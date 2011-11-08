@@ -175,7 +175,7 @@ int32_t libmpq__decompress_block(uint8_t *in_buf, uint32_t in_size, uint8_t *out
 
 	/* check if one compression mode is used. */
 	else if (compression_type == LIBMPQ_FLAG_COMPRESS_PKZIP ||
-	    compression_type == LIBMPQ_FLAG_COMPRESS_MULTI) {
+	         compression_type == LIBMPQ_FLAG_COMPRESS_MULTI) {
 
 		/* check if block is really compressed, some blocks have set the compression flag, but are not compressed. */
 		if (in_size < out_size) {

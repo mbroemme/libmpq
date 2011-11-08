@@ -76,10 +76,10 @@ const char *libmpq__strerror(int32_t return_code) {
 int32_t libmpq__archive_open(mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset) {
 
 	/* some common variables. */
-	uint32_t i              = 0;
-	uint32_t count          = 0;
-	int32_t result          = 0;
-	uint32_t header_search	= FALSE;
+	uint32_t i             = 0;
+	uint32_t count         = 0;
+	int32_t result         = 0;
+	uint32_t header_search = FALSE;
 
 	if (archive_offset == -1) {
 		archive_offset = 0;
@@ -535,8 +535,8 @@ int32_t libmpq__file_read(mpq_archive_s *mpq_archive, uint32_t file_number, uint
 
 	/* some common variables. */
 	uint32_t i;
-	uint32_t blocks         = 0;
-	int32_t result          = 0;
+	uint32_t blocks                 = 0;
+	int32_t result                  = 0;
 	libmpq__off_t file_offset       = 0;
 	libmpq__off_t unpacked_size     = 0;
 	libmpq__off_t transferred_block = 0;
@@ -861,11 +861,11 @@ int32_t libmpq__block_read(mpq_archive_s *mpq_archive, uint32_t file_number, uin
 
 	/* some common variables. */
 	uint8_t *in_buf;
-	uint32_t seed       = 0;
-	uint32_t encrypted  = 0;
-	uint32_t compressed = 0;
-	uint32_t imploded   = 0;
-	int32_t tb          = 0;
+	uint32_t seed               = 0;
+	uint32_t encrypted          = 0;
+	uint32_t compressed         = 0;
+	uint32_t imploded           = 0;
+	int32_t tb                  = 0;
 	libmpq__off_t block_offset  = 0;
 	libmpq__off_t in_size       = 0;
 	libmpq__off_t unpacked_size = 0;
