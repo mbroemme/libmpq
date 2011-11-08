@@ -37,6 +37,23 @@
 /* support for platform specific things */
 #include "platform.h"
 
+/* static error constants. */
+static const char *__libmpq_error_strings[] = {
+	"success",
+	"open error on file",
+	"close error on file",
+	"lseek error on file",
+	"read error on file",
+	"write error on file",
+	"memory allocation error",
+	"format errror",
+	"init() wasn't called",
+	"buffer size is to small",
+	"file or block does not exist in archive",
+	"we don't know the decryption seed",
+	"error on unpacking file"
+};
+
 /* this function returns the library version information. */
 const char *libmpq__version(void) {
 
@@ -44,30 +61,15 @@ const char *libmpq__version(void) {
 	return VERSION;
 }
 
-static const char *__libmpq_error_strings[] = {
-		"success",
-		"open error on file",
-		"close error on file",
-		"lseek error on file",
-		"read error on file",
-		"write error on file",
-		"memory allocation error",
-		"format errror",
-		"init() wasn't called",
-		"buffer size is to small",
-		"file or block does not exist in archive",
-		"we don't know the decryption seed",
-		"error on unpacking file"
-	};
-
 /* this function returns a string message for a return code. */
-const char *libmpq__strerror(int32_t returncode) {
+const char *libmpq__strerror(int32_t return_code) {
+
 	/* check for array bounds */
-	if (-returncode < 0 || -returncode > sizeof(__libmpq_error_strings)/sizeof(char*))
+	if (-return_code < 0 || -return_code > sizeof(__libmpq_error_strings)/sizeof(char*))
 		return NULL;
 
 	/* return appropriate string */
-	return __libmpq_error_strings[-returncode];
+	return __libmpq_error_strings[-return_code];
 }
 
 /* this function read a file and verify if it is a valid mpq archive, then it read and decrypt the hash table. */
