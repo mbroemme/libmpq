@@ -611,7 +611,6 @@ int32_t libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_numb
 	/* some common variables. */
 	uint32_t i;
 	uint32_t packed_size;
-	int32_t rb     = 0;
 	int32_t result = 0;
 
 	/* check if given file number is not out of range. */
