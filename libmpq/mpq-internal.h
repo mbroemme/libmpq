@@ -43,6 +43,7 @@
 #define LIBMPQ_FLAG_COMPRESS_PKZIP		0x00000100	/* compression made by pkware data compression library. */
 #define LIBMPQ_FLAG_COMPRESS_MULTI		0x00000200	/* multiple compressions. */
 #define LIBMPQ_FLAG_COMPRESS_NONE		0x00000300	/* no compression (no blizzard flag used by myself). */
+#define LIBMPQ_FLAG_ENCRYPTION_KEY_V2		0x00020000	/* File decryption key is additionally derived from file offset and unpacked size. */
 #define LIBMPQ_FLAG_SINGLE			0x01000000	/* file is stored in one single sector, first seen in world of warcraft. */
 #define LIBMPQ_FLAG_CRC				0x04000000	/* compressed block offset table has CRC checksum. */
 

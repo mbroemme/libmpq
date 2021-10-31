@@ -49,6 +49,20 @@ int32_t libmpq__decrypt_key(
 	uint32_t	*key
 );
 
+/* function to obtain the decryption key given a filename. */
+int32_t libmpq__encryption_key_from_filename(
+	const char	*filename,
+	uint32_t	*key
+);
+
+/* function to obtain the decryption key given a filename for files with LIBMPQ_FLAG_ENCRYPTION_KEY_V2. */
+int32_t libmpq__encryption_key_from_filename_v2(
+	const char	*filename,
+	uint32_t	offset,
+	uint32_t	unpacked_size,
+	uint32_t	*key
+);
+
 /* function to decompress or explode block from archive. */
 int32_t libmpq__decompress_block(
 	uint8_t		*in_buf,

@@ -99,6 +99,31 @@ int32_t libmpq__decrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed)
 	return LIBMPQ_SUCCESS;
 }
 
+/* returns the last component of a path after / or \ */
+static const char *get_basename(const char *filename) {
+	const char *basename = strrchr(filename, '\\');
+	if (*basename != '\0') return basename + 1;
+	basename = strrchr(filename, '/');
+	if (*basename != '\0') return basename + 1;
+	return filename;
+}
+
+int32_t libmpq__encryption_key_from_filename(const char *filename, uint32_t *key) {
+	const char *basename = get_basename(filename);
+	if (*basename == '\0')
+		return LIBMPQ_ERROR_DECRYPT;
+	*key = libmpq__hash_string(basename, 0x300);
+	return LIBMPQ_SUCCESS;
+}
+
+int32_t libmpq__encryption_key_from_filename_v2(const char *filename, uint32_t offset, uint32_t unpacked_size, uint32_t *key) {
+	int32_t result = libmpq__encryption_key_from_filename(filename, key);
+	if (result < 0)
+		return result;
+	*key = (*key + offset) ^ unpacked_size;
+	return LIBMPQ_SUCCESS;
+}
+
 /* function to detect decryption key. */
 int32_t libmpq__decrypt_key(uint8_t *in_buf, uint32_t in_size, uint32_t block_size, uint32_t *key) {
 
