@@ -831,6 +831,51 @@ int32_t libmpq__block_size_unpacked(mpq_archive_s *mpq_archive, uint32_t file_nu
 	return LIBMPQ_SUCCESS;
 }
 
+/* returns the block number, size, and block start position for the given position in the unpacked file. */
+int32_t libmpq__block_seek(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t file_position, uint32_t *block_number, libmpq__off_t *block_size, uint32_t *block_start_position) {
+
+	/* some common variables. */
+	uint32_t file_size;
+	uint32_t num_blocks;
+
+	/* check if given file number is not out of range. */
+	CHECK_FILE_NUM(file_number, mpq_archive)
+
+	/* check if packed block offset table is opened. */
+	if (mpq_archive->mpq_file[file_number] == NULL ||
+	    mpq_archive->mpq_file[file_number]->packed_offset == NULL) {
+
+		/* packed block offset table is not opened. */
+		return LIBMPQ_ERROR_OPEN;
+	}
+
+	file_size = mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].unpacked_size;
+	if ((mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags & LIBMPQ_FLAG_SINGLE) != 0) {
+		if (file_position >= file_size)
+			return LIBMPQ_ERROR_EXIST;
+
+		*block_number = file_position / file_size;
+		*block_size = file_size;
+		*block_start_position = 0;
+	} else {
+		*block_number = file_position / mpq_archive->block_size;
+
+		num_blocks = (file_size + mpq_archive->block_size - 1) / mpq_archive->block_size;
+
+		if (*block_number >= num_blocks)
+			return LIBMPQ_ERROR_EXIST;
+
+		if (*block_number + 1 < num_blocks) {
+			*block_size = mpq_archive->block_size;
+		} else {
+			*block_size = file_size - mpq_archive->block_size * (num_blocks - 1);
+		}
+		*block_start_position = (*block_number) * (*block_size);
+	}
+
+	return LIBMPQ_SUCCESS;
+}
+
 /* this function return the decryption seed for the given file and block. */
 int32_t libmpq__block_seed(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number, uint32_t *seed) {
 
