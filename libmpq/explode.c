@@ -145,8 +145,9 @@ static int32_t skip_bit(pkzip_cmp_s *mpq_pkzip, uint32_t bits) {
 	/* load input buffer if necessary. */
 	mpq_pkzip->bit_buf >>= mpq_pkzip->extra_bits;
 	if (mpq_pkzip->in_pos == mpq_pkzip->in_bytes) {
-		mpq_pkzip->in_pos = sizeof(mpq_pkzip->in_buf);
-		if ((mpq_pkzip->in_bytes = mpq_pkzip->read_buf((char *)mpq_pkzip->in_buf, &mpq_pkzip->in_pos, mpq_pkzip->param)) == 0) {
+		uint32_t in_pos = sizeof(mpq_pkzip->in_buf);
+		if ((mpq_pkzip->in_bytes = mpq_pkzip->read_buf((char *)mpq_pkzip->in_buf, &in_pos, mpq_pkzip->param)) == 0) {
+			mpq_pkzip->in_pos = in_pos;
 			return 1;
 		}
 		mpq_pkzip->in_pos = 0;
@@ -538,8 +539,10 @@ uint32_t libmpq__do_decompress_pkzip(uint8_t *work_buf, void *param) {
 	mpq_pkzip->read_buf   = data_read_input;
 	mpq_pkzip->write_buf  = data_write_output;
 	mpq_pkzip->param      = param;
-	mpq_pkzip->in_pos     = sizeof(mpq_pkzip->in_buf);
-	mpq_pkzip->in_bytes   = mpq_pkzip->read_buf((char *)mpq_pkzip->in_buf, &mpq_pkzip->in_pos, mpq_pkzip->param);
+
+	uint32_t in_pos = sizeof(mpq_pkzip->in_buf);
+	mpq_pkzip->in_bytes = mpq_pkzip->read_buf((char *)mpq_pkzip->in_buf, &in_pos, mpq_pkzip->param);
+	mpq_pkzip->in_pos = in_pos;
 
 	/* check if we have pkzip data. */
 	if (mpq_pkzip->in_bytes <= 4) {
