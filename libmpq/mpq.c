@@ -605,6 +605,81 @@ int32_t libmpq__file_read(mpq_archive_s *mpq_archive, uint32_t file_number, uint
 	return LIBMPQ_SUCCESS;
 }
 
+/* this function read the given file from archive into a buffer. calculates the filename-based decryption key if needed. */
+int32_t libmpq__file_read_with_filename(mpq_archive_s *mpq_archive, uint32_t file_number, const char *filename, uint8_t *out_buf, libmpq__off_t out_size, libmpq__off_t *transferred) {
+
+	/* some common variables. */
+	uint32_t i;
+	uint32_t blocks                 = 0;
+	int32_t result                  = 0;
+	libmpq__off_t file_offset       = 0;
+	libmpq__off_t unpacked_size     = 0;
+	libmpq__off_t transferred_block = 0;
+	libmpq__off_t transferred_total = 0;
+
+	/* check if given file number is not out of range. */
+	CHECK_FILE_NUM(file_number, mpq_archive)
+
+	/* get target size of block. */
+	libmpq__file_size_unpacked(mpq_archive, file_number, &unpacked_size);
+
+	/* check if target buffer is to small. */
+	if (unpacked_size > out_size) {
+
+		/* output buffer size is to small or block size is unknown. */
+		return LIBMPQ_ERROR_SIZE;
+	}
+
+	/* fetch file offset. */
+	libmpq__file_offset(mpq_archive, file_number, &file_offset);
+
+	/* get block count for file. */
+	libmpq__file_blocks(mpq_archive, file_number, &blocks);
+
+	/* open the packed block offset table. */
+	if ((result = libmpq__block_open_offset_with_filename(mpq_archive, file_number, filename)) < 0) {
+
+		/* something on opening packed block offset table failed. */
+		return result;
+	}
+
+	/* loop through all blocks. */
+	for (i = 0; i < blocks; i++) {
+
+		/* cleanup size variable. */
+		unpacked_size = 0;
+
+		/* get unpacked block size. */
+		libmpq__block_size_unpacked(mpq_archive, file_number, i, &unpacked_size);
+
+		/* read block. */
+		if ((result = libmpq__block_read(mpq_archive, file_number, i, out_buf + transferred_total, unpacked_size, &transferred_block)) < 0) {
+
+			/* close the packed block offset table. */
+			libmpq__block_close_offset(mpq_archive, file_number);
+
+			/* something on reading block failed. */
+			return result;
+		}
+
+		transferred_total += transferred_block;
+
+	}
+
+	/* close the packed block offset table. */
+	libmpq__block_close_offset(mpq_archive, file_number);
+
+	/* check for null pointer. */
+	if (transferred != NULL) {
+
+		/* store transferred bytes. */
+		*transferred = transferred_total;
+	}
+
+	/* if no error was found, return zero. */
+	return LIBMPQ_SUCCESS;
+}
+
 /* opens a file and calculates the filename-based decryption key if needed. */
 int32_t libmpq__block_open_offset_with_filename(mpq_archive_s *mpq_archive, uint32_t file_number, const char *filename) {
 
