@@ -488,26 +488,27 @@ int32_t libmpq__file_imploded(mpq_archive_s *mpq_archive, uint32_t file_number, 
 	return LIBMPQ_SUCCESS;
 }
 
-/* this function return filenumber by the given name. */
-int32_t libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *number) {
+/* calculates the filename hash. */
+void libmpq__file_hash(const char *filename, uint32_t *hash1, uint32_t *hash2, uint32_t *hash3) {
+	*hash1 = libmpq__hash_string(filename, 0x0);
+	*hash2 = libmpq__hash_string(filename, 0x100);
+	*hash3 = libmpq__hash_string(filename, 0x200);
+}
 
-	/* some common variables. */
-	uint32_t i, hash1, hash2, hash3, ht_count;
-
+/* finds the file number with the given filename hash. */
+int32_t libmpq__file_number_from_hash(mpq_archive_s *mpq_archive, uint32_t hash1, uint32_t hash2, uint32_t hash3, uint32_t *number) {
 	/* if the list of file names doesn't include this one, we'll have
 	 * to figure out the file number the "hard" way.
 	 */
-	ht_count = mpq_archive->mpq_header.hash_table_count;
+	uint32_t ht_count = mpq_archive->mpq_header.hash_table_count;
 
-	hash1 = libmpq__hash_string (filename, 0x0) & (ht_count - 1);
-	hash2 = libmpq__hash_string (filename, 0x100);
-	hash3 = libmpq__hash_string (filename, 0x200);
+	hash1 &= (ht_count - 1);
 
 	/* loop through all files in mpq archive.
 	 * hash1 gives us a clue about the starting position of this
 	 * search.
 	 */
-	for (i = hash1; mpq_archive->mpq_hash[i].block_table_index != LIBMPQ_HASH_FREE; i = (i + 1) & (ht_count - 1)) {
+	for (uint32_t i = hash1; mpq_archive->mpq_hash[i].block_table_index != LIBMPQ_HASH_FREE; i = (i + 1) & (ht_count - 1)) {
 
 		/* if the other two hashes match, we found our file number. */
 		if (mpq_archive->mpq_hash[i].hash_a == hash2 &&
@@ -528,6 +529,14 @@ int32_t libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, ui
 
 	/* if no matching entry found, so return error. */
 	return LIBMPQ_ERROR_EXIST;
+}
+
+
+/* this function return filenumber by the given name. */
+int32_t libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *number) {
+	uint32_t hash1, hash2, hash3;
+	libmpq__file_hash(filename, &hash1, &hash2, &hash3);
+	return libmpq__file_number_from_hash(mpq_archive, hash1, hash2, hash3, number);
 }
 
 /* this function read the given file from archive into a buffer. */
