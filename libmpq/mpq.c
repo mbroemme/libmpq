@@ -897,6 +897,15 @@ int32_t libmpq__block_read(mpq_archive_s *mpq_archive, uint32_t file_number, uin
 	block_offset = mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].offset + (((long long)mpq_archive->mpq_block_ex[mpq_archive->mpq_map[file_number].block_table_indices].offset_high) << 32) + mpq_archive->mpq_file[file_number]->packed_offset[block_number];
 	in_size = mpq_archive->mpq_file[file_number]->packed_offset[block_number + 1] - mpq_archive->mpq_file[file_number]->packed_offset[block_number];
 
+	/* get implosion status. */
+	libmpq__file_imploded(mpq_archive, file_number, &imploded);
+
+	/* get compression status. */
+	libmpq__file_compressed(mpq_archive, file_number, &compressed);
+
+	/* check if we can avoid allocating a temporary buffer. */
+	const uint8_t use_in_buf_as_out = in_size <= out_size && (!compressed || in_size == out_size) && !imploded;
+
 	/* seek in file. */
 	if (fseeko(mpq_archive->fp, block_offset + mpq_archive->archive_offset, SEEK_SET) < 0) {
 
@@ -904,18 +913,22 @@ int32_t libmpq__block_read(mpq_archive_s *mpq_archive, uint32_t file_number, uin
 		return LIBMPQ_ERROR_SEEK;
 	}
 
-	/* allocate memory for the read buffer. */
-	if ((in_buf = calloc(1, in_size)) == NULL) {
+	if (use_in_buf_as_out) {
+		in_buf = out_buf;
+	} else {
+		/* allocate memory for the read buffer. */
+		if ((in_buf = calloc(1, in_size)) == NULL) {
 
-		/* memory allocation problem. */
-		return LIBMPQ_ERROR_MALLOC;
+			/* memory allocation problem. */
+			return LIBMPQ_ERROR_MALLOC;
+		}
 	}
 
 	/* read block from file. */
 	if (fread(in_buf, 1, in_size, mpq_archive->fp) != in_size) {
 
 		/* free buffers. */
-		free(in_buf);
+		if (!use_in_buf_as_out) free(in_buf);
 
 		/* something on reading block failed. */
 		return LIBMPQ_ERROR_READ;
@@ -941,9 +954,6 @@ int32_t libmpq__block_read(mpq_archive_s *mpq_archive, uint32_t file_number, uin
 		}
 	}
 
-	/* get compression status. */
-	libmpq__file_compressed(mpq_archive, file_number, &compressed);
-
 	/* check if file is compressed. */
 	if (compressed) {
 
@@ -951,15 +961,12 @@ int32_t libmpq__block_read(mpq_archive_s *mpq_archive, uint32_t file_number, uin
 		if ((tb = libmpq__decompress_block(in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_MULTI)) < 0) {
 
 			/* free temporary buffer. */
-			free(in_buf);
+			if (!use_in_buf_as_out) free(in_buf);
 
 			/* something on decompressing block failed. */
 			return LIBMPQ_ERROR_UNPACK;
 		}
 	}
-
-	/* get implosion status. */
-	libmpq__file_imploded(mpq_archive, file_number, &imploded);
 
 	/* check if file is imploded. */
 	if (imploded) {
@@ -991,7 +998,7 @@ int32_t libmpq__block_read(mpq_archive_s *mpq_archive, uint32_t file_number, uin
 		if ((tb = libmpq__decompress_block(in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_NONE)) < 0) {
 
 			/* free temporary buffer. */
-			free(in_buf);
+			if (!use_in_buf_as_out) free(in_buf);
 
 			/* something on decompressing block failed. */
 			return LIBMPQ_ERROR_UNPACK;
@@ -999,7 +1006,7 @@ int32_t libmpq__block_read(mpq_archive_s *mpq_archive, uint32_t file_number, uin
 	}
 
 	/* free read buffer. */
-	free(in_buf);
+	if (!use_in_buf_as_out) free(in_buf);
 
 	/* check for null pointer. */
 	if (transferred != NULL) {
