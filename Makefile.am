@@ -16,13 +16,8 @@ pkgconfig_DATA			= libmpq.pc
 
 # extra stuff.
 EXTRA_DIST =			\
-	AUTHORS			\
 	COPYING			\
 	COPYING.LESSER		\
-	FAQ			\
-	INSTALL			\
 	NEWS			\
-	README			\
-	RELICENSING.md		\
-	THANKS			\
-	TODO
+	README.md		\
+	RELICENSING.md
