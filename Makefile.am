@@ -5,7 +5,7 @@ AUTOMAKE_OPTIONS		= 1.6
 SUBDIRS				= libmpq bindings doc
 
 # the directories which are part of the distribution.
-DIST_SUBDIRS			= $(SUBDIRS)
+DIST_SUBDIRS			= $(SUBDIRS) tools
 
 # libmpq runtime configuration script.
 bin_SCRIPTS			= libmpq-config
@@ -18,9 +18,11 @@ pkgconfig_DATA			= libmpq.pc
 EXTRA_DIST =			\
 	AUTHORS			\
 	COPYING			\
+	COPYING.LESSER		\
 	FAQ			\
 	INSTALL			\
 	NEWS			\
 	README			\
+	RELICENSING.md		\
 	THANKS			\
 	TODO
