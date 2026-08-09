@@ -18,6 +18,5 @@ pkgconfig_DATA			= libmpq.pc
 EXTRA_DIST =			\
 	COPYING			\
 	COPYING.LESSER		\
-	NEWS			\
 	README.md		\
 	RELICENSING.md
