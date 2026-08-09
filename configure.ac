@@ -78,8 +78,8 @@ libmpq/Makefile
 bindings/Makefile
 bindings/d/Makefile
 bindings/python/Makefile
-doc/Makefile
-doc/man1/Makefile
-doc/man3/Makefile
+docs/Makefile
+docs/man1/Makefile
+docs/man3/Makefile
 tools/Makefile
 ])
