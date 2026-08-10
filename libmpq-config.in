@@ -39,9 +39,8 @@ while test "$#" -gt "0"; do
       echo "@VERSION@"
       ;;
     --cflags)
-      largefile="@LFS_CFLAGS@"
       includes=-I@includedir@/libmpq
-      echo "$includes $largefile"
+      echo "$includes"
       ;;
     --libs)
       libdirs="-L@libdir@"
@@ -54,4 +53,3 @@ while test "$#" -gt "0"; do
   esac
   shift
 done
-

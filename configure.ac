@@ -9,40 +9,13 @@ AC_CANONICAL_TARGET
 AM_INIT_AUTOMAKE([no-dependencies])
 AC_CONFIG_HEADERS([config.h:config.h.in])
 
+# detect platform feature declarations.
+AC_USE_SYSTEM_EXTENSIONS
+
 # checking for programs.
 LT_INIT
 AC_PROG_MAKE_SET
 AC_PROG_CC
-AC_SYS_LARGEFILE
-AC_FUNC_FSEEKO
-
-# check if we need to export some largefile flags.
-if test "$enable_largefile" != no; then
-	if test "$ac_cv_sys_file_offset_bits" != 'no'; then
-		if test -z "$LFS_CFLAGS" ; then
-			LFS_CFLAGS="-D_FILE_OFFSET_BITS=$ac_cv_sys_file_offset_bits"
-		else
-			LFS_CFLAGS="$LFS_CFLAGS -D_FILE_OFFSET_BITS=$ac_cv_sys_file_offset_bits"
-		fi
-	fi
-	if test "$ac_cv_sys_large_files" != 'no'; then
-		if test -z "$LFS_CFLAGS" ; then
-			LFS_CFLAGS="-D_LARGE_FILES=1"
-		else
-			LFS_CFLAGS="$LFS_CFLAGS -D_LARGE_FILES=1"
-		fi
-	fi
-	if  test "$ac_cv_sys_largefile_source" != 'no'; then
-		if test -z "$LFS_CFLAGS" ; then
-			LFS_CFLAGS="-D_LARGEFILE_SOURCE=1"
-		else
-			LFS_CFLAGS="$LFS_CFLAGS -D_LARGEFILE_SOURCE=1"
-		fi
-	fi
-fi
-
-# export largefile flags.
-AC_SUBST(LFS_CFLAGS)
 
 # compile with hidden visibility when the compiler supports it.
 AC_COMPILE_IFELSE(

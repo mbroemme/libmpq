@@ -47,22 +47,10 @@ make distclean
 The example below takes the first command-line argument as an MPQ archive and
 extracts the first file to a buffer.
 
-Compile on 32-bit systems with:
+Compile with:
 
 ```sh
-gcc \
-  -D_FILE_OFFSET_BITS=64 \
-  -D_LARGE_FILES=1 \
-  -D_LARGEFILE_SOURCE=1 \
-  mpq-example.c -o mpq-example -lmpq -lz -lbz2 -I/usr/local/include/libmpq
-```
-
-Compile on 64-bit systems with:
-
-```sh
-gcc \
-  -D_LARGE_FILES=1 \
-  mpq-example.c -o mpq-example -lmpq -lz -lbz2 -I/usr/local/include/libmpq
+gcc mpq-example.c -o mpq-example -lmpq -lz -lbz2 -I/usr/local/include/libmpq
 ```
 
 ```c
