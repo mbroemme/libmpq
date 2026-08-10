@@ -44,6 +44,13 @@ fi
 # export largefile flags.
 AC_SUBST(LFS_CFLAGS)
 
+# compile with hidden visibility when the compiler supports it.
+AC_COMPILE_IFELSE(
+	[AC_LANG_PROGRAM([[__attribute__((visibility("hidden"))) int hidden_symbol;]], [[]])],
+	[CFLAGS="$CFLAGS -fvisibility=hidden"],
+	[]
+)
+
 # check for zlib library.
 AC_CHECK_HEADER([zlib.h], [], [AC_MSG_ERROR([*** zlib.h is required, install zlib header files])])
 AC_CHECK_LIB([z], [inflateEnd], [], [AC_MSG_ERROR([*** inflateEnd is required, install zlib library files])])
@@ -51,13 +58,6 @@ AC_CHECK_LIB([z], [inflateEnd], [], [AC_MSG_ERROR([*** inflateEnd is required, i
 # check for bzlib2 library.
 AC_CHECK_HEADER([bzlib.h], [], [AC_MSG_ERROR([*** bzlib.h is required, install bzip2 header files])])
 AC_CHECK_LIB([bz2], [BZ2_bzDecompressInit], [], [AC_MSG_ERROR([*** BZ2_bzDecompressInit is required, install bzip2 library files])])
-
-# When we're running gcc 4 or greater, compile with -fvisibility=hidden.
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
-#if !defined(__GNUC__) || (__GNUC__ < 4)
-#error not gcc4
-#endif
-]], [[]])],[CFLAGS="$CFLAGS -fvisibility=hidden"],[])
 
 # find python for binding
 AM_PATH_PYTHON([2.4],,[:])
