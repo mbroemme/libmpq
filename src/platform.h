@@ -21,7 +21,7 @@
 #define _PLATFORM_H
 
 #ifdef _MSC_VER
-  #define fseeko _fseeki64
+#define fseeko _fseeki64
 #endif
 
-#endif								/* _PLATFORM_H */
+#endif /* _PLATFORM_H */

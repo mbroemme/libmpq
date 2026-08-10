@@ -24,7 +24,7 @@
 #endif
 
 #ifdef _MSC_VER
-  #pragma pack(pop)
+#pragma pack(pop)
 #endif
 
 #undef PACK_STRUCT

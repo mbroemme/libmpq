@@ -1,0 +1,79 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${project_root}"
+
+clang_format="${CLANG_FORMAT:-}"
+if [[ -z "${clang_format}" ]]; then
+	for candidate in clang-format-22 clang-format; do
+		if command -v "${candidate}" >/dev/null 2>&1; then
+			clang_format="${candidate}"
+			break
+		fi
+	done
+fi
+
+clang_tidy="${CLANG_TIDY:-}"
+if [[ -z "${clang_tidy}" ]]; then
+	for candidate in clang-tidy-22 clang-tidy; do
+		if command -v "${candidate}" >/dev/null 2>&1; then
+			clang_tidy="${candidate}"
+			break
+		fi
+	done
+fi
+
+for command in git shellcheck; do
+	if ! command -v "${command}" >/dev/null 2>&1; then
+		printf 'Required command not found: %s\n' "${command}" >&2
+		exit 1
+	fi
+done
+
+if [[ -z "${clang_format}" ]] || ! command -v "${clang_format}" >/dev/null 2>&1; then
+	printf 'No clang-format found. Set CLANG_FORMAT to its executable name or path.\n' >&2
+	exit 1
+fi
+
+if [[ -z "${clang_tidy}" ]] || ! command -v "${clang_tidy}" >/dev/null 2>&1; then
+	printf 'No clang-tidy found. Set CLANG_TIDY to its executable name or path.\n' >&2
+	exit 1
+fi
+
+if [[ ! -f compile_commands.json ]]; then
+	printf 'No compile_commands.json found. Generate it with:\n' >&2
+	printf '  sh autogen.sh && ./configure --prefix=/usr && bear -- make -j"$(nproc)" && bear --append -- make -C tools crypt_buf_gen\n' >&2
+	exit 1
+fi
+
+printf 'Checking shell scripts...\n'
+shell_scripts=(
+	scripts/check
+	scripts/check-comment-spacing
+	scripts/check-function-spacing
+)
+sh -n autogen.sh
+bash -n "${shell_scripts[@]}"
+shellcheck -S error autogen.sh "${shell_scripts[@]}"
+
+printf 'Checking changed text whitespace...\n'
+if ! git diff --check HEAD --; then
+	exit 1
+fi
+
+printf 'Checking C formatting...\n'
+mapfile -t sources < <(git ls-files 'src/*.c' 'src/*.h' 'tools/*.c')
+if ((${#sources[@]} == 0)); then
+	printf 'No C sources found.\n' >&2
+	exit 1
+fi
+scripts/check-comment-spacing "${sources[@]}"
+scripts/check-function-spacing "${sources[@]}"
+"${clang_format}" --dry-run --Werror "${sources[@]}"
+
+printf 'Checking C diagnostics...\n'
+"${clang_tidy}" -p . src/*.c tools/*.c
+
+printf 'All source checks passed.\n'
