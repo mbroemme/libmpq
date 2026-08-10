@@ -1,6 +1,3 @@
-# minimum required automake 1.6
-AUTOMAKE_OPTIONS		= 1.6
-
 # library information and headers which should not be installed.
 lib_LTLIBRARIES			= libmpq.la
 noinst_HEADERS			= common.h crypt_buf.h explode.h extract.h huffman.h mpq-internal.h pack_begin.h pack_end.h platform.h wave.h

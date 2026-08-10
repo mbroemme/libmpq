@@ -1,6 +1,3 @@
-# minimum required automake 1.6
-AUTOMAKE_OPTIONS		= 1.6
-
 # the main programs.
 bin_PROGRAMS			= crypt_buf_gen
 

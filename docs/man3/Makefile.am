@@ -1,6 +1,3 @@
-# minimum required automake 1.6
-AUTOMAKE_OPTIONS		= 1.6
-
 # manual page directory.
 EXTRA_DIST			= $(man_MANS)
 
