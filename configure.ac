@@ -1,20 +1,16 @@
 # the autoconf initilization.
-AC_INIT(libmpq, 0.5.0, [mbroemme@libmpq.org], [libmpq])
+AC_INIT([libmpq],[0.5.0],[mbroemme@libmpq.org],[libmpq])
 AC_SUBST(LIBMPQ_ABI, [1:0:0])
 
 # detect the canonical host and target build environment.
-AC_CANONICAL_SYSTEM
+AC_CANONICAL_TARGET
 
 # initialize autoconf and automake system.
 AM_INIT_AUTOMAKE([no-dependencies])
 AC_CONFIG_HEADERS([config.h:config.h.in])
 
-# notices.
-AC_PREREQ(2.53)
-AC_REVISION($Revision: 1.6 $)
-
 # checking for programs.
-AC_PROG_LIBTOOL
+LT_INIT
 AC_PROG_MAKE_SET
 AC_PROG_CC
 AC_SYS_LARGEFILE
@@ -57,11 +53,11 @@ AC_CHECK_HEADER([bzlib.h], [], [AC_MSG_ERROR([*** bzlib.h is required, install b
 AC_CHECK_LIB([bz2], [BZ2_bzDecompressInit], [], [AC_MSG_ERROR([*** BZ2_bzDecompressInit is required, install bzip2 library files])])
 
 # When we're running gcc 4 or greater, compile with -fvisibility=hidden.
-AC_TRY_COMPILE([
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 #if !defined(__GNUC__) || (__GNUC__ < 4)
 #error not gcc4
 #endif
-], [], [CFLAGS="$CFLAGS -fvisibility=hidden"])
+]], [[]])],[CFLAGS="$CFLAGS -fvisibility=hidden"],[])
 
 # find python for binding
 AM_PATH_PYTHON([2.4],,[:])
@@ -72,7 +68,7 @@ AC_CONFIG_FILES([libmpq.pc])
 AC_CONFIG_FILES([libmpq-config],[chmod +x libmpq-config])
 
 # creating files.
-AC_OUTPUT([
+AC_CONFIG_FILES([
 Makefile
 src/Makefile
 bindings/Makefile
@@ -83,3 +79,6 @@ docs/man1/Makefile
 docs/man3/Makefile
 tools/Makefile
 ])
+
+# perform configuration actions.
+AC_OUTPUT
