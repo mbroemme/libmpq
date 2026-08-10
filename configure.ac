@@ -17,6 +17,17 @@ LT_INIT
 AC_PROG_MAKE_SET
 AC_PROG_CC
 
+# require C99 capable compiler and use it for all project checks/builds.
+AC_MSG_CHECKING([whether $CC supports C99])
+AC_COMPILE_IFELSE(
+	[AC_LANG_PROGRAM([[#if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
+#error "C99 support is required"
+#endif]])],
+	[AC_MSG_RESULT([yes])],
+	[AC_MSG_RESULT([no])
+	 AC_MSG_ERROR([*** a C99 capable compiler is required])]
+)
+
 # compile with hidden visibility when the compiler supports it.
 AC_COMPILE_IFELSE(
 	[AC_LANG_PROGRAM([[__attribute__((visibility("hidden"))) int hidden_symbol;]], [[]])],
