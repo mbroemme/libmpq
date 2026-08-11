@@ -1,7 +1,7 @@
 /*
  *  common.c -- internal hash, crypt and decompression helpers.
  *
- *  Copyright (c) 2003-2011 Maik Broemme <mbroemme@libmpq.org>
+ *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
  *  This file is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by

@@ -1,7 +1,7 @@
 /*
  *  explode.h -- PKWARE Data Compression Library explode declarations.
  *
- *  Copyright (c) 2003-2011 Maik Broemme <mbroemme@libmpq.org>
+ *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
  *  This source was adapted from the C++ version of pklib.h included
  *  in stormlib. The C++ version belongs to the following authors:

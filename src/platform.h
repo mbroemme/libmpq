@@ -1,7 +1,7 @@
 /*
  *  platform.h -- header file for platform specific parts.
  *
- *  Copyright (c) 2010-2011 Georg Lukas <georg@op-co.de>
+ *  Copyright (c) 2010-2026 Georg Lukas <georg@op-co.de>
  *
  *  This file is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by

@@ -1,7 +1,7 @@
 /*
  *  mpq.h -- public libmpq API declarations and constants.
  *
- *  Copyright (c) 2003-2011 Maik Broemme <mbroemme@libmpq.org>
+ *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
  *  Some parts (the encryption and decryption stuff) were adapted from
  *  the C++ version of StormLib.h and StormPort.h included in stormlib.

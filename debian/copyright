@@ -9,7 +9,7 @@ Upstream Author:
 
 Copyright:
 
-    Copyright (C) 2003-2011 Maik Broemme
+    Copyright (C) 2003-2026 Maik Broemme
 
 License:
 
@@ -19,5 +19,5 @@ License:
     (at your option) any later version.
 
 
-The Debian packaging is (C) 2008-2011, Georg Lukas <georg@op-co.de> and
+The Debian packaging is (C) 2008-2026, Georg Lukas <georg@op-co.de> and
 is licensed under the LGPL-2.1-or-later, see `/usr/share/common-licenses/LGPL-2.1'.
