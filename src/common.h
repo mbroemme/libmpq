@@ -1,5 +1,5 @@
 /*
- *  common.h -- header functions used by mpq-tools.
+ *  common.h -- internal hash, crypt and decompression helpers.
  *
  *  Copyright (c) 2003-2011 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -20,19 +20,19 @@
 #ifndef _COMMON_H
 #define _COMMON_H
 
-/* function to return the hash to a given string. */
+/* Hash an MPQ table name or file name with one of the Storm hash table offsets. */
 uint32_t libmpq__hash_string(const char *key, uint32_t offset);
 
-/* function to encrypt a block. */
+/* Encrypt a block in place using the MPQ block cipher. */
 int32_t libmpq__encrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed);
 
-/* function to decrypt a block. */
+/* Decrypt a block in place using the MPQ block cipher. */
 int32_t libmpq__decrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed);
 
-/* function to detect decryption key. */
+/* Recover a file block-table decryption seed from encrypted block offsets. */
 int32_t libmpq__decrypt_key(uint8_t *in_buf, uint32_t in_size, uint32_t block_size, uint32_t *key);
 
-/* function to decompress or explode block from archive. */
+/* Decompress one archive block according to its MPQ compression flags. */
 int32_t libmpq__decompress_block(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size,
     uint32_t compression_type

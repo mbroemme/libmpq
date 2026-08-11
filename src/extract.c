@@ -1,6 +1,5 @@
 /*
- *  extract.c -- global extracting function for all known file compressions
- *               in a mpq archive.
+ *  extract.c -- decompression backends for MPQ block payloads.
  *
  *  Copyright (c) 2003-2011 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -18,7 +17,7 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-/* generic includes. */
+/* system includes. */
 #include <stdlib.h>
 #include <string.h>
 
@@ -26,22 +25,22 @@
 #include <bzlib.h>
 #include <zlib.h>
 
-/* libmpq main includes. */
+/* public api includes. */
 #include "mpq.h"
 
-/* libmpq generic includes. */
+/* internal decompression includes. */
 #include "explode.h"
 #include "extract.h"
 #include "huffman.h"
 #include "wave.h"
 
-/* table with decompression bits and functions. */
+/* Map MPQ compression flags to the backend that can decode that payload. */
 static decompress_table_s dcmp_table[] = {
     { LIBMPQ_COMPRESSION_HUFFMAN,
-      libmpq__decompress_huffman },                       /* decompression using huffman trees. */
+      libmpq__decompress_huffman },                       /* decompression using Huffman trees. */
     { LIBMPQ_COMPRESSION_ZLIB, libmpq__decompress_zlib }, /* decompression with the zlib library. */
     { LIBMPQ_COMPRESSION_PKZIP,
-      libmpq__decompress_pkzip }, /* decompression with pkware data compression library. */
+      libmpq__decompress_pkzip }, /* decompression with PKWARE Data Compression Library. */
     { LIBMPQ_COMPRESSION_BZIP2, libmpq__decompress_bzip2 }, /* decompression with bzip2 library. */
     { LIBMPQ_COMPRESSION_WAVE_MONO,
       libmpq__decompress_wave_mono }, /* decompression for mono waves. */
@@ -49,14 +48,14 @@ static decompress_table_s dcmp_table[] = {
       libmpq__decompress_wave_stereo } /* decompression for stereo waves. */
 };
 
-/* this function decompress a stream using huffman algorithm. */
+/* Decompress an MPQ Huffman-compressed stream into the caller-provided buffer. */
 int32_t
 libmpq__decompress_huffman(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size)
 {
 
     /* TODO: make typdefs of this structs? */
 
-    /* some common variables. */
+    /* Huffman state and transferred-byte count for this stream. */
     int32_t tb = 0;
     struct huffman_tree_s *ht;
     struct huffman_input_stream_s *is;
@@ -99,12 +98,12 @@ libmpq__decompress_huffman(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, 
     return tb;
 }
 
-/* this function decompress a stream using zlib algorithm. */
+/* Decompress an MPQ zlib-compressed stream into the caller-provided buffer. */
 int32_t
 libmpq__decompress_zlib(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size)
 {
 
-    /* some common variables. */
+    /* zlib stream state and transferred-byte count for this stream. */
     int32_t result = 0;
     int32_t tb = 0;
     z_stream z;
@@ -147,12 +146,12 @@ libmpq__decompress_zlib(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uin
     return tb;
 }
 
-/* this function decompress a stream using pkzip algorithm. */
+/* Decompress an MPQ PKWARE Data Compression Library stream. */
 int32_t
 libmpq__decompress_pkzip(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size)
 {
 
-    /* some common variables. */
+    /* PKZIP work buffer, callback state and transferred-byte count. */
     int32_t tb = 0;
     pkzip_cmp_s *work_buf;
     pkzip_data_s info;
@@ -195,12 +194,12 @@ libmpq__decompress_pkzip(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
     return tb;
 }
 
-/* this function decompress a stream using bzip2 library. */
+/* Decompress an MPQ bzip2-compressed stream into the caller-provided buffer. */
 int32_t
 libmpq__decompress_bzip2(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size)
 {
 
-    /* some common variables. */
+    /* bzip2 stream state and transferred-byte count for this stream. */
     int32_t result = 0;
     int32_t tb = 0;
     bz_stream strm;
@@ -236,12 +235,12 @@ libmpq__decompress_bzip2(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
     return tb;
 }
 
-/* this function decompress a stream using wave algorithm. (1 channel) */
+/* Decompress an MPQ mono WAVE-compressed stream. */
 int32_t
 libmpq__decompress_wave_mono(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size)
 {
 
-    /* some common variables. */
+    /* Transferred-byte count reported by the shared WAVE decoder. */
     int32_t tb = 0;
 
     /* save the number of copied bytes. */
@@ -255,14 +254,14 @@ libmpq__decompress_wave_mono(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf
     return tb;
 }
 
-/* this function decompress a stream using wave algorithm. (2 channels) */
+/* Decompress an MPQ stereo WAVE-compressed stream. */
 int32_t
 libmpq__decompress_wave_stereo(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
 )
 {
 
-    /* some common variables. */
+    /* Transferred-byte count reported by the shared WAVE decoder. */
     int32_t tb = 0;
 
     /* save the number of copied bytes. */
@@ -276,12 +275,12 @@ libmpq__decompress_wave_stereo(
     return tb;
 }
 
-/* this function decompress a stream using a combination of the other compression algorithm. */
+/* Decode a Blizzard multi-compression stream by applying each flagged backend in order. */
 int32_t
 libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size)
 {
 
-    /* some common variables. */
+    /* Compression mask state, temporary buffers and transferred-byte count. */
     int32_t tb = 0;
     uint32_t count = 0;
     uint32_t entries = (sizeof(dcmp_table) / sizeof(decompress_table_s));
@@ -296,7 +295,7 @@ libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
     /* decrement data size. */
     in_size--;
 
-    /* search decompression table type and get all types of compression. */
+    /* Count supported algorithms and remember flags that have no local backend. */
     for (i = 0; i < entries; i++) {
 
         /* check if have to apply this decompression. */
@@ -305,19 +304,19 @@ libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
             /* increase counter for used compression algorithms. */
             count++;
 
-            /* this algorithm is supported, remove from unsupp mask */
+            /* This algorithm is supported, so remove it from the unsupported mask. */
             decompress_unsupp &= ~dcmp_table[i].mask;
         }
     }
 
-    /* check if there is some method unhandled. (e.g. compressed by future versions) */
+    /* Refuse streams that use a compression method from a newer unsupported format. */
     if (decompress_unsupp) {
 
-        /* compression type is unknown and we need to implement it. :) */
+        /* Compression type is unknown to this version of libmpq. */
         return LIBMPQ_ERROR_UNPACK;
     }
 
-    /* if multiple decompressions should be made, we need temporary buffer for the data. */
+    /* Multiple backends need a temporary buffer between decompression stages. */
     if (count > 1) {
 
         /* allocate memory for temporary buffer. */
@@ -334,10 +333,11 @@ libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
     /* apply all decompressions. */
     for (i = 0, count = 0; i < entries; i++) {
 
-        /* check if not used this kind of compression. */
+        /* Apply this decompressor if its bit is present in the stream header. */
         if (decompress_flag & dcmp_table[i].mask) {
 
-            /* if multiple decompressions should be made, we need temporary buffer for the data. */
+            /* First stage can write directly to the output buffer. Later stages
+             * alternate buffers. */
             if (count == 0) {
 
                 /* use output buffer as working buffer. */
@@ -348,7 +348,7 @@ libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
                 work_buf = temp_buf;
             }
 
-            /* decompress buffer using corresponding function. */
+            /* Decompress the current stage with the mapped backend. */
             if ((tb = dcmp_table[i].decompress(in_buf, in_size, work_buf, out_size)) < 0) {
 
                 /* free temporary buffer. */
@@ -358,7 +358,7 @@ libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
                 return tb;
             }
 
-            /* move output size to source size for next compression. */
+            /* Feed this stage's output into the next decompression stage. */
             in_size = out_size;
             in_buf = work_buf;
 
@@ -367,8 +367,7 @@ libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
         }
     }
 
-    /* if output buffer is not the same like target buffer, we have to copy data (this will happen
-     * on multiple decompressions). */
+    /* Copy the final stage back if it ended in the temporary buffer. */
     if (work_buf != out_buf) {
 
         /* copy buffer. */

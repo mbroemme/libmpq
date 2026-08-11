@@ -1,10 +1,10 @@
 /*
- *  wave.c -- this file contains decompression methods used by mpq-tools
+ *  wave.c -- WAVE compression decompression helpers.
  *            to decompress wave files.
  *
  *  Copyright (c) 2003-2011 Maik Broemme <mbroemme@libmpq.org>
  *
- *  This source was adepted from the C++ version of wave.cpp included
+ *  This source was adapted from the C++ version of wave.cpp included
  *  in stormlib. The C++ version belongs to the following authors:
  *
  *  Ladislav Zezula <ladik@zezula.net>
@@ -24,10 +24,10 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-/* generic includes. */
+/* system includes. */
 #include <stdint.h>
 
-/* libmpq generic includes. */
+/* internal wave includes. */
 #include "wave.h"
 
 /* table necessary dor decompression. */
@@ -54,14 +54,14 @@ static const uint32_t wave_table_1503f1a0[] = {
     0x00007FFF
 };
 
-/* this function decompress a wave file, mono or stereo, 1500F230 offset. */
+/* Decompress mono or stereo MPQ WAVE predictor data into PCM bytes. */
 int32_t
 libmpq__do_decompress_wave(
     uint8_t *out_buf, int32_t out_length, uint8_t *in_buf, int32_t in_length, int32_t channels
 )
 {
 
-    /* some common variables. */
+    /* Decoder state for channel deltas and transferred bytes. */
     byte_and_int16_t out;
     byte_and_int16_t in;
     uint32_t index;
@@ -88,7 +88,7 @@ libmpq__do_decompress_wave(
     /* 15007AD7 */
     for (count = 0; count < channels; count++) {
 
-        /* some common variables. */
+        /* Current sample code and output channel for this input byte. */
         int32_t temp;
 
         /* save pointer. */

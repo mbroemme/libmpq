@@ -1,9 +1,9 @@
 /*
- *  explode.c -- explode function of pkware data compression library.
+ *  explode.c -- PKWARE Data Compression Library explode implementation.
  *
  *  Copyright (c) 2003-2011 Maik Broemme <mbroemme@libmpq.org>
  *
- *  This source was adepted from the C++ version of pkware.cpp included
+ *  This source was adapted from the C++ version of pkware.cpp included
  *  in stormlib. The C++ version belongs to the following authors:
  *
  *  Ladislav Zezula <ladik@zezula.net>
@@ -22,16 +22,16 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-/* generic includes. */
+/* system includes. */
 #include <string.h>
 
-/* libmpq main includes. */
+/* public api includes. */
 #include "mpq.h"
 
-/* libmpq generic includes. */
+/* internal pkzip includes. */
 #include "explode.h"
 
-/* tables used for data extraction. */
+/* Distance bit lengths used by the PKWARE explode distance decoder. */
 static const uint8_t pkzip_dist_bits[] = {
     0x02, 0x04, 0x04, 0x05, 0x05, 0x05, 0x05, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06,
     0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07,
@@ -39,7 +39,7 @@ static const uint8_t pkzip_dist_bits[] = {
     0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08
 };
 
-/* tables used for data extraction. */
+/* Distance code lookup table used by the PKWARE explode decoder. */
 static const uint8_t pkzip_dist_code[] = {
     0x03, 0x0D, 0x05, 0x19, 0x09, 0x11, 0x01, 0x3E, 0x1E, 0x2E, 0x0E, 0x36, 0x16, 0x26, 0x06, 0x3A,
     0x1A, 0x2A, 0x0A, 0x32, 0x12, 0x22, 0x42, 0x02, 0x7C, 0x3C, 0x5C, 0x1C, 0x6C, 0x2C, 0x4C, 0x0C,
@@ -47,24 +47,24 @@ static const uint8_t pkzip_dist_code[] = {
     0xF0, 0x70, 0xB0, 0x30, 0xD0, 0x50, 0x90, 0x10, 0xE0, 0x60, 0xA0, 0x20, 0xC0, 0x40, 0x80, 0x00
 };
 
-/* tables used for data extraction. */
+/* Extra bit counts for decoded copy lengths. */
 static const uint8_t pkzip_clen_bits[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                                            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08 };
 
-/* tables used for data extraction. */
+/* Base values for decoded copy lengths. */
 static const uint16_t pkzip_len_base[] = { 0x0000, 0x0001, 0x0002, 0x0003, 0x0004, 0x0005,
                                            0x0006, 0x0007, 0x0008, 0x000A, 0x000E, 0x0016,
                                            0x0026, 0x0046, 0x0086, 0x0106 };
 
-/* tables used for data extraction. */
+/* Bit lengths for the static copy-length Huffman table. */
 static const uint8_t pkzip_slen_bits[] = { 0x03, 0x02, 0x03, 0x03, 0x04, 0x04, 0x04, 0x05,
                                            0x05, 0x05, 0x05, 0x06, 0x06, 0x06, 0x07, 0x07 };
 
-/* tables used for data extraction. */
+/* Codes for the static copy-length Huffman table. */
 static const uint8_t pkzip_len_code[] = { 0x05, 0x03, 0x01, 0x06, 0x0A, 0x02, 0x0C, 0x14,
                                           0x04, 0x18, 0x08, 0x30, 0x10, 0x20, 0x40, 0x00 };
 
-/* tables used for data extraction. */
+/* Bit lengths for the ASCII literal table. */
 static const uint8_t pkzip_bits_asc[] = {
     0x0B, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x08, 0x07, 0x0C, 0x0C, 0x07, 0x0C, 0x0C,
     0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0D, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C,
@@ -84,7 +84,7 @@ static const uint8_t pkzip_bits_asc[] = {
     0x0D, 0x0D, 0x0C, 0x0C, 0x0C, 0x0D, 0x0D, 0x0D, 0x0D, 0x0D, 0x0D, 0x0D, 0x0D, 0x0D, 0x0D, 0x0D
 };
 
-/* tables used for data extraction. */
+/* Codes for the ASCII literal table. */
 static const uint16_t pkzip_code_asc[] = {
     0x0490, 0x0FE0, 0x07E0, 0x0BE0, 0x03E0, 0x0DE0, 0x05E0, 0x09E0, 0x01E0, 0x00B8, 0x0062, 0x0EE0,
     0x06E0, 0x0022, 0x0AE0, 0x02E0, 0x0CE0, 0x04E0, 0x08E0, 0x00E0, 0x0F60, 0x0760, 0x0B60, 0x0360,
@@ -110,14 +110,14 @@ static const uint16_t pkzip_code_asc[] = {
     0x1800, 0x0800, 0x1000, 0x0000
 };
 
-/* local unused variables. */
+/* PKWARE copyright banner kept for parity with the original implementation. */
 char pkware_copyright[] = "PKWARE Data Compression Library for Win32\r\n"
                           "Copyright 1989-1995 PKWARE Inc.  All Rights Reserved\r\n"
                           "Patent No. 5,051,745\r\n"
                           "PKWARE Data Compression Library Reg. U.S. Pat. and Tm. Off.\r\n"
                           "Version 1.11\r\n";
 
-/* skips given number of bits. */
+/* Drop bits from the bit buffer, loading the next input byte when required. */
 static int32_t
 skip_bit(pkzip_cmp_s *mpq_pkzip, uint32_t bits)
 {
@@ -150,18 +150,18 @@ skip_bit(pkzip_cmp_s *mpq_pkzip, uint32_t bits)
     return 0;
 }
 
-/* this function generate the decode tables used for decryption. */
+/* Build byte-sized lookup tables from bit-length and code arrays. */
 static void
 generate_tables_decode(int32_t count, uint8_t *bits, const uint8_t *code, uint8_t *buf2)
 {
 
-    /* some common variables. */
+    /* Walk backwards because the original table order assigns higher codes first. */
     int32_t i;
 
     /* EBX - count */
     for (i = count - 1; i >= 0; i--) {
 
-        /* some common variables. */
+        /* Fill every lookup slot reachable by this code prefix. */
         uint32_t idx1 = code[i];
         uint32_t idx2 = 1 << bits[i];
 
@@ -173,12 +173,12 @@ generate_tables_decode(int32_t count, uint8_t *bits, const uint8_t *code, uint8_
     }
 }
 
-/* this function generate the tables for ascii decompression. */
+/* Build the ASCII literal lookup tables used by the PKWARE explode decoder. */
 static void
 generate_tables_ascii(pkzip_cmp_s *mpq_pkzip)
 {
 
-    /* some common variables. */
+    /* ASCII table cursor and bit expansion state. */
     const uint16_t *code_asc = &pkzip_code_asc[0xFF];
     uint32_t acc;
     uint32_t add;
@@ -275,7 +275,7 @@ decode_literal(pkzip_cmp_s *mpq_pkzip)
         /* check bits. */
         if ((bits = mpq_pkzip->clen_bits[value]) != 0) {
 
-            /* some common variables. */
+            /* Decoded literal symbol and bit length for this table entry. */
             uint32_t val2 = mpq_pkzip->bit_buf & ((1 << bits) - 1);
 
             /* check if we should skip one bit. */
@@ -345,7 +345,7 @@ decode_literal(pkzip_cmp_s *mpq_pkzip)
         }
     } else {
 
-        /* check if eight bits are in bit buffer for skipping. */
+        /* Ensure eight bits are available before advancing the bit buffer. */
         if (skip_bit(mpq_pkzip, 8)) {
             return 0x306;
         }
@@ -358,12 +358,12 @@ decode_literal(pkzip_cmp_s *mpq_pkzip)
     return skip_bit(mpq_pkzip, mpq_pkzip->bits_asc[value]) ? 0x306 : value;
 }
 
-/* this function retrieves the number of bytes to move back. */
+/* Decode the backward copy distance used by LZ-style PKWARE matches. */
 static uint32_t
 decode_distance(pkzip_cmp_s *mpq_pkzip, uint32_t length)
 {
 
-    /* some common variables. */
+    /* Distance prefix, extra bits and final byte distance. */
     uint32_t pos = mpq_pkzip->pos1[(mpq_pkzip->bit_buf & 0xFF)];
 
     /* number of bits to skip. */
@@ -408,7 +408,7 @@ static uint32_t
 data_read_input(char *buf, uint32_t *size, void *param)
 {
 
-    /* some common variables. */
+    /* Source state passed by the public decompression wrapper. */
     pkzip_data_s *info = (pkzip_data_s *)param;
     uint32_t max_avail = (info->in_bytes - info->in_pos);
     uint32_t to_read = *size;
@@ -427,8 +427,8 @@ data_read_input(char *buf, uint32_t *size, void *param)
 }
 
 /*
- *  function for store output data used by mpq_pkzip "implode" and
- *  "explode" as userdefined callback.
+ *  callback stores output data produced by mpq_pkzip "implode" and
+ *  "explode" operations.
  *
  *  char		*buf	- pointer to data to be written.
  *  uint32_t		*size	- number of bytes to write.
@@ -438,7 +438,7 @@ static void
 data_write_output(char *buf, uint32_t *size, void *param)
 {
 
-    /* some common variables. */
+    /* Destination state passed by the public decompression wrapper. */
     pkzip_data_s *info = (pkzip_data_s *)param;
     uint32_t max_write = (info->max_out - info->out_pos);
     uint32_t to_write = *size;
@@ -453,7 +453,7 @@ data_write_output(char *buf, uint32_t *size, void *param)
     info->out_pos += to_write;
 }
 
-/* this function extract the data from input stream. */
+/* Expand the compressed PKWARE stream into the output ring buffer. */
 static uint32_t
 expand(pkzip_cmp_s *mpq_pkzip)
 {
@@ -464,7 +464,7 @@ expand(pkzip_cmp_s *mpq_pkzip)
     /* one byte from compressed file. */
     uint32_t one_byte;
 
-    /* some common variables. */
+    /* Decoder status returned to the caller. */
     uint32_t result;
 
     /* initialize output buffer position. */
@@ -482,7 +482,7 @@ expand(pkzip_cmp_s *mpq_pkzip)
             /* EDX */
             uint8_t *target;
 
-            /* some common variables. */
+            /* Decoded match length and backward copy distance. */
             uint32_t copy_length = one_byte - 0xFE;
             uint32_t move_back;
 
@@ -531,12 +531,12 @@ expand(pkzip_cmp_s *mpq_pkzip)
     return result;
 }
 
-/* this function explode the data stream. */
+/* Initialize PKWARE decoder state and explode the compressed data stream. */
 uint32_t
 libmpq__do_decompress_pkzip(uint8_t *work_buf, void *param)
 {
 
-    /* some common variables. */
+    /* Caller-provided work buffer interpreted as PKWARE decoder state. */
     pkzip_cmp_s *mpq_pkzip = (pkzip_cmp_s *)work_buf;
 
     /* set the whole work buffer to zeros. */

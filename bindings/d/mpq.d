@@ -29,19 +29,19 @@ module mpq;
 import std.string; // for format() and toStringz()
 import std.traits; // for ParameterTypeTuple!()
 
-/* XXX: this assumes that libmpq is compiled with Large File Support on */
+/* libmpq exposes 64-bit offsets through its public API. */
 alias long off_t;
 
-/* libmpq error return values */
+/* libmpq error return values. Negative values are errors, zero means success. */
 const LIBMPQ_ERROR_OPEN			= -1;	/* open error on file. */
 const LIBMPQ_ERROR_CLOSE		= -2;	/* close error on file. */
 const LIBMPQ_ERROR_SEEK			= -3;	/* lseek error on file. */
 const LIBMPQ_ERROR_READ			= -4;	/* read error on file. */
 const LIBMPQ_ERROR_WRITE		= -5;	/* write error on file. */
 const LIBMPQ_ERROR_MALLOC		= -6;	/* memory allocation error. */
-const LIBMPQ_ERROR_FORMAT		= -7;	/* format errror. */
+const LIBMPQ_ERROR_FORMAT		= -7;	/* format error. */
 const LIBMPQ_ERROR_NOT_INITIALIZED	= -8;	/* init() wasn't called. */
-const LIBMPQ_ERROR_SIZE			= -9;	/* buffer size is to small. */
+const LIBMPQ_ERROR_SIZE			= -9;	/* buffer size is too small. */
 const LIBMPQ_ERROR_EXIST		= -10;	/* file or block does not exist in archive. */
 const LIBMPQ_ERROR_DECRYPT		= -11;	/* we don't know the decryption seed. */
 const LIBMPQ_ERROR_UNPACK		= -12;	/* error on unpacking file. */
@@ -51,10 +51,10 @@ extern struct mpq_archive_s;
 
 extern(C) {
 
-/* libmpq__generic information about library. */
+/* Library metadata. */
 char *libmpq__version();
 
-/* libmpq__generic mpq archive information. */
+/* Archive lifecycle and metadata APIs. */
 int libmpq__archive_open(mpq_archive_s **mpq_archive, char *mpq_filename, off_t archive_offset);
 int libmpq__archive_close(mpq_archive_s *mpq_archive);
 int libmpq__archive_size_packed(mpq_archive_s *mpq_archive, off_t *packed_size);
@@ -63,7 +63,7 @@ int libmpq__archive_offset(mpq_archive_s *mpq_archive, off_t *offset);
 int libmpq__archive_version(mpq_archive_s *mpq_archive, uint *version_);
 int libmpq__archive_files(mpq_archive_s *mpq_archive, uint *files);
 
-/* libmpq__generic file processing functions. */
+/* File metadata and full-file read APIs. */
 int libmpq__file_size_packed(mpq_archive_s *mpq_archive, uint file_number, off_t *packed_size);
 int libmpq__file_size_unpacked(mpq_archive_s *mpq_archive, uint file_number, off_t *unpacked_size);
 int libmpq__file_offset(mpq_archive_s *mpq_archive, uint file_number, off_t *offset);
@@ -74,7 +74,7 @@ int libmpq__file_imploded(mpq_archive_s *mpq_archive, uint file_number, uint *im
 int libmpq__file_number(mpq_archive_s *mpq_archive, char *filename, uint *number);
 int libmpq__file_read(mpq_archive_s *mpq_archive, uint file_number, ubyte *out_buf, off_t out_size, off_t *transferred);
 
-/* libmpq__generic block processing functions. */
+/* Block offset cache and per-block read APIs. */
 int libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint file_number);
 int libmpq__block_close_offset(mpq_archive_s *mpq_archive, uint file_number);
 int libmpq__block_size_unpacked(mpq_archive_s *mpq_archive, uint file_number, uint block_number, off_t *unpacked_size);
@@ -140,7 +140,7 @@ int MPQ_CHECKERR(alias Fn)(ParameterTypeTuple!(Fn) args)
 /** mixin alias to wrap library functions into MPQ_CHECKERR.
  *
  * alias mpq.func_name(...) to MPQ_CHECKERR(libmpq__func_name)(...)
- * @param func_name name of the function to be wrapped
+ * @param func_name name of the function being wrapped
  */
 template MPQ_FUNC(char[] func_name) {
 	const char[] MPQ_FUNC = "alias MPQ_CHECKERR!(libmpq__" ~ func_name ~ ") " ~ func_name ~ ";";

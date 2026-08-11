@@ -1,9 +1,9 @@
 /*
- *  huffman.h -- structures used for huffman compression.
+ *  huffman.h -- adaptive Huffman decompression structures and helpers.
  *
  *  Copyright (c) 2003-2011 Maik Broemme <mbroemme@libmpq.org>
  *
- *  This source was adepted from the C++ version of huffman.h included
+ *  This source was adapted from the C++ version of huffman.h included
  *  in stormlib. The C++ version belongs to the following authors:
  *
  *  Ladislav Zezula <ladik@zezula.net>
@@ -36,7 +36,7 @@
 
 /* define item handling. */
 #define INSERT_ITEM 1  /* insert item into huffman tree. */
-#define SWITCH_ITEMS 2 /* switch items isnide huffman tree. */
+#define SWITCH_ITEMS 2 /* switch items inside huffman tree. */
 
 /* input stream for huffman decompression. */
 struct huffman_input_stream_s
@@ -50,7 +50,8 @@ struct huffman_input_stream_s
 struct huffman_tree_item_s
 {
     struct huffman_tree_item_s *next; /* 00 - pointer to next huffman tree item. */
-    struct huffman_tree_item_s *prev; /* 04 - pointer to prev huffman tree item (< 0 if none). */
+    struct huffman_tree_item_s
+        *prev; /* 04 - pointer to previous huffman tree item (< 0 if none). */
     uint32_t
         dcmp_byte; /* 08 - index of this item in item pointer array, decompressed byte value. */
     uint32_t byte_value; /* 0C - some byte value. */
@@ -108,10 +109,10 @@ libmpq__huffman_previous_item(struct huffman_tree_item_s *hi, long value);
 /* get one bit from stream. */
 uint32_t libmpq__huffman_get_1bit(struct huffman_input_stream_s *is);
 
-/* get seven bit from stream. */
+/* get seven bits from stream. */
 uint32_t libmpq__huffman_get_7bit(struct huffman_input_stream_s *is);
 
-/* get eight bit from stream. */
+/* get eight bits from stream. */
 uint32_t libmpq__huffman_get_8bit(struct huffman_input_stream_s *is);
 
 /* call 1500E740. */

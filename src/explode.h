@@ -1,10 +1,9 @@
 /*
- *  explode.h -- header file for pkware data decompression library
- *               used by mpq-tools.
+ *  explode.h -- PKWARE Data Compression Library explode declarations.
  *
  *  Copyright (c) 2003-2011 Maik Broemme <mbroemme@libmpq.org>
  *
- *  This source was adepted from the C++ version of pklib.h included
+ *  This source was adapted from the C++ version of pklib.h included
  *  in stormlib. The C++ version belongs to the following authors:
  *
  *  Ladislav Zezula <ladik@zezula.net>
@@ -53,7 +52,7 @@ typedef struct
     uint32_t (*read_buf)(char *buf, uint32_t *size, void *param); /* 0028 offset.*/
     void (*write_buf)(char *buf, uint32_t *size, void *param);    /* 002C offset. */
     uint8_t out_buf[0x2000];  /* 0030 - output circle buffer, starting position is 0x1000. */
-    uint8_t offs_2030[0x204]; /* 2030 - whats that? */
+    uint8_t offs_2030[0x204]; /* 2030 - compatibility workspace from the original layout. */
     uint8_t in_buf[0x800];    /* 2234 - buffer for data to be decompressed. */
     uint8_t pos1[0x100];      /* 2A34 - positions in buffers. */
     uint8_t pos2[0x100];      /* 2B34 - positions in buffers. */

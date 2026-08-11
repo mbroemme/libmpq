@@ -1,4 +1,4 @@
-"""wrapper for libmpq"""
+"""Python 2 ctypes wrapper for libmpq archive and file access."""
 
 # This file is free software; you can redistribute it and/or modify
 # it under the terms of the GNU Lesser General Public License as published by
@@ -20,8 +20,11 @@ import os
 libmpq = ctypes.CDLL(ctypes.util.find_library("mpq"))
 
 class Error(Exception):
+    """Base exception for libmpq-specific failures."""
+
     pass
 
+# Map libmpq return codes to Python exception types used by errcheck hooks.
 errors = {
     -1: (IOError, "open"),
     -2: (IOError, "close"),

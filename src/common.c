@@ -1,5 +1,5 @@
 /*
- *  common.c -- shared functions used by mpq-tools.
+ *  common.c -- internal hash, crypt and decompression helpers.
  *
  *  Copyright (c) 2003-2011 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -17,32 +17,31 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-/* generic includes. */
+/* system includes. */
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
-/* libmpq main includes. */
+/* public api includes. */
 #include "mpq-internal.h"
 #include "mpq.h"
 
-/* libmpq generic includes. */
+/* internal decompression includes. */
 #include "extract.h"
 
 #include "common.h"
 
-/* the global shared decryption buffer. it's a static array compiled into the
- * library, and can be re-created by compiling and running crypt_buf_gen.c
- */
+/* Shared Storm/MPQ encryption table. It is compiled into the library and can be
+ * regenerated with tools/crypt_buf_gen when the table generator changes. */
 #include "crypt_buf.h"
 
-/* function to return the hash to a given string. */
+/* Hash an MPQ table name or file name with one of the Storm hash table offsets. */
 uint32_t
 libmpq__hash_string(const char *key, uint32_t offset)
 {
 
-    /* some common variables. */
+    /* Storm hashing starts with fixed seed values for every input string. */
     uint32_t seed1 = 0x7FED7FED;
     uint32_t seed2 = 0xEEEEEEEE;
 
@@ -59,12 +58,12 @@ libmpq__hash_string(const char *key, uint32_t offset)
     return seed1;
 }
 
-/* function to encrypt a block. */
+/* Encrypt a block in place using the MPQ block cipher and the supplied seed. */
 int32_t
 libmpq__encrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed)
 {
 
-    /* some common variables. */
+    /* The cipher updates both seeds for every 32-bit word. */
     uint32_t seed2 = 0xEEEEEEEE;
     uint32_t ch;
 
@@ -77,16 +76,16 @@ libmpq__encrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed)
         *in_buf++ = ch;
     }
 
-    /* if no error was found, return decrypted bytes. */
+    /* Block encryption has no recoverable per-word error state. */
     return LIBMPQ_SUCCESS;
 }
 
-/* function to decrypt a block. */
+/* Decrypt a block in place using the MPQ block cipher and the supplied seed. */
 int32_t
 libmpq__decrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed)
 {
 
-    /* some common variables. */
+    /* The cipher updates both seeds for every 32-bit word. */
     uint32_t seed2 = 0xEEEEEEEE;
     uint32_t ch;
 
@@ -99,35 +98,35 @@ libmpq__decrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed)
         *in_buf++ = ch;
     }
 
-    /* if no error was found, return decrypted bytes. */
+    /* Block decryption has no recoverable per-word error state. */
     return LIBMPQ_SUCCESS;
 }
 
-/* function to detect decryption key. */
+/* Recover the per-file block-table seed from the first encrypted block offsets. */
 int32_t
 libmpq__decrypt_key(uint8_t *in_buf, uint32_t in_size, uint32_t block_size, uint32_t *key)
 {
 
-    /* some common variables. */
+    /* Candidate seed saved after matching the first known block offset. */
     uint32_t saveseed1;
 
-    /* temp = seed1 + seed2 */
+    /* Intermediate value matching seed1 + seed2 for the first encrypted word. */
     uint32_t temp;
     uint32_t i = 0;
 
-    /* temp = seed1 + buffer[0x400 + (seed1 & 0xFF)] */
+    /* Derive the first seed candidate from the known block-table size. */
     temp = (*(uint32_t *)in_buf ^ in_size) - 0xEEEEEEEE;
 
-    /* try all 255 possibilities. */
+    /* Try every possible low byte used to index the encryption table. */
     for (i = 0; i < 0x100; i++) {
 
-        /* some common variables. */
+        /* Candidate seeds and decrypted block offsets for this low byte. */
         uint32_t seed1;
         uint32_t seed2 = 0xEEEEEEEE;
         uint32_t ch;
         uint32_t ch2;
 
-        /* try the first uint32_t's (we exactly know the value). */
+        /* The first encrypted value must decrypt to the block table size. */
         seed1 = temp - crypt_buf[0x400 + i];
         seed2 += crypt_buf[0x400 + (seed1 & 0xFF)];
         ch = ((uint32_t *)in_buf)[0] ^ (seed1 + seed2);
@@ -159,11 +158,11 @@ libmpq__decrypt_key(uint8_t *in_buf, uint32_t in_size, uint32_t block_size, uint
         }
     }
 
-    /* if no file seed was found return with error. */
+    /* No candidate produced a plausible block offset sequence. */
     return LIBMPQ_ERROR_DECRYPT;
 }
 
-/* function to decompress or explode a block from mpq archive. */
+/* Decompress one archive block according to its MPQ compression flags. */
 int32_t
 libmpq__decompress_block(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size,
@@ -171,7 +170,7 @@ libmpq__decompress_block(
 )
 {
 
-    /* some common variables. */
+    /* Number of bytes transferred by the selected decompressor. */
     int32_t tb = 0;
 
     /* check if buffer is not compressed. */
@@ -184,7 +183,7 @@ libmpq__decompress_block(
         tb = out_size;
     }
 
-    /* check if one compression mode is used. */
+    /* Dispatch single PKZIP compression or Blizzard's chained compression mode. */
     else if (compression_type == LIBMPQ_FLAG_COMPRESS_PKZIP ||
              compression_type == LIBMPQ_FLAG_COMPRESS_MULTI) {
 
@@ -203,7 +202,7 @@ libmpq__decompress_block(
                 }
             }
 
-            /* check if we are using multiple compression algorithm. */
+            /* Run the chained MPQ decompressor selected by the block header byte. */
             else if (compression_type == LIBMPQ_FLAG_COMPRESS_MULTI) {
 
                 /*
@@ -213,7 +212,7 @@ libmpq__decompress_block(
                  */
                 if ((tb = libmpq__decompress_multi(in_buf, in_size, out_buf, out_size)) < 0) {
 
-                    /* something on decompression failed. */
+                    /* Propagate the decompressor-specific failure code. */
                     return tb;
                 }
             }
@@ -228,6 +227,6 @@ libmpq__decompress_block(
         }
     }
 
-    /* if no error was found, return transferred bytes. */
+    /* Return the number of bytes written to the output buffer. */
     return tb;
 }

@@ -1,6 +1,5 @@
 /*
- *  mpq-internal.h -- some default types and defines, but only required for
- *                    compilation of the library.
+ *  mpq-internal.h -- internal MPQ archive structures and constants.
  *
  *  Copyright (c) 2003-2011 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -21,7 +20,7 @@
 #ifndef _MPQ_INTERNAL_H
 #define _MPQ_INTERNAL_H
 
-/* generic includes. */
+/* system includes. */
 #include <stdint.h>
 #include <stdio.h>
 

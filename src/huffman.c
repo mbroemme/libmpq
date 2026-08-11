@@ -9,7 +9,7 @@
  *    - Removed the object oriented stuff.
  *    - Replaced the goto things with some better C code.
  *
- *  This source was adepted from the C++ version of huffman.cpp included
+ *  This source was adapted from the C++ version of huffman.cpp included
  *  in stormlib. The C++ version belongs to the following authors:
  *
  *  Ladislav Zezula <ladik@zezula.net>
@@ -29,15 +29,15 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-/* generic includes. */
+/* system includes. */
 #include <stdlib.h>
 #include <string.h>
 
-/* libmpq main includes. */
+/* public api includes. */
 #include "mpq-internal.h"
 #include "mpq.h"
 
-/* libmpq generic includes. */
+/* internal huffman includes. */
 #include "huffman.h"
 
 /* tables for huffman tree. */
@@ -215,7 +215,7 @@ static const uint8_t table_1502A630[] = {
     0x00, 0x00
 };
 
-/* this function insert an item to a huffman tree. */
+/* Insert a Huffman tree item before another item in the adaptive list. */
 void
 libmpq__huffman_insert_item(
     struct huffman_tree_item_s **p_item, struct huffman_tree_item_s *item, uint32_t where,
@@ -226,7 +226,7 @@ libmpq__huffman_insert_item(
     /* EDI - next to the first item. */
     struct huffman_tree_item_s *next = item->next;
 
-    /* ESI - prev to the first item. */
+    /* Previous item relative to the insertion point. */
     struct huffman_tree_item_s *prev = item->prev;
 
     /* pointer to previous item. */
@@ -238,7 +238,7 @@ libmpq__huffman_insert_item(
     /* check the first item already has next one. */
     if (next != 0) {
 
-        /* check if previous item exist. */
+        /* Resolve encoded previous-item references from the original tree layout. */
         if (PTR_INT(prev) < 0) {
 
             /* return previous item. */
@@ -335,7 +335,7 @@ void
 libmpq__huffman_remove_item(struct huffman_tree_item_s *hi)
 {
 
-    /* EDX - some common variables. */
+    /* Previous-link scratch value used while unlinking the item. */
     struct huffman_tree_item_s *temp;
 
     /* check if next item is not empty. */
@@ -358,12 +358,12 @@ libmpq__huffman_remove_item(struct huffman_tree_item_s *hi)
     }
 }
 
-/* get previous huffman tree item. */
+/* Resolve the previous Huffman tree item, including encoded relative pointers. */
 struct huffman_tree_item_s *
 libmpq__huffman_previous_item(struct huffman_tree_item_s *hi, long value)
 {
 
-    /* check if previous item exist. */
+    /* Negative pointer values encode direct references in the original layout. */
     if (PTR_INT(hi->prev) < 0) {
 
         /* return previous item. */
@@ -386,7 +386,7 @@ uint32_t
 libmpq__huffman_get_1bit(struct huffman_input_stream_s *is)
 {
 
-    /* some common variables. */
+    /* Current bit before refilling the 32-bit input buffer if needed. */
     uint32_t bit = (is->bit_buf & 1);
 
     /* shift bit right by one. */
@@ -424,7 +424,7 @@ uint32_t
 libmpq__huffman_get_8bit(struct huffman_input_stream_s *is)
 {
 
-    /* some common variables. */
+    /* Byte extracted from the low bits of the input buffer. */
     uint32_t one_byte;
 
     /* check if we should extract bits. */
@@ -454,7 +454,7 @@ libmpq__huffman_call_1500E740(struct huffman_tree_s *ht)
     /* EAX */
     struct huffman_tree_item_s *p_item2;
 
-    /* some common variables. */
+    /* Temporary item and pointer-array state used by the original tree update routine. */
     struct huffman_tree_item_s *p_next;
     struct huffman_tree_item_s *p_prev;
     struct huffman_tree_item_s **pp_item;
@@ -641,12 +641,12 @@ libmpq__huffman_call_1500E820(struct huffman_tree_s *ht, struct huffman_tree_ite
     }
 }
 
-/* this function initialize a huffman tree. */
+/* Initialize the adaptive Huffman tree and clear all lookup tables. */
 void
 libmpq__huffman_tree_init(struct huffman_tree_s *ht, uint32_t cmp)
 {
 
-    /* some common variables. */
+    /* Tree item cursor and remaining item count. */
     uint32_t count;
     struct huffman_tree_item_s *hi;
 
@@ -673,7 +673,7 @@ libmpq__huffman_tree_init(struct huffman_tree_s *ht, uint32_t cmp)
     }
 }
 
-/* this function build a huffman tree, called with the first 8 bits loaded from input stream. */
+/* Build the adaptive Huffman tree using the first byte already loaded from the stream. */
 void
 libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
 {
@@ -684,14 +684,14 @@ libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
     /* [ESP+1C] - pointer to uint8_t in table_1502A630. */
     const uint8_t *byte_array;
 
-    /* thats needed to replace the goto stuff from original source. :) */
+    /* Tracks whether the translated control flow found a matching insertion point. */
     uint32_t found;
 
     /* [ESP+14] - Pointer to Huffman tree item pointer array. */
     struct huffman_tree_item_s **p_item;
     struct huffman_tree_item_s *child1;
 
-    /* some common variables. */
+    /* Loop index used while rebuilding quick-decode tables. */
     uint32_t i;
 
     /* ESI - loop while pointer has a negative value (last entry). */
@@ -914,13 +914,13 @@ libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
                 /* check if next item exist. */
                 if (item->next != 0) {
 
-                    /* some common variables. */
+                    /* Previous item resolved before unlinking this child. */
                     struct huffman_tree_item_s *temp4 = libmpq__huffman_previous_item(item, -1);
 
-                    /* zhe first item changed. */
+                    /* Relink the previous item to skip the removed child. */
                     temp4->next = item->next;
 
-                    /* first->prev changed to negative value. */
+                    /* Preserve the encoded previous reference on the next item. */
                     item->next->prev = item->prev;
                     item->next = NULL;
                     item->prev = NULL;
@@ -937,7 +937,7 @@ libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
                 /* set item with 0x17 byte value. */
                 item->prev = p_item2->next->prev;
 
-                /* changed prev of item with. */
+                /* Insert the item before the next sibling. */
                 p_item2->next->prev = item;
                 p_item2->next = item;
             }
@@ -953,7 +953,7 @@ libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
     ht->offs0004 = 1;
 }
 
-/* this function did the real decompression. */
+/* Decode the Huffman bitstream into the output buffer. */
 int32_t
 libmpq__do_decompress_huffman(
     struct huffman_tree_s *ht, struct huffman_input_stream_s *is, uint8_t *out_buf,
@@ -961,7 +961,7 @@ libmpq__do_decompress_huffman(
 )
 {
 
-    /* some common variables. */
+    /* Output cursor, decoded symbol and adaptive tree traversal state. */
     uint32_t dcmp_byte = 0;
     uint8_t *out_pos = out_buf;
     uint32_t bit_count;
@@ -975,13 +975,13 @@ libmpq__do_decompress_huffman(
     /* 7 bits loaded from input stream. */
     uint32_t n7bits;
 
-    /* thats needed to replace the goto stuff from original source. :) */
+    /* Tracks translated control flow that replaced gotos in the original source. */
     uint32_t found;
 
-    /* can we use quick decompression */
+    /* Select whether the quick-decode table can satisfy the current bit prefix. */
     uint32_t has_qd;
 
-    /* test the output length, must not be non zero. */
+    /* Nothing can be written when the caller requested a zero-length output. */
     if (out_length == 0) {
         return 0;
     }
@@ -992,7 +992,7 @@ libmpq__do_decompress_huffman(
     /* build the Huffman tree. */
     libmpq__huffman_tree_build(ht, n8bits);
 
-    /* compression 8 bit or not? */
+    /* Compression type 0 uses 8-bit literal handling. */
     ht->cmp0 = (n8bits == 0) ? TRUE : FALSE;
 
     /* loop until break. */

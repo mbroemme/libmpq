@@ -1,5 +1,5 @@
 /*
- *  mpq.h -- some default types and defines.
+ *  mpq.h -- public libmpq API declarations and constants.
  *
  *  Copyright (c) 2003-2011 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -31,7 +31,7 @@
 extern "C" {
 #endif
 
-/* generic includes. */
+/* system includes. */
 #include <stdint.h>
 #include <sys/types.h>
 
@@ -41,33 +41,33 @@ extern "C" {
 #define LIBMPQ_API
 #endif
 
-/* define errors. */
+/* API return values. Negative values are errors, zero means success. */
 #define LIBMPQ_ERROR_OPEN -1            /* open error on file. */
 #define LIBMPQ_ERROR_CLOSE -2           /* close error on file. */
 #define LIBMPQ_ERROR_SEEK -3            /* lseek error on file. */
 #define LIBMPQ_ERROR_READ -4            /* read error on file. */
 #define LIBMPQ_ERROR_WRITE -5           /* write error on file. */
 #define LIBMPQ_ERROR_MALLOC -6          /* memory allocation error. */
-#define LIBMPQ_ERROR_FORMAT -7          /* format errror. */
+#define LIBMPQ_ERROR_FORMAT -7          /* format error. */
 #define LIBMPQ_ERROR_NOT_INITIALIZED -8 /* libmpq__init() wasn't called. */
-#define LIBMPQ_ERROR_SIZE -9            /* buffer size is to small. */
+#define LIBMPQ_ERROR_SIZE -9            /* buffer size is too small. */
 #define LIBMPQ_ERROR_EXIST -10          /* file or block does not exist in archive. */
 #define LIBMPQ_ERROR_DECRYPT -11        /* we don't know the decryption seed. */
 #define LIBMPQ_ERROR_UNPACK -12         /* error on unpacking file. */
 
-/* internal data structure. */
+/* Opaque archive handle owned by libmpq. */
 typedef struct mpq_archive mpq_archive_s;
 
-/* file offset data type for API*/
+/* Public file offset type used by all archive and file size APIs. */
 typedef int64_t libmpq__off_t;
 
-/* generic information about library. */
+/* Library metadata. */
 extern LIBMPQ_API const char *libmpq__version(void);
 
-/* string error message for a libmpq return code. */
+/* Error reporting. */
 extern LIBMPQ_API const char *libmpq__strerror(int32_t return_code);
 
-/* generic mpq archive information. */
+/* Archive lifecycle and metadata APIs. */
 extern LIBMPQ_API int32_t libmpq__archive_open(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset
 );
@@ -80,7 +80,7 @@ extern LIBMPQ_API int32_t libmpq__archive_offset(mpq_archive_s *mpq_archive, lib
 extern LIBMPQ_API int32_t libmpq__archive_version(mpq_archive_s *mpq_archive, uint32_t *version);
 extern LIBMPQ_API int32_t libmpq__archive_files(mpq_archive_s *mpq_archive, uint32_t *files);
 
-/* generic file processing functions. */
+/* File metadata and full-file read APIs. */
 extern LIBMPQ_API int32_t libmpq__file_size_packed(
     mpq_archive_s *mpq_archive, uint32_t file_number, libmpq__off_t *packed_size
 );
@@ -104,7 +104,7 @@ extern LIBMPQ_API int32_t libmpq__file_read(
     libmpq__off_t *transferred
 );
 
-/* generic block processing functions. */
+/* Block offset cache and per-block read APIs. */
 extern LIBMPQ_API int32_t
 libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number);
 extern LIBMPQ_API int32_t

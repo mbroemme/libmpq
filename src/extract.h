@@ -1,5 +1,5 @@
 /*
- *  extract.h -- header for the extraction functions used by mpq-tools.
+ *  extract.h -- decompression backend declarations for MPQ block payloads.
  *
  *  Copyright (c) 2003-2011 Maik Broemme <mbroemme@libmpq.org>
  *

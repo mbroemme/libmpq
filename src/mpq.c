@@ -17,26 +17,26 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-/* mpq-tools configuration includes. */
+/* configuration includes. */
 #include "config.h"
 
-/* libmpq main includes. */
+/* public and internal api includes. */
 #include "mpq-internal.h"
 #include "mpq.h"
 
-/* libmpq generic includes. */
+/* internal hash, crypt and decompression includes. */
 #include "common.h"
 
-/* generic includes. */
+/* system includes. */
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
-/* support for platform specific things */
+/* platform compatibility includes. */
 #include "platform.h"
 
-/* static error constants. */
+/* Error strings indexed by the negated libmpq error code. */
 static const char *__libmpq_error_strings[] = { "success",
                                                 "open error on file",
                                                 "close error on file",
@@ -51,7 +51,7 @@ static const char *__libmpq_error_strings[] = { "success",
                                                 "we don't know the decryption seed",
                                                 "error on unpacking file" };
 
-/* this function returns the library version information. */
+/* Return the configured libmpq package version. */
 const char *
 libmpq__version(void)
 {
@@ -60,28 +60,28 @@ libmpq__version(void)
     return VERSION;
 }
 
-/* this function returns a string message for a return code. */
+/* Translate a libmpq return code into a static diagnostic string. */
 const char *
 libmpq__strerror(int32_t return_code)
 {
 
-    /* check for array bounds */
+    /* Only negative libmpq error codes and zero are valid table indexes. */
     if (-return_code < 0 || -return_code > sizeof(__libmpq_error_strings) / sizeof(char *))
         return NULL;
 
-    /* return appropriate string */
+    /* Return the static string owned by the library. */
     return __libmpq_error_strings[-return_code];
 }
 
-/* this function read a file and verify if it is a valid mpq archive, then it read and decrypt the
- * hash table. */
+/* Open an MPQ archive, locate its header, read metadata tables, decrypt them and
+ * build the in-memory file map used by later file and block operations. */
 int32_t
 libmpq__archive_open(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset
 )
 {
 
-    /* some common variables. */
+    /* Archive table counters and status used while building the file map. */
     uint32_t i = 0;
     uint32_t count = 0;
     int32_t result = 0;
@@ -94,11 +94,11 @@ libmpq__archive_open(
 
     if ((*mpq_archive = calloc(1, sizeof(mpq_archive_s))) == NULL) {
 
-        /* archive struct could not be allocated */
+        /* Archive state could not be allocated. */
         return LIBMPQ_ERROR_MALLOC;
     }
 
-    /* check if file exists and is readable */
+    /* Open the archive file for binary reads. */
     if (((*mpq_archive)->fp = fopen(mpq_filename, "rb")) == NULL) {
 
         /* file could not be opened. */
@@ -353,7 +353,7 @@ error:
     return result;
 }
 
-/* this function close the file descriptor, free the decryption buffer and the file list. */
+/* Close the archive file and release all metadata tables allocated during archive open. */
 int32_t
 libmpq__archive_close(mpq_archive_s *mpq_archive)
 {
@@ -379,12 +379,12 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
     return LIBMPQ_SUCCESS;
 }
 
-/* this function return the packed size of all files in the archive. */
+/* Return the sum of packed sizes for all files in the archive block table. */
 int32_t
 libmpq__archive_size_packed(mpq_archive_s *mpq_archive, libmpq__off_t *packed_size)
 {
 
-    /* some common variables. */
+    /* Running total across all block-table entries. */
     uint32_t i;
 
     /* loop through all files in archive and count packed size. */
@@ -397,12 +397,12 @@ libmpq__archive_size_packed(mpq_archive_s *mpq_archive, libmpq__off_t *packed_si
     return LIBMPQ_SUCCESS;
 }
 
-/* this function return the unpacked size of all files in the archive. */
+/* Return the sum of unpacked sizes for all files in the archive block table. */
 int32_t
 libmpq__archive_size_unpacked(mpq_archive_s *mpq_archive, libmpq__off_t *unpacked_size)
 {
 
-    /* some common variables. */
+    /* Running total across all block-table entries. */
     uint32_t i;
 
     /* loop through all files in archive and count unpacked size. */
@@ -415,7 +415,7 @@ libmpq__archive_size_unpacked(mpq_archive_s *mpq_archive, libmpq__off_t *unpacke
     return LIBMPQ_SUCCESS;
 }
 
-/* this function return the archive offset (beginning of archive in file). */
+/* Return the byte offset where the MPQ archive starts in the backing file. */
 int32_t
 libmpq__archive_offset(mpq_archive_s *mpq_archive, libmpq__off_t *offset)
 {
@@ -427,7 +427,7 @@ libmpq__archive_offset(mpq_archive_s *mpq_archive, libmpq__off_t *offset)
     return LIBMPQ_SUCCESS;
 }
 
-/* this function return the archive offset. */
+/* Return the MPQ archive format version stored in the header. */
 int32_t
 libmpq__archive_version(mpq_archive_s *mpq_archive, uint32_t *version)
 {
@@ -439,7 +439,7 @@ libmpq__archive_version(mpq_archive_s *mpq_archive, uint32_t *version)
     return LIBMPQ_SUCCESS;
 }
 
-/* this function return the number of valid files in archive. */
+/* Return the number of valid file entries discovered while opening the archive. */
 int32_t
 libmpq__archive_files(mpq_archive_s *mpq_archive, uint32_t *files)
 {
@@ -484,7 +484,7 @@ libmpq__check_block_number(mpq_archive_s *mpq_archive, uint32_t file_number, uin
     return LIBMPQ_SUCCESS;
 }
 
-/* this function return the packed size of the given files in the archive. */
+/* Return the packed size of a file entry by block-table number. */
 int32_t
 libmpq__file_size_packed(
     mpq_archive_s *mpq_archive, uint32_t file_number, libmpq__off_t *packed_size
@@ -504,7 +504,7 @@ libmpq__file_size_packed(
     return LIBMPQ_SUCCESS;
 }
 
-/* this function return the unpacked size of the given file in the archive. */
+/* Return the unpacked size of a file entry by block-table number. */
 int32_t
 libmpq__file_size_unpacked(
     mpq_archive_s *mpq_archive, uint32_t file_number, libmpq__off_t *unpacked_size
@@ -524,7 +524,7 @@ libmpq__file_size_unpacked(
     return LIBMPQ_SUCCESS;
 }
 
-/* this function return the file offset (beginning of file in archive). */
+/* Return the file data offset relative to the start of the archive. */
 int32_t
 libmpq__file_offset(mpq_archive_s *mpq_archive, uint32_t file_number, libmpq__off_t *offset)
 {
@@ -545,7 +545,7 @@ libmpq__file_offset(mpq_archive_s *mpq_archive, uint32_t file_number, libmpq__of
     return LIBMPQ_SUCCESS;
 }
 
-/* this function return the number of blocks for the given file in the archive. */
+/* Return the number of blocks needed to store the selected file. */
 int32_t
 libmpq__file_blocks(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *blocks)
 {
@@ -562,7 +562,7 @@ libmpq__file_blocks(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *
     return LIBMPQ_SUCCESS;
 }
 
-/* this function return if the file is encrypted or not. */
+/* Report whether the selected file entry has the MPQ encrypted flag set. */
 int32_t
 libmpq__file_encrypted(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *encrypted)
 {
@@ -583,7 +583,7 @@ libmpq__file_encrypted(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_
     return LIBMPQ_SUCCESS;
 }
 
-/* this function return if the file is compressed or not. */
+/* Report whether the selected file entry has any MPQ compression flags set. */
 int32_t
 libmpq__file_compressed(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *compressed)
 {
@@ -604,7 +604,7 @@ libmpq__file_compressed(mpq_archive_s *mpq_archive, uint32_t file_number, uint32
     return LIBMPQ_SUCCESS;
 }
 
-/* this function return if the file is imploded or not. */
+/* Report whether the selected file entry uses PKWARE implosion. */
 int32_t
 libmpq__file_imploded(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *imploded)
 {
@@ -625,12 +625,12 @@ libmpq__file_imploded(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t
     return LIBMPQ_SUCCESS;
 }
 
-/* this function return filenumber by the given name. */
+/* Resolve an MPQ file name to its block-table number through the hash table. */
 int32_t
 libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *number)
 {
 
-    /* some common variables. */
+    /* Hash table probe values for the three Storm hash variants. */
     uint32_t i, hash1, hash2, hash3, ht_count;
 
     /* if the list of file names doesn't include this one, we'll have
@@ -671,7 +671,7 @@ libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *
     return LIBMPQ_ERROR_EXIST;
 }
 
-/* this function read the given file from archive into a buffer. */
+/* Read a complete file by opening its block offset table and copying each block. */
 int32_t
 libmpq__file_read(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint8_t *out_buf, libmpq__off_t out_size,
@@ -679,7 +679,7 @@ libmpq__file_read(
 )
 {
 
-    /* some common variables. */
+    /* Block loop state and total bytes transferred to the caller. */
     uint32_t i;
     uint32_t blocks = 0;
     int32_t result = 0;
@@ -696,10 +696,10 @@ libmpq__file_read(
     /* get target size of block. */
     libmpq__file_size_unpacked(mpq_archive, file_number, &unpacked_size);
 
-    /* check if target buffer is to small. */
+    /* Check if the target buffer is too small. */
     if (unpacked_size > out_size) {
 
-        /* output buffer size is to small or block size is unknown. */
+        /* Output buffer size is too small or block size is unknown. */
         return LIBMPQ_ERROR_SIZE;
     }
 
@@ -755,12 +755,12 @@ libmpq__file_read(
     return LIBMPQ_SUCCESS;
 }
 
-/* this function open a file in the given archive and caches the block offset information. */
+/* Open a file entry and cache its packed block offset table for block operations. */
 int32_t
 libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
 {
 
-    /* some common variables. */
+    /* Packed block table state, file seed and read status. */
     uint32_t blocks;
     uint32_t i;
     uint32_t packed_offset_count;
@@ -942,7 +942,7 @@ error:
     return result;
 }
 
-/* this function free the file pointer to the opened file in archive. */
+/* Release a cached block offset table when the last user closes it. */
 int32_t
 libmpq__block_close_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
 {
@@ -978,7 +978,7 @@ libmpq__block_close_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
     return LIBMPQ_SUCCESS;
 }
 
-/* this function return the unpacked size of the given file and block in the archive. */
+/* Return the unpacked size for one block of an opened file entry. */
 int32_t
 libmpq__block_size_unpacked(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number,
@@ -1041,7 +1041,7 @@ libmpq__block_size_unpacked(
     return LIBMPQ_SUCCESS;
 }
 
-/* this function return the decryption seed for the given file and block. */
+/* Return the per-block decryption seed derived from the file seed and block number. */
 int32_t
 libmpq__block_seed(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number, uint32_t *seed
@@ -1077,7 +1077,7 @@ libmpq__block_seed(
     return LIBMPQ_SUCCESS;
 }
 
-/* this function read the given block from archive into a buffer. */
+/* Read, decrypt and decompress one block from an opened file entry. */
 int32_t
 libmpq__block_read(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number, uint8_t *out_buf,
@@ -1085,7 +1085,7 @@ libmpq__block_read(
 )
 {
 
-    /* some common variables. */
+    /* Packed input buffer, size bookkeeping and block decryption state. */
     uint8_t *in_buf;
     uint32_t seed = 0;
     uint32_t encrypted = 0;
@@ -1121,10 +1121,10 @@ libmpq__block_read(
     /* get target size of block. */
     libmpq__block_size_unpacked(mpq_archive, file_number, block_number, &unpacked_size);
 
-    /* check if target buffer is to small. */
+    /* Check if the target buffer is too small. */
     if (unpacked_size > out_size) {
 
-        /* output buffer size is to small or block size is unknown. */
+        /* Output buffer size is too small or block size is unknown. */
         return LIBMPQ_ERROR_SIZE;
     }
 
