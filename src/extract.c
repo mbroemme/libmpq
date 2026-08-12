@@ -20,8 +20,8 @@
 #include "extract.h"
 #include "explode.h"
 #include "huffman.h"
-#include "mpq.h"
 #include "wave.h"
+#include <libmpq/mpq.h>
 
 #include <stdlib.h>
 #include <string.h>

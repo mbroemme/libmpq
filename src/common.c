@@ -21,7 +21,7 @@
 #include "crypt_buf.h"
 #include "extract.h"
 #include "mpq-internal.h"
-#include "mpq.h"
+#include <libmpq/mpq.h>
 
 #include <ctype.h>
 #include <stdlib.h>

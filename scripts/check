@@ -46,7 +46,14 @@ if git grep -nI '[[:blank:]]$' -- .; then
 fi
 
 printf 'Checking C formatting...\n'
-mapfile -t sources < <(git ls-files 'src/*.c' 'src/*.h')
+mapfile -t sources < <(
+	git ls-files 'src/*.c' 'src/*.h' 'include/libmpq/*.h' |
+	while IFS= read -r source; do
+		if [[ -f "${source}" ]]; then
+			printf '%s\n' "${source}"
+		fi
+	done
+)
 if ((${#sources[@]} == 0)); then
 	printf 'No C sources found.\n' >&2
 	exit 1

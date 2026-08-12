@@ -23,7 +23,7 @@
  */
 
 #include "explode.h"
-#include "mpq.h"
+#include <libmpq/mpq.h>
 
 #include <string.h>
 

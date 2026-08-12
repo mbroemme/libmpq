@@ -1,5 +1,5 @@
 # Subdirectories that are built and installed.
-SUBDIRS				= src bindings docs
+SUBDIRS				= include src bindings docs
 
 # Subdirectories included in source distributions.
 DIST_SUBDIRS			= $(SUBDIRS) tools

@@ -30,7 +30,7 @@
 
 #include "huffman.h"
 #include "mpq-internal.h"
-#include "mpq.h"
+#include <libmpq/mpq.h>
 
 #include <stdlib.h>
 #include <string.h>

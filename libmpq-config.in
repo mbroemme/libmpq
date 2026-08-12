@@ -39,7 +39,7 @@ while test "$#" -gt "0"; do
       echo "@VERSION@"
       ;;
     --cflags)
-      includes=-I@includedir@/libmpq
+      includes=-I@includedir@
       echo "$includes"
       ;;
     --libs)

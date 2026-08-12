@@ -59,6 +59,7 @@ AC_CONFIG_FILES([libmpq-config],[chmod +x libmpq-config])
 # Generate the remaining package build files.
 AC_CONFIG_FILES([
 Makefile
+include/Makefile
 src/Makefile
 bindings/Makefile
 bindings/d/Makefile

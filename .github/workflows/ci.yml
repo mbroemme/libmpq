@@ -100,7 +100,7 @@ jobs:
       - name: Run clang-tidy
         run: |
           set -euxo pipefail
-          mapfile -t sources < <(git ls-files 'src/*.c' 'tools/*.c')
+          mapfile -t sources < <(git ls-files 'src/*.c' 'include/libmpq/*.h' 'tools/*.c')
           if ((${#sources[@]} == 0)); then
             echo 'No C translation units found.' >&2
             exit 1

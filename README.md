@@ -109,7 +109,7 @@ an archive, reads the first file into memory, and reports library errors:
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <mpq.h>
+#include <libmpq/mpq.h>
 
 int
 main(int argc, char **argv)

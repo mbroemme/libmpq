@@ -27,12 +27,11 @@
 #ifndef LIBMPQ_MPQ_H
 #define LIBMPQ_MPQ_H
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include <stdint.h>
-#include <sys/types.h>
 
 #if defined(__GNUC__) && (__GNUC__ >= 4)
 #define LIBMPQ_API __attribute__((visibility("default")))

@@ -23,8 +23,8 @@
 
 #include "common.h"
 #include "mpq-internal.h"
-#include "mpq.h"
 #include "platform.h"
+#include <libmpq/mpq.h>
 
 #include <fcntl.h>
 #include <stdlib.h>
