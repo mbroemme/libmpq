@@ -17,8 +17,8 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef _PACK_BEGIN
-#define _PACK_BEGIN
+#ifndef LIBMPQ_PACK_BEGIN
+#define LIBMPQ_PACK_BEGIN
 #else
 #error "pack_begin.h may not be included twice!"
 #endif

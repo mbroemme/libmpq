@@ -17,8 +17,8 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef _MPQ_INTERNAL_H
-#define _MPQ_INTERNAL_H
+#ifndef LIBMPQ_MPQ_INTERNAL_H
+#define LIBMPQ_MPQ_INTERNAL_H
 
 #include <stdint.h>
 #include <stdio.h>
@@ -162,4 +162,4 @@ struct mpq_archive
     uint32_t files;     /* Number of valid extractable file entries. */
 };
 
-#endif /* _MPQ_INTERNAL_H */
+#endif /* LIBMPQ_MPQ_INTERNAL_H */

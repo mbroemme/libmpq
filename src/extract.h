@@ -17,8 +17,8 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef _EXTRACT_H
-#define _EXTRACT_H
+#ifndef LIBMPQ_EXTRACT_H
+#define LIBMPQ_EXTRACT_H
 
 #include <stdint.h>
 
@@ -71,4 +71,4 @@ extern int32_t libmpq__decompress_wave_stereo(
 extern int32_t
 libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size);
 
-#endif /* _EXTRACT_H */
+#endif /* LIBMPQ_EXTRACT_H */

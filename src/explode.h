@@ -22,8 +22,8 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef _EXPLODE_H
-#define _EXPLODE_H
+#ifndef LIBMPQ_EXPLODE_H
+#define LIBMPQ_EXPLODE_H
 
 #include <stdint.h>
 
@@ -86,4 +86,4 @@ typedef struct
 /* Initialize PKWARE decoder state and expand the compressed stream. */
 uint32_t libmpq__do_decompress_pkzip(uint8_t *work_buf, void *param);
 
-#endif /* _EXPLODE_H */
+#endif /* LIBMPQ_EXPLODE_H */

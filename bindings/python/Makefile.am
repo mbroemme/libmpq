@@ -1,2 +1,2 @@
-# library information and headers which should not be installed.
+# Install the Python binding module.
 python_PYTHON			= mpq.py

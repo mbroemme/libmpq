@@ -49,6 +49,8 @@ libmpq__decompress_huffman(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, 
     struct huffman_tree_s *ht;
     struct huffman_input_stream_s *is;
 
+    (void)in_size;
+
     if ((ht = malloc(sizeof(struct huffman_tree_s))) == NULL) {
         return LIBMPQ_ERROR_MALLOC;
     }
@@ -70,7 +72,7 @@ libmpq__decompress_huffman(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, 
 
     libmpq__huffman_tree_init(ht, LIBMPQ_HUFF_DECOMPRESS);
 
-    tb = libmpq__do_decompress_huffman(ht, is, out_buf, out_size);
+    tb = libmpq__huffman_decode(ht, is, out_buf, out_size);
 
     free(is);
     free(ht);

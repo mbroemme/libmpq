@@ -23,8 +23,8 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef _WAVE_H
-#define _WAVE_H
+#ifndef LIBMPQ_WAVE_H
+#define LIBMPQ_WAVE_H
 
 #include <stdint.h>
 
@@ -40,4 +40,4 @@ int32_t libmpq__do_decompress_wave(
     uint8_t *out_buf, int32_t out_length, uint8_t *in_buf, int32_t in_length, int32_t channels
 );
 
-#endif /* _WAVE_H */
+#endif /* LIBMPQ_WAVE_H */

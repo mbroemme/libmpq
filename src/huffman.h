@@ -23,8 +23,8 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef _HUFFMAN_H
-#define _HUFFMAN_H
+#ifndef LIBMPQ_HUFFMAN_H
+#define LIBMPQ_HUFFMAN_H
 
 #include <stdint.h>
 
@@ -62,31 +62,31 @@ struct huffman_tree_item_s
 /* Cache entry for resolving short Huffman prefixes without walking the tree. */
 struct huffman_decompress_s
 {
-    uint32_t offs00; /* 00 - tree update generation for this cache entry. */
-    uint32_t bits;   /* 04 - Bits represented by this entry. */
-    union
+    uint32_t tree_update_generation; /* 00 - tree update generation for this cache entry. */
+    uint32_t bits;                   /* 04 - Bits represented by this entry. */
+    union huffman_decode_value_u
     {
         uint32_t dcmp_byte;                 /* 08 - decoded symbol for short prefixes. */
         struct huffman_tree_item_s *p_item; /* 08 - resume node for longer prefixes. */
-    };
+    } value;
 };
 
 /* Adaptive Huffman tree state and quick-decode cache. */
 struct huffman_tree_s
 {
-    uint32_t cmp0;                                /* 0000 - true for compression type 0. */
-    uint32_t offs0004;                            /* 0004 - tree update generation. */
-    struct huffman_tree_item_s items0008[0x203];  /* 0008 - static node pool. */
-    struct huffman_tree_item_s *item3050;         /* 3050 - encoded sentinel storage. */
-    struct huffman_tree_item_s *item3054;         /* 3054 - current sentinel item. */
-    struct huffman_tree_item_s *item3058;         /* 3058 - next reusable item or sentinel. */
-    struct huffman_tree_item_s *item305C;         /* 305C - insertion scratch pointer. */
-    struct huffman_tree_item_s *first;            /* 3060 - head sentinel for frequency list. */
-    struct huffman_tree_item_s *last;             /* 3064 - tail sentinel for frequency list. */
-    uint32_t items;                               /* 3068 - number of nodes used from the pool. */
-    struct huffman_tree_item_s *items306C[0x102]; /* 306C - symbol-to-node lookup table. */
-    struct huffman_decompress_s qd3474[0x80];     /* 3474 - seven-bit quick-decode cache. */
-    uint8_t table_1502A630[];                     /* Initial weight table appended by layout. */
+    uint32_t compression_type_zero;                 /* 0000 - true for compression type 0. */
+    uint32_t tree_update_generation;                /* 0004 - tree update generation. */
+    struct huffman_tree_item_s node_pool[0x203];    /* 0008 - static node pool. */
+    struct huffman_tree_item_s *encoded_sentinel;   /* 3050 - encoded sentinel storage. */
+    struct huffman_tree_item_s *current_sentinel;   /* 3054 - current sentinel item. */
+    struct huffman_tree_item_s *next_reusable_item; /* 3058 - next reusable item or sentinel. */
+    struct huffman_tree_item_s *insertion_scratch;  /* 305C - insertion scratch pointer. */
+    struct huffman_tree_item_s *first;              /* 3060 - head sentinel for frequency list. */
+    struct huffman_tree_item_s *last;               /* 3064 - tail sentinel for frequency list. */
+    uint32_t items;                                 /* 3068 - number of nodes used from the pool. */
+    struct huffman_tree_item_s *symbol_nodes[0x102];      /* 306C - symbol-to-node lookup table. */
+    struct huffman_decompress_s quick_decode_cache[0x80]; /* 3474 - seven-bit quick-decode cache. */
+    uint8_t huffman_initial_weights[]; /* Initial weight table appended by layout. */
 };
 
 /* Insert or move an item inside the adaptive Huffman frequency list. */
@@ -103,19 +103,19 @@ struct huffman_tree_item_s *
 libmpq__huffman_previous_item(struct huffman_tree_item_s *hi, long value);
 
 /* Read one bit from the Huffman input stream. */
-uint32_t libmpq__huffman_get_1bit(struct huffman_input_stream_s *is);
+uint32_t libmpq__huffman_read_bit(struct huffman_input_stream_s *is);
 
 /* Peek at the next seven bits without consuming them. */
-uint32_t libmpq__huffman_get_7bit(struct huffman_input_stream_s *is);
+uint32_t libmpq__huffman_peek_seven_bits(struct huffman_input_stream_s *is);
 
 /* Read one byte from the Huffman input stream. */
-uint32_t libmpq__huffman_get_8bit(struct huffman_input_stream_s *is);
+uint32_t libmpq__huffman_read_byte(struct huffman_input_stream_s *is);
 
 /* Allocate or recycle a Huffman tree item and move it to the front list. */
-struct huffman_tree_item_s *libmpq__huffman_call_1500E740(struct huffman_tree_s *ht);
+struct huffman_tree_item_s *libmpq__huffman_acquire_item(struct huffman_tree_s *ht);
 
 /* Increase adaptive Huffman weights and reorder affected items. */
-void libmpq__huffman_call_1500E820(struct huffman_tree_s *ht, struct huffman_tree_item_s *p_item);
+void libmpq__huffman_update_weights(struct huffman_tree_s *ht, struct huffman_tree_item_s *p_item);
 
 /* Initialize the adaptive Huffman tree and clear lookup tables. */
 void libmpq__huffman_tree_init(struct huffman_tree_s *ht, uint32_t cmp);
@@ -124,9 +124,9 @@ void libmpq__huffman_tree_init(struct huffman_tree_s *ht, uint32_t cmp);
 void libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type);
 
 /* Decode a Huffman bitstream into the caller-provided output buffer. */
-int32_t libmpq__do_decompress_huffman(
+int32_t libmpq__huffman_decode(
     struct huffman_tree_s *ht, struct huffman_input_stream_s *is, uint8_t *out_buf,
     uint32_t out_length
 );
 
-#endif /* _HUFFMAN_H */
+#endif /* LIBMPQ_HUFFMAN_H */

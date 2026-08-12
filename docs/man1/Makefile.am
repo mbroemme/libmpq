@@ -1,6 +1,6 @@
-# manual page directory.
+# Include the manual pages in source distributions.
 EXTRA_DIST			= $(man_MANS)
 
-# manual pages for the installed binaries.
+# Manual pages for installed command-line utilities.
 man_MANS =			\
 	libmpq-config.1

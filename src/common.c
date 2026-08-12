@@ -94,7 +94,9 @@ libmpq__decrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed)
 
 /* Recover the per-file block-table seed from the first encrypted block offsets. */
 int32_t
-libmpq__decrypt_key(uint8_t *in_buf, uint32_t in_size, uint32_t block_size, uint32_t *key)
+libmpq__derive_block_table_seed(
+    uint8_t *in_buf, uint32_t in_size, uint32_t block_size, uint32_t *key
+)
 {
 
     /* Candidate seed saved after matching the first known block offset. */

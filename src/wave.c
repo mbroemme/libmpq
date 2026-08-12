@@ -26,7 +26,7 @@
 #include "wave.h"
 
 /* Predictor-index adjustments used by the MPQ ADPCM WAVE decoder. */
-static const uint32_t wave_table_1503f120[] = {
+static const uint32_t wave_step_adjustments[] = {
     0xFFFFFFFF, 0x00000000, 0xFFFFFFFF, 0x00000004, 0xFFFFFFFF, 0x00000002, 0xFFFFFFFF, 0x00000006,
     0xFFFFFFFF, 0x00000001, 0xFFFFFFFF, 0x00000005, 0xFFFFFFFF, 0x00000003, 0xFFFFFFFF, 0x00000007,
     0xFFFFFFFF, 0x00000001, 0xFFFFFFFF, 0x00000005, 0xFFFFFFFF, 0x00000003, 0xFFFFFFFF, 0x00000007,
@@ -34,7 +34,7 @@ static const uint32_t wave_table_1503f120[] = {
 };
 
 /* Step-size table used by the MPQ ADPCM WAVE decoder. */
-static const uint32_t wave_table_1503f1a0[] = {
+static const uint32_t wave_step_sizes[] = {
     0x00000007, 0x00000008, 0x00000009, 0x0000000A, 0x0000000B, 0x0000000C, 0x0000000D, 0x0000000E,
     0x00000010, 0x00000011, 0x00000013, 0x00000015, 0x00000017, 0x00000019, 0x0000001C, 0x0000001F,
     0x00000022, 0x00000025, 0x00000029, 0x0000002D, 0x00000032, 0x00000037, 0x0000003C, 0x00000042,
@@ -60,8 +60,8 @@ libmpq__do_decompress_wave(
     byte_and_int16_t out;
     byte_and_int16_t in;
     uint32_t index;
-    int32_t nr_array1[2];
-    int32_t nr_array2[2];
+    int32_t step_indices[2];
+    int32_t predictor_samples[2];
     int32_t count = 0;
 
     if (channels < 1 || channels > 2 || in_length < 2 + channels * 2) {
@@ -73,8 +73,8 @@ libmpq__do_decompress_wave(
 
     out.pb = out_buf;
     in.pb = in_buf;
-    nr_array1[0] = 0x2C;
-    nr_array1[1] = 0x2C;
+    step_indices[0] = 0x2C;
+    step_indices[1] = 0x2C;
 
     /* The first word is the MPQ WAVE predictor header, followed by seed samples. */
     in.pw++;
@@ -86,7 +86,7 @@ libmpq__do_decompress_wave(
         int32_t temp;
 
         temp = *(int16_t *)in.pw++;
-        nr_array2[count] = temp;
+        predictor_samples[count] = temp;
 
         if (out_length < 2) {
             return out.pb - out_buf;
@@ -111,23 +111,23 @@ libmpq__do_decompress_wave(
             switch (one_byte & 0x7F) {
             case 0:
 
-                if (nr_array1[index] != 0) {
-                    nr_array1[index]--;
+                if (step_indices[index] != 0) {
+                    step_indices[index]--;
                 }
 
                 if (out_length < 2) {
                     break;
                 }
 
-                *out.pw++ = (uint16_t)nr_array2[index];
+                *out.pw++ = (uint16_t)predictor_samples[index];
                 out_length -= 2;
                 continue;
             case 1:
 
-                nr_array1[index] += 8;
+                step_indices[index] += 8;
 
-                if (nr_array1[index] > 0x58) {
-                    nr_array1[index] = 0x58;
+                if (step_indices[index] > 0x58) {
+                    step_indices[index] = 0x58;
                 }
 
                 if (channels == 2) {
@@ -137,10 +137,10 @@ libmpq__do_decompress_wave(
             case 2:
                 continue;
             default:
-                nr_array1[index] -= 8;
+                step_indices[index] -= 8;
 
-                if (nr_array1[index] < 0) {
-                    nr_array1[index] = 0;
+                if (step_indices[index] < 0) {
+                    step_indices[index] = 0;
                 }
 
                 if (channels != 2) {
@@ -152,9 +152,9 @@ libmpq__do_decompress_wave(
         } else {
 
             /* Decode a signed delta from the current step-size table entry. */
-            uint32_t temp1 = wave_table_1503f1a0[nr_array1[index]];
+            uint32_t temp1 = wave_step_sizes[step_indices[index]];
             uint32_t temp2 = temp1 >> in_buf[1];
-            int32_t temp3 = nr_array2[index];
+            int32_t temp3 = predictor_samples[index];
 
             if (one_byte & 0x01) {
                 temp2 += (temp1 >> 0);
@@ -187,24 +187,24 @@ libmpq__do_decompress_wave(
             }
 
             /* Store the clamped predictor sample for the active channel. */
-            nr_array2[index] = temp3;
+            predictor_samples[index] = temp3;
 
             if (out_length < 2) {
                 break;
             }
 
-            temp2 = nr_array1[index];
+            temp2 = step_indices[index];
             one_byte &= 0x1F;
             *out.pw++ = (uint16_t)temp3;
             out_length -= 2;
-            temp2 += wave_table_1503f120[one_byte];
-            nr_array1[index] = temp2;
+            temp2 += wave_step_adjustments[one_byte];
+            step_indices[index] = temp2;
 
-            if (nr_array1[index] < 0) {
-                nr_array1[index] = 0;
+            if (step_indices[index] < 0) {
+                step_indices[index] = 0;
             } else {
-                if (nr_array1[index] > 0x58) {
-                    nr_array1[index] = 0x58;
+                if (step_indices[index] > 0x58) {
+                    step_indices[index] = 0x58;
                 }
             }
         }

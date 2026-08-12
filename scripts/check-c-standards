@@ -1,0 +1,36 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly temp_root="$(mktemp -d "${TMPDIR:-/tmp}/libmpq-c-standards.XXXXXX")"
+
+cleanup()
+{
+	rm -rf "${temp_root}"
+}
+trap cleanup EXIT
+
+cp -a "${project_root}" "${temp_root}/tree"
+cd "${temp_root}/tree"
+
+sh autogen.sh >/dev/null
+
+for compiler in gcc clang; do
+	if ! command -v "${compiler}" >/dev/null 2>&1; then
+		printf 'Skipping unavailable compiler: %s\n' "${compiler}"
+		continue
+	fi
+
+	for standard in c99 c11 c17 c23 gnu23; do
+		printf 'Checking %s with %s...\n' "${standard}" "${compiler}"
+		./configure --disable-static --enable-shared \
+			CC="${compiler}" \
+			CFLAGS="-std=${standard} -Wall -Wextra -Wpedantic -Werror" >/dev/null
+		make clean >/dev/null 2>&1 || true
+		make -j"$(nproc)" >/dev/null
+		make check >/dev/null
+	done
+done
+
+printf 'All requested C standard checks passed.\n'

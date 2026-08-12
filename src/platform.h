@@ -17,11 +17,11 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef _PLATFORM_H
-#define _PLATFORM_H
+#ifndef LIBMPQ_PLATFORM_H
+#define LIBMPQ_PLATFORM_H
 
 #ifdef _MSC_VER
 #define fseeko _fseeki64
 #endif
 
-#endif /* _PLATFORM_H */
+#endif /* LIBMPQ_PLATFORM_H */

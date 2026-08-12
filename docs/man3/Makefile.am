@@ -1,7 +1,7 @@
-# manual page directory.
+# Include the manual pages in source distributions.
 EXTRA_DIST			= $(man_MANS)
 
-# manual pages for the installed binaries.
+# Manual pages for the installed libmpq library API.
 man_MANS =				\
 	libmpq.3			\
 	libmpq__archive_close.3		\

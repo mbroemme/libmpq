@@ -17,8 +17,8 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef _COMMON_H
-#define _COMMON_H
+#ifndef LIBMPQ_COMMON_H
+#define LIBMPQ_COMMON_H
 
 #include <stdint.h>
 
@@ -32,7 +32,9 @@ int32_t libmpq__encrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed)
 int32_t libmpq__decrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed);
 
 /* Recover a file block-table decryption seed from encrypted block offsets. */
-int32_t libmpq__decrypt_key(uint8_t *in_buf, uint32_t in_size, uint32_t block_size, uint32_t *key);
+int32_t libmpq__derive_block_table_seed(
+    uint8_t *in_buf, uint32_t in_size, uint32_t block_size, uint32_t *key
+);
 
 /* Decompress one archive block according to its MPQ compression flags. */
 int32_t libmpq__decompress_block(
@@ -40,4 +42,4 @@ int32_t libmpq__decompress_block(
     uint32_t compression_type
 );
 
-#endif /* _COMMON_H */
+#endif /* LIBMPQ_COMMON_H */

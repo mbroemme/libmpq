@@ -32,6 +32,8 @@ shell_scripts=(
 	scripts/check
 	scripts/check-comment-spacing
 	scripts/check-function-spacing
+	scripts/check-c-identifiers
+	scripts/check-c-standards
 )
 sh -n autogen.sh
 bash -n "${shell_scripts[@]}"
@@ -51,6 +53,8 @@ if ((${#sources[@]} == 0)); then
 fi
 scripts/check-comment-spacing "${sources[@]}"
 scripts/check-function-spacing "${sources[@]}"
+scripts/check-c-identifiers
+scripts/check-c-standards
 "${clang_format}" --dry-run --Werror "${sources[@]}"
 
 printf 'All source checks passed.\n'

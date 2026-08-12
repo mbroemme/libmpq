@@ -36,7 +36,7 @@
 #include <string.h>
 
 /* Initial adaptive Huffman weights indexed by compression type. */
-static const uint8_t table_1502A630[] = {
+static const uint8_t huffman_initial_weights[] = {
 
     /* Compression type 0x00. */
     0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -263,7 +263,7 @@ libmpq__huffman_insert_item(
 
         item->next = item2;
         item->prev = item2->prev;
-        next2 = PTR_INT(ht->item305C);
+        next2 = PTR_INT(ht->insertion_scratch);
         prev2 = item2->prev;
 
         if (PTR_INT(prev2) < 0) {
@@ -301,8 +301,8 @@ libmpq__huffman_remove_item(struct huffman_tree_s *ht, struct huffman_tree_item_
         if (PTR_INT(temp) <= 0) {
             temp = PTR_NOT(temp);
 
-            if (temp == PTR_PTR(&ht->item3054)) {
-                ht->item3054 = hi->next;
+            if (temp == PTR_PTR(&ht->current_sentinel)) {
+                ht->current_sentinel = hi->next;
             } else if (temp == PTR_PTR(&ht->first)) {
                 ht->first = hi->next;
             }
@@ -341,7 +341,7 @@ libmpq__huffman_previous_item(struct huffman_tree_item_s *hi, long value)
 
 /* Read one bit from the Huffman input stream. */
 uint32_t
-libmpq__huffman_get_1bit(struct huffman_input_stream_s *is)
+libmpq__huffman_read_bit(struct huffman_input_stream_s *is)
 {
 
     /* Current bit before refilling the 32-bit input buffer if needed. */
@@ -361,7 +361,7 @@ libmpq__huffman_get_1bit(struct huffman_input_stream_s *is)
 
 /* Peek at the next seven Huffman bits without consuming them. */
 uint32_t
-libmpq__huffman_get_7bit(struct huffman_input_stream_s *is)
+libmpq__huffman_peek_seven_bits(struct huffman_input_stream_s *is)
 {
 
     /* Ensure the quick-decode prefix is fully available. */
@@ -376,7 +376,7 @@ libmpq__huffman_get_7bit(struct huffman_input_stream_s *is)
 
 /* Read one byte from the Huffman input stream. */
 uint32_t
-libmpq__huffman_get_8bit(struct huffman_input_stream_s *is)
+libmpq__huffman_read_byte(struct huffman_input_stream_s *is)
 {
 
     /* Byte extracted from the low bits of the input buffer. */
@@ -398,17 +398,17 @@ libmpq__huffman_get_8bit(struct huffman_input_stream_s *is)
 
 /* Allocate or recycle a Huffman tree item and move it to the front list. */
 struct huffman_tree_item_s *
-libmpq__huffman_call_1500E740(struct huffman_tree_s *ht)
+libmpq__huffman_acquire_item(struct huffman_tree_s *ht)
 {
 
-    struct huffman_tree_item_s *p_item1 = ht->item3058;
+    struct huffman_tree_item_s *p_item1 = ht->next_reusable_item;
     struct huffman_tree_item_s *p_item2;
 
     /* Temporary item and pointer-array state used by the original tree update routine. */
     struct huffman_tree_item_s *p_next;
     struct huffman_tree_item_s *p_prev;
     if (PTR_INT(p_item1) <= 0 || (p_item2 = p_item1) == NULL) {
-        if ((p_item2 = &ht->items0008[ht->items++]) != NULL) {
+        if ((p_item2 = &ht->node_pool[ht->items++]) != NULL) {
             p_item1 = p_item2;
         } else {
             p_item1 = ht->first;
@@ -439,17 +439,17 @@ libmpq__huffman_call_1500E740(struct huffman_tree_s *ht)
 
     p_prev = ht->last;
 
-    if (p_prev <= 0) {
+    if (PTR_INT(p_prev) <= 0) {
         p_prev = PTR_NOT(p_prev);
         p_prev->next = p_item1;
         p_prev->prev = p_item2;
         p_item2->parent = NULL;
         p_item2->child = NULL;
     } else {
-        if (PTR_INT(ht->item305C) < 0) {
+        if (PTR_INT(ht->insertion_scratch) < 0) {
             p_prev += PTR_PTR(&ht->first) - ht->first->prev;
         } else {
-            p_prev += PTR_INT(ht->item305C);
+            p_prev += PTR_INT(ht->insertion_scratch);
         }
 
         p_prev->next = p_item1;
@@ -463,7 +463,7 @@ libmpq__huffman_call_1500E740(struct huffman_tree_s *ht)
 
 /* Increase adaptive Huffman weights and reorder items to keep the tree sorted. */
 void
-libmpq__huffman_call_1500E820(struct huffman_tree_s *ht, struct huffman_tree_item_s *p_item)
+libmpq__huffman_update_weights(struct huffman_tree_s *ht, struct huffman_tree_item_s *p_item)
 {
 
     struct huffman_tree_item_s *p_item1;
@@ -539,7 +539,7 @@ libmpq__huffman_call_1500E820(struct huffman_tree_s *ht, struct huffman_tree_ite
         p_item->parent = p_item1->parent;
         p_item1->parent = p_item2;
 
-        ht->offs0004++;
+        ht->tree_update_generation++;
     }
 }
 
@@ -552,24 +552,26 @@ libmpq__huffman_tree_init(struct huffman_tree_s *ht, uint32_t cmp)
     uint32_t count;
     struct huffman_tree_item_s *hi;
 
-    for (hi = ht->items0008, count = 0x203; count != 0; hi++, count--) {
+    for (hi = ht->node_pool, count = 0x203; count != 0; hi++, count--) {
         hi->next = hi->prev = NULL;
     }
 
     /* Recreate the sentinel links used by the adaptive tree list. */
-    ht->item3050 = NULL;
-    ht->item3054 = PTR_PTR(&ht->item3054);
-    ht->item3058 = PTR_NOT(ht->item3054);
-    ht->item305C = NULL;
+    ht->encoded_sentinel = NULL;
+    ht->current_sentinel = PTR_PTR(&ht->current_sentinel);
+    ht->next_reusable_item = PTR_NOT(ht->current_sentinel);
+    ht->insertion_scratch = NULL;
     ht->first = PTR_PTR(&ht->first);
     ht->last = PTR_NOT(ht->first);
-    ht->offs0004 = 1;
+    ht->tree_update_generation = 1;
     ht->items = 0;
 
     /* Decompression starts with an empty seven-bit quick-decode cache. */
     if (cmp == LIBMPQ_HUFF_DECOMPRESS) {
-        for (count = 0; count < sizeof(ht->qd3474) / sizeof(struct huffman_decompress_s); count++) {
-            ht->qd3474[count].offs00 = 0;
+        for (count = 0;
+             count < sizeof(ht->quick_decode_cache) / sizeof(struct huffman_decompress_s);
+             count++) {
+            ht->quick_decode_cache[count].tree_update_generation = 0;
         }
     }
 }
@@ -601,28 +603,30 @@ libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
             libmpq__huffman_remove_item(ht, ht->last);
         }
 
-        ht->item3058 = PTR_PTR(&ht->item3054);
-        ht->last->prev = ht->item3058;
-        temp = libmpq__huffman_previous_item(PTR_PTR(&ht->item3054), PTR_INT(&ht->item3050));
+        ht->next_reusable_item = PTR_PTR(&ht->current_sentinel);
+        ht->last->prev = ht->next_reusable_item;
+        temp = libmpq__huffman_previous_item(
+            PTR_PTR(&ht->current_sentinel), PTR_INT(&ht->encoded_sentinel)
+        );
         temp->next = ht->last;
-        ht->item3054 = ht->last;
+        ht->current_sentinel = ht->last;
     }
 
-    memset(ht->items306C, 0, sizeof(ht->items306C));
+    memset(ht->symbol_nodes, 0, sizeof(ht->symbol_nodes));
 
     max_byte = 0;
 
-    p_item = (struct huffman_tree_item_s **)&ht->items306C;
+    p_item = (struct huffman_tree_item_s **)&ht->symbol_nodes;
 
     cmp_type &= 0xFF;
 
     /* Each compression type has 258 initial symbol weights. */
-    byte_array = table_1502A630 + cmp_type * 258;
+    byte_array = huffman_initial_weights + cmp_type * 258;
 
     for (i = 0; i < 0x100; i++, p_item++) {
 
         /* Reuse a pending tree item or allocate the next item from the static pool. */
-        struct huffman_tree_item_s *item = ht->item3058;
+        struct huffman_tree_item_s *item = ht->next_reusable_item;
         struct huffman_tree_item_s *p_item3;
         uint8_t one_byte = byte_array[i];
 
@@ -631,7 +635,7 @@ libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
         }
 
         if (PTR_INT(item) <= 0) {
-            item = &ht->items0008[ht->items++];
+            item = &ht->node_pool[ht->items++];
         }
 
         libmpq__huffman_insert_item(ht, item, SWITCH_ITEMS, NULL);
@@ -685,11 +689,11 @@ libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
     /* Add control symbols after the literal byte symbols. */
     for (; i < 0x102; i++) {
 
-        struct huffman_tree_item_s **p_item2 = &ht->items306C[i];
-        struct huffman_tree_item_s *item2 = ht->item3058;
+        struct huffman_tree_item_s **p_item2 = &ht->symbol_nodes[i];
+        struct huffman_tree_item_s *item2 = ht->next_reusable_item;
 
         if (PTR_INT(item2) <= 0) {
-            item2 = &ht->items0008[ht->items++];
+            item2 = &ht->node_pool[ht->items++];
         }
 
         libmpq__huffman_insert_item(ht, item2, INSERT_ITEM, NULL);
@@ -707,8 +711,8 @@ libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
         struct huffman_tree_item_s *item;
 
         while (PTR_INT((child2 = child1->prev)) > 0) {
-            if (PTR_INT((item = ht->item3058)) <= 0) {
-                item = &ht->items0008[ht->items++];
+            if (PTR_INT((item = ht->next_reusable_item)) <= 0) {
+                item = &ht->node_pool[ht->items++];
             }
 
             libmpq__huffman_insert_item(ht, item, SWITCH_ITEMS, NULL);
@@ -776,12 +780,12 @@ libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
         }
     }
 
-    ht->offs0004 = 1;
+    ht->tree_update_generation = 1;
 }
 
 /* Decode the Huffman bitstream into the output buffer. */
 int32_t
-libmpq__do_decompress_huffman(
+libmpq__huffman_decode(
     struct huffman_tree_s *ht, struct huffman_input_stream_s *is, uint8_t *out_buf,
     uint32_t out_length
 )
@@ -812,32 +816,32 @@ libmpq__do_decompress_huffman(
         return 0;
     }
 
-    n8bits = libmpq__huffman_get_8bit(is);
+    n8bits = libmpq__huffman_read_byte(is);
 
     libmpq__huffman_tree_build(ht, n8bits);
 
     /* Compression type 0 uses 8-bit literal handling. */
-    ht->cmp0 = (n8bits == 0) ? TRUE : FALSE;
+    ht->compression_type_zero = (n8bits == 0) ? TRUE : FALSE;
 
     for (;;) {
-        n7bits = libmpq__huffman_get_7bit(is);
+        n7bits = libmpq__huffman_peek_seven_bits(is);
 
         /* Quick-decode entries cache symbols for seven-bit prefixes after tree updates. */
-        qd = &ht->qd3474[n7bits];
-        has_qd = (qd->offs00 >= ht->offs0004) ? TRUE : FALSE;
+        qd = &ht->quick_decode_cache[n7bits];
+        has_qd = (qd->tree_update_generation >= ht->tree_update_generation) ? TRUE : FALSE;
 
         if (has_qd) {
             found = 0;
             if (qd->bits > 7) {
                 is->bit_buf >>= 7;
                 is->bits -= 7;
-                p_item1 = qd->p_item;
+                p_item1 = qd->value.p_item;
                 found = 1;
             }
             if (found == 0) {
                 is->bit_buf >>= qd->bits;
                 is->bits -= qd->bits;
-                dcmp_byte = qd->dcmp_byte;
+                dcmp_byte = qd->value.dcmp_byte;
             }
         } else {
             found = 1;
@@ -862,7 +866,7 @@ libmpq__do_decompress_huffman(
                     return 0;
                 }
 
-                if (libmpq__huffman_get_1bit(is)) {
+                if (libmpq__huffman_read_bit(is)) {
                     p_item1 = p_item1->prev;
 
                     if (p_item1 == NULL) {
@@ -878,17 +882,18 @@ libmpq__do_decompress_huffman(
 
             if (has_qd == FALSE) {
                 if (bit_count > 7) {
-                    qd->offs00 = ht->offs0004;
+                    qd->tree_update_generation = ht->tree_update_generation;
                     qd->bits = bit_count;
-                    qd->p_item = p_item2;
+                    qd->value.p_item = p_item2;
                 } else {
                     uint32_t index = n7bits & (0xFFFFFFFF >> (32 - bit_count));
                     uint32_t add = (1 << bit_count);
 
-                    for (qd = &ht->qd3474[index]; index <= 0x7F; index += add, qd += add) {
-                        qd->offs00 = ht->offs0004;
+                    for (qd = &ht->quick_decode_cache[index]; index <= 0x7F;
+                         index += add, qd += add) {
+                        qd->tree_update_generation = ht->tree_update_generation;
                         qd->bits = bit_count;
-                        qd->dcmp_byte = p_item1->dcmp_byte;
+                        qd->value.dcmp_byte = p_item1->dcmp_byte;
                     }
                 }
             }
@@ -898,27 +903,27 @@ libmpq__do_decompress_huffman(
 
         /* 0x101 introduces a new literal and splits the current escape node. */
         if (dcmp_byte == 0x101) {
-            n8bits = libmpq__huffman_get_8bit(is);
-            p_item1 = (ht->last <= 0) ? NULL : ht->last;
+            n8bits = libmpq__huffman_read_byte(is);
+            p_item1 = (PTR_INT(ht->last) <= 0) ? NULL : ht->last;
             if (p_item1 == NULL) {
                 return 0;
             }
-            p_item2 = libmpq__huffman_call_1500E740(ht);
+            p_item2 = libmpq__huffman_acquire_item(ht);
             p_item2->parent = p_item1;
             p_item2->dcmp_byte = p_item1->dcmp_byte;
             p_item2->byte_value = p_item1->byte_value;
-            ht->items306C[p_item2->dcmp_byte] = p_item2;
-            p_item2 = libmpq__huffman_call_1500E740(ht);
+            ht->symbol_nodes[p_item2->dcmp_byte] = p_item2;
+            p_item2 = libmpq__huffman_acquire_item(ht);
             p_item2->parent = p_item1;
             p_item2->dcmp_byte = n8bits;
             p_item2->byte_value = 0;
-            ht->items306C[p_item2->dcmp_byte] = p_item2;
+            ht->symbol_nodes[p_item2->dcmp_byte] = p_item2;
             p_item1->child = p_item2;
 
-            libmpq__huffman_call_1500E820(ht, p_item2);
+            libmpq__huffman_update_weights(ht, p_item2);
 
-            if (ht->cmp0 == 0) {
-                libmpq__huffman_call_1500E820(ht, ht->items306C[n8bits]);
+            if (ht->compression_type_zero == 0) {
+                libmpq__huffman_update_weights(ht, ht->symbol_nodes[n8bits]);
             }
 
             dcmp_byte = n8bits;
@@ -934,8 +939,8 @@ libmpq__do_decompress_huffman(
             break;
         }
 
-        if (ht->cmp0) {
-            libmpq__huffman_call_1500E820(ht, ht->items306C[dcmp_byte]);
+        if (ht->compression_type_zero) {
+            libmpq__huffman_update_weights(ht, ht->symbol_nodes[dcmp_byte]);
         }
     }
 

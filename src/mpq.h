@@ -24,8 +24,8 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef _MPQ_H
-#define _MPQ_H
+#ifndef LIBMPQ_MPQ_H
+#define LIBMPQ_MPQ_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,18 +41,18 @@ extern "C" {
 #endif
 
 /* API return values. Negative values are errors, zero means success. */
-#define LIBMPQ_ERROR_OPEN -1            /* File open failed. */
-#define LIBMPQ_ERROR_CLOSE -2           /* File close failed. */
-#define LIBMPQ_ERROR_SEEK -3            /* File seek failed. */
-#define LIBMPQ_ERROR_READ -4            /* File read failed. */
-#define LIBMPQ_ERROR_WRITE -5           /* File write failed. */
-#define LIBMPQ_ERROR_MALLOC -6          /* Memory allocation failed. */
-#define LIBMPQ_ERROR_FORMAT -7          /* Archive format is invalid. */
-#define LIBMPQ_ERROR_NOT_INITIALIZED -8 /* Library initialization is missing. */
-#define LIBMPQ_ERROR_SIZE -9            /* Caller-provided buffer is too small. */
-#define LIBMPQ_ERROR_EXIST -10          /* File or block does not exist in archive. */
-#define LIBMPQ_ERROR_DECRYPT -11        /* Decryption seed is unknown. */
-#define LIBMPQ_ERROR_UNPACK -12         /* File unpacking failed. */
+#define LIBMPQ_ERROR_OPEN (-1)            /* File open failed. */
+#define LIBMPQ_ERROR_CLOSE (-2)           /* File close failed. */
+#define LIBMPQ_ERROR_SEEK (-3)            /* File seek failed. */
+#define LIBMPQ_ERROR_READ (-4)            /* File read failed. */
+#define LIBMPQ_ERROR_WRITE (-5)           /* File write failed. */
+#define LIBMPQ_ERROR_MALLOC (-6)          /* Memory allocation failed. */
+#define LIBMPQ_ERROR_FORMAT (-7)          /* Archive format is invalid. */
+#define LIBMPQ_ERROR_NOT_INITIALIZED (-8) /* Library initialization is missing. */
+#define LIBMPQ_ERROR_SIZE (-9)            /* Caller-provided buffer is too small. */
+#define LIBMPQ_ERROR_EXIST (-10)          /* File or block does not exist in archive. */
+#define LIBMPQ_ERROR_DECRYPT (-11)        /* Decryption seed is unknown. */
+#define LIBMPQ_ERROR_UNPACK (-12)         /* File unpacking failed. */
 
 /* Opaque archive handle owned by libmpq. */
 typedef struct mpq_archive mpq_archive_s;
@@ -155,4 +155,4 @@ extern LIBMPQ_API int32_t libmpq__block_read(
 }
 #endif
 
-#endif /* _MPQ_H */
+#endif /* LIBMPQ_MPQ_H */
