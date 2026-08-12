@@ -17,7 +17,9 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
+#ifdef HAVE_CONFIG_H
 #include "config.h"
+#endif
 
 #include "common.h"
 #include "mpq-internal.h"
