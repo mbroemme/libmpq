@@ -1,5 +1,5 @@
 # Subdirectories that are built and installed.
-SUBDIRS				= include src bindings docs
+SUBDIRS				= include/libmpq src bindings docs/man1 docs/man3
 
 # Subdirectories included in source distributions.
 DIST_SUBDIRS			= $(SUBDIRS) tools

@@ -59,12 +59,11 @@ AC_CONFIG_FILES([libmpq-config],[chmod +x libmpq-config])
 # Generate the remaining package build files.
 AC_CONFIG_FILES([
 Makefile
-include/Makefile
+include/libmpq/Makefile
 src/Makefile
 bindings/Makefile
 bindings/d/Makefile
 bindings/python/Makefile
-docs/Makefile
 docs/man1/Makefile
 docs/man3/Makefile
 tools/Makefile
