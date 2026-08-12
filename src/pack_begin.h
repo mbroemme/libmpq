@@ -28,6 +28,6 @@
 #define PACK_STRUCT
 #else
 
-/* we assume GNU here */
+/* Fall back to the GNU packed-structure attribute. */
 #define PACK_STRUCT __attribute__((packed))
 #endif

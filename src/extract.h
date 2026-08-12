@@ -20,63 +20,52 @@
 #ifndef _EXTRACT_H
 #define _EXTRACT_H
 
-/* define compression types for multilpe compressions. */
-#define LIBMPQ_COMPRESSION_HUFFMAN                                                                 \
-    0x01 /* huffman compression. (used on wave files only and introduced in starcraft) */
-#define LIBMPQ_COMPRESSION_ZLIB 0x02 /* zlib compression. (introduced in warcraft 3) */
-#define LIBMPQ_COMPRESSION_PKZIP                                                                   \
-    0x08 /* pkware dcl compression. (first used compression algorithm) */
+/* Compression flags stored in the first byte of a Blizzard multi-compression block. */
+#define LIBMPQ_COMPRESSION_HUFFMAN 0x01 /* Huffman compression used for WAVE payloads. */
+#define LIBMPQ_COMPRESSION_ZLIB 0x02    /* Zlib compression introduced in Warcraft III. */
+#define LIBMPQ_COMPRESSION_PKZIP 0x08   /* PKWARE Data Compression Library compression. */
 #define LIBMPQ_COMPRESSION_BZIP2                                                                   \
-    0x10 /* bzip compression. (introduced in warcraft 3 - the frozen throne) */
-#define LIBMPQ_COMPRESSION_WAVE_MONO 0x40   /* adpcm 4:1 compression. (introduced in starcraft) */
-#define LIBMPQ_COMPRESSION_WAVE_STEREO 0x80 /* adpcm 4:1 compression. (introduced in starcraft) */
+    0x10 /* Bzip2 compression introduced in Warcraft III: The Frozen Throne. */
+#define LIBMPQ_COMPRESSION_WAVE_MONO 0x40   /* Mono ADPCM 4:1 WAVE compression. */
+#define LIBMPQ_COMPRESSION_WAVE_STEREO 0x80 /* Stereo ADPCM 4:1 WAVE compression. */
 
-/*
- *  table for decompression functions, return value for all functions
- *  is the transferred data size or one of the following error constants:
- *
- *  LIBMPQ_ERROR_MALLOC
- *  LIBMPQ_ERROR_DECOMPRESS
- */
+/* Decompression backend signature; returns transferred bytes or a libmpq error code. */
 typedef int32_t (*DECOMPRESS)(uint8_t *, uint32_t, uint8_t *, uint32_t);
+
+/* Maps one MPQ compression flag to the backend that can decode it. */
 typedef struct
 {
-    uint32_t mask;         /* decompression bit. */
-    DECOMPRESS decompress; /* decompression function. */
+    uint32_t mask;         /* Compression flag handled by this entry. */
+    DECOMPRESS decompress; /* Backend implementation. */
 } decompress_table_s;
 
-/*
- *  huffman decompression routine, the in_size parameter is not used,
- *  but needs to be specified due to compatibility reasons.
- *
- *  1500F5F0
- */
+/* Decompress a Huffman-coded MPQ stream; in_size is kept for backend ABI parity. */
 extern int32_t
 libmpq__decompress_huffman(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size);
 
-/* decompression using zlib. */
+/* Decompress a zlib-coded MPQ stream. */
 extern int32_t
 libmpq__decompress_zlib(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size);
 
-/* decompression using pkzip. */
+/* Decompress a PKWARE DCL-coded MPQ stream. */
 extern int32_t
 libmpq__decompress_pkzip(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size);
 
-/* decompression using bzip2. */
+/* Decompress a bzip2-coded MPQ stream. */
 extern int32_t
 libmpq__decompress_bzip2(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size);
 
-/* decompression using wave. (1 channel) */
+/* Decompress a mono ADPCM WAVE stream. */
 extern int32_t libmpq__decompress_wave_mono(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
 );
 
-/* decompression using wave. (2 channels) */
+/* Decompress a stereo ADPCM WAVE stream. */
 extern int32_t libmpq__decompress_wave_stereo(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
 );
 
-/* decompression using multiple of the above algorithm. */
+/* Decode a Blizzard multi-compression stream by applying each flagged backend in order. */
 extern int32_t
 libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size);
 

@@ -22,13 +22,10 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-/* system includes. */
 #include <string.h>
 
-/* public api includes. */
 #include "mpq.h"
 
-/* internal pkzip includes. */
 #include "explode.h"
 
 /* Distance bit lengths used by the PKWARE explode distance decoder. */
@@ -122,14 +119,13 @@ static int32_t
 skip_bit(pkzip_cmp_s *mpq_pkzip, uint32_t bits)
 {
 
-    /* check if number of bits required is less than number of bits in the buffer. */
     if (bits <= mpq_pkzip->extra_bits) {
         mpq_pkzip->extra_bits -= bits;
         mpq_pkzip->bit_buf >>= bits;
         return 0;
     }
 
-    /* load input buffer if necessary. */
+    /* Refill the bit buffer from the input callback when the staging buffer is empty. */
     mpq_pkzip->bit_buf >>= mpq_pkzip->extra_bits;
     if (mpq_pkzip->in_pos == mpq_pkzip->in_bytes) {
         uint32_t in_size = sizeof(mpq_pkzip->in_buf);
@@ -141,12 +137,10 @@ skip_bit(pkzip_cmp_s *mpq_pkzip, uint32_t bits)
         mpq_pkzip->in_pos = 0;
     }
 
-    /* update bit buffer. */
     mpq_pkzip->bit_buf |= (mpq_pkzip->in_buf[mpq_pkzip->in_pos++] << 8);
     mpq_pkzip->bit_buf >>= (bits - mpq_pkzip->extra_bits);
     mpq_pkzip->extra_bits = (mpq_pkzip->extra_bits - bits) + 8;
 
-    /* if no error was found, return zero. */
     return 0;
 }
 
@@ -158,14 +152,12 @@ generate_tables_decode(int32_t count, uint8_t *bits, const uint8_t *code, uint8_
     /* Walk backwards because the original table order assigns higher codes first. */
     int32_t i;
 
-    /* EBX - count */
     for (i = count - 1; i >= 0; i--) {
 
         /* Fill every lookup slot reachable by this code prefix. */
         uint32_t idx1 = code[i];
         uint32_t idx2 = 1 << bits[i];
 
-        /* loop until table is ready. */
         do {
             buf2[idx1] = (uint8_t)i;
             idx1 += idx2;
@@ -184,12 +176,11 @@ generate_tables_ascii(pkzip_cmp_s *mpq_pkzip)
     uint32_t add;
     uint16_t count;
 
-    /* loop through ascii table. */
+    /* Expand the static ASCII literal codes into the decoder lookup tables. */
     for (count = 0x00FF; code_asc >= pkzip_code_asc; code_asc--, count--) {
         uint8_t *bits_asc = mpq_pkzip->bits_asc + count;
         uint8_t bits_tmp = *bits_asc;
 
-        /* check if byte is finished. */
         if (bits_tmp <= 8) {
             add = (1 << bits_tmp);
             acc = *code_asc;
@@ -202,7 +193,6 @@ generate_tables_ascii(pkzip_cmp_s *mpq_pkzip)
                 mpq_pkzip->offs_2c34[acc] = 0xFF;
                 if (*code_asc & 0x3F) {
 
-                    /* decrease bit by four. */
                     bits_tmp -= 4;
                     *bits_asc = bits_tmp;
                     add = (1 << bits_tmp);
@@ -213,7 +203,6 @@ generate_tables_ascii(pkzip_cmp_s *mpq_pkzip)
                     } while (acc < 0x100);
                 } else {
 
-                    /* decrease bit by six. */
                     bits_tmp -= 6;
                     *bits_asc = bits_tmp;
                     add = (1 << bits_tmp);
@@ -225,7 +214,6 @@ generate_tables_ascii(pkzip_cmp_s *mpq_pkzip)
                 }
             } else {
 
-                /* decrease bit by eight. (one byte) */
                 bits_tmp -= 8;
                 *bits_asc = bits_tmp;
                 add = (1 << bits_tmp);
@@ -240,106 +228,82 @@ generate_tables_ascii(pkzip_cmp_s *mpq_pkzip)
 }
 
 /*
- *  decompress the imploded data using coded literals.
- *
- *  returns: 0x000 - 0x0FF : one byte from compressed file.
- *           0x100 - 0x305 : copy previous block. (0x100 = 1 byte)
- *           0x306         : out of buffer?
+ * Decode the next PKWARE literal or match-length symbol.
+ * Values 0x000-0x0FF represent literal bytes.
+ * Values 0x100-0x305 represent LZ match lengths.
+ * Value 0x306 marks input exhaustion.
  */
 static uint32_t
 decode_literal(pkzip_cmp_s *mpq_pkzip)
 {
 
-    /* number of bits to skip. */
     uint32_t bits;
-
-    /* position in buffers. */
     uint32_t value;
 
-    /* check if bit the current buffer is set, if not return the next byte. */
+    /* A set low bit marks a length code; an unset bit marks a literal code. */
     if (mpq_pkzip->bit_buf & 1) {
 
-        /* skip current bit in the buffer. */
         if (skip_bit(mpq_pkzip, 1)) {
             return 0x306;
         }
 
-        /* the next bits are position in buffers. */
+        /* The next prefix selects a length-code table entry. */
         value = mpq_pkzip->pos2[(mpq_pkzip->bit_buf & 0xFF)];
 
-        /* get number of bits to skip. */
         if (skip_bit(mpq_pkzip, mpq_pkzip->slen_bits[value])) {
             return 0x306;
         }
 
-        /* check bits. */
         if ((bits = mpq_pkzip->clen_bits[value]) != 0) {
 
             /* Decoded literal symbol and bit length for this table entry. */
             uint32_t val2 = mpq_pkzip->bit_buf & ((1 << bits) - 1);
 
-            /* check if we should skip one bit. */
             if (skip_bit(mpq_pkzip, bits)) {
-
-                /* check position if we should skip the bit. */
                 if ((value + val2) != 0x10E) {
                     return 0x306;
                 }
             }
 
-            /* fill values. */
             value = mpq_pkzip->len_base[value] + val2;
         }
 
-        /* return number of bytes to repeat. */
         return value + 0x100;
     }
 
-    /* skip one bit. */
     if (skip_bit(mpq_pkzip, 1)) {
         return 0x306;
     }
 
-    /* check the binary compression type, read 8 bits and return them as one byte. */
+    /* Binary mode stores literals as raw eight-bit values. */
     if (mpq_pkzip->cmp_type == LIBMPQ_PKZIP_CMP_BINARY) {
 
-        /* fill values. */
         value = mpq_pkzip->bit_buf & 0xFF;
 
-        /* check if we should skip one bit. */
         if (skip_bit(mpq_pkzip, 8)) {
             return 0x306;
         }
 
-        /* return value from bit buffer. */
         return value;
     }
 
-    /* check if ascii compression is used. */
     if (mpq_pkzip->bit_buf & 0xFF) {
-
-        /* fill values. */
         value = mpq_pkzip->offs_2c34[mpq_pkzip->bit_buf & 0xFF];
 
-        /* check value. */
         if (value == 0xFF) {
             if (mpq_pkzip->bit_buf & 0x3F) {
 
-                /* check if four bits are in bit buffer for skipping. */
                 if (skip_bit(mpq_pkzip, 4)) {
                     return 0x306;
                 }
 
-                /* fill values. */
                 value = mpq_pkzip->offs_2d34[mpq_pkzip->bit_buf & 0xFF];
             } else {
 
-                /* check if six bits are in bit buffer for skipping. */
                 if (skip_bit(mpq_pkzip, 6)) {
                     return 0x306;
                 }
 
-                /* fill values. */
                 value = mpq_pkzip->offs_2e34[mpq_pkzip->bit_buf & 0x7F];
             }
         }
@@ -350,11 +314,9 @@ decode_literal(pkzip_cmp_s *mpq_pkzip)
             return 0x306;
         }
 
-        /* fill values. */
         value = mpq_pkzip->offs_2eb4[mpq_pkzip->bit_buf & 0xFF];
     }
 
-    /* return out of buffer error (0x306) or position in buffer. */
     return skip_bit(mpq_pkzip, mpq_pkzip->bits_asc[value]) ? 0x306 : value;
 }
 
@@ -366,44 +328,31 @@ decode_distance(pkzip_cmp_s *mpq_pkzip, uint32_t length)
     /* Distance prefix, extra bits and final byte distance. */
     uint32_t pos = mpq_pkzip->pos1[(mpq_pkzip->bit_buf & 0xFF)];
 
-    /* number of bits to skip. */
     uint32_t skip = mpq_pkzip->dist_bits[pos];
 
-    /* skip the appropriate number of bits. */
     if (skip_bit(mpq_pkzip, skip) == 1) {
         return 0;
     }
 
-    /* check if length is two. */
+    /* Two-byte matches use a fixed two-bit distance suffix. */
     if (length == 2) {
         pos = (pos << 2) | (mpq_pkzip->bit_buf & 0x03);
 
-        /* skip the bits. */
         if (skip_bit(mpq_pkzip, 2) == 1) {
             return 0;
         }
     } else {
         pos = (pos << mpq_pkzip->dsize_bits) | (mpq_pkzip->bit_buf & mpq_pkzip->dsize_mask);
 
-        /* skip the bits */
         if (skip_bit(mpq_pkzip, mpq_pkzip->dsize_bits) == 1) {
             return 0;
         }
     }
 
-    /* return the bytes to move back. */
     return pos + 1;
 }
 
-/*
- *  function loads data from the input buffer used by mpq_pkzip
- *  "implode" and "explode" function as user defined callback and
- *  returns number of bytes loaded.
- *
- *  char		*buf	- pointer to a buffer where to store loaded data.
- *  uint32_t		*size	- maximum number of bytes to read.
- *  void		*param	- custom pointer, parameter of implode/explode.
- */
+/* Copy compressed bytes from libmpq callback state into the PKWARE staging buffer. */
 static uint32_t
 data_read_input(char *buf, uint32_t *size, void *param)
 {
@@ -413,27 +362,17 @@ data_read_input(char *buf, uint32_t *size, void *param)
     uint32_t max_avail = (info->in_bytes - info->in_pos);
     uint32_t to_read = *size;
 
-    /* check the case when not enough data available. */
     if (to_read > max_avail) {
         to_read = max_avail;
     }
 
-    /* load data and increment offsets. */
     memcpy(buf, info->in_buf + info->in_pos, to_read);
     info->in_pos += to_read;
 
-    /* return bytes read. */
     return to_read;
 }
 
-/*
- *  callback stores output data produced by mpq_pkzip "implode" and
- *  "explode" operations.
- *
- *  char		*buf	- pointer to data to be written.
- *  uint32_t		*size	- number of bytes to write.
- *  void		*param	- custom pointer, parameter of implode/explode.
- */
+/* Copy decompressed bytes from the PKWARE ring buffer into libmpq output state. */
 static void
 data_write_output(char *buf, uint32_t *size, void *param)
 {
@@ -443,12 +382,10 @@ data_write_output(char *buf, uint32_t *size, void *param)
     uint32_t max_write = (info->max_out - info->out_pos);
     uint32_t to_write = *size;
 
-    /* check the case when not enough space in the output buffer. */
     if (to_write > max_write) {
         to_write = max_write;
     }
 
-    /* write output data and increments offsets. */
     memcpy(info->out_buf + info->out_pos, buf, to_write);
     info->out_pos += to_write;
 }
@@ -458,76 +395,55 @@ static uint32_t
 expand(pkzip_cmp_s *mpq_pkzip)
 {
 
-    /* number of bytes to copy. */
     uint32_t copy_bytes;
-
-    /* one byte from compressed file. */
     uint32_t one_byte;
-
-    /* Decoder status returned to the caller. */
     uint32_t result;
 
-    /* initialize output buffer position. */
+    /* The lower half preserves history while the upper half is flushed to the caller. */
     mpq_pkzip->out_pos = 0x1000;
 
-    /* check if end of data or error, so terminate decompress. */
     while ((result = one_byte = decode_literal(mpq_pkzip)) < 0x305) {
 
-        /* check if one byte is greater than 0x100, which means 'repeat n - 0xFE bytes'. */
+        /* Values above 0x100 are LZ matches; lower values are literal bytes. */
         if (one_byte >= 0x100) {
-
-            /* ECX */
             uint8_t *source;
-
-            /* EDX */
             uint8_t *target;
 
             /* Decoded match length and backward copy distance. */
             uint32_t copy_length = one_byte - 0xFE;
             uint32_t move_back;
 
-            /* get length of data to copy. */
             if ((move_back = decode_distance(mpq_pkzip, copy_length)) == 0) {
                 result = 0x306;
                 break;
             }
 
-            /* target and source pointer. */
             target = &mpq_pkzip->out_buf[mpq_pkzip->out_pos];
             source = target - move_back;
             mpq_pkzip->out_pos += copy_length;
 
-            /* copy until nothing left. */
             while (copy_length-- > 0) {
                 *target++ = *source++;
             }
         } else {
-
-            /* byte is 0x100 great, so add one byte. */
             mpq_pkzip->out_buf[mpq_pkzip->out_pos++] = (uint8_t)one_byte;
         }
 
-        /* check if number of extracted bytes has reached 1/2 of output buffer, so flush output
-         * buffer. */
+        /* Flush the upper half while keeping the lower half as match history. */
         if (mpq_pkzip->out_pos >= 0x2000) {
-
-            /* copy decompressed data into user buffer. */
             copy_bytes = 0x1000;
             mpq_pkzip->write_buf(
                 (char *)&mpq_pkzip->out_buf[0x1000], &copy_bytes, mpq_pkzip->param
             );
 
-            /* check if there are some data left, keep them alive. */
             memcpy(mpq_pkzip->out_buf, &mpq_pkzip->out_buf[0x1000], mpq_pkzip->out_pos - 0x1000);
             mpq_pkzip->out_pos -= 0x1000;
         }
     }
 
-    /* copy the rest. */
     copy_bytes = mpq_pkzip->out_pos - 0x1000;
     mpq_pkzip->write_buf((char *)&mpq_pkzip->out_buf[0x1000], &copy_bytes, mpq_pkzip->param);
 
-    /* return copied bytes. */
     return result;
 }
 
@@ -539,10 +455,8 @@ libmpq__do_decompress_pkzip(uint8_t *work_buf, void *param)
     /* Caller-provided work buffer interpreted as PKWARE decoder state. */
     pkzip_cmp_s *mpq_pkzip = (pkzip_cmp_s *)work_buf;
 
-    /* set the whole work buffer to zeros. */
     memset(mpq_pkzip, 0, sizeof(pkzip_cmp_s));
 
-    /* initialize work struct and load compressed data. */
     mpq_pkzip->read_buf = data_read_input;
     mpq_pkzip->write_buf = data_write_output;
     mpq_pkzip->param = param;
@@ -552,62 +466,45 @@ libmpq__do_decompress_pkzip(uint8_t *work_buf, void *param)
     mpq_pkzip->in_bytes =
         mpq_pkzip->read_buf((char *)mpq_pkzip->in_buf, &in_size, mpq_pkzip->param);
 
-    /* check if we have pkzip data. */
     if (mpq_pkzip->in_bytes <= 4) {
         return LIBMPQ_PKZIP_CMP_BAD_DATA;
     }
 
-    /* get the compression type. */
     mpq_pkzip->cmp_type = mpq_pkzip->in_buf[0];
-
-    /* get the dictionary size. */
     mpq_pkzip->dsize_bits = mpq_pkzip->in_buf[1];
-
-    /* initialize 16-bit bit buffer. */
     mpq_pkzip->bit_buf = mpq_pkzip->in_buf[2];
-
-    /* extra (over 8) bits. */
     mpq_pkzip->extra_bits = 0;
-
-    /* position in input buffer. */
     mpq_pkzip->in_pos = 3;
 
-    /* check if valid dictionary size. */
     if (4 > mpq_pkzip->dsize_bits || mpq_pkzip->dsize_bits > 6) {
         return LIBMPQ_PKZIP_CMP_INV_DICTSIZE;
     }
 
-    /* shifted by 'sar' instruction. */
+    /* Mask the variable-width distance suffix for the selected dictionary size. */
     mpq_pkzip->dsize_mask = 0xFFFF >> (0x10 - mpq_pkzip->dsize_bits);
 
-    /* check if we are using binary compression. */
     if (mpq_pkzip->cmp_type != LIBMPQ_PKZIP_CMP_BINARY) {
 
-        /* check if we are using ascii compression. */
         if (mpq_pkzip->cmp_type != LIBMPQ_PKZIP_CMP_ASCII) {
             return LIBMPQ_PKZIP_CMP_INV_MODE;
         }
 
-        /* create ascii buffer. */
         memcpy(mpq_pkzip->bits_asc, pkzip_bits_asc, sizeof(mpq_pkzip->bits_asc));
         generate_tables_ascii(mpq_pkzip);
     }
 
-    /* create the tables for decode. */
+    /* Build lookup tables for copy lengths, distances and optional ASCII literals. */
     memcpy(mpq_pkzip->slen_bits, pkzip_slen_bits, sizeof(mpq_pkzip->slen_bits));
     generate_tables_decode(0x10, mpq_pkzip->slen_bits, pkzip_len_code, mpq_pkzip->pos2);
 
-    /* create the tables for decode. */
     memcpy(mpq_pkzip->clen_bits, pkzip_clen_bits, sizeof(mpq_pkzip->clen_bits));
     memcpy(mpq_pkzip->len_base, pkzip_len_base, sizeof(mpq_pkzip->len_base));
     memcpy(mpq_pkzip->dist_bits, pkzip_dist_bits, sizeof(mpq_pkzip->dist_bits));
     generate_tables_decode(0x40, mpq_pkzip->dist_bits, pkzip_dist_code, mpq_pkzip->pos1);
 
-    /* check if data extraction works. */
     if (expand(mpq_pkzip) != 0x306) {
         return LIBMPQ_PKZIP_CMP_NO_ERROR;
     }
 
-    /* something failed, so return error. */
     return LIBMPQ_PKZIP_CMP_ABORT;
 }

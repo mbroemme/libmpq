@@ -1,6 +1,5 @@
 /*
- *  wave.c -- WAVE compression decompression helpers.
- *            to decompress wave files.
+ *  wave.c -- WAVE decompression helpers for MPQ audio payloads.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -24,13 +23,11 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-/* system includes. */
 #include <stdint.h>
 
-/* internal wave includes. */
 #include "wave.h"
 
-/* table necessary dor decompression. */
+/* Predictor-index adjustments used by the MPQ ADPCM WAVE decoder. */
 static const uint32_t wave_table_1503f120[] = {
     0xFFFFFFFF, 0x00000000, 0xFFFFFFFF, 0x00000004, 0xFFFFFFFF, 0x00000002, 0xFFFFFFFF, 0x00000006,
     0xFFFFFFFF, 0x00000001, 0xFFFFFFFF, 0x00000005, 0xFFFFFFFF, 0x00000003, 0xFFFFFFFF, 0x00000007,
@@ -38,7 +35,7 @@ static const uint32_t wave_table_1503f120[] = {
     0xFFFFFFFF, 0x00000002, 0xFFFFFFFF, 0x00000004, 0xFFFFFFFF, 0x00000006, 0xFFFFFFFF, 0x00000008
 };
 
-/* table necessary dor decompression. */
+/* Step-size table used by the MPQ ADPCM WAVE decoder. */
 static const uint32_t wave_table_1503f1a0[] = {
     0x00000007, 0x00000008, 0x00000009, 0x0000000A, 0x0000000B, 0x0000000C, 0x0000000D, 0x0000000E,
     0x00000010, 0x00000011, 0x00000013, 0x00000015, 0x00000017, 0x00000019, 0x0000001C, 0x0000001F,
@@ -73,127 +70,94 @@ libmpq__do_decompress_wave(
         return 0;
     }
 
-    /* end on input buffer. */
+    /* Stop decoding when the compressed stream cursor reaches this address. */
     uint8_t *in_end = in_buf + in_length;
 
-    /* assign default values. */
     out.pb = out_buf;
     in.pb = in_buf;
     nr_array1[0] = 0x2C;
     nr_array1[1] = 0x2C;
 
-    /* increase. */
+    /* The first word is the MPQ WAVE predictor header, followed by seed samples. */
     in.pw++;
 
-    /* 15007AD7 */
+    /* Emit the initial seed sample for each channel. */
     for (count = 0; count < channels; count++) {
 
         /* Current sample code and output channel for this input byte. */
         int32_t temp;
 
-        /* save pointer. */
         temp = *(int16_t *)in.pw++;
         nr_array2[count] = temp;
 
-        /* check if should break. */
         if (out_length < 2) {
             return out.pb - out_buf;
         }
 
-        /* return values. */
         *out.pw++ = (uint16_t)temp;
         out_length -= 2;
     }
 
-    /* decrease channels. */
+    /* Start with the last channel so stereo data alternates on each emitted sample. */
     index = channels - 1;
 
-    /* loop through input buffer until end reached. */
     while (in.pb < in_end) {
-
-        /* save the byte. */
         uint8_t one_byte = *in.pb++;
 
-        /* check how many channels and set index. */
         if (channels == 2) {
             index = (index == 0) ? 1 : 0;
         }
 
-        /* 15007B25 - get one byte from input buffer. */
+        /* High-bit control bytes adjust predictor state instead of carrying deltas. */
         if (one_byte & 0x80) {
-
-            /* 15007B32 */
             switch (one_byte & 0x7F) {
             case 0:
 
-                /* 15007B8E */
                 if (nr_array1[index] != 0) {
                     nr_array1[index]--;
                 }
 
-                /* check if should break. */
                 if (out_length < 2) {
                     break;
                 }
 
-                /* return values. */
                 *out.pw++ = (uint16_t)nr_array2[index];
                 out_length -= 2;
-
-                /* continue loop. */
                 continue;
             case 1:
 
-                /* 15007B72 and EBX. */
                 nr_array1[index] += 8;
 
-                /* check index. */
                 if (nr_array1[index] > 0x58) {
                     nr_array1[index] = 0x58;
                 }
 
-                /* check how many channels and set index. */
                 if (channels == 2) {
                     index = (index == 0) ? 1 : 0;
                 }
-
-                /* continue loop. */
                 continue;
             case 2:
-
-                /* nothing todo, so continue. */
                 continue;
             default:
-
-                /* decrease index. */
                 nr_array1[index] -= 8;
 
-                /* check index. */
                 if (nr_array1[index] < 0) {
                     nr_array1[index] = 0;
                 }
 
-                /* check if two channels left. */
                 if (channels != 2) {
                     continue;
                 }
                 index = (index == 0) ? 1 : 0;
-
-                /* continue loop. */
                 continue;
             }
         } else {
 
-            /* EDI */
+            /* Decode a signed delta from the current step-size table entry. */
             uint32_t temp1 = wave_table_1503f1a0[nr_array1[index]];
-
-            /* ESI */
             uint32_t temp2 = temp1 >> in_buf[1];
-
-            /* ECX */
             int32_t temp3 = nr_array2[index];
 
-            /* EBX = one byte. */
             if (one_byte & 0x01) {
                 temp2 += (temp1 >> 0);
             }
@@ -224,15 +188,13 @@ libmpq__do_decompress_wave(
                 }
             }
 
-            /* restore index. */
+            /* Store the clamped predictor sample for the active channel. */
             nr_array2[index] = temp3;
 
-            /* check if should break. */
             if (out_length < 2) {
                 break;
             }
 
-            /* assign values. */
             temp2 = nr_array1[index];
             one_byte &= 0x1F;
             *out.pw++ = (uint16_t)temp3;
@@ -240,12 +202,9 @@ libmpq__do_decompress_wave(
             temp2 += wave_table_1503f120[one_byte];
             nr_array1[index] = temp2;
 
-            /* check index. */
             if (nr_array1[index] < 0) {
                 nr_array1[index] = 0;
             } else {
-
-                /* check index. */
                 if (nr_array1[index] > 0x58) {
                     nr_array1[index] = 0x58;
                 }
@@ -253,6 +212,5 @@ libmpq__do_decompress_wave(
         }
     }
 
-    /* return copied bytes. */
     return (out.pb - out_buf);
 }
