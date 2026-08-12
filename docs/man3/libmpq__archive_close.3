@@ -12,9 +12,9 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
-.TH libmpq 3 2011-11-06 "The MoPaQ archive library"
+.TH LIBMPQ__ARCHIVE_CLOSE 3 2026-08-12 "The MoPaQ archive library"
 .SH NAME
-libmpq \- cross-platform C library for manipulating mpq archives.
+libmpq__archive_close \- close an opened MPQ archive.
 .SH SYNOPSIS
 .nf
 .B
@@ -26,9 +26,11 @@ libmpq \- cross-platform C library for manipulating mpq archives.
 .fi
 .SH DESCRIPTION
 .PP
-Call \fBlibmpq__archive_close\fP() to close a mpq archive which was opened by \fBlibmpq__archive_open\fP(). The function frees the archive structure itself and the contents of it.
+Call \fBlibmpq__archive_close\fP() to close an MPQ archive opened by
+\fBlibmpq__archive_open\fP(). The function frees the archive structure and
+its contents.
 .LP
-The \fBlibmpq__archive_close\fP() function one takes one argument of the archive structure \fImpq_archive\fP which has to be set by \fBlibmpq__archive_open\fP.
+The \fBlibmpq__archive_close\fP() function takes the archive handle returned by \fBlibmpq__archive_open\fP().
 .SH RETURN VALUE
 On success, a zero is returned and on error one of the following constants.
 .TP
@@ -42,9 +44,8 @@ The given file could not be closed.
 .BR libmpq__archive_version (3),
 .BR libmpq__archive_files (3)
 .SH AUTHOR
-Check documentation.
 .TP
-libmpq is (c) 2003-2026
+The libmpq project was started in 2003.
 .B Maik Broemme <mbroemme@libmpq.org>
 .PP
-The above e-mail address can be used to send bug reports, feedbacks or library enhancements.
+Use the email address above to report bugs, provide feedback, or suggest library enhancements.

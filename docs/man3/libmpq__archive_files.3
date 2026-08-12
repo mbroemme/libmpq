@@ -12,9 +12,9 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
-.TH libmpq 3 2011-11-06 "The MoPaQ archive library"
+.TH LIBMPQ__ARCHIVE_FILES 3 2026-08-12 "The MoPaQ archive library"
 .SH NAME
-libmpq \- cross-platform C library for manipulating mpq archives.
+libmpq__archive_files \- return the number of valid files in an MPQ archive.
 .SH SYNOPSIS
 .nf
 .B
@@ -27,17 +27,19 @@ libmpq \- cross-platform C library for manipulating mpq archives.
 .fi
 .SH DESCRIPTION
 .PP
-Call \fBlibmpq__archive_files\fP() to get the number of files inside the archive. It will count only valid files and skip files which have deleted or freed hash entries.
+Call \fBlibmpq__archive_files\fP() to get the number of valid files in the
+archive. Deleted or free hash entries are excluded.
 .LP
-The \fBlibmpq__archive_files\fP() function takes as first argument the archive structure \fImpq_archive\fP which have to be allocated first and opened by \fBlibmpq__archive_open\fP(). The second argument is a reference to the number of \fIfiles\fP in the archive.
+The first argument is an archive handle opened by
+\fBlibmpq__archive_open\fP(). The function stores the number of valid files
+in \fIfiles\fP.
 .SH RETURN VALUE
 On success, a zero is returned.
 .SH SEE ALSO
 .BR libmpq__file_blocks (3)
 .SH AUTHOR
-Check documentation.
 .TP
-libmpq is (c) 2003-2026
+The libmpq project was started in 2003.
 .B Maik Broemme <mbroemme@libmpq.org>
 .PP
-The above e-mail address can be used to send bug reports, feedbacks or library enhancements.
+Use the email address above to report bugs, provide feedback, or suggest library enhancements.

@@ -12,17 +12,17 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
-.TH libmpq 1 2011-11-06 "The MoPaQ archive library"
+.TH LIBMPQ-CONFIG 1 2026-08-12 "The MoPaQ archive library"
 .SH NAME
-libmpq-config \- script to get information about the installed version of libmpq.
+libmpq-config \- print compiler and linker flags for libmpq.
 .SH SYNOPSIS
 .B libmpq-config
 [\-\-prefix\fI[=DIR]\fP] [\-\-exec\-prefix\fI[=DIR]\fP] [\-\-version]
 .br
-[\-\-cflags] [\-\-libs] [\-\-static\-libs]
+[\-\-cflags] [\-\-libs]
 .SH DESCRIPTION
 .PP
-\fIlibmpq-config\fP is a tool that is used to determine the compiler and linker flags that should be used to compile and link programs that use \fIlibmpq\fP. Finally, it's also used internally by the .m4 macros for GNU autoconf that are included with \fIlibmpq\fP.
+\fIlibmpq-config\fP prints the compiler and linker flags required to build programs that use \fIlibmpq\fP.
 .SH OPTIONS
 \fIlibmpq-config\fP accepts the following options:
 .TP 8
@@ -33,30 +33,30 @@ Print the currently installed version of \fIlibmpq\fP on the standard output.
 .B  \-\-libs
 .ti 15
 Print the linker flags that are necessary to link \fIlibmpq\fP to a program.
-.TP 8
-.B  \-\-static\-libs
-.ti 15
-Print the linker flags that are necessary to statically link \fIlibmpq\fP to a program.
-.TP 8
 .B  \-\-cflags
 .ti 15
-Print the compiler flags that are necessary to compile a program that use \fIlibmpq\fP.
+Print the compiler flags required to compile a program that uses
+\fIlibmpq\fP.
 .TP 8
 .B  \-\-prefix=PREFIX
 .ti 15
-If specified, use PREFIX instead of the installation prefix that \fIlibmpq\fP was built with when computing the output for the \-\-cflags and \-\-libs options. This option is also used for the exec prefix if \-\-exec\-prefix was not specified. This option must be specified before any \-\-libs or \-\-cflags options.
+If specified, use PREFIX instead of the installation prefix when computing
+output for the \-\-cflags and \-\-libs options. PREFIX is also used as the
+exec prefix unless \-\-exec\-prefix is specified. This option must precede
+\-\-libs and \-\-cflags.
 .TP 8
 .B  \-\-exec\-prefix=PREFIX
 .ti 15
-If specified, use PREFIX instead of the installation exec prefix that \fIlibmpq\fP was built with when computing the output for the \-\-cflags and \-\-libs options.  This option must be specified before any \-\-libs or \-\-cflags options.
+If specified, use PREFIX instead of the installation exec prefix when
+computing output for the \-\-cflags and \-\-libs options. This option must
+precede \-\-libs and \-\-cflags.
 .SH NOTE
-Instead of using this configuration script you should better use the pkg-config version because this would be more platform independent and makes the usage within GNU autoconf much easier.
+Use the pkg-config module when possible. It is more portable and integrates more easily with build systems.
 .SH SEE ALSO
 \fBlibmpq\fR(3)
 .SH AUTHOR
-Check documentation.
 .TP
-libmpq is (c) 2003-2026
+The libmpq project was started in 2003.
 .B Maik Broemme <mbroemme@libmpq.org>
 .PP
-The above e-mail address can be used to send bug reports, feedbacks or library enhancements.
+Use the email address above to report bugs, provide feedback, or suggest library enhancements.

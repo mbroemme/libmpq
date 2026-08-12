@@ -12,9 +12,9 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
-.TH libmpq 3 2011-11-06 "The MoPaQ archive library"
+.TH LIBMPQ__FILE_NUMBER 3 2026-08-12 "The MoPaQ archive library"
 .SH NAME
-libmpq \- cross-platform C library for manipulating mpq archives.
+libmpq__file_number \- resolve an MPQ filename to its file number.
 .SH SYNOPSIS
 .nf
 .B
@@ -28,18 +28,21 @@ libmpq \- cross-platform C library for manipulating mpq archives.
 .fi
 .SH DESCRIPTION
 .PP
-Call \fBlibmpq__file_number\fP() to get the number of a given file in the archive. This function will return a file number regardless of a known or opened listfile.
+Call \fBlibmpq__file_number\fP() to resolve a filename using the archive
+hash table. The lookup does not require a listfile.
 .LP
-The \fBlibmpq__file_number\fP() function takes as first argument the archive structure \fImpq_archive\fP which have to be allocated first and opened by \fBlibmpq__archive_open\fP(). The second argument \fIfilename\fP is the name of the file and the third argument is a reference to the \fInumber\fP of the file.
+The first argument is an archive handle opened by
+\fBlibmpq__archive_open\fP(). The function resolves \fIfilename\fP and
+stores its file number in \fInumber\fP.
 .SH RETURN VALUE
-On success, the number of the file is returned and on error one of the following constants.
+On success, zero is returned and the file number is stored in \fInumber\fP.
+On error, one of the following constants is returned.
 .TP
 .B LIBMPQ_ERROR_EXIST
-File does not exist in archive.
+The file does not exist in the archive.
 .SH AUTHOR
-Check documentation.
 .TP
-libmpq is (c) 2003-2026
+The libmpq project was started in 2003.
 .B Maik Broemme <mbroemme@libmpq.org>
 .PP
-The above e-mail address can be used to send bug reports, feedbacks or library enhancements.
+Use the email address above to report bugs, provide feedback, or suggest library enhancements.

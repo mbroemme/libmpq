@@ -12,9 +12,9 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
-.TH libmpq 3 2011-11-06 "The MoPaQ archive library"
+.TH LIBMPQ__FILE_OFFSET 3 2026-08-12 "The MoPaQ archive library"
 .SH NAME
-libmpq \- cross-platform C library for manipulating mpq archives.
+libmpq__file_offset \- return a file's offset in an MPQ archive.
 .SH SYNOPSIS
 .nf
 .B
@@ -23,14 +23,16 @@ libmpq \- cross-platform C library for manipulating mpq archives.
 .BI "int32_t libmpq__file_offset("
 .BI "        mpq_archive_s  *" "mpq_archive",
 .BI "        uint32_t        " "file_number",
-.BI "        off_t          *" "offset"
+.BI "        libmpq__off_t *" "offset"
 .BI ");"
 .fi
 .SH DESCRIPTION
 .PP
-Call \fBlibmpq__file_offset\fP() to get the offset of the file, which is the absolute position in the archive. It also supports archives within archives.
+Call \fBlibmpq__file_offset\fP() to get a file's absolute byte offset in the archive.
 .LP
-The \fBlibmpq__file_offset\fP() function takes as first argument the archive structure \fImpq_archive\fP which have to be allocated first and opened by \fBlibmpq__archive_open\fP(). The second argument \fIfile_number\fP is the number of file and the third argument is a reference to the file starting position \fIoffset\fP in archive.
+The first argument is an archive handle opened by
+\fBlibmpq__archive_open\fP(). The function stores the offset for
+\fIfile_number\fP in \fIoffset\fP.
 .SH RETURN VALUE
 On success, a zero is returned and on error one of the following constants.
 .TP
@@ -38,11 +40,9 @@ On success, a zero is returned and on error one of the following constants.
 File does not exist in archive.
 .SH SEE ALSO
 .BR libmpq__archive_offset (3),
-.BR libmpq__block_offset (3)
 .SH AUTHOR
-Check documentation.
 .TP
-libmpq is (c) 2003-2026
+The libmpq project was started in 2003.
 .B Maik Broemme <mbroemme@libmpq.org>
 .PP
-The above e-mail address can be used to send bug reports, feedbacks or library enhancements.
+Use the email address above to report bugs, provide feedback, or suggest library enhancements.

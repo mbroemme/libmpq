@@ -12,9 +12,9 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
-.TH libmpq 3 2011-11-06 "The MoPaQ archive library"
+.TH LIBMPQ__ARCHIVE_SIZE_PACKED 3 2026-08-12 "The MoPaQ archive library"
 .SH NAME
-libmpq \- cross-platform C library for manipulating mpq archives.
+libmpq__archive_size_packed \- return the total packed size of archive files.
 .SH SYNOPSIS
 .nf
 .B
@@ -22,23 +22,23 @@ libmpq \- cross-platform C library for manipulating mpq archives.
 .sp
 .BI "int32_t libmpq__archive_size_packed("
 .BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        off_t          *" "packed_size"
+.BI "        libmpq__off_t *" "packed_size"
 .BI ");"
 .fi
 .SH DESCRIPTION
 .PP
-Call \fBlibmpq__archive_size_packed\fP() to get the packed size of all files in the archive. It will count compressed and imploded files as well as stored only.
+Call \fBlibmpq__archive_size_packed\fP() to get the total packed size of all valid files in the archive.
 .LP
-The \fBlibmpq__archive_size_packed\fP() function takes as first argument the archive structure \fImpq_archive\fP which have to be allocated first and opened by \fBlibmpq__archive_open\fP(). The second argument is a reference to the compressed, imploded or stored size \fIpacked_size\fP of file.
+The first argument is an archive handle opened by
+\fBlibmpq__archive_open\fP(). The function stores the total packed size in
+\fIpacked_size\fP.
 .SH RETURN VALUE
 On success, a zero is returned.
 .SH SEE ALSO
 .BR libmpq__file_size_packed (3),
-.BR libmpq__block_size_packed (3)
 .SH AUTHOR
-Check documentation.
 .TP
-libmpq is (c) 2003-2026
+The libmpq project was started in 2003.
 .B Maik Broemme <mbroemme@libmpq.org>
 .PP
-The above e-mail address can be used to send bug reports, feedbacks or library enhancements.
+Use the email address above to report bugs, provide feedback, or suggest library enhancements.

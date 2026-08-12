@@ -12,9 +12,9 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
-.TH libmpq 3 2011-11-06 "The MoPaQ archive library"
+.TH LIBMPQ__BLOCK_CLOSE_OFFSET 3 2026-08-12 "The MoPaQ archive library"
 .SH NAME
-libmpq \- cross-platform C library for manipulating mpq archives.
+libmpq__block_close_offset \- release an opened block offset table.
 .SH SYNOPSIS
 .nf
 .B
@@ -27,20 +27,24 @@ libmpq \- cross-platform C library for manipulating mpq archives.
 .fi
 .SH DESCRIPTION
 .PP
-Call \fBlibmpq__block_close_offset\fP() to close the block offset table for the given file. It will close the block offset table regardless of compression (compressed, imploded or stored) type of file.
+Call \fBlibmpq__block_close_offset\fP() to release the cached block offset table for a file.
 .LP
-The \fBlibmpq__block_close_offset\fP() function takes as first argument the archive structure \fImpq_archive\fP which have to be allocated first and opened by \fBlibmpq__archive_open\fP(). The second argument \fIfile_number\fP is the number of file to close.
+The first argument is an archive handle opened by
+\fBlibmpq__archive_open\fP(). The second argument, \fIfile_number\fP,
+identifies the file whose table should be released.
 .SH RETURN VALUE
 On success, a zero is returned and on error one of the following constants.
 .TP
 .B LIBMPQ_ERROR_EXIST
 File or block does not exist in archive.
+.TP
+.B LIBMPQ_ERROR_OPEN
+The block offset table is not open.
 .SH SEE ALSO
 .BR libmpq__block_open_offset (3)
 .SH AUTHOR
-Check documentation.
 .TP
-libmpq is (c) 2003-2026
+The libmpq project was started in 2003.
 .B Maik Broemme <mbroemme@libmpq.org>
 .PP
-The above e-mail address can be used to send bug reports, feedbacks or library enhancements.
+Use the email address above to report bugs, provide feedback, or suggest library enhancements.

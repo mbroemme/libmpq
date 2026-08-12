@@ -12,9 +12,9 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
-.TH libmpq 3 2011-11-06 "The MoPaQ archive library"
+.TH LIBMPQ__ARCHIVE_OPEN 3 2026-08-12 "The MoPaQ archive library"
 .SH NAME
-libmpq \- cross-platform C library for manipulating mpq archives.
+libmpq__archive_open \- open an MPQ archive for reading.
 .SH SYNOPSIS
 .nf
 .B
@@ -23,16 +23,22 @@ libmpq \- cross-platform C library for manipulating mpq archives.
 .BI "int32_t libmpq__archive_open("
 .BI "        mpq_archive_s **" "mpq_archive",
 .BI "        const char     *" "mpq_filename",
-.BI "        off_t           " "archive_offset"
+.BI "        libmpq__off_t   " "archive_offset"
 .BI ");"
 .fi
 .SH DESCRIPTION
 .PP
-Call \fBlibmpq__archive_open\fP() to open a given mpq archive for later use to extract or manipulate files inside the archive. It will create all required file structures and you have to call \fBlibmpq__archive_close\fP() on success to clean the opened structures. On failure there is no need to call \fBlibmpq__archive_close\fP() because everything will be cleaned up.
+Call \fBlibmpq__archive_open\fP() to open an MPQ archive for extracting
+files. On success, the function allocates the archive handle; close it with
+\fBlibmpq__archive_close\fP(). On failure, the allocated state is cleaned
+up automatically.
 .LP
-The \fBlibmpq__archive_open\fP() function takes as first argument a reference to the archive structure \fImpq_archive\fP and will open the file \fImpq_filename\fP to the structure pointed to by \fImpq_archive\fP. The last argument, \fIarchive_offset\fP is normally -1, but can be specified when the archive offset is known, or not 512-byte aligned.
+The function stores the newly allocated archive handle in
+\fImpq_archive\fP and opens \fImpq_filename\fP. Set \fIarchive_offset\fP to
+-1 to search for the archive header, or provide a known offset.
 .SH RETURN VALUE
-On success, *\fImpq_archive\fP is set to a new \fBmpq_archive_s\fP* and zero is returned, and on error one of the following constants is returned.
+On success, *\fImpq_archive\fP is set to a new \fBmpq_archive_s\fP and zero
+is returned. On error, one of the following constants is returned.
 .TP
 .B LIBMPQ_ERROR_OPEN
 The given file could not be opened.
@@ -44,10 +50,10 @@ Not enough memory for creating required structures.
 Seeking in file failed.
 .TP
 .B LIBMPQ_ERROR_FORMAT
-The given file is no valid mpq archive.
+The given file is not a valid MPQ archive.
 .TP
 .B LIBMPQ_ERROR_READ
-Reading in archive failed.
+Reading the archive failed.
 .SH SEE ALSO
 .BR libmpq__archive_close (3),
 .BR libmpq__archive_size_packed (3),
@@ -56,9 +62,8 @@ Reading in archive failed.
 .BR libmpq__archive_version (3),
 .BR libmpq__archive_files (3)
 .SH AUTHOR
-Check documentation.
 .TP
-libmpq is (c) 2003-2026
+The libmpq project was started in 2003.
 .B Maik Broemme <mbroemme@libmpq.org>
 .PP
-The above e-mail address can be used to send bug reports, feedbacks or library enhancements.
+Use the email address above to report bugs, provide feedback, or suggest library enhancements.
