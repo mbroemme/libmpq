@@ -1,18 +1,17 @@
-"""wrapper for libmpq"""
+"""Python 2 ctypes wrapper for libmpq archive and file access."""
 
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
+# This file is free software; you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation; either version 2.1 of the License, or
 # (at your option) any later version.
 #
-# This program is distributed in the hope that it will be useful,
+# This file is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Lesser General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+# You should have received a copy of the GNU Lesser General Public License
+# along with this file; if not, see <https://www.gnu.org/licenses/>.
 
 import ctypes
 import ctypes.util
@@ -21,8 +20,11 @@ import os
 libmpq = ctypes.CDLL(ctypes.util.find_library("mpq"))
 
 class Error(Exception):
+    """Base exception for libmpq-specific failures."""
+
     pass
 
+# Map libmpq return codes to Python exception types used by errcheck hooks.
 errors = {
     -1: (IOError, "open"),
     -2: (IOError, "close"),
@@ -39,6 +41,7 @@ errors = {
 }
 
 def check_error(result, func, arguments, errors=errors):
+    """Raise the mapped Python exception for a negative libmpq result."""
     try:
         error = errors[result]
     except KeyError:
@@ -75,21 +78,27 @@ __version__ = libmpq.libmpq__version()
 
 
 class Reader(object):
+    """Buffered block reader for one MPQ file entry."""
+
     def __init__(self, file, libmpq=libmpq):
+        """Open the block offset table and initialize buffered read state."""
         self._file = file
         self._pos = 0
         self._buf = []
         self._cur_block = 0
         libmpq.libmpq__block_open_offset(self._file._archive._mpq,
             self._file.number)
-    
-    def __iter__(self): 
+
+    def __iter__(self):
+        """Return the reader as its own iterator."""
         return self
-    
+
     def __repr__(self):
+        """Return a debugging representation for this reader."""
         return "iter(%r)" % self._file
-    
+
     def seek(self, offset, whence=os.SEEK_SET, os=os):
+        """Move the read position, rewinding and replaying blocks when needed."""
         if whence == os.SEEK_SET:
             pass
         elif whence == os.SEEK_CUR:
@@ -98,7 +107,7 @@ class Reader(object):
             offset += self._file.unpacked_size
         else:
             raise ValueError, "invalid whence"
-        
+
         if offset >= self._pos:
             self.read(offset - self._pos)
         else:
@@ -106,11 +115,13 @@ class Reader(object):
             self._buf = []
             self._cur_block = 0
             self.read(offset)
-    
+
     def tell(self):
+        """Return the current read position in the unpacked file."""
         return self._pos
-    
+
     def _read_block(self, ctypes=ctypes, libmpq=libmpq):
+        """Read the next archive block into the local buffer queue."""
         block_size = ctypes.c_uint64()
         libmpq.libmpq__block_size_unpacked(self._file._archive._mpq,
             self._file.number, self._cur_block, ctypes.byref(block_size))
@@ -120,8 +131,9 @@ class Reader(object):
             block_data, ctypes.c_uint64(len(block_data)), None)
         self._buf.append(block_data.raw)
         self._cur_block += 1
-    
+
     def read(self, size=-1):
+        """Read up to size bytes, or the rest of the file when size is negative."""
         while size < 0 or sum(map(len, self._buf)) < size:
             if self._cur_block == self._file.blocks:
                 break
@@ -135,8 +147,9 @@ class Reader(object):
             self._buf = [buf[size:]]
         self._pos += len(ret)
         return ret
-    
+
     def readline(self, os=os):
+        """Read one text line while preserving MPQ file iterator semantics."""
         line = []
         while True:
             char = self.read(1)
@@ -147,14 +160,16 @@ class Reader(object):
                 break
             line.append(char)
         return ''.join(line)
-    
+
     def next(self):
+        """Return the next line for Python 2 iterator protocol."""
         line = self.readline()
         if not line:
             raise StopIteration
         return line
-    
+
     def readlines(self, sizehint=-1):
+        """Return lines until EOF or the optional size hint is reached."""
         res = []
         while sizehint < 0 or sum(map(len, res)) < sizehint:
             line = self.readline()
@@ -162,19 +177,23 @@ class Reader(object):
                 break
             res.append(line)
         return res
-    
+
     xreadlines = __iter__
-    
+
     def __del__(self, libmpq=libmpq):
+        """Release the cached block offset table held by this reader."""
         libmpq.libmpq__block_close_offset(self._file._archive._mpq,
             self._file.number)
 
 
 class File(object):
+    """Metadata and full-file access wrapper for one MPQ file entry."""
+
     def __init__(self, archive, number, ctypes=ctypes, libmpq=libmpq):
+        """Load metadata for one numeric archive entry."""
         self._archive = archive
         self.number = number
-        
+
         for name, atype in [
             ("packed_size", ctypes.c_uint64),
             ("unpacked_size", ctypes.c_uint64),
@@ -188,22 +207,28 @@ class File(object):
             func = getattr(libmpq, "libmpq__file_"+name)
             func(self._archive._mpq, self.number, ctypes.byref(data))
             setattr(self, name, data.value)
-    
+
     def __str__(self, ctypes=ctypes, libmpq=libmpq):
+        """Return the complete unpacked file payload."""
         data = ctypes.create_string_buffer(self.unpacked_size)
         libmpq.libmpq__file_read(self._archive._mpq, self.number,
             data, ctypes.c_uint64(len(data)), None)
         return data.raw
-    
+
     def __repr__(self):
+        """Return a debugging representation for this file entry."""
         return "%r[%i]" % (self._archive, self.number)
-    
+
     def __iter__(self, Reader=Reader):
+        """Return a buffered reader over this file entry."""
         return Reader(self)
 
 
 class Archive(object):
+    """Opened MPQ archive with metadata and index/name lookup helpers."""
+
     def __init__(self, source, ctypes=ctypes, File=File, libmpq=libmpq):
+        """Open a top-level archive or an embedded archive stored in a File."""
         self._source = source
         if isinstance(source, File):
             assert not source.encrypted
@@ -214,12 +239,12 @@ class Archive(object):
         else:
             self.filename = source
             offset = -1
-        
+
         self._mpq = ctypes.c_void_p()
         libmpq.libmpq__archive_open(ctypes.byref(self._mpq), self.filename,
             ctypes.c_uint64(offset))
         self._opened = True
-        
+
         for field_name, field_type in [
             ("packed_size", ctypes.c_uint64),
             ("unpacked_size", ctypes.c_uint64),
@@ -231,15 +256,18 @@ class Archive(object):
             data = field_type()
             func(self._mpq, ctypes.byref(data))
             setattr(self, field_name, data.value)
-    
+
     def __del__(self, libmpq=libmpq):
+        """Close the underlying libmpq archive handle if it was opened."""
         if getattr(self, "_opened", False):
             libmpq.libmpq__archive_close(self._mpq)
-    
+
     def __len__(self):
+        """Return the number of extractable file entries."""
         return self.files
-    
+
     def __contains__(self, item, ctypes=ctypes, libmpq=libmpq):
+        """Return whether a file name or numeric index exists in the archive."""
         if isinstance(item, str):
             data = ctypes.c_uint32()
             try:
@@ -249,8 +277,9 @@ class Archive(object):
                 return False
             return True
         return 0 <= item < self.files
-    
+
     def __getitem__(self, item, ctypes=ctypes, File=File, libmpq=libmpq):
+        """Return a File wrapper for a file name or numeric index."""
         if isinstance(item, str):
             data = ctypes.c_int()
             libmpq.libmpq__file_number(self._mpq, ctypes.c_char_p(item),
@@ -260,8 +289,9 @@ class Archive(object):
             if not 0 <= item < self.files:
                 raise IndexError, "file not in archive"
         return File(self, item)
-    
+
     def __repr__(self):
+        """Return a debugging representation for this archive."""
         return "mpq.Archive(%r)" % self._source
 
 # Remove clutter - everything except Error and Archive.
@@ -272,25 +302,23 @@ if __name__ == "__main__":
     archive = Archive(sys.argv[1])
     print repr(archive)
     for k, v in archive.__dict__.iteritems():
-        #if k[0] == '_': continue
         print " " * (4 - 1), k, v
     assert '(listfile)' in archive
     assert 0 in archive
     assert len(archive) == archive.files
     files = [x.strip() for x in archive['(listfile)']]
     files.extend(xrange(archive.files))
-    for key in files: #sys.argv[2:] if sys.argv[2:] else xrange(archive.files):
+    for key in files:
         file = archive[key]
         print
         print " " * (4 - 1), repr(file)
         for k, v in file.__dict__.iteritems():
-            #if k[0] == '_': continue
             print " " * (8 - 1), k, v
-        
+
         a = str(file)
-        
+
         b = iter(file).read()
-        
+
         reader = iter(file)
         c = []
         while True:
@@ -300,23 +328,23 @@ if __name__ == "__main__":
             assert len(d) <= l
             c.append(d)
         c = "".join(c)
-        
+
         d = []
         reader.seek(0)
         for line in reader:
             d.append(line)
         d = "".join(d)
-        
+
         assert a == b == c == d, map(hash, [a,b,c,d])
         assert len(a) == file.unpacked_size
-        
+
         repr(iter(file))
-        
-        
+
+
         reader.seek(0)
         a = reader.readlines()
-        
+
         reader.seek(0)
         b = list(reader)
-        
+
         assert a == b

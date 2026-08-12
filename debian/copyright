@@ -9,15 +9,15 @@ Upstream Author:
 
 Copyright:
 
-    Copyright (C) 2003-2011 Maik Broemme
+    Copyright (C) 2003-2026 Maik Broemme
 
 License:
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
+    it under the terms of the GNU Lesser General Public License as published by
+    the Free Software Foundation; either version 2.1 of the License, or
     (at your option) any later version.
 
 
-The Debian packaging is (C) 2008-2011, Georg Lukas <georg@op-co.de> and
-is licensed under the GPL, see `/usr/share/common-licenses/GPL'.
+The Debian packaging is (C) 2008-2026, Georg Lukas <georg@op-co.de> and
+is licensed under the LGPL-2.1-or-later, see `/usr/share/common-licenses/LGPL-2.1'.

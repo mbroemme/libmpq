@@ -1,0 +1,177 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ 3 2026-08-12 "The MoPaQ archive library"
+.SH NAME
+libmpq \- cross-platform C library for reading MPQ archives.
+.SH SYNOPSIS
+.nf
+.B
+#include <libmpq/mpq.h>
+.sp
+.BI "const char *libmpq__version(void);"
+.sp
+.BI "const char *libmpq__strerror(int32_t return_code);"
+.sp
+.BI "int32_t libmpq__archive_open("
+.BI "        mpq_archive_s **" "mpq_archive",
+.BI "        const char     *" "mpq_filename",
+.BI "        libmpq__off_t   " "archive_offset"
+.BI ");"
+.sp
+.BI "int32_t libmpq__archive_close("
+.BI "        mpq_archive_s  *" "mpq_archive"
+.BI ");"
+.sp
+.BI "int32_t libmpq__archive_size_packed("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        libmpq__off_t *" "packed_size"
+.BI ");"
+.sp
+.BI "int32_t libmpq__archive_size_unpacked("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        libmpq__off_t *" "unpacked_size"
+.BI ");"
+.sp
+.BI "int32_t libmpq__archive_offset("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        libmpq__off_t *" "offset"
+.BI ");"
+.sp
+.BI "int32_t libmpq__archive_version("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t       *" "version"
+.BI ");"
+.sp
+.BI "int32_t libmpq__archive_files("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t       *" "files"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_size_packed("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "file_number",
+.BI "        libmpq__off_t *" "packed_size"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_size_unpacked("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "file_number",
+.BI "        libmpq__off_t *" "unpacked_size"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_offset("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "file_number",
+.BI "        libmpq__off_t *" "offset"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_blocks("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "file_number",
+.BI "        uint32_t       *" "blocks"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_encrypted("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "file_number",
+.BI "        uint32_t       *" "encrypted"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_compressed("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "file_number",
+.BI "        uint32_t       *" "compressed"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_imploded("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "file_number",
+.BI "        uint32_t       *" "imploded"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_number("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        const char     *" "filename",
+.BI "        uint32_t       *" "number"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_read("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "file_number",
+.BI "        uint8_t        *" "out_buf",
+.BI "        libmpq__off_t   " "out_size",
+.BI "        libmpq__off_t *" "transferred"
+.BI ");"
+.sp
+.BI "int32_t libmpq__block_open_offset("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "file_number"
+.BI ");"
+.sp
+.BI "int32_t libmpq__block_close_offset("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "file_number"
+.BI ");"
+.sp
+.BI "int32_t libmpq__block_size_unpacked("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "file_number",
+.BI "        uint32_t        " "block_number",
+.BI "        libmpq__off_t *" "unpacked_size"
+.BI ");"
+.sp
+.BI "int32_t libmpq__block_read("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "file_number",
+.BI "        uint32_t        " "block_number",
+.BI "        uint8_t        *" "out_buf",
+.BI "        libmpq__off_t   " "out_size",
+.BI "        libmpq__off_t *" "transferred"
+.BI ");"
+.fi
+.SH DESCRIPTION
+.PP
+The \fIlibmpq\fP library reads MPQ archives, decrypts and decompresses file
+data, and extracts files compressed with zlib, bzip2, or PKWARE implosion.
+Archive creation is not supported.
+.SH SEE ALSO
+.BR libmpq__version (3),
+.BR libmpq__strerror (3),
+.BR libmpq__archive_open (3),
+.BR libmpq__archive_close (3),
+.BR libmpq__archive_size_packed (3),
+.BR libmpq__archive_size_unpacked (3),
+.BR libmpq__archive_offset (3),
+.BR libmpq__archive_version (3),
+.BR libmpq__archive_files (3),
+.BR libmpq__file_size_packed (3),
+.BR libmpq__file_size_unpacked (3),
+.BR libmpq__file_offset (3),
+.BR libmpq__file_blocks (3),
+.BR libmpq__file_encrypted (3),
+.BR libmpq__file_compressed (3),
+.BR libmpq__file_imploded (3),
+.BR libmpq__file_number (3),
+.BR libmpq__file_read (3),
+.BR libmpq__block_open_offset (3),
+.BR libmpq__block_close_offset (3),
+.BR libmpq__block_size_unpacked (3),
+.BR libmpq__block_read (3)
+.SH AUTHOR
+.TP
+The libmpq project was started in 2003.
+.B Maik Broemme <mbroemme@libmpq.org>
+.PP
+Use the email address above to report bugs, provide feedback, or suggest library enhancements.
