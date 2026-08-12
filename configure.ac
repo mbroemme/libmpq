@@ -9,13 +9,13 @@ AC_CANONICAL_TARGET
 AM_INIT_AUTOMAKE([no-dependencies])
 AC_CONFIG_HEADERS([config.h:config.h.in])
 
-# detect platform feature declarations.
-AC_USE_SYSTEM_EXTENSIONS
-
 # checking for programs.
-LT_INIT
-AC_PROG_MAKE_SET
+CFLAGS="$CFLAGS -std=c99"
+AC_USE_SYSTEM_EXTENSIONS
 AC_PROG_CC
+
+# libtool init.
+LT_INIT([disable-static])
 
 # require C99 capable compiler and use it for all project checks/builds.
 AC_MSG_CHECKING([whether $CC supports C99])
