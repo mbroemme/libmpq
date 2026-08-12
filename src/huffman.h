@@ -89,12 +89,12 @@ struct huffman_tree_s
 
 /* Insert or move an item inside the adaptive Huffman frequency list. */
 void libmpq__huffman_insert_item(
-    struct huffman_tree_item_s **p_item, struct huffman_tree_item_s *item, uint32_t where,
+    struct huffman_tree_s *ht, struct huffman_tree_item_s *item, uint32_t where,
     struct huffman_tree_item_s *item2
 );
 
 /* Remove an item from the adaptive Huffman frequency list. */
-void libmpq__huffman_remove_item(struct huffman_tree_item_s *hi);
+void libmpq__huffman_remove_item(struct huffman_tree_s *ht, struct huffman_tree_item_s *hi);
 
 /* Resolve the previous Huffman item, including encoded relative links. */
 struct huffman_tree_item_s *

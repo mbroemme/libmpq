@@ -214,7 +214,7 @@ static const uint8_t table_1502A630[] = {
 /* Insert a Huffman tree item before another item in the adaptive list. */
 void
 libmpq__huffman_insert_item(
-    struct huffman_tree_item_s **p_item, struct huffman_tree_item_s *item, uint32_t where,
+    struct huffman_tree_s *ht, struct huffman_tree_item_s *item, uint32_t where,
     struct huffman_tree_item_s *item2
 )
 {
@@ -247,14 +247,14 @@ libmpq__huffman_insert_item(
     }
 
     if (item2 == NULL) {
-        item2 = PTR_PTR(&p_item[1]);
+        item2 = PTR_PTR(&ht->first);
     }
 
     switch (where) {
     case SWITCH_ITEMS:
 
         /* Reinsert item before item2->next while preserving the encoded first-link slot. */
-        item->next = item2->next; /* NOLINT(clang-analyzer-security.ArrayBound) */
+        item->next = item2->next;
         item->prev = item2->next->prev;
         item2->next->prev = item;
 
@@ -264,7 +264,7 @@ libmpq__huffman_insert_item(
 
         item->next = item2;
         item->prev = item2->prev;
-        next2 = PTR_INT(p_item[0]);
+        next2 = PTR_INT(ht->item305C);
         prev2 = item2->prev;
 
         if (PTR_INT(prev2) < 0) {
@@ -290,7 +290,7 @@ libmpq__huffman_insert_item(
 
 /* Remove a Huffman item from the adaptive linked list. */
 void
-libmpq__huffman_remove_item(struct huffman_tree_item_s *hi)
+libmpq__huffman_remove_item(struct huffman_tree_s *ht, struct huffman_tree_item_s *hi)
 {
 
     /* Previous-link scratch value used while unlinking the item. */
@@ -301,11 +301,18 @@ libmpq__huffman_remove_item(struct huffman_tree_item_s *hi)
 
         if (PTR_INT(temp) <= 0) {
             temp = PTR_NOT(temp);
+
+            if (temp == PTR_PTR(&ht->item3054)) {
+                ht->item3054 = hi->next;
+            } else if (temp == PTR_PTR(&ht->first)) {
+                ht->first = hi->next;
+            }
         } else {
             temp += (hi - hi->next->prev);
+
+            temp->next = hi->next;
         }
 
-        temp->next = hi->next; /* NOLINT(clang-analyzer-core.FixedAddressDereference) */
         hi->next->prev = hi->prev;
         hi->next = hi->prev = NULL;
     }
@@ -326,7 +333,11 @@ libmpq__huffman_previous_item(struct huffman_tree_item_s *hi, long value)
         value = hi - hi->next->prev;
     }
 
-    return hi->prev + value; /* NOLINT(clang-analyzer-core.NullPointerArithm) */
+    if (hi->prev == NULL) {
+        return NULL;
+    }
+
+    return hi->prev + value;
 }
 
 /* Read one bit from the Huffman input stream. */
@@ -397,8 +408,6 @@ libmpq__huffman_call_1500E740(struct huffman_tree_s *ht)
     /* Temporary item and pointer-array state used by the original tree update routine. */
     struct huffman_tree_item_s *p_next;
     struct huffman_tree_item_s *p_prev;
-    struct huffman_tree_item_s **pp_item;
-
     if (PTR_INT(p_item1) <= 0 || (p_item2 = p_item1) == NULL) {
         if ((p_item2 = &ht->items0008[ht->items++]) != NULL) {
             p_item1 = p_item2;
@@ -426,11 +435,10 @@ libmpq__huffman_call_1500E740(struct huffman_tree_s *ht)
         p_item1->prev = NULL;
     }
 
-    pp_item = &ht->first;
-    p_item1->next = (struct huffman_tree_item_s *)pp_item;
-    p_item1->prev = pp_item[1]; /* NOLINT(clang-analyzer-security.ArrayBound) */
+    p_item1->next = PTR_PTR(&ht->first);
+    p_item1->prev = ht->last;
 
-    p_prev = pp_item[1];
+    p_prev = ht->last;
 
     if (p_prev <= 0) {
         p_prev = PTR_NOT(p_prev);
@@ -440,13 +448,13 @@ libmpq__huffman_call_1500E740(struct huffman_tree_s *ht)
         p_item2->child = NULL;
     } else {
         if (PTR_INT(ht->item305C) < 0) {
-            p_prev += (struct huffman_tree_item_s *)pp_item - (*pp_item)->prev;
+            p_prev += PTR_PTR(&ht->first) - ht->first->prev;
         } else {
             p_prev += PTR_INT(ht->item305C);
         }
 
         p_prev->next = p_item1;
-        pp_item[1] = p_item2;
+        ht->last = p_item2;
         p_item2->parent = NULL;
         p_item2->child = NULL;
     }
@@ -591,7 +599,7 @@ libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
     while (PTR_INT(ht->last) > 0) {
         struct huffman_tree_item_s *temp;
         if (ht->last->next != NULL) {
-            libmpq__huffman_remove_item(ht->last);
+            libmpq__huffman_remove_item(ht, ht->last);
         }
 
         ht->item3058 = PTR_PTR(&ht->item3054);
@@ -627,7 +635,7 @@ libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
             item = &ht->items0008[ht->items++];
         }
 
-        libmpq__huffman_insert_item(&ht->item305C, item, SWITCH_ITEMS, NULL);
+        libmpq__huffman_insert_item(ht, item, SWITCH_ITEMS, NULL);
 
         item->parent = NULL;
         item->child = NULL;
@@ -662,7 +670,7 @@ libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
         }
 
         if (item->next != NULL) {
-            libmpq__huffman_remove_item(item);
+            libmpq__huffman_remove_item(ht, item);
         }
 
         if (p_item3 == NULL) {
@@ -685,7 +693,7 @@ libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
             item2 = &ht->items0008[ht->items++];
         }
 
-        libmpq__huffman_insert_item(&ht->item305C, item2, INSERT_ITEM, NULL);
+        libmpq__huffman_insert_item(ht, item2, INSERT_ITEM, NULL);
 
         item2->dcmp_byte = i;
         item2->byte_value = 1;
@@ -704,7 +712,7 @@ libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
                 item = &ht->items0008[ht->items++];
             }
 
-            libmpq__huffman_insert_item(&ht->item305C, item, SWITCH_ITEMS, NULL);
+            libmpq__huffman_insert_item(ht, item, SWITCH_ITEMS, NULL);
 
             item->parent = NULL;
             item->child = NULL;
@@ -851,8 +859,16 @@ libmpq__do_decompress_huffman(
             do {
                 p_item1 = p_item1->child;
 
+                if (p_item1 == NULL) {
+                    return 0;
+                }
+
                 if (libmpq__huffman_get_1bit(is)) {
                     p_item1 = p_item1->prev;
+
+                    if (p_item1 == NULL) {
+                        return 0;
+                    }
                 }
 
                 /* Store the seventh-level item so the quick cache can resume from it later. */
