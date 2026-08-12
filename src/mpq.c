@@ -862,16 +862,19 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
         if (mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags &
             LIBMPQ_FLAG_ENCRYPTED) {
 
+            uint32_t seed;
+
             /* check if we don't know the file seed, try to find it. */
             if (libmpq__decrypt_key(
                     (uint8_t *)mpq_archive->mpq_file[file_number]->packed_offset, packed_size,
-                    mpq_archive->block_size, &mpq_archive->mpq_file[file_number]->seed
+                    mpq_archive->block_size, &seed
                 ) < 0) {
 
                 /* sorry without seed, we cannot extract file. */
                 result = LIBMPQ_ERROR_DECRYPT;
                 goto error;
             }
+            mpq_archive->mpq_file[file_number]->seed = seed;
 
             /* decrypt block in input buffer. */
             if (libmpq__decrypt_block(
