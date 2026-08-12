@@ -26,6 +26,8 @@
 #ifndef _HUFFMAN_H
 #define _HUFFMAN_H
 
+#include <stdint.h>
+
 /* Initialize the Huffman tree for decompression. */
 #define LIBMPQ_HUFF_DECOMPRESS 0
 

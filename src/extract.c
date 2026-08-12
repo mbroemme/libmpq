@@ -17,18 +17,17 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "extract.h"
+#include "explode.h"
+#include "huffman.h"
+#include "mpq.h"
+#include "wave.h"
+
 #include <stdlib.h>
 #include <string.h>
 
 #include <bzlib.h>
 #include <zlib.h>
-
-#include "mpq.h"
-
-#include "explode.h"
-#include "extract.h"
-#include "huffman.h"
-#include "wave.h"
 
 /* Map MPQ compression flags to the backend that can decode that payload. */
 static decompress_table_s dcmp_table[] = {

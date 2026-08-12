@@ -25,6 +25,8 @@
 #ifndef _EXPLODE_H
 #define _EXPLODE_H
 
+#include <stdint.h>
+
 /* PKWARE compression modes stored in the compressed stream header. */
 #define LIBMPQ_PKZIP_CMP_BINARY 0 /* Binary literal mode. */
 #define LIBMPQ_PKZIP_CMP_ASCII 1  /* ASCII literal mode. */

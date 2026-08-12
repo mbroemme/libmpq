@@ -26,6 +26,8 @@
 #ifndef _WAVE_H
 #define _WAVE_H
 
+#include <stdint.h>
+
 /* Cursor that can address WAVE output as bytes or 16-bit PCM samples. */
 typedef union
 {

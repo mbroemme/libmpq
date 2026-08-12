@@ -19,17 +19,15 @@
 
 #include "config.h"
 
+#include "common.h"
 #include "mpq-internal.h"
 #include "mpq.h"
-
-#include "common.h"
+#include "platform.h"
 
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-
-#include "platform.h"
 
 /* Error strings indexed by the negated libmpq error code. */
 static const char *__libmpq_error_strings[] = { "success",

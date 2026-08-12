@@ -20,6 +20,8 @@
 #ifndef _EXTRACT_H
 #define _EXTRACT_H
 
+#include <stdint.h>
+
 /* Compression flags stored in the first byte of a Blizzard multi-compression block. */
 #define LIBMPQ_COMPRESSION_HUFFMAN 0x01 /* Huffman compression used for WAVE payloads. */
 #define LIBMPQ_COMPRESSION_ZLIB 0x02    /* Zlib compression introduced in Warcraft III. */

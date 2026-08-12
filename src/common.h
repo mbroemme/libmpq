@@ -20,6 +20,8 @@
 #ifndef _COMMON_H
 #define _COMMON_H
 
+#include <stdint.h>
+
 /* Hash an MPQ table name or file name with one of the Storm hash table offsets. */
 uint32_t libmpq__hash_string(const char *key, uint32_t offset);
 

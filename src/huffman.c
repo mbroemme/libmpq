@@ -28,13 +28,12 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <stdlib.h>
-#include <string.h>
-
+#include "huffman.h"
 #include "mpq-internal.h"
 #include "mpq.h"
 
-#include "huffman.h"
+#include <stdlib.h>
+#include <string.h>
 
 /* Initial adaptive Huffman weights indexed by compression type. */
 static const uint8_t table_1502A630[] = {

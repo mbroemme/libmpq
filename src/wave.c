@@ -23,8 +23,6 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <stdint.h>
-
 #include "wave.h"
 
 /* Predictor-index adjustments used by the MPQ ADPCM WAVE decoder. */

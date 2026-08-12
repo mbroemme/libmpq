@@ -22,11 +22,10 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <string.h>
-
+#include "explode.h"
 #include "mpq.h"
 
-#include "explode.h"
+#include <string.h>
 
 /* Distance bit lengths used by the PKWARE explode distance decoder. */
 static const uint8_t pkzip_dist_bits[] = {

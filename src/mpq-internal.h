@@ -22,6 +22,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/types.h>
 
 /* Common success return code used by libmpq functions. */
 #define LIBMPQ_SUCCESS 0
