@@ -168,7 +168,6 @@ libmpq__archive_open(
              calloc((*mpq_archive)->mpq_header.block_table_count, sizeof(mpq_file_s *))) == NULL ||
         ((*mpq_archive)->mpq_map =
              calloc((*mpq_archive)->mpq_header.block_table_count, sizeof(mpq_map_s))) == NULL) {
-
         result = LIBMPQ_ERROR_MALLOC;
         goto error;
     }
@@ -281,7 +280,6 @@ error:
 int32_t
 libmpq__archive_close(mpq_archive_s *mpq_archive)
 {
-
     if ((fclose(mpq_archive->fp)) < 0) {
 
         /* Keep the handle intact so the caller may retry closing it. */
@@ -334,7 +332,6 @@ libmpq__archive_size_unpacked(mpq_archive_s *mpq_archive, libmpq__off_t *unpacke
 int32_t
 libmpq__archive_offset(mpq_archive_s *mpq_archive, libmpq__off_t *offset)
 {
-
     *offset = mpq_archive->archive_offset;
 
     return LIBMPQ_SUCCESS;
@@ -344,7 +341,6 @@ libmpq__archive_offset(mpq_archive_s *mpq_archive, libmpq__off_t *offset)
 int32_t
 libmpq__archive_version(mpq_archive_s *mpq_archive, uint32_t *version)
 {
-
     *version = mpq_archive->mpq_header.version + 1;
 
     return LIBMPQ_SUCCESS;
@@ -354,7 +350,6 @@ libmpq__archive_version(mpq_archive_s *mpq_archive, uint32_t *version)
 int32_t
 libmpq__archive_files(mpq_archive_s *mpq_archive, uint32_t *files)
 {
-
     *files = mpq_archive->files;
 
     return LIBMPQ_SUCCESS;
@@ -402,7 +397,6 @@ libmpq__file_size_packed(
     mpq_archive_s *mpq_archive, uint32_t file_number, libmpq__off_t *packed_size
 )
 {
-
     if (validate_file_number(mpq_archive, file_number) < 0) {
         return LIBMPQ_ERROR_EXIST;
     }
@@ -419,7 +413,6 @@ libmpq__file_size_unpacked(
     mpq_archive_s *mpq_archive, uint32_t file_number, libmpq__off_t *unpacked_size
 )
 {
-
     if (validate_file_number(mpq_archive, file_number) < 0) {
         return LIBMPQ_ERROR_EXIST;
     }
@@ -434,7 +427,6 @@ libmpq__file_size_unpacked(
 int32_t
 libmpq__file_offset(mpq_archive_s *mpq_archive, uint32_t file_number, libmpq__off_t *offset)
 {
-
     if (validate_file_number(mpq_archive, file_number) < 0) {
         return LIBMPQ_ERROR_EXIST;
     }
@@ -452,7 +444,6 @@ libmpq__file_offset(mpq_archive_s *mpq_archive, uint32_t file_number, libmpq__of
 int32_t
 libmpq__file_blocks(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *blocks)
 {
-
     if (validate_file_number(mpq_archive, file_number) < 0) {
         return LIBMPQ_ERROR_EXIST;
     }
@@ -466,7 +457,6 @@ libmpq__file_blocks(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *
 int32_t
 libmpq__file_encrypted(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *encrypted)
 {
-
     if (validate_file_number(mpq_archive, file_number) < 0) {
         return LIBMPQ_ERROR_EXIST;
     }
@@ -484,7 +474,6 @@ libmpq__file_encrypted(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_
 int32_t
 libmpq__file_compressed(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *compressed)
 {
-
     if (validate_file_number(mpq_archive, file_number) < 0) {
         return LIBMPQ_ERROR_EXIST;
     }
@@ -502,7 +491,6 @@ libmpq__file_compressed(mpq_archive_s *mpq_archive, uint32_t file_number, uint32
 int32_t
 libmpq__file_imploded(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *imploded)
 {
-
     if (validate_file_number(mpq_archive, file_number) < 0) {
         return LIBMPQ_ERROR_EXIST;
     }
@@ -533,7 +521,6 @@ libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *
     /* The first hash selects the initial probe slot; collisions use linear probing. */
     for (i = hash1; mpq_archive->mpq_hash[i].block_table_index != LIBMPQ_HASH_FREE;
          i = (i + 1) & (ht_count - 1)) {
-
         if (mpq_archive->mpq_hash[i].hash_a == hash2 && mpq_archive->mpq_hash[i].hash_b == hash3) {
             *number =
                 mpq_archive->mpq_hash[i].block_table_index -
@@ -689,7 +676,6 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
         /* The packed offset table uses seed - 1, so recover the file seed first. */
         if (mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags &
             LIBMPQ_FLAG_ENCRYPTED) {
-
             uint32_t seed;
 
             if (libmpq__derive_block_table_seed(
@@ -756,7 +742,6 @@ error:
 int32_t
 libmpq__block_close_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
 {
-
     if (validate_file_number(mpq_archive, file_number) < 0) {
         return LIBMPQ_ERROR_EXIST;
     }
@@ -786,7 +771,6 @@ libmpq__block_size_unpacked(
     libmpq__off_t *unpacked_size
 )
 {
-
     if (validate_file_number(mpq_archive, file_number) < 0) {
         return LIBMPQ_ERROR_EXIST;
     }
@@ -832,7 +816,6 @@ libmpq__get_block_seed(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number, uint32_t *seed
 )
 {
-
     if (validate_file_number(mpq_archive, file_number) < 0) {
         return LIBMPQ_ERROR_EXIST;
     }

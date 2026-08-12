@@ -117,7 +117,6 @@ char pkware_copyright[] = "PKWARE Data Compression Library for Win32\r\n"
 static int32_t
 skip_bit(pkzip_cmp_s *mpq_pkzip, uint32_t bits)
 {
-
     if (bits <= mpq_pkzip->extra_bits) {
         mpq_pkzip->extra_bits -= bits;
         mpq_pkzip->bit_buf >>= bits;
@@ -191,7 +190,6 @@ generate_tables_ascii(pkzip_cmp_s *mpq_pkzip)
             if ((acc = (*code_asc & 0xFF)) != 0) {
                 mpq_pkzip->offs_2c34[acc] = 0xFF;
                 if (*code_asc & 0x3F) {
-
                     bits_tmp -= 4;
                     *bits_asc = bits_tmp;
                     add = (1 << bits_tmp);
@@ -201,7 +199,6 @@ generate_tables_ascii(pkzip_cmp_s *mpq_pkzip)
                         acc += add;
                     } while (acc < 0x100);
                 } else {
-
                     bits_tmp -= 6;
                     *bits_asc = bits_tmp;
                     add = (1 << bits_tmp);
@@ -212,7 +209,6 @@ generate_tables_ascii(pkzip_cmp_s *mpq_pkzip)
                     } while (acc < 0x80);
                 }
             } else {
-
                 bits_tmp -= 8;
                 *bits_asc = bits_tmp;
                 add = (1 << bits_tmp);
@@ -235,13 +231,11 @@ generate_tables_ascii(pkzip_cmp_s *mpq_pkzip)
 static uint32_t
 decode_literal(pkzip_cmp_s *mpq_pkzip)
 {
-
     uint32_t bits;
     uint32_t value;
 
     /* A set low bit marks a length code; an unset bit marks a literal code. */
     if (mpq_pkzip->bit_buf & 1) {
-
         if (skip_bit(mpq_pkzip, 1)) {
             return 0x306;
         }
@@ -276,7 +270,6 @@ decode_literal(pkzip_cmp_s *mpq_pkzip)
 
     /* Binary mode stores literals as raw eight-bit values. */
     if (mpq_pkzip->cmp_type == LIBMPQ_PKZIP_CMP_BINARY) {
-
         value = mpq_pkzip->bit_buf & 0xFF;
 
         if (skip_bit(mpq_pkzip, 8)) {
@@ -291,14 +284,12 @@ decode_literal(pkzip_cmp_s *mpq_pkzip)
 
         if (value == 0xFF) {
             if (mpq_pkzip->bit_buf & 0x3F) {
-
                 if (skip_bit(mpq_pkzip, 4)) {
                     return 0x306;
                 }
 
                 value = mpq_pkzip->offs_2d34[mpq_pkzip->bit_buf & 0xFF];
             } else {
-
                 if (skip_bit(mpq_pkzip, 6)) {
                     return 0x306;
                 }
@@ -393,7 +384,6 @@ data_write_output(char *buf, uint32_t *size, void *param)
 static uint32_t
 expand(pkzip_cmp_s *mpq_pkzip)
 {
-
     uint32_t copy_bytes;
     uint32_t one_byte;
     uint32_t result;
@@ -483,7 +473,6 @@ libmpq__do_decompress_pkzip(uint8_t *work_buf, void *param)
     mpq_pkzip->dsize_mask = 0xFFFF >> (0x10 - mpq_pkzip->dsize_bits);
 
     if (mpq_pkzip->cmp_type != LIBMPQ_PKZIP_CMP_BINARY) {
-
         if (mpq_pkzip->cmp_type != LIBMPQ_PKZIP_CMP_ASCII) {
             return LIBMPQ_PKZIP_CMP_INV_MODE;
         }

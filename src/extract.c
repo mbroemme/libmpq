@@ -102,7 +102,6 @@ libmpq__decompress_zlib(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uin
 
     /* Use zlib's default window handling; MPQ streams are standard zlib payloads. */
     if ((result = inflateInit(&z)) != Z_OK) {
-
         return result;
     }
 
@@ -243,7 +242,6 @@ libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
 
     /* Count supported algorithms and remember flags that have no local backend. */
     for (i = 0; i < entries; i++) {
-
         if (decompress_flag & dcmp_table[i].mask) {
             count++;
             decompress_unsupp &= ~dcmp_table[i].mask;
@@ -252,13 +250,11 @@ libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
 
     /* Refuse streams that use a compression method from a newer unsupported format. */
     if (decompress_unsupp) {
-
         return LIBMPQ_ERROR_UNPACK;
     }
 
     /* Multiple backends need a temporary buffer between decompression stages. */
     if (count > 1) {
-
         if ((temp_buf = malloc(out_size)) == NULL) {
             return LIBMPQ_ERROR_MALLOC;
         }
@@ -274,7 +270,6 @@ libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
 
             /* Chained stages ping-pong between output and temporary storage. */
             if (count == 0) {
-
                 work_buf = out_buf;
             } else {
                 work_buf = temp_buf;
@@ -282,7 +277,6 @@ libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
 
             /* Decompress the current stage with the mapped backend. */
             if ((tb = dcmp_table[i].decompress(in_buf, in_size, work_buf, out_size)) < 0) {
-
                 free(temp_buf);
                 return tb;
             }
@@ -297,7 +291,6 @@ libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
 
     /* Copy the final stage back if it ended in the temporary buffer. */
     if (work_buf != out_buf) {
-
         memcpy(out_buf, in_buf, out_size);
     }
 

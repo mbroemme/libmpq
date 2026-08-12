@@ -217,7 +217,6 @@ libmpq__huffman_insert_item(
     struct huffman_tree_item_s *item2
 )
 {
-
     struct huffman_tree_item_s *next = item->next;
 
     /* Previous item relative to the insertion point. */
@@ -232,7 +231,6 @@ libmpq__huffman_insert_item(
 
         /* Resolve encoded previous-item references from the original tree layout. */
         if (PTR_INT(prev) < 0) {
-
             prev = PTR_NOT(prev);
         } else {
             prev += (item - next->prev);
@@ -324,7 +322,6 @@ libmpq__huffman_previous_item(struct huffman_tree_item_s *hi, long value)
 
     /* Negative pointer values encode direct references in the original layout. */
     if (PTR_INT(hi->prev) < 0) {
-
         return PTR_NOT(hi->prev);
     }
 
@@ -400,7 +397,6 @@ libmpq__huffman_read_byte(struct huffman_input_stream_s *is)
 struct huffman_tree_item_s *
 libmpq__huffman_acquire_item(struct huffman_tree_s *ht)
 {
-
     struct huffman_tree_item_s *p_item1 = ht->next_reusable_item;
     struct huffman_tree_item_s *p_item2;
 
@@ -465,7 +461,6 @@ libmpq__huffman_acquire_item(struct huffman_tree_s *ht)
 void
 libmpq__huffman_update_weights(struct huffman_tree_s *ht, struct huffman_tree_item_s *p_item)
 {
-
     struct huffman_tree_item_s *p_item1;
     struct huffman_tree_item_s *p_item2 = NULL;
     struct huffman_tree_item_s *p_item3;
@@ -473,7 +468,6 @@ libmpq__huffman_update_weights(struct huffman_tree_s *ht, struct huffman_tree_it
 
     /* Walk toward the root, increasing weights and moving nodes forward as needed. */
     for (; p_item != NULL; p_item = p_item->parent) {
-
         p_item->byte_value++;
 
         for (p_item1 = p_item;; p_item1 = p_prev) {
@@ -688,7 +682,6 @@ libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
 
     /* Add control symbols after the literal byte symbols. */
     for (; i < 0x102; i++) {
-
         struct huffman_tree_item_s **p_item2 = &ht->symbol_nodes[i];
         struct huffman_tree_item_s *item2 = ht->next_reusable_item;
 
@@ -729,7 +722,6 @@ libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
             if (item->byte_value >= max_byte) {
                 max_byte = item->byte_value;
             } else {
-
                 struct huffman_tree_item_s *p_item2 = child2->prev;
                 found = 0;
 
