@@ -122,13 +122,13 @@ class Reader(object):
 
     def _read_block(self, ctypes=ctypes, libmpq=libmpq):
         """Read the next archive block into the local buffer queue."""
-        block_size = ctypes.c_uint64()
+        block_size = ctypes.c_int64()
         libmpq.libmpq__block_size_unpacked(self._file._archive._mpq,
             self._file.number, self._cur_block, ctypes.byref(block_size))
         block_data = ctypes.create_string_buffer(block_size.value)
         libmpq.libmpq__block_read(self._file._archive._mpq,
             self._file.number, self._cur_block,
-            block_data, ctypes.c_uint64(len(block_data)), None)
+            block_data, ctypes.c_int64(len(block_data)), None)
         self._buf.append(block_data.raw)
         self._cur_block += 1
 
@@ -195,9 +195,9 @@ class File(object):
         self.number = number
 
         for name, atype in [
-            ("size_packed", ctypes.c_uint64),
-            ("size_unpacked", ctypes.c_uint64),
-            ("offset", ctypes.c_uint64),
+            ("size_packed", ctypes.c_int64),
+            ("size_unpacked", ctypes.c_int64),
+            ("offset", ctypes.c_int64),
             ("blocks", ctypes.c_uint32),
             ("encrypted", ctypes.c_uint32),
             ("compressed", ctypes.c_uint32),
@@ -215,7 +215,7 @@ class File(object):
         """Return the complete unpacked file payload."""
         data = ctypes.create_string_buffer(self.size_unpacked)
         libmpq.libmpq__file_read(self._archive._mpq, self.number,
-            data, ctypes.c_uint64(len(data)), None)
+            data, ctypes.c_int64(len(data)), None)
         return data.raw
 
     def __repr__(self):
@@ -245,13 +245,13 @@ class Archive(object):
 
         self._mpq = ctypes.c_void_p()
         libmpq.libmpq__archive_open(ctypes.byref(self._mpq), self.filename,
-            ctypes.c_uint64(offset))
+            ctypes.c_int64(offset))
         self._opened = True
 
         for field_name, field_type in [
-            ("size_packed", ctypes.c_uint64),
-            ("size_unpacked", ctypes.c_uint64),
-            ("offset", ctypes.c_uint64),
+            ("size_packed", ctypes.c_int64),
+            ("size_unpacked", ctypes.c_int64),
+            ("offset", ctypes.c_int64),
             ("version", ctypes.c_uint32),
             ("files", ctypes.c_uint32),
         ]:
