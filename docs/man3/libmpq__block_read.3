@@ -1,0 +1,77 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__BLOCK_READ 3 2026-08-12 "The MoPaQ archive library"
+.SH NAME
+libmpq__block_read \- read, decrypt, and decompress one archive block.
+.SH SYNOPSIS
+.nf
+.B
+#include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__block_read("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "file_number",
+.BI "        uint32_t        " "block_number,
+.BI "        uint8_t        *" "out_buf",
+.BI "        libmpq__off_t   " "out_size",
+.BI "        libmpq__off_t *" "transferred"
+.BI ");"
+.fi
+.SH DESCRIPTION
+.PP
+Call \fBlibmpq__block_read\fP() to read one block into the caller's buffer.
+Encrypted blocks are decrypted and compressed blocks are decompressed before
+they are returned.
+.LP
+The first argument is an archive handle opened by
+\fBlibmpq__archive_open\fP(). The \fIfile_number\fP and \fIblock_number\fP
+arguments select the block. \fIout_buf\fP and \fIout_size\fP specify the
+output buffer. The function stores the number of bytes written in
+\fItransferred\fP.
+.SH RETURN VALUE
+On success, a zero is returned and on error one of the following constants.
+.TP
+.B LIBMPQ_ERROR_EXIST
+Block does not exist in archive.
+.TP
+.B LIBMPQ_ERROR_OPEN
+The block offset table is not open. Call
+\fBlibmpq__block_open_offset\fP() before reading the block.
+.TP
+.B LIBMPQ_ERROR_SIZE
+The output buffer is too small.
+.TP
+.B LIBMPQ_ERROR_SEEK
+Seeking in the archive failed.
+.TP
+.B LIBMPQ_ERROR_MALLOC
+Not enough memory was available for the required structures.
+.TP
+.B LIBMPQ_ERROR_READ
+Reading the archive failed.
+.TP
+.B LIBMPQ_ERROR_DECRYPT
+Decrypting the block failed.
+.TP
+.B LIBMPQ_ERROR_UNPACK
+Decompressing the block failed.
+.SH SEE ALSO
+.BR libmpq__file_read (3)
+.SH AUTHOR
+.TP
+The libmpq project was started in 2003.
+.B Maik Broemme <mbroemme@libmpq.org>
+.PP
+Use the email address above to report bugs, provide feedback, or suggest library enhancements.

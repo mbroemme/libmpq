@@ -1,0 +1,174 @@
+# Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+#
+# This file is free software; you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation; either version 2.1 of the License, or
+# (at your option) any later version.
+#
+# This file is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this file; if not, see <https://www.gnu.org/licenses/>.
+
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint and static analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: debian:trixie-slim
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install lint dependencies
+        run: |
+          set -euxo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates \
+            wget
+          mkdir -p /etc/apt/keyrings
+          wget -qO /etc/apt/keyrings/apt.llvm.org.asc https://apt.llvm.org/llvm-snapshot.gpg.key
+          chmod 0644 /etc/apt/keyrings/apt.llvm.org.asc
+          echo 'deb [signed-by=/etc/apt/keyrings/apt.llvm.org.asc] http://apt.llvm.org/trixie/ llvm-toolchain-trixie-22 main' > /etc/apt/sources.list.d/llvm.list
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            bear \
+            build-essential \
+            clang-22 \
+            clang-format-22 \
+            clang-tidy-22 \
+            ca-certificates \
+            git \
+            libbz2-dev \
+            libtool \
+            pkg-config \
+            shellcheck \
+            zlib1g-dev
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Trust repository checkout
+        run: |
+          set -euxo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Run source checks
+        env:
+          CLANG_FORMAT: clang-format-22
+        run: scripts/check
+
+      - name: Generate build system
+        run: |
+          set -euxo pipefail
+          sh autogen.sh
+
+      - name: Configure for clang-tidy
+        run: |
+          set -euxo pipefail
+          ./configure --prefix=/usr CC=clang-22
+
+      - name: Build compilation database
+        run: |
+          set -euxo pipefail
+          bear -- make -j"$(nproc)" V=1
+          bear --append -- make -C tools crypt_buf_gen V=1
+
+      - name: Run clang-tidy
+        run: |
+          set -euxo pipefail
+          mapfile -t sources < <(git ls-files 'src/*.c' 'include/libmpq/*.h' 'tools/*.c')
+          if ((${#sources[@]} == 0)); then
+            echo 'No C translation units found.' >&2
+            exit 1
+          fi
+          clang-tidy-22 --quiet -p . "${sources[@]}"
+
+  build:
+    name: Build (${{ matrix.compiler.name }})
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: debian:trixie-slim
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - name: gcc
+            package: gcc
+            cc: gcc
+          - name: clang
+            package: clang
+            cc: clang
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          set -euxo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            build-essential \
+            ca-certificates \
+            git \
+            libbz2-dev \
+            libtool \
+            pkg-config \
+            zlib1g-dev \
+            ${{ matrix.compiler.package }}
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Trust repository checkout
+        run: |
+          set -euxo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Generate build system
+        run: |
+          set -euxo pipefail
+          sh autogen.sh
+
+      - name: Configure
+        run: |
+          set -euxo pipefail
+          ./configure --prefix=/usr CC=${{ matrix.compiler.cc }}
+
+      - name: Build
+        run: |
+          set -euxo pipefail
+          make -j"$(nproc)" V=1
+
+      - name: Check
+        run: |
+          set -euxo pipefail
+          make check V=1

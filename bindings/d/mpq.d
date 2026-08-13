@@ -1,21 +1,20 @@
 /*
  *  mpq.d -- D programming language module for libmpq
  *
- *  Copyright (c) 2008-2011 Georg Lukas <georg@op-co.de>
+ *  Copyright (c) 2008-2026 Georg Lukas <georg@op-co.de>
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
+ *  This file is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU Lesser General Public License as published by
+ *  the Free Software Foundation; either version 2.1 of the License, or
  *  (at your option) any later version.
  *
- *  This program is distributed in the hope that it will be useful,
+ *  This file is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  GNU Lesser General Public License for more details.
  *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+ *  You should have received a copy of the GNU Lesser General Public License
+ *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  *
  *  This module is written to support Phobos. Patches to allow binding to
  *  Tango are welcome.
@@ -30,61 +29,95 @@ module mpq;
 import std.string; // for format() and toStringz()
 import std.traits; // for ParameterTypeTuple!()
 
-/* XXX: this assumes that libmpq is compiled with Large File Support on */
+/* libmpq exposes 64-bit offsets through its public API. */
 alias long off_t;
 
-/* libmpq error return values */
+/* libmpq error return values. Negative values are errors, zero means success. */
 const LIBMPQ_ERROR_OPEN			= -1;	/* open error on file. */
 const LIBMPQ_ERROR_CLOSE		= -2;	/* close error on file. */
 const LIBMPQ_ERROR_SEEK			= -3;	/* lseek error on file. */
 const LIBMPQ_ERROR_READ			= -4;	/* read error on file. */
 const LIBMPQ_ERROR_WRITE		= -5;	/* write error on file. */
 const LIBMPQ_ERROR_MALLOC		= -6;	/* memory allocation error. */
-const LIBMPQ_ERROR_FORMAT		= -7;	/* format errror. */
+const LIBMPQ_ERROR_FORMAT		= -7;	/* format error. */
 const LIBMPQ_ERROR_NOT_INITIALIZED	= -8;	/* init() wasn't called. */
-const LIBMPQ_ERROR_SIZE			= -9;	/* buffer size is to small. */
+const LIBMPQ_ERROR_SIZE			= -9;	/* buffer size is too small. */
 const LIBMPQ_ERROR_EXIST		= -10;	/* file or block does not exist in archive. */
 const LIBMPQ_ERROR_DECRYPT		= -11;	/* we don't know the decryption seed. */
 const LIBMPQ_ERROR_UNPACK		= -12;	/* error on unpacking file. */
 
-/** libmpq internal meta-data for an archive */
+/** Opaque archive handle owned by libmpq. */
 extern struct mpq_archive_s;
 
 extern(C) {
 
-/* libmpq__generic information about library. */
+/* Return the configured libmpq package version string. */
 char *libmpq__version();
 
-/* libmpq__generic mpq archive information. */
+/* Open an MPQ archive from a file path and optional embedded archive offset. */
 int libmpq__archive_open(mpq_archive_s **mpq_archive, char *mpq_filename, off_t archive_offset);
+
+/* Close an opened archive and release its decoded metadata tables. */
 int libmpq__archive_close(mpq_archive_s *mpq_archive);
+
+/* Return the sum of packed sizes for all extractable files. */
 int libmpq__archive_size_packed(mpq_archive_s *mpq_archive, off_t *packed_size);
+
+/* Return the sum of unpacked sizes for all extractable files. */
 int libmpq__archive_size_unpacked(mpq_archive_s *mpq_archive, off_t *unpacked_size);
+
+/* Return the byte offset where the MPQ archive starts in the backing file. */
 int libmpq__archive_offset(mpq_archive_s *mpq_archive, off_t *offset);
+
+/* Return the MPQ archive format version. */
 int libmpq__archive_version(mpq_archive_s *mpq_archive, uint *version_);
+
+/* Return the number of valid file entries discovered while opening the archive. */
 int libmpq__archive_files(mpq_archive_s *mpq_archive, uint *files);
 
-/* libmpq__generic file processing functions. */
+/* Return the packed size for one file entry. */
 int libmpq__file_size_packed(mpq_archive_s *mpq_archive, uint file_number, off_t *packed_size);
+
+/* Return the unpacked size for one file entry. */
 int libmpq__file_size_unpacked(mpq_archive_s *mpq_archive, uint file_number, off_t *unpacked_size);
+
+/* Return the file payload offset relative to the archive start. */
 int libmpq__file_offset(mpq_archive_s *mpq_archive, uint file_number, off_t *offset);
+
+/* Return the number of blocks used by one file entry. */
 int libmpq__file_blocks(mpq_archive_s *mpq_archive, uint file_number, uint *blocks);
+
+/* Report whether one file entry has the MPQ encrypted flag set. */
 int libmpq__file_encrypted(mpq_archive_s *mpq_archive, uint file_number, uint *encrypted);
+
+/* Report whether one file entry uses Blizzard multi-compression. */
 int libmpq__file_compressed(mpq_archive_s *mpq_archive, uint file_number, uint *compressed);
+
+/* Report whether one file entry uses PKWARE implosion. */
 int libmpq__file_imploded(mpq_archive_s *mpq_archive, uint file_number, uint *imploded);
+
+/* Resolve an MPQ file name to a public file number. */
 int libmpq__file_number(mpq_archive_s *mpq_archive, char *filename, uint *number);
+
+/* Read a complete file into the caller-provided output buffer. */
 int libmpq__file_read(mpq_archive_s *mpq_archive, uint file_number, ubyte *out_buf, off_t out_size, off_t *transferred);
 
-/* libmpq__generic block processing functions. */
+/* Open and cache the packed block offset table for one file entry. */
 int libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint file_number);
+
+/* Release a cached block offset table for one file entry. */
 int libmpq__block_close_offset(mpq_archive_s *mpq_archive, uint file_number);
+
+/* Return the unpacked size for one block of an opened file entry. */
 int libmpq__block_size_unpacked(mpq_archive_s *mpq_archive, uint file_number, uint block_number, off_t *unpacked_size);
+
+/* Read, decrypt and decompress one block from an opened file entry. */
 int libmpq__block_read(mpq_archive_s *mpq_archive, uint file_number, uint block_number, ubyte *out_buf, off_t out_size, off_t *transferred);
 
 }
 
 
-/** exception class for failed libmpq calls */
+/** Exception raised when a checked libmpq call returns an error code. */
 class MPQException : Exception {
 	const string[] Errors = [
 		"unknown error",
@@ -94,14 +127,16 @@ class MPQException : Exception {
 		"read error on file",
 		"write error on file",
 		"memory allocation error",
-		"format errror",
+		"format error",
 		"init() wasn't called",
-		"buffer size is to small",
+		"buffer size is too small",
 		"file or block does not exist in archive",
 		"we don't know the decryption seed",
 		"error on unpacking file"];
 
 	public int errno;
+
+	/** Build an exception message from a libmpq function name and error code. */
 	this(char[] fnname = "unknown_function", int errno = 0) {
 
 		this.errno = errno;
@@ -113,7 +148,7 @@ class MPQException : Exception {
 }
 
 
-/** template to wrap function calls and throw exceptions in case of error
+/** Wrap a libmpq function and throw MPQException when it returns a negative code.
  *
  * thanks for the idea to while(nan) blog,
  * http://while-nan.blogspot.com/2007/06/wrapping-functions-for-fun-and-profit.html
@@ -131,17 +166,17 @@ int MPQ_CHECKERR(alias Fn)(ParameterTypeTuple!(Fn) args)
 {
 	int result = Fn(args);
 	if (result < 0) {
-		/* XXX: relying on non-specified stringof() behaviour */
+		/* D frontends have historically exposed the aliased function name here. */
 		throw new MPQException((&Fn).stringof[2..$], result);
 	}
         return result;
 }
 
 
-/** mixin alias to wrap library functions into MPQ_CHECKERR.
+/** Generate an alias that routes one libmpq function through MPQ_CHECKERR.
  *
  * alias mpq.func_name(...) to MPQ_CHECKERR(libmpq__func_name)(...)
- * @param func_name name of the function to be wrapped
+ * @param func_name name of the function being wrapped
  */
 template MPQ_FUNC(char[] func_name) {
 	const char[] MPQ_FUNC = "alias MPQ_CHECKERR!(libmpq__" ~ func_name ~ ") " ~ func_name ~ ";";
@@ -169,7 +204,7 @@ mixin(MPQ_FUNC!("block_close_offset"));
 mixin(MPQ_FUNC!("block_unpacked_size"));
 mixin(MPQ_FUNC!("block_read"));
 
-/** getter function named name for returning archive_* single values:
+/** Generate an Archive getter that returns one archive_* metadata value.
  *
  *   <type> Archive.<name>() { return libmpq__archive_<name>() }
  *
@@ -185,7 +220,7 @@ template MPQ_A_GET(char[] type, char[] name, char[] name2 = name) {
 		"}";
 }
 
-/** wrapper class for an MPQ Archive
+/** High-level wrapper around a libmpq archive handle.
  *
  * syntax: auto a = new mpq.Archive("somefile.mpq");
  */
@@ -194,6 +229,7 @@ class Archive {
 	File listfile;
 	char[][] listfiledata;
 
+	/** Open an MPQ archive at the optional embedded archive offset. */
 	this(char[] archivename, off_t offset = -1) {
 		archive_open(&m, toStringz(archivename), offset);
 	}
@@ -204,21 +240,27 @@ class Archive {
 	mixin(MPQ_A_GET!("uint", "version", "version_"));
 	mixin(MPQ_A_GET!("uint", "files"));
 
+	/** Close the underlying libmpq archive handle. */
 	~this() {
 		archive_close(m);
 	}
 
+	/** Return the raw libmpq archive handle used by file wrappers. */
 	mpq_archive_s* archive() {
 		return m;
 	}
 
+	/** Return a File wrapper for the named archive entry. */
 	File opIndex(char[] fname) {
 		return new File(this, fname);
 	}
+
+	/** Return a File wrapper for the numeric archive entry. */
 	File opIndex(int fno) {
 		return new File(this, fno);
 	}
 
+	/** Return the cached (listfile) contents, or an empty list when absent. */
 	char[][] filelist() {
 		try {
 			if (!listfile) {
@@ -246,7 +288,7 @@ class Archive {
 }
 
 
-/** getter function named name for returning file_* single values:
+/** Generate a File getter that returns one file_* metadata value.
  *
  *   <type> File.<name>() { return libmpq__file_<name>() }
  *
@@ -263,7 +305,7 @@ template MPQ_F_GET(char[] type, char[] name, char[] name2 = name) {
 		"}";
 }
 
-/** wrapper class for a single file in an MPQ Archive
+/** High-level wrapper around one file entry in an MPQ archive.
  *
  * syntax:
  *    auto a = new mpq.Archive("somefile.mpq");
@@ -277,6 +319,7 @@ class File {
 	char[] filename;
 	uint fileno;
 
+	/** Open a file wrapper by numeric archive entry index. */
 	this(Archive a, int fileno) {
 		this.a = a;
 		this.am = a.archive();
@@ -288,11 +331,12 @@ class File {
 		this.fileno = fileno;
 	}
 
+	/** Open a file wrapper by archive file name. */
 	this(Archive a, char[] filename) {
 		this.a = a;
 		this.am = a.archive();
 		this.filename = filename;
-		/* this line will throw an exception when the file is not there */
+		/* file_number() raises MPQException when the archive has no matching name. */
 		mpq.file_number(am, toStringz(filename), &this.fileno);
 	}
 
@@ -304,9 +348,13 @@ class File {
 	mixin(MPQ_F_GET!("uint", "compressed"));
 	mixin(MPQ_F_GET!("uint", "imploded"));
 
+	/** Return the numeric file entry index. */
 	uint no() {	return fileno; }
+
+	/** Return the original file name passed to the wrapper. */
 	char[] name() {	return filename; }
 
+	/** Read and return the complete unpacked file payload. */
 	ubyte[] read() {
 		ubyte[] content;
 		content.length = this.unpacked_size();
