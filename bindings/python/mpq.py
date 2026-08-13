@@ -104,7 +104,7 @@ class Reader(object):
         elif whence == os.SEEK_CUR:
             offset += self._pos
         elif whence == os.SEEK_END:
-            offset += self._file.unpacked_size
+            offset += self._file.size_unpacked
         else:
             raise ValueError, "invalid whence"
 
@@ -195,8 +195,8 @@ class File(object):
         self.number = number
 
         for name, atype in [
-            ("packed_size", ctypes.c_uint64),
-            ("unpacked_size", ctypes.c_uint64),
+            ("size_packed", ctypes.c_uint64),
+            ("size_unpacked", ctypes.c_uint64),
             ("offset", ctypes.c_uint64),
             ("blocks", ctypes.c_uint32),
             ("encrypted", ctypes.c_uint32),
@@ -208,9 +208,12 @@ class File(object):
             func(self._archive._mpq, self.number, ctypes.byref(data))
             setattr(self, name, data.value)
 
+    packed_size = property(lambda self: self.size_packed)
+    unpacked_size = property(lambda self: self.size_unpacked)
+
     def __str__(self, ctypes=ctypes, libmpq=libmpq):
         """Return the complete unpacked file payload."""
-        data = ctypes.create_string_buffer(self.unpacked_size)
+        data = ctypes.create_string_buffer(self.size_unpacked)
         libmpq.libmpq__file_read(self._archive._mpq, self.number,
             data, ctypes.c_uint64(len(data)), None)
         return data.raw
@@ -246,8 +249,8 @@ class Archive(object):
         self._opened = True
 
         for field_name, field_type in [
-            ("packed_size", ctypes.c_uint64),
-            ("unpacked_size", ctypes.c_uint64),
+            ("size_packed", ctypes.c_uint64),
+            ("size_unpacked", ctypes.c_uint64),
             ("offset", ctypes.c_uint64),
             ("version", ctypes.c_uint32),
             ("files", ctypes.c_uint32),
@@ -256,6 +259,9 @@ class Archive(object):
             data = field_type()
             func(self._mpq, ctypes.byref(data))
             setattr(self, field_name, data.value)
+
+    packed_size = property(lambda self: self.size_packed)
+    unpacked_size = property(lambda self: self.size_unpacked)
 
     def __del__(self, libmpq=libmpq):
         """Close the underlying libmpq archive handle if it was opened."""
@@ -336,7 +342,7 @@ if __name__ == "__main__":
         d = "".join(d)
 
         assert a == b == c == d, map(hash, [a,b,c,d])
-        assert len(a) == file.unpacked_size
+        assert len(a) == file.size_unpacked
 
         repr(iter(file))
 
