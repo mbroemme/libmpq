@@ -42,7 +42,7 @@ const LIBMPQ_ERROR_MALLOC		= -6;	/* memory allocation error. */
 const LIBMPQ_ERROR_FORMAT		= -7;	/* format error. */
 const LIBMPQ_ERROR_NOT_INITIALIZED	= -8;	/* init() wasn't called. */
 const LIBMPQ_ERROR_SIZE			= -9;	/* buffer size is too small. */
-const LIBMPQ_ERROR_EXIST		= -10;	/* file or block does not exist in archive. */
+const LIBMPQ_ERROR_EXIST		= -10;	/* archive, file, or block does not exist. */
 const LIBMPQ_ERROR_DECRYPT		= -11;	/* we don't know the decryption seed. */
 const LIBMPQ_ERROR_UNPACK		= -12;	/* error on unpacking file. */
 
@@ -130,7 +130,7 @@ class MPQException : Exception {
 		"format error",
 		"init() wasn't called",
 		"buffer size is too small",
-		"file or block does not exist in archive",
+		"archive, file, or block does not exist",
 		"we don't know the decryption seed",
 		"error on unpacking file"];
 
