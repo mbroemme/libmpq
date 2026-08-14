@@ -40,8 +40,11 @@ The function stores the newly allocated archive handle in
 On success, *\fImpq_archive\fP is set to a new \fBmpq_archive_s\fP and zero
 is returned. On error, one of the following constants is returned.
 .TP
+.B LIBMPQ_ERROR_EXIST
+The given archive file does not exist.
+.TP
 .B LIBMPQ_ERROR_OPEN
-The given file could not be opened.
+The given file exists but could not be opened.
 .TP
 .B LIBMPQ_ERROR_MALLOC
 Not enough memory for creating required structures.
