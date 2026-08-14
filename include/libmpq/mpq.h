@@ -49,7 +49,7 @@ extern "C" {
 #define LIBMPQ_ERROR_FORMAT (-7)          /* Archive format is invalid. */
 #define LIBMPQ_ERROR_NOT_INITIALIZED (-8) /* Library initialization is missing. */
 #define LIBMPQ_ERROR_SIZE (-9)            /* Caller-provided buffer is too small. */
-#define LIBMPQ_ERROR_EXIST (-10)          /* File or block does not exist in archive. */
+#define LIBMPQ_ERROR_EXIST (-10)          /* Archive, file, or block does not exist. */
 #define LIBMPQ_ERROR_DECRYPT (-11)        /* Decryption seed is unknown. */
 #define LIBMPQ_ERROR_UNPACK (-12)         /* File unpacking failed. */
 

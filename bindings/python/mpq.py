@@ -42,6 +42,9 @@ errors = {
 
 def check_error(result, func, arguments, errors=errors):
     """Raise the mapped Python exception for a negative libmpq result."""
+    if result == -10 and getattr(func, "__name__", "") == "libmpq__archive_open":
+        raise IOError("archive does not exist")
+
     try:
         error = errors[result]
     except KeyError:

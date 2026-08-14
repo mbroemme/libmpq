@@ -26,6 +26,7 @@
 #include "platform.h"
 #include <libmpq/mpq.h>
 
+#include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,7 +43,7 @@ static const char *libmpq_error_strings[] = { "success",
                                               "format error",
                                               "init() wasn't called",
                                               "buffer size is too small",
-                                              "file or block does not exist in archive",
+                                              "archive, file, or block does not exist",
                                               "we don't know the decryption seed",
                                               "error on unpacking file" };
 
@@ -90,8 +91,9 @@ libmpq__archive_open(
     }
 
     /* Open the archive file for binary reads. */
+    errno = 0;
     if (((*mpq_archive)->fp = fopen(mpq_filename, "rb")) == NULL) {
-        result = LIBMPQ_ERROR_OPEN;
+        result = errno == ENOENT ? LIBMPQ_ERROR_EXIST : LIBMPQ_ERROR_OPEN;
         goto error;
     }
 
