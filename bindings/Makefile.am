@@ -1,4 +1,4 @@
-# any directories which should be built and installed.
+# Subdirectories that are built and installed.
 SUBDIRS				= d
 
 if HAVE_PYTHON

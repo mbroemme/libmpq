@@ -1,0 +1,62 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ-CONFIG 1 2026-08-12 "The MoPaQ archive library"
+.SH NAME
+libmpq-config \- print compiler and linker flags for libmpq.
+.SH SYNOPSIS
+.B libmpq-config
+[\-\-prefix\fI[=DIR]\fP] [\-\-exec\-prefix\fI[=DIR]\fP] [\-\-version]
+.br
+[\-\-cflags] [\-\-libs]
+.SH DESCRIPTION
+.PP
+\fIlibmpq-config\fP prints the compiler and linker flags required to build programs that use \fIlibmpq\fP.
+.SH OPTIONS
+\fIlibmpq-config\fP accepts the following options:
+.TP 8
+.B  \-\-version
+.ti 15
+Print the currently installed version of \fIlibmpq\fP on the standard output.
+.TP 8
+.B  \-\-libs
+.ti 15
+Print the linker flags that are necessary to link \fIlibmpq\fP to a program.
+.B  \-\-cflags
+.ti 15
+Print the compiler flags required to compile a program that uses
+\fIlibmpq\fP.
+.TP 8
+.B  \-\-prefix=PREFIX
+.ti 15
+If specified, use PREFIX instead of the installation prefix when computing
+output for the \-\-cflags and \-\-libs options. PREFIX is also used as the
+exec prefix unless \-\-exec\-prefix is specified. This option must precede
+\-\-libs and \-\-cflags.
+.TP 8
+.B  \-\-exec\-prefix=PREFIX
+.ti 15
+If specified, use PREFIX instead of the installation exec prefix when
+computing output for the \-\-cflags and \-\-libs options. This option must
+precede \-\-libs and \-\-cflags.
+.SH NOTE
+Use the pkg-config module when possible. It is more portable and integrates more easily with build systems.
+.SH SEE ALSO
+\fBlibmpq\fR(3)
+.SH AUTHOR
+.TP
+The libmpq project was started in 2003.
+.B Maik Broemme <mbroemme@libmpq.org>
+.PP
+Use the email address above to report bugs, provide feedback, or suggest library enhancements.
