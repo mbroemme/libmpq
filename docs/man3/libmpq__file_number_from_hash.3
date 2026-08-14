@@ -1,0 +1,54 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__FILE_NUMBER_FROM_HASH 3 2026-08-14 "The MoPaQ archive library"
+.SH NAME
+libmpq__file_number_from_hash \- resolve an MPQ filename hash to its file number.
+.SH SYNOPSIS
+.nf
+.B
+#include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__file_number_from_hash("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "hash1",
+.BI "        uint32_t        " "hash2",
+.BI "        uint32_t        " "hash3",
+.BI "        uint32_t       *" "number"
+.BI ");"
+.fi
+.SH DESCRIPTION
+.PP
+Call \fBlibmpq__file_number_from_hash\fP() to resolve precomputed Storm
+filename hashes using an archive's hash table. Use \fBlibmpq__file_hash\fP()
+to calculate the hashes from a filename.
+.LP
+The first argument is an archive handle opened by
+\fBlibmpq__archive_open\fP(). The function stores the matching file number
+in \fInumber\fP.
+.SH RETURN VALUE
+On success, zero is returned and the file number is stored in \fInumber\fP.
+On error, one of the following constants is returned.
+.TP
+.B LIBMPQ_ERROR_EXIST
+No file in the archive matches the supplied hashes.
+.SH SEE ALSO
+.BR libmpq__file_hash (3),
+.BR libmpq__file_number (3)
+.SH AUTHOR
+.TP
+The libmpq project was started in 2003.
+.B Maik Broemme <mbroemme@libmpq.org>
+.PP
+Use the email address above to report bugs, provide feedback, or suggest library enhancements.

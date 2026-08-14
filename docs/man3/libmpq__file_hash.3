@@ -1,0 +1,47 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__FILE_HASH 3 2026-08-14 "The MoPaQ archive library"
+.SH NAME
+libmpq__file_hash \- calculate the Storm hashes for an MPQ filename.
+.SH SYNOPSIS
+.nf
+.B
+#include <libmpq/mpq.h>
+.sp
+.BI "void libmpq__file_hash("
+.BI "        const char     *" "filename",
+.BI "        uint32_t       *" "hash1",
+.BI "        uint32_t       *" "hash2",
+.BI "        uint32_t       *" "hash3"
+.BI ");"
+.fi
+.SH DESCRIPTION
+.PP
+Call \fBlibmpq__file_hash\fP() to calculate the three Storm filename hashes
+used by the MPQ hash table. The values can be reused with
+\fBlibmpq__file_number_from_hash\fP() when looking up the same filename in
+multiple archives.
+.LP
+The function stores the three hash values in \fIhash1\fP, \fIhash2\fP,
+and \fIhash3\fP.
+.SH SEE ALSO
+.BR libmpq__file_number (3),
+.BR libmpq__file_number_from_hash (3)
+.SH AUTHOR
+.TP
+The libmpq project was started in 2003.
+.B Maik Broemme <mbroemme@libmpq.org>
+.PP
+Use the email address above to report bugs, provide feedback, or suggest library enhancements.

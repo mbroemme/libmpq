@@ -107,6 +107,21 @@ libmpq \- cross-platform C library for reading MPQ archives.
 .BI "        uint32_t       *" "number"
 .BI ");"
 .sp
+.BI "void libmpq__file_hash("
+.BI "        const char     *" "filename",
+.BI "        uint32_t       *" "hash1",
+.BI "        uint32_t       *" "hash2",
+.BI "        uint32_t       *" "hash3"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_number_from_hash("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "hash1",
+.BI "        uint32_t        " "hash2",
+.BI "        uint32_t        " "hash3",
+.BI "        uint32_t       *" "number"
+.BI ");"
+.sp
 .BI "int32_t libmpq__file_read("
 .BI "        mpq_archive_s  *" "mpq_archive",
 .BI "        uint32_t        " "file_number",
@@ -164,6 +179,8 @@ Archive creation is not supported.
 .BR libmpq__file_compressed (3),
 .BR libmpq__file_imploded (3),
 .BR libmpq__file_number (3),
+.BR libmpq__file_hash (3),
+.BR libmpq__file_number_from_hash (3),
 .BR libmpq__file_read (3),
 .BR libmpq__block_open_offset (3),
 .BR libmpq__block_close_offset (3),

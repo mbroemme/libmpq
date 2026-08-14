@@ -124,6 +124,15 @@ libmpq__file_imploded(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t
 extern LIBMPQ_API int32_t
 libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *number);
 
+/* Calculate the three Storm hashes used to identify an MPQ file name. */
+extern LIBMPQ_API void
+libmpq__file_hash(const char *filename, uint32_t *hash1, uint32_t *hash2, uint32_t *hash3);
+
+/* Resolve a precomputed MPQ file-name hash to a public file number. */
+extern LIBMPQ_API int32_t libmpq__file_number_from_hash(
+    mpq_archive_s *mpq_archive, uint32_t hash1, uint32_t hash2, uint32_t hash3, uint32_t *number
+);
+
 /* Read a complete file into the caller-provided output buffer. */
 extern LIBMPQ_API int32_t libmpq__file_read(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint8_t *out_buf, libmpq__off_t out_size,

@@ -506,19 +506,28 @@ libmpq__file_imploded(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t
     return LIBMPQ_SUCCESS;
 }
 
-/* Resolve an MPQ file name to its block-table number through the hash table. */
+/* Calculate the three Storm hashes used to identify an MPQ file name. */
+void
+libmpq__file_hash(const char *filename, uint32_t *hash1, uint32_t *hash2, uint32_t *hash3)
+{
+    *hash1 = libmpq__hash_string(filename, 0x0);
+    *hash2 = libmpq__hash_string(filename, 0x100);
+    *hash3 = libmpq__hash_string(filename, 0x200);
+}
+
+/* Resolve a precomputed MPQ file-name hash to a public file number. */
 int32_t
-libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *number)
+libmpq__file_number_from_hash(
+    mpq_archive_s *mpq_archive, uint32_t hash1, uint32_t hash2, uint32_t hash3, uint32_t *number
+)
 {
 
-    /* Hash table probe values for the three Storm hash variants. */
-    uint32_t i, hash1, hash2, hash3, ht_count;
+    /* Hash table probe state and archive hash-table size. */
+    uint32_t i, ht_count;
 
     ht_count = mpq_archive->mpq_header.hash_table_count;
 
-    hash1 = libmpq__hash_string(filename, 0x0) & (ht_count - 1);
-    hash2 = libmpq__hash_string(filename, 0x100);
-    hash3 = libmpq__hash_string(filename, 0x200);
+    hash1 &= (ht_count - 1);
 
     /* The first hash selects the initial probe slot; collisions use linear probing. */
     for (i = hash1; mpq_archive->mpq_hash[i].block_table_index != LIBMPQ_HASH_FREE;
@@ -537,6 +546,16 @@ libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *
     }
 
     return LIBMPQ_ERROR_EXIST;
+}
+
+/* Resolve an MPQ file name to its block-table number through the hash table. */
+int32_t
+libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *number)
+{
+    uint32_t hash1, hash2, hash3;
+
+    libmpq__file_hash(filename, &hash1, &hash2, &hash3);
+    return libmpq__file_number_from_hash(mpq_archive, hash1, hash2, hash3, number);
 }
 
 /* Read a complete file by opening its block offset table and copying each block. */
