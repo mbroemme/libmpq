@@ -1,0 +1,72 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__ARCHIVE_OPEN 3 2026-08-12 "The MoPaQ archive library"
+.SH NAME
+libmpq__archive_open \- open an MPQ archive for reading.
+.SH SYNOPSIS
+.nf
+.B
+#include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__archive_open("
+.BI "        mpq_archive_s **" "mpq_archive",
+.BI "        const char     *" "mpq_filename",
+.BI "        libmpq__off_t   " "archive_offset"
+.BI ");"
+.fi
+.SH DESCRIPTION
+.PP
+Call \fBlibmpq__archive_open\fP() to open an MPQ archive for extracting
+files. On success, the function allocates the archive handle; close it with
+\fBlibmpq__archive_close\fP(). On failure, the allocated state is cleaned
+up automatically.
+.LP
+The function stores the newly allocated archive handle in
+\fImpq_archive\fP and opens \fImpq_filename\fP. Set \fIarchive_offset\fP to
+-1 to search for the archive header, or provide a known offset.
+.SH RETURN VALUE
+On success, *\fImpq_archive\fP is set to a new \fBmpq_archive_s\fP and zero
+is returned. On error, one of the following constants is returned.
+.TP
+.B LIBMPQ_ERROR_EXIST
+The given archive file does not exist.
+.TP
+.B LIBMPQ_ERROR_OPEN
+The given file exists but could not be opened.
+.TP
+.B LIBMPQ_ERROR_MALLOC
+Not enough memory for creating required structures.
+.TP
+.B LIBMPQ_ERROR_SEEK
+Seeking in file failed.
+.TP
+.B LIBMPQ_ERROR_FORMAT
+The given file is not a valid MPQ archive.
+.TP
+.B LIBMPQ_ERROR_READ
+Reading the archive failed.
+.SH SEE ALSO
+.BR libmpq__archive_close (3),
+.BR libmpq__archive_size_packed (3),
+.BR libmpq__archive_size_unpacked (3),
+.BR libmpq__archive_offset (3),
+.BR libmpq__archive_version (3),
+.BR libmpq__archive_files (3)
+.SH AUTHOR
+.TP
+The libmpq project was started in 2003.
+.B Maik Broemme <mbroemme@libmpq.org>
+.PP
+Use the email address above to report bugs, provide feedback, or suggest library enhancements.
