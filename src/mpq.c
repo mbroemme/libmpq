@@ -855,6 +855,7 @@ libmpq__block_read(
     uint32_t compressed = 0;
     uint32_t imploded = 0;
     int32_t tb = 0;
+    uint8_t use_out_buf = FALSE;
     libmpq__off_t block_offset = 0;
     libmpq__off_t in_size = 0;
     libmpq__off_t unpacked_size = 0;
@@ -893,56 +894,71 @@ libmpq__block_read(
     in_size = mpq_archive->mpq_file[file_number]->packed_offset[block_number + 1] -
               mpq_archive->mpq_file[file_number]->packed_offset[block_number];
 
+    libmpq__file_encrypted(mpq_archive, file_number, &encrypted);
+    libmpq__file_compressed(mpq_archive, file_number, &compressed);
+    libmpq__file_imploded(mpq_archive, file_number, &imploded);
+
+    /* Raw unencrypted blocks can be read directly into the caller's buffer. */
+    use_out_buf = !encrypted && !compressed && !imploded && in_size <= out_size;
+
     if (fseeko(mpq_archive->fp, block_offset + mpq_archive->archive_offset, SEEK_SET) < 0) {
         return LIBMPQ_ERROR_SEEK;
     }
 
-    if ((in_buf = calloc(1, in_size)) == NULL) {
-        return LIBMPQ_ERROR_MALLOC;
+    if (use_out_buf) {
+        in_buf = out_buf;
+    } else {
+        if ((in_buf = calloc(1, in_size)) == NULL) {
+            return LIBMPQ_ERROR_MALLOC;
+        }
     }
 
     if (fread(in_buf, 1, (size_t)in_size, mpq_archive->fp) != (size_t)in_size) {
-        free(in_buf);
+        if (!use_out_buf) {
+            free(in_buf);
+        }
         return LIBMPQ_ERROR_READ;
     }
-
-    libmpq__file_encrypted(mpq_archive, file_number, &encrypted);
 
     if (encrypted) {
         libmpq__get_block_seed(mpq_archive, file_number, block_number, &seed);
 
         if (libmpq__decrypt_block((uint32_t *)in_buf, in_size, seed) < 0) {
-            free(in_buf);
+            if (!use_out_buf) {
+                free(in_buf);
+            }
             return LIBMPQ_ERROR_DECRYPT;
         }
     }
-
-    libmpq__file_compressed(mpq_archive, file_number, &compressed);
 
     /* Blizzard multi-compression blocks declare their exact backend chain in the payload. */
     if (compressed) {
         if ((tb = libmpq__decompress_block(
                  in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_MULTI
              )) < 0) {
-            free(in_buf);
+            if (!use_out_buf) {
+                free(in_buf);
+            }
             return LIBMPQ_ERROR_UNPACK;
         }
     }
-
-    libmpq__file_imploded(mpq_archive, file_number, &imploded);
 
     /* PKWARE-imploded blocks use the legacy explode decoder. */
     if (imploded) {
         if ((tb = libmpq__decompress_block(
                  in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_PKZIP
              )) < 0) {
-            free(in_buf);
+            if (!use_out_buf) {
+                free(in_buf);
+            }
             return LIBMPQ_ERROR_UNPACK;
         }
     }
 
     if (compressed && imploded) {
-        free(in_buf);
+        if (!use_out_buf) {
+            free(in_buf);
+        }
         return LIBMPQ_ERROR_UNPACK;
     }
 
@@ -950,12 +966,16 @@ libmpq__block_read(
         if ((tb = libmpq__decompress_block(
                  in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_NONE
              )) < 0) {
-            free(in_buf);
+            if (!use_out_buf) {
+                free(in_buf);
+            }
             return LIBMPQ_ERROR_UNPACK;
         }
     }
 
-    free(in_buf);
+    if (!use_out_buf) {
+        free(in_buf);
+    }
 
     if (transferred != NULL) {
         *transferred = tb;
