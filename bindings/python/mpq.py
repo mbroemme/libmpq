@@ -70,6 +70,7 @@ libmpq.libmpq__file_encrypted.errcheck = check_error
 libmpq.libmpq__file_compressed.errcheck = check_error
 libmpq.libmpq__file_imploded.errcheck = check_error
 libmpq.libmpq__file_number.errcheck = check_error
+libmpq.libmpq__file_number_from_hash.errcheck = check_error
 libmpq.libmpq__file_read.errcheck = check_error
 
 libmpq.libmpq__block_open_offset.errcheck = check_error

@@ -99,6 +99,12 @@ int libmpq__file_imploded(mpq_archive_s *mpq_archive, uint file_number, uint *im
 /* Resolve an MPQ file name to a public file number. */
 int libmpq__file_number(mpq_archive_s *mpq_archive, char *filename, uint *number);
 
+/* Calculate the three Storm hashes used to identify an MPQ file name. */
+void libmpq__file_hash(char *filename, uint *hash1, uint *hash2, uint *hash3);
+
+/* Resolve a precomputed MPQ file-name hash to a public file number. */
+int libmpq__file_number_from_hash(mpq_archive_s *mpq_archive, uint hash1, uint hash2, uint hash3, uint *number);
+
 /* Read a complete file into the caller-provided output buffer. */
 int libmpq__file_read(mpq_archive_s *mpq_archive, uint file_number, ubyte *out_buf, off_t out_size, off_t *transferred);
 
@@ -198,6 +204,7 @@ mixin(MPQ_FUNC!("file_encrypted"));
 mixin(MPQ_FUNC!("file_compressed"));
 mixin(MPQ_FUNC!("file_imploded"));
 mixin(MPQ_FUNC!("file_number"));
+mixin(MPQ_FUNC!("file_number_from_hash"));
 mixin(MPQ_FUNC!("file_read"));
 mixin(MPQ_FUNC!("block_open_offset"));
 mixin(MPQ_FUNC!("block_close_offset"));
