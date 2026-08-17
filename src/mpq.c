@@ -707,6 +707,7 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
                 goto error;
             }
             mpq_archive->mpq_file[file_number]->seed = seed;
+            mpq_archive->mpq_file[file_number]->seed_known = TRUE;
 
             if (libmpq__decrypt_block(
                     mpq_archive->mpq_file[file_number]->packed_offset, packed_size,
@@ -744,6 +745,63 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
                 mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices]
                     .packed_size;
         }
+    }
+
+    /* Raw encrypted files have no encrypted offset table from which to derive a seed. */
+    if ((mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags &
+         (LIBMPQ_FLAG_ENCRYPTED | LIBMPQ_FLAG_COMPRESSED)) == LIBMPQ_FLAG_ENCRYPTED) {
+        uint8_t first_block[8];
+        uint32_t first_offset;
+        uint32_t second_offset;
+        uint32_t first_size;
+        uint32_t seed;
+
+        if (packed_offset_count < 2) {
+            result = LIBMPQ_ERROR_FORMAT;
+            goto error;
+        }
+
+        first_offset = mpq_archive->mpq_file[file_number]->packed_offset[0];
+        second_offset = mpq_archive->mpq_file[file_number]->packed_offset[1];
+        if (second_offset < first_offset) {
+            result = LIBMPQ_ERROR_FORMAT;
+            goto error;
+        }
+
+        first_size = second_offset - first_offset;
+        if (first_size < sizeof(first_block)) {
+            result = LIBMPQ_ERROR_DECRYPT;
+            goto error;
+        }
+
+        if (fseeko(
+                mpq_archive->fp,
+                mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices]
+                        .offset +
+                    (((long long)mpq_archive
+                          ->mpq_block_ex[mpq_archive->mpq_map[file_number].block_table_indices]
+                          .offset_high)
+                     << 32) +
+                    mpq_archive->archive_offset,
+                SEEK_SET
+            ) < 0 ||
+            fread(first_block, 1, sizeof(first_block), mpq_archive->fp) != sizeof(first_block)) {
+            result = LIBMPQ_ERROR_READ;
+            goto error;
+        }
+
+        if (libmpq__detect_file_key(
+                first_block, sizeof(first_block),
+                mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices]
+                    .unpacked_size,
+                &seed
+            ) < 0) {
+            result = LIBMPQ_ERROR_DECRYPT;
+            goto error;
+        }
+
+        mpq_archive->mpq_file[file_number]->seed = seed;
+        mpq_archive->mpq_file[file_number]->seed_known = TRUE;
     }
 
     return LIBMPQ_SUCCESS;
@@ -854,6 +912,10 @@ libmpq__get_block_seed(
         return LIBMPQ_ERROR_EXIST;
     }
 
+    if (!mpq_archive->mpq_file[file_number]->seed_known) {
+        return LIBMPQ_ERROR_DECRYPT;
+    }
+
     *seed = mpq_archive->mpq_file[file_number]->seed + block_number;
 
     return LIBMPQ_SUCCESS;
@@ -940,7 +1002,12 @@ libmpq__block_read(
     }
 
     if (encrypted) {
-        libmpq__get_block_seed(mpq_archive, file_number, block_number, &seed);
+        if (libmpq__get_block_seed(mpq_archive, file_number, block_number, &seed) < 0) {
+            if (!use_out_buf) {
+                free(in_buf);
+            }
+            return LIBMPQ_ERROR_DECRYPT;
+        }
 
         if (libmpq__decrypt_block((uint32_t *)in_buf, in_size, seed) < 0) {
             if (!use_out_buf) {

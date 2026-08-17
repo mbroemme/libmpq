@@ -131,6 +131,7 @@ typedef struct
 typedef struct
 {
     uint32_t seed;                /* Per-file decryption seed. */
+    uint8_t seed_known;           /* Whether seed was recovered successfully. */
     uint32_t *packed_offset;      /* Packed sector offsets for multi-sector files. */
     uint32_t packed_offset_count; /* Number of packed_offset entries. */
     uint32_t open_count;          /* Reference count for the cached sector table. */
