@@ -470,6 +470,8 @@ libmpq__pkzip_compress(
 
     if (out_buf == NULL || out_size == NULL || (in_size != 0 && in_buf == NULL))
         return LIBMPQ_ERROR_FORMAT;
+    if (bytes < 2)
+        return LIBMPQ_ERROR_FORMAT;
     out = calloc(1, bytes ? bytes : 1);
     if (out == NULL)
         return LIBMPQ_ERROR_MALLOC;

@@ -24,6 +24,8 @@
 static inline uint16_t
 libmpq__load_le16(const uint8_t *buffer)
 {
+    if (buffer == 0)
+        return 0;
     return (uint16_t)buffer[0] | ((uint16_t)buffer[1] << 8);
 }
 
@@ -32,6 +34,8 @@ libmpq__load_le16(const uint8_t *buffer)
 static inline uint32_t
 libmpq__load_le32(const uint8_t *buffer)
 {
+    if (buffer == 0)
+        return 0;
     return (uint32_t)buffer[0] | ((uint32_t)buffer[1] << 8) | ((uint32_t)buffer[2] << 16) |
            ((uint32_t)buffer[3] << 24);
 }
@@ -42,6 +46,8 @@ libmpq__load_le32(const uint8_t *buffer)
 static inline uint64_t
 libmpq__load_le64(const uint8_t *buffer)
 {
+    if (buffer == 0)
+        return 0;
     return (uint64_t)libmpq__load_le32(buffer) | ((uint64_t)libmpq__load_le32(buffer + 4) << 32);
 }
 

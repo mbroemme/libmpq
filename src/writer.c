@@ -653,6 +653,13 @@ libmpq__writer_archive_create(
     if (fseeko(a->fp, (off_t)offset, SEEK_SET) < 0) {
         fclose(a->fp);
         free(a->filename);
+        free(a->mpq_hash);
+        free(a->mpq_block);
+        free(a->mpq_block_ex);
+        free(a->write_names);
+        free(a->write_locales);
+        free(a->write_platforms);
+        free(a);
         return LIBMPQ_ERROR_SEEK;
     }
     *out = a;
@@ -735,6 +742,12 @@ libmpq__writer_file_begin(
         ~(LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO);
     if (w->options.compression_next == 0)
         w->options.compression_next = w->options.compression_first;
+    if (a->write_sector_size == 0) {
+        free(w->name);
+        free(w->data);
+        free(w);
+        return LIBMPQ_ERROR_FORMAT;
+    }
     w->block_count = (w->options.flags & LIBMPQ_FILE_FLAG_SINGLE)
                          ? 1
                          : (uint32_t)((size + a->write_sector_size - 1) / a->write_sector_size);
@@ -870,12 +883,15 @@ libmpq__writer_file_add_path(
         fclose(fp);
         return result;
     }
-    while ((got = fread(buffer, 1, sizeof(buffer), fp)) != 0) {
+    while (!feof(fp) && !ferror(fp)) {
+        got = fread(buffer, 1, sizeof(buffer), fp);
+        if (got == 0)
+            break;
         result = libmpq__writer_file_write(writer, buffer, (libmpq__off_t)got);
         if (result < 0)
             break;
     }
-    if (ferror(fp) && result == 0)
+    if (ferror(fp))
         result = LIBMPQ_ERROR_READ;
     fclose(fp);
     if (result == 0)

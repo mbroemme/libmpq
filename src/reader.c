@@ -82,6 +82,8 @@ decode_mpq_hash_table(mpq_hash_s *table, const uint8_t *raw, uint32_t count)
 {
     uint32_t i;
 
+    if (table == 0 || raw == 0)
+        return;
     for (i = 0; i < count; i++) {
         const uint8_t *entry = raw + i * sizeof(mpq_hash_s);
 
@@ -100,6 +102,8 @@ decode_mpq_block_table(mpq_block_s *table, const uint8_t *raw, uint32_t count)
 {
     uint32_t i;
 
+    if (table == 0 || raw == 0)
+        return;
     for (i = 0; i < count; i++) {
         const uint8_t *entry = raw + i * sizeof(mpq_block_s);
 
@@ -118,6 +122,8 @@ decode_mpq_block_ex_table(mpq_block_ex_s *table, const uint8_t *raw, uint32_t co
 {
     uint32_t i;
 
+    if (table == 0 || raw == 0)
+        return;
     for (i = 0; i < count; i++) {
         table[i].offset_high = libmpq__load_le16(raw + i * sizeof(mpq_block_ex_s));
     }
