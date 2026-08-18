@@ -197,6 +197,4 @@ struct mpq_file_writer
     mpq_file_create_options_s options;
 };
 
-int32_t libmpq__writer_finalize(mpq_archive_s *archive);
-
 #endif /* LIBMPQ_MPQ_INTERNAL_H */
