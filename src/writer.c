@@ -388,6 +388,120 @@ stream_finish(mpq_file_writer_s *writer)
     return LIBMPQ_ERROR_SIZE;
 }
 
+/* Serialize the completed hash, block, extended tables, and archive header. */
+static int32_t
+finalize_archive(mpq_archive_s *a)
+{
+    uint8_t *raw;
+    uint32_t i;
+    size_t bytes;
+    uint64_t end;
+    uint8_t header[44];
+    if (a->write_current)
+        return LIBMPQ_ERROR_SIZE;
+    if ((a->write_flags & LIBMPQ_ARCHIVE_CREATE_LISTFILE) != 0) {
+        size_t total = 1;
+        uint8_t *list;
+        for (i = 0; i < a->write_next_block; i++)
+            total += strlen(a->write_names[i]) + 1;
+        list = malloc(total);
+        if (!list)
+            return LIBMPQ_ERROR_MALLOC;
+        total = 0;
+        for (i = 0; i < a->write_next_block; i++) {
+            size_t n = strlen(a->write_names[i]);
+            memcpy(list + total, a->write_names[i], n);
+            total += n;
+            list[total++] = '\n';
+        }
+        {
+            mpq_file_create_options_s o = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
+            int32_t r = libmpq__file_add(a, LIBMPQ_LISTFILE_NAME, list, (libmpq__off_t)total, &o);
+            free(list);
+            if (r < 0)
+                return r;
+        }
+    }
+    bytes = (size_t)a->write_hash_capacity * 16;
+    raw = malloc(bytes);
+    if (!raw)
+        return LIBMPQ_ERROR_MALLOC;
+    for (i = 0; i < a->write_hash_capacity; i++) {
+        libmpq__store_le32(raw + i * 16, a->mpq_hash[i].hash_a);
+        libmpq__store_le32(raw + i * 16 + 4, a->mpq_hash[i].hash_b);
+        libmpq__store_le16(raw + i * 16 + 8, a->mpq_hash[i].locale);
+        libmpq__store_le16(raw + i * 16 + 10, a->mpq_hash[i].platform);
+        libmpq__store_le32(raw + i * 16 + 12, a->mpq_hash[i].block_table_index);
+    }
+    libmpq__common_encrypt_block(
+        raw, (uint32_t)bytes, libmpq__common_hash_string("(hash table)", 0x300)
+    );
+    if (write_at(a->fp, a->mpq_header.hash_table_offset, raw, bytes) < 0) {
+        free(raw);
+        return LIBMPQ_ERROR_WRITE;
+    }
+    free(raw);
+    bytes = (size_t)a->write_capacity * 16;
+    raw = malloc(bytes);
+    if (!raw)
+        return LIBMPQ_ERROR_MALLOC;
+    for (i = 0; i < a->write_capacity; i++) {
+        libmpq__store_le32(raw + i * 16, a->mpq_block[i].offset);
+        libmpq__store_le32(raw + i * 16 + 4, a->mpq_block[i].packed_size);
+        libmpq__store_le32(raw + i * 16 + 8, a->mpq_block[i].unpacked_size);
+        libmpq__store_le32(raw + i * 16 + 12, a->mpq_block[i].flags);
+    }
+    libmpq__common_encrypt_block(
+        raw, (uint32_t)bytes, libmpq__common_hash_string("(block table)", 0x300)
+    );
+    if (write_at(a->fp, a->mpq_header.block_table_offset, raw, bytes) < 0) {
+        free(raw);
+        return LIBMPQ_ERROR_WRITE;
+    }
+    free(raw);
+    if (a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO) {
+        bytes = (size_t)a->write_capacity * 2;
+        raw = malloc(bytes);
+        if (!raw)
+            return LIBMPQ_ERROR_MALLOC;
+        for (i = 0; i < a->write_capacity; i++)
+            libmpq__store_le16(raw + i * 2, a->mpq_block_ex[i].offset_high);
+        if (write_at(a->fp, a->mpq_header_ex.extended_offset, raw, bytes) < 0) {
+            free(raw);
+            return LIBMPQ_ERROR_WRITE;
+        }
+        free(raw);
+    }
+    if (fseeko(a->fp, 0, SEEK_END) < 0)
+        return LIBMPQ_ERROR_SEEK;
+    end = (uint64_t)ftello(a->fp);
+    if (end > UINT32_MAX)
+        return LIBMPQ_ERROR_SIZE;
+    memset(header, 0, sizeof(header));
+    libmpq__store_le32(header, LIBMPQ_HEADER);
+    libmpq__store_le32(header + 4, a->mpq_header.header_size);
+    libmpq__store_le32(header + 8, (uint32_t)end);
+    libmpq__store_le16(header + 12, a->mpq_header.version);
+    libmpq__store_le16(header + 14, a->mpq_header.block_size);
+    libmpq__store_le32(header + 16, a->mpq_header.hash_table_offset);
+    libmpq__store_le32(header + 20, a->mpq_header.block_table_offset);
+    libmpq__store_le32(header + 24, a->mpq_header.hash_table_count);
+    libmpq__store_le32(header + 28, a->mpq_header.block_table_count);
+    if (a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO) {
+        libmpq__store_le64(header + 32, a->mpq_header_ex.extended_offset);
+        libmpq__store_le16(
+            header + 40, (uint16_t)(((uint64_t)a->mpq_header.hash_table_offset) >> 32)
+        );
+        libmpq__store_le16(
+            header + 42, (uint16_t)(((uint64_t)a->mpq_header.block_table_offset) >> 32)
+        );
+    }
+    if (write_at(a->fp, 0, header, a->mpq_header.header_size) < 0 || fflush(a->fp) != 0)
+        return LIBMPQ_ERROR_WRITE;
+    a->write_finalized = TRUE;
+    return LIBMPQ_SUCCESS;
+}
+
 /* Create a new seekable MPQ v1 or v2 archive with reserved metadata tables. */
 int32_t
 libmpq__archive_create(
@@ -705,120 +819,6 @@ libmpq__file_add_path(
         free(writer);
     }
     return result;
-}
-
-/* Serialize the completed hash, block, extended tables, and archive header. */
-static int32_t
-finalize_archive(mpq_archive_s *a)
-{
-    uint8_t *raw;
-    uint32_t i;
-    size_t bytes;
-    uint64_t end;
-    uint8_t header[44];
-    if (a->write_current)
-        return LIBMPQ_ERROR_SIZE;
-    if ((a->write_flags & LIBMPQ_ARCHIVE_CREATE_LISTFILE) != 0) {
-        size_t total = 1;
-        uint8_t *list;
-        for (i = 0; i < a->write_next_block; i++)
-            total += strlen(a->write_names[i]) + 1;
-        list = malloc(total);
-        if (!list)
-            return LIBMPQ_ERROR_MALLOC;
-        total = 0;
-        for (i = 0; i < a->write_next_block; i++) {
-            size_t n = strlen(a->write_names[i]);
-            memcpy(list + total, a->write_names[i], n);
-            total += n;
-            list[total++] = '\n';
-        }
-        {
-            mpq_file_create_options_s o = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
-            int32_t r = libmpq__file_add(a, LIBMPQ_LISTFILE_NAME, list, (libmpq__off_t)total, &o);
-            free(list);
-            if (r < 0)
-                return r;
-        }
-    }
-    bytes = (size_t)a->write_hash_capacity * 16;
-    raw = malloc(bytes);
-    if (!raw)
-        return LIBMPQ_ERROR_MALLOC;
-    for (i = 0; i < a->write_hash_capacity; i++) {
-        libmpq__store_le32(raw + i * 16, a->mpq_hash[i].hash_a);
-        libmpq__store_le32(raw + i * 16 + 4, a->mpq_hash[i].hash_b);
-        libmpq__store_le16(raw + i * 16 + 8, a->mpq_hash[i].locale);
-        libmpq__store_le16(raw + i * 16 + 10, a->mpq_hash[i].platform);
-        libmpq__store_le32(raw + i * 16 + 12, a->mpq_hash[i].block_table_index);
-    }
-    libmpq__common_encrypt_block(
-        raw, (uint32_t)bytes, libmpq__common_hash_string("(hash table)", 0x300)
-    );
-    if (write_at(a->fp, a->mpq_header.hash_table_offset, raw, bytes) < 0) {
-        free(raw);
-        return LIBMPQ_ERROR_WRITE;
-    }
-    free(raw);
-    bytes = (size_t)a->write_capacity * 16;
-    raw = malloc(bytes);
-    if (!raw)
-        return LIBMPQ_ERROR_MALLOC;
-    for (i = 0; i < a->write_capacity; i++) {
-        libmpq__store_le32(raw + i * 16, a->mpq_block[i].offset);
-        libmpq__store_le32(raw + i * 16 + 4, a->mpq_block[i].packed_size);
-        libmpq__store_le32(raw + i * 16 + 8, a->mpq_block[i].unpacked_size);
-        libmpq__store_le32(raw + i * 16 + 12, a->mpq_block[i].flags);
-    }
-    libmpq__common_encrypt_block(
-        raw, (uint32_t)bytes, libmpq__common_hash_string("(block table)", 0x300)
-    );
-    if (write_at(a->fp, a->mpq_header.block_table_offset, raw, bytes) < 0) {
-        free(raw);
-        return LIBMPQ_ERROR_WRITE;
-    }
-    free(raw);
-    if (a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO) {
-        bytes = (size_t)a->write_capacity * 2;
-        raw = malloc(bytes);
-        if (!raw)
-            return LIBMPQ_ERROR_MALLOC;
-        for (i = 0; i < a->write_capacity; i++)
-            libmpq__store_le16(raw + i * 2, a->mpq_block_ex[i].offset_high);
-        if (write_at(a->fp, a->mpq_header_ex.extended_offset, raw, bytes) < 0) {
-            free(raw);
-            return LIBMPQ_ERROR_WRITE;
-        }
-        free(raw);
-    }
-    if (fseeko(a->fp, 0, SEEK_END) < 0)
-        return LIBMPQ_ERROR_SEEK;
-    end = (uint64_t)ftello(a->fp);
-    if (end > UINT32_MAX)
-        return LIBMPQ_ERROR_SIZE;
-    memset(header, 0, sizeof(header));
-    libmpq__store_le32(header, LIBMPQ_HEADER);
-    libmpq__store_le32(header + 4, a->mpq_header.header_size);
-    libmpq__store_le32(header + 8, (uint32_t)end);
-    libmpq__store_le16(header + 12, a->mpq_header.version);
-    libmpq__store_le16(header + 14, a->mpq_header.block_size);
-    libmpq__store_le32(header + 16, a->mpq_header.hash_table_offset);
-    libmpq__store_le32(header + 20, a->mpq_header.block_table_offset);
-    libmpq__store_le32(header + 24, a->mpq_header.hash_table_count);
-    libmpq__store_le32(header + 28, a->mpq_header.block_table_count);
-    if (a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO) {
-        libmpq__store_le64(header + 32, a->mpq_header_ex.extended_offset);
-        libmpq__store_le16(
-            header + 40, (uint16_t)(((uint64_t)a->mpq_header.hash_table_offset) >> 32)
-        );
-        libmpq__store_le16(
-            header + 42, (uint16_t)(((uint64_t)a->mpq_header.block_table_offset) >> 32)
-        );
-    }
-    if (write_at(a->fp, 0, header, a->mpq_header.header_size) < 0 || fflush(a->fp) != 0)
-        return LIBMPQ_ERROR_WRITE;
-    a->write_finalized = TRUE;
-    return LIBMPQ_SUCCESS;
 }
 
 /* Finalize a writer archive and make it readable by libmpq. */

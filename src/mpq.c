@@ -132,27 +132,6 @@ static const char *libmpq_error_strings[] = { "success",
                                               "we don't know the decryption seed",
                                               "error on unpacking file" };
 
-/* Return the configured libmpq package version. */
-const char *
-libmpq__version(void)
-{
-    return VERSION;
-}
-
-/* Translate a libmpq return code into a static diagnostic string. */
-const char *
-libmpq__strerror(int32_t return_code)
-{
-
-    /* Only negative libmpq error codes and zero are valid table indexes. */
-    if (-return_code < 0 ||
-        (size_t)-return_code >= sizeof(libmpq_error_strings) / sizeof(libmpq_error_strings[0]))
-        return NULL;
-
-    /* Return the static string owned by the library. */
-    return libmpq_error_strings[-return_code];
-}
-
 /* Open an MPQ archive path and prepare decoded metadata for later operations. */
 static int32_t
 archive_open_path(
@@ -425,6 +404,63 @@ error:
     return result;
 }
 
+/* Validate that a public file number maps to an extractable archive entry. */
+static int32_t
+validate_file_number(mpq_archive_s *mpq_archive, uint32_t file_number)
+{
+    if (file_number >= mpq_archive->files) {
+        return LIBMPQ_ERROR_EXIST;
+    }
+
+    return LIBMPQ_SUCCESS;
+}
+
+/* Return the number of sectors needed to represent a file entry. */
+static uint32_t
+count_file_blocks(mpq_archive_s *mpq_archive, uint32_t file_number)
+{
+    uint32_t block_table_index = mpq_archive->mpq_map[file_number].block_table_indices;
+    uint32_t unpacked_size = mpq_archive->mpq_block[block_table_index].unpacked_size;
+
+    if ((mpq_archive->mpq_block[block_table_index].flags & LIBMPQ_FLAG_SINGLE) != 0) {
+        return 1;
+    }
+
+    return (unpacked_size + mpq_archive->block_size - 1) / mpq_archive->block_size;
+}
+
+/* Validate that a block number exists for the selected file entry. */
+static int32_t
+validate_block_number(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number)
+{
+    if (block_number >= count_file_blocks(mpq_archive, file_number)) {
+        return LIBMPQ_ERROR_EXIST;
+    }
+
+    return LIBMPQ_SUCCESS;
+}
+
+/* Return the configured libmpq package version. */
+const char *
+libmpq__version(void)
+{
+    return VERSION;
+}
+
+/* Translate a libmpq return code into a static diagnostic string. */
+const char *
+libmpq__strerror(int32_t return_code)
+{
+
+    /* Only negative libmpq error codes and zero are valid table indexes. */
+    if (-return_code < 0 ||
+        (size_t)-return_code >= sizeof(libmpq_error_strings) / sizeof(libmpq_error_strings[0]))
+        return NULL;
+
+    /* Return the static string owned by the library. */
+    return libmpq_error_strings[-return_code];
+}
+
 /* Open an MPQ archive from a path and optional embedded archive offset. */
 int32_t
 libmpq__archive_open(
@@ -566,42 +602,6 @@ int32_t
 libmpq__archive_files(mpq_archive_s *mpq_archive, uint32_t *files)
 {
     *files = mpq_archive->files;
-
-    return LIBMPQ_SUCCESS;
-}
-
-/* Validate that a public file number maps to an extractable archive entry. */
-static int32_t
-validate_file_number(mpq_archive_s *mpq_archive, uint32_t file_number)
-{
-    if (file_number >= mpq_archive->files) {
-        return LIBMPQ_ERROR_EXIST;
-    }
-
-    return LIBMPQ_SUCCESS;
-}
-
-/* Return the number of sectors needed to represent a file entry. */
-static uint32_t
-count_file_blocks(mpq_archive_s *mpq_archive, uint32_t file_number)
-{
-    uint32_t block_table_index = mpq_archive->mpq_map[file_number].block_table_indices;
-    uint32_t unpacked_size = mpq_archive->mpq_block[block_table_index].unpacked_size;
-
-    if ((mpq_archive->mpq_block[block_table_index].flags & LIBMPQ_FLAG_SINGLE) != 0) {
-        return 1;
-    }
-
-    return (unpacked_size + mpq_archive->block_size - 1) / mpq_archive->block_size;
-}
-
-/* Validate that a block number exists for the selected file entry. */
-static int32_t
-validate_block_number(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number)
-{
-    if (block_number >= count_file_blocks(mpq_archive, file_number)) {
-        return LIBMPQ_ERROR_EXIST;
-    }
 
     return LIBMPQ_SUCCESS;
 }

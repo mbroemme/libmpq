@@ -53,6 +53,38 @@ static const uint32_t wave_step_sizes[] = {
     0x00007FFF
 };
 
+/* Quantize one PCM predictor difference into the MPQ ADPCM control byte. */
+static uint8_t
+wave_encode_delta(int32_t difference, int32_t *predictor, int32_t *step_index, uint32_t shift)
+{
+    uint32_t step = wave_step_sizes[*step_index];
+    uint32_t magnitude = (difference < 0) ? (uint32_t)-difference : (uint32_t)difference;
+    uint32_t code = difference < 0 ? 0x40u : 0;
+    uint32_t bit;
+    int32_t delta = (int32_t)(step >> shift);
+    for (bit = 0; bit < 6; bit++) {
+        uint32_t contribution = step >> bit;
+        if (magnitude >= (uint32_t)(delta + (int32_t)contribution)) {
+            code |= 1u << bit;
+            delta += (int32_t)contribution;
+        }
+    }
+    if (difference < 0)
+        *predictor -= delta;
+    else
+        *predictor += delta;
+    if (*predictor > 32767)
+        *predictor = 32767;
+    if (*predictor < -32768)
+        *predictor = -32768;
+    *step_index += (int32_t)wave_step_adjustments[code & 0x1f];
+    if (*step_index < 0)
+        *step_index = 0;
+    if (*step_index > 0x58)
+        *step_index = 0x58;
+    return (uint8_t)code;
+}
+
 /* Inspect a RIFF/WAVE prefix and validate its PCM16 channel configuration. */
 int32_t
 libmpq__wave_probe_pcm16(const uint8_t *data, uint32_t size, libmpq_wave_info_s *info)
@@ -86,38 +118,6 @@ libmpq__wave_probe_pcm16(const uint8_t *data, uint32_t size, libmpq_wave_info_s 
     info->data_offset = data_offset;
     info->data_size = data_size;
     return 0;
-}
-
-/* Quantize one PCM predictor difference into the MPQ ADPCM control byte. */
-static uint8_t
-wave_encode_delta(int32_t difference, int32_t *predictor, int32_t *step_index, uint32_t shift)
-{
-    uint32_t step = wave_step_sizes[*step_index];
-    uint32_t magnitude = (difference < 0) ? (uint32_t)-difference : (uint32_t)difference;
-    uint32_t code = difference < 0 ? 0x40u : 0;
-    uint32_t bit;
-    int32_t delta = (int32_t)(step >> shift);
-    for (bit = 0; bit < 6; bit++) {
-        uint32_t contribution = step >> bit;
-        if (magnitude >= (uint32_t)(delta + (int32_t)contribution)) {
-            code |= 1u << bit;
-            delta += (int32_t)contribution;
-        }
-    }
-    if (difference < 0)
-        *predictor -= delta;
-    else
-        *predictor += delta;
-    if (*predictor > 32767)
-        *predictor = 32767;
-    if (*predictor < -32768)
-        *predictor = -32768;
-    *step_index += (int32_t)wave_step_adjustments[code & 0x1f];
-    if (*step_index < 0)
-        *step_index = 0;
-    if (*step_index > 0x58)
-        *step_index = 0x58;
-    return (uint8_t)code;
 }
 
 /* Encode one complete PCM sector using the MPQ mono/stereo ADPCM format. */
