@@ -84,7 +84,7 @@ libmpq__archive_create(
 int32_t
 libmpq__file_begin(
     mpq_archive_s *archive, const char *name, libmpq__off_t size,
-    const mpq_file_create_options_s *options, mpq_file_writer_s **out
+    const mpq_file_create_options_s *options, mpq_writer_s **out
 )
 {
     return libmpq__writer_file_begin(archive, name, size, options, out);
@@ -92,14 +92,14 @@ libmpq__file_begin(
 
 /* Write one input range through the internal writer implementation. */
 int32_t
-libmpq__file_write(mpq_file_writer_s *writer, const uint8_t *buffer, libmpq__off_t size)
+libmpq__file_write(mpq_writer_s *writer, const uint8_t *buffer, libmpq__off_t size)
 {
     return libmpq__writer_file_write(writer, buffer, size);
 }
 
 /* Finish a streamed file through the internal writer implementation. */
 int32_t
-libmpq__file_finish(mpq_file_writer_s *writer)
+libmpq__file_finish(mpq_writer_s *writer)
 {
     return libmpq__writer_file_finish(writer);
 }

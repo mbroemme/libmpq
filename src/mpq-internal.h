@@ -178,10 +178,10 @@ struct mpq_archive
     char **write_names;
     uint16_t *write_locales;
     uint16_t *write_platforms;
-    mpq_file_writer_s *write_current;
+    mpq_writer_s *write_current;
 };
 
-struct mpq_file_writer
+struct mpq_writer
 {
     mpq_archive_s *archive;
     char *name;

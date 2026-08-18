@@ -4,7 +4,7 @@ libmpq__file_begin \- begin a streamed MPQ file
 .SH SYNOPSIS
 .B #include <libmpq/mpq.h>
 .PP
-.B int32_t libmpq__file_begin(mpq_archive_s *archive, const char *name, libmpq__off_t size, const mpq_file_create_options_s *options, mpq_file_writer_s **writer);
+.B int32_t libmpq__file_begin(mpq_archive_s *archive, const char *name, libmpq__off_t size, const mpq_file_create_options_s *options, mpq_writer_s **writer);
 .SH DESCRIPTION
 Begins a file whose final unpacked size is known. Supply bytes with
 libmpq__file_write(3), then call libmpq__file_finish(3).

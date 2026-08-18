@@ -266,7 +266,7 @@ encode_sector(
 
 /* Compress, encrypt, and append the writer's currently buffered sector. */
 static int32_t
-stream_flush_sector(mpq_file_writer_s *writer)
+stream_flush_sector(mpq_writer_s *writer)
 {
     mpq_archive_s *archive = writer->archive;
     uint8_t *packed = NULL;
@@ -326,7 +326,7 @@ stream_flush_sector(mpq_file_writer_s *writer)
 
 /* Finish the streamed file by writing its offset table and archive metadata. */
 static int32_t
-stream_finish(mpq_file_writer_s *writer)
+stream_finish(mpq_writer_s *writer)
 {
     mpq_archive_s *archive = writer->archive;
     uint32_t index, slot, hash1, hash2, hash3, i;
@@ -617,11 +617,11 @@ libmpq__writer_archive_create(
 int32_t
 libmpq__writer_file_begin(
     mpq_archive_s *a, const char *name, libmpq__off_t size,
-    const mpq_file_create_options_s *options, mpq_file_writer_s **out
+    const mpq_file_create_options_s *options, mpq_writer_s **out
 )
 {
     mpq_file_create_options_s defaults = { 0, 0, 0, 0, 0 };
-    mpq_file_writer_s *w;
+    mpq_writer_s *w;
     if (!a || !a->write_mode || !name || !out || size < 0 || a->write_current)
         return LIBMPQ_ERROR_FORMAT;
     if (options == NULL)
@@ -713,7 +713,7 @@ libmpq__writer_file_begin(
 
 /* Append caller-provided bytes and flush complete sectors immediately. */
 int32_t
-libmpq__writer_file_write(mpq_file_writer_s *w, const uint8_t *buffer, libmpq__off_t size)
+libmpq__writer_file_write(mpq_writer_s *w, const uint8_t *buffer, libmpq__off_t size)
 {
     if (!w || (!buffer && size != 0) || size < 0 || size > w->expected - w->written)
         return LIBMPQ_ERROR_SIZE;
@@ -736,7 +736,7 @@ libmpq__writer_file_write(mpq_file_writer_s *w, const uint8_t *buffer, libmpq__o
 
 /* Flush the final sector and commit the file's block and hash-table entries. */
 int32_t
-libmpq__writer_file_finish(mpq_file_writer_s *w)
+libmpq__writer_file_finish(mpq_writer_s *w)
 {
     int32_t result;
     if (!w)
@@ -763,7 +763,7 @@ libmpq__writer_file_add(
     const mpq_file_create_options_s *options
 )
 {
-    mpq_file_writer_s *w;
+    mpq_writer_s *w;
     int32_t result = libmpq__writer_file_begin(a, name, size, options, &w);
     if (result < 0)
         return result;
@@ -790,7 +790,7 @@ libmpq__writer_file_add_path(
     uint8_t buffer[4096];
     size_t got;
     int32_t result;
-    mpq_file_writer_s *writer;
+    mpq_writer_s *writer;
     fp = fopen(source, "rb");
     if (!fp)
         return LIBMPQ_ERROR_OPEN;

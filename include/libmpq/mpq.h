@@ -55,7 +55,7 @@ extern "C" {
 
 /* Opaque archive handle owned by libmpq. */
 typedef struct mpq_archive mpq_archive_s;
-typedef struct mpq_file_writer mpq_file_writer_s;
+typedef struct mpq_writer mpq_writer_s;
 
 /* Archive versions accepted by libmpq__archive_create. */
 #define LIBMPQ_ARCHIVE_VERSION_ONE 0
@@ -121,11 +121,11 @@ extern LIBMPQ_API int32_t libmpq__archive_create(
 /* Begin, stream, and finish one file in a writer archive. */
 extern LIBMPQ_API int32_t libmpq__file_begin(
     mpq_archive_s *mpq_archive, const char *filename, libmpq__off_t unpacked_size,
-    const mpq_file_create_options_s *options, mpq_file_writer_s **writer
+    const mpq_file_create_options_s *options, mpq_writer_s **writer
 );
 extern LIBMPQ_API int32_t
-libmpq__file_write(mpq_file_writer_s *writer, const uint8_t *buffer, libmpq__off_t size);
-extern LIBMPQ_API int32_t libmpq__file_finish(mpq_file_writer_s *writer);
+libmpq__file_write(mpq_writer_s *writer, const uint8_t *buffer, libmpq__off_t size);
+extern LIBMPQ_API int32_t libmpq__file_finish(mpq_writer_s *writer);
 extern LIBMPQ_API int32_t libmpq__file_add(
     mpq_archive_s *mpq_archive, const char *filename, const uint8_t *buffer, libmpq__off_t size,
     const mpq_file_create_options_s *options
