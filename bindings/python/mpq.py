@@ -99,6 +99,7 @@ def check_error(result, func, arguments, errors=errors):
 libmpq.libmpq__version.restype = ctypes.c_char_p
 
 libmpq.libmpq__archive_open.errcheck = check_error
+libmpq.libmpq__archive_clone.errcheck = check_error
 libmpq.libmpq__archive_close.errcheck = check_error
 libmpq.libmpq__archive_size_packed.errcheck = check_error
 libmpq.libmpq__archive_size_unpacked.errcheck = check_error
@@ -322,6 +323,21 @@ class Archive(object):
 
     packed_size = property(lambda self: self.size_packed)
     unpacked_size = property(lambda self: self.size_unpacked)
+
+    def clone(self, ctypes=ctypes, libmpq=libmpq):
+        """Return an independently readable handle for the same archive path."""
+        clone = self.__class__.__new__(self.__class__)
+        clone._source = self._source
+        clone.filename = self.filename
+        clone._mpq = ctypes.c_void_p()
+        libmpq.libmpq__archive_clone(ctypes.byref(clone._mpq), self._mpq)
+        clone._opened = True
+        clone.size_packed = self.size_packed
+        clone.size_unpacked = self.size_unpacked
+        clone.offset = self.offset
+        clone.version = self.version
+        clone.files = self.files
+        return clone
 
     def __del__(self, libmpq=libmpq):
         """Close the underlying libmpq archive handle if it was opened."""

@@ -68,9 +68,9 @@ libmpq__strerror(int32_t return_code)
     return libmpq_error_strings[-return_code];
 }
 
-/* Open an MPQ archive and prepare decoded metadata for later file and block operations. */
-int32_t
-libmpq__archive_open(
+/* Open an MPQ archive path and prepare decoded metadata for later operations. */
+static int32_t
+archive_open_path(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset
 )
 {
@@ -89,6 +89,25 @@ libmpq__archive_open(
     if ((*mpq_archive = calloc(1, sizeof(mpq_archive_s))) == NULL) {
         return LIBMPQ_ERROR_MALLOC;
     }
+
+    (*mpq_archive)->filename = malloc(strlen(mpq_filename) + 1);
+    if ((*mpq_archive)->filename == NULL) {
+        result = LIBMPQ_ERROR_MALLOC;
+        goto error;
+    }
+    memcpy((*mpq_archive)->filename, mpq_filename, strlen(mpq_filename) + 1);
+
+#if !defined(_WIN32) && !defined(_WIN64)
+    {
+        struct stat file_status;
+
+        if (stat(mpq_filename, &file_status) == 0) {
+            (*mpq_archive)->file_device = (uint64_t)file_status.st_dev;
+            (*mpq_archive)->file_inode = (uint64_t)file_status.st_ino;
+            (*mpq_archive)->file_identity_valid = TRUE;
+        }
+    }
+#endif
 
     /* Open the archive file for binary reads. */
     errno = 0;
@@ -271,6 +290,7 @@ error:
     free((*mpq_archive)->mpq_hash);
     free((*mpq_archive)->mpq_block);
     free((*mpq_archive)->mpq_block_ex);
+    free((*mpq_archive)->filename);
     free(*mpq_archive);
 
     *mpq_archive = NULL;
@@ -278,14 +298,58 @@ error:
     return result;
 }
 
+/* Open an MPQ archive from a path and optional embedded archive offset. */
+int32_t
+libmpq__archive_open(
+    mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset
+)
+{
+    return archive_open_path(mpq_archive, mpq_filename, archive_offset);
+}
+
+/* Reopen an archive with independent file I/O, metadata, and lazy caches. */
+int32_t
+libmpq__archive_clone(mpq_archive_s **clone, mpq_archive_s *source)
+{
+    struct stat file_status;
+
+    if (clone == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *clone = NULL;
+
+    if (source == NULL || source->filename == NULL)
+        return LIBMPQ_ERROR_EXIST;
+
+#if !defined(_WIN32) && !defined(_WIN64)
+    if (source->file_identity_valid) {
+        if (stat(source->filename, &file_status) < 0)
+            return errno == ENOENT ? LIBMPQ_ERROR_EXIST : LIBMPQ_ERROR_OPEN;
+        if ((uint64_t)file_status.st_dev != source->file_device ||
+            (uint64_t)file_status.st_ino != source->file_inode)
+            return LIBMPQ_ERROR_EXIST;
+    }
+#endif
+
+    return archive_open_path(clone, source->filename, source->archive_offset);
+}
+
 /* Close the archive file and release all metadata tables allocated during archive open. */
 int32_t
 libmpq__archive_close(mpq_archive_s *mpq_archive)
 {
+    uint32_t i;
+
     if ((fclose(mpq_archive->fp)) < 0) {
 
         /* Keep the handle intact so the caller may retry closing it. */
         return LIBMPQ_ERROR_CLOSE;
+    }
+
+    for (i = 0; i < mpq_archive->mpq_header.block_table_count; i++) {
+        if (mpq_archive->mpq_file[i] != NULL) {
+            free(mpq_archive->mpq_file[i]->packed_offset);
+            free(mpq_archive->mpq_file[i]);
+        }
     }
 
     free(mpq_archive->mpq_map);
@@ -293,6 +357,7 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
     free(mpq_archive->mpq_hash);
     free(mpq_archive->mpq_block);
     free(mpq_archive->mpq_block_ex);
+    free(mpq_archive->filename);
     free(mpq_archive);
 
     return LIBMPQ_SUCCESS;

@@ -57,6 +57,9 @@ char *libmpq__version();
 /* Open an MPQ archive from a file path and optional embedded archive offset. */
 int libmpq__archive_open(mpq_archive_s **mpq_archive, char *mpq_filename, off_t archive_offset);
 
+/* Clone an archive using an independent stream and private decoded state. */
+int libmpq__archive_clone(mpq_archive_s **clone, mpq_archive_s *source);
+
 /* Close an opened archive and release its decoded metadata tables. */
 int libmpq__archive_close(mpq_archive_s *mpq_archive);
 
@@ -190,6 +193,7 @@ template MPQ_FUNC(char[] func_name) {
 
 alias libmpq__version libversion; /* must be direct alias because it returns char*, not error int */
 mixin(MPQ_FUNC!("archive_open"));
+mixin(MPQ_FUNC!("archive_clone"));
 mixin(MPQ_FUNC!("archive_close"));
 mixin(MPQ_FUNC!("archive_packed_size"));
 mixin(MPQ_FUNC!("archive_unpacked_size"));
@@ -239,6 +243,16 @@ class Archive {
 	/** Open an MPQ archive at the optional embedded archive offset. */
 	this(char[] archivename, off_t offset = -1) {
 		archive_open(&m, toStringz(archivename), offset);
+	}
+
+	private this() {
+	}
+
+	/** Create an independently readable wrapper for this archive. */
+	Archive clone() {
+		auto result = new Archive();
+		archive_clone(&result.m, m);
+		return result;
 	}
 
 	mixin(MPQ_A_GET!("off_t", "packed_size"));

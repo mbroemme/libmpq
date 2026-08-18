@@ -70,6 +70,9 @@ extern LIBMPQ_API int32_t libmpq__archive_open(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset
 );
 
+/* Clone an archive using an independent stream and private decoded state. */
+extern LIBMPQ_API int32_t libmpq__archive_clone(mpq_archive_s **clone, mpq_archive_s *source);
+
 /* Close an opened archive and release its decoded metadata tables. */
 extern LIBMPQ_API int32_t libmpq__archive_close(mpq_archive_s *mpq_archive);
 

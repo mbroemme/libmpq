@@ -148,9 +148,13 @@ typedef struct
 /* Runtime archive handle containing file I/O state and decoded metadata tables. */
 struct mpq_archive
 {
-    FILE *fp;             /* Backing file handle. */
-    uint32_t block_size;  /* Unpacked sector size in bytes. */
-    off_t archive_offset; /* Absolute archive start in the backing file. */
+    FILE *fp;                    /* Backing file handle. */
+    char *filename;              /* Original path used to reopen this archive. */
+    uint64_t file_device;        /* Device identity captured when supported. */
+    uint64_t file_inode;         /* Inode identity captured when supported. */
+    uint8_t file_identity_valid; /* Whether the path identity is reliable. */
+    uint32_t block_size;         /* Unpacked sector size in bytes. */
+    off_t archive_offset;        /* Absolute archive start in the backing file. */
 
     mpq_header_s mpq_header;       /* Decoded base archive header. */
     mpq_header_ex_s mpq_header_ex; /* Decoded extended archive header. */

@@ -30,6 +30,11 @@ libmpq \- cross-platform C library for reading MPQ archives.
 .BI "        libmpq__off_t   " "archive_offset"
 .BI ");"
 .sp
+.BI "int32_t libmpq__archive_clone("
+.BI "        mpq_archive_s **" "clone",
+.BI "        mpq_archive_s  *" "source"
+.BI ");"
+.sp
 .BI "int32_t libmpq__archive_close("
 .BI "        mpq_archive_s  *" "mpq_archive"
 .BI ");"
@@ -161,10 +166,17 @@ libmpq \- cross-platform C library for reading MPQ archives.
 The \fIlibmpq\fP library reads MPQ archives, decrypts and decompresses file
 data, and extracts files compressed with zlib, bzip2, or PKWARE implosion.
 Archive creation is not supported.
+.PP
+An archive handle is not safe for concurrent operations. Use
+\fBlibmpq__archive_clone\fP() to create one independent reader per worker.
+Cloning reopens the original backing path and reparses its metadata; it is
+not snapshot semantics. The path must remain readable and unchanged while
+clones are created or used.
 .SH SEE ALSO
 .BR libmpq__version (3),
 .BR libmpq__strerror (3),
 .BR libmpq__archive_open (3),
+.BR libmpq__archive_clone (3),
 .BR libmpq__archive_close (3),
 .BR libmpq__archive_size_packed (3),
 .BR libmpq__archive_size_unpacked (3),

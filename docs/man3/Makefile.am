@@ -5,6 +5,7 @@ EXTRA_DIST			= $(man_MANS)
 man_MANS =				\
 	libmpq.3			\
 	libmpq__archive_close.3		\
+	libmpq__archive_clone.3		\
 	libmpq__archive_files.3		\
 	libmpq__archive_offset.3	\
 	libmpq__archive_open.3		\
