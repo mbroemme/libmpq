@@ -876,7 +876,7 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
 
     /* Compressed multi-sector files store a packed sector offset table in the archive. */
     if ((mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags &
-         LIBMPQ_FLAG_COMPRESSED) != 0 &&
+         (LIBMPQ_FLAG_COMPRESSED | LIBMPQ_FLAG_COMPRESS_PKZIP)) != 0 &&
         (mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags &
          LIBMPQ_FLAG_SINGLE) == 0) {
         if (fseeko(

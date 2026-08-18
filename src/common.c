@@ -236,15 +236,17 @@ libmpq__decompress_block(
              compression_type == LIBMPQ_FLAG_COMPRESS_MULTI) {
 
         /* Some MPQ blocks carry a compression flag even though the payload is already raw. */
-        if (in_size < out_size) {
-            if (compression_type == LIBMPQ_FLAG_COMPRESS_PKZIP) {
-                if ((tb = libmpq__decompress_pkzip(in_buf, in_size, out_buf, out_size)) < 0) {
-                    return tb;
-                }
+        if (compression_type == LIBMPQ_FLAG_COMPRESS_PKZIP) {
+
+            /* Standalone implode has no multi-compression mask and may be
+             * larger than the source (notably for literal-only streams). */
+            if ((tb = libmpq__decompress_pkzip(in_buf, in_size, out_buf, out_size)) < 0) {
+                return tb;
             }
+        } else if (in_size < out_size) {
 
             /* Run the chained MPQ decompressor selected by the block header byte. */
-            else if (compression_type == LIBMPQ_FLAG_COMPRESS_MULTI) {
+            if (compression_type == LIBMPQ_FLAG_COMPRESS_MULTI) {
 
                 /* Storm.dll 1.0.9 accepts an unused archive path compatibility parameter. */
                 if ((tb = libmpq__decompress_multi(in_buf, in_size, out_buf, out_size)) < 0) {

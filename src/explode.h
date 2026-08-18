@@ -86,4 +86,9 @@ typedef struct
 /* Initialize PKWARE decoder state and expand the compressed stream. */
 uint32_t libmpq__do_decompress_pkzip(uint8_t *work_buf, void *param);
 
+/* Encode a valid binary PKWARE stream using the DCL literal and simple-run forms. */
+int32_t libmpq__compress_pkzip(
+    const uint8_t *in_buf, uint32_t in_size, uint8_t **out_buf, uint32_t *out_size
+);
+
 #endif /* LIBMPQ_EXPLODE_H */

@@ -6,6 +6,7 @@
 #include "common.h"
 #include "endian.h"
 #include "extract.h"
+#include "explode.h"
 #include "mpq-internal.h"
 #include <libmpq/mpq.h>
 
@@ -55,7 +56,9 @@ file_key(const char *name)
 static int
 supported_mask(uint32_t mask)
 {
-    return (mask & ~(LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) == 0;
+    return (mask & ~(LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_ZLIB |
+                     LIBMPQ_COMPRESSION_PKZIP | LIBMPQ_COMPRESSION_BZIP2 |
+                     LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO)) == 0;
 }
 
 static int32_t
@@ -70,7 +73,18 @@ compress_stage(uint8_t **data, size_t *size, uint32_t mask)
     out = malloc(out_size);
     if (out == NULL)
         return LIBMPQ_ERROR_MALLOC;
-    if (mask == LIBMPQ_COMPRESSION_ZLIB) {
+    if (mask == LIBMPQ_COMPRESSION_PKZIP) {
+        uint8_t *candidate = NULL;
+        uint32_t candidate_size = 0;
+        free(out);
+        int32_t status = libmpq__compress_pkzip(*data, (uint32_t)*size, &candidate, &candidate_size);
+        if (status < 0)
+            return status;
+        free(*data);
+        *data = candidate;
+        *size = candidate_size;
+        return LIBMPQ_SUCCESS;
+    } else if (mask == LIBMPQ_COMPRESSION_ZLIB) {
         memset(&z, 0, sizeof(z));
         z.next_in = *data;
         z.avail_in = (uInt)*size;
@@ -122,7 +136,9 @@ encode_sector(const uint8_t *input, size_t input_size, uint32_t requested, uint8
 {
     uint8_t *data;
     size_t size;
-    uint32_t masks[] = { LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_BZIP2 };
+    uint32_t masks[] = { LIBMPQ_COMPRESSION_WAVE_MONO, LIBMPQ_COMPRESSION_WAVE_STEREO,
+                         LIBMPQ_COMPRESSION_HUFFMAN, LIBMPQ_COMPRESSION_ZLIB,
+                         LIBMPQ_COMPRESSION_PKZIP, LIBMPQ_COMPRESSION_BZIP2 };
     size_t i;
 
     if (!supported_mask(requested))
@@ -135,12 +151,34 @@ encode_sector(const uint8_t *input, size_t input_size, uint32_t requested, uint8
     *emitted_mask = 0;
     for (i = 0; i < sizeof(masks) / sizeof(masks[0]); i++) {
         if (requested & masks[i]) {
-            int32_t result = compress_stage(&data, &size, masks[i]);
-            if (result < 0) {
+            size_t before = size;
+            uint8_t *saved = malloc(before ? before : 1);
+            int32_t result;
+            if (saved == NULL) {
                 free(data);
-                return result;
+                return LIBMPQ_ERROR_MALLOC;
             }
-            *emitted_mask |= (uint8_t)masks[i];
+            memcpy(saved, data, before);
+            if (masks[i] == LIBMPQ_COMPRESSION_WAVE_MONO ||
+                masks[i] == LIBMPQ_COMPRESSION_WAVE_STEREO ||
+                masks[i] == LIBMPQ_COMPRESSION_HUFFMAN) {
+                free(saved);
+                continue;
+            }
+            result = compress_stage(&data, &size, masks[i]);
+            if (result < 0) {
+                free(saved);
+                continue;
+            }
+            if (size <= before - (before >= 2 ? 2 : before))
+                *emitted_mask |= (uint8_t)masks[i];
+            else {
+                free(data);
+                data = saved;
+                size = before;
+                saved = NULL;
+            }
+            free(saved);
         }
     }
     if (*emitted_mask == 0 || size + 1 >= input_size) {
@@ -177,7 +215,8 @@ add_finished(mpq_file_writer_s *writer)
         return LIBMPQ_ERROR_SIZE;
     if (archive->write_current != writer)
         return LIBMPQ_ERROR_EXIST;
-    if ((writer->options.flags & LIBMPQ_FILE_FLAG_IMPLODE) != 0)
+    if ((writer->options.flags & LIBMPQ_FILE_FLAG_IMPLODE) != 0 &&
+        (writer->options.flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0)
         return LIBMPQ_ERROR_FORMAT;
     mask = writer->options.compression_first;
     if (writer->options.compression_next == 0)
@@ -186,6 +225,13 @@ add_finished(mpq_file_writer_s *writer)
         return LIBMPQ_ERROR_FORMAT;
     if ((writer->options.flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0 &&
         !supported_mask(writer->options.compression_next))
+        return LIBMPQ_ERROR_FORMAT;
+    if ((writer->options.compression_first & (LIBMPQ_COMPRESSION_WAVE_MONO |
+                                              LIBMPQ_COMPRESSION_WAVE_STEREO)) != 0 ||
+        (writer->options.compression_next & (LIBMPQ_COMPRESSION_WAVE_MONO |
+                                             LIBMPQ_COMPRESSION_WAVE_STEREO)) != 0 ||
+        (writer->options.compression_first & LIBMPQ_COMPRESSION_HUFFMAN) != 0 ||
+        (writer->options.compression_next & LIBMPQ_COMPRESSION_HUFFMAN) != 0)
         return LIBMPQ_ERROR_FORMAT;
 
     libmpq__file_hash(writer->name, &hash1, &hash2, &hash3);
@@ -207,10 +253,12 @@ add_finished(mpq_file_writer_s *writer)
     offset_count = blocks + 1;
     payload_offset = (uint64_t)ftello(archive->fp);
     if ((writer->options.flags & LIBMPQ_FILE_FLAG_SINGLE) == 0 &&
-        (writer->options.flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0) {
+        ((writer->options.flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0 ||
+         (writer->options.flags & LIBMPQ_FILE_FLAG_IMPLODE) != 0)) {
         offsets = calloc(offset_count, sizeof(*offsets));
         if (offsets == NULL)
             return LIBMPQ_ERROR_MALLOC;
+
         /* The offset table is part of the packed file and precedes its sectors. */
         if (fseeko(archive->fp, (off_t)(payload_offset + (uint64_t)offset_count * 4), SEEK_SET) < 0) {
             free(offsets);
@@ -233,6 +281,14 @@ add_finished(mpq_file_writer_s *writer)
         if ((writer->options.flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0)
             result = encode_sector(writer->data + (size_t)i * archive->write_sector_size,
                                    input_size, requested, &packed, &packed_size, &emitted);
+        else if ((writer->options.flags & LIBMPQ_FILE_FLAG_IMPLODE) != 0) {
+            uint32_t packed32 = 0;
+            result = libmpq__compress_pkzip(
+                writer->data + (size_t)i * archive->write_sector_size,
+                (uint32_t)input_size, &packed, &packed32
+            );
+            packed_size = packed32;
+        }
         else {
             packed = malloc(input_size ? input_size : 1);
             if (packed == NULL)
@@ -282,7 +338,7 @@ add_finished(mpq_file_writer_s *writer)
     archive->mpq_block[index].unpacked_size = (uint32_t)writer->expected;
     archive->mpq_block[index].flags = LIBMPQ_FLAG_EXISTS | writer->options.flags;
     if ((writer->options.flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0)
-        archive->mpq_block[index].flags |= LIBMPQ_FLAG_COMPRESSED;
+        archive->mpq_block[index].flags |= LIBMPQ_FLAG_COMPRESS_MULTI;
     archive->mpq_block_ex[index].offset_high = (uint16_t)(payload_offset >> 32);
     archive->write_names[index] = writer->name;
     archive->write_locales[index] = writer->options.locale;

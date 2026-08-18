@@ -26,6 +26,7 @@
 #include <libmpq/mpq.h>
 
 #include <string.h>
+#include <stdlib.h>
 
 /* Distance bit lengths used by the PKWARE explode distance decoder. */
 static const uint8_t pkzip_dist_bits[] = {
@@ -59,6 +60,71 @@ static const uint8_t pkzip_slen_bits[] = { 0x03, 0x02, 0x03, 0x03, 0x04, 0x04, 0
 /* Codes for the static copy-length Huffman table. */
 static const uint8_t pkzip_len_code[] = { 0x05, 0x03, 0x01, 0x06, 0x0A, 0x02, 0x0C, 0x14,
                                           0x04, 0x18, 0x08, 0x30, 0x10, 0x20, 0x40, 0x00 };
+
+static void
+pkzip_put_bits(uint8_t *out, size_t *bit_pos, uint32_t value, unsigned bits)
+{
+    unsigned i;
+    for (i = 0; i < bits; i++, (*bit_pos)++)
+        if (value & (1u << i))
+            out[*bit_pos >> 3] |= (uint8_t)(1u << (*bit_pos & 7));
+}
+
+int32_t
+libmpq__compress_pkzip(
+    const uint8_t *in_buf, uint32_t in_size, uint8_t **out_buf, uint32_t *out_size
+)
+{
+    size_t bit_count = (size_t)in_size * 9 + 16;
+    size_t bytes = 2 + (bit_count + 7) / 8;
+    uint8_t *out;
+    uint32_t i;
+
+    if (out_buf == NULL || out_size == NULL || (in_size != 0 && in_buf == NULL))
+        return LIBMPQ_ERROR_FORMAT;
+    out = calloc(1, bytes ? bytes : 1);
+    if (out == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    out[0] = LIBMPQ_PKZIP_CMP_BINARY;
+    out[1] = 4;
+    bit_count = 0;
+    for (i = 0; i < in_size;) {
+        pkzip_put_bits(out + 2, &bit_count, 0, 1);
+        pkzip_put_bits(out + 2, &bit_count, in_buf[i], 8);
+        if (i + 2 < in_size && in_buf[i + 1] == in_buf[i] && in_buf[i + 2] == in_buf[i]) {
+            uint32_t length = 3;
+            uint32_t value, entry, extra, code;
+            while (i + length < in_size && length < 0x206 && in_buf[i + length] == in_buf[i])
+                length++;
+            value = length - 2;
+            for (entry = 0; entry < 16; entry++) {
+                extra = pkzip_clen_bits[entry];
+                if (value >= pkzip_len_base[entry] &&
+                    value < pkzip_len_base[entry] + (1u << extra))
+                    break;
+            }
+            if (entry == 16)
+                entry = 15;
+            code = ((value - pkzip_len_base[entry]) << (pkzip_slen_bits[entry] + 1)) |
+                   (pkzip_len_code[entry] * 2u) | 1u;
+            pkzip_put_bits(out + 2, &bit_count, code,
+                           pkzip_slen_bits[entry] + pkzip_clen_bits[entry] + 1);
+
+            /* Distance one: distance prefix zero and a zero dictionary suffix. */
+            pkzip_put_bits(out + 2, &bit_count, pkzip_dist_code[0], pkzip_dist_bits[0]);
+            pkzip_put_bits(out + 2, &bit_count, 0, 4);
+            i += length;
+        } else {
+            i++;
+        }
+    }
+
+    /* Length table 15, extra value 255: the canonical 0x305 terminator. */
+    pkzip_put_bits(out + 2, &bit_count, 0xFF01u, 16);
+    *out_buf = out;
+    *out_size = (uint32_t)(2 + (bit_count + 7) / 8);
+    return 0;
+}
 
 /* Bit lengths for the ASCII literal table. */
 static const uint8_t pkzip_bits_asc[] = {
