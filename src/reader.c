@@ -32,6 +32,9 @@
 #include <string.h>
 #include <sys/stat.h>
 
+/* Calculate a serialized table size while rejecting arithmetic overflow.
+ * MPQ table lengths are stored in 32-bit fields, so both native allocation
+ * size and on-disk representation must fit before the caller proceeds. */
 static int32_t
 table_size(uint32_t count, size_t item_size, size_t *size)
 {
@@ -43,6 +46,9 @@ table_size(uint32_t count, size_t item_size, size_t *size)
     return LIBMPQ_SUCCESS;
 }
 
+/* Decode the fixed MPQ v1 header from its little-endian byte representation.
+ * The helper performs no validation; callers validate version, offsets, and
+ * counts after all header fields have been loaded. */
 static void
 decode_mpq_header(mpq_header_s *header, const uint8_t *raw)
 {
@@ -57,6 +63,9 @@ decode_mpq_header(mpq_header_s *header, const uint8_t *raw)
     header->block_table_count = libmpq__load_le32(raw + 28);
 }
 
+/* Decode the optional MPQ v2 high-offset header extension.
+ * Its fields extend table and archive offsets without changing the v1 header
+ * layout, so they are loaded separately when the archive version requires it. */
 static void
 decode_mpq_header_ex(mpq_header_ex_s *header, const uint8_t *raw)
 {
@@ -65,6 +74,9 @@ decode_mpq_header_ex(mpq_header_ex_s *header, const uint8_t *raw)
     header->block_table_offset_high = libmpq__load_le16(raw + 10);
 }
 
+/* Decode the encrypted hash-table entries into native archive structures.
+ * Each entry is read field-by-field to avoid alignment and host-endian
+ * assumptions when the library runs on a different architecture. */
 static void
 decode_mpq_hash_table(mpq_hash_s *table, const uint8_t *raw, uint32_t count)
 {
@@ -81,6 +93,8 @@ decode_mpq_hash_table(mpq_hash_s *table, const uint8_t *raw, uint32_t count)
     }
 }
 
+/* Decode the fixed-width block table used by MPQ v1 and v2 archives.
+ * The high offset words are handled separately by the extended-table helper. */
 static void
 decode_mpq_block_table(mpq_block_s *table, const uint8_t *raw, uint32_t count)
 {
@@ -96,6 +110,9 @@ decode_mpq_block_table(mpq_block_s *table, const uint8_t *raw, uint32_t count)
     }
 }
 
+/* Decode the optional high 16-bit offset table for MPQ v2 block entries.
+ * The caller has already positioned the input at the extension table and
+ * supplies storage sized for the block-table entry count. */
 static void
 decode_mpq_block_ex_table(mpq_block_ex_s *table, const uint8_t *raw, uint32_t count)
 {
@@ -106,6 +123,9 @@ decode_mpq_block_ex_table(mpq_block_ex_s *table, const uint8_t *raw, uint32_t co
     }
 }
 
+/* Decode a packed array of little-endian 32-bit values in place.
+ * This is used for sector offset tables whose serialized representation is
+ * independent of the host CPU's byte order. */
 void
 libmpq__reader_decode_uint32_table(uint32_t *table, const uint8_t *raw, uint32_t count)
 {
@@ -116,7 +136,9 @@ libmpq__reader_decode_uint32_table(uint32_t *table, const uint8_t *raw, uint32_t
     }
 }
 
-/* Open an MPQ archive path and prepare decoded metadata for later operations. */
+/* Open an MPQ archive path and prepare decoded metadata for later operations.
+ * The routine locates the header, loads and decrypts all metadata tables, and
+ * builds the compact file map used by the public archive and block APIs. */
 int32_t
 libmpq__reader_archive_open_path(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset
@@ -133,6 +155,7 @@ libmpq__reader_archive_open_path(
     uint8_t *table_data = NULL;
     size_t table_bytes = 0;
 
+    /* A sentinel offset requests the embedded-archive scan used by readers. */
     if (archive_offset == -1) {
         archive_offset = 0;
         header_search = TRUE;
@@ -171,7 +194,7 @@ libmpq__reader_archive_open_path(
     (*mpq_archive)->mpq_header.mpq_magic = 0;
     (*mpq_archive)->files = 0;
 
-    /* Without an explicit offset, scan every 512 bytes for an embedded MPQ header. */
+    /* Probe the requested location, or advance in 512-byte steps for embedded archives. */
     while (TRUE) {
         (*mpq_archive)->mpq_header.mpq_magic = 0;
 
@@ -217,6 +240,7 @@ libmpq__reader_archive_open_path(
     (*mpq_archive)->block_size = 512 << (*mpq_archive)->mpq_header.block_size;
     (*mpq_archive)->archive_offset = archive_offset;
 
+    /* MPQ v2 stores high table offsets in a separate extension immediately after v1. */
     if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO) {
         if (fseeko((*mpq_archive)->fp, sizeof(mpq_header_s) + archive_offset, SEEK_SET) < 0) {
             result = LIBMPQ_ERROR_SEEK;
@@ -258,6 +282,7 @@ libmpq__reader_archive_open_path(
         goto error;
     }
 
+    /* Locate, read, decrypt, and decode the hash table before file lookup begins. */
     if (fseeko(
             (*mpq_archive)->fp,
             (*mpq_archive)->mpq_header.hash_table_offset +
@@ -295,6 +320,7 @@ libmpq__reader_archive_open_path(
         goto error;
     }
 
+    /* The block table uses the same fixed key pattern as the hash table. */
     if (fseeko(
             (*mpq_archive)->fp,
             (*mpq_archive)->mpq_header.block_table_offset +
@@ -321,7 +347,7 @@ libmpq__reader_archive_open_path(
     free(table_data);
     table_data = NULL;
 
-    /* Extended block tables are optional and only needed when payload offsets exceed 4 GiB. */
+    /* v2 block high words are optional and are loaded only when present. */
     if ((*mpq_archive)->mpq_header_ex.extended_offset > 0) {
         if (fseeko(
                 (*mpq_archive)->fp, (*mpq_archive)->mpq_header_ex.extended_offset + archive_offset,
@@ -371,6 +397,8 @@ libmpq__reader_archive_open_path(
     return LIBMPQ_SUCCESS;
 
 error:
+
+    /* All partially allocated reader state is released through one failure path. */
     free(table_data);
     if ((*mpq_archive)->fp)
         fclose((*mpq_archive)->fp);
@@ -388,7 +416,9 @@ error:
     return result;
 }
 
-/* Validate that a public file number maps to an extractable archive entry. */
+/* Validate that a public file number maps to an extractable archive entry.
+ * Public numbering excludes unused block-table slots, so this check protects
+ * all later map and block-table accesses from an invalid compact index. */
 int32_t
 libmpq__reader_validate_file_number(mpq_archive_s *mpq_archive, uint32_t file_number)
 {
@@ -399,7 +429,9 @@ libmpq__reader_validate_file_number(mpq_archive_s *mpq_archive, uint32_t file_nu
     return LIBMPQ_SUCCESS;
 }
 
-/* Return the number of sectors needed to represent a file entry. */
+/* Return the number of sectors needed to represent a file entry.
+ * Single-unit files always have one payload block; sectorized files use the
+ * archive block size and round the unpacked length up to a complete sector. */
 uint32_t
 libmpq__reader_count_file_blocks(mpq_archive_s *mpq_archive, uint32_t file_number)
 {
@@ -413,7 +445,9 @@ libmpq__reader_count_file_blocks(mpq_archive_s *mpq_archive, uint32_t file_numbe
     return (unpacked_size + mpq_archive->block_size - 1) / mpq_archive->block_size;
 }
 
-/* Validate that a block number exists for the selected file entry. */
+/* Validate that a block number exists for the selected file entry.
+ * The file's storage mode determines the valid range, including the special
+ * one-block case for single-unit entries. */
 int32_t
 libmpq__reader_validate_block_number(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number
@@ -426,7 +460,9 @@ libmpq__reader_validate_block_number(
     return LIBMPQ_SUCCESS;
 }
 
-/* Return the per-block decryption seed derived from the file seed and block number. */
+/* Return the per-block decryption seed derived from the file seed and block number.
+ * The helper validates file and block ownership, ensures offset metadata is
+ * available, and refuses to guess a key when anonymous decryption failed. */
 int32_t
 libmpq__reader_get_block_seed(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number, uint32_t *seed

@@ -50,14 +50,18 @@ static const char *libmpq_error_strings[] = { "success",
                                               "we don't know the decryption seed",
                                               "error on unpacking file" };
 
-/* Return the configured libmpq package version. */
+/* Return the configured libmpq package version.
+ * The returned pointer refers to immutable library storage and remains valid
+ * for the lifetime of the process. */
 const char *
 libmpq__version(void)
 {
     return VERSION;
 }
 
-/* Translate a libmpq return code into a static diagnostic string. */
+/* Translate a libmpq return code into a static diagnostic string.
+ * Valid codes index an internal immutable table; invalid positive or out-of-
+ * range negative values return NULL instead of reading outside that table. */
 const char *
 libmpq__strerror(int32_t return_code)
 {
@@ -71,7 +75,9 @@ libmpq__strerror(int32_t return_code)
     return libmpq_error_strings[-return_code];
 }
 
-/* Create an MPQ archive through the internal writer implementation. */
+/* Create an MPQ archive through the internal writer implementation.
+ * This public facade preserves the stable API while keeping archive layout
+ * and file-table construction in the writer module. */
 int32_t
 libmpq__archive_create(
     mpq_archive_s **out, const char *path, const mpq_archive_create_options_s *options
@@ -80,7 +86,9 @@ libmpq__archive_create(
     return libmpq__writer_archive_create(out, path, options);
 }
 
-/* Begin a streamed file through the internal writer implementation. */
+/* Begin a streamed file through the internal writer implementation.
+ * The returned opaque writer owns the in-progress file state until finish or
+ * an error closes the stream. */
 int32_t
 libmpq__file_begin(
     mpq_archive_s *archive, const char *name, libmpq__off_t size,
@@ -90,21 +98,27 @@ libmpq__file_begin(
     return libmpq__writer_file_begin(archive, name, size, options, out);
 }
 
-/* Write one input range through the internal writer implementation. */
+/* Write one input range through the internal writer implementation.
+ * The writer validates the declared file size and buffers or flushes sectors
+ * according to the selected storage and compression options. */
 int32_t
 libmpq__file_write(mpq_writer_s *writer, const uint8_t *buffer, libmpq__off_t size)
 {
     return libmpq__writer_file_write(writer, buffer, size);
 }
 
-/* Finish a streamed file through the internal writer implementation. */
+/* Finish a streamed file through the internal writer implementation.
+ * Finalization verifies that all declared bytes were supplied and publishes
+ * the completed file entry in the archive tables. */
 int32_t
 libmpq__file_finish(mpq_writer_s *writer)
 {
     return libmpq__writer_file_finish(writer);
 }
 
-/* Add an in-memory file through the internal writer implementation. */
+/* Add an in-memory file through the internal writer implementation.
+ * The convenience call performs begin, write, and finish operations while
+ * retaining the same validation and compression behavior as streaming. */
 int32_t
 libmpq__file_add(
     mpq_archive_s *archive, const char *name, const uint8_t *data, libmpq__off_t size,
@@ -114,7 +128,9 @@ libmpq__file_add(
     return libmpq__writer_file_add(archive, name, data, size, options);
 }
 
-/* Add a filesystem file through the internal writer implementation. */
+/* Add a filesystem file through the internal writer implementation.
+ * The source is read in bounded chunks, so callers need not load the complete
+ * file into memory before archive creation begins. */
 int32_t
 libmpq__file_add_path(
     mpq_archive_s *archive, const char *name, const char *source,
@@ -124,7 +140,9 @@ libmpq__file_add_path(
     return libmpq__writer_file_add_path(archive, name, source, options);
 }
 
-/* Open an MPQ archive from a path and optional embedded archive offset. */
+/* Open an MPQ archive from a path and optional embedded archive offset.
+ * A sentinel offset enables embedded-header scanning, while an explicit offset
+ * restricts parsing to the requested archive location. */
 int32_t
 libmpq__archive_open(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset
@@ -133,7 +151,9 @@ libmpq__archive_open(
     return libmpq__reader_archive_open_path(mpq_archive, mpq_filename, archive_offset);
 }
 
-/* Reopen an archive with independent file I/O, metadata, and lazy caches. */
+/* Reopen an archive with independent file I/O, metadata, and lazy caches.
+ * Cloning rejects writer handles and verifies the source path still identifies
+ * the same file before reparsing it into a separate archive object. */
 int32_t
 libmpq__archive_clone(mpq_archive_s **clone, mpq_archive_s *source)
 {
@@ -147,6 +167,8 @@ libmpq__archive_clone(mpq_archive_s **clone, mpq_archive_s *source)
         return LIBMPQ_ERROR_EXIST;
 
 #if !defined(_WIN32) && !defined(_WIN64)
+
+    /* Reject cloning after the backing path has been replaced or removed. */
     if (source->file_identity_valid) {
         if (stat(source->filename, &file_status) < 0)
             return errno == ENOENT ? LIBMPQ_ERROR_EXIST : LIBMPQ_ERROR_OPEN;
@@ -159,7 +181,9 @@ libmpq__archive_clone(mpq_archive_s **clone, mpq_archive_s *source)
     return libmpq__reader_archive_open_path(clone, source->filename, source->archive_offset);
 }
 
-/* Close the archive file and release all metadata tables allocated during archive open. */
+/* Close the archive file and release all metadata tables allocated during archive open.
+ * Writer handles are finalized before their archive storage is freed, while
+ * reader-side cached block offsets are released entry by entry. */
 int32_t
 libmpq__archive_close(mpq_archive_s *mpq_archive)
 {
@@ -170,6 +194,8 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
         return LIBMPQ_ERROR_EXIST;
 
     if (mpq_archive->write_mode) {
+
+        /* Writer closure must serialize tables before releasing writer storage. */
         result = libmpq__writer_finalize(mpq_archive);
         if (mpq_archive->fp != NULL && fclose(mpq_archive->fp) < 0 && result == LIBMPQ_SUCCESS)
             result = LIBMPQ_ERROR_CLOSE;
@@ -210,7 +236,9 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
     return LIBMPQ_SUCCESS;
 }
 
-/* Return the sum of packed sizes for all files in the archive block table. */
+/* Return the sum of packed sizes for all files in the archive block table.
+ * The caller supplies an accumulator, allowing this query to preserve the
+ * library's existing additive API behavior. */
 int32_t
 libmpq__archive_size_packed(mpq_archive_s *mpq_archive, libmpq__off_t *packed_size)
 {
@@ -226,7 +254,9 @@ libmpq__archive_size_packed(mpq_archive_s *mpq_archive, libmpq__off_t *packed_si
     return LIBMPQ_SUCCESS;
 }
 
-/* Return the sum of unpacked sizes for all files in the archive block table. */
+/* Return the sum of unpacked sizes for all files in the archive block table.
+ * Only live public file-map entries are counted; unused block-table capacity
+ * does not contribute to the reported total. */
 int32_t
 libmpq__archive_size_unpacked(mpq_archive_s *mpq_archive, libmpq__off_t *unpacked_size)
 {
@@ -242,7 +272,8 @@ libmpq__archive_size_unpacked(mpq_archive_s *mpq_archive, libmpq__off_t *unpacke
     return LIBMPQ_SUCCESS;
 }
 
-/* Return the byte offset where the MPQ archive starts in the backing file. */
+/* Return the byte offset where the MPQ archive starts in the backing file.
+ * Embedded archives therefore report their discovered start rather than zero. */
 int32_t
 libmpq__archive_offset(mpq_archive_s *mpq_archive, libmpq__off_t *offset)
 {
@@ -251,7 +282,9 @@ libmpq__archive_offset(mpq_archive_s *mpq_archive, libmpq__off_t *offset)
     return LIBMPQ_SUCCESS;
 }
 
-/* Return the MPQ archive format version stored in the header. */
+/* Return the MPQ archive format version stored in the header.
+ * The internal zero-based version is converted to the public one-based API
+ * value before being written to the caller's output. */
 int32_t
 libmpq__archive_version(mpq_archive_s *mpq_archive, uint32_t *version)
 {
@@ -260,7 +293,8 @@ libmpq__archive_version(mpq_archive_s *mpq_archive, uint32_t *version)
     return LIBMPQ_SUCCESS;
 }
 
-/* Return the number of valid file entries discovered while opening the archive. */
+/* Return the number of valid file entries discovered while opening the archive.
+ * This is the compact public count, not the reserved block-table capacity. */
 int32_t
 libmpq__archive_files(mpq_archive_s *mpq_archive, uint32_t *files)
 {
@@ -269,7 +303,9 @@ libmpq__archive_files(mpq_archive_s *mpq_archive, uint32_t *files)
     return LIBMPQ_SUCCESS;
 }
 
-/* Return the packed size of a file entry by block-table number. */
+/* Return the packed size of a file entry by block-table number.
+ * The public file number is validated and translated through the compact map
+ * before reading the corresponding block-table entry. */
 int32_t
 libmpq__file_size_packed(
     mpq_archive_s *mpq_archive, uint32_t file_number, libmpq__off_t *packed_size
@@ -285,7 +321,9 @@ libmpq__file_size_packed(
     return LIBMPQ_SUCCESS;
 }
 
-/* Return the unpacked size of a file entry by block-table number. */
+/* Return the unpacked size of a file entry by block-table number.
+ * Invalid compact file numbers are rejected before any archive metadata is
+ * accessed. */
 int32_t
 libmpq__file_size_unpacked(
     mpq_archive_s *mpq_archive, uint32_t file_number, libmpq__off_t *unpacked_size
@@ -301,7 +339,9 @@ libmpq__file_size_unpacked(
     return LIBMPQ_SUCCESS;
 }
 
-/* Return the file data offset relative to the start of the archive. */
+/* Return the file data offset relative to the start of the archive.
+ * MPQ v2 high offset words are combined with the legacy low word to produce
+ * the complete offset visible through the public API. */
 int32_t
 libmpq__file_offset(mpq_archive_s *mpq_archive, uint32_t file_number, libmpq__off_t *offset)
 {
@@ -318,7 +358,9 @@ libmpq__file_offset(mpq_archive_s *mpq_archive, uint32_t file_number, libmpq__of
     return LIBMPQ_SUCCESS;
 }
 
-/* Return the number of blocks needed to store the selected file. */
+/* Return the number of blocks needed to store the selected file.
+ * The reader distinguishes single-unit files from sectorized entries and
+ * applies the archive sector size for the latter. */
 int32_t
 libmpq__file_blocks(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *blocks)
 {
@@ -331,7 +373,8 @@ libmpq__file_blocks(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *
     return LIBMPQ_SUCCESS;
 }
 
-/* Report whether the selected file entry has the MPQ encrypted flag set. */
+/* Report whether the selected file entry has the MPQ encrypted flag set.
+ * The result is normalized to the library's boolean convention after lookup. */
 int32_t
 libmpq__file_encrypted(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *encrypted)
 {
@@ -348,7 +391,9 @@ libmpq__file_encrypted(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_
     return LIBMPQ_SUCCESS;
 }
 
-/* Report whether the selected file entry has any MPQ compression flags set. */
+/* Report whether the selected file entry has any MPQ compression flags set.
+ * This reports Blizzard multi-compression metadata, including its per-sector
+ * codec mask, rather than treating standalone PKWARE as multi-compressed. */
 int32_t
 libmpq__file_compressed(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *compressed)
 {
@@ -365,7 +410,9 @@ libmpq__file_compressed(mpq_archive_s *mpq_archive, uint32_t file_number, uint32
     return LIBMPQ_SUCCESS;
 }
 
-/* Report whether the selected file entry uses PKWARE implosion. */
+/* Report whether the selected file entry uses PKWARE implosion.
+ * The flag query covers standalone implode storage as represented in the MPQ
+ * block entry and returns a normalized boolean result. */
 int32_t
 libmpq__file_imploded(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *imploded)
 {
@@ -382,7 +429,9 @@ libmpq__file_imploded(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t
     return LIBMPQ_SUCCESS;
 }
 
-/* Calculate the three Storm hashes used to identify an MPQ file name. */
+/* Calculate the three Storm hashes used to identify an MPQ file name.
+ * Each output corresponds to a distinct hash-table phase used during MPQ
+ * name lookup and collision probing. */
 void
 libmpq__file_hash(const char *filename, uint32_t *hash1, uint32_t *hash2, uint32_t *hash3)
 {
@@ -391,7 +440,9 @@ libmpq__file_hash(const char *filename, uint32_t *hash1, uint32_t *hash2, uint32
     *hash3 = libmpq__common_hash_string(filename, 0x200);
 }
 
-/* Resolve a precomputed MPQ file-name hash to a public file number. */
+/* Resolve a precomputed MPQ file-name hash to a public file number.
+ * The first hash selects a slot and linear probing continues until the stored
+ * pair matches or the table wraps without finding the file. */
 int32_t
 libmpq__file_number_from_hash(
     mpq_archive_s *mpq_archive, uint32_t hash1, uint32_t hash2, uint32_t hash3, uint32_t *number
@@ -424,7 +475,9 @@ libmpq__file_number_from_hash(
     return LIBMPQ_ERROR_EXIST;
 }
 
-/* Resolve an MPQ file name to its block-table number through the hash table. */
+/* Resolve an MPQ file name to its block-table number through the hash table.
+ * The name is hashed with all three Storm phases before the collision-aware
+ * lookup is delegated to the precomputed-hash helper. */
 int32_t
 libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *number)
 {
@@ -434,7 +487,9 @@ libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *
     return libmpq__file_number_from_hash(mpq_archive, hash1, hash2, hash3, number);
 }
 
-/* Read a complete file by opening its block offset table and copying each block. */
+/* Read a complete file by opening its block offset table and copying each block.
+ * The output buffer must hold the complete unpacked file, and cached offset
+ * state is closed on both successful and failed block reads. */
 int32_t
 libmpq__file_read(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint8_t *out_buf, libmpq__off_t out_size,
@@ -468,6 +523,7 @@ libmpq__file_read(
         return result;
     }
 
+    /* Read each block into its exact destination slice and maintain one total. */
     for (i = 0; i < blocks; i++) {
         unpacked_size = 0;
 
@@ -493,7 +549,9 @@ libmpq__file_read(
     return LIBMPQ_SUCCESS;
 }
 
-/* Open a file entry and cache its packed block offset table for block operations. */
+/* Open a file entry and cache its packed block offset table for block operations.
+ * Compressed entries load and decrypt their serialized offsets, while raw or
+ * single-unit entries receive synthesized offsets from block metadata. */
 int32_t
 libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
 {
@@ -511,6 +569,8 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
     }
 
     if (mpq_archive->mpq_file[file_number]) {
+
+        /* Nested callers share the cached offsets through a reference count. */
         mpq_archive->mpq_file[file_number]->open_count++;
         return LIBMPQ_SUCCESS;
     }
@@ -537,7 +597,8 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
     mpq_archive->mpq_file[file_number]->packed_offset_count = packed_offset_count;
     mpq_archive->mpq_file[file_number]->open_count = 1;
 
-    /* Compressed multi-sector files store a packed sector offset table in the archive. */
+    /* Compressed multi-sector files carry serialized offsets before their first
+     * payload, so load that table before any block can be read. */
     if ((mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags &
          (LIBMPQ_FLAG_COMPRESSED | LIBMPQ_FLAG_COMPRESS_PKZIP)) != 0 &&
         (mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags &
@@ -609,6 +670,8 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
         free(packed_data);
         packed_data = NULL;
     } else {
+
+        /* Raw sectorized files derive offsets directly from their fixed sector size. */
         if ((mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags &
              LIBMPQ_FLAG_SINGLE) == 0) {
 
@@ -675,6 +738,7 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
             goto error;
         }
 
+        /* Raw encrypted payloads require signature-based key recovery instead. */
         if (libmpq__common_detect_file_key(
                 first_block, sizeof(first_block),
                 mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices]
@@ -704,7 +768,9 @@ error:
     return result;
 }
 
-/* Release a cached block offset table when the last user closes it. */
+/* Release a cached block offset table when the last user closes it.
+ * Reference counting permits nested block operations while ensuring the cache
+ * is freed only after the final matching close. */
 int32_t
 libmpq__block_close_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
 {
@@ -719,6 +785,8 @@ libmpq__block_close_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
     mpq_archive->mpq_file[file_number]->open_count--;
 
     if (mpq_archive->mpq_file[file_number]->open_count != 0) {
+
+        /* Keep the cache alive until every matching open operation closes. */
         return LIBMPQ_SUCCESS;
     }
 
@@ -730,7 +798,9 @@ libmpq__block_close_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
     return LIBMPQ_SUCCESS;
 }
 
-/* Return the unpacked size for one block of an opened file entry. */
+/* Return the unpacked size for one block of an opened file entry.
+ * Full sectors use the archive sector size, while the final sector is reduced
+ * to the remaining file bytes and single-unit files use their full size. */
 int32_t
 libmpq__block_size_unpacked(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number,
@@ -756,6 +826,8 @@ libmpq__block_size_unpacked(
 
     if ((mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags &
          LIBMPQ_FLAG_SINGLE) != 0) {
+
+        /* A single-unit entry has one logical block containing the whole file. */
         *unpacked_size =
             mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices]
                 .unpacked_size;
@@ -763,6 +835,8 @@ libmpq__block_size_unpacked(
 
     if ((mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags &
          LIBMPQ_FLAG_SINGLE) == 0) {
+
+        /* Every non-final sector is full-sized; only the tail uses a remainder. */
         if (block_number < libmpq__reader_count_file_blocks(mpq_archive, file_number) - 1) {
             *unpacked_size = mpq_archive->block_size;
         } else {
@@ -776,7 +850,9 @@ libmpq__block_size_unpacked(
     return LIBMPQ_SUCCESS;
 }
 
-/* Read, decrypt and decompress one block from an opened file entry. */
+/* Read, decrypt and decompress one block from an opened file entry.
+ * The routine computes packed bounds, applies per-block encryption, selects
+ * raw or codec output, and reports the exact unpacked byte count. */
 int32_t
 libmpq__block_read(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number, uint8_t *out_buf,
@@ -819,7 +895,9 @@ libmpq__block_read(
         return LIBMPQ_ERROR_SIZE;
     }
 
-    /* Packed offsets are relative to the file payload start, not the archive start. */
+    /* Compute the absolute payload position from archive, file, and block offsets.
+     * The stored block offset is relative to the file payload start, not the
+     * beginning of the archive file. */
     block_offset =
         mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].offset +
         (((long long)mpq_archive
@@ -842,6 +920,8 @@ libmpq__block_read(
     }
 
     if (use_out_buf) {
+
+        /* Raw data can bypass a temporary allocation when no transform is needed. */
         in_buf = out_buf;
     } else {
         if ((in_buf = calloc(1, in_size)) == NULL) {
@@ -857,6 +937,8 @@ libmpq__block_read(
     }
 
     if (encrypted) {
+
+        /* Encrypted blocks use a seed derived from the file and block number. */
         if (libmpq__reader_get_block_seed(mpq_archive, file_number, block_number, &seed) < 0) {
             if (!use_out_buf) {
                 free(in_buf);
@@ -874,6 +956,8 @@ libmpq__block_read(
 
     /* Blizzard multi-compression blocks declare their exact backend chain in the payload. */
     if (compressed) {
+
+        /* The payload's leading mask selects and orders its decompression stages. */
         if ((tb = libmpq__common_decompress_block(
                  in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_MULTI
              )) < 0) {
@@ -886,6 +970,8 @@ libmpq__block_read(
 
     /* PKWARE-imploded blocks use the legacy explode decoder. */
     if (imploded) {
+
+        /* Standalone PKWARE payloads use the legacy decoder without a mask byte. */
         if ((tb = libmpq__common_decompress_block(
                  in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_PKZIP
              )) < 0) {
@@ -904,6 +990,8 @@ libmpq__block_read(
     }
 
     if (!compressed && !imploded) {
+
+        /* A raw block is copied only after encrypted and compressed paths are excluded. */
         if ((tb = libmpq__common_decompress_block(
                  in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_NONE
              )) < 0) {

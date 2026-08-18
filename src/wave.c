@@ -53,7 +53,9 @@ static const uint32_t wave_step_sizes[] = {
     0x00007FFF
 };
 
-/* Quantize one PCM predictor difference into the MPQ ADPCM control byte. */
+/* Quantize one PCM predictor difference into the MPQ ADPCM control byte.
+ * The predictor and step index are updated in place so the next sample uses
+ * the same adaptive state as the matching decoder. */
 static uint8_t
 wave_encode_delta(int32_t difference, int32_t *predictor, int32_t *step_index, uint32_t shift)
 {
@@ -85,7 +87,9 @@ wave_encode_delta(int32_t difference, int32_t *predictor, int32_t *step_index, u
     return (uint8_t)code;
 }
 
-/* Inspect a RIFF/WAVE prefix and validate its PCM16 channel configuration. */
+/* Inspect a RIFF/WAVE prefix and validate its PCM16 channel configuration.
+ * Chunk boundaries, padding, channel count, sample width, and complete PCM
+ * frames are checked before offsets and sizes are returned to the caller. */
 int32_t
 libmpq__wave_probe_pcm16(const uint8_t *data, uint32_t size, libmpq_wave_info_s *info)
 {
@@ -96,6 +100,8 @@ libmpq__wave_probe_pcm16(const uint8_t *data, uint32_t size, libmpq_wave_info_s 
         memcmp(data + 8, "WAVE", 4) != 0)
         return LIBMPQ_ERROR_FORMAT;
     end = size;
+
+    /* Walk RIFF chunks while honoring the required even-byte chunk padding. */
     while (pos + 8 <= end) {
         uint32_t chunk_size = libmpq__load_le32(data + pos + 4);
         uint32_t next = pos + 8 + chunk_size + (chunk_size & 1u);
@@ -120,7 +126,9 @@ libmpq__wave_probe_pcm16(const uint8_t *data, uint32_t size, libmpq_wave_info_s 
     return 0;
 }
 
-/* Encode one complete PCM sector using the MPQ mono/stereo ADPCM format. */
+/* Encode one complete PCM sector using the MPQ mono/stereo ADPCM format.
+ * The first sample of each channel seeds the predictor header, and subsequent
+ * interleaved samples are reduced to adaptive six-bit delta codes. */
 int32_t
 libmpq__wave_compress(
     const uint8_t *in_buf, uint32_t in_size, uint8_t **out_buf, uint32_t *out_size,
@@ -140,11 +148,15 @@ libmpq__wave_compress(
     libmpq__store_le16(out, 0);
     out[1] = (uint8_t)shift;
     pos = 2;
+
+    /* Store one initial predictor sample per channel in the compressed header. */
     for (i = 0; i < channels; i++) {
         predictor[i] = (int16_t)libmpq__load_le16(in_buf + i * 2);
         libmpq__store_le16(out + pos, (uint16_t)predictor[i]);
         pos += 2;
     }
+
+    /* Encode the remaining interleaved frames using shared channel state. */
     for (i = 1; i < samples; i++) {
         uint32_t channel;
         for (channel = 0; channel < channels; channel++) {
@@ -159,7 +171,9 @@ libmpq__wave_compress(
     return 0;
 }
 
-/* Decompress mono or stereo MPQ WAVE predictor data into PCM bytes. */
+/* Decompress mono or stereo MPQ WAVE predictor data into PCM bytes.
+ * It restores channel seed samples first, then applies control and delta
+ * bytes until the input or caller-provided output capacity is exhausted. */
 int32_t
 libmpq__wave_decompress(
     uint8_t *out_buf, int32_t out_length, uint8_t *in_buf, int32_t in_length, int32_t channels
@@ -187,7 +201,7 @@ libmpq__wave_decompress(
     /* The first word is the MPQ WAVE predictor header, followed by seed samples. */
     in_buf += sizeof(uint16_t);
 
-    /* Emit the initial seed sample for each channel. */
+    /* Emit the initial seed sample for each channel before delta decoding. */
     for (count = 0; count < channels; count++) {
 
         /* Current sample code and output channel for this input byte. */
@@ -209,6 +223,7 @@ libmpq__wave_decompress(
     /* Start with the last channel so stereo data alternates on each emitted sample. */
     index = channels - 1;
 
+    /* Decode interleaved control bytes until input or output capacity is exhausted. */
     while (in_buf < in_end) {
         uint8_t one_byte = *in_buf++;
 
@@ -216,7 +231,7 @@ libmpq__wave_decompress(
             index = (index == 0) ? 1 : 0;
         }
 
-        /* High-bit control bytes adjust predictor state instead of carrying deltas. */
+        /* High-bit control bytes adjust predictor index and do not emit samples. */
         if (one_byte & 0x80) {
             switch (one_byte & 0x7F) {
             case 0:
@@ -261,6 +276,8 @@ libmpq__wave_decompress(
                 continue;
             }
         } else {
+
+            /* Low-bit values update the active channel predictor and emit PCM. */
 
             /* Decode a signed delta from the current step-size table entry. */
             uint32_t temp1 = wave_step_sizes[step_indices[index]];

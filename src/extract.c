@@ -42,7 +42,9 @@ static decompress_table_s dcmp_table[] = {
     { LIBMPQ_COMPRESSION_WAVE_MONO, libmpq__extract_decompress_wave_mono }
 };
 
-/* Decompress an MPQ Huffman-compressed stream into the caller-provided buffer. */
+/* Decompress an MPQ Huffman-compressed stream into the caller-provided buffer.
+ * The stream owns adaptive tree state, so the function initializes and frees
+ * a separate tree and bit reader for each archive block. */
 int32_t
 libmpq__extract_decompress_huffman(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
@@ -87,7 +89,9 @@ libmpq__extract_decompress_huffman(
     return tb;
 }
 
-/* Decompress an MPQ zlib-compressed stream into the caller-provided buffer. */
+/* Decompress an MPQ zlib-compressed stream into the caller-provided buffer.
+ * The output count returned by zlib is converted to the libmpq block API's
+ * signed transfer convention, while zlib failures are propagated unchanged. */
 int32_t
 libmpq__extract_decompress_zlib(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
@@ -127,7 +131,9 @@ libmpq__extract_decompress_zlib(
     return tb;
 }
 
-/* Decompress an MPQ PKWARE Data Compression Library stream. */
+/* Decompress an MPQ PKWARE Data Compression Library stream.
+ * A scratch codec object and callback state isolate the decoder from the
+ * caller's buffers while preserving the exact number of produced bytes. */
 int32_t
 libmpq__extract_decompress_pkzip(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
@@ -166,7 +172,9 @@ libmpq__extract_decompress_pkzip(
     return tb;
 }
 
-/* Decompress an MPQ bzip2-compressed stream into the caller-provided buffer. */
+/* Decompress an MPQ bzip2-compressed stream into the caller-provided buffer.
+ * The bzip2 state consumes the compressed block and writes decoded bytes
+ * directly to the destination supplied by the archive reader. */
 int32_t
 libmpq__extract_decompress_bzip2(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
@@ -202,7 +210,9 @@ libmpq__extract_decompress_bzip2(
     return tb;
 }
 
-/* Decompress an MPQ mono WAVE-compressed stream. */
+/* Decompress an MPQ mono WAVE-compressed stream.
+ * The channel count is fixed to one so the shared WAVE decoder can validate
+ * the payload format and reconstruct the original PCM byte stream. */
 int32_t
 libmpq__extract_decompress_wave_mono(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
@@ -219,7 +229,9 @@ libmpq__extract_decompress_wave_mono(
     return tb;
 }
 
-/* Decompress an MPQ stereo WAVE-compressed stream. */
+/* Decompress an MPQ stereo WAVE-compressed stream.
+ * The channel count is fixed to two, matching the stereo ADPCM framing and
+ * predictor state expected by the shared WAVE decoder. */
 int32_t
 libmpq__extract_decompress_wave_stereo(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
@@ -236,7 +248,9 @@ libmpq__extract_decompress_wave_stereo(
     return tb;
 }
 
-/* Decode a Blizzard multi-compression stream by applying each flagged backend in order. */
+/* Decode a Blizzard multi-compression stream by applying each flagged backend in order.
+ * The leading mask selects supported codecs, and intermediate buffers preserve
+ * each stage's output while the next stage consumes it. */
 int32_t
 libmpq__extract_decompress_multi(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size

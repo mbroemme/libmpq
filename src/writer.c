@@ -38,7 +38,9 @@
 #include <bzlib.h>
 #include <zlib.h>
 
-/* Return the smallest supported power-of-two table capacity at or above value. */
+/* Return the smallest supported power-of-two table capacity at or above value.
+ * MPQ hash tables use power-of-two probing, so this helper provides the next
+ * legal capacity without exceeding the format's 32-bit range. */
 static uint32_t
 next_power_two(uint32_t value)
 {
@@ -48,7 +50,9 @@ next_power_two(uint32_t value)
     return result;
 }
 
-/* Write one byte range at an absolute archive offset. */
+/* Write one byte range at an absolute archive offset.
+ * Seeking and writing are treated as one archive operation so short writes
+ * and positioning failures are converted to the library's write error. */
 static int32_t
 write_at(FILE *fp, uint64_t offset, const void *data, size_t size)
 {
@@ -57,7 +61,9 @@ write_at(FILE *fp, uint64_t offset, const void *data, size_t size)
     return LIBMPQ_SUCCESS;
 }
 
-/* Calculate the MPQ file encryption key from a normalized file name. */
+/* Calculate the MPQ file encryption key from a normalized file name.
+ * Slash normalization matches MPQ's Windows-oriented name hashing while the
+ * temporary normalized string remains private to this calculation. */
 static uint32_t
 file_key(const char *name)
 {
@@ -76,7 +82,8 @@ file_key(const char *name)
     return key;
 }
 
-/* Return whether every requested compression bit has a local implementation. */
+/* Return whether every requested compression bit has a local implementation.
+ * Unknown bits are rejected before any codec or archive state is modified. */
 static int
 supported_mask(uint32_t mask)
 {
@@ -85,7 +92,9 @@ supported_mask(uint32_t mask)
                      LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO)) == 0;
 }
 
-/* Apply one selected compression backend and replace the current buffer. */
+/* Apply one selected compression backend and replace the current buffer.
+ * Each backend receives the current stage output and returns a newly owned
+ * buffer, allowing the caller to retain the previous stage on fallback. */
 static int32_t
 compress_stage(uint8_t **data, size_t *size, uint32_t mask)
 {
@@ -192,7 +201,9 @@ compress_stage(uint8_t **data, size_t *size, uint32_t mask)
     return LIBMPQ_SUCCESS;
 }
 
-/* Apply the selected compression chain and return its actual successful mask. */
+/* Apply the selected compression chain and return its actual successful mask.
+ * Stages run in canonical Storm order, and a stage is kept only when it saves
+ * at least two bytes; the emitted mask therefore describes actual reductions. */
 static int32_t
 encode_sector(
     const uint8_t *input, size_t input_size, uint32_t requested, uint8_t **output,
@@ -214,6 +225,8 @@ encode_sector(
     memcpy(data, input, input_size);
     size = input_size;
     *emitted_mask = 0;
+
+    /* Try each requested codec independently so expansion does not poison later stages. */
     for (i = 0; i < sizeof(masks) / sizeof(masks[0]); i++) {
         if (requested & masks[i]) {
             size_t before = size;
@@ -264,7 +277,9 @@ encode_sector(
     return LIBMPQ_SUCCESS;
 }
 
-/* Compress, encrypt, and append the writer's currently buffered sector. */
+/* Compress, encrypt, and append the writer's currently buffered sector.
+ * Sector zero and later sectors may use different masks; the resulting offset
+ * is recorded relative to the payload for the table written during finish. */
 static int32_t
 stream_flush_sector(mpq_writer_s *writer)
 {
@@ -276,6 +291,7 @@ stream_flush_sector(mpq_writer_s *writer)
                                                    : writer->options.compression_next;
     int32_t result;
 
+    /* Reject an extra flush before touching the archive stream. */
     if (writer->sector_index >= writer->block_count)
         return LIBMPQ_ERROR_SIZE;
     if ((writer->options.flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0)
@@ -296,6 +312,8 @@ stream_flush_sector(mpq_writer_s *writer)
         free(packed);
         return result;
     }
+
+    /* Payload encryption uses the file seed advanced by the sector number. */
     if (writer->options.flags & LIBMPQ_FILE_FLAG_ENCRYPTED)
         libmpq__common_encrypt_block(
             packed, (uint32_t)packed_size, file_key(writer->name) + writer->sector_index
@@ -324,7 +342,9 @@ stream_flush_sector(mpq_writer_s *writer)
     return 0;
 }
 
-/* Finish the streamed file by writing its offset table and archive metadata. */
+/* Finish the streamed file by writing its offset table and archive metadata.
+ * The serialized table is placed before packed sectors, encrypted separately,
+ * and then the completed file is inserted into the block and hash tables. */
 static int32_t
 stream_finish(mpq_writer_s *writer)
 {
@@ -335,6 +355,7 @@ stream_finish(mpq_writer_s *writer)
     uint8_t *table;
     int32_t result;
 
+    /* A file is publishable only after its declared byte and sector counts match. */
     if (writer->written != writer->expected || writer->sector_index != writer->block_count)
         return LIBMPQ_ERROR_SIZE;
     if (writer->offsets) {
@@ -360,6 +381,8 @@ stream_finish(mpq_writer_s *writer)
         return archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE
                    ? LIBMPQ_ERROR_SIZE
                    : (writer->payload_offset >> 32 > UINT16_MAX ? LIBMPQ_ERROR_SIZE : 0);
+
+    /* Reserve the next block slot only after payload and offset sizes validate. */
     index = archive->write_next_block;
     libmpq__file_hash(writer->name, &hash1, &hash2, &hash3);
     archive->mpq_block[index].offset = (uint32_t)writer->payload_offset;
@@ -389,7 +412,9 @@ stream_finish(mpq_writer_s *writer)
     return LIBMPQ_ERROR_SIZE;
 }
 
-/* Serialize the completed hash, block, extended tables, and archive header. */
+/* Serialize the completed hash, block, extended tables, and archive header.
+ * Finalization optionally creates the listfile, encrypts metadata with the
+ * fixed MPQ table keys, writes v2 high offsets, and commits the header last. */
 static int32_t
 finalize_archive(mpq_archive_s *a)
 {
@@ -398,6 +423,8 @@ finalize_archive(mpq_archive_s *a)
     size_t bytes;
     uint64_t end;
     uint8_t header[44];
+
+    /* An unfinished streamed file would leave archive tables inconsistent. */
     if (a->write_current)
         return LIBMPQ_ERROR_SIZE;
     if ((a->write_flags & LIBMPQ_ARCHIVE_CREATE_LISTFILE) != 0) {
@@ -424,6 +451,8 @@ finalize_archive(mpq_archive_s *a)
                 return r;
         }
     }
+
+    /* Serialize and encrypt the hash table before writing the block metadata. */
     bytes = (size_t)a->write_hash_capacity * 16;
     raw = malloc(bytes);
     if (!raw)
@@ -443,6 +472,8 @@ finalize_archive(mpq_archive_s *a)
         return LIBMPQ_ERROR_WRITE;
     }
     free(raw);
+
+    /* Serialize the fixed-capacity block table using explicit little-endian fields. */
     bytes = (size_t)a->write_capacity * 16;
     raw = malloc(bytes);
     if (!raw)
@@ -504,7 +535,9 @@ finalize_archive(mpq_archive_s *a)
     return LIBMPQ_SUCCESS;
 }
 
-/* Create a new seekable MPQ v1 or v2 archive with reserved metadata tables. */
+/* Create a new seekable MPQ v1 or v2 archive with reserved metadata tables.
+ * The function validates creation options, reserves table space, initializes
+ * empty hash entries, and leaves the file positioned at the first payload. */
 int32_t
 libmpq__writer_archive_create(
     mpq_archive_s **out, const char *path, const mpq_archive_create_options_s *options
@@ -521,6 +554,8 @@ libmpq__writer_archive_create(
     *out = NULL;
     if (options == NULL)
         options = &defaults;
+
+    /* Reject versions, capacities, and sector sizes that cannot be represented safely. */
     if (options->version > LIBMPQ_ARCHIVE_VERSION_TWO || options->max_files == UINT32_MAX ||
         (options->max_files && options->max_files > 0x40000000u))
         return LIBMPQ_ERROR_FORMAT;
@@ -543,6 +578,8 @@ libmpq__writer_archive_create(
     a->write_capacity = options->max_files ? options->max_files : 1024;
     a->write_sector_size = options->sector_size ? options->sector_size : 4096;
     a->write_flags = options->flags;
+
+    /* Keep hash load below one half so linear probing remains bounded. */
     a->write_hash_capacity = next_power_two(a->write_capacity * 2);
     header_size = options->version == LIBMPQ_ARCHIVE_VERSION_TWO ? 44 : 32;
     a->mpq_header.version = (uint16_t)options->version;
@@ -613,7 +650,9 @@ libmpq__writer_archive_create(
     return LIBMPQ_SUCCESS;
 }
 
-/* Begin streaming one file into the archive using the requested options. */
+/* Begin streaming one file into the archive using the requested options.
+ * It validates flags and duplicate names, allocates one sector of input space,
+ * and reserves an offset table when compressed multi-sector storage requires it. */
 int32_t
 libmpq__writer_file_begin(
     mpq_archive_s *a, const char *name, libmpq__off_t size,
@@ -650,6 +689,8 @@ libmpq__writer_file_begin(
         free(w);
         return LIBMPQ_ERROR_FORMAT;
     }
+
+    /* Probe existing entries for duplicate name/locale/platform combinations. */
     {
         uint32_t h1, h2, h3, i;
         libmpq__file_hash(name, &h1, &h2, &h3);
@@ -686,6 +727,8 @@ libmpq__writer_file_begin(
     if (w->block_count == 0)
         w->block_count = 1;
     w->payload_offset = (uint64_t)ftello(a->fp);
+
+    /* Reserve offset-table space before the first packed sector is written. */
     if (!(w->options.flags & LIBMPQ_FILE_FLAG_SINGLE) &&
         (w->options.flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE))) {
         size_t table_size = (size_t)(w->block_count + 1) * 4;
@@ -711,12 +754,16 @@ libmpq__writer_file_begin(
     return LIBMPQ_SUCCESS;
 }
 
-/* Append caller-provided bytes and flush complete sectors immediately. */
+/* Append caller-provided bytes and flush complete sectors immediately.
+ * The input is copied into a single sector buffer, so memory use is bounded
+ * independently of the total file size. */
 int32_t
 libmpq__writer_file_write(mpq_writer_s *w, const uint8_t *buffer, libmpq__off_t size)
 {
     if (!w || (!buffer && size != 0) || size < 0 || size > w->expected - w->written)
         return LIBMPQ_ERROR_SIZE;
+
+    /* Fill the current sector, flushing exactly when it reaches capacity. */
     while (size != 0) {
         uint32_t room = w->archive->write_sector_size - w->data_size;
         uint32_t take = (uint32_t)((size < room) ? size : room);
@@ -734,7 +781,9 @@ libmpq__writer_file_write(mpq_writer_s *w, const uint8_t *buffer, libmpq__off_t 
     return 0;
 }
 
-/* Flush the final sector and commit the file's block and hash-table entries. */
+/* Flush the final sector and commit the file's block and hash-table entries.
+ * Cleanup occurs on both success and failure so the archive never retains an
+ * active writer after this function returns. */
 int32_t
 libmpq__writer_file_finish(mpq_writer_s *w)
 {
@@ -756,7 +805,9 @@ libmpq__writer_file_finish(mpq_writer_s *w)
     return result;
 }
 
-/* Add an in-memory file through the streaming writer interface. */
+/* Add an in-memory file through the streaming writer interface.
+ * This convenience wrapper uses the same sector pipeline as explicit begin,
+ * write, and finish calls and cleans up an aborted stream. */
 int32_t
 libmpq__writer_file_add(
     mpq_archive_s *a, const char *name, const uint8_t *data, libmpq__off_t size,
@@ -779,7 +830,9 @@ libmpq__writer_file_add(
     return libmpq__writer_file_finish(w);
 }
 
-/* Add a filesystem file while keeping only one input sector in memory. */
+/* Add a filesystem file while keeping only one input sector in memory.
+ * The source length is determined first so the streaming writer can enforce
+ * its declared size while reading bounded chunks from disk. */
 int32_t
 libmpq__writer_file_add_path(
     mpq_archive_s *a, const char *name, const char *source, const mpq_file_create_options_s *options
@@ -823,7 +876,9 @@ libmpq__writer_file_add_path(
     return result;
 }
 
-/* Finalize a writer archive and make it readable by libmpq. */
+/* Finalize a writer archive and make it readable by libmpq.
+ * The public close path uses this internal wrapper to keep serialization in
+ * the writer module while preserving the archive handle lifecycle. */
 int32_t
 libmpq__writer_finalize(mpq_archive_s *a)
 {
