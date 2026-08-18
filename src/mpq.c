@@ -153,6 +153,59 @@ libmpq__strerror(int32_t return_code)
     return libmpq_error_strings[-return_code];
 }
 
+/* Create an MPQ archive through the writer implementation. */
+int32_t
+libmpq__archive_create(
+    mpq_archive_s **out, const char *path, const mpq_archive_create_options_s *options
+)
+{
+    return libmpq__writer_archive_create(out, path, options);
+}
+
+/* Begin a streamed file write through the writer implementation. */
+int32_t
+libmpq__file_begin(
+    mpq_archive_s *archive, const char *name, libmpq__off_t size,
+    const mpq_file_create_options_s *options, mpq_file_writer_s **out
+)
+{
+    return libmpq__writer_file_begin(archive, name, size, options, out);
+}
+
+/* Write one input range through the writer implementation. */
+int32_t
+libmpq__file_write(mpq_file_writer_s *writer, const uint8_t *buffer, libmpq__off_t size)
+{
+    return libmpq__writer_file_write(writer, buffer, size);
+}
+
+/* Finish a streamed file through the writer implementation. */
+int32_t
+libmpq__file_finish(mpq_file_writer_s *writer)
+{
+    return libmpq__writer_file_finish(writer);
+}
+
+/* Add an in-memory file through the writer implementation. */
+int32_t
+libmpq__file_add(
+    mpq_archive_s *archive, const char *name, const uint8_t *data, libmpq__off_t size,
+    const mpq_file_create_options_s *options
+)
+{
+    return libmpq__writer_file_add(archive, name, data, size, options);
+}
+
+/* Add a filesystem file through the writer implementation. */
+int32_t
+libmpq__file_add_path(
+    mpq_archive_s *archive, const char *name, const char *source,
+    const mpq_file_create_options_s *options
+)
+{
+    return libmpq__writer_file_add_path(archive, name, source, options);
+}
+
 /* Open an MPQ archive path and prepare decoded metadata for later operations. */
 static int32_t
 archive_open_path(

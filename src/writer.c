@@ -393,7 +393,7 @@ libmpq__writer_stream_finish(mpq_file_writer_s *writer)
 
 /* Create a new seekable MPQ v1 or v2 archive with reserved metadata tables. */
 int32_t
-libmpq__archive_create(
+libmpq__writer_archive_create(
     mpq_archive_s **out, const char *path, const mpq_archive_create_options_s *options
 )
 {
@@ -502,7 +502,7 @@ libmpq__archive_create(
 
 /* Begin streaming one file into the archive using the requested options. */
 int32_t
-libmpq__file_begin(
+libmpq__writer_file_begin(
     mpq_archive_s *a, const char *name, libmpq__off_t size,
     const mpq_file_create_options_s *options, mpq_file_writer_s **out
 )
@@ -600,7 +600,7 @@ libmpq__file_begin(
 
 /* Append caller-provided bytes and flush complete sectors immediately. */
 int32_t
-libmpq__file_write(mpq_file_writer_s *w, const uint8_t *buffer, libmpq__off_t size)
+libmpq__writer_file_write(mpq_file_writer_s *w, const uint8_t *buffer, libmpq__off_t size)
 {
     if (!w || (!buffer && size != 0) || size < 0 || size > w->expected - w->written)
         return LIBMPQ_ERROR_SIZE;
@@ -623,7 +623,7 @@ libmpq__file_write(mpq_file_writer_s *w, const uint8_t *buffer, libmpq__off_t si
 
 /* Flush the final sector and commit the file's block and hash-table entries. */
 int32_t
-libmpq__file_finish(mpq_file_writer_s *w)
+libmpq__writer_file_finish(mpq_file_writer_s *w)
 {
     int32_t result;
     if (!w)
@@ -645,16 +645,16 @@ libmpq__file_finish(mpq_file_writer_s *w)
 
 /* Add an in-memory file through the streaming writer interface. */
 int32_t
-libmpq__file_add(
+libmpq__writer_file_add(
     mpq_archive_s *a, const char *name, const uint8_t *data, libmpq__off_t size,
     const mpq_file_create_options_s *options
 )
 {
     mpq_file_writer_s *w;
-    int32_t result = libmpq__file_begin(a, name, size, options, &w);
+    int32_t result = libmpq__writer_file_begin(a, name, size, options, &w);
     if (result < 0)
         return result;
-    result = libmpq__file_write(w, data, size);
+    result = libmpq__writer_file_write(w, data, size);
     if (result < 0) {
         free(w->name);
         free(w->data);
@@ -663,12 +663,12 @@ libmpq__file_add(
         a->write_current = NULL;
         return result;
     }
-    return libmpq__file_finish(w);
+    return libmpq__writer_file_finish(w);
 }
 
 /* Add a filesystem file while keeping only one input sector in memory. */
 int32_t
-libmpq__file_add_path(
+libmpq__writer_file_add_path(
     mpq_archive_s *a, const char *name, const char *source, const mpq_file_create_options_s *options
 )
 {
@@ -685,13 +685,13 @@ libmpq__file_add_path(
         fclose(fp);
         return LIBMPQ_ERROR_SEEK;
     }
-    result = libmpq__file_begin(a, name, size, options, &writer);
+    result = libmpq__writer_file_begin(a, name, size, options, &writer);
     if (result < 0) {
         fclose(fp);
         return result;
     }
     while ((got = fread(buffer, 1, sizeof(buffer), fp)) != 0) {
-        result = libmpq__file_write(writer, buffer, (libmpq__off_t)got);
+        result = libmpq__writer_file_write(writer, buffer, (libmpq__off_t)got);
         if (result < 0)
             break;
     }
@@ -699,7 +699,7 @@ libmpq__file_add_path(
         result = LIBMPQ_ERROR_READ;
     fclose(fp);
     if (result == 0)
-        result = libmpq__file_finish(writer);
+        result = libmpq__writer_file_finish(writer);
     else {
         a->write_current = NULL;
         free(writer->name);
@@ -738,7 +738,8 @@ libmpq__writer_finalize_archive(mpq_archive_s *a)
         }
         {
             mpq_file_create_options_s o = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
-            int32_t r = libmpq__file_add(a, LIBMPQ_LISTFILE_NAME, list, (libmpq__off_t)total, &o);
+            int32_t r =
+                libmpq__writer_file_add(a, LIBMPQ_LISTFILE_NAME, list, (libmpq__off_t)total, &o);
             free(list);
             if (r < 0)
                 return r;
