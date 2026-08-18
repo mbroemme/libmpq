@@ -22,6 +22,7 @@
 #endif
 
 #include "common.h"
+#include "endian.h"
 #include "mpq-internal.h"
 #include "platform.h"
 #include <libmpq/mpq.h>
@@ -31,6 +32,90 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+
+static int32_t
+table_size(uint32_t count, size_t item_size, size_t *size)
+{
+    if (item_size == 0 || count > SIZE_MAX / item_size || (size_t)count * item_size > UINT32_MAX) {
+        return LIBMPQ_ERROR_FORMAT;
+    }
+
+    *size = (size_t)count * item_size;
+    return LIBMPQ_SUCCESS;
+}
+
+static void
+decode_mpq_header(mpq_header_s *header, const uint8_t *raw)
+{
+    header->mpq_magic = libmpq__load_le32(raw + 0);
+    header->header_size = libmpq__load_le32(raw + 4);
+    header->archive_size = libmpq__load_le32(raw + 8);
+    header->version = libmpq__load_le16(raw + 12);
+    header->block_size = libmpq__load_le16(raw + 14);
+    header->hash_table_offset = libmpq__load_le32(raw + 16);
+    header->block_table_offset = libmpq__load_le32(raw + 20);
+    header->hash_table_count = libmpq__load_le32(raw + 24);
+    header->block_table_count = libmpq__load_le32(raw + 28);
+}
+
+static void
+decode_mpq_header_ex(mpq_header_ex_s *header, const uint8_t *raw)
+{
+    header->extended_offset = libmpq__load_le64(raw + 0);
+    header->hash_table_offset_high = libmpq__load_le16(raw + 8);
+    header->block_table_offset_high = libmpq__load_le16(raw + 10);
+}
+
+static void
+decode_mpq_hash_table(mpq_hash_s *table, const uint8_t *raw, uint32_t count)
+{
+    uint32_t i;
+
+    for (i = 0; i < count; i++) {
+        const uint8_t *entry = raw + i * sizeof(mpq_hash_s);
+
+        table[i].hash_a = libmpq__load_le32(entry + 0);
+        table[i].hash_b = libmpq__load_le32(entry + 4);
+        table[i].locale = libmpq__load_le16(entry + 8);
+        table[i].platform = libmpq__load_le16(entry + 10);
+        table[i].block_table_index = libmpq__load_le32(entry + 12);
+    }
+}
+
+static void
+decode_mpq_block_table(mpq_block_s *table, const uint8_t *raw, uint32_t count)
+{
+    uint32_t i;
+
+    for (i = 0; i < count; i++) {
+        const uint8_t *entry = raw + i * sizeof(mpq_block_s);
+
+        table[i].offset = libmpq__load_le32(entry + 0);
+        table[i].packed_size = libmpq__load_le32(entry + 4);
+        table[i].unpacked_size = libmpq__load_le32(entry + 8);
+        table[i].flags = libmpq__load_le32(entry + 12);
+    }
+}
+
+static void
+decode_mpq_block_ex_table(mpq_block_ex_s *table, const uint8_t *raw, uint32_t count)
+{
+    uint32_t i;
+
+    for (i = 0; i < count; i++) {
+        table[i].offset_high = libmpq__load_le16(raw + i * sizeof(mpq_block_ex_s));
+    }
+}
+
+static void
+decode_uint32_table(uint32_t *table, const uint8_t *raw, uint32_t count)
+{
+    uint32_t i;
+
+    for (i = 0; i < count; i++) {
+        table[i] = libmpq__load_le32(raw + i * sizeof(uint32_t));
+    }
+}
 
 /* Error strings indexed by the negated libmpq error code. */
 static const char *libmpq_error_strings[] = { "success",
@@ -80,6 +165,10 @@ archive_open_path(
     uint32_t count = 0;
     int32_t result = 0;
     uint32_t header_search = FALSE;
+    uint8_t header_data[sizeof(mpq_header_s)];
+    uint8_t header_ex_data[sizeof(mpq_header_ex_s)];
+    uint8_t *table_data = NULL;
+    size_t table_bytes = 0;
 
     if (archive_offset == -1) {
         archive_offset = 0;
@@ -128,11 +217,12 @@ archive_open_path(
             goto error;
         }
 
-        if (fread(&(*mpq_archive)->mpq_header, 1, sizeof(mpq_header_s), (*mpq_archive)->fp) !=
-            sizeof(mpq_header_s)) {
+        if (fread(header_data, 1, sizeof(header_data), (*mpq_archive)->fp) != sizeof(header_data)) {
             result = LIBMPQ_ERROR_FORMAT;
             goto error;
         }
+
+        decode_mpq_header(&(*mpq_archive)->mpq_header, header_data);
 
         if ((*mpq_archive)->mpq_header.mpq_magic == LIBMPQ_HEADER) {
             if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE) {
@@ -170,11 +260,13 @@ archive_open_path(
             goto error;
         }
 
-        if (fread(&(*mpq_archive)->mpq_header_ex, 1, sizeof(mpq_header_ex_s), (*mpq_archive)->fp) !=
-            sizeof(mpq_header_ex_s)) {
+        if (fread(header_ex_data, 1, sizeof(header_ex_data), (*mpq_archive)->fp) !=
+            sizeof(header_ex_data)) {
             result = LIBMPQ_ERROR_FORMAT;
             goto error;
         }
+
+        decode_mpq_header_ex(&(*mpq_archive)->mpq_header_ex, header_ex_data);
     }
 
     /* Metadata tables are decoded once and kept with the archive handle for later lookups. */
@@ -193,6 +285,16 @@ archive_open_path(
         goto error;
     }
 
+    if (table_size((*mpq_archive)->mpq_header.hash_table_count, sizeof(mpq_hash_s), &table_bytes) <
+        0) {
+        result = LIBMPQ_ERROR_FORMAT;
+        goto error;
+    }
+    if (table_bytes != 0 && (table_data = malloc(table_bytes)) == NULL) {
+        result = LIBMPQ_ERROR_MALLOC;
+        goto error;
+    }
+
     if (fseeko(
             (*mpq_archive)->fp,
             (*mpq_archive)->mpq_header.hash_table_offset +
@@ -204,20 +306,31 @@ archive_open_path(
         goto error;
     }
 
-    if (fread(
-            (*mpq_archive)->mpq_hash, 1,
-            (*mpq_archive)->mpq_header.hash_table_count * sizeof(mpq_hash_s), (*mpq_archive)->fp
-        ) != (*mpq_archive)->mpq_header.hash_table_count * sizeof(mpq_hash_s)) {
+    if (fread(table_data, 1, table_bytes, (*mpq_archive)->fp) != table_bytes) {
         result = LIBMPQ_ERROR_READ;
         goto error;
     }
 
     /* MPQ stores the hash table encrypted with the fixed "(hash table)" key. */
     libmpq__decrypt_block(
-        (uint32_t *)((*mpq_archive)->mpq_hash),
-        (*mpq_archive)->mpq_header.hash_table_count * sizeof(mpq_hash_s),
-        libmpq__hash_string("(hash table)", 0x300)
+        table_data, (uint32_t)table_bytes, libmpq__hash_string("(hash table)", 0x300)
     );
+    decode_mpq_hash_table(
+        (*mpq_archive)->mpq_hash, table_data, (*mpq_archive)->mpq_header.hash_table_count
+    );
+    free(table_data);
+    table_data = NULL;
+
+    if (table_size(
+            (*mpq_archive)->mpq_header.block_table_count, sizeof(mpq_block_s), &table_bytes
+        ) < 0) {
+        result = LIBMPQ_ERROR_FORMAT;
+        goto error;
+    }
+    if (table_bytes != 0 && (table_data = malloc(table_bytes)) == NULL) {
+        result = LIBMPQ_ERROR_MALLOC;
+        goto error;
+    }
 
     if (fseeko(
             (*mpq_archive)->fp,
@@ -230,20 +343,20 @@ archive_open_path(
         goto error;
     }
 
-    if (fread(
-            (*mpq_archive)->mpq_block, 1,
-            (*mpq_archive)->mpq_header.block_table_count * sizeof(mpq_block_s), (*mpq_archive)->fp
-        ) != (*mpq_archive)->mpq_header.block_table_count * sizeof(mpq_block_s)) {
+    if (fread(table_data, 1, table_bytes, (*mpq_archive)->fp) != table_bytes) {
         result = LIBMPQ_ERROR_READ;
         goto error;
     }
 
     /* MPQ stores the block table encrypted with the fixed "(block table)" key. */
     libmpq__decrypt_block(
-        (uint32_t *)((*mpq_archive)->mpq_block),
-        (*mpq_archive)->mpq_header.block_table_count * sizeof(mpq_block_s),
-        libmpq__hash_string("(block table)", 0x300)
+        table_data, (uint32_t)table_bytes, libmpq__hash_string("(block table)", 0x300)
     );
+    decode_mpq_block_table(
+        (*mpq_archive)->mpq_block, table_data, (*mpq_archive)->mpq_header.block_table_count
+    );
+    free(table_data);
+    table_data = NULL;
 
     /* Extended block tables are optional and only needed when payload offsets exceed 4 GiB. */
     if ((*mpq_archive)->mpq_header_ex.extended_offset > 0) {
@@ -255,14 +368,26 @@ archive_open_path(
             goto error;
         }
 
-        if (fread(
-                (*mpq_archive)->mpq_block_ex, 1,
-                (*mpq_archive)->mpq_header.block_table_count * sizeof(mpq_block_ex_s),
-                (*mpq_archive)->fp
-            ) != (*mpq_archive)->mpq_header.block_table_count * sizeof(mpq_block_ex_s)) {
+        if (table_size(
+                (*mpq_archive)->mpq_header.block_table_count, sizeof(mpq_block_ex_s), &table_bytes
+            ) < 0) {
             result = LIBMPQ_ERROR_FORMAT;
             goto error;
         }
+        if (table_bytes != 0 && (table_data = malloc(table_bytes)) == NULL) {
+            result = LIBMPQ_ERROR_MALLOC;
+            goto error;
+        }
+
+        if (fread(table_data, 1, table_bytes, (*mpq_archive)->fp) != table_bytes) {
+            result = LIBMPQ_ERROR_FORMAT;
+            goto error;
+        }
+        decode_mpq_block_ex_table(
+            (*mpq_archive)->mpq_block_ex, table_data, (*mpq_archive)->mpq_header.block_table_count
+        );
+        free(table_data);
+        table_data = NULL;
     }
 
     /* Build the compact public file-number map from existing block-table entries. */
@@ -279,9 +404,11 @@ archive_open_path(
 
     (*mpq_archive)->files = count;
 
+    free(table_data);
     return LIBMPQ_SUCCESS;
 
 error:
+    free(table_data);
     if ((*mpq_archive)->fp)
         fclose((*mpq_archive)->fp);
 
@@ -693,6 +820,7 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
     uint32_t packed_offset_count;
     uint32_t packed_size;
     int32_t result = 0;
+    uint8_t *packed_data = NULL;
 
     if (validate_file_number(mpq_archive, file_number) < 0) {
         return LIBMPQ_ERROR_EXIST;
@@ -745,16 +873,19 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
             goto error;
         }
 
-        if (fread(
-                mpq_archive->mpq_file[file_number]->packed_offset, 1, packed_size, mpq_archive->fp
-            ) != packed_size) {
+        if ((packed_data = malloc(packed_size)) == NULL) {
+            result = LIBMPQ_ERROR_MALLOC;
+            goto error;
+        }
+
+        if (fread(packed_data, 1, packed_size, mpq_archive->fp) != packed_size) {
             result = LIBMPQ_ERROR_READ;
             goto error;
         }
 
         /* Some protected archives omit the encrypted flag; a wrong first offset exposes that. */
-        if (mpq_archive->mpq_file[file_number]->packed_offset[0] != packed_size &&
-            mpq_archive->mpq_file[file_number]->packed_offset[0] != packed_size + 4) {
+        if (libmpq__load_le32(packed_data) != packed_size &&
+            libmpq__load_le32(packed_data) != packed_size + 4) {
             mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags |=
                 LIBMPQ_FLAG_ENCRYPTED;
         }
@@ -765,8 +896,7 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
             uint32_t seed;
 
             if (libmpq__derive_block_table_seed(
-                    (uint8_t *)mpq_archive->mpq_file[file_number]->packed_offset, packed_size,
-                    mpq_archive->block_size, &seed
+                    packed_data, packed_size, mpq_archive->block_size, &seed
                 ) < 0) {
                 result = LIBMPQ_ERROR_DECRYPT;
                 goto error;
@@ -775,19 +905,25 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
             mpq_archive->mpq_file[file_number]->seed_known = TRUE;
 
             if (libmpq__decrypt_block(
-                    mpq_archive->mpq_file[file_number]->packed_offset, packed_size,
-                    mpq_archive->mpq_file[file_number]->seed - 1
+                    packed_data, packed_size, mpq_archive->mpq_file[file_number]->seed - 1
                 ) < 0) {
                 result = LIBMPQ_ERROR_DECRYPT;
                 goto error;
             }
 
             /* A valid decrypted table starts with its own byte size. */
-            if (mpq_archive->mpq_file[file_number]->packed_offset[0] != packed_size) {
+            if (libmpq__load_le32(packed_data) != packed_size) {
                 result = LIBMPQ_ERROR_DECRYPT;
                 goto error;
             }
         }
+
+        decode_uint32_table(
+            mpq_archive->mpq_file[file_number]->packed_offset, packed_data,
+            packed_size / sizeof(uint32_t)
+        );
+        free(packed_data);
+        packed_data = NULL;
     } else {
         if ((mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags &
              LIBMPQ_FLAG_SINGLE) == 0) {
@@ -872,6 +1008,8 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
     return LIBMPQ_SUCCESS;
 
 error:
+
+    free(packed_data);
 
     if (mpq_archive->mpq_file[file_number] != NULL) {
         free(mpq_archive->mpq_file[file_number]->packed_offset);
@@ -1074,7 +1212,7 @@ libmpq__block_read(
             return LIBMPQ_ERROR_DECRYPT;
         }
 
-        if (libmpq__decrypt_block((uint32_t *)in_buf, in_size, seed) < 0) {
+        if (libmpq__decrypt_block(in_buf, (uint32_t)in_size, seed) < 0) {
             if (!use_out_buf) {
                 free(in_buf);
             }

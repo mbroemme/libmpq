@@ -19,6 +19,7 @@
 
 #include "common.h"
 #include "crypt_buf.h"
+#include "endian.h"
 #include "extract.h"
 #include "mpq-internal.h"
 #include <libmpq/mpq.h>
@@ -50,20 +51,23 @@ libmpq__hash_string(const char *key, uint32_t offset)
 
 /* Encrypt a block in place using the MPQ block cipher and the supplied seed. */
 int32_t
-libmpq__encrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed)
+libmpq__encrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
 {
 
     /* The cipher updates both seeds for every 32-bit word. */
     uint32_t seed2 = 0xEEEEEEEE;
     uint32_t ch;
+    uint32_t value;
 
     /* The MPQ block cipher operates on complete 32-bit words. */
     for (; in_size >= 4; in_size -= 4) {
         seed2 += crypt_buf[0x400 + (seed & 0xFF)];
-        ch = *in_buf ^ (seed + seed2);
+        value = libmpq__load_le32(in_buf);
+        ch = value ^ (seed + seed2);
         seed = ((~seed << 0x15) + 0x11111111) | (seed >> 0x0B);
-        seed2 = *in_buf + seed2 + (seed2 << 5) + 3;
-        *in_buf++ = ch;
+        seed2 = value + seed2 + (seed2 << 5) + 3;
+        libmpq__store_le32(in_buf, ch);
+        in_buf += sizeof(uint32_t);
     }
 
     /* Block encryption has no recoverable per-word error state. */
@@ -72,7 +76,7 @@ libmpq__encrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed)
 
 /* Decrypt a block in place using the MPQ block cipher and the supplied seed. */
 int32_t
-libmpq__decrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed)
+libmpq__decrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
 {
 
     /* The cipher updates both seeds for every 32-bit word. */
@@ -82,10 +86,11 @@ libmpq__decrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed)
     /* The MPQ block cipher operates on complete 32-bit words. */
     for (; in_size >= 4; in_size -= 4) {
         seed2 += crypt_buf[0x400 + (seed & 0xFF)];
-        ch = *in_buf ^ (seed + seed2);
+        ch = libmpq__load_le32(in_buf) ^ (seed + seed2);
         seed = ((~seed << 0x15) + 0x11111111) | (seed >> 0x0B);
         seed2 = ch + seed2 + (seed2 << 5) + 3;
-        *in_buf++ = ch;
+        libmpq__store_le32(in_buf, ch);
+        in_buf += sizeof(uint32_t);
     }
 
     /* Block decryption has no recoverable per-word error state. */
@@ -111,8 +116,8 @@ libmpq__detect_file_key(const uint8_t *in_buf, uint32_t in_size, uint32_t file_s
         return LIBMPQ_ERROR_DECRYPT;
     }
 
-    memcpy(&encrypted_first, in_buf, sizeof(encrypted_first));
-    memcpy(&encrypted_second, in_buf + sizeof(encrypted_first), sizeof(encrypted_second));
+    encrypted_first = libmpq__load_le32(in_buf);
+    encrypted_second = libmpq__load_le32(in_buf + sizeof(encrypted_first));
 
     for (i = 0; i < 0x100; i++) {
         uint32_t j;
@@ -160,7 +165,11 @@ libmpq__derive_block_table_seed(
     uint32_t i = 0;
 
     /* Derive the first seed candidate from the known block-table size. */
-    temp = (*(uint32_t *)in_buf ^ in_size) - 0xEEEEEEEE;
+    if (in_buf == NULL || key == NULL || in_size < 8) {
+        return LIBMPQ_ERROR_DECRYPT;
+    }
+
+    temp = (libmpq__load_le32(in_buf) ^ in_size) - 0xEEEEEEEE;
 
     /* Try every possible low byte used to index the encryption table. */
     for (i = 0; i < 0x100; i++) {
@@ -174,7 +183,7 @@ libmpq__derive_block_table_seed(
         /* The first encrypted value must decrypt to the block table size. */
         seed1 = temp - crypt_buf[0x400 + i];
         seed2 += crypt_buf[0x400 + (seed1 & 0xFF)];
-        ch = ((uint32_t *)in_buf)[0] ^ (seed1 + seed2);
+        ch = libmpq__load_le32(in_buf) ^ (seed1 + seed2);
 
         if (ch != in_size) {
             continue;
@@ -191,7 +200,7 @@ libmpq__derive_block_table_seed(
         seed1 = ((~seed1 << 0x15) + 0x11111111) | (seed1 >> 0x0B);
         seed2 = ch + seed2 + (seed2 << 5) + 3;
         seed2 += crypt_buf[0x400 + (seed1 & 0xFF)];
-        ch = ((uint32_t *)in_buf)[1] ^ (seed1 + seed2);
+        ch = libmpq__load_le32(in_buf + sizeof(uint32_t)) ^ (seed1 + seed2);
 
         if ((ch - ch2) <= block_size) {
             *key = saveseed1;
@@ -215,6 +224,9 @@ libmpq__decompress_block(
     int32_t tb = 0;
 
     if (compression_type == LIBMPQ_FLAG_COMPRESS_NONE) {
+        if (in_size < out_size) {
+            return LIBMPQ_ERROR_SIZE;
+        }
         memcpy(out_buf, in_buf, out_size);
         tb = out_size;
     }
@@ -241,7 +253,7 @@ libmpq__decompress_block(
             }
         } else {
             memcpy(out_buf, in_buf, out_size);
-            tb = in_size;
+            tb = out_size;
         }
     }
 

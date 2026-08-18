@@ -24,6 +24,7 @@
  */
 
 #include "wave.h"
+#include "endian.h"
 
 /* Predictor-index adjustments used by the MPQ ADPCM WAVE decoder. */
 static const uint32_t wave_step_adjustments[] = {
@@ -57,8 +58,7 @@ libmpq__do_decompress_wave(
 {
 
     /* Decoder state for channel deltas and transferred bytes. */
-    byte_and_int16_t out;
-    byte_and_int16_t in;
+    uint8_t *out_ptr;
     uint32_t index;
     int32_t step_indices[2];
     int32_t predictor_samples[2];
@@ -71,13 +71,12 @@ libmpq__do_decompress_wave(
     /* Stop decoding when the compressed stream cursor reaches this address. */
     uint8_t *in_end = in_buf + in_length;
 
-    out.pb = out_buf;
-    in.pb = in_buf;
+    out_ptr = out_buf;
     step_indices[0] = 0x2C;
     step_indices[1] = 0x2C;
 
     /* The first word is the MPQ WAVE predictor header, followed by seed samples. */
-    in.pw++;
+    in_buf += sizeof(uint16_t);
 
     /* Emit the initial seed sample for each channel. */
     for (count = 0; count < channels; count++) {
@@ -85,22 +84,24 @@ libmpq__do_decompress_wave(
         /* Current sample code and output channel for this input byte. */
         int32_t temp;
 
-        temp = *(int16_t *)in.pw++;
+        temp = (int16_t)libmpq__load_le16(in_buf);
+        in_buf += sizeof(uint16_t);
         predictor_samples[count] = temp;
 
         if (out_length < 2) {
-            return out.pb - out_buf;
+            return (int32_t)(out_ptr - out_buf);
         }
 
-        *out.pw++ = (uint16_t)temp;
+        libmpq__store_le16(out_ptr, (uint16_t)temp);
+        out_ptr += sizeof(uint16_t);
         out_length -= 2;
     }
 
     /* Start with the last channel so stereo data alternates on each emitted sample. */
     index = channels - 1;
 
-    while (in.pb < in_end) {
-        uint8_t one_byte = *in.pb++;
+    while (in_buf < in_end) {
+        uint8_t one_byte = *in_buf++;
 
         if (channels == 2) {
             index = (index == 0) ? 1 : 0;
@@ -119,7 +120,8 @@ libmpq__do_decompress_wave(
                     break;
                 }
 
-                *out.pw++ = (uint16_t)predictor_samples[index];
+                libmpq__store_le16(out_ptr, (uint16_t)predictor_samples[index]);
+                out_ptr += sizeof(uint16_t);
                 out_length -= 2;
                 continue;
             case 1:
@@ -195,7 +197,8 @@ libmpq__do_decompress_wave(
 
             temp2 = step_indices[index];
             one_byte &= 0x1F;
-            *out.pw++ = (uint16_t)temp3;
+            libmpq__store_le16(out_ptr, (uint16_t)temp3);
+            out_ptr += sizeof(uint16_t);
             out_length -= 2;
             temp2 += wave_step_adjustments[one_byte];
             step_indices[index] = temp2;
@@ -210,5 +213,5 @@ libmpq__do_decompress_wave(
         }
     }
 
-    return (out.pb - out_buf);
+    return (int32_t)(out_ptr - out_buf);
 }

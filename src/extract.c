@@ -18,6 +18,7 @@
  */
 
 #include "extract.h"
+#include "endian.h"
 #include "explode.h"
 #include "huffman.h"
 #include "wave.h"
@@ -49,7 +50,9 @@ libmpq__decompress_huffman(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, 
     struct huffman_tree_s *ht;
     struct huffman_input_stream_s *is;
 
-    (void)in_size;
+    if (in_buf == NULL || out_buf == NULL || in_size < sizeof(uint32_t)) {
+        return LIBMPQ_ERROR_FORMAT;
+    }
 
     if ((ht = malloc(sizeof(struct huffman_tree_s))) == NULL) {
         return LIBMPQ_ERROR_MALLOC;
@@ -65,7 +68,7 @@ libmpq__decompress_huffman(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, 
     memset(is, 0, sizeof(struct huffman_input_stream_s));
 
     /* The first four bytes seed the bit buffer; remaining bytes form the stream. */
-    is->bit_buf = *(uint32_t *)in_buf;
+    is->bit_buf = libmpq__load_le32(in_buf);
     in_buf += sizeof(int32_t);
     is->in_buf = (uint8_t *)in_buf;
     is->bits = 32;

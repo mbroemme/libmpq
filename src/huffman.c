@@ -29,6 +29,7 @@
  */
 
 #include "huffman.h"
+#include "endian.h"
 #include "mpq-internal.h"
 #include <libmpq/mpq.h>
 
@@ -348,7 +349,7 @@ libmpq__huffman_read_bit(struct huffman_input_stream_s *is)
 
     /* Refill the 32-bit buffer when all pending bits have been consumed. */
     if (--is->bits == 0) {
-        is->bit_buf = *(uint32_t *)is->in_buf;
+        is->bit_buf = libmpq__load_le32(is->in_buf);
         is->in_buf += sizeof(int32_t);
         is->bits = 32;
     }
@@ -363,7 +364,7 @@ libmpq__huffman_peek_seven_bits(struct huffman_input_stream_s *is)
 
     /* Ensure the quick-decode prefix is fully available. */
     if (is->bits <= 7) {
-        is->bit_buf |= *(uint16_t *)is->in_buf << is->bits;
+        is->bit_buf |= (uint32_t)libmpq__load_le16(is->in_buf) << is->bits;
         is->in_buf += sizeof(int16_t);
         is->bits += 16;
     }
@@ -381,7 +382,7 @@ libmpq__huffman_read_byte(struct huffman_input_stream_s *is)
 
     /* Refill before consuming a byte that crosses the current bit buffer. */
     if (is->bits <= 8) {
-        is->bit_buf |= *(uint16_t *)is->in_buf << is->bits;
+        is->bit_buf |= (uint32_t)libmpq__load_le16(is->in_buf) << is->bits;
         is->in_buf += sizeof(int16_t);
         is->bits += 16;
     }

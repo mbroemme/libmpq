@@ -28,13 +28,6 @@
 
 #include <stdint.h>
 
-/* Cursor that can address WAVE output as bytes or 16-bit PCM samples. */
-typedef union
-{
-    uint16_t *pw;
-    uint8_t *pb;
-} byte_and_int16_t;
-
 /* Decompress mono or stereo MPQ WAVE predictor data into PCM bytes. */
 int32_t libmpq__do_decompress_wave(
     uint8_t *out_buf, int32_t out_length, uint8_t *in_buf, int32_t in_length, int32_t channels

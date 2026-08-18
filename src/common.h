@@ -25,11 +25,11 @@
 /* Hash an MPQ table name or file name with one of the Storm hash table offsets. */
 uint32_t libmpq__hash_string(const char *key, uint32_t offset);
 
-/* Encrypt a block in place using the MPQ block cipher. */
-int32_t libmpq__encrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed);
+/* Encrypt a serialized little-endian block in place using the MPQ cipher. */
+int32_t libmpq__encrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed);
 
-/* Decrypt a block in place using the MPQ block cipher. */
-int32_t libmpq__decrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed);
+/* Decrypt a serialized little-endian block in place using the MPQ cipher. */
+int32_t libmpq__decrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed);
 
 /* Recover a file seed from the first known words of an encrypted payload. */
 int32_t
