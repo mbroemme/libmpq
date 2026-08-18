@@ -30,6 +30,7 @@
 
 /* Initialize the Huffman tree for decompression. */
 #define LIBMPQ_HUFF_DECOMPRESS 0
+#define LIBMPQ_HUFF_COMPRESS 1
 
 /* Convert the encoded pointer values used by the original Huffman layout. */
 #define PTR_NOT(ptr) (struct huffman_tree_item_s *)(~(unsigned long)(ptr))
@@ -46,6 +47,15 @@ struct huffman_input_stream_s
     uint8_t *in_buf;  /* 00 - next unread input bytes. */
     uint32_t bit_buf; /* 04 - pending bits. */
     uint32_t bits;    /* 08 - number of valid bits in bit_buf. */
+};
+
+struct huffman_output_stream_s
+{
+    uint8_t *out_buf;
+    uint32_t out_pos;
+    uint32_t bit_buf;
+    uint32_t bits;
+    uint32_t capacity;
 };
 
 /* Node stored in the adaptive Huffman tree and linked frequency list. */
@@ -127,6 +137,11 @@ void libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type);
 int32_t libmpq__huffman_decode(
     struct huffman_tree_s *ht, struct huffman_input_stream_s *is, uint8_t *out_buf,
     uint32_t out_length
+);
+
+int32_t libmpq__huffman_encode(
+    struct huffman_tree_s *ht, struct huffman_output_stream_s *os, const uint8_t *in_buf,
+    uint32_t in_length
 );
 
 #endif /* LIBMPQ_HUFFMAN_H */

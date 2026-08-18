@@ -939,3 +939,118 @@ libmpq__huffman_decode(
 
     return (out_pos - out_buf);
 }
+
+/* Append one least-significant-bit-first bit to the Huffman output stream. */
+static int32_t
+libmpq__huffman_write_bit(struct huffman_output_stream_s *os, uint32_t bit)
+{
+    os->bit_buf |= (bit & 1u) << os->bits++;
+    if (os->bits == 8) {
+        if (os->out_pos >= os->capacity)
+            return LIBMPQ_ERROR_SIZE;
+        os->out_buf[os->out_pos++] = (uint8_t)os->bit_buf;
+        os->bit_buf = 0;
+        os->bits = 0;
+    }
+    return LIBMPQ_SUCCESS;
+}
+
+/* Append a little-endian run of bits to the Huffman output stream. */
+static int32_t
+libmpq__huffman_write_bits(struct huffman_output_stream_s *os, uint32_t value, uint32_t count)
+{
+    while (count-- != 0) {
+        int32_t result = libmpq__huffman_write_bit(os, value);
+        if (result < 0)
+            return result;
+        value >>= 1;
+    }
+    return LIBMPQ_SUCCESS;
+}
+
+/* Emit the adaptive-tree path for one Huffman symbol. */
+static int32_t
+libmpq__huffman_encode_symbol(struct huffman_output_stream_s *os, struct huffman_tree_item_s *item)
+{
+    uint32_t bits = 0, count = 0;
+    struct huffman_tree_item_s *parent;
+    for (parent = item->parent; parent != NULL; parent = parent->parent) {
+        if (parent->child->prev == item)
+            bits |= 1u << count;
+        item = parent;
+        if (++count == 32)
+            return LIBMPQ_ERROR_FORMAT;
+    }
+    return libmpq__huffman_write_bits(os, bits, count);
+}
+
+/* Replace the NYT node with an escape branch and the newly seen literal. */
+static int32_t
+libmpq__huffman_insert_literal(struct huffman_tree_s *ht, uint32_t value)
+{
+    struct huffman_tree_item_s *escape = ht->last;
+    struct huffman_tree_item_s *old, *literal;
+    if (escape == NULL || PTR_INT(escape) <= 0)
+        return LIBMPQ_ERROR_FORMAT;
+    old = libmpq__huffman_acquire_item(ht);
+    literal = libmpq__huffman_acquire_item(ht);
+    if (old == NULL || literal == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    old->parent = escape;
+    old->dcmp_byte = escape->dcmp_byte;
+    old->byte_value = escape->byte_value;
+    literal->parent = escape;
+    literal->dcmp_byte = value;
+    literal->byte_value = 0;
+    escape->child = literal;
+    ht->symbol_nodes[old->dcmp_byte] = old;
+    ht->symbol_nodes[value] = literal;
+    libmpq__huffman_update_weights(ht, literal);
+    if (ht->compression_type_zero == 0)
+        libmpq__huffman_update_weights(ht, old);
+    return LIBMPQ_SUCCESS;
+}
+
+/* Encode a byte stream using the MPQ adaptive Huffman wire format. */
+int32_t
+libmpq__huffman_encode(
+    struct huffman_tree_s *ht, struct huffman_output_stream_s *os, const uint8_t *in_buf,
+    uint32_t in_length
+)
+{
+    uint32_t i;
+    if (ht == NULL || os == NULL || (in_length != 0 && in_buf == NULL) || os->capacity < 4)
+        return LIBMPQ_ERROR_FORMAT;
+    os->out_pos = 1;
+    os->bit_buf = 0;
+    os->bits = 0;
+    os->out_buf[0] = 0;
+    libmpq__huffman_tree_init(ht, LIBMPQ_HUFF_COMPRESS);
+    libmpq__huffman_tree_build(ht, 0);
+    ht->compression_type_zero = TRUE;
+    for (i = 0; i < in_length; i++) {
+        uint32_t value = in_buf[i];
+        struct huffman_tree_item_s *item = ht->symbol_nodes[value];
+        if (item == NULL) {
+            if (libmpq__huffman_encode_symbol(os, ht->symbol_nodes[0x101]) < 0 ||
+                libmpq__huffman_write_bits(os, value, 8) < 0)
+                return LIBMPQ_ERROR_SIZE;
+            if (libmpq__huffman_insert_literal(ht, value) < 0)
+                return LIBMPQ_ERROR_FORMAT;
+        } else if (libmpq__huffman_encode_symbol(os, item) < 0) {
+            return LIBMPQ_ERROR_SIZE;
+        } else {
+            libmpq__huffman_update_weights(ht, item);
+        }
+    }
+    if (libmpq__huffman_encode_symbol(os, ht->symbol_nodes[0x100]) < 0)
+        return LIBMPQ_ERROR_SIZE;
+    if (os->bits != 0) {
+        if (os->out_pos >= os->capacity)
+            return LIBMPQ_ERROR_SIZE;
+        os->out_buf[os->out_pos++] = (uint8_t)os->bit_buf;
+    }
+    while (os->out_pos < 4)
+        os->out_buf[os->out_pos++] = 0;
+    return (int32_t)os->out_pos;
+}

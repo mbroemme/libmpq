@@ -25,6 +25,9 @@
 
 #include "wave.h"
 #include "endian.h"
+#include <libmpq/mpq.h>
+#include <stdlib.h>
+#include <string.h>
 
 /* Predictor-index adjustments used by the MPQ ADPCM WAVE decoder. */
 static const uint32_t wave_step_adjustments[] = {
@@ -49,6 +52,112 @@ static const uint32_t wave_step_sizes[] = {
     0x00003BB9, 0x000041B2, 0x00004844, 0x00004F7E, 0x00005771, 0x0000602F, 0x000069CE, 0x00007462,
     0x00007FFF
 };
+
+/* Inspect a RIFF/WAVE prefix and validate its PCM16 channel configuration. */
+int32_t
+libmpq__wave_probe_pcm16(const uint8_t *data, uint32_t size, libmpq_wave_info_s *info)
+{
+    uint32_t pos = 12, end;
+    uint16_t channels = 0, format = 0, bits = 0;
+    uint32_t data_offset = 0, data_size = 0;
+    if (data == NULL || info == NULL || size < 12 || memcmp(data, "RIFF", 4) != 0 ||
+        memcmp(data + 8, "WAVE", 4) != 0)
+        return LIBMPQ_ERROR_FORMAT;
+    end = size;
+    while (pos + 8 <= end) {
+        uint32_t chunk_size = libmpq__load_le32(data + pos + 4);
+        uint32_t next = pos + 8 + chunk_size + (chunk_size & 1u);
+        if (next < pos || next > end)
+            return LIBMPQ_ERROR_FORMAT;
+        if (memcmp(data + pos, "fmt ", 4) == 0 && chunk_size >= 16) {
+            format = libmpq__load_le16(data + pos + 8);
+            channels = libmpq__load_le16(data + pos + 10);
+            bits = libmpq__load_le16(data + pos + 22);
+        } else if (memcmp(data + pos, "data", 4) == 0) {
+            data_offset = pos + 8;
+            data_size = chunk_size;
+        }
+        pos = next;
+    }
+    if (format != 1 || (channels != 1 && channels != 2) || bits != 16 || data_offset == 0 ||
+        data_offset > size || (data_size % (channels * 2)) != 0)
+        return LIBMPQ_ERROR_FORMAT;
+    info->channels = channels;
+    info->data_offset = data_offset;
+    info->data_size = data_size;
+    return 0;
+}
+
+/* Quantize one PCM predictor difference into the MPQ ADPCM control byte. */
+static uint8_t
+wave_encode_delta(int32_t difference, int32_t *predictor, int32_t *step_index, uint32_t shift)
+{
+    uint32_t step = wave_step_sizes[*step_index];
+    uint32_t magnitude = (difference < 0) ? (uint32_t)-difference : (uint32_t)difference;
+    uint32_t code = difference < 0 ? 0x40u : 0;
+    uint32_t bit;
+    int32_t delta = (int32_t)(step >> shift);
+    for (bit = 0; bit < 6; bit++) {
+        uint32_t contribution = step >> bit;
+        if (magnitude >= (uint32_t)(delta + (int32_t)contribution)) {
+            code |= 1u << bit;
+            delta += (int32_t)contribution;
+        }
+    }
+    if (difference < 0)
+        *predictor -= delta;
+    else
+        *predictor += delta;
+    if (*predictor > 32767)
+        *predictor = 32767;
+    if (*predictor < -32768)
+        *predictor = -32768;
+    *step_index += (int32_t)wave_step_adjustments[code & 0x1f];
+    if (*step_index < 0)
+        *step_index = 0;
+    if (*step_index > 0x58)
+        *step_index = 0x58;
+    return (uint8_t)code;
+}
+
+/* Encode one complete PCM sector using the MPQ mono/stereo ADPCM format. */
+int32_t
+libmpq__compress_wave(
+    const uint8_t *in_buf, uint32_t in_size, uint8_t **out_buf, uint32_t *out_size,
+    uint32_t channels
+)
+{
+    uint32_t samples, i, shift = 4, pos;
+    int32_t predictor[2] = { 0, 0 }, index[2] = { 0x2c, 0x2c };
+    uint8_t *out;
+    if (out_buf == NULL || out_size == NULL || in_buf == NULL || (channels != 1 && channels != 2) ||
+        in_size < channels * 2 || (in_size % (channels * 2)) != 0)
+        return LIBMPQ_ERROR_FORMAT;
+    samples = in_size / (channels * 2);
+    out = malloc(2 + channels * 2 + samples * channels);
+    if (out == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    libmpq__store_le16(out, 0);
+    out[1] = (uint8_t)shift;
+    pos = 2;
+    for (i = 0; i < channels; i++) {
+        predictor[i] = (int16_t)libmpq__load_le16(in_buf + i * 2);
+        libmpq__store_le16(out + pos, (uint16_t)predictor[i]);
+        pos += 2;
+    }
+    for (i = 1; i < samples; i++) {
+        uint32_t channel;
+        for (channel = 0; channel < channels; channel++) {
+            int32_t sample = (int16_t)libmpq__load_le16(in_buf + (i * channels + channel) * 2);
+            out[pos++] = wave_encode_delta(
+                sample - predictor[channel], &predictor[channel], &index[channel], shift
+            );
+        }
+    }
+    *out_buf = out;
+    *out_size = pos;
+    return 0;
+}
 
 /* Decompress mono or stereo MPQ WAVE predictor data into PCM bytes. */
 int32_t

@@ -25,8 +25,8 @@
 #include "pkware.h"
 #include <libmpq/mpq.h>
 
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* Distance bit lengths used by the PKWARE explode distance decoder. */
 static const uint8_t pkzip_dist_bits[] = {
@@ -61,8 +61,9 @@ static const uint8_t pkzip_slen_bits[] = { 0x03, 0x02, 0x03, 0x03, 0x04, 0x04, 0
 static const uint8_t pkzip_len_code[] = { 0x05, 0x03, 0x01, 0x06, 0x0A, 0x02, 0x0C, 0x14,
                                           0x04, 0x18, 0x08, 0x30, 0x10, 0x20, 0x40, 0x00 };
 
+/* Append a low-bit-first PKWARE code to the output bitstream. */
 static void
-pkzip_put_bits(uint8_t *out, size_t *bit_pos, uint32_t value, unsigned bits)
+libmpq__pkzip_put_bits(uint8_t *out, size_t *bit_pos, uint32_t value, unsigned bits)
 {
     unsigned i;
     for (i = 0; i < bits; i++, (*bit_pos)++)
@@ -70,6 +71,7 @@ pkzip_put_bits(uint8_t *out, size_t *bit_pos, uint32_t value, unsigned bits)
             out[*bit_pos >> 3] |= (uint8_t)(1u << (*bit_pos & 7));
 }
 
+/* Encode binary input as a PKWARE DCL stream for MPQ implode storage. */
 int32_t
 libmpq__compress_pkzip(
     const uint8_t *in_buf, uint32_t in_size, uint8_t **out_buf, uint32_t *out_size
@@ -89,8 +91,8 @@ libmpq__compress_pkzip(
     out[1] = 4;
     bit_count = 0;
     for (i = 0; i < in_size;) {
-        pkzip_put_bits(out + 2, &bit_count, 0, 1);
-        pkzip_put_bits(out + 2, &bit_count, in_buf[i], 8);
+        libmpq__pkzip_put_bits(out + 2, &bit_count, 0, 1);
+        libmpq__pkzip_put_bits(out + 2, &bit_count, in_buf[i], 8);
         if (i + 2 < in_size && in_buf[i + 1] == in_buf[i] && in_buf[i + 2] == in_buf[i]) {
             uint32_t length = 3;
             uint32_t value, entry, extra, code;
@@ -99,20 +101,20 @@ libmpq__compress_pkzip(
             value = length - 2;
             for (entry = 0; entry < 16; entry++) {
                 extra = pkzip_clen_bits[entry];
-                if (value >= pkzip_len_base[entry] &&
-                    value < pkzip_len_base[entry] + (1u << extra))
+                if (value >= pkzip_len_base[entry] && value < pkzip_len_base[entry] + (1u << extra))
                     break;
             }
             if (entry == 16)
                 entry = 15;
             code = ((value - pkzip_len_base[entry]) << (pkzip_slen_bits[entry] + 1)) |
                    (pkzip_len_code[entry] * 2u) | 1u;
-            pkzip_put_bits(out + 2, &bit_count, code,
-                           pkzip_slen_bits[entry] + pkzip_clen_bits[entry] + 1);
+            libmpq__pkzip_put_bits(
+                out + 2, &bit_count, code, pkzip_slen_bits[entry] + pkzip_clen_bits[entry] + 1
+            );
 
             /* Distance one: distance prefix zero and a zero dictionary suffix. */
-            pkzip_put_bits(out + 2, &bit_count, pkzip_dist_code[0], pkzip_dist_bits[0]);
-            pkzip_put_bits(out + 2, &bit_count, 0, 4);
+            libmpq__pkzip_put_bits(out + 2, &bit_count, pkzip_dist_code[0], pkzip_dist_bits[0]);
+            libmpq__pkzip_put_bits(out + 2, &bit_count, 0, 4);
             i += length;
         } else {
             i++;
@@ -120,7 +122,7 @@ libmpq__compress_pkzip(
     }
 
     /* Length table 15, extra value 255: the canonical 0x305 terminator. */
-    pkzip_put_bits(out + 2, &bit_count, 0xFF01u, 16);
+    libmpq__pkzip_put_bits(out + 2, &bit_count, 0xFF01u, 16);
     *out_buf = out;
     *out_size = (uint32_t)(2 + (bit_count + 7) / 8);
     return 0;
@@ -179,9 +181,9 @@ char pkware_copyright[] = "PKWARE Data Compression Library for Win32\r\n"
                           "PKWARE Data Compression Library Reg. U.S. Pat. and Tm. Off.\r\n"
                           "Version 1.11\r\n";
 
-/* Drop bits from the bit buffer, loading the next input byte when required. */
+/* Consume bits from the PKWARE input accumulator. */
 static int32_t
-skip_bit(pkzip_cmp_s *mpq_pkzip, uint32_t bits)
+libmpq__pkzip_skip_bit(pkzip_cmp_s *mpq_pkzip, uint32_t bits)
 {
     if (bits <= mpq_pkzip->extra_bits) {
         mpq_pkzip->extra_bits -= bits;
@@ -208,9 +210,11 @@ skip_bit(pkzip_cmp_s *mpq_pkzip, uint32_t bits)
     return 0;
 }
 
-/* Build byte-sized lookup tables from bit-length and code arrays. */
+/* Build a decode lookup table from PKWARE canonical bit codes. */
 static void
-generate_tables_decode(int32_t count, uint8_t *bits, const uint8_t *code, uint8_t *buf2)
+libmpq__pkzip_generate_tables_decode(
+    int32_t count, uint8_t *bits, const uint8_t *code, uint8_t *buf2
+)
 {
 
     /* Walk backwards because the original table order assigns higher codes first. */
@@ -229,9 +233,9 @@ generate_tables_decode(int32_t count, uint8_t *bits, const uint8_t *code, uint8_
     }
 }
 
-/* Build the ASCII literal lookup tables used by the PKWARE explode decoder. */
+/* Build the ASCII literal lookup tables used by the PKWARE decoder. */
 static void
-generate_tables_ascii(pkzip_cmp_s *mpq_pkzip)
+libmpq__pkzip_generate_tables_ascii(pkzip_cmp_s *mpq_pkzip)
 {
 
     /* ASCII table cursor and bit expansion state. */
@@ -288,28 +292,23 @@ generate_tables_ascii(pkzip_cmp_s *mpq_pkzip)
     }
 }
 
-/*
- * Decode the next PKWARE literal or match-length symbol.
- * Values 0x000-0x0FF represent literal bytes.
- * Values 0x100-0x305 represent LZ match lengths.
- * Value 0x306 marks input exhaustion.
- */
+/* Decode one PKWARE literal or copy marker. */
 static uint32_t
-decode_literal(pkzip_cmp_s *mpq_pkzip)
+libmpq__pkzip_decode_literal(pkzip_cmp_s *mpq_pkzip)
 {
     uint32_t bits;
     uint32_t value;
 
     /* A set low bit marks a length code; an unset bit marks a literal code. */
     if (mpq_pkzip->bit_buf & 1) {
-        if (skip_bit(mpq_pkzip, 1)) {
+        if (libmpq__pkzip_skip_bit(mpq_pkzip, 1)) {
             return 0x306;
         }
 
         /* The next prefix selects a length-code table entry. */
         value = mpq_pkzip->pos2[(mpq_pkzip->bit_buf & 0xFF)];
 
-        if (skip_bit(mpq_pkzip, mpq_pkzip->slen_bits[value])) {
+        if (libmpq__pkzip_skip_bit(mpq_pkzip, mpq_pkzip->slen_bits[value])) {
             return 0x306;
         }
 
@@ -318,7 +317,7 @@ decode_literal(pkzip_cmp_s *mpq_pkzip)
             /* Decoded literal symbol and bit length for this table entry. */
             uint32_t val2 = mpq_pkzip->bit_buf & ((1 << bits) - 1);
 
-            if (skip_bit(mpq_pkzip, bits)) {
+            if (libmpq__pkzip_skip_bit(mpq_pkzip, bits)) {
                 if ((value + val2) != 0x10E) {
                     return 0x306;
                 }
@@ -330,7 +329,7 @@ decode_literal(pkzip_cmp_s *mpq_pkzip)
         return value + 0x100;
     }
 
-    if (skip_bit(mpq_pkzip, 1)) {
+    if (libmpq__pkzip_skip_bit(mpq_pkzip, 1)) {
         return 0x306;
     }
 
@@ -338,7 +337,7 @@ decode_literal(pkzip_cmp_s *mpq_pkzip)
     if (mpq_pkzip->cmp_type == LIBMPQ_PKZIP_CMP_BINARY) {
         value = mpq_pkzip->bit_buf & 0xFF;
 
-        if (skip_bit(mpq_pkzip, 8)) {
+        if (libmpq__pkzip_skip_bit(mpq_pkzip, 8)) {
             return 0x306;
         }
 
@@ -350,13 +349,13 @@ decode_literal(pkzip_cmp_s *mpq_pkzip)
 
         if (value == 0xFF) {
             if (mpq_pkzip->bit_buf & 0x3F) {
-                if (skip_bit(mpq_pkzip, 4)) {
+                if (libmpq__pkzip_skip_bit(mpq_pkzip, 4)) {
                     return 0x306;
                 }
 
                 value = mpq_pkzip->offs_2d34[mpq_pkzip->bit_buf & 0xFF];
             } else {
-                if (skip_bit(mpq_pkzip, 6)) {
+                if (libmpq__pkzip_skip_bit(mpq_pkzip, 6)) {
                     return 0x306;
                 }
 
@@ -366,19 +365,19 @@ decode_literal(pkzip_cmp_s *mpq_pkzip)
     } else {
 
         /* Ensure eight bits are available before advancing the bit buffer. */
-        if (skip_bit(mpq_pkzip, 8)) {
+        if (libmpq__pkzip_skip_bit(mpq_pkzip, 8)) {
             return 0x306;
         }
 
         value = mpq_pkzip->offs_2eb4[mpq_pkzip->bit_buf & 0xFF];
     }
 
-    return skip_bit(mpq_pkzip, mpq_pkzip->bits_asc[value]) ? 0x306 : value;
+    return libmpq__pkzip_skip_bit(mpq_pkzip, mpq_pkzip->bits_asc[value]) ? 0x306 : value;
 }
 
-/* Decode the backward copy distance used by LZ-style PKWARE matches. */
+/* Decode the backward distance for a PKWARE copy operation. */
 static uint32_t
-decode_distance(pkzip_cmp_s *mpq_pkzip, uint32_t length)
+libmpq__pkzip_decode_distance(pkzip_cmp_s *mpq_pkzip, uint32_t length)
 {
 
     /* Distance prefix, extra bits and final byte distance. */
@@ -386,7 +385,7 @@ decode_distance(pkzip_cmp_s *mpq_pkzip, uint32_t length)
 
     uint32_t skip = mpq_pkzip->dist_bits[pos];
 
-    if (skip_bit(mpq_pkzip, skip) == 1) {
+    if (libmpq__pkzip_skip_bit(mpq_pkzip, skip) == 1) {
         return 0;
     }
 
@@ -394,13 +393,13 @@ decode_distance(pkzip_cmp_s *mpq_pkzip, uint32_t length)
     if (length == 2) {
         pos = (pos << 2) | (mpq_pkzip->bit_buf & 0x03);
 
-        if (skip_bit(mpq_pkzip, 2) == 1) {
+        if (libmpq__pkzip_skip_bit(mpq_pkzip, 2) == 1) {
             return 0;
         }
     } else {
         pos = (pos << mpq_pkzip->dsize_bits) | (mpq_pkzip->bit_buf & mpq_pkzip->dsize_mask);
 
-        if (skip_bit(mpq_pkzip, mpq_pkzip->dsize_bits) == 1) {
+        if (libmpq__pkzip_skip_bit(mpq_pkzip, mpq_pkzip->dsize_bits) == 1) {
             return 0;
         }
     }
@@ -408,9 +407,9 @@ decode_distance(pkzip_cmp_s *mpq_pkzip, uint32_t length)
     return pos + 1;
 }
 
-/* Copy compressed bytes from libmpq callback state into the PKWARE staging buffer. */
+/* Supply compressed bytes to the PKWARE decoder callback. */
 static uint32_t
-data_read_input(char *buf, uint32_t *size, void *param)
+libmpq__pkzip_data_read_input(char *buf, uint32_t *size, void *param)
 {
 
     /* Source state passed by the public decompression wrapper. */
@@ -428,9 +427,9 @@ data_read_input(char *buf, uint32_t *size, void *param)
     return to_read;
 }
 
-/* Copy decompressed bytes from the PKWARE ring buffer into libmpq output state. */
+/* Receive expanded bytes from the PKWARE decoder callback. */
 static void
-data_write_output(char *buf, uint32_t *size, void *param)
+libmpq__pkzip_data_write_output(char *buf, uint32_t *size, void *param)
 {
 
     /* Destination state passed by the public decompression wrapper. */
@@ -446,9 +445,9 @@ data_write_output(char *buf, uint32_t *size, void *param)
     info->out_pos += to_write;
 }
 
-/* Expand the compressed PKWARE stream into the output ring buffer. */
+/* Expand one complete PKWARE stream using its configured callbacks. */
 static uint32_t
-expand(pkzip_cmp_s *mpq_pkzip)
+libmpq__pkzip_expand(pkzip_cmp_s *mpq_pkzip)
 {
     uint32_t copy_bytes;
     uint32_t one_byte;
@@ -457,7 +456,7 @@ expand(pkzip_cmp_s *mpq_pkzip)
     /* The lower half preserves history while the upper half is flushed to the caller. */
     mpq_pkzip->out_pos = 0x1000;
 
-    while ((result = one_byte = decode_literal(mpq_pkzip)) < 0x305) {
+    while ((result = one_byte = libmpq__pkzip_decode_literal(mpq_pkzip)) < 0x305) {
 
         /* Values above 0x100 are LZ matches; lower values are literal bytes. */
         if (one_byte >= 0x100) {
@@ -468,7 +467,7 @@ expand(pkzip_cmp_s *mpq_pkzip)
             uint32_t copy_length = one_byte - 0xFE;
             uint32_t move_back;
 
-            if ((move_back = decode_distance(mpq_pkzip, copy_length)) == 0) {
+            if ((move_back = libmpq__pkzip_decode_distance(mpq_pkzip, copy_length)) == 0) {
                 result = 0x306;
                 break;
             }
@@ -512,8 +511,8 @@ libmpq__do_decompress_pkzip(uint8_t *work_buf, void *param)
 
     memset(mpq_pkzip, 0, sizeof(pkzip_cmp_s));
 
-    mpq_pkzip->read_buf = data_read_input;
-    mpq_pkzip->write_buf = data_write_output;
+    mpq_pkzip->read_buf = libmpq__pkzip_data_read_input;
+    mpq_pkzip->write_buf = libmpq__pkzip_data_write_output;
     mpq_pkzip->param = param;
     mpq_pkzip->in_pos = 0;
 
@@ -544,19 +543,23 @@ libmpq__do_decompress_pkzip(uint8_t *work_buf, void *param)
         }
 
         memcpy(mpq_pkzip->bits_asc, pkzip_bits_asc, sizeof(mpq_pkzip->bits_asc));
-        generate_tables_ascii(mpq_pkzip);
+        libmpq__pkzip_generate_tables_ascii(mpq_pkzip);
     }
 
     /* Build lookup tables for copy lengths, distances and optional ASCII literals. */
     memcpy(mpq_pkzip->slen_bits, pkzip_slen_bits, sizeof(mpq_pkzip->slen_bits));
-    generate_tables_decode(0x10, mpq_pkzip->slen_bits, pkzip_len_code, mpq_pkzip->pos2);
+    libmpq__pkzip_generate_tables_decode(
+        0x10, mpq_pkzip->slen_bits, pkzip_len_code, mpq_pkzip->pos2
+    );
 
     memcpy(mpq_pkzip->clen_bits, pkzip_clen_bits, sizeof(mpq_pkzip->clen_bits));
     memcpy(mpq_pkzip->len_base, pkzip_len_base, sizeof(mpq_pkzip->len_base));
     memcpy(mpq_pkzip->dist_bits, pkzip_dist_bits, sizeof(mpq_pkzip->dist_bits));
-    generate_tables_decode(0x40, mpq_pkzip->dist_bits, pkzip_dist_code, mpq_pkzip->pos1);
+    libmpq__pkzip_generate_tables_decode(
+        0x40, mpq_pkzip->dist_bits, pkzip_dist_code, mpq_pkzip->pos1
+    );
 
-    if (expand(mpq_pkzip) != 0x306) {
+    if (libmpq__pkzip_expand(mpq_pkzip) != 0x306) {
         return LIBMPQ_PKZIP_CMP_NO_ERROR;
     }
 

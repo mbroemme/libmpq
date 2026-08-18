@@ -83,10 +83,10 @@ typedef struct mpq_file_writer mpq_file_writer_s;
 
 typedef struct
 {
-    uint32_t version;       /* LIBMPQ_ARCHIVE_VERSION_*; zero selects v1. */
-    uint32_t max_files;     /* Reserved file-entry capacity; zero selects 1024. */
-    uint32_t sector_size;   /* Power of two, from 512 through 0x80000000. */
-    uint32_t flags;         /* LIBMPQ_ARCHIVE_CREATE_* flags. */
+    uint32_t version;     /* LIBMPQ_ARCHIVE_VERSION_*; zero selects v1. */
+    uint32_t max_files;   /* Reserved file-entry capacity; zero selects 1024. */
+    uint32_t sector_size; /* Power of two, from 512 through 0x80000000. */
+    uint32_t flags;       /* LIBMPQ_ARCHIVE_CREATE_* flags. */
 } mpq_archive_create_options_s;
 
 typedef struct
@@ -123,13 +123,12 @@ extern LIBMPQ_API int32_t libmpq__file_begin(
     mpq_archive_s *mpq_archive, const char *filename, libmpq__off_t unpacked_size,
     const mpq_file_create_options_s *options, mpq_file_writer_s **writer
 );
-extern LIBMPQ_API int32_t libmpq__file_write(
-    mpq_file_writer_s *writer, const uint8_t *buffer, libmpq__off_t size
-);
+extern LIBMPQ_API int32_t
+libmpq__file_write(mpq_file_writer_s *writer, const uint8_t *buffer, libmpq__off_t size);
 extern LIBMPQ_API int32_t libmpq__file_finish(mpq_file_writer_s *writer);
 extern LIBMPQ_API int32_t libmpq__file_add(
-    mpq_archive_s *mpq_archive, const char *filename, const uint8_t *buffer,
-    libmpq__off_t size, const mpq_file_create_options_s *options
+    mpq_archive_s *mpq_archive, const char *filename, const uint8_t *buffer, libmpq__off_t size,
+    const mpq_file_create_options_s *options
 );
 extern LIBMPQ_API int32_t libmpq__file_add_path(
     mpq_archive_s *mpq_archive, const char *filename, const char *source_path,

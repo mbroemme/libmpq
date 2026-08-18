@@ -240,7 +240,10 @@ libmpq__decompress_block(
 
             /* Standalone implode has no multi-compression mask and may be
              * larger than the source (notably for literal-only streams). */
-            if ((tb = libmpq__decompress_pkzip(in_buf, in_size, out_buf, out_size)) < 0) {
+            if (in_size >= out_size) {
+                memcpy(out_buf, in_buf, out_size);
+                tb = out_size;
+            } else if ((tb = libmpq__decompress_pkzip(in_buf, in_size, out_buf, out_size)) < 0) {
                 return tb;
             }
         } else if (in_size < out_size) {

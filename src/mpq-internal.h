@@ -20,10 +20,10 @@
 #ifndef LIBMPQ_MPQ_INTERNAL_H
 #define LIBMPQ_MPQ_INTERNAL_H
 
+#include <libmpq/mpq.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/types.h>
-#include <libmpq/mpq.h>
 
 /* Common success return code used by libmpq functions. */
 #define LIBMPQ_SUCCESS 0
@@ -186,6 +186,12 @@ struct mpq_file_writer
     mpq_archive_s *archive;
     char *name;
     uint8_t *data;
+    uint32_t data_size;
+    uint32_t sector_index;
+    uint32_t block_count;
+    uint64_t payload_offset;
+    uint64_t packed_total;
+    uint32_t *offsets;
     libmpq__off_t expected;
     libmpq__off_t written;
     mpq_file_create_options_s options;

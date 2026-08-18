@@ -19,8 +19,8 @@
 
 #include "extract.h"
 #include "endian.h"
-#include "pkware.h"
 #include "huffman.h"
+#include "pkware.h"
 #include "wave.h"
 #include <libmpq/mpq.h>
 
@@ -33,13 +33,13 @@
 /* Map MPQ compression flags to the backend that can decode that payload. */
 static decompress_table_s dcmp_table[] = {
 
-    /* Inverse of the canonical writer order: WAVE, Huffman, zlib, PKWARE, bzip2. */
-    { LIBMPQ_COMPRESSION_WAVE_STEREO, libmpq__decompress_wave_stereo },
-    { LIBMPQ_COMPRESSION_WAVE_MONO, libmpq__decompress_wave_mono },
-    { LIBMPQ_COMPRESSION_HUFFMAN, libmpq__decompress_huffman },
+    /* Reverse of the canonical writer order. */
+    { LIBMPQ_COMPRESSION_BZIP2, libmpq__decompress_bzip2 },
     { LIBMPQ_COMPRESSION_PKZIP, libmpq__decompress_pkzip },
     { LIBMPQ_COMPRESSION_ZLIB, libmpq__decompress_zlib },
-    { LIBMPQ_COMPRESSION_BZIP2, libmpq__decompress_bzip2 }
+    { LIBMPQ_COMPRESSION_HUFFMAN, libmpq__decompress_huffman },
+    { LIBMPQ_COMPRESSION_WAVE_STEREO, libmpq__decompress_wave_stereo },
+    { LIBMPQ_COMPRESSION_WAVE_MONO, libmpq__decompress_wave_mono }
 };
 
 /* Decompress an MPQ Huffman-compressed stream into the caller-provided buffer. */
@@ -274,11 +274,10 @@ libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
         if (decompress_flag & dcmp_table[i].mask) {
 
             /* Chained stages ping-pong between output and temporary storage. */
-            if (count == 0) {
-                work_buf = out_buf;
-            } else {
-                work_buf = temp_buf;
-            }
+            if (count == 0)
+                work_buf = temp_buf != NULL ? temp_buf : out_buf;
+            else
+                work_buf = (in_buf == out_buf) ? temp_buf : out_buf;
 
             /* Decompress the current stage with the mapped backend. */
             if ((tb = dcmp_table[i].decompress(in_buf, in_size, work_buf, out_size)) < 0) {
@@ -287,7 +286,11 @@ libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
             }
 
             /* Feed this stage's output into the next decompression stage. */
-            in_size = out_size;
+            if (tb < 0) {
+                free(temp_buf);
+                return tb;
+            }
+            in_size = (uint32_t)tb;
             in_buf = work_buf;
 
             count++;
@@ -296,7 +299,7 @@ libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
 
     /* Copy the final stage back if it ended in the temporary buffer. */
     if (work_buf != out_buf) {
-        memcpy(out_buf, in_buf, out_size);
+        memcpy(out_buf, in_buf, (size_t)tb);
     }
 
     free(temp_buf);
