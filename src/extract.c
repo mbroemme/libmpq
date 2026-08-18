@@ -32,12 +32,14 @@
 
 /* Map MPQ compression flags to the backend that can decode that payload. */
 static decompress_table_s dcmp_table[] = {
-    { LIBMPQ_COMPRESSION_HUFFMAN, libmpq__decompress_huffman },
-    { LIBMPQ_COMPRESSION_ZLIB, libmpq__decompress_zlib },
-    { LIBMPQ_COMPRESSION_PKZIP, libmpq__decompress_pkzip },
-    { LIBMPQ_COMPRESSION_BZIP2, libmpq__decompress_bzip2 },
+
+    /* Inverse of the canonical writer order: WAVE, Huffman, zlib, PKWARE, bzip2. */
+    { LIBMPQ_COMPRESSION_WAVE_STEREO, libmpq__decompress_wave_stereo },
     { LIBMPQ_COMPRESSION_WAVE_MONO, libmpq__decompress_wave_mono },
-    { LIBMPQ_COMPRESSION_WAVE_STEREO, libmpq__decompress_wave_stereo }
+    { LIBMPQ_COMPRESSION_HUFFMAN, libmpq__decompress_huffman },
+    { LIBMPQ_COMPRESSION_PKZIP, libmpq__decompress_pkzip },
+    { LIBMPQ_COMPRESSION_ZLIB, libmpq__decompress_zlib },
+    { LIBMPQ_COMPRESSION_BZIP2, libmpq__decompress_bzip2 }
 };
 
 /* Decompress an MPQ Huffman-compressed stream into the caller-provided buffer. */

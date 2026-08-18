@@ -10,7 +10,7 @@ status=0
 printf 'Checking C identifier casing...\n'
 if rg -n --glob '*.c' --glob '*.h' \
 	'\b[a-z][a-z0-9_]*[A-Z][A-Za-z0-9_]*\b' src include tools |
-	rg -v 'uInt|inflateInit|inflateEnd|MPQ\\x1A'; then
+	rg -v 'uInt|inflateInit|inflateEnd|deflateInit|deflateEnd|MPQ\\x1A'; then
 	printf 'Camel-case C identifiers found.\n' >&2
 	status=1
 fi

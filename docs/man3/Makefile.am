@@ -12,6 +12,7 @@ man_MANS =				\
 	libmpq__archive_size_packed.3	\
 	libmpq__archive_size_unpacked.3	\
 	libmpq__archive_version.3	\
+	libmpq__archive_create.3	\
 	libmpq__block_close_offset.3	\
 	libmpq__block_open_offset.3	\
 	libmpq__block_read.3		\
@@ -25,6 +26,11 @@ man_MANS =				\
 	libmpq__file_number_from_hash.3	\
 	libmpq__file_offset.3		\
 	libmpq__file_read.3		\
+	libmpq__file_begin.3		\
+	libmpq__file_write.3		\
+	libmpq__file_finish.3	\
+	libmpq__file_add.3		\
+	libmpq__file_add_path.3	\
 	libmpq__file_size_packed.3	\
 	libmpq__file_size_unpacked.3	\
 	libmpq__strerror.3		\

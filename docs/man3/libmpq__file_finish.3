@@ -1,0 +1,10 @@
+.TH LIBMPQ__FILE_FINISH 3 2026-08-18 "The MoPaQ archive library"
+.SH NAME
+libmpq__file_finish \- finish a streamed MPQ file
+.SH SYNOPSIS
+.B #include <libmpq/mpq.h>
+.PP
+.B int32_t libmpq__file_finish(mpq_file_writer_s *writer);
+.SH DESCRIPTION
+Validates the declared size, writes the file sectors and records its hash and
+block entry. Incomplete streams are rejected.

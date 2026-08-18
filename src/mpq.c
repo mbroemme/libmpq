@@ -444,7 +444,7 @@ libmpq__archive_clone(mpq_archive_s **clone, mpq_archive_s *source)
         return LIBMPQ_ERROR_EXIST;
     *clone = NULL;
 
-    if (source == NULL || source->filename == NULL)
+    if (source == NULL || source->filename == NULL || source->write_mode)
         return LIBMPQ_ERROR_EXIST;
 
 #if !defined(_WIN32) && !defined(_WIN64)
@@ -465,6 +465,27 @@ int32_t
 libmpq__archive_close(mpq_archive_s *mpq_archive)
 {
     uint32_t i;
+    int32_t result = LIBMPQ_SUCCESS;
+
+    if (mpq_archive == NULL)
+        return LIBMPQ_ERROR_EXIST;
+
+    if (mpq_archive->write_mode) {
+        result = libmpq__writer_finalize(mpq_archive);
+        if (mpq_archive->fp != NULL && fclose(mpq_archive->fp) < 0 && result == LIBMPQ_SUCCESS)
+            result = LIBMPQ_ERROR_CLOSE;
+        for (i = 0; i < mpq_archive->write_capacity; i++)
+            free(mpq_archive->write_names ? mpq_archive->write_names[i] : NULL);
+        free(mpq_archive->write_names);
+        free(mpq_archive->write_locales);
+        free(mpq_archive->write_platforms);
+        free(mpq_archive->mpq_hash);
+        free(mpq_archive->mpq_block);
+        free(mpq_archive->mpq_block_ex);
+        free(mpq_archive->filename);
+        free(mpq_archive);
+        return result;
+    }
 
     if ((fclose(mpq_archive->fp)) < 0) {
 

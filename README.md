@@ -8,8 +8,8 @@
 [![License: LGPL-2.1-or-later](https://img.shields.io/badge/license-LGPL--2.1--or--later-blue.svg)](COPYING.LESSER)
 [![GitHub downloads](https://img.shields.io/github/downloads/mbroemme/libmpq/total?style=flat&label=downloads&cacheSeconds=21600)](https://github.com/mbroemme/libmpq/releases)
 
-A portable C library for reading, decrypting, decompressing, and extracting
-files from MoPaQ (MPQ) archives.
+A portable C library for creating, reading, decrypting, decompressing, and
+extracting files from MoPaQ (MPQ) archives.
 
 ## Overview
 
@@ -17,8 +17,10 @@ MPQ is a proprietary archive format created by Mike O'Brien in 1996. It is
 used by Blizzard games including Diablo, Diablo II, StarCraft, Warcraft II:
 Battle.net Edition, Warcraft III, and World of Warcraft.
 
-libmpq provides a C API for applications that need to inspect MPQ archives and
-extract their file contents. Archive creation is not supported.
+libmpq provides a C API for applications that need to inspect, create, and
+extract MPQ archives. Creation supports seekable v1 and v2 archives, streaming
+or buffer/path file addition, encrypted tables and payloads, optional listfiles,
+and raw, zlib, and bzip2 multi-compression sectors.
 
 ## Features
 

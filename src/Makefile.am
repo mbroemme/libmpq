@@ -13,5 +13,6 @@ GENERAL_SRCS =			\
 	huffman.c		\
 	extract.c		\
 	explode.c		\
-	mpq.c			\
-	wave.c
+		mpq.c			\
+		wave.c			\
+		writer.c

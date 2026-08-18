@@ -1,0 +1,10 @@
+.TH LIBMPQ__FILE_WRITE 3 2026-08-18 "The MoPaQ archive library"
+.SH NAME
+libmpq__file_write \- write bytes to a streamed MPQ file
+.SH SYNOPSIS
+.B #include <libmpq/mpq.h>
+.PP
+.B int32_t libmpq__file_write(mpq_file_writer_s *writer, const uint8_t *buffer, libmpq__off_t size);
+.SH DESCRIPTION
+Appends bytes to the writer returned by libmpq__file_begin(3). Writes beyond
+the declared unpacked size are rejected.

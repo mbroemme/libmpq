@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/types.h>
+#include <libmpq/mpq.h>
 
 /* Common success return code used by libmpq functions. */
 #define LIBMPQ_SUCCESS 0
@@ -165,6 +166,31 @@ struct mpq_archive
 
     mpq_map_s *mpq_map; /* Public file-number to block-table mapping. */
     uint32_t files;     /* Number of valid extractable file entries. */
+
+    /* Writer-only state.  Reader handles leave these fields zeroed. */
+    uint8_t write_mode;
+    uint8_t write_finalized;
+    uint32_t write_capacity;
+    uint32_t write_hash_capacity;
+    uint32_t write_sector_size;
+    uint32_t write_flags;
+    uint32_t write_next_block;
+    char **write_names;
+    uint16_t *write_locales;
+    uint16_t *write_platforms;
+    mpq_file_writer_s *write_current;
 };
+
+struct mpq_file_writer
+{
+    mpq_archive_s *archive;
+    char *name;
+    uint8_t *data;
+    libmpq__off_t expected;
+    libmpq__off_t written;
+    mpq_file_create_options_s options;
+};
+
+int32_t libmpq__writer_finalize(mpq_archive_s *archive);
 
 #endif /* LIBMPQ_MPQ_INTERNAL_H */

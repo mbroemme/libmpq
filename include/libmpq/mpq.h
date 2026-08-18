@@ -55,6 +55,48 @@ extern "C" {
 
 /* Opaque archive handle owned by libmpq. */
 typedef struct mpq_archive mpq_archive_s;
+typedef struct mpq_file_writer mpq_file_writer_s;
+
+/* Archive versions accepted by libmpq__archive_create. */
+#define LIBMPQ_ARCHIVE_VERSION_ONE 0
+#define LIBMPQ_ARCHIVE_VERSION_TWO 1
+
+/* Creation flags. */
+#define LIBMPQ_ARCHIVE_CREATE_LISTFILE 0x00000001u
+
+/* MPQ file flags accepted by mpq_file_create_options_s.flags. */
+#define LIBMPQ_FILE_FLAG_IMPLODE 0x00000100u
+#define LIBMPQ_FILE_FLAG_COMPRESS 0x00000200u
+#define LIBMPQ_FILE_FLAG_ENCRYPTED 0x00010000u
+#define LIBMPQ_FILE_FLAG_SINGLE 0x01000000u
+#define LIBMPQ_FILE_FLAG_LOCALE 0x00000000u
+
+/* Multi-compression mask bits. */
+#ifndef LIBMPQ_COMPRESSION_HUFFMAN
+#define LIBMPQ_COMPRESSION_HUFFMAN 0x01u
+#define LIBMPQ_COMPRESSION_ZLIB 0x02u
+#define LIBMPQ_COMPRESSION_PKZIP 0x08u
+#define LIBMPQ_COMPRESSION_BZIP2 0x10u
+#define LIBMPQ_COMPRESSION_WAVE_MONO 0x40u
+#define LIBMPQ_COMPRESSION_WAVE_STEREO 0x80u
+#endif
+
+typedef struct
+{
+    uint32_t version;       /* LIBMPQ_ARCHIVE_VERSION_*; zero selects v1. */
+    uint32_t max_files;     /* Reserved file-entry capacity; zero selects 1024. */
+    uint32_t sector_size;   /* Power of two, from 512 through 0x80000000. */
+    uint32_t flags;         /* LIBMPQ_ARCHIVE_CREATE_* flags. */
+} mpq_archive_create_options_s;
+
+typedef struct
+{
+    uint32_t flags;             /* LIBMPQ_FILE_FLAG_* and locale/platform flags. */
+    uint32_t compression_first; /* Multi-compression mask for the first sector. */
+    uint32_t compression_next;  /* Multi-compression mask for later sectors. */
+    uint16_t locale;
+    uint16_t platform;
+} mpq_file_create_options_s;
 
 /* Public file offset type used by all archive and file size APIs. */
 typedef int64_t libmpq__off_t;
@@ -68,6 +110,30 @@ extern LIBMPQ_API const char *libmpq__strerror(int32_t return_code);
 /* Open an MPQ archive from a file path and optional embedded archive offset. */
 extern LIBMPQ_API int32_t libmpq__archive_open(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset
+);
+
+/* Create a seekable v1 or v2 archive at mpq_filename. */
+extern LIBMPQ_API int32_t libmpq__archive_create(
+    mpq_archive_s **mpq_archive, const char *mpq_filename,
+    const mpq_archive_create_options_s *options
+);
+
+/* Begin, stream, and finish one file in a writer archive. */
+extern LIBMPQ_API int32_t libmpq__file_begin(
+    mpq_archive_s *mpq_archive, const char *filename, libmpq__off_t unpacked_size,
+    const mpq_file_create_options_s *options, mpq_file_writer_s **writer
+);
+extern LIBMPQ_API int32_t libmpq__file_write(
+    mpq_file_writer_s *writer, const uint8_t *buffer, libmpq__off_t size
+);
+extern LIBMPQ_API int32_t libmpq__file_finish(mpq_file_writer_s *writer);
+extern LIBMPQ_API int32_t libmpq__file_add(
+    mpq_archive_s *mpq_archive, const char *filename, const uint8_t *buffer,
+    libmpq__off_t size, const mpq_file_create_options_s *options
+);
+extern LIBMPQ_API int32_t libmpq__file_add_path(
+    mpq_archive_s *mpq_archive, const char *filename, const char *source_path,
+    const mpq_file_create_options_s *options
 );
 
 /* Clone an archive using an independent stream and private decoded state. */
