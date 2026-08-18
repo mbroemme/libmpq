@@ -28,7 +28,7 @@ extract their file contents. Archive creation is not supported.
 * Decompress zlib, bzip2, Huffman, PKWARE implode, Blizzard multi-compression,
   and mono or stereo WAVE ADPCM payloads.
 * Provide a stable C API with installed headers under `include/libmpq`.
-* Provide optional Python 2 ctypes and D language bindings.
+* Provide optional Python 2 and 3 ctypes and D language bindings.
 * Install API manual pages for the library functions and `libmpq-config`.
 
 ## Requirements
@@ -40,9 +40,9 @@ The build system requires:
 * zlib development headers and libraries.
 * bzip2 development headers and libraries.
 
-The Python binding is optional and is enabled when a Python interpreter version
-2.4 or newer is found. The D binding is installed as a D module and does not
-form part of the C library build.
+The Python binding is optional and is enabled when Python 2.4 or newer,
+including Python 3, is found. The D binding is installed as a D module and
+does not form part of the C library build.
 
 ## Building
 
@@ -179,8 +179,8 @@ the shared library's transitive dependencies automatically.
 
 The source tree contains bindings for the public C API:
 
-* `bindings/python/mpq.py` provides a Python 2 ctypes wrapper and buffered
-  archive/file readers.
+* `bindings/python/mpq.py` provides a Python 2 and 3 ctypes wrapper and
+  buffered archive/file readers.
 * `bindings/d/mpq.d` provides D declarations and helper classes for Phobos.
 
 The Python binding is included automatically when the required interpreter is
@@ -198,7 +198,6 @@ required to use libmpq.
 * MPQ archive creation is not supported.
 * Big-endian systems are not currently supported.
 * Windows support is not currently tested or documented by the Autotools build.
-* The Python binding uses Python 2 syntax and is retained for compatibility.
 
 ## Contributing
 
