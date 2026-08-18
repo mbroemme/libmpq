@@ -249,7 +249,8 @@ huffman_write_bits(struct huffman_output_stream_s *os, uint32_t value, uint32_t 
 static int32_t
 huffman_encode_symbol(struct huffman_output_stream_s *os, struct huffman_tree_item_s *item)
 {
-    uint32_t bits = 0, count = 0;
+    uint32_t bits = 0;
+    uint32_t count = 0;
     struct huffman_tree_item_s *parent;
     for (parent = item->parent; parent != NULL; parent = parent->parent) {
         if (parent->child->prev == item)
@@ -268,7 +269,8 @@ static int32_t
 huffman_insert_literal(struct huffman_tree_s *ht, uint32_t value)
 {
     struct huffman_tree_item_s *escape = ht->last;
-    struct huffman_tree_item_s *old, *literal;
+    struct huffman_tree_item_s *old;
+    struct huffman_tree_item_s *literal;
     if (escape == NULL || PTR_INT(escape) <= 0)
         return LIBMPQ_ERROR_FORMAT;
     old = libmpq__huffman_acquire_item(ht);

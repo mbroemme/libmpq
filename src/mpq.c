@@ -450,7 +450,8 @@ libmpq__file_number_from_hash(
 {
 
     /* Hash table probe state and archive hash-table size. */
-    uint32_t i, ht_count;
+    uint32_t i;
+    uint32_t ht_count;
 
     ht_count = mpq_archive->mpq_header.hash_table_count;
 
@@ -481,7 +482,9 @@ libmpq__file_number_from_hash(
 int32_t
 libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *number)
 {
-    uint32_t hash1, hash2, hash3;
+    uint32_t hash1;
+    uint32_t hash2;
+    uint32_t hash3;
 
     libmpq__file_hash(filename, &hash1, &hash2, &hash3);
     return libmpq__file_number_from_hash(mpq_archive, hash1, hash2, hash3, number);

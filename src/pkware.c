@@ -485,7 +485,10 @@ libmpq__pkzip_compress(
         pkzip_put_bits(out + 2, &bit_count, in_buf[i], 8);
         if (i + 2 < in_size && in_buf[i + 1] == in_buf[i] && in_buf[i + 2] == in_buf[i]) {
             uint32_t length = 3;
-            uint32_t value, entry, extra, code;
+            uint32_t value;
+            uint32_t entry;
+            uint32_t extra;
+            uint32_t code;
             while (i + length < in_size && length < 0x206 && in_buf[i + length] == in_buf[i])
                 length++;
             value = length - 2;

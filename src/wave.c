@@ -93,9 +93,13 @@ wave_encode_delta(int32_t difference, int32_t *predictor, int32_t *step_index, u
 int32_t
 libmpq__wave_probe_pcm16(const uint8_t *data, uint32_t size, libmpq_wave_info_s *info)
 {
-    uint32_t pos = 12, end;
-    uint16_t channels = 0, format = 0, bits = 0;
-    uint32_t data_offset = 0, data_size = 0;
+    uint32_t pos = 12;
+    uint32_t end;
+    uint16_t channels = 0;
+    uint16_t format = 0;
+    uint16_t bits = 0;
+    uint32_t data_offset = 0;
+    uint32_t data_size = 0;
     if (data == NULL || info == NULL || size < 12 || memcmp(data, "RIFF", 4) != 0 ||
         memcmp(data + 8, "WAVE", 4) != 0)
         return LIBMPQ_ERROR_FORMAT;
@@ -135,8 +139,14 @@ libmpq__wave_compress(
     uint32_t channels
 )
 {
-    uint32_t samples, i, shift = 4, pos;
-    int32_t predictor[2] = { 0, 0 }, index[2] = { 0x2c, 0x2c };
+    uint32_t samples;
+    uint32_t i;
+    uint32_t shift = 4;
+    uint32_t pos;
+
+    int32_t predictor[2] = { 0, 0 };
+    int32_t index[2] = { 0x2c, 0x2c };
+
     uint8_t *out;
     if (out_buf == NULL || out_size == NULL || in_buf == NULL || (channels != 1 && channels != 2) ||
         in_size < channels * 2 || (in_size % (channels * 2)) != 0)

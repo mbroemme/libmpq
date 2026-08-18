@@ -68,7 +68,8 @@ static uint32_t
 file_key(const char *name)
 {
     char *normalized = NULL;
-    size_t i, length = strlen(name);
+    size_t i;
+    size_t length = strlen(name);
     uint32_t key;
 
     normalized = malloc(length + 1);
@@ -212,9 +213,11 @@ encode_sector(
 {
     uint8_t *data;
     size_t size;
+
     uint32_t masks[] = { LIBMPQ_COMPRESSION_WAVE_MONO, LIBMPQ_COMPRESSION_WAVE_STEREO,
                          LIBMPQ_COMPRESSION_HUFFMAN,   LIBMPQ_COMPRESSION_ZLIB,
                          LIBMPQ_COMPRESSION_PKZIP,     LIBMPQ_COMPRESSION_BZIP2 };
+
     size_t i;
 
     if (!supported_mask(requested))
@@ -349,7 +352,12 @@ static int32_t
 stream_finish(mpq_writer_s *writer)
 {
     mpq_archive_s *archive = writer->archive;
-    uint32_t index, slot, hash1, hash2, hash3, i;
+    uint32_t index;
+    uint32_t slot;
+    uint32_t hash1;
+    uint32_t hash2;
+    uint32_t hash3;
+    uint32_t i;
     uint64_t total;
     size_t table_size;
     uint8_t *table;
@@ -545,7 +553,8 @@ libmpq__writer_archive_create(
 {
     mpq_archive_create_options_s defaults = { LIBMPQ_ARCHIVE_VERSION_ONE, 1024, 4096, 0 };
     mpq_archive_s *a;
-    uint32_t i, header_size;
+    uint32_t i;
+    uint32_t header_size;
     uint64_t offset;
     uint8_t *zero;
 
@@ -692,10 +701,15 @@ libmpq__writer_file_begin(
 
     /* Probe existing entries for duplicate name/locale/platform combinations. */
     {
-        uint32_t h1, h2, h3, i;
+        uint32_t h1;
+        uint32_t h2;
+        uint32_t h3;
+        uint32_t i;
         libmpq__file_hash(name, &h1, &h2, &h3);
         for (i = 0; i < a->write_next_block; i++) {
-            uint32_t a1, a2, a3;
+            uint32_t a1;
+            uint32_t a2;
+            uint32_t a3;
             if (a->write_names[i] == NULL || a->write_locales[i] != options->locale ||
                 a->write_platforms[i] != options->platform)
                 continue;

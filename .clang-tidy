@@ -17,7 +17,8 @@ Checks: >
   bugprone-sizeof-expression,
   bugprone-suspicious-memset-usage,
   bugprone-suspicious-string-compare,
-  bugprone-swapped-arguments
+  bugprone-swapped-arguments,
+  readability-isolate-declaration
 WarningsAsErrors: '*'
 
 # Report diagnostics only from headers owned by this project.

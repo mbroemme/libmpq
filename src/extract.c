@@ -263,7 +263,8 @@ libmpq__extract_decompress_multi(
     uint32_t entries = (sizeof(dcmp_table) / sizeof(decompress_table_s));
     uint8_t *temp_buf = NULL;
     uint8_t *work_buf = 0;
-    uint8_t decompress_flag, decompress_unsupp;
+    uint8_t decompress_flag;
+    uint8_t decompress_unsupp;
     uint32_t i;
 
     /* First byte selects the chained decompression backends for this block. */
