@@ -1,5 +1,5 @@
 /*
- *  explode.h -- PKWARE Data Compression Library explode declarations.
+ *  pkware.h -- PKWARE Data Compression Library declarations.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -22,8 +22,8 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef LIBMPQ_EXPLODE_H
-#define LIBMPQ_EXPLODE_H
+#ifndef LIBMPQ_PKWARE_H
+#define LIBMPQ_PKWARE_H
 
 #include <stdint.h>
 
@@ -91,4 +91,4 @@ int32_t libmpq__compress_pkzip(
     const uint8_t *in_buf, uint32_t in_size, uint8_t **out_buf, uint32_t *out_size
 );
 
-#endif /* LIBMPQ_EXPLODE_H */
+#endif /* LIBMPQ_PKWARE_H */

@@ -1,6 +1,6 @@
 # Build the shared library and keep private headers out of installations.
 lib_LTLIBRARIES			= libmpq.la
-noinst_HEADERS			= common.h crypt_buf.h endian.h explode.h extract.h huffman.h mpq-internal.h pack_begin.h pack_end.h platform.h wave.h
+noinst_HEADERS			= common.h crypt_buf.h endian.h pkware.h extract.h huffman.h mpq-internal.h pack_begin.h pack_end.h platform.h wave.h
 
 AM_CPPFLAGS			= -I$(top_builddir) -I$(top_srcdir)/include
 
@@ -12,7 +12,7 @@ GENERAL_SRCS =			\
 	common.c		\
 	huffman.c		\
 	extract.c		\
-	explode.c		\
+	pkware.c		\
 		mpq.c			\
 		wave.c			\
 		writer.c

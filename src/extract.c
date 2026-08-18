@@ -19,7 +19,7 @@
 
 #include "extract.h"
 #include "endian.h"
-#include "explode.h"
+#include "pkware.h"
 #include "huffman.h"
 #include "wave.h"
 #include <libmpq/mpq.h>

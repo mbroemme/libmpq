@@ -6,7 +6,7 @@
 #include "common.h"
 #include "endian.h"
 #include "extract.h"
-#include "explode.h"
+#include "pkware.h"
 #include "mpq-internal.h"
 #include <libmpq/mpq.h>
 

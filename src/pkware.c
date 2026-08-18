@@ -1,5 +1,5 @@
 /*
- *  explode.c -- PKWARE Data Compression Library explode implementation.
+ *  pkware.c -- PKWARE Data Compression Library implementation.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -22,7 +22,7 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "explode.h"
+#include "pkware.h"
 #include <libmpq/mpq.h>
 
 #include <string.h>
