@@ -30,6 +30,11 @@ libmpq \- cross-platform C library for reading MPQ archives.
 .BI "        libmpq__off_t   " "archive_offset"
 .BI ");"
 .sp
+.BI "int32_t libmpq__archive_clone("
+.BI "        mpq_archive_s **" "clone",
+.BI "        mpq_archive_s  *" "source"
+.BI ");"
+.sp
 .BI "int32_t libmpq__archive_close("
 .BI "        mpq_archive_s  *" "mpq_archive"
 .BI ");"
@@ -107,6 +112,21 @@ libmpq \- cross-platform C library for reading MPQ archives.
 .BI "        uint32_t       *" "number"
 .BI ");"
 .sp
+.BI "void libmpq__file_hash("
+.BI "        const char     *" "filename",
+.BI "        uint32_t       *" "hash1",
+.BI "        uint32_t       *" "hash2",
+.BI "        uint32_t       *" "hash3"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_number_from_hash("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "hash1",
+.BI "        uint32_t        " "hash2",
+.BI "        uint32_t        " "hash3",
+.BI "        uint32_t       *" "number"
+.BI ");"
+.sp
 .BI "int32_t libmpq__file_read("
 .BI "        mpq_archive_s  *" "mpq_archive",
 .BI "        uint32_t        " "file_number",
@@ -146,10 +166,17 @@ libmpq \- cross-platform C library for reading MPQ archives.
 The \fIlibmpq\fP library reads MPQ archives, decrypts and decompresses file
 data, and extracts files compressed with zlib, bzip2, or PKWARE implosion.
 Archive creation is not supported.
+.PP
+An archive handle is not safe for concurrent operations. Use
+\fBlibmpq__archive_clone\fP() to create one independent reader per worker.
+Cloning reopens the original backing path and reparses its metadata; it is
+not snapshot semantics. The path must remain readable and unchanged while
+clones are created or used.
 .SH SEE ALSO
 .BR libmpq__version (3),
 .BR libmpq__strerror (3),
 .BR libmpq__archive_open (3),
+.BR libmpq__archive_clone (3),
 .BR libmpq__archive_close (3),
 .BR libmpq__archive_size_packed (3),
 .BR libmpq__archive_size_unpacked (3),
@@ -164,14 +191,28 @@ Archive creation is not supported.
 .BR libmpq__file_compressed (3),
 .BR libmpq__file_imploded (3),
 .BR libmpq__file_number (3),
+.BR libmpq__file_hash (3),
+.BR libmpq__file_number_from_hash (3),
 .BR libmpq__file_read (3),
 .BR libmpq__block_open_offset (3),
 .BR libmpq__block_close_offset (3),
 .BR libmpq__block_size_unpacked (3),
 .BR libmpq__block_read (3)
 .SH AUTHOR
-.TP
-The libmpq project was started in 2003.
-.B Maik Broemme <mbroemme@libmpq.org>
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
 .PP
-Use the email address above to report bugs, provide feedback, or suggest library enhancements.
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

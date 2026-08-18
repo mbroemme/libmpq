@@ -42,7 +42,7 @@ const LIBMPQ_ERROR_MALLOC		= -6;	/* memory allocation error. */
 const LIBMPQ_ERROR_FORMAT		= -7;	/* format error. */
 const LIBMPQ_ERROR_NOT_INITIALIZED	= -8;	/* init() wasn't called. */
 const LIBMPQ_ERROR_SIZE			= -9;	/* buffer size is too small. */
-const LIBMPQ_ERROR_EXIST		= -10;	/* file or block does not exist in archive. */
+const LIBMPQ_ERROR_EXIST		= -10;	/* archive, file, or block does not exist. */
 const LIBMPQ_ERROR_DECRYPT		= -11;	/* we don't know the decryption seed. */
 const LIBMPQ_ERROR_UNPACK		= -12;	/* error on unpacking file. */
 
@@ -56,6 +56,9 @@ char *libmpq__version();
 
 /* Open an MPQ archive from a file path and optional embedded archive offset. */
 int libmpq__archive_open(mpq_archive_s **mpq_archive, char *mpq_filename, off_t archive_offset);
+
+/* Clone an archive using an independent stream and private decoded state. */
+int libmpq__archive_clone(mpq_archive_s **clone, mpq_archive_s *source);
 
 /* Close an opened archive and release its decoded metadata tables. */
 int libmpq__archive_close(mpq_archive_s *mpq_archive);
@@ -99,6 +102,12 @@ int libmpq__file_imploded(mpq_archive_s *mpq_archive, uint file_number, uint *im
 /* Resolve an MPQ file name to a public file number. */
 int libmpq__file_number(mpq_archive_s *mpq_archive, char *filename, uint *number);
 
+/* Calculate the three Storm hashes used to identify an MPQ file name. */
+void libmpq__file_hash(char *filename, uint *hash1, uint *hash2, uint *hash3);
+
+/* Resolve a precomputed MPQ file-name hash to a public file number. */
+int libmpq__file_number_from_hash(mpq_archive_s *mpq_archive, uint hash1, uint hash2, uint hash3, uint *number);
+
 /* Read a complete file into the caller-provided output buffer. */
 int libmpq__file_read(mpq_archive_s *mpq_archive, uint file_number, ubyte *out_buf, off_t out_size, off_t *transferred);
 
@@ -130,7 +139,7 @@ class MPQException : Exception {
 		"format error",
 		"init() wasn't called",
 		"buffer size is too small",
-		"file or block does not exist in archive",
+		"archive, file, or block does not exist",
 		"we don't know the decryption seed",
 		"error on unpacking file"];
 
@@ -184,6 +193,7 @@ template MPQ_FUNC(char[] func_name) {
 
 alias libmpq__version libversion; /* must be direct alias because it returns char*, not error int */
 mixin(MPQ_FUNC!("archive_open"));
+mixin(MPQ_FUNC!("archive_clone"));
 mixin(MPQ_FUNC!("archive_close"));
 mixin(MPQ_FUNC!("archive_packed_size"));
 mixin(MPQ_FUNC!("archive_unpacked_size"));
@@ -198,6 +208,7 @@ mixin(MPQ_FUNC!("file_encrypted"));
 mixin(MPQ_FUNC!("file_compressed"));
 mixin(MPQ_FUNC!("file_imploded"));
 mixin(MPQ_FUNC!("file_number"));
+mixin(MPQ_FUNC!("file_number_from_hash"));
 mixin(MPQ_FUNC!("file_read"));
 mixin(MPQ_FUNC!("block_open_offset"));
 mixin(MPQ_FUNC!("block_close_offset"));
@@ -232,6 +243,16 @@ class Archive {
 	/** Open an MPQ archive at the optional embedded archive offset. */
 	this(char[] archivename, off_t offset = -1) {
 		archive_open(&m, toStringz(archivename), offset);
+	}
+
+	private this() {
+	}
+
+	/** Create an independently readable wrapper for this archive. */
+	Archive clone() {
+		auto result = new Archive();
+		archive_clone(&result.m, m);
+		return result;
 	}
 
 	mixin(MPQ_A_GET!("off_t", "packed_size"));

@@ -49,7 +49,7 @@ extern "C" {
 #define LIBMPQ_ERROR_FORMAT (-7)          /* Archive format is invalid. */
 #define LIBMPQ_ERROR_NOT_INITIALIZED (-8) /* Library initialization is missing. */
 #define LIBMPQ_ERROR_SIZE (-9)            /* Caller-provided buffer is too small. */
-#define LIBMPQ_ERROR_EXIST (-10)          /* File or block does not exist in archive. */
+#define LIBMPQ_ERROR_EXIST (-10)          /* Archive, file, or block does not exist. */
 #define LIBMPQ_ERROR_DECRYPT (-11)        /* Decryption seed is unknown. */
 #define LIBMPQ_ERROR_UNPACK (-12)         /* File unpacking failed. */
 
@@ -69,6 +69,9 @@ extern LIBMPQ_API const char *libmpq__strerror(int32_t return_code);
 extern LIBMPQ_API int32_t libmpq__archive_open(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset
 );
+
+/* Clone an archive using an independent stream and private decoded state. */
+extern LIBMPQ_API int32_t libmpq__archive_clone(mpq_archive_s **clone, mpq_archive_s *source);
 
 /* Close an opened archive and release its decoded metadata tables. */
 extern LIBMPQ_API int32_t libmpq__archive_close(mpq_archive_s *mpq_archive);
@@ -123,6 +126,15 @@ libmpq__file_imploded(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t
 /* Resolve an MPQ file name to a public file number. */
 extern LIBMPQ_API int32_t
 libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *number);
+
+/* Calculate the three Storm hashes used to identify an MPQ file name. */
+extern LIBMPQ_API void
+libmpq__file_hash(const char *filename, uint32_t *hash1, uint32_t *hash2, uint32_t *hash3);
+
+/* Resolve a precomputed MPQ file-name hash to a public file number. */
+extern LIBMPQ_API int32_t libmpq__file_number_from_hash(
+    mpq_archive_s *mpq_archive, uint32_t hash1, uint32_t hash2, uint32_t hash3, uint32_t *number
+);
 
 /* Read a complete file into the caller-provided output buffer. */
 extern LIBMPQ_API int32_t libmpq__file_read(

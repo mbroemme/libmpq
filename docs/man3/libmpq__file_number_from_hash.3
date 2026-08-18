@@ -12,36 +12,40 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
-.TH LIBMPQ__FILE_IMPLODED 3 2026-08-12 "The MoPaQ archive library"
+.TH LIBMPQ__FILE_NUMBER_FROM_HASH 3 2026-08-14 "The MoPaQ archive library"
 .SH NAME
-libmpq__file_imploded \- report whether a file uses PKWARE implosion.
+libmpq__file_number_from_hash \- resolve an MPQ filename hash to its file number.
 .SH SYNOPSIS
 .nf
 .B
 #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__file_imploded("
+.BI "int32_t libmpq__file_number_from_hash("
 .BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        uint32_t        " "file_number",
-.BI "        uint32_t       *" "imploded"
+.BI "        uint32_t        " "hash1",
+.BI "        uint32_t        " "hash2",
+.BI "        uint32_t        " "hash3",
+.BI "        uint32_t       *" "number"
 .BI ");"
 .fi
 .SH DESCRIPTION
 .PP
-Call \fBlibmpq__file_imploded\fP() to determine whether a file uses PKWARE
-implosion. The output value is nonzero when implosion is enabled and zero
-otherwise.
+Call \fBlibmpq__file_number_from_hash\fP() to resolve precomputed Storm
+filename hashes using an archive's hash table. Use \fBlibmpq__file_hash\fP()
+to calculate the hashes from a filename.
 .LP
 The first argument is an archive handle opened by
-\fBlibmpq__archive_open\fP(). The function stores the status for
-\fIfile_number\fP in \fIimploded\fP.
+\fBlibmpq__archive_open\fP(). The function stores the matching file number
+in \fInumber\fP.
 .SH RETURN VALUE
-On success, a zero is returned and on error one of the following constants.
+On success, zero is returned and the file number is stored in \fInumber\fP.
+On error, one of the following constants is returned.
 .TP
 .B LIBMPQ_ERROR_EXIST
-The file does not exist in the archive.
+No file in the archive matches the supplied hashes.
 .SH SEE ALSO
-.BR libmpq__archive_files (3)
+.BR libmpq__file_hash (3),
+.BR libmpq__file_number (3)
 .SH AUTHOR
 The libmpq project is maintained by
 .B Maik Broemme <mbroemme@libmpq.org>.

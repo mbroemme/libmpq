@@ -12,36 +12,33 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
-.TH LIBMPQ__FILE_IMPLODED 3 2026-08-12 "The MoPaQ archive library"
+.TH LIBMPQ__FILE_HASH 3 2026-08-14 "The MoPaQ archive library"
 .SH NAME
-libmpq__file_imploded \- report whether a file uses PKWARE implosion.
+libmpq__file_hash \- calculate the Storm hashes for an MPQ filename.
 .SH SYNOPSIS
 .nf
 .B
 #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__file_imploded("
-.BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        uint32_t        " "file_number",
-.BI "        uint32_t       *" "imploded"
+.BI "void libmpq__file_hash("
+.BI "        const char     *" "filename",
+.BI "        uint32_t       *" "hash1",
+.BI "        uint32_t       *" "hash2",
+.BI "        uint32_t       *" "hash3"
 .BI ");"
 .fi
 .SH DESCRIPTION
 .PP
-Call \fBlibmpq__file_imploded\fP() to determine whether a file uses PKWARE
-implosion. The output value is nonzero when implosion is enabled and zero
-otherwise.
+Call \fBlibmpq__file_hash\fP() to calculate the three Storm filename hashes
+used by the MPQ hash table. The values can be reused with
+\fBlibmpq__file_number_from_hash\fP() when looking up the same filename in
+multiple archives.
 .LP
-The first argument is an archive handle opened by
-\fBlibmpq__archive_open\fP(). The function stores the status for
-\fIfile_number\fP in \fIimploded\fP.
-.SH RETURN VALUE
-On success, a zero is returned and on error one of the following constants.
-.TP
-.B LIBMPQ_ERROR_EXIST
-The file does not exist in the archive.
+The function stores the three hash values in \fIhash1\fP, \fIhash2\fP,
+and \fIhash3\fP.
 .SH SEE ALSO
-.BR libmpq__archive_files (3)
+.BR libmpq__file_number (3),
+.BR libmpq__file_number_from_hash (3)
 .SH AUTHOR
 The libmpq project is maintained by
 .B Maik Broemme <mbroemme@libmpq.org>.

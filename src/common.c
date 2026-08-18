@@ -92,6 +92,59 @@ libmpq__decrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed)
     return LIBMPQ_SUCCESS;
 }
 
+/* Recover a file seed by matching StormLib's small set of known file signatures. */
+int32_t
+libmpq__detect_file_key(const uint8_t *in_buf, uint32_t in_size, uint32_t file_size, uint32_t *key)
+{
+    static const uint32_t wave_magic = 0x46464952; /* "RIFF" */
+    static const uint32_t exe_magic = 0x00905A4D;  /* "MZ" and DOS stub signature */
+    static const uint32_t xml_magic = 0x6D783F3C;  /* "<?xm" */
+    static const uint32_t mpq_magic = 0x1A51504D;  /* "MPQ\x1A" */
+    uint32_t encrypted_first;
+    uint32_t encrypted_second;
+    uint32_t first;
+    static const uint32_t known_first[] = { wave_magic, exe_magic, xml_magic, mpq_magic };
+    const uint32_t known_second[] = { file_size - 8, 3, 0x6576206C, 32 }; /* "l ve" */
+    uint32_t i;
+
+    if (in_buf == NULL || key == NULL || in_size < 8) {
+        return LIBMPQ_ERROR_DECRYPT;
+    }
+
+    memcpy(&encrypted_first, in_buf, sizeof(encrypted_first));
+    memcpy(&encrypted_second, in_buf + sizeof(encrypted_first), sizeof(encrypted_second));
+
+    for (i = 0; i < 0x100; i++) {
+        uint32_t j;
+
+        /* Invert the first cipher word for each known signature. */
+        for (j = 0; j < sizeof(known_first) / sizeof(known_first[0]); j++) {
+            uint32_t seed = (encrypted_first ^ known_first[j]) - 0xEEEEEEEE - crypt_buf[0x400 + i];
+            uint32_t seed2;
+            uint32_t next_seed;
+            uint32_t second;
+
+            if ((seed & 0xFF) != i) {
+                continue;
+            }
+
+            first = known_first[j];
+            seed2 = 0xEEEEEEEE + crypt_buf[0x400 + i];
+            next_seed = ((~seed << 0x15) + 0x11111111) | (seed >> 0x0B);
+            seed2 = first + seed2 + (seed2 << 5) + 3;
+            seed2 += crypt_buf[0x400 + (next_seed & 0xFF)];
+            second = encrypted_second ^ (next_seed + seed2);
+
+            if (second == known_second[j]) {
+                *key = seed;
+                return LIBMPQ_SUCCESS;
+            }
+        }
+    }
+
+    return LIBMPQ_ERROR_DECRYPT;
+}
+
 /* Recover the per-file block-table seed from the first encrypted block offsets. */
 int32_t
 libmpq__derive_block_table_seed(

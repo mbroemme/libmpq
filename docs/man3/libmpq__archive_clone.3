@@ -1,0 +1,50 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.TH LIBMPQ__ARCHIVE_CLONE 3 2026-08-18 "The MoPaQ archive library"
+.SH NAME
+libmpq__archive_clone \- clone an MPQ archive for independent reading.
+.SH SYNOPSIS
+.nf
+.B
+#include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__archive_clone("
+.BI "        mpq_archive_s **" "clone",
+.BI "        mpq_archive_s  *" "source"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Call \fBlibmpq__archive_clone\fP() to reopen the backing path of an archive
+with an independent file stream, decoded metadata tables, and lazy block
+caches. A source handle may be closed after cloning succeeds, and each
+clone must be closed independently with \fBlibmpq__archive_close\fP().
+.PP
+Cloning is independent-handle support, not snapshot semantics. The original
+path must remain readable and unchanged while clones are created or used.
+The source handle itself remains unsafe for concurrent operations; create one
+clone per worker instead.
+.SH RETURN VALUE
+On success, *\fIclone\fP is set to a new handle and zero is returned. On
+failure, *\fIclone\fP is set to NULL and the open, seek, read, format, or
+allocation error is returned.
+.SH SEE ALSO
+.BR libmpq__archive_open (3),
+.BR libmpq__archive_close (3)
+.SH AUTHOR
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

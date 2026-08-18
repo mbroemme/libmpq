@@ -31,6 +31,10 @@ int32_t libmpq__encrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed)
 /* Decrypt a block in place using the MPQ block cipher. */
 int32_t libmpq__decrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed);
 
+/* Recover a file seed from the first known words of an encrypted payload. */
+int32_t
+libmpq__detect_file_key(const uint8_t *in_buf, uint32_t in_size, uint32_t file_size, uint32_t *key);
+
 /* Recover a file block-table decryption seed from encrypted block offsets. */
 int32_t libmpq__derive_block_table_seed(
     uint8_t *in_buf, uint32_t in_size, uint32_t block_size, uint32_t *key
