@@ -211,10 +211,11 @@ Testing against a broad collection of MPQ archives is especially useful.
 The project was initiated by Maik Broemme. Current and past contributors
 include:
 
-* Maik Broemme <mbroemme@libmpq.org>
-* Tilman Sauerbeck <tilman@code-monkey.de>
-* Forrest Voight <voights@gmail.com>
-* Georg Lukas <georg@op-co.de>
+* Maik Broemme
+* Gleb Mazovetskiy
+* Tilman Sauerbeck
+* Forrest Voight
+* Georg Lukas
 
 libmpq also preserves attribution for the StormLib, ShadowFlare, PKWARE, and
 other MPQ-related work on which parts of the implementation are based.
