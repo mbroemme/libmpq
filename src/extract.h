@@ -42,33 +42,38 @@ typedef struct
 } decompress_table_s;
 
 /* Decompress a Huffman-coded MPQ stream; in_size is kept for backend ABI parity. */
-extern int32_t
-libmpq__decompress_huffman(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size);
+extern int32_t libmpq__extract_decompress_huffman(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
+);
 
 /* Decompress a zlib-coded MPQ stream. */
-extern int32_t
-libmpq__decompress_zlib(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size);
+extern int32_t libmpq__extract_decompress_zlib(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
+);
 
 /* Decompress a PKWARE DCL-coded MPQ stream. */
-extern int32_t
-libmpq__decompress_pkzip(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size);
+extern int32_t libmpq__extract_decompress_pkzip(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
+);
 
 /* Decompress a bzip2-coded MPQ stream. */
-extern int32_t
-libmpq__decompress_bzip2(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size);
+extern int32_t libmpq__extract_decompress_bzip2(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
+);
 
 /* Decompress a mono ADPCM WAVE stream. */
-extern int32_t libmpq__decompress_wave_mono(
+extern int32_t libmpq__extract_decompress_wave_mono(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
 );
 
 /* Decompress a stereo ADPCM WAVE stream. */
-extern int32_t libmpq__decompress_wave_stereo(
+extern int32_t libmpq__extract_decompress_wave_stereo(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
 );
 
 /* Decode a Blizzard multi-compression stream by applying each flagged backend in order. */
-extern int32_t
-libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size);
+extern int32_t libmpq__extract_decompress_multi(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
+);
 
 #endif /* LIBMPQ_EXTRACT_H */

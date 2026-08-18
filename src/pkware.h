@@ -31,7 +31,7 @@
 #define LIBMPQ_PKZIP_CMP_BINARY 0 /* Binary literal mode. */
 #define LIBMPQ_PKZIP_CMP_ASCII 1  /* ASCII literal mode. */
 
-/* PKWARE decoder status values returned by libmpq__do_decompress_pkzip(). */
+/* PKWARE decoder status values returned by libmpq__pkzip_decompress(). */
 #define LIBMPQ_PKZIP_CMP_NO_ERROR 0
 #define LIBMPQ_PKZIP_CMP_INV_DICTSIZE 1
 #define LIBMPQ_PKZIP_CMP_INV_MODE 2
@@ -84,10 +84,10 @@ typedef struct
 } pkzip_data_s;
 
 /* Initialize PKWARE decoder state and expand the compressed stream. */
-uint32_t libmpq__do_decompress_pkzip(uint8_t *work_buf, void *param);
+uint32_t libmpq__pkzip_decompress(uint8_t *work_buf, void *param);
 
 /* Encode a valid binary PKWARE stream using the DCL literal and simple-run forms. */
-int32_t libmpq__compress_pkzip(
+int32_t libmpq__pkzip_compress(
     const uint8_t *in_buf, uint32_t in_size, uint8_t **out_buf, uint32_t *out_size
 );
 

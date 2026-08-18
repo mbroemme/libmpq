@@ -122,7 +122,7 @@ wave_encode_delta(int32_t difference, int32_t *predictor, int32_t *step_index, u
 
 /* Encode one complete PCM sector using the MPQ mono/stereo ADPCM format. */
 int32_t
-libmpq__compress_wave(
+libmpq__wave_compress(
     const uint8_t *in_buf, uint32_t in_size, uint8_t **out_buf, uint32_t *out_size,
     uint32_t channels
 )
@@ -161,7 +161,7 @@ libmpq__compress_wave(
 
 /* Decompress mono or stereo MPQ WAVE predictor data into PCM bytes. */
 int32_t
-libmpq__do_decompress_wave(
+libmpq__wave_decompress(
     uint8_t *out_buf, int32_t out_length, uint8_t *in_buf, int32_t in_length, int32_t channels
 )
 {

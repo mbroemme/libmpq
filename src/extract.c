@@ -34,17 +34,19 @@
 static decompress_table_s dcmp_table[] = {
 
     /* Reverse of the canonical writer order. */
-    { LIBMPQ_COMPRESSION_BZIP2, libmpq__decompress_bzip2 },
-    { LIBMPQ_COMPRESSION_PKZIP, libmpq__decompress_pkzip },
-    { LIBMPQ_COMPRESSION_ZLIB, libmpq__decompress_zlib },
-    { LIBMPQ_COMPRESSION_HUFFMAN, libmpq__decompress_huffman },
-    { LIBMPQ_COMPRESSION_WAVE_STEREO, libmpq__decompress_wave_stereo },
-    { LIBMPQ_COMPRESSION_WAVE_MONO, libmpq__decompress_wave_mono }
+    { LIBMPQ_COMPRESSION_BZIP2, libmpq__extract_decompress_bzip2 },
+    { LIBMPQ_COMPRESSION_PKZIP, libmpq__extract_decompress_pkzip },
+    { LIBMPQ_COMPRESSION_ZLIB, libmpq__extract_decompress_zlib },
+    { LIBMPQ_COMPRESSION_HUFFMAN, libmpq__extract_decompress_huffman },
+    { LIBMPQ_COMPRESSION_WAVE_STEREO, libmpq__extract_decompress_wave_stereo },
+    { LIBMPQ_COMPRESSION_WAVE_MONO, libmpq__extract_decompress_wave_mono }
 };
 
 /* Decompress an MPQ Huffman-compressed stream into the caller-provided buffer. */
 int32_t
-libmpq__decompress_huffman(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size)
+libmpq__extract_decompress_huffman(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
+)
 {
 
     /* Huffman state and transferred-byte count for this stream. */
@@ -87,7 +89,9 @@ libmpq__decompress_huffman(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, 
 
 /* Decompress an MPQ zlib-compressed stream into the caller-provided buffer. */
 int32_t
-libmpq__decompress_zlib(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size)
+libmpq__extract_decompress_zlib(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
+)
 {
 
     /* Zlib stream state and transferred-byte count for this stream. */
@@ -125,7 +129,9 @@ libmpq__decompress_zlib(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uin
 
 /* Decompress an MPQ PKWARE Data Compression Library stream. */
 int32_t
-libmpq__decompress_pkzip(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size)
+libmpq__extract_decompress_pkzip(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
+)
 {
 
     /* PKZIP work buffer, callback state and transferred-byte count. */
@@ -148,7 +154,7 @@ libmpq__decompress_pkzip(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
     info.out_pos = 0;
     info.max_out = out_size;
 
-    if ((tb = libmpq__do_decompress_pkzip((uint8_t *)work_buf, &info)) < 0) {
+    if ((tb = libmpq__pkzip_decompress((uint8_t *)work_buf, &info)) < 0) {
         free(work_buf);
         return tb;
     }
@@ -162,7 +168,9 @@ libmpq__decompress_pkzip(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
 
 /* Decompress an MPQ bzip2-compressed stream into the caller-provided buffer. */
 int32_t
-libmpq__decompress_bzip2(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size)
+libmpq__extract_decompress_bzip2(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
+)
 {
 
     /* Bzip2 stream state and transferred-byte count for this stream. */
@@ -196,13 +204,15 @@ libmpq__decompress_bzip2(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, ui
 
 /* Decompress an MPQ mono WAVE-compressed stream. */
 int32_t
-libmpq__decompress_wave_mono(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size)
+libmpq__extract_decompress_wave_mono(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
+)
 {
 
     /* Transferred-byte count reported by the shared WAVE decoder. */
     int32_t tb = 0;
 
-    if ((tb = libmpq__do_decompress_wave(out_buf, out_size, in_buf, in_size, 1)) < 0) {
+    if ((tb = libmpq__wave_decompress(out_buf, out_size, in_buf, in_size, 1)) < 0) {
         return tb;
     }
 
@@ -211,7 +221,7 @@ libmpq__decompress_wave_mono(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf
 
 /* Decompress an MPQ stereo WAVE-compressed stream. */
 int32_t
-libmpq__decompress_wave_stereo(
+libmpq__extract_decompress_wave_stereo(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
 )
 {
@@ -219,7 +229,7 @@ libmpq__decompress_wave_stereo(
     /* Transferred-byte count reported by the shared WAVE decoder. */
     int32_t tb = 0;
 
-    if ((tb = libmpq__do_decompress_wave(out_buf, out_size, in_buf, in_size, 2)) < 0) {
+    if ((tb = libmpq__wave_decompress(out_buf, out_size, in_buf, in_size, 2)) < 0) {
         return tb;
     }
 
@@ -228,7 +238,9 @@ libmpq__decompress_wave_stereo(
 
 /* Decode a Blizzard multi-compression stream by applying each flagged backend in order. */
 int32_t
-libmpq__decompress_multi(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size)
+libmpq__extract_decompress_multi(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
+)
 {
 
     /* Compression mask state, temporary buffers and transferred-byte count. */

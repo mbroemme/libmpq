@@ -153,59 +153,6 @@ libmpq__strerror(int32_t return_code)
     return libmpq_error_strings[-return_code];
 }
 
-/* Create an MPQ archive through the writer implementation. */
-int32_t
-libmpq__archive_create(
-    mpq_archive_s **out, const char *path, const mpq_archive_create_options_s *options
-)
-{
-    return libmpq__writer_archive_create(out, path, options);
-}
-
-/* Begin a streamed file write through the writer implementation. */
-int32_t
-libmpq__file_begin(
-    mpq_archive_s *archive, const char *name, libmpq__off_t size,
-    const mpq_file_create_options_s *options, mpq_file_writer_s **out
-)
-{
-    return libmpq__writer_file_begin(archive, name, size, options, out);
-}
-
-/* Write one input range through the writer implementation. */
-int32_t
-libmpq__file_write(mpq_file_writer_s *writer, const uint8_t *buffer, libmpq__off_t size)
-{
-    return libmpq__writer_file_write(writer, buffer, size);
-}
-
-/* Finish a streamed file through the writer implementation. */
-int32_t
-libmpq__file_finish(mpq_file_writer_s *writer)
-{
-    return libmpq__writer_file_finish(writer);
-}
-
-/* Add an in-memory file through the writer implementation. */
-int32_t
-libmpq__file_add(
-    mpq_archive_s *archive, const char *name, const uint8_t *data, libmpq__off_t size,
-    const mpq_file_create_options_s *options
-)
-{
-    return libmpq__writer_file_add(archive, name, data, size, options);
-}
-
-/* Add a filesystem file through the writer implementation. */
-int32_t
-libmpq__file_add_path(
-    mpq_archive_s *archive, const char *name, const char *source,
-    const mpq_file_create_options_s *options
-)
-{
-    return libmpq__writer_file_add_path(archive, name, source, options);
-}
-
 /* Open an MPQ archive path and prepare decoded metadata for later operations. */
 static int32_t
 archive_open_path(
@@ -365,8 +312,8 @@ archive_open_path(
     }
 
     /* MPQ stores the hash table encrypted with the fixed "(hash table)" key. */
-    libmpq__decrypt_block(
-        table_data, (uint32_t)table_bytes, libmpq__hash_string("(hash table)", 0x300)
+    libmpq__common_decrypt_block(
+        table_data, (uint32_t)table_bytes, libmpq__common_hash_string("(hash table)", 0x300)
     );
     decode_mpq_hash_table(
         (*mpq_archive)->mpq_hash, table_data, (*mpq_archive)->mpq_header.hash_table_count
@@ -402,8 +349,8 @@ archive_open_path(
     }
 
     /* MPQ stores the block table encrypted with the fixed "(block table)" key. */
-    libmpq__decrypt_block(
-        table_data, (uint32_t)table_bytes, libmpq__hash_string("(block table)", 0x300)
+    libmpq__common_decrypt_block(
+        table_data, (uint32_t)table_bytes, libmpq__common_hash_string("(block table)", 0x300)
     );
     decode_mpq_block_table(
         (*mpq_archive)->mpq_block, table_data, (*mpq_archive)->mpq_header.block_table_count
@@ -776,9 +723,9 @@ libmpq__file_imploded(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t
 void
 libmpq__file_hash(const char *filename, uint32_t *hash1, uint32_t *hash2, uint32_t *hash3)
 {
-    *hash1 = libmpq__hash_string(filename, 0x0);
-    *hash2 = libmpq__hash_string(filename, 0x100);
-    *hash3 = libmpq__hash_string(filename, 0x200);
+    *hash1 = libmpq__common_hash_string(filename, 0x0);
+    *hash2 = libmpq__common_hash_string(filename, 0x100);
+    *hash3 = libmpq__common_hash_string(filename, 0x200);
 }
 
 /* Resolve a precomputed MPQ file-name hash to a public file number. */
@@ -969,7 +916,7 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
             LIBMPQ_FLAG_ENCRYPTED) {
             uint32_t seed;
 
-            if (libmpq__derive_block_table_seed(
+            if (libmpq__common_derive_block_table_seed(
                     packed_data, packed_size, mpq_archive->block_size, &seed
                 ) < 0) {
                 result = LIBMPQ_ERROR_DECRYPT;
@@ -978,7 +925,7 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
             mpq_archive->mpq_file[file_number]->seed = seed;
             mpq_archive->mpq_file[file_number]->seed_known = TRUE;
 
-            if (libmpq__decrypt_block(
+            if (libmpq__common_decrypt_block(
                     packed_data, packed_size, mpq_archive->mpq_file[file_number]->seed - 1
                 ) < 0) {
                 result = LIBMPQ_ERROR_DECRYPT;
@@ -1065,7 +1012,7 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
             goto error;
         }
 
-        if (libmpq__detect_file_key(
+        if (libmpq__common_detect_file_key(
                 first_block, sizeof(first_block),
                 mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices]
                     .unpacked_size,
@@ -1286,7 +1233,7 @@ libmpq__block_read(
             return LIBMPQ_ERROR_DECRYPT;
         }
 
-        if (libmpq__decrypt_block(in_buf, (uint32_t)in_size, seed) < 0) {
+        if (libmpq__common_decrypt_block(in_buf, (uint32_t)in_size, seed) < 0) {
             if (!use_out_buf) {
                 free(in_buf);
             }
@@ -1296,7 +1243,7 @@ libmpq__block_read(
 
     /* Blizzard multi-compression blocks declare their exact backend chain in the payload. */
     if (compressed) {
-        if ((tb = libmpq__decompress_block(
+        if ((tb = libmpq__common_decompress_block(
                  in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_MULTI
              )) < 0) {
             if (!use_out_buf) {
@@ -1308,7 +1255,7 @@ libmpq__block_read(
 
     /* PKWARE-imploded blocks use the legacy explode decoder. */
     if (imploded) {
-        if ((tb = libmpq__decompress_block(
+        if ((tb = libmpq__common_decompress_block(
                  in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_PKZIP
              )) < 0) {
             if (!use_out_buf) {
@@ -1326,7 +1273,7 @@ libmpq__block_read(
     }
 
     if (!compressed && !imploded) {
-        if ((tb = libmpq__decompress_block(
+        if ((tb = libmpq__common_decompress_block(
                  in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_NONE
              )) < 0) {
             if (!use_out_buf) {

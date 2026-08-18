@@ -942,7 +942,7 @@ libmpq__huffman_decode(
 
 /* Append one least-significant-bit-first bit to the Huffman output stream. */
 static int32_t
-libmpq__huffman_write_bit(struct huffman_output_stream_s *os, uint32_t bit)
+huffman_write_bit(struct huffman_output_stream_s *os, uint32_t bit)
 {
     os->bit_buf |= (bit & 1u) << os->bits++;
     if (os->bits == 8) {
@@ -957,10 +957,10 @@ libmpq__huffman_write_bit(struct huffman_output_stream_s *os, uint32_t bit)
 
 /* Append a little-endian run of bits to the Huffman output stream. */
 static int32_t
-libmpq__huffman_write_bits(struct huffman_output_stream_s *os, uint32_t value, uint32_t count)
+huffman_write_bits(struct huffman_output_stream_s *os, uint32_t value, uint32_t count)
 {
     while (count-- != 0) {
-        int32_t result = libmpq__huffman_write_bit(os, value);
+        int32_t result = huffman_write_bit(os, value);
         if (result < 0)
             return result;
         value >>= 1;
@@ -970,7 +970,7 @@ libmpq__huffman_write_bits(struct huffman_output_stream_s *os, uint32_t value, u
 
 /* Emit the adaptive-tree path for one Huffman symbol. */
 static int32_t
-libmpq__huffman_encode_symbol(struct huffman_output_stream_s *os, struct huffman_tree_item_s *item)
+huffman_encode_symbol(struct huffman_output_stream_s *os, struct huffman_tree_item_s *item)
 {
     uint32_t bits = 0, count = 0;
     struct huffman_tree_item_s *parent;
@@ -981,12 +981,12 @@ libmpq__huffman_encode_symbol(struct huffman_output_stream_s *os, struct huffman
         if (++count == 32)
             return LIBMPQ_ERROR_FORMAT;
     }
-    return libmpq__huffman_write_bits(os, bits, count);
+    return huffman_write_bits(os, bits, count);
 }
 
 /* Replace the NYT node with an escape branch and the newly seen literal. */
 static int32_t
-libmpq__huffman_insert_literal(struct huffman_tree_s *ht, uint32_t value)
+huffman_insert_literal(struct huffman_tree_s *ht, uint32_t value)
 {
     struct huffman_tree_item_s *escape = ht->last;
     struct huffman_tree_item_s *old, *literal;
@@ -1032,18 +1032,18 @@ libmpq__huffman_encode(
         uint32_t value = in_buf[i];
         struct huffman_tree_item_s *item = ht->symbol_nodes[value];
         if (item == NULL) {
-            if (libmpq__huffman_encode_symbol(os, ht->symbol_nodes[0x101]) < 0 ||
-                libmpq__huffman_write_bits(os, value, 8) < 0)
+            if (huffman_encode_symbol(os, ht->symbol_nodes[0x101]) < 0 ||
+                huffman_write_bits(os, value, 8) < 0)
                 return LIBMPQ_ERROR_SIZE;
-            if (libmpq__huffman_insert_literal(ht, value) < 0)
+            if (huffman_insert_literal(ht, value) < 0)
                 return LIBMPQ_ERROR_FORMAT;
-        } else if (libmpq__huffman_encode_symbol(os, item) < 0) {
+        } else if (huffman_encode_symbol(os, item) < 0) {
             return LIBMPQ_ERROR_SIZE;
         } else {
             libmpq__huffman_update_weights(ht, item);
         }
     }
-    if (libmpq__huffman_encode_symbol(os, ht->symbol_nodes[0x100]) < 0)
+    if (huffman_encode_symbol(os, ht->symbol_nodes[0x100]) < 0)
         return LIBMPQ_ERROR_SIZE;
     if (os->bits != 0) {
         if (os->out_pos >= os->capacity)

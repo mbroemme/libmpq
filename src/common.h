@@ -23,25 +23,26 @@
 #include <stdint.h>
 
 /* Hash an MPQ table name or file name with one of the Storm hash table offsets. */
-uint32_t libmpq__hash_string(const char *key, uint32_t offset);
+uint32_t libmpq__common_hash_string(const char *key, uint32_t offset);
 
 /* Encrypt a serialized little-endian block in place using the MPQ cipher. */
-int32_t libmpq__encrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed);
+int32_t libmpq__common_encrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed);
 
 /* Decrypt a serialized little-endian block in place using the MPQ cipher. */
-int32_t libmpq__decrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed);
+int32_t libmpq__common_decrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed);
 
 /* Recover a file seed from the first known words of an encrypted payload. */
-int32_t
-libmpq__detect_file_key(const uint8_t *in_buf, uint32_t in_size, uint32_t file_size, uint32_t *key);
+int32_t libmpq__common_detect_file_key(
+    const uint8_t *in_buf, uint32_t in_size, uint32_t file_size, uint32_t *key
+);
 
 /* Recover a file block-table decryption seed from encrypted block offsets. */
-int32_t libmpq__derive_block_table_seed(
+int32_t libmpq__common_derive_block_table_seed(
     uint8_t *in_buf, uint32_t in_size, uint32_t block_size, uint32_t *key
 );
 
 /* Decompress one archive block according to its MPQ compression flags. */
-int32_t libmpq__decompress_block(
+int32_t libmpq__common_decompress_block(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size,
     uint32_t compression_type
 );

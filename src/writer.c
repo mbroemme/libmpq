@@ -39,7 +39,7 @@
 
 /* Return the smallest supported power-of-two table capacity at or above value. */
 static uint32_t
-libmpq__writer_next_power_two(uint32_t value)
+next_power_two(uint32_t value)
 {
     uint32_t result = 4;
     while (result < value && result < 0x80000000u)
@@ -49,7 +49,7 @@ libmpq__writer_next_power_two(uint32_t value)
 
 /* Write one byte range at an absolute archive offset. */
 static int32_t
-libmpq__writer_write_at(FILE *fp, uint64_t offset, const void *data, size_t size)
+write_at(FILE *fp, uint64_t offset, const void *data, size_t size)
 {
     if (fseeko(fp, (off_t)offset, SEEK_SET) < 0 || (size && fwrite(data, 1, size, fp) != size))
         return LIBMPQ_ERROR_WRITE;
@@ -58,7 +58,7 @@ libmpq__writer_write_at(FILE *fp, uint64_t offset, const void *data, size_t size
 
 /* Calculate the MPQ file encryption key from a normalized file name. */
 static uint32_t
-libmpq__writer_file_key(const char *name)
+file_key(const char *name)
 {
     char *normalized = NULL;
     size_t i, length = strlen(name);
@@ -70,14 +70,14 @@ libmpq__writer_file_key(const char *name)
     for (i = 0; i < length; i++)
         normalized[i] = name[i] == '/' ? '\\' : name[i];
     normalized[length] = 0;
-    key = libmpq__hash_string(normalized, 0x300);
+    key = libmpq__common_hash_string(normalized, 0x300);
     free(normalized);
     return key;
 }
 
 /* Return whether every requested compression bit has a local implementation. */
 static int
-libmpq__writer_supported_mask(uint32_t mask)
+supported_mask(uint32_t mask)
 {
     return (mask & ~(LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_ZLIB |
                      LIBMPQ_COMPRESSION_PKZIP | LIBMPQ_COMPRESSION_BZIP2 |
@@ -86,7 +86,7 @@ libmpq__writer_supported_mask(uint32_t mask)
 
 /* Apply one selected compression backend and replace the current buffer. */
 static int32_t
-libmpq__writer_compress_stage(uint8_t **data, size_t *size, uint32_t mask)
+compress_stage(uint8_t **data, size_t *size, uint32_t mask)
 {
     uint8_t *out;
     size_t out_size = *size + (*size / 100) + 1024;
@@ -104,7 +104,7 @@ libmpq__writer_compress_stage(uint8_t **data, size_t *size, uint32_t mask)
         uint32_t candidate_size = 0;
         free(out);
         int32_t status =
-            libmpq__compress_pkzip(*data, (uint32_t)*size, &candidate, &candidate_size);
+            libmpq__pkzip_compress(*data, (uint32_t)*size, &candidate, &candidate_size);
         if (status < 0)
             return status;
         free(*data);
@@ -134,7 +134,7 @@ libmpq__writer_compress_stage(uint8_t **data, size_t *size, uint32_t mask)
     } else if (mask == LIBMPQ_COMPRESSION_WAVE_MONO || mask == LIBMPQ_COMPRESSION_WAVE_STEREO) {
         uint8_t *candidate = NULL;
         uint32_t candidate_size = 0;
-        int32_t status = libmpq__compress_wave(
+        int32_t status = libmpq__wave_compress(
             *data, (uint32_t)*size, &candidate, &candidate_size,
             mask == LIBMPQ_COMPRESSION_WAVE_MONO ? 1 : 2
         );
@@ -193,7 +193,7 @@ libmpq__writer_compress_stage(uint8_t **data, size_t *size, uint32_t mask)
 
 /* Apply the selected compression chain and return its actual successful mask. */
 static int32_t
-libmpq__writer_encode_sector(
+encode_sector(
     const uint8_t *input, size_t input_size, uint32_t requested, uint8_t **output,
     size_t *output_size, uint8_t *emitted_mask
 )
@@ -205,7 +205,7 @@ libmpq__writer_encode_sector(
                          LIBMPQ_COMPRESSION_PKZIP,     LIBMPQ_COMPRESSION_BZIP2 };
     size_t i;
 
-    if (!libmpq__writer_supported_mask(requested))
+    if (!supported_mask(requested))
         return LIBMPQ_ERROR_FORMAT;
     data = malloc(input_size ? input_size : 1);
     if (data == NULL)
@@ -229,7 +229,7 @@ libmpq__writer_encode_sector(
                 free(saved);
                 continue;
             }
-            result = libmpq__writer_compress_stage(&data, &size, masks[i]);
+            result = compress_stage(&data, &size, masks[i]);
             if (result < 0) {
                 free(saved);
                 continue;
@@ -265,7 +265,7 @@ libmpq__writer_encode_sector(
 
 /* Compress, encrypt, and append the writer's currently buffered sector. */
 static int32_t
-libmpq__writer_stream_flush_sector(mpq_file_writer_s *writer)
+stream_flush_sector(mpq_file_writer_s *writer)
 {
     mpq_archive_s *archive = writer->archive;
     uint8_t *packed = NULL;
@@ -278,12 +278,12 @@ libmpq__writer_stream_flush_sector(mpq_file_writer_s *writer)
     if (writer->sector_index >= writer->block_count)
         return LIBMPQ_ERROR_SIZE;
     if ((writer->options.flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0)
-        result = libmpq__writer_encode_sector(
+        result = encode_sector(
             writer->data, writer->data_size, requested, &packed, &packed_size, &emitted
         );
     else if ((writer->options.flags & LIBMPQ_FILE_FLAG_IMPLODE) != 0) {
         uint32_t packed32 = 0;
-        result = libmpq__compress_pkzip(writer->data, writer->data_size, &packed, &packed32);
+        result = libmpq__pkzip_compress(writer->data, writer->data_size, &packed, &packed32);
         packed_size = packed32;
     } else {
         packed = malloc(packed_size ? packed_size : 1);
@@ -296,9 +296,8 @@ libmpq__writer_stream_flush_sector(mpq_file_writer_s *writer)
         return result;
     }
     if (writer->options.flags & LIBMPQ_FILE_FLAG_ENCRYPTED)
-        libmpq__encrypt_block(
-            packed, (uint32_t)packed_size,
-            libmpq__writer_file_key(writer->name) + writer->sector_index
+        libmpq__common_encrypt_block(
+            packed, (uint32_t)packed_size, file_key(writer->name) + writer->sector_index
         );
     if (writer->offsets)
         writer->offsets[writer->sector_index] =
@@ -326,7 +325,7 @@ libmpq__writer_stream_flush_sector(mpq_file_writer_s *writer)
 
 /* Finish the streamed file by writing its offset table and archive metadata. */
 static int32_t
-libmpq__writer_stream_finish(mpq_file_writer_s *writer)
+stream_finish(mpq_file_writer_s *writer)
 {
     mpq_archive_s *archive = writer->archive;
     uint32_t index, slot, hash1, hash2, hash3, i;
@@ -347,10 +346,8 @@ libmpq__writer_stream_finish(mpq_file_writer_s *writer)
         for (i = 0; i <= writer->block_count; i++)
             libmpq__store_le32(table + i * 4, writer->offsets[i]);
         if (writer->options.flags & LIBMPQ_FILE_FLAG_ENCRYPTED)
-            libmpq__encrypt_block(
-                table, (uint32_t)table_size, libmpq__writer_file_key(writer->name) - 1
-            );
-        result = libmpq__writer_write_at(archive->fp, writer->payload_offset, table, table_size);
+            libmpq__common_encrypt_block(table, (uint32_t)table_size, file_key(writer->name) - 1);
+        result = write_at(archive->fp, writer->payload_offset, table, table_size);
         free(table);
         if (result < 0)
             return result;
@@ -393,7 +390,7 @@ libmpq__writer_stream_finish(mpq_file_writer_s *writer)
 
 /* Create a new seekable MPQ v1 or v2 archive with reserved metadata tables. */
 int32_t
-libmpq__writer_archive_create(
+libmpq__archive_create(
     mpq_archive_s **out, const char *path, const mpq_archive_create_options_s *options
 )
 {
@@ -430,7 +427,7 @@ libmpq__writer_archive_create(
     a->write_capacity = options->max_files ? options->max_files : 1024;
     a->write_sector_size = options->sector_size ? options->sector_size : 4096;
     a->write_flags = options->flags;
-    a->write_hash_capacity = libmpq__writer_next_power_two(a->write_capacity * 2);
+    a->write_hash_capacity = next_power_two(a->write_capacity * 2);
     header_size = options->version == LIBMPQ_ARCHIVE_VERSION_TWO ? 44 : 32;
     a->mpq_header.version = (uint16_t)options->version;
     a->mpq_header.header_size = header_size;
@@ -502,7 +499,7 @@ libmpq__writer_archive_create(
 
 /* Begin streaming one file into the archive using the requested options. */
 int32_t
-libmpq__writer_file_begin(
+libmpq__file_begin(
     mpq_archive_s *a, const char *name, libmpq__off_t size,
     const mpq_file_create_options_s *options, mpq_file_writer_s **out
 )
@@ -526,8 +523,8 @@ libmpq__writer_file_begin(
         return LIBMPQ_ERROR_FORMAT;
     }
     if ((options->flags & LIBMPQ_FILE_FLAG_COMPRESS) &&
-        (!libmpq__writer_supported_mask(options->compression_first) ||
-         !libmpq__writer_supported_mask(options->compression_next))) {
+        (!supported_mask(options->compression_first) ||
+         !supported_mask(options->compression_next))) {
         free(w);
         return LIBMPQ_ERROR_FORMAT;
     }
@@ -600,7 +597,7 @@ libmpq__writer_file_begin(
 
 /* Append caller-provided bytes and flush complete sectors immediately. */
 int32_t
-libmpq__writer_file_write(mpq_file_writer_s *w, const uint8_t *buffer, libmpq__off_t size)
+libmpq__file_write(mpq_file_writer_s *w, const uint8_t *buffer, libmpq__off_t size)
 {
     if (!w || (!buffer && size != 0) || size < 0 || size > w->expected - w->written)
         return LIBMPQ_ERROR_SIZE;
@@ -613,7 +610,7 @@ libmpq__writer_file_write(mpq_file_writer_s *w, const uint8_t *buffer, libmpq__o
         buffer += take;
         size -= take;
         if (w->data_size == w->archive->write_sector_size) {
-            int32_t result = libmpq__writer_stream_flush_sector(w);
+            int32_t result = stream_flush_sector(w);
             if (result < 0)
                 return result;
         }
@@ -623,18 +620,18 @@ libmpq__writer_file_write(mpq_file_writer_s *w, const uint8_t *buffer, libmpq__o
 
 /* Flush the final sector and commit the file's block and hash-table entries. */
 int32_t
-libmpq__writer_file_finish(mpq_file_writer_s *w)
+libmpq__file_finish(mpq_file_writer_s *w)
 {
     int32_t result;
     if (!w)
         return LIBMPQ_ERROR_EXIST;
     if (w->data_size != 0 || w->expected == 0) {
-        result = libmpq__writer_stream_flush_sector(w);
+        result = stream_flush_sector(w);
     } else {
         result = 0;
     }
     if (result == 0)
-        result = libmpq__writer_stream_finish(w);
+        result = stream_finish(w);
     w->archive->write_current = NULL;
     free(w->name);
     free(w->data);
@@ -645,16 +642,16 @@ libmpq__writer_file_finish(mpq_file_writer_s *w)
 
 /* Add an in-memory file through the streaming writer interface. */
 int32_t
-libmpq__writer_file_add(
+libmpq__file_add(
     mpq_archive_s *a, const char *name, const uint8_t *data, libmpq__off_t size,
     const mpq_file_create_options_s *options
 )
 {
     mpq_file_writer_s *w;
-    int32_t result = libmpq__writer_file_begin(a, name, size, options, &w);
+    int32_t result = libmpq__file_begin(a, name, size, options, &w);
     if (result < 0)
         return result;
-    result = libmpq__writer_file_write(w, data, size);
+    result = libmpq__file_write(w, data, size);
     if (result < 0) {
         free(w->name);
         free(w->data);
@@ -663,12 +660,12 @@ libmpq__writer_file_add(
         a->write_current = NULL;
         return result;
     }
-    return libmpq__writer_file_finish(w);
+    return libmpq__file_finish(w);
 }
 
 /* Add a filesystem file while keeping only one input sector in memory. */
 int32_t
-libmpq__writer_file_add_path(
+libmpq__file_add_path(
     mpq_archive_s *a, const char *name, const char *source, const mpq_file_create_options_s *options
 )
 {
@@ -685,13 +682,13 @@ libmpq__writer_file_add_path(
         fclose(fp);
         return LIBMPQ_ERROR_SEEK;
     }
-    result = libmpq__writer_file_begin(a, name, size, options, &writer);
+    result = libmpq__file_begin(a, name, size, options, &writer);
     if (result < 0) {
         fclose(fp);
         return result;
     }
     while ((got = fread(buffer, 1, sizeof(buffer), fp)) != 0) {
-        result = libmpq__writer_file_write(writer, buffer, (libmpq__off_t)got);
+        result = libmpq__file_write(writer, buffer, (libmpq__off_t)got);
         if (result < 0)
             break;
     }
@@ -699,7 +696,7 @@ libmpq__writer_file_add_path(
         result = LIBMPQ_ERROR_READ;
     fclose(fp);
     if (result == 0)
-        result = libmpq__writer_file_finish(writer);
+        result = libmpq__file_finish(writer);
     else {
         a->write_current = NULL;
         free(writer->name);
@@ -712,7 +709,7 @@ libmpq__writer_file_add_path(
 
 /* Serialize the completed hash, block, extended tables, and archive header. */
 static int32_t
-libmpq__writer_finalize_archive(mpq_archive_s *a)
+finalize_archive(mpq_archive_s *a)
 {
     uint8_t *raw;
     uint32_t i;
@@ -738,8 +735,7 @@ libmpq__writer_finalize_archive(mpq_archive_s *a)
         }
         {
             mpq_file_create_options_s o = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
-            int32_t r =
-                libmpq__writer_file_add(a, LIBMPQ_LISTFILE_NAME, list, (libmpq__off_t)total, &o);
+            int32_t r = libmpq__file_add(a, LIBMPQ_LISTFILE_NAME, list, (libmpq__off_t)total, &o);
             free(list);
             if (r < 0)
                 return r;
@@ -756,8 +752,10 @@ libmpq__writer_finalize_archive(mpq_archive_s *a)
         libmpq__store_le16(raw + i * 16 + 10, a->mpq_hash[i].platform);
         libmpq__store_le32(raw + i * 16 + 12, a->mpq_hash[i].block_table_index);
     }
-    libmpq__encrypt_block(raw, (uint32_t)bytes, libmpq__hash_string("(hash table)", 0x300));
-    if (libmpq__writer_write_at(a->fp, a->mpq_header.hash_table_offset, raw, bytes) < 0) {
+    libmpq__common_encrypt_block(
+        raw, (uint32_t)bytes, libmpq__common_hash_string("(hash table)", 0x300)
+    );
+    if (write_at(a->fp, a->mpq_header.hash_table_offset, raw, bytes) < 0) {
         free(raw);
         return LIBMPQ_ERROR_WRITE;
     }
@@ -772,8 +770,10 @@ libmpq__writer_finalize_archive(mpq_archive_s *a)
         libmpq__store_le32(raw + i * 16 + 8, a->mpq_block[i].unpacked_size);
         libmpq__store_le32(raw + i * 16 + 12, a->mpq_block[i].flags);
     }
-    libmpq__encrypt_block(raw, (uint32_t)bytes, libmpq__hash_string("(block table)", 0x300));
-    if (libmpq__writer_write_at(a->fp, a->mpq_header.block_table_offset, raw, bytes) < 0) {
+    libmpq__common_encrypt_block(
+        raw, (uint32_t)bytes, libmpq__common_hash_string("(block table)", 0x300)
+    );
+    if (write_at(a->fp, a->mpq_header.block_table_offset, raw, bytes) < 0) {
         free(raw);
         return LIBMPQ_ERROR_WRITE;
     }
@@ -785,7 +785,7 @@ libmpq__writer_finalize_archive(mpq_archive_s *a)
             return LIBMPQ_ERROR_MALLOC;
         for (i = 0; i < a->write_capacity; i++)
             libmpq__store_le16(raw + i * 2, a->mpq_block_ex[i].offset_high);
-        if (libmpq__writer_write_at(a->fp, a->mpq_header_ex.extended_offset, raw, bytes) < 0) {
+        if (write_at(a->fp, a->mpq_header_ex.extended_offset, raw, bytes) < 0) {
             free(raw);
             return LIBMPQ_ERROR_WRITE;
         }
@@ -815,8 +815,7 @@ libmpq__writer_finalize_archive(mpq_archive_s *a)
             header + 42, (uint16_t)(((uint64_t)a->mpq_header.block_table_offset) >> 32)
         );
     }
-    if (libmpq__writer_write_at(a->fp, 0, header, a->mpq_header.header_size) < 0 ||
-        fflush(a->fp) != 0)
+    if (write_at(a->fp, 0, header, a->mpq_header.header_size) < 0 || fflush(a->fp) != 0)
         return LIBMPQ_ERROR_WRITE;
     a->write_finalized = TRUE;
     return LIBMPQ_SUCCESS;
@@ -826,5 +825,5 @@ libmpq__writer_finalize_archive(mpq_archive_s *a)
 int32_t
 libmpq__writer_finalize(mpq_archive_s *a)
 {
-    return libmpq__writer_finalize_archive(a);
+    return finalize_archive(a);
 }

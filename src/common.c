@@ -31,7 +31,7 @@
 
 /* Hash an MPQ table name or file name with one of the Storm hash table offsets. */
 uint32_t
-libmpq__hash_string(const char *key, uint32_t offset)
+libmpq__common_hash_string(const char *key, uint32_t offset)
 {
 
     /* Storm hashing starts with fixed seed values for every input string. */
@@ -51,7 +51,7 @@ libmpq__hash_string(const char *key, uint32_t offset)
 
 /* Encrypt a block in place using the MPQ block cipher and the supplied seed. */
 int32_t
-libmpq__encrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
+libmpq__common_encrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
 {
 
     /* The cipher updates both seeds for every 32-bit word. */
@@ -76,7 +76,7 @@ libmpq__encrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
 
 /* Decrypt a block in place using the MPQ block cipher and the supplied seed. */
 int32_t
-libmpq__decrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
+libmpq__common_decrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
 {
 
     /* The cipher updates both seeds for every 32-bit word. */
@@ -99,7 +99,9 @@ libmpq__decrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
 
 /* Recover a file seed by matching StormLib's small set of known file signatures. */
 int32_t
-libmpq__detect_file_key(const uint8_t *in_buf, uint32_t in_size, uint32_t file_size, uint32_t *key)
+libmpq__common_detect_file_key(
+    const uint8_t *in_buf, uint32_t in_size, uint32_t file_size, uint32_t *key
+)
 {
     static const uint32_t wave_magic = 0x46464952; /* "RIFF" */
     static const uint32_t exe_magic = 0x00905A4D;  /* "MZ" and DOS stub signature */
@@ -152,7 +154,7 @@ libmpq__detect_file_key(const uint8_t *in_buf, uint32_t in_size, uint32_t file_s
 
 /* Recover the per-file block-table seed from the first encrypted block offsets. */
 int32_t
-libmpq__derive_block_table_seed(
+libmpq__common_derive_block_table_seed(
     uint8_t *in_buf, uint32_t in_size, uint32_t block_size, uint32_t *key
 )
 {
@@ -214,7 +216,7 @@ libmpq__derive_block_table_seed(
 
 /* Decompress one archive block according to its MPQ compression flags. */
 int32_t
-libmpq__decompress_block(
+libmpq__common_decompress_block(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size,
     uint32_t compression_type
 )
@@ -243,7 +245,8 @@ libmpq__decompress_block(
             if (in_size >= out_size) {
                 memcpy(out_buf, in_buf, out_size);
                 tb = out_size;
-            } else if ((tb = libmpq__decompress_pkzip(in_buf, in_size, out_buf, out_size)) < 0) {
+            } else if ((tb = libmpq__extract_decompress_pkzip(in_buf, in_size, out_buf, out_size)) <
+                       0) {
                 return tb;
             }
         } else if (in_size < out_size) {
@@ -252,7 +255,8 @@ libmpq__decompress_block(
             if (compression_type == LIBMPQ_FLAG_COMPRESS_MULTI) {
 
                 /* Storm.dll 1.0.9 accepts an unused archive path compatibility parameter. */
-                if ((tb = libmpq__decompress_multi(in_buf, in_size, out_buf, out_size)) < 0) {
+                if ((tb = libmpq__extract_decompress_multi(in_buf, in_size, out_buf, out_size)) <
+                    0) {
                     return tb;
                 }
             }

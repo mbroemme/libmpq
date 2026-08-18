@@ -37,13 +37,13 @@ typedef struct
 
 int32_t libmpq__wave_probe_pcm16(const uint8_t *data, uint32_t size, libmpq_wave_info_s *info);
 
-int32_t libmpq__compress_wave(
+int32_t libmpq__wave_compress(
     const uint8_t *in_buf, uint32_t in_size, uint8_t **out_buf, uint32_t *out_size,
     uint32_t channels
 );
 
 /* Decompress mono or stereo MPQ WAVE predictor data into PCM bytes. */
-int32_t libmpq__do_decompress_wave(
+int32_t libmpq__wave_decompress(
     uint8_t *out_buf, int32_t out_length, uint8_t *in_buf, int32_t in_length, int32_t channels
 );
 
