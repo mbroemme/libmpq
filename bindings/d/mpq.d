@@ -51,7 +51,7 @@ extern struct mpq_archive_s;
 extern struct mpq_writer_s;
 
 struct mpq_archive_create_options_s { uint version; uint max_files; uint sector_size; uint flags; }
-struct mpq_file_create_options_s { uint flags; uint compression_first; uint compression_next; ushort locale; ushort platform; }
+struct mpq_file_options_s { uint flags; uint compression_first; uint compression_next; ushort locale; ushort platform; }
 
 extern(C) {
 
@@ -61,11 +61,11 @@ char *libmpq__version();
 /* Open an MPQ archive from a file path and optional embedded archive offset. */
 int libmpq__archive_open(mpq_archive_s **mpq_archive, char *mpq_filename, off_t archive_offset);
 int libmpq__archive_create(mpq_archive_s **mpq_archive, char *mpq_filename, mpq_archive_create_options_s *options);
-int libmpq__file_begin(mpq_archive_s *archive, char *filename, off_t unpacked_size, mpq_file_create_options_s *options, mpq_writer_s **writer);
+int libmpq__file_begin(mpq_archive_s *archive, char *filename, off_t unpacked_size, mpq_file_options_s *options, mpq_writer_s **writer);
 int libmpq__file_write(mpq_writer_s *writer, ubyte *buffer, off_t size);
 int libmpq__file_finish(mpq_writer_s *writer);
-int libmpq__file_add(mpq_archive_s *archive, char *filename, ubyte *buffer, off_t size, mpq_file_create_options_s *options);
-int libmpq__file_add_path(mpq_archive_s *archive, char *filename, char *source_path, mpq_file_create_options_s *options);
+int libmpq__file_add(mpq_archive_s *archive, char *filename, ubyte *buffer, off_t size, mpq_file_options_s *options);
+int libmpq__file_add_path(mpq_archive_s *archive, char *filename, char *source_path, mpq_file_options_s *options);
 
 /* Clone an archive using an independent stream and private decoded state. */
 int libmpq__archive_clone(mpq_archive_s **clone, mpq_archive_s *source);

@@ -455,7 +455,7 @@ finalize_archive(mpq_archive_s *a)
             list[total++] = '\n';
         }
         {
-            mpq_file_create_options_s o = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
+            mpq_file_options_s o = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
             int32_t r =
                 libmpq__writer_file_add(a, LIBMPQ_LISTFILE_NAME, list, (libmpq__off_t)total, &o);
             free(list);
@@ -675,11 +675,11 @@ libmpq__writer_archive_create(
  * and reserves an offset table when compressed multi-sector storage requires it. */
 int32_t
 libmpq__writer_file_begin(
-    mpq_archive_s *a, const char *name, libmpq__off_t size,
-    const mpq_file_create_options_s *options, mpq_writer_s **out
+    mpq_archive_s *a, const char *name, libmpq__off_t size, const mpq_file_options_s *options,
+    mpq_writer_s **out
 )
 {
-    mpq_file_create_options_s defaults = { 0, 0, 0, 0, 0 };
+    mpq_file_options_s defaults = { 0, 0, 0, 0, 0 };
     mpq_writer_s *w;
     if (!a || !a->write_mode || !name || !out || size < 0 || a->write_current)
         return LIBMPQ_ERROR_FORMAT;
@@ -842,7 +842,7 @@ libmpq__writer_file_finish(mpq_writer_s *w)
 int32_t
 libmpq__writer_file_add(
     mpq_archive_s *a, const char *name, const uint8_t *data, libmpq__off_t size,
-    const mpq_file_create_options_s *options
+    const mpq_file_options_s *options
 )
 {
     mpq_writer_s *w;
@@ -866,7 +866,7 @@ libmpq__writer_file_add(
  * its declared size while reading bounded chunks from disk. */
 int32_t
 libmpq__writer_file_add_path(
-    mpq_archive_s *a, const char *name, const char *source, const mpq_file_create_options_s *options
+    mpq_archive_s *a, const char *name, const char *source, const mpq_file_options_s *options
 )
 {
     FILE *fp;

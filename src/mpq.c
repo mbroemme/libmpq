@@ -91,8 +91,8 @@ libmpq__archive_create(
  * an error closes the stream. */
 int32_t
 libmpq__file_begin(
-    mpq_archive_s *archive, const char *name, libmpq__off_t size,
-    const mpq_file_create_options_s *options, mpq_writer_s **out
+    mpq_archive_s *archive, const char *name, libmpq__off_t size, const mpq_file_options_s *options,
+    mpq_writer_s **out
 )
 {
     return libmpq__writer_file_begin(archive, name, size, options, out);
@@ -122,7 +122,7 @@ libmpq__file_finish(mpq_writer_s *writer)
 int32_t
 libmpq__file_add(
     mpq_archive_s *archive, const char *name, const uint8_t *data, libmpq__off_t size,
-    const mpq_file_create_options_s *options
+    const mpq_file_options_s *options
 )
 {
     return libmpq__writer_file_add(archive, name, data, size, options);
@@ -133,8 +133,7 @@ libmpq__file_add(
  * file into memory before archive creation begins. */
 int32_t
 libmpq__file_add_path(
-    mpq_archive_s *archive, const char *name, const char *source,
-    const mpq_file_create_options_s *options
+    mpq_archive_s *archive, const char *name, const char *source, const mpq_file_options_s *options
 )
 {
     return libmpq__writer_file_add_path(archive, name, source, options);
