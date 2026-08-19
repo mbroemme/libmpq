@@ -385,6 +385,10 @@ stream_finish(mpq_writer_s *writer)
     } else {
         total = writer->packed_total;
     }
+
+    /* Restore the append position after rewriting the table at the file start. */
+    if (fseeko(archive->fp, (off_t)(writer->payload_offset + total), SEEK_SET) < 0)
+        return LIBMPQ_ERROR_SEEK;
     if (writer->payload_offset > UINT32_MAX || total > UINT32_MAX || writer->expected > UINT32_MAX)
         return archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE
                    ? LIBMPQ_ERROR_SIZE
