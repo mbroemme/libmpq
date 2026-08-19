@@ -66,6 +66,7 @@ bindings/d/Makefile
 bindings/python/Makefile
 docs/man1/Makefile
 docs/man3/Makefile
+tests/Makefile
 tools/Makefile
 ])
 

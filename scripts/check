@@ -47,7 +47,7 @@ fi
 
 printf 'Checking C formatting...\n'
 mapfile -t sources < <(
-	git ls-files 'src/*.c' 'src/*.h' 'include/libmpq/*.h' |
+	git ls-files 'src/*.c' 'src/*.h' 'include/libmpq/*.h' 'tests/*.c' 'tests/*.h' |
 	while IFS= read -r source; do
 		if [[ -f "${source}" ]]; then
 			printf '%s\n' "${source}"

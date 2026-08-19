@@ -9,7 +9,7 @@ status=0
 
 printf 'Checking C identifier casing...\n'
 if rg -n --glob '*.c' --glob '*.h' \
-	'\b[a-z][a-z0-9_]*[A-Z][A-Za-z0-9_]*\b' src include tools |
+	'\b[a-z][a-z0-9_]*[A-Z][A-Za-z0-9_]*\b' src include tools tests |
 	rg -v 'uInt|inflateInit|inflateEnd|deflateInit|deflateEnd|MPQ\\x1A'; then
 	printf 'Camel-case C identifiers found.\n' >&2
 	status=1
@@ -17,7 +17,7 @@ fi
 
 printf 'Checking opaque generated identifier suffixes...\n'
 if rg -n --glob '*.c' --glob '*.h' \
-	'\b[A-Za-z_][A-Za-z0-9_]*_[0-9A-Fa-f]{6,}\b' src include tools; then
+	'\b[A-Za-z_][A-Za-z0-9_]*_[0-9A-Fa-f]{6,}\b' src include tools tests; then
 	printf 'Opaque hexadecimal C identifiers found.\n' >&2
 	status=1
 fi

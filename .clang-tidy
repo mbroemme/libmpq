@@ -22,7 +22,7 @@ Checks: >
 WarningsAsErrors: '*'
 
 # Report diagnostics only from headers owned by this project.
-HeaderFilterRegex: '(^|.*/)((src/[^/]+\.[ch])|(include/libmpq/[^/]+\.h)|(tools/[^/]+\.c))$'
+HeaderFilterRegex: '(^|.*/)((src/[^/]+\.[ch])|(include/libmpq/[^/]+\.h)|(tools/[^/]+\.c)|(tests/[^/]+\.[ch]))$'
 SystemHeaders: false
 
 CheckOptions:
