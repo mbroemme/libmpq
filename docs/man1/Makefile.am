@@ -2,5 +2,5 @@
 EXTRA_DIST			= $(man_MANS)
 
 # Manual pages for installed command-line utilities.
-man_MANS =			\
+man_MANS = \
 	libmpq-config.1
