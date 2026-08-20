@@ -1,6 +1,6 @@
 /* Shared deterministic helpers for the libmpq C regression programs. */
-#ifndef LIBMPQ_TEST_H
-#define LIBMPQ_TEST_H
+#ifndef LIBMPQ_TEST_HELPER_H
+#define LIBMPQ_TEST_HELPER_H
 
 #include <libmpq/mpq.h>
 
