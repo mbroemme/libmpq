@@ -39,6 +39,11 @@ typedef struct
 /* Validate a RIFF/WAVE PCM16 payload and return its channel/data boundaries. */
 int32_t libmpq__wave_probe_pcm16(const uint8_t *data, uint32_t size, libmpq_wave_info_s *info);
 
+/* Validate a RIFF/WAVE PCM16 prefix against the complete declared file size. */
+int32_t libmpq__wave_probe_pcm16_prefix(
+    const uint8_t *data, uint32_t prefix_size, uint64_t file_size, libmpq_wave_info_s *info
+);
+
 /* Encode complete PCM16 mono or stereo samples as MPQ ADPCM payload bytes. */
 int32_t libmpq__wave_compress(
     const uint8_t *in_buf, uint32_t in_size, uint8_t **out_buf, uint32_t *out_size,

@@ -132,13 +132,17 @@ stream_flush_sector(mpq_writer_s *writer)
          (LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO))) {
         libmpq_wave_info_s wave;
 
-        /* Keep an explicit caller-selected channel mask when the first sector
-         * contains only a prefix of the complete RIFF data chunk. */
-        if (libmpq__wave_probe_pcm16(writer->data, writer->data_size, &wave) == 0) {
+        /* Validate the complete WAVE geometry before preserving lossy output. */
+        if (libmpq__wave_probe_pcm16_prefix(
+                writer->data, writer->data_size, (uint64_t)writer->expected, &wave
+            ) == 0) {
             writer->options.compression_next &=
                 ~(LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO);
             writer->options.compression_next |=
                 wave.channels == 1 ? LIBMPQ_COMPRESSION_WAVE_MONO : LIBMPQ_COMPRESSION_WAVE_STEREO;
+        } else {
+            free(packed);
+            return LIBMPQ_ERROR_FORMAT;
         }
     }
     writer->sector_index++;

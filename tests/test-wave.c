@@ -129,7 +129,8 @@ test_adpcm_archive(void)
     size_t wave_size;
     size_t output_size;
     mpq_archive_s *archive = NULL;
-    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS, 0, LIBMPQ_COMPRESSION_WAVE_MONO, 0,
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS, 0,
+                                   LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_HUFFMAN, 0,
                                    0 };
     uint32_t number;
     uint32_t blocks;
@@ -174,6 +175,31 @@ test_adpcm_archive(void)
     return 0;
 }
 
+/* Reject a lossy request when the declared WAVE data exceeds the file. */
+static int
+test_adpcm_rejects_invalid_wave(void)
+{
+    char path[128];
+    uint8_t *wave;
+    size_t wave_size;
+    mpq_archive_s *archive = NULL;
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS, 0, LIBMPQ_COMPRESSION_WAVE_MONO, 0,
+                                   0 };
+
+    TEST_CHECK(test_temp_path(path, sizeof(path), "wave-invalid") == 0);
+    wave = make_wave(7000, 1, &wave_size);
+    TEST_CHECK(wave != NULL);
+    put_le32(wave + 40, 20000);
+    TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_ONE, 0) == 0);
+    TEST_CHECK(
+        libmpq__file_add(archive, "invalid.wav", wave, wave_size, &options) == LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    free(wave);
+    remove(path);
+    return 0;
+}
+
 /* Store and extract empty, sector-boundary, XML, WAVE, and nested payloads. */
 int
 main(void)
@@ -197,6 +223,7 @@ main(void)
     TEST_CHECK(test_adpcm_codec(1) == 0);
     TEST_CHECK(test_adpcm_codec(2) == 0);
     TEST_CHECK(test_adpcm_archive() == 0);
+    TEST_CHECK(test_adpcm_rejects_invalid_wave() == 0);
     TEST_CHECK(test_temp_path(inner_path, sizeof(inner_path), "wave-inner") == 0);
     TEST_CHECK(test_temp_path(extracted_path, sizeof(extracted_path), "wave-extracted") == 0);
     test_payload(exact, sizeof(exact), 7);

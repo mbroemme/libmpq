@@ -130,6 +130,55 @@ libmpq__wave_probe_pcm16(const uint8_t *data, uint32_t size, libmpq_wave_info_s 
     return 0;
 }
 
+/* Validate a RIFF/WAVE prefix when later PCM bytes are not buffered yet.
+ * The available prefix must contain the format and data chunk headers, while
+ * the declared data range must fit within the complete writer file size. */
+int32_t
+libmpq__wave_probe_pcm16_prefix(
+    const uint8_t *data, uint32_t prefix_size, uint64_t file_size, libmpq_wave_info_s *info
+)
+{
+    uint32_t pos = 12;
+    uint16_t channels = 0;
+    uint16_t format = 0;
+    uint16_t bits = 0;
+    uint32_t data_offset = 0;
+    uint32_t data_size = 0;
+
+    if (data == NULL || info == NULL || prefix_size < 12 || file_size < prefix_size ||
+        memcmp(data, "RIFF", 4) != 0 || memcmp(data + 8, "WAVE", 4) != 0)
+        return LIBMPQ_ERROR_FORMAT;
+    while (pos + 8 <= prefix_size) {
+        uint32_t chunk_size = libmpq__load_le32(data + pos + 4);
+        uint64_t next = (uint64_t)pos + 8 + chunk_size + (chunk_size & 1u);
+        if (next < pos || next > file_size)
+            return LIBMPQ_ERROR_FORMAT;
+        if (memcmp(data + pos, "fmt ", 4) == 0 && chunk_size >= 16) {
+            if ((uint64_t)pos + 24 > prefix_size)
+                return LIBMPQ_ERROR_FORMAT;
+            format = libmpq__load_le16(data + pos + 8);
+            channels = libmpq__load_le16(data + pos + 10);
+            bits = libmpq__load_le16(data + pos + 22);
+        } else if (memcmp(data + pos, "data", 4) == 0) {
+            data_offset = pos + 8;
+            data_size = chunk_size;
+            if ((uint64_t)data_offset + data_size > file_size)
+                return LIBMPQ_ERROR_FORMAT;
+            break;
+        }
+        if (next > prefix_size)
+            break;
+        pos = (uint32_t)next;
+    }
+    if (format != 1 || (channels != 1 && channels != 2) || bits != 16 || data_offset == 0 ||
+        data_offset > prefix_size || (data_size % (channels * 2)) != 0)
+        return LIBMPQ_ERROR_FORMAT;
+    info->channels = channels;
+    info->data_offset = data_offset;
+    info->data_size = data_size;
+    return 0;
+}
+
 /* Encode one complete PCM sector using the MPQ mono/stereo ADPCM format.
  * The first sample of each channel seeds the predictor header, and subsequent
  * interleaved samples are reduced to adaptive six-bit delta codes. */

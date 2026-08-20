@@ -490,10 +490,6 @@ libmpq__compression_encode_sector(
                 return LIBMPQ_ERROR_MALLOC;
             }
             memcpy(saved, data, before);
-            if (masks[i] == LIBMPQ_COMPRESSION_HUFFMAN) {
-                free(saved);
-                continue;
-            }
             result = compression_stage(&data, &size, masks[i]);
             if (result < 0) {
                 free(saved);

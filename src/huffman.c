@@ -253,8 +253,7 @@ huffman_encode_symbol(struct huffman_output_stream_s *os, struct huffman_tree_it
     uint32_t count = 0;
     struct huffman_tree_item_s *parent;
     for (parent = item->parent; parent != NULL; parent = parent->parent) {
-        if (parent->child->prev == item)
-            bits |= 1u << count;
+        bits = (bits << 1) | (parent->child->prev == item ? 1u : 0u);
         item = parent;
         if (++count == 32)
             return LIBMPQ_ERROR_FORMAT;
@@ -1081,6 +1080,10 @@ libmpq__huffman_encode(
                 return LIBMPQ_ERROR_SIZE;
             if (huffman_insert_literal(ht, value) < 0)
                 return LIBMPQ_ERROR_FORMAT;
+
+            /* The decoder updates a newly introduced literal once while
+             * splitting the escape node and once again after emitting it. */
+            libmpq__huffman_update_weights(ht, ht->symbol_nodes[value]);
         } else if (huffman_encode_symbol(os, item) < 0) {
             return LIBMPQ_ERROR_SIZE;
         } else {
