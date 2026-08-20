@@ -12,6 +12,7 @@ check_PROGRAMS = \
 	test-crypto \
 	test-huffman \
 	test-endian \
+	test-fixtures \
 	test-mpq \
 	test-pkware \
 	test-reader \
@@ -25,6 +26,7 @@ test_compression_SOURCES = test-compression.c $(COMMON_SOURCES)
 test_crypto_SOURCES = test-crypto.c $(COMMON_SOURCES)
 test_huffman_SOURCES = test-huffman.c $(COMMON_SOURCES)
 test_endian_SOURCES = test-endian.c ../src/endian.c $(COMMON_SOURCES)
+test_fixtures_SOURCES = test-fixtures.c $(COMMON_SOURCES)
 test_mpq_SOURCES = test-mpq.c $(COMMON_SOURCES)
 test_pkware_SOURCES = test-pkware.c $(COMMON_SOURCES)
 test_reader_SOURCES = test-reader.c $(COMMON_SOURCES)
@@ -34,6 +36,7 @@ test_writer_SOURCES = test-writer.c $(COMMON_SOURCES)
 # Fixture-dependent tests resolve archives from the source tree, including
 # when Automake runs them from a separate VPATH or distcheck build directory.
 test_huffman_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_fixtures_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_pkware_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_reader_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 
@@ -50,6 +53,7 @@ EXTRA_DIST = \
 	test-reader.c \
 	test-wave.c \
 	test-writer.c \
+	test-fixtures.c \
 	fixtures/README.md \
 	fixtures/mpq-v1-features.mpq \
 	fixtures/mpq-v2-features.mpq
