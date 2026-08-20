@@ -23,7 +23,7 @@ TESTS = $(check_PROGRAMS)
 # Compile shared assertions and deterministic-data helpers into every test.
 COMMON_SOURCES = helper.c helper.h
 test_compression_SOURCES = test-compression.c $(COMMON_SOURCES)
-test_crypto_SOURCES = test-crypto.c $(COMMON_SOURCES)
+test_crypto_SOURCES = test-crypto.c ../src/crypto.c ../src/endian.c $(COMMON_SOURCES)
 test_huffman_SOURCES = test-huffman.c $(COMMON_SOURCES)
 test_endian_SOURCES = test-endian.c ../src/endian.c $(COMMON_SOURCES)
 test_fixtures_SOURCES = test-fixtures.c $(COMMON_SOURCES)
