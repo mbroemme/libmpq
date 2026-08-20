@@ -182,9 +182,6 @@ cc -std=c99 -Wall -Wextra mpq-example.c -o mpq-example \
   $(libmpq-config --cflags) $(libmpq-config --libs)
 ```
 
-Pass `-lz -lbz2` explicitly when linking in environments that do not resolve
-the shared library's transitive dependencies automatically.
-
 ## Bindings
 
 The source tree contains bindings for the public C API:
