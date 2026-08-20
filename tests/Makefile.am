@@ -30,7 +30,7 @@ test_fixtures_SOURCES = test-fixtures.c $(COMMON_SOURCES)
 test_mpq_SOURCES = test-mpq.c $(COMMON_SOURCES)
 test_pkware_SOURCES = test-pkware.c $(COMMON_SOURCES)
 test_reader_SOURCES = test-reader.c $(COMMON_SOURCES)
-test_wave_SOURCES = test-wave.c $(COMMON_SOURCES)
+test_wave_SOURCES = test-wave.c ../src/wave.c ../src/endian.c $(COMMON_SOURCES)
 test_writer_SOURCES = test-writer.c $(COMMON_SOURCES)
 
 # Fixture-dependent tests resolve archives from the source tree, including

@@ -490,9 +490,7 @@ libmpq__compression_encode_sector(
                 return LIBMPQ_ERROR_MALLOC;
             }
             memcpy(saved, data, before);
-            if (masks[i] == LIBMPQ_COMPRESSION_WAVE_MONO ||
-                masks[i] == LIBMPQ_COMPRESSION_WAVE_STEREO ||
-                masks[i] == LIBMPQ_COMPRESSION_HUFFMAN) {
+            if (masks[i] == LIBMPQ_COMPRESSION_HUFFMAN) {
                 free(saved);
                 continue;
             }
