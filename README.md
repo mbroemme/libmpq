@@ -191,11 +191,12 @@ The source tree contains bindings for the public C API:
 
 * `bindings/python/mpq.py` provides a Python 2 and 3 ctypes wrapper and
   buffered archive/file readers.
-* `bindings/d/mpq.d` provides D declarations and helper classes for Phobos.
+* `bindings/d/mpq.d` provides the `libmpq.mpq` D module with declarations and
+  helper classes for Phobos.
 
 The Python binding is included automatically when the required interpreter is
-found during configuration. The D binding is installed under the configured D
-include directory.
+found during configuration. The D binding is installed as
+`libmpq/mpq.d`, alongside the C header; import it with `import libmpq.mpq;`.
 
 ## Documentation
 

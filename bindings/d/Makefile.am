@@ -1,3 +1,3 @@
-# Install the D binding header under the default D include directory.
-libmpq_includedir		= $(includedir)/d
-libmpq_include_HEADERS		= mpq.d
+# Install the D module in the same public namespace as the C header.
+libmpq_includedir = $(includedir)/libmpq
+libmpq_include_HEADERS = mpq.d

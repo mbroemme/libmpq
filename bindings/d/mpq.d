@@ -20,7 +20,7 @@
  *  Tango are welcome.
  */
 
-module mpq;
+module libmpq.mpq;
 
 /* the following pragma does not work on DMD/Linux, generates a warning on
  * GDC/Linux and has not been tested on Windows. Commented out for now. */
