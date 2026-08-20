@@ -1,6 +1,6 @@
 /* Exercise RIFF/WAVE-shaped payload handling and boundary payloads. */
+#include "../src/wave.h"
 #include "helper.h"
-#include "wave.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,6 +44,8 @@ make_pcm(uint8_t *pcm, size_t samples, uint16_t channels)
 static uint8_t *
 make_wave(size_t samples, uint16_t channels, size_t *size)
 {
+    static const uint8_t riff_wave_fmt[] = { 'W', 'A', 'V', 'E', 'f', 'm', 't', ' ' };
+    static const uint8_t data_tag[] = { 'd', 'a', 't', 'a' };
     uint8_t *wave;
     size_t pcm_size = samples * channels * 2;
     *size = 44 + pcm_size;
@@ -52,7 +54,7 @@ make_wave(size_t samples, uint16_t channels, size_t *size)
         return NULL;
     memcpy(wave, "RIFF", 4);
     put_le32(wave + 4, (uint32_t)(*size - 8));
-    memcpy(wave + 8, "WAVEfmt ", 8);
+    memcpy(wave + 8, riff_wave_fmt, sizeof(riff_wave_fmt));
     put_le32(wave + 16, 16);
     put_le16(wave + 20, 1);
     put_le16(wave + 22, channels);
@@ -60,7 +62,7 @@ make_wave(size_t samples, uint16_t channels, size_t *size)
     put_le32(wave + 28, 22050 * channels * 2);
     put_le16(wave + 32, (uint16_t)(channels * 2));
     put_le16(wave + 34, 16);
-    memcpy(wave + 36, "data", 4);
+    memcpy(wave + 36, data_tag, sizeof(data_tag));
     put_le32(wave + 40, (uint32_t)pcm_size);
     make_pcm(wave + 44, samples, channels);
     return wave;
@@ -83,23 +85,28 @@ test_adpcm_codec(uint16_t channels)
     int32_t maximum_error = 0;
     size_t i;
 
-    TEST_CHECK(pcm != NULL && decoded != NULL);
+    if (pcm == NULL || decoded == NULL) {
+        test_failure(__FILE__, __LINE__, "pcm != NULL && decoded != NULL");
+        free(decoded);
+        free(pcm);
+        return 1;
+    }
     make_pcm(pcm, samples, channels);
-    TEST_CHECK(
-        libmpq__wave_compress(pcm, (uint32_t)pcm_size, &encoded, &encoded_size, channels) == 0
-    );
-    TEST_CHECK(
-        libmpq__wave_compress(
+    if (libmpq__wave_compress(pcm, (uint32_t)pcm_size, &encoded, &encoded_size, channels) != 0)
+        goto failure;
+    if (libmpq__wave_compress(
             pcm, (uint32_t)pcm_size, &encoded_again, &encoded_again_size, channels
-        ) == 0
-    );
-    TEST_CHECK(encoded_size == encoded_again_size);
-    TEST_CHECK(memcmp(encoded, encoded_again, encoded_size) == 0);
-    TEST_CHECK(encoded_size < pcm_size);
+        ) != 0)
+        goto failure;
+    if (encoded_size != encoded_again_size || memcmp(encoded, encoded_again, encoded_size) != 0)
+        goto failure;
+    if (encoded_size >= pcm_size)
+        goto failure;
     decoded_size = libmpq__wave_decompress(
         decoded, (int32_t)pcm_size, encoded, (int32_t)encoded_size, channels
     );
-    TEST_CHECK(decoded_size == (int32_t)pcm_size);
+    if (decoded_size != (int32_t)pcm_size)
+        goto failure;
     for (i = 0; i < pcm_size / 2; ++i) {
         int32_t original = (int16_t)(pcm[i * 2] | ((uint16_t)pcm[i * 2 + 1] << 8));
         int32_t result = (int16_t)(decoded[i * 2] | ((uint16_t)decoded[i * 2 + 1] << 8));
@@ -110,13 +117,21 @@ test_adpcm_codec(uint16_t channels)
         if (error > maximum_error)
             maximum_error = error;
     }
-    TEST_CHECK(absolute_error / (pcm_size / 2) < 6000);
-    TEST_CHECK(maximum_error < 16000);
+    if (absolute_error / (pcm_size / 2) >= 6000 || maximum_error >= 16000)
+        goto failure;
     free(decoded);
     free(encoded_again);
     free(encoded);
     free(pcm);
     return 0;
+
+failure:
+    test_failure(__FILE__, __LINE__, "ADPCM round trip");
+    free(decoded);
+    free(encoded_again);
+    free(encoded);
+    free(pcm);
+    return 1;
 }
 
 /* Prove that archive sectors after the lossless WAVE header use ADPCM. */
@@ -204,6 +219,9 @@ test_adpcm_rejects_invalid_wave(void)
 int
 main(void)
 {
+    static const uint8_t riff_tag[] = { 'R', 'I', 'F', 'F' };
+    static const uint8_t riff_wave_fmt[] = { 'W', 'A', 'V', 'E', 'f', 'm', 't', ' ' };
+    static const uint8_t data_tag[] = { 'd', 'a', 't', 'a' };
     char path[128];
     char inner_path[128];
     char extracted_path[128];
@@ -229,8 +247,8 @@ main(void)
     test_payload(exact, sizeof(exact), 7);
     test_payload(partial, sizeof(partial), 8);
     memset(wave, 0, sizeof(wave));
-    memcpy(wave, "RIFF", 4);
-    memcpy(wave + 8, "WAVEfmt ", 8);
+    memcpy(wave, riff_tag, sizeof(riff_tag));
+    memcpy(wave + 8, riff_wave_fmt, sizeof(riff_wave_fmt));
     wave[16] = 16;
     wave[20] = 1;
     wave[22] = 1;
@@ -238,7 +256,7 @@ main(void)
     wave[25] = 0xac;
     wave[32] = 2;
     wave[34] = 16;
-    memcpy(wave + 36, "data", 4);
+    memcpy(wave + 36, data_tag, sizeof(data_tag));
     wave[40] = 16;
     TEST_CHECK(test_add_archive(&inner_archive, inner_path, 0, 0) == 0);
     TEST_CHECK(

@@ -43,7 +43,7 @@ test_encrypted_compressed_file(const char *path)
 {
     uint8_t payload[12000];
     uint8_t *archive_data = NULL;
-    uint8_t *table;
+    uint8_t *table = NULL;
     uint8_t *output = NULL;
     size_t archive_size;
     size_t output_size;
@@ -77,14 +77,19 @@ test_encrypted_compressed_file(const char *path)
     table = malloc(16);
     TEST_CHECK(table != NULL);
     memcpy(table, archive_data + offset, 16);
-    TEST_CHECK(libmpq__load_le32(table) != 16);
     key = libmpq__crypto_hash_string("encrypted-compressed.bin", 0x300);
-    TEST_CHECK(libmpq__crypto_decrypt_block(table, 16, key - 1) == 0);
-    TEST_CHECK(libmpq__load_le32(table) == 16);
-    TEST_CHECK(libmpq__load_le32(table + 4) > libmpq__load_le32(table));
-    TEST_CHECK(libmpq__load_le32(table + 12) > libmpq__load_le32(table + 8));
-    free(table);
-    free(archive_data);
+    {
+        int valid = libmpq__load_le32(table) != 16;
+        valid = valid && libmpq__crypto_decrypt_block(table, 16, key - 1) == 0;
+        valid = valid && libmpq__load_le32(table) == 16;
+        valid = valid && libmpq__load_le32(table + 4) > libmpq__load_le32(table);
+        valid = valid && libmpq__load_le32(table + 12) > libmpq__load_le32(table + 8);
+        free(table);
+        free(archive_data);
+        table = NULL;
+        archive_data = NULL;
+        TEST_CHECK(valid);
+    }
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     return 0;
 }
