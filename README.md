@@ -38,7 +38,7 @@ Huffman, zlib, PKWARE, bzip2, or mono/stereo WAVE ADPCM.
   and mono or stereo WAVE ADPCM payloads.
 * Generate an optional `(listfile)` entry during archive creation.
 * Provide a stable C API with installed headers under `include/libmpq`.
-* Provide optional Python 2 and 3 ctypes and D language bindings.
+* Provide optional Python 2 and 3 ctypes, D, and Java bindings.
 * Install API manual pages for the library functions and `libmpq-config`.
 
 ## Requirements
@@ -53,6 +53,11 @@ The build system requires:
 The Python binding is optional and is enabled when Python 2.4 or newer,
 including Python 3, is found. The D binding is installed as a D module and
 does not form part of the C library build.
+
+The Java binding is built independently with Maven and requires JDK 22 or
+newer. It uses the Foreign Function and Memory API, maps the stable public C
+API, and does not bundle native libraries. See `bindings/java/README.md` for
+library-loading and test instructions.
 
 ## Building
 

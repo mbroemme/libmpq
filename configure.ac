@@ -63,6 +63,7 @@ include/libmpq/Makefile
 src/Makefile
 bindings/Makefile
 bindings/d/Makefile
+bindings/java/Makefile
 bindings/python/Makefile
 docs/man1/Makefile
 docs/man3/Makefile

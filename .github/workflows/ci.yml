@@ -174,3 +174,59 @@ jobs:
         run: |
           set -euxo pipefail
           make check V=1
+
+  java:
+    name: Java bindings (JDK ${{ matrix.java }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['22', '25']
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install native build dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            build-essential \
+            ca-certificates \
+            libbz2-dev \
+            libtool \
+            maven \
+            zlib1g-dev
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+          cache-dependency-path: bindings/java/pom.xml
+
+      - name: Generate build system
+        run: |
+          set -euxo pipefail
+          sh autogen.sh
+
+      - name: Build native library
+        run: |
+          set -euxo pipefail
+          ./configure --prefix=/usr
+          make -j"$(nproc)" V=1
+
+      - name: Test Java bindings
+        run: |
+          set -euxo pipefail
+          mvn -f bindings/java/pom.xml test \
+            -Dorg.libmpq.library="${GITHUB_WORKSPACE}/src/.libs/libmpq.so" \
+            -Dlibmpq.sourceDir="${GITHUB_WORKSPACE}"
