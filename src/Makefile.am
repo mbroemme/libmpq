@@ -11,6 +11,7 @@ libmpq_la_LDFLAGS		= -version-info @LIBMPQ_ABI@
 GENERAL_SRCS = \
 	compression.c \
 	crypto.c \
+	endian.c \
 	huffman.c \
 	mpq.c \
 	pkware.c \
