@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Create one archive entry and verify its codec round trip. */
 static int
 round_trip(
     const char *path, const char *name, const uint8_t *payload, size_t size, uint32_t flags,
@@ -28,6 +29,7 @@ round_trip(
     return 0;
 }
 
+/* Exercise supported codec/encryption combinations and rejected masks. */
 int
 main(void)
 {

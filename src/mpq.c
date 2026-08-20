@@ -21,7 +21,8 @@
 #include "config.h"
 #endif
 
-#include "common.h"
+#include "compression.h"
+#include "crypto.h"
 #include "endian.h"
 #include "mpq-internal.h"
 #include "platform.h"
@@ -434,9 +435,9 @@ libmpq__file_imploded(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t
 void
 libmpq__file_hash(const char *filename, uint32_t *hash1, uint32_t *hash2, uint32_t *hash3)
 {
-    *hash1 = libmpq__common_hash_string(filename, 0x0);
-    *hash2 = libmpq__common_hash_string(filename, 0x100);
-    *hash3 = libmpq__common_hash_string(filename, 0x200);
+    *hash1 = libmpq__crypto_hash_string(filename, 0x0);
+    *hash2 = libmpq__crypto_hash_string(filename, 0x100);
+    *hash3 = libmpq__crypto_hash_string(filename, 0x200);
 }
 
 /* Resolve a precomputed MPQ file-name hash to a public file number.
@@ -642,7 +643,7 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
             LIBMPQ_FLAG_ENCRYPTED) {
             uint32_t seed;
 
-            if (libmpq__common_derive_block_table_seed(
+            if (libmpq__crypto_derive_block_table_seed(
                     packed_data, packed_size, mpq_archive->block_size, &seed
                 ) < 0) {
                 result = LIBMPQ_ERROR_DECRYPT;
@@ -651,7 +652,7 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
             mpq_archive->mpq_file[file_number]->seed = seed;
             mpq_archive->mpq_file[file_number]->seed_known = TRUE;
 
-            if (libmpq__common_decrypt_block(
+            if (libmpq__crypto_decrypt_block(
                     packed_data, packed_size, mpq_archive->mpq_file[file_number]->seed - 1
                 ) < 0) {
                 result = LIBMPQ_ERROR_DECRYPT;
@@ -741,7 +742,7 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
         }
 
         /* Raw encrypted payloads require signature-based key recovery instead. */
-        if (libmpq__common_detect_file_key(
+        if (libmpq__crypto_detect_file_key(
                 first_block, sizeof(first_block),
                 mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices]
                     .unpacked_size,
@@ -948,7 +949,7 @@ libmpq__block_read(
             return LIBMPQ_ERROR_DECRYPT;
         }
 
-        if (libmpq__common_decrypt_block(in_buf, (uint32_t)in_size, seed) < 0) {
+        if (libmpq__crypto_decrypt_block(in_buf, (uint32_t)in_size, seed) < 0) {
             if (!use_out_buf) {
                 free(in_buf);
             }
@@ -960,7 +961,7 @@ libmpq__block_read(
     if (compressed) {
 
         /* The payload's leading mask selects and orders its decompression stages. */
-        if ((tb = libmpq__common_decompress_block(
+        if ((tb = libmpq__compression_decompress_block(
                  in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_MULTI
              )) < 0) {
             if (!use_out_buf) {
@@ -974,7 +975,7 @@ libmpq__block_read(
     if (imploded) {
 
         /* Standalone PKWARE payloads use the legacy decoder without a mask byte. */
-        if ((tb = libmpq__common_decompress_block(
+        if ((tb = libmpq__compression_decompress_block(
                  in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_PKZIP
              )) < 0) {
             if (!use_out_buf) {
@@ -994,7 +995,7 @@ libmpq__block_read(
     if (!compressed && !imploded) {
 
         /* A raw block is copied only after encrypted and compressed paths are excluded. */
-        if ((tb = libmpq__common_decompress_block(
+        if ((tb = libmpq__compression_decompress_block(
                  in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_NONE
              )) < 0) {
             if (!use_out_buf) {

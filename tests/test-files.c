@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Exercise file lookup, metadata, hashing, and complete reads. */
 int
 main(void)
 {

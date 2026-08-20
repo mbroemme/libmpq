@@ -28,18 +28,43 @@
 
 #include <stdint.h>
 
-/* Initialize the Huffman tree for decompression. */
+/*
+ * Select the initial adaptive Huffman model. The value is passed to the tree
+ * initializer and is not itself serialized as an MPQ compression mask: zero
+ * selects the model used while decoding an archive stream, while one selects
+ * the corresponding encoder model.
+ */
+
+/* Initialize the adaptive tree for decoding compressed input. */
 #define LIBMPQ_HUFF_DECOMPRESS 0
+
+/* Initialize the adaptive tree for encoding uncompressed input. */
 #define LIBMPQ_HUFF_COMPRESS 1
 
-/* Convert the encoded pointer values used by the original Huffman layout. */
+/*
+ * Convert the encoded pointer values used by the original Huffman layout.
+ * The imported algorithm stores some linked-list references as either normal
+ * pointers or bitwise-complemented pointer values. PTR_NOT restores or
+ * creates the complemented representation, PTR_PTR preserves a normal
+ * pointer representation, and PTR_INT exposes the encoded value for the
+ * sign and sentinel tests used by the compatibility implementation.
+ */
 #define PTR_NOT(ptr) (struct huffman_tree_item_s *)(~(unsigned long)(ptr))
 #define PTR_PTR(ptr) ((struct huffman_tree_item_s *)(ptr))
 #define PTR_INT(ptr) (long)(ptr)
 
-/* Huffman linked-list update operations. */
-#define INSERT_ITEM 1  /* Insert a new item into the list. */
-#define SWITCH_ITEMS 2 /* Move an existing item inside the list. */
+/*
+ * Operations accepted by libmpq__huffman_insert_item(). The first operation
+ * links a newly allocated node into the adaptive frequency list; the second
+ * relocates an existing node after its weight changes. These values are
+ * internal operation codes and are not part of the serialized stream.
+ */
+
+/* Insert a new item into the adaptive frequency list. */
+#define INSERT_ITEM 1
+
+/* Move an existing item to its new frequency-list position. */
+#define SWITCH_ITEMS 2
 
 /* Bitstream cursor used by the adaptive Huffman decoder. */
 struct huffman_input_stream_s
@@ -99,46 +124,61 @@ struct huffman_tree_s
     uint8_t huffman_initial_weights[]; /* Initial weight table appended by layout. */
 };
 
-/* Insert or move an item inside the adaptive Huffman frequency list. */
+/*
+ * Insert or move item inside the adaptive Huffman frequency list. where is
+ * INSERT_ITEM for a new node or SWITCH_ITEMS for an existing node; item2 is
+ * the neighboring list item when required. The tree owns no heap storage for
+ * item and the operation preserves the encoded sentinel links in ht.
+ */
 void libmpq__huffman_insert_item(
     struct huffman_tree_s *ht, struct huffman_tree_item_s *item, uint32_t where,
     struct huffman_tree_item_s *item2
 );
 
-/* Remove an item from the adaptive Huffman frequency list. */
+/* Remove item from ht's frequency list without releasing its fixed-pool slot. */
 void libmpq__huffman_remove_item(struct huffman_tree_s *ht, struct huffman_tree_item_s *hi);
 
-/* Resolve the previous Huffman item, including encoded relative links. */
+/* Resolve a previous item from an encoded link and caller-supplied relative offset. */
 struct huffman_tree_item_s *
 libmpq__huffman_previous_item(struct huffman_tree_item_s *hi, long value);
 
-/* Read one bit from the Huffman input stream. */
+/* Consume and return one low-order bit, refilling the stream in LE words. */
 uint32_t libmpq__huffman_read_bit(struct huffman_input_stream_s *is);
 
-/* Peek at the next seven bits without consuming them. */
+/* Return the next seven low-order bits without advancing the input cursor. */
 uint32_t libmpq__huffman_peek_seven_bits(struct huffman_input_stream_s *is);
 
-/* Read one byte from the Huffman input stream. */
+/* Consume and return one low-order byte, refilling the bit accumulator as needed. */
 uint32_t libmpq__huffman_read_byte(struct huffman_input_stream_s *is);
 
-/* Allocate or recycle a Huffman tree item and move it to the front list. */
+/* Acquire a fixed-pool node, recycle an exhausted node when necessary, and link it. */
 struct huffman_tree_item_s *libmpq__huffman_acquire_item(struct huffman_tree_s *ht);
 
-/* Increase adaptive Huffman weights and reorder affected items. */
+/* Increase item and ancestor weights while restoring frequency-list order. */
 void libmpq__huffman_update_weights(struct huffman_tree_s *ht, struct huffman_tree_item_s *p_item);
 
-/* Initialize the adaptive Huffman tree and clear lookup tables. */
+/* Reset tree state, sentinels, node-pool cursors, and decoder cache for cmp. */
 void libmpq__huffman_tree_init(struct huffman_tree_s *ht, uint32_t cmp);
 
-/* Build the adaptive Huffman tree for the selected compression type. */
+/* Populate the adaptive tree from the initial weight table selected by cmp_type. */
 void libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type);
 
-/* Decode a Huffman bitstream into the caller-provided output buffer. */
+/*
+ * Decode input into out_buf until the requested byte count or end marker is
+ * reached. Buffers remain caller-owned; the return value is bytes written, or
+ * zero when the stream cannot produce a valid symbol sequence.
+ */
 int32_t libmpq__huffman_decode(
     struct huffman_tree_s *ht, struct huffman_input_stream_s *is, uint8_t *out_buf,
     uint32_t out_length
 );
 
+/*
+ * Encode in_buf into an MPQ adaptive-Huffman stream in os. The output stream
+ * must provide at least four bytes of capacity and remains caller-owned; the
+ * return value is bytes produced or a negative libmpq error on invalid input
+ * or insufficient capacity.
+ */
 int32_t libmpq__huffman_encode(
     struct huffman_tree_s *ht, struct huffman_output_stream_s *os, const uint8_t *in_buf,
     uint32_t in_length

@@ -28,6 +28,7 @@
 
 #include <stdint.h>
 
+/* Locations and size of the PCM data chunk in a validated RIFF/WAVE file. */
 typedef struct
 {
     uint16_t channels;
@@ -35,14 +36,16 @@ typedef struct
     uint32_t data_size;
 } libmpq_wave_info_s;
 
+/* Validate a RIFF/WAVE PCM16 payload and return its channel/data boundaries. */
 int32_t libmpq__wave_probe_pcm16(const uint8_t *data, uint32_t size, libmpq_wave_info_s *info);
 
+/* Encode complete PCM16 mono or stereo samples as MPQ ADPCM payload bytes. */
 int32_t libmpq__wave_compress(
     const uint8_t *in_buf, uint32_t in_size, uint8_t **out_buf, uint32_t *out_size,
     uint32_t channels
 );
 
-/* Decompress mono or stereo MPQ WAVE predictor data into PCM bytes. */
+/* Decode mono or stereo MPQ ADPCM predictor data into signed PCM16 bytes. */
 int32_t libmpq__wave_decompress(
     uint8_t *out_buf, int32_t out_length, uint8_t *in_buf, int32_t in_length, int32_t channels
 );

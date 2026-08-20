@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/* Exercise sector offset handles, block metadata, and block reads. */
 int
 main(void)
 {

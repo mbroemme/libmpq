@@ -23,15 +23,30 @@
 #include <libmpq/mpq.h>
 #include <stdint.h>
 
+/*
+ * Open and parse an archive at archive_offset. A negative offset enables the
+ * embedded-archive scan; otherwise the offset is interpreted as an absolute
+ * file position. On success the returned archive owns its FILE and metadata.
+ */
 int32_t libmpq__reader_archive_open_path(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset
 );
+
+/* Decode count serialized little-endian uint32 values into native storage. */
 void libmpq__reader_decode_uint32_table(uint32_t *table, const uint8_t *raw, uint32_t count);
+
+/* Validate that file_number addresses a populated file entry in the archive. */
 int32_t libmpq__reader_validate_file_number(mpq_archive_s *mpq_archive, uint32_t file_number);
+
+/* Return the number of sectors required by a file, or zero for an invalid file. */
 uint32_t libmpq__reader_count_file_blocks(mpq_archive_s *mpq_archive, uint32_t file_number);
+
+/* Validate both a file number and one of its sector indexes. */
 int32_t libmpq__reader_validate_block_number(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number
 );
+
+/* Resolve and, when necessary, recover the encryption seed for one file sector. */
 int32_t libmpq__reader_get_block_seed(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number, uint32_t *seed
 );

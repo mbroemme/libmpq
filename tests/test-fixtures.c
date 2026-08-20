@@ -34,6 +34,7 @@ static const fixture_entry entries[] = {
       "45a47477f2e70c65982c60f382681f3740a68d44c014b9cecb3df87df497f448" }
 };
 
+/* Verify one fixture archive and every listed extracted payload. */
 static int
 test_fixture(const char *path, uint32_t expected_version, const char *archive_hash)
 {
@@ -70,6 +71,7 @@ test_fixture(const char *path, uint32_t expected_version, const char *archive_ha
     return 0;
 }
 
+/* Run the tracked fixture checks for both supported archive versions. */
 int
 main(void)
 {

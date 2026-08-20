@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Create one deterministic archive and verify its bytes and extracted files. */
 static int
 create_one(const char *path, uint32_t version)
 {
@@ -60,6 +61,7 @@ create_one(const char *path, uint32_t version)
     return 0;
 }
 
+/* Exercise deterministic creation and streaming writer operations. */
 int
 main(void)
 {

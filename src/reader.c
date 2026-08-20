@@ -21,7 +21,7 @@
 #include "config.h"
 #endif
 
-#include "common.h"
+#include "crypto.h"
 #include "endian.h"
 #include "mpq-internal.h"
 #include "platform.h"
@@ -306,8 +306,8 @@ libmpq__reader_archive_open_path(
     }
 
     /* MPQ stores the hash table encrypted with the fixed "(hash table)" key. */
-    libmpq__common_decrypt_block(
-        table_data, (uint32_t)table_bytes, libmpq__common_hash_string("(hash table)", 0x300)
+    libmpq__crypto_decrypt_block(
+        table_data, (uint32_t)table_bytes, libmpq__crypto_hash_string("(hash table)", 0x300)
     );
     decode_mpq_hash_table(
         (*mpq_archive)->mpq_hash, table_data, (*mpq_archive)->mpq_header.hash_table_count
@@ -344,8 +344,8 @@ libmpq__reader_archive_open_path(
     }
 
     /* MPQ stores the block table encrypted with the fixed "(block table)" key. */
-    libmpq__common_decrypt_block(
-        table_data, (uint32_t)table_bytes, libmpq__common_hash_string("(block table)", 0x300)
+    libmpq__crypto_decrypt_block(
+        table_data, (uint32_t)table_bytes, libmpq__crypto_hash_string("(block table)", 0x300)
     );
     decode_mpq_block_table(
         (*mpq_archive)->mpq_block, table_data, (*mpq_archive)->mpq_header.block_table_count

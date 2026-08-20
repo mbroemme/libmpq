@@ -27,15 +27,40 @@
 
 #include <stdint.h>
 
-/* PKWARE compression modes stored in the compressed stream header. */
-#define LIBMPQ_PKZIP_CMP_BINARY 0 /* Binary literal mode. */
-#define LIBMPQ_PKZIP_CMP_ASCII 1  /* ASCII literal mode. */
+/*
+ * Literal coding modes stored in the two-byte PKWARE DCL stream header.
+ * Binary mode treats literals as arbitrary bytes and is the mode emitted by
+ * the libmpq compressor. ASCII mode applies the legacy text-oriented literal
+ * coding rules accepted by the decoder for compatibility with existing MPQ
+ * archives.
+ */
 
-/* PKWARE decoder status values returned by libmpq__pkzip_decompress(). */
+/* Encode and decode literals as arbitrary binary byte values. */
+#define LIBMPQ_PKZIP_CMP_BINARY 0
+
+/* Encode and decode literals using the legacy ASCII text mode. */
+#define LIBMPQ_PKZIP_CMP_ASCII 1
+
+/*
+ * Decoder status values returned by libmpq__pkzip_decompress(). Zero means
+ * that the stream reached its end marker successfully. Positive values
+ * identify malformed stream metadata, malformed compressed data, or an
+ * aborted callback transfer; callers must not interpret them as byte counts.
+ */
+
+/* The compressed stream was decoded successfully. */
 #define LIBMPQ_PKZIP_CMP_NO_ERROR 0
+
+/* The dictionary-size field is outside the supported 4-, 5-, or 6-bit range. */
 #define LIBMPQ_PKZIP_CMP_INV_DICTSIZE 1
+
+/* The literal coding mode is neither binary nor ASCII. */
 #define LIBMPQ_PKZIP_CMP_INV_MODE 2
+
+/* The compressed stream contains invalid or truncated data. */
 #define LIBMPQ_PKZIP_CMP_BAD_DATA 3
+
+/* A decoder input/output callback stopped the expansion before completion. */
 #define LIBMPQ_PKZIP_CMP_ABORT 4
 
 #include "pack_begin.h"
@@ -83,10 +108,19 @@ typedef struct
     int32_t max_out;  /* Maximum writable bytes in the output buffer. */
 } pkzip_data_s;
 
-/* Initialize PKWARE decoder state and expand the compressed stream. */
+/*
+ * Initialize the caller-provided decoder workspace and expand its callback
+ * stream. param supplies input/output callbacks and remains caller-owned;
+ * the result is a PKWARE status constant, not a byte count.
+ */
 uint32_t libmpq__pkzip_decompress(uint8_t *work_buf, void *param);
 
-/* Encode a valid binary PKWARE stream using the DCL literal and simple-run forms. */
+/*
+ * Encode binary input as a newly allocated DCL stream using literal and
+ * distance-one run forms. out_buf is returned to the caller for release and
+ * out_size reports its serialized length; invalid arguments or allocation
+ * failure return a negative libmpq error.
+ */
 int32_t libmpq__pkzip_compress(
     const uint8_t *in_buf, uint32_t in_size, uint8_t **out_buf, uint32_t *out_size
 );

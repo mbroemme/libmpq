@@ -1,5 +1,5 @@
 /*
- *  common.c -- internal hash, crypt and decompression helpers.
+ *  crypto.c -- internal hash, encryption and key-recovery helpers.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -17,23 +17,20 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "common.h"
+#include "crypto.h"
 #include "crypt_buf.h"
 #include "endian.h"
-#include "extract.h"
 #include "mpq-internal.h"
 #include <libmpq/mpq.h>
 
 #include <ctype.h>
 #include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
 
 /* Hash an MPQ table name or file name with one of the Storm hash table offsets.
  * The caller supplies the table offset that selects the required hash phase,
  * and the returned value is used for MPQ lookup and encryption-key derivation. */
 uint32_t
-libmpq__common_hash_string(const char *key, uint32_t offset)
+libmpq__crypto_hash_string(const char *key, uint32_t offset)
 {
 
     /* Storm hashing starts with fixed seed values for every input string. */
@@ -55,7 +52,7 @@ libmpq__common_hash_string(const char *key, uint32_t offset)
  * The routine serializes complete little-endian words and leaves any trailing
  * incomplete bytes untouched because MPQ encryption is word-oriented. */
 int32_t
-libmpq__common_encrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
+libmpq__crypto_encrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
 {
 
     /* The cipher updates both seeds for every 32-bit word. */
@@ -82,7 +79,7 @@ libmpq__common_encrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
  * It reverses the word transformation performed by the matching encryptor,
  * so callers can reuse the same buffer without allocating a second copy. */
 int32_t
-libmpq__common_decrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
+libmpq__crypto_decrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
 {
 
     /* The cipher updates both seeds for every 32-bit word. */
@@ -107,7 +104,7 @@ libmpq__common_decrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
  * The function tests the encrypted prefix against RIFF, executable, XML, and
  * MPQ signatures and writes the unique matching seed to the caller's output. */
 int32_t
-libmpq__common_detect_file_key(
+libmpq__crypto_detect_file_key(
     const uint8_t *in_buf, uint32_t in_size, uint32_t file_size, uint32_t *key
 )
 {
@@ -164,7 +161,7 @@ libmpq__common_detect_file_key(
  * It checks all possible low-byte cipher candidates and accepts only a seed
  * whose first two decoded offsets describe a plausible sector-table layout. */
 int32_t
-libmpq__common_derive_block_table_seed(
+libmpq__crypto_derive_block_table_seed(
     uint8_t *in_buf, uint32_t in_size, uint32_t block_size, uint32_t *key
 )
 {
@@ -222,62 +219,4 @@ libmpq__common_derive_block_table_seed(
 
     /* No candidate produced a plausible block offset sequence. */
     return LIBMPQ_ERROR_DECRYPT;
-}
-
-/* Decompress one archive block according to its MPQ compression flags.
- * Raw data is copied directly, while PKWARE and multi-compression payloads
- * are dispatched to the codec layer with MPQ-compatible expansion semantics. */
-int32_t
-libmpq__common_decompress_block(
-    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size,
-    uint32_t compression_type
-)
-{
-
-    /* Number of bytes transferred by the selected decompressor. */
-    int32_t tb = 0;
-
-    if (compression_type == LIBMPQ_FLAG_COMPRESS_NONE) {
-        if (in_size < out_size) {
-            return LIBMPQ_ERROR_SIZE;
-        }
-        memcpy(out_buf, in_buf, out_size);
-        tb = out_size;
-    }
-
-    /* Dispatch single PKZIP compression or Blizzard's chained compression mode. */
-    else if (compression_type == LIBMPQ_FLAG_COMPRESS_PKZIP ||
-             compression_type == LIBMPQ_FLAG_COMPRESS_MULTI) {
-
-        /* Some MPQ blocks carry a compression flag even though the payload is already raw. */
-        if (compression_type == LIBMPQ_FLAG_COMPRESS_PKZIP) {
-
-            /* Standalone implode has no multi-compression mask and may be
-             * larger than the source (notably for literal-only streams). */
-            if (in_size >= out_size) {
-                memcpy(out_buf, in_buf, out_size);
-                tb = out_size;
-            } else if ((tb = libmpq__extract_decompress_pkzip(in_buf, in_size, out_buf, out_size)) <
-                       0) {
-                return tb;
-            }
-        } else if (in_size < out_size) {
-
-            /* Run the chained MPQ decompressor selected by the block header byte. */
-            if (compression_type == LIBMPQ_FLAG_COMPRESS_MULTI) {
-
-                /* Storm.dll 1.0.9 accepts an unused archive path compatibility parameter. */
-                if ((tb = libmpq__extract_decompress_multi(in_buf, in_size, out_buf, out_size)) <
-                    0) {
-                    return tb;
-                }
-            }
-        } else {
-            memcpy(out_buf, in_buf, out_size);
-            tb = out_size;
-        }
-    }
-
-    /* Return the number of bytes written to the output buffer. */
-    return tb;
 }

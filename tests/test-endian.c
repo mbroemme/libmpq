@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Verify endian helpers and byte-stable archive creation and extraction. */
 int
 main(void)
 {

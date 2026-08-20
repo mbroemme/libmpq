@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Verify cloned handles remain usable independently after either close. */
 int
 main(void)
 {

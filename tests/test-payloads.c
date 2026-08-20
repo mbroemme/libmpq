@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Exercise deterministic empty, boundary, binary, XML, WAVE, and nested data. */
 int
 main(void)
 {

@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+/* Exercise public diagnostics and invalid archive-handle behavior. */
 int
 main(void)
 {

@@ -17,12 +17,14 @@ typedef struct
     size_t used;
 } test_sha256_context;
 
+/* Rotate one word right for the local SHA-256 implementation. */
 static uint32_t
 test_rotr(uint32_t value, unsigned count)
 {
     return (value >> count) | (value << (32u - count));
 }
 
+/* Compress one 64-byte message block into the local SHA-256 state. */
 static void
 test_sha256_block(test_sha256_context *context, const uint8_t *block)
 {
@@ -92,12 +94,14 @@ test_sha256_block(test_sha256_context *context, const uint8_t *block)
     context->state[7] += h;
 }
 
+/* Report a failed assertion and let the caller terminate the test normally. */
 void
 test_failure(const char *file, unsigned line, const char *condition)
 {
     fprintf(stderr, "%s:%u: check failed: %s\n", file, line, condition);
 }
 
+/* Build a deterministic temporary pathname without creating the file. */
 int
 test_temp_path(char *path, size_t path_size, const char *tag)
 {
@@ -105,6 +109,7 @@ test_temp_path(char *path, size_t path_size, const char *tag)
     return result > 0 && (size_t)result < path_size ? 0 : -1;
 }
 
+/* Read a complete regular file into newly allocated caller-owned memory. */
 int
 test_read_path(const char *path, uint8_t **data, size_t *size)
 {
@@ -137,6 +142,7 @@ test_read_path(const char *path, uint8_t **data, size_t *size)
     return 0;
 }
 
+/* Fill a buffer with deterministic pseudo-random data derived from seed. */
 void
 test_payload(uint8_t *data, size_t size, uint32_t seed)
 {
@@ -147,6 +153,7 @@ test_payload(uint8_t *data, size_t size, uint32_t seed)
     }
 }
 
+/* Hash an in-memory byte range and write its lowercase hexadecimal digest. */
 int
 test_sha256(const uint8_t *data, size_t size, char output[65])
 {
@@ -182,6 +189,7 @@ test_sha256(const uint8_t *data, size_t size, char output[65])
     return 0;
 }
 
+/* Read one numbered archive file into newly allocated caller-owned memory. */
 int
 test_archive_read(mpq_archive_s *archive, uint32_t number, uint8_t **data, size_t *size)
 {
@@ -200,6 +208,7 @@ test_archive_read(mpq_archive_s *archive, uint32_t number, uint8_t **data, size_
     return 0;
 }
 
+/* Create the deterministic archive used by the focused regression programs. */
 int
 test_add_archive(mpq_archive_s **archive, const char *path, uint32_t version, uint32_t flags)
 {
