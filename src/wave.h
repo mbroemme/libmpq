@@ -28,15 +28,30 @@
 
 #include <stdint.h>
 
-/* Cursor that can address WAVE output as bytes or 16-bit PCM samples. */
-typedef union
+/* Locations and size of the PCM data chunk in a validated RIFF/WAVE file. */
+typedef struct
 {
-    uint16_t *pw;
-    uint8_t *pb;
-} byte_and_int16_t;
+    uint16_t channels;
+    uint32_t data_offset;
+    uint32_t data_size;
+} libmpq_wave_info_s;
 
-/* Decompress mono or stereo MPQ WAVE predictor data into PCM bytes. */
-int32_t libmpq__do_decompress_wave(
+/* Validate a RIFF/WAVE PCM16 payload and return its channel/data boundaries. */
+int32_t libmpq__wave_probe_pcm16(const uint8_t *data, uint32_t size, libmpq_wave_info_s *info);
+
+/* Validate a RIFF/WAVE PCM16 prefix against the complete declared file size. */
+int32_t libmpq__wave_probe_pcm16_prefix(
+    const uint8_t *data, uint32_t prefix_size, uint64_t file_size, libmpq_wave_info_s *info
+);
+
+/* Encode complete PCM16 mono or stereo samples as MPQ ADPCM payload bytes. */
+int32_t libmpq__wave_compress(
+    const uint8_t *in_buf, uint32_t in_size, uint8_t **out_buf, uint32_t *out_size,
+    uint32_t channels
+);
+
+/* Decode mono or stereo MPQ ADPCM predictor data into signed PCM16 bytes. */
+int32_t libmpq__wave_decompress(
     uint8_t *out_buf, int32_t out_length, uint8_t *in_buf, int32_t in_length, int32_t channels
 );
 

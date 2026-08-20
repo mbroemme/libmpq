@@ -14,7 +14,7 @@
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
 .TH LIBMPQ 3 2026-08-12 "The MoPaQ archive library"
 .SH NAME
-libmpq \- cross-platform C library for reading MPQ archives.
+libmpq \- cross-platform C library for creating and reading MPQ archives.
 .SH SYNOPSIS
 .nf
 .B
@@ -163,9 +163,12 @@ libmpq \- cross-platform C library for reading MPQ archives.
 .fi
 .SH DESCRIPTION
 .PP
-The \fIlibmpq\fP library reads MPQ archives, decrypts and decompresses file
-data, and extracts files compressed with zlib, bzip2, or PKWARE implosion.
-Archive creation is not supported.
+The \fIlibmpq\fP library creates and reads MPQ archives, decrypts and
+decompresses file data, and extracts files compressed with zlib, bzip2, or
+PKWARE implosion. Creation uses seekable v1 or v2 archives and may be driven
+through a streaming writer or buffer/path convenience functions. The current
+writer supports raw sectors, encrypted tables and payloads, generated
+listfiles, and zlib or bzip2 multi-compression.
 .PP
 An archive handle is not safe for concurrent operations. Use
 \fBlibmpq__archive_clone\fP() to create one independent reader per worker.

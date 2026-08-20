@@ -20,6 +20,7 @@
 #ifndef LIBMPQ_MPQ_INTERNAL_H
 #define LIBMPQ_MPQ_INTERNAL_H
 
+#include <libmpq/mpq.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/types.h>
@@ -78,7 +79,13 @@
 
 #include "pack_begin.h"
 
-/* On-disk MPQ archive header. */
+/*
+ * The fixed portion of an MPQ archive header stored at the archive start.
+ * It identifies the format, describes the sector-size exponent, and locates
+ * the encrypted hash and block tables relative to the archive. Version 1
+ * archives use the 32-bit offsets in this structure; version 2 archives pair
+ * them with mpq_header_ex_s when the table locations need high bits.
+ */
 typedef struct
 {
     uint32_t mpq_magic;          /* MPQ signature. */
@@ -95,14 +102,18 @@ typedef struct
 /* Extended archive offsets used by version 2 archives. */
 typedef struct
 {
-    uint64_t extended_offset; /* Offset of the extended block table from the archive start. */
-    uint16_t
-        hash_table_offset_high; /* Upper 16 bits of the hash table offset for large archives. */
-    uint16_t
-        block_table_offset_high; /* Upper 16 bits of the block table offset for large archives. */
+    uint64_t extended_offset;         /* Extended block-table offset from the archive start. */
+    uint16_t hash_table_offset_high;  /* High 16 bits of the hash-table offset. */
+    uint16_t block_table_offset_high; /* High 16 bits of the block-table offset. */
 } PACK_STRUCT mpq_header_ex_s;
 
-/* Hash-table entry used to locate a file by Storm filename hashes. */
+/*
+ * One encrypted-table entry used to resolve a filename without storing its
+ * plaintext in the hash table. The two Storm filename hashes are matched
+ * together with locale and platform before the block-table index is used.
+ * A free index marks an unused slot, while a valid index must refer to an
+ * existing entry in the archive's block table.
+ */
 typedef struct
 {
     uint32_t hash_a;            /* First filename hash. */
@@ -112,7 +123,12 @@ typedef struct
     uint32_t block_table_index; /* Index into the block table. */
 } PACK_STRUCT mpq_hash_s;
 
-/* Block-table entry describing the stored payload for one file. */
+/*
+ * The serialized metadata for one stored file payload. The offset and
+ * packed size identify the bytes on disk, while the unpacked size describes
+ * the result after decryption and decompression. Flags select the storage,
+ * encryption, and compression rules needed to interpret that payload.
+ */
 typedef struct
 {
     uint32_t offset;        /* Payload offset from the archive start. */
@@ -121,7 +137,12 @@ typedef struct
     uint32_t flags;         /* MPQ file flags. */
 } PACK_STRUCT mpq_block_s;
 
-/* High offset bits for large archives whose file payloads cross 4 GiB. */
+/*
+ * The version 2 extension for a block-table entry whose payload offset does
+ * not fit in the legacy 32-bit block-table field. The low offset remains in
+ * mpq_block_s, and this field supplies its upper 16 bits. It is unused for
+ * version 1 archives and must remain synchronized with the low offset.
+ */
 typedef struct
 {
     uint16_t offset_high; /* Upper 16 bits of the file payload offset. */
@@ -137,7 +158,13 @@ typedef struct
     uint32_t open_count;          /* Reference count for the cached sector table. */
 } PACK_STRUCT mpq_file_s;
 
-/* Mapping from public file numbers to valid block-table indices. */
+/*
+ * Translation from libmpq's compact public file numbering to the serialized
+ * block table. MPQ block tables can contain unused or invalid entries, so a
+ * public file number is not necessarily the same as its block-table index.
+ * block_table_diff preserves how many invalid entries were skipped while
+ * constructing the mapping for callers that need the original layout.
+ */
 typedef struct
 {
     uint32_t block_table_indices; /* Block-table index for this public file number. */
@@ -145,7 +172,13 @@ typedef struct
 } PACK_STRUCT mpq_map_s;
 #include "pack_end.h"
 
-/* Runtime archive handle containing file I/O state and decoded metadata tables. */
+/*
+ * Runtime handle for an opened or newly created MPQ archive. It owns the
+ * backing stream, decoded header and tables, file mappings, and per-file
+ * caches used during extraction. In write mode it additionally owns the
+ * reserved table capacity and file-name metadata needed to finalize the
+ * archive; reader handles leave those writer-only fields empty.
+ */
 struct mpq_archive
 {
     FILE *fp;                    /* Backing file handle. */
@@ -165,6 +198,43 @@ struct mpq_archive
 
     mpq_map_s *mpq_map; /* Public file-number to block-table mapping. */
     uint32_t files;     /* Number of valid extractable file entries. */
+
+    /* Writer-only state. Reader handles leave these fields zeroed. */
+    uint8_t write_mode;           /* Whether this handle was opened for creation. */
+    uint8_t write_finalized;      /* Whether the final header and tables were written. */
+    uint32_t write_capacity;      /* Reserved number of block-table entries. */
+    uint32_t write_hash_capacity; /* Reserved number of hash-table entries. */
+    uint32_t write_sector_size;   /* Sector size used while buffering and packing files. */
+    uint32_t write_flags;         /* Archive-creation flags, including listfile generation. */
+    uint32_t write_next_block;    /* Next block-table slot assigned to a completed file. */
+    char **write_names;           /* Names corresponding to assigned block-table entries. */
+    uint16_t *write_locales;      /* Locales corresponding to assigned file entries. */
+    uint16_t *write_platforms;    /* Platforms corresponding to assigned file entries. */
+    mpq_writer_s *write_current;  /* Active file writer; only one file may be streamed at once. */
+};
+
+/*
+ * A live writer owns the state for one file being streamed into an archive.
+ * It buffers at most one archive sector, applies the selected compression and
+ * encryption options when that sector is flushed, and records packed offsets
+ * for compressed files. The archive owns the active writer through
+ * mpq_archive.write_current; the writer is released after file finish or an
+ * aborted write, and must not outlive its parent archive.
+ */
+struct mpq_writer
+{
+    mpq_archive_s *archive;     /* Parent archive that owns the output stream. */
+    char *name;                 /* File name used for hashing and encryption keys. */
+    uint8_t *data;              /* Buffer for the current uncompressed input sector. */
+    uint32_t data_size;         /* Number of valid bytes currently buffered in data. */
+    uint32_t sector_index;      /* Index of the next sector to flush. */
+    uint32_t block_count;       /* Number of sectors expected for this file. */
+    uint64_t payload_offset;    /* Archive offset where this file's payload begins. */
+    uint64_t packed_total;      /* Bytes written for packed sectors, excluding the table. */
+    uint32_t *offsets;          /* Relative sector offsets for compressed files. */
+    libmpq__off_t expected;     /* File size declared when the writer was opened. */
+    libmpq__off_t written;      /* Number of source bytes accepted by the writer. */
+    mpq_file_options_s options; /* Storage, compression, encryption, and identity options. */
 };
 
 #endif /* LIBMPQ_MPQ_INTERNAL_H */

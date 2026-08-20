@@ -8,8 +8,8 @@
 [![License: LGPL-2.1-or-later](https://img.shields.io/badge/license-LGPL--2.1--or--later-blue.svg)](COPYING.LESSER)
 [![GitHub downloads](https://img.shields.io/github/downloads/mbroemme/libmpq/total?style=flat&label=downloads&cacheSeconds=21600)](https://github.com/mbroemme/libmpq/releases)
 
-A portable C library for reading, decrypting, decompressing, and extracting
-files from MoPaQ (MPQ) archives.
+A portable C library for creating, reading, decrypting, decompressing, and
+extracting files from MoPaQ (MPQ) archives.
 
 ## Overview
 
@@ -17,18 +17,28 @@ MPQ is a proprietary archive format created by Mike O'Brien in 1996. It is
 used by Blizzard games including Diablo, Diablo II, StarCraft, Warcraft II:
 Battle.net Edition, Warcraft III, and World of Warcraft.
 
-libmpq provides a C API for applications that need to inspect MPQ archives and
-extract their file contents. Archive creation is not supported.
+libmpq provides a C API for applications that need to inspect, create, and
+extract MPQ archives. Creation supports seekable v1 and v2 archives, streaming
+or buffer/path file addition, encrypted tables and payloads, optional listfiles,
+raw and single-unit files, PKWARE implode, and multi-compression sectors using
+Huffman, zlib, PKWARE, bzip2, or mono/stereo WAVE ADPCM.
 
 ## Features
 
 * Read MPQ archives and embedded archives located at a file offset.
 * Read archive metadata, file names, file sizes, flags, and block information.
+* Create seekable MPQ v1 and v2 archives with fixed file-table capacity.
+* Add files through streaming, memory-buffer, or filesystem-path APIs.
 * Decrypt encrypted hash tables, block tables, and file payloads.
+* Create encrypted hash and block tables, file payloads, and sector offsets.
+* Create raw, single-unit, sectorized, and multi-sector file entries.
+* Compress file sectors with PKWARE implode, Huffman, zlib, bzip2, or WAVE
+  ADPCM using separate first-sector and later-sector masks.
 * Decompress zlib, bzip2, Huffman, PKWARE implode, Blizzard multi-compression,
   and mono or stereo WAVE ADPCM payloads.
+* Generate an optional `(listfile)` entry during archive creation.
 * Provide a stable C API with installed headers under `include/libmpq`.
-* Provide optional Python 2 ctypes and D language bindings.
+* Provide optional Python 2 and 3 ctypes and D language bindings.
 * Install API manual pages for the library functions and `libmpq-config`.
 
 ## Requirements
@@ -40,9 +50,9 @@ The build system requires:
 * zlib development headers and libraries.
 * bzip2 development headers and libraries.
 
-The Python binding is optional and is enabled when a Python interpreter version
-2.4 or newer is found. The D binding is installed as a D module and does not
-form part of the C library build.
+The Python binding is optional and is enabled when Python 2.4 or newer,
+including Python 3, is found. The D binding is installed as a D module and
+does not form part of the C library build.
 
 ## Building
 
@@ -179,8 +189,8 @@ the shared library's transitive dependencies automatically.
 
 The source tree contains bindings for the public C API:
 
-* `bindings/python/mpq.py` provides a Python 2 ctypes wrapper and buffered
-  archive/file readers.
+* `bindings/python/mpq.py` provides a Python 2 and 3 ctypes wrapper and
+  buffered archive/file readers.
 * `bindings/d/mpq.d` provides D declarations and helper classes for Phobos.
 
 The Python binding is included automatically when the required interpreter is
@@ -195,10 +205,13 @@ required to use libmpq.
 
 ## Limitations
 
-* MPQ archive creation is not supported.
-* Big-endian systems are not currently supported.
+* Archive creation is currently limited to seekable MPQ v1 and v2 archives.
+  MPQ v3/v4, HET/BET tables, and related format extensions are not supported.
+* Sparse and LZMA compression, attributes, signatures, checksums, patch
+  metadata, and StormLib-specific key modes are not supported by the writer.
+* Big-endian hosts are supported through explicit little-endian serialization,
+  but are not currently covered by the default CI configuration.
 * Windows support is not currently tested or documented by the Autotools build.
-* The Python binding uses Python 2 syntax and is retained for compatibility.
 
 ## Contributing
 

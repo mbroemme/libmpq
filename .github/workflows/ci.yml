@@ -95,12 +95,14 @@ jobs:
         run: |
           set -euxo pipefail
           bear -- make -j"$(nproc)" V=1
+          bear --append -- make check V=1
           bear --append -- make -C tools crypt_buf_gen V=1
 
       - name: Run clang-tidy
         run: |
           set -euxo pipefail
-          mapfile -t sources < <(git ls-files 'src/*.c' 'include/libmpq/*.h' 'tools/*.c')
+          mapfile -t sources < <(git ls-files \
+            'src/*.c' 'include/libmpq/*.h' 'tools/*.c' 'tests/*.c' 'tests/*.h')
           if ((${#sources[@]} == 0)); then
             echo 'No C translation units found.' >&2
             exit 1

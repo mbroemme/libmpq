@@ -99,8 +99,14 @@ def check_error(result, func, arguments, errors=errors):
 libmpq.libmpq__version.restype = ctypes.c_char_p
 
 libmpq.libmpq__archive_open.errcheck = check_error
+libmpq.libmpq__archive_create.errcheck = check_error
 libmpq.libmpq__archive_clone.errcheck = check_error
 libmpq.libmpq__archive_close.errcheck = check_error
+libmpq.libmpq__file_begin.errcheck = check_error
+libmpq.libmpq__file_write.errcheck = check_error
+libmpq.libmpq__file_finish.errcheck = check_error
+libmpq.libmpq__file_add.errcheck = check_error
+libmpq.libmpq__file_add_path.errcheck = check_error
 libmpq.libmpq__archive_size_packed.errcheck = check_error
 libmpq.libmpq__archive_size_unpacked.errcheck = check_error
 libmpq.libmpq__archive_offset.errcheck = check_error
@@ -124,6 +130,60 @@ libmpq.libmpq__block_size_unpacked.errcheck = check_error
 libmpq.libmpq__block_read.errcheck = check_error
 
 __version__ = libmpq.libmpq__version()
+
+class ArchiveCreateOptions(ctypes.Structure):
+    _fields_ = [("version", ctypes.c_uint32), ("max_files", ctypes.c_uint32),
+                ("sector_size", ctypes.c_uint32), ("flags", ctypes.c_uint32)]
+
+class FileCreateOptions(ctypes.Structure):
+    _fields_ = [("flags", ctypes.c_uint32), ("compression_first", ctypes.c_uint32),
+                ("compression_next", ctypes.c_uint32), ("locale", ctypes.c_uint16),
+                ("platform", ctypes.c_uint16)]
+
+class WriterFile(object):
+    """Streaming file handle returned by Writer.begin."""
+    def __init__(self, archive, name, size, options, ctypes=ctypes, libmpq=libmpq):
+        self._archive = archive
+        self._writer = ctypes.c_void_p()
+        libmpq.libmpq__file_begin(archive._mpq, _as_bytes(name), size,
+            ctypes.byref(options), ctypes.byref(self._writer))
+
+    def write(self, data, ctypes=ctypes, libmpq=libmpq):
+        return libmpq.libmpq__file_write(self._writer, data, len(data))
+
+    def finish(self, libmpq=libmpq):
+        result = libmpq.libmpq__file_finish(self._writer)
+        self._writer = None
+        return result
+
+class Writer(object):
+    """Small convenience wrapper for seekable archive creation."""
+    def __init__(self, filename, version=0, max_files=1024, sector_size=4096, flags=0, ctypes=ctypes, libmpq=libmpq):
+        options = ArchiveCreateOptions(version, max_files, sector_size, flags)
+        self._mpq = ctypes.c_void_p()
+        libmpq.libmpq__archive_create(ctypes.byref(self._mpq), _as_bytes(filename), ctypes.byref(options))
+        self.filename = filename
+        self._opened = True
+
+    def add(self, name, data, options=None, ctypes=ctypes, libmpq=libmpq):
+        if options is None:
+            options = FileCreateOptions()
+        return libmpq.libmpq__file_add(self._mpq, _as_bytes(name), data, len(data), ctypes.byref(options))
+
+    def begin(self, name, size, options=None, WriterFile=WriterFile):
+        if options is None:
+            options = FileCreateOptions()
+        return WriterFile(self, name, size, options)
+
+    def add_path(self, name, source, options=None, ctypes=ctypes, libmpq=libmpq):
+        if options is None:
+            options = FileCreateOptions()
+        return libmpq.libmpq__file_add_path(self._mpq, _as_bytes(name), _as_bytes(source), ctypes.byref(options))
+
+    def close(self, libmpq=libmpq):
+        if self._opened:
+            libmpq.libmpq__archive_close(self._mpq)
+            self._opened = False
 
 
 class Reader(object):
@@ -376,7 +436,7 @@ class Archive(object):
         """Return a debugging representation for this archive."""
         return "mpq.Archive(%r)" % self._source
 
-# Remove clutter - everything except Error and Archive.
+# Remove clutter - everything except the public wrappers.
 del os, check_error, ctypes, errors, File, libmpq, Reader
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # Initialize the Autoconf package metadata.
-AC_INIT([libmpq],[0.5.1],[mbroemme@libmpq.org],[libmpq])
-AC_SUBST(LIBMPQ_ABI, [2:0:1])
+AC_INIT([libmpq],[0.6.0],[mbroemme@libmpq.org],[libmpq])
+AC_SUBST(LIBMPQ_ABI, [3:0:2])
 
 # Detect the canonical host and target build environments.
 AC_CANONICAL_TARGET
@@ -66,6 +66,7 @@ bindings/d/Makefile
 bindings/python/Makefile
 docs/man1/Makefile
 docs/man3/Makefile
+tests/Makefile
 tools/Makefile
 ])
 

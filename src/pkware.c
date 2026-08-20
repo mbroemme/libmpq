@@ -1,5 +1,5 @@
 /*
- *  explode.c -- PKWARE Data Compression Library explode implementation.
+ *  pkware.c -- PKWARE Data Compression Library implementation.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -22,9 +22,11 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "explode.h"
+#include "pkware.h"
+#include "mpq-internal.h"
 #include <libmpq/mpq.h>
 
+#include <stdlib.h>
 #include <string.h>
 
 /* Distance bit lengths used by the PKWARE explode distance decoder. */
@@ -59,6 +61,18 @@ static const uint8_t pkzip_slen_bits[] = { 0x03, 0x02, 0x03, 0x03, 0x04, 0x04, 0
 /* Codes for the static copy-length Huffman table. */
 static const uint8_t pkzip_len_code[] = { 0x05, 0x03, 0x01, 0x06, 0x0A, 0x02, 0x0C, 0x14,
                                           0x04, 0x18, 0x08, 0x30, 0x10, 0x20, 0x40, 0x00 };
+
+/* Append a low-bit-first PKWARE code to the output bitstream.
+ * The caller provides a zeroed output buffer and a bit cursor, and this helper
+ * sets only the bits represented by the requested code. */
+static void
+pkzip_put_bits(uint8_t *out, size_t *bit_pos, uint32_t value, unsigned bits)
+{
+    unsigned i;
+    for (i = 0; i < bits; i++, (*bit_pos)++)
+        if (value & (1u << i))
+            out[*bit_pos >> 3] |= (uint8_t)(1u << (*bit_pos & 7));
+}
 
 /* Bit lengths for the ASCII literal table. */
 static const uint8_t pkzip_bits_asc[] = {
@@ -106,14 +120,9 @@ static const uint16_t pkzip_code_asc[] = {
     0x1800, 0x0800, 0x1000, 0x0000
 };
 
-/* PKWARE copyright banner kept for parity with the original implementation. */
-char pkware_copyright[] = "PKWARE Data Compression Library for Win32\r\n"
-                          "Copyright 1989-1995 PKWARE Inc.  All Rights Reserved\r\n"
-                          "Patent No. 5,051,745\r\n"
-                          "PKWARE Data Compression Library Reg. U.S. Pat. and Tm. Off.\r\n"
-                          "Version 1.11\r\n";
-
-/* Drop bits from the bit buffer, loading the next input byte when required. */
+/* Consume bits from the PKWARE input accumulator.
+ * It refills the eight-bit staging window through the configured callback and
+ * returns a nonzero value when the compressed input ends prematurely. */
 static int32_t
 skip_bit(pkzip_cmp_s *mpq_pkzip, uint32_t bits)
 {
@@ -142,7 +151,9 @@ skip_bit(pkzip_cmp_s *mpq_pkzip, uint32_t bits)
     return 0;
 }
 
-/* Build byte-sized lookup tables from bit-length and code arrays. */
+/* Build a decode lookup table from PKWARE canonical bit codes.
+ * Each short code is expanded across all matching low-byte prefixes so the
+ * decoder can resolve literals and lengths without walking a tree at runtime. */
 static void
 generate_tables_decode(int32_t count, uint8_t *bits, const uint8_t *code, uint8_t *buf2)
 {
@@ -163,7 +174,9 @@ generate_tables_decode(int32_t count, uint8_t *bits, const uint8_t *code, uint8_
     }
 }
 
-/* Build the ASCII literal lookup tables used by the PKWARE explode decoder. */
+/* Build the ASCII literal lookup tables used by the PKWARE decoder.
+ * The static canonical tables are expanded into prefix tables that support
+ * the variable-length ASCII mode used by DCL streams. */
 static void
 generate_tables_ascii(pkzip_cmp_s *mpq_pkzip)
 {
@@ -222,12 +235,9 @@ generate_tables_ascii(pkzip_cmp_s *mpq_pkzip)
     }
 }
 
-/*
- * Decode the next PKWARE literal or match-length symbol.
- * Values 0x000-0x0FF represent literal bytes.
- * Values 0x100-0x305 represent LZ match lengths.
- * Value 0x306 marks input exhaustion.
- */
+/* Decode one PKWARE literal or copy marker.
+ * The low control bit distinguishes a length/distance match from a literal,
+ * and the selected mode determines whether literals are binary or ASCII-coded. */
 static uint32_t
 decode_literal(pkzip_cmp_s *mpq_pkzip)
 {
@@ -268,7 +278,7 @@ decode_literal(pkzip_cmp_s *mpq_pkzip)
         return 0x306;
     }
 
-    /* Binary mode stores literals as raw eight-bit values. */
+    /* Binary mode carries literal bytes directly after the control bit. */
     if (mpq_pkzip->cmp_type == LIBMPQ_PKZIP_CMP_BINARY) {
         value = mpq_pkzip->bit_buf & 0xFF;
 
@@ -279,6 +289,7 @@ decode_literal(pkzip_cmp_s *mpq_pkzip)
         return value;
     }
 
+    /* ASCII mode resolves short prefixes through progressively wider tables. */
     if (mpq_pkzip->bit_buf & 0xFF) {
         value = mpq_pkzip->offs_2c34[mpq_pkzip->bit_buf & 0xFF];
 
@@ -310,7 +321,9 @@ decode_literal(pkzip_cmp_s *mpq_pkzip)
     return skip_bit(mpq_pkzip, mpq_pkzip->bits_asc[value]) ? 0x306 : value;
 }
 
-/* Decode the backward copy distance used by LZ-style PKWARE matches. */
+/* Decode the backward distance for a PKWARE copy operation.
+ * Two-byte matches use a fixed suffix width, while longer matches use the
+ * dictionary-size-dependent distance width configured in the stream header. */
 static uint32_t
 decode_distance(pkzip_cmp_s *mpq_pkzip, uint32_t length)
 {
@@ -342,7 +355,9 @@ decode_distance(pkzip_cmp_s *mpq_pkzip, uint32_t length)
     return pos + 1;
 }
 
-/* Copy compressed bytes from libmpq callback state into the PKWARE staging buffer. */
+/* Supply compressed bytes to the PKWARE decoder callback.
+ * The callback clamps each request to the remaining input and advances the
+ * wrapper-owned cursor so the codec never reads beyond the MPQ block. */
 static uint32_t
 data_read_input(char *buf, uint32_t *size, void *param)
 {
@@ -362,7 +377,9 @@ data_read_input(char *buf, uint32_t *size, void *param)
     return to_read;
 }
 
-/* Copy decompressed bytes from the PKWARE ring buffer into libmpq output state. */
+/* Receive expanded bytes from the PKWARE decoder callback.
+ * Output is clamped to the caller's capacity and the accepted byte count is
+ * recorded for the extraction wrapper after each decoder flush. */
 static void
 data_write_output(char *buf, uint32_t *size, void *param)
 {
@@ -380,7 +397,9 @@ data_write_output(char *buf, uint32_t *size, void *param)
     info->out_pos += to_write;
 }
 
-/* Expand the compressed PKWARE stream into the output ring buffer. */
+/* Expand one complete PKWARE stream using its configured callbacks.
+ * The sliding 4 KiB window supplies LZ history while completed upper-half
+ * data is flushed incrementally through the output callback. */
 static uint32_t
 expand(pkzip_cmp_s *mpq_pkzip)
 {
@@ -407,6 +426,7 @@ expand(pkzip_cmp_s *mpq_pkzip)
                 break;
             }
 
+            /* Copy from the sliding history window, allowing overlapping matches. */
             target = &mpq_pkzip->out_buf[mpq_pkzip->out_pos];
             source = target - move_back;
             mpq_pkzip->out_pos += copy_length;
@@ -418,7 +438,7 @@ expand(pkzip_cmp_s *mpq_pkzip)
             mpq_pkzip->out_buf[mpq_pkzip->out_pos++] = (uint8_t)one_byte;
         }
 
-        /* Flush the upper half while keeping the lower half as match history. */
+        /* Flush half the window while retaining the other half as match history. */
         if (mpq_pkzip->out_pos >= 0x2000) {
             copy_bytes = 0x1000;
             mpq_pkzip->write_buf(
@@ -436,9 +456,86 @@ expand(pkzip_cmp_s *mpq_pkzip)
     return result;
 }
 
-/* Initialize PKWARE decoder state and explode the compressed data stream. */
+/* Encode binary input as a PKWARE DCL stream for MPQ implode storage.
+ * Repeated bytes become distance-one matches, while other bytes are emitted
+ * literally; the output ends with the canonical DCL terminator. */
+int32_t
+libmpq__pkzip_compress(
+    const uint8_t *in_buf, uint32_t in_size, uint8_t **out_buf, uint32_t *out_size
+)
+{
+    size_t bit_count = (size_t)in_size * 9 + 16;
+    size_t bytes = 2 + (bit_count + 7) / 8;
+    uint8_t *out;
+    uint32_t i;
+
+    if (out_buf == NULL || out_size == NULL || (in_size != 0 && in_buf == NULL))
+        return LIBMPQ_ERROR_FORMAT;
+    if (bytes < 2)
+        return LIBMPQ_ERROR_FORMAT;
+    out = calloc(1, bytes ? bytes : 1);
+    if (out == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    out[0] = LIBMPQ_PKZIP_CMP_BINARY;
+    out[1] = 4;
+
+    /* The first two bytes identify binary mode and the four-bit dictionary. */
+    bit_count = 0;
+
+    /* Encode runs as matches and leave non-repeating bytes as literals. */
+    for (i = 0; i < in_size;) {
+        pkzip_put_bits(out + 2, &bit_count, 0, 1);
+        pkzip_put_bits(out + 2, &bit_count, in_buf[i], 8);
+        if (i + 2 < in_size && in_buf[i + 1] == in_buf[i] && in_buf[i + 2] == in_buf[i]) {
+            uint32_t length = 3;
+            uint32_t value;
+            uint32_t entry;
+            uint32_t extra;
+            uint32_t code;
+            while (i + length < in_size && length < 0x206 && in_buf[i + length] == in_buf[i])
+                length++;
+            value = length - 2;
+            for (entry = 0; entry < 16; entry++) {
+                extra = pkzip_clen_bits[entry];
+                if (value >= pkzip_len_base[entry] && value < pkzip_len_base[entry] + (1u << extra))
+                    break;
+            }
+            if (entry == 16)
+                entry = 15;
+            code = ((value - pkzip_len_base[entry]) << (pkzip_slen_bits[entry] + 1)) |
+                   (pkzip_len_code[entry] * 2u) | 1u;
+            pkzip_put_bits(
+                out + 2, &bit_count, code, pkzip_slen_bits[entry] + pkzip_clen_bits[entry] + 1
+            );
+
+            /* Distance one: distance prefix zero and a zero dictionary suffix. */
+            pkzip_put_bits(out + 2, &bit_count, pkzip_dist_code[0], pkzip_dist_bits[0]);
+            pkzip_put_bits(out + 2, &bit_count, 0, 4);
+            i += length;
+        } else {
+            i++;
+        }
+    }
+
+    /* Length table 15, extra value 255: the canonical 0x305 terminator. */
+    pkzip_put_bits(out + 2, &bit_count, 0xFF01u, 16);
+    *out_buf = out;
+    *out_size = (uint32_t)(2 + (bit_count + 7) / 8);
+    return LIBMPQ_SUCCESS;
+}
+
+/* PKWARE copyright banner kept for parity with the original implementation. */
+char pkware_copyright[] = "PKWARE Data Compression Library for Win32\r\n"
+                          "Copyright 1989-1995 PKWARE Inc.  All Rights Reserved\r\n"
+                          "Patent No. 5,051,745\r\n"
+                          "PKWARE Data Compression Library Reg. U.S. Pat. and Tm. Off.\r\n"
+                          "Version 1.11\r\n";
+
+/* Initialize PKWARE decoder state and explode the compressed data stream.
+ * The caller owns the work buffer and callback parameter; this routine fills
+ * the codec state, validates the stream header, and delegates expansion. */
 uint32_t
-libmpq__do_decompress_pkzip(uint8_t *work_buf, void *param)
+libmpq__pkzip_decompress(uint8_t *work_buf, void *param)
 {
 
     /* Caller-provided work buffer interpreted as PKWARE decoder state. */
@@ -459,6 +556,7 @@ libmpq__do_decompress_pkzip(uint8_t *work_buf, void *param)
         return LIBMPQ_PKZIP_CMP_BAD_DATA;
     }
 
+    /* The two-byte header selects literal mode and dictionary width. */
     mpq_pkzip->cmp_type = mpq_pkzip->in_buf[0];
     mpq_pkzip->dsize_bits = mpq_pkzip->in_buf[1];
     mpq_pkzip->bit_buf = mpq_pkzip->in_buf[2];

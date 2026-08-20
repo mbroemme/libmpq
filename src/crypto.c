@@ -1,5 +1,5 @@
 /*
- *  common.c -- internal hash, crypt and decompression helpers.
+ *  crypto.c -- internal hash, encryption and key-recovery helpers.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -17,20 +17,20 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "common.h"
+#include "crypto.h"
 #include "crypt_buf.h"
-#include "extract.h"
+#include "endian.h"
 #include "mpq-internal.h"
 #include <libmpq/mpq.h>
 
 #include <ctype.h>
 #include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
 
-/* Hash an MPQ table name or file name with one of the Storm hash table offsets. */
+/* Hash an MPQ table name or file name with one of the Storm hash table offsets.
+ * The caller supplies the table offset that selects the required hash phase,
+ * and the returned value is used for MPQ lookup and encryption-key derivation. */
 uint32_t
-libmpq__hash_string(const char *key, uint32_t offset)
+libmpq__crypto_hash_string(const char *key, uint32_t offset)
 {
 
     /* Storm hashing starts with fixed seed values for every input string. */
@@ -48,31 +48,38 @@ libmpq__hash_string(const char *key, uint32_t offset)
     return seed1;
 }
 
-/* Encrypt a block in place using the MPQ block cipher and the supplied seed. */
+/* Encrypt a block in place using the MPQ block cipher and the supplied seed.
+ * The routine serializes complete little-endian words and leaves any trailing
+ * incomplete bytes untouched because MPQ encryption is word-oriented. */
 int32_t
-libmpq__encrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed)
+libmpq__crypto_encrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
 {
 
     /* The cipher updates both seeds for every 32-bit word. */
     uint32_t seed2 = 0xEEEEEEEE;
     uint32_t ch;
+    uint32_t value;
 
     /* The MPQ block cipher operates on complete 32-bit words. */
     for (; in_size >= 4; in_size -= 4) {
         seed2 += crypt_buf[0x400 + (seed & 0xFF)];
-        ch = *in_buf ^ (seed + seed2);
+        value = libmpq__load_le32(in_buf);
+        ch = value ^ (seed + seed2);
         seed = ((~seed << 0x15) + 0x11111111) | (seed >> 0x0B);
-        seed2 = *in_buf + seed2 + (seed2 << 5) + 3;
-        *in_buf++ = ch;
+        seed2 = value + seed2 + (seed2 << 5) + 3;
+        libmpq__store_le32(in_buf, ch);
+        in_buf += sizeof(uint32_t);
     }
 
     /* Block encryption has no recoverable per-word error state. */
     return LIBMPQ_SUCCESS;
 }
 
-/* Decrypt a block in place using the MPQ block cipher and the supplied seed. */
+/* Decrypt a block in place using the MPQ block cipher and the supplied seed.
+ * It reverses the word transformation performed by the matching encryptor,
+ * so callers can reuse the same buffer without allocating a second copy. */
 int32_t
-libmpq__decrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed)
+libmpq__crypto_decrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
 {
 
     /* The cipher updates both seeds for every 32-bit word. */
@@ -82,19 +89,24 @@ libmpq__decrypt_block(uint32_t *in_buf, uint32_t in_size, uint32_t seed)
     /* The MPQ block cipher operates on complete 32-bit words. */
     for (; in_size >= 4; in_size -= 4) {
         seed2 += crypt_buf[0x400 + (seed & 0xFF)];
-        ch = *in_buf ^ (seed + seed2);
+        ch = libmpq__load_le32(in_buf) ^ (seed + seed2);
         seed = ((~seed << 0x15) + 0x11111111) | (seed >> 0x0B);
         seed2 = ch + seed2 + (seed2 << 5) + 3;
-        *in_buf++ = ch;
+        libmpq__store_le32(in_buf, ch);
+        in_buf += sizeof(uint32_t);
     }
 
     /* Block decryption has no recoverable per-word error state. */
     return LIBMPQ_SUCCESS;
 }
 
-/* Recover a file seed by matching StormLib's small set of known file signatures. */
+/* Recover a file seed by matching StormLib's small set of known file signatures.
+ * The function tests the encrypted prefix against RIFF, executable, XML, and
+ * MPQ signatures and writes the unique matching seed to the caller's output. */
 int32_t
-libmpq__detect_file_key(const uint8_t *in_buf, uint32_t in_size, uint32_t file_size, uint32_t *key)
+libmpq__crypto_detect_file_key(
+    const uint8_t *in_buf, uint32_t in_size, uint32_t file_size, uint32_t *key
+)
 {
     static const uint32_t wave_magic = 0x46464952; /* "RIFF" */
     static const uint32_t exe_magic = 0x00905A4D;  /* "MZ" and DOS stub signature */
@@ -111,8 +123,8 @@ libmpq__detect_file_key(const uint8_t *in_buf, uint32_t in_size, uint32_t file_s
         return LIBMPQ_ERROR_DECRYPT;
     }
 
-    memcpy(&encrypted_first, in_buf, sizeof(encrypted_first));
-    memcpy(&encrypted_second, in_buf + sizeof(encrypted_first), sizeof(encrypted_second));
+    encrypted_first = libmpq__load_le32(in_buf);
+    encrypted_second = libmpq__load_le32(in_buf + sizeof(encrypted_first));
 
     for (i = 0; i < 0x100; i++) {
         uint32_t j;
@@ -145,9 +157,11 @@ libmpq__detect_file_key(const uint8_t *in_buf, uint32_t in_size, uint32_t file_s
     return LIBMPQ_ERROR_DECRYPT;
 }
 
-/* Recover the per-file block-table seed from the first encrypted block offsets. */
+/* Recover the per-file block-table seed from the first encrypted block offsets.
+ * It checks all possible low-byte cipher candidates and accepts only a seed
+ * whose first two decoded offsets describe a plausible sector-table layout. */
 int32_t
-libmpq__derive_block_table_seed(
+libmpq__crypto_derive_block_table_seed(
     uint8_t *in_buf, uint32_t in_size, uint32_t block_size, uint32_t *key
 )
 {
@@ -160,7 +174,11 @@ libmpq__derive_block_table_seed(
     uint32_t i = 0;
 
     /* Derive the first seed candidate from the known block-table size. */
-    temp = (*(uint32_t *)in_buf ^ in_size) - 0xEEEEEEEE;
+    if (in_buf == NULL || key == NULL || in_size < 8) {
+        return LIBMPQ_ERROR_DECRYPT;
+    }
+
+    temp = (libmpq__load_le32(in_buf) ^ in_size) - 0xEEEEEEEE;
 
     /* Try every possible low byte used to index the encryption table. */
     for (i = 0; i < 0x100; i++) {
@@ -174,7 +192,7 @@ libmpq__derive_block_table_seed(
         /* The first encrypted value must decrypt to the block table size. */
         seed1 = temp - crypt_buf[0x400 + i];
         seed2 += crypt_buf[0x400 + (seed1 & 0xFF)];
-        ch = ((uint32_t *)in_buf)[0] ^ (seed1 + seed2);
+        ch = libmpq__load_le32(in_buf) ^ (seed1 + seed2);
 
         if (ch != in_size) {
             continue;
@@ -191,7 +209,7 @@ libmpq__derive_block_table_seed(
         seed1 = ((~seed1 << 0x15) + 0x11111111) | (seed1 >> 0x0B);
         seed2 = ch + seed2 + (seed2 << 5) + 3;
         seed2 += crypt_buf[0x400 + (seed1 & 0xFF)];
-        ch = ((uint32_t *)in_buf)[1] ^ (seed1 + seed2);
+        ch = libmpq__load_le32(in_buf + sizeof(uint32_t)) ^ (seed1 + seed2);
 
         if ((ch - ch2) <= block_size) {
             *key = saveseed1;
@@ -201,50 +219,4 @@ libmpq__derive_block_table_seed(
 
     /* No candidate produced a plausible block offset sequence. */
     return LIBMPQ_ERROR_DECRYPT;
-}
-
-/* Decompress one archive block according to its MPQ compression flags. */
-int32_t
-libmpq__decompress_block(
-    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size,
-    uint32_t compression_type
-)
-{
-
-    /* Number of bytes transferred by the selected decompressor. */
-    int32_t tb = 0;
-
-    if (compression_type == LIBMPQ_FLAG_COMPRESS_NONE) {
-        memcpy(out_buf, in_buf, out_size);
-        tb = out_size;
-    }
-
-    /* Dispatch single PKZIP compression or Blizzard's chained compression mode. */
-    else if (compression_type == LIBMPQ_FLAG_COMPRESS_PKZIP ||
-             compression_type == LIBMPQ_FLAG_COMPRESS_MULTI) {
-
-        /* Some MPQ blocks carry a compression flag even though the payload is already raw. */
-        if (in_size < out_size) {
-            if (compression_type == LIBMPQ_FLAG_COMPRESS_PKZIP) {
-                if ((tb = libmpq__decompress_pkzip(in_buf, in_size, out_buf, out_size)) < 0) {
-                    return tb;
-                }
-            }
-
-            /* Run the chained MPQ decompressor selected by the block header byte. */
-            else if (compression_type == LIBMPQ_FLAG_COMPRESS_MULTI) {
-
-                /* Storm.dll 1.0.9 accepts an unused archive path compatibility parameter. */
-                if ((tb = libmpq__decompress_multi(in_buf, in_size, out_buf, out_size)) < 0) {
-                    return tb;
-                }
-            }
-        } else {
-            memcpy(out_buf, in_buf, out_size);
-            tb = in_size;
-        }
-    }
-
-    /* Return the number of bytes written to the output buffer. */
-    return tb;
 }
