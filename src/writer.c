@@ -105,7 +105,7 @@ stream_flush_sector(mpq_writer_s *writer)
         packed_size = packed32;
     } else {
         packed = malloc(packed_size ? packed_size : 1);
-        result = packed == NULL ? LIBMPQ_ERROR_MALLOC : 0;
+        result = packed == NULL ? LIBMPQ_ERROR_MALLOC : LIBMPQ_SUCCESS;
         if (result == 0)
             memcpy(packed, writer->data, packed_size);
     }
@@ -148,7 +148,7 @@ stream_flush_sector(mpq_writer_s *writer)
     writer->sector_index++;
     writer->data_size = 0;
     free(packed);
-    return 0;
+    return LIBMPQ_SUCCESS;
 }
 
 /* Finish the streamed file by writing its offset table and archive metadata.
@@ -224,7 +224,7 @@ stream_finish(mpq_writer_s *writer)
             archive->mpq_hash[pos].locale = writer->options.locale;
             archive->mpq_hash[pos].platform = writer->options.platform;
             archive->mpq_hash[pos].block_table_index = index;
-            return 0;
+            return LIBMPQ_SUCCESS;
         }
     }
     return LIBMPQ_ERROR_SIZE;
@@ -615,7 +615,7 @@ libmpq__writer_file_write(mpq_writer_s *w, const uint8_t *buffer, libmpq__off_t 
                 return result;
         }
     }
-    return 0;
+    return LIBMPQ_SUCCESS;
 }
 
 /* Flush the final sector and commit the file's block and hash-table entries.

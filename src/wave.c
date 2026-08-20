@@ -25,6 +25,7 @@
 
 #include "wave.h"
 #include "endian.h"
+#include "mpq-internal.h"
 #include <libmpq/mpq.h>
 #include <stdlib.h>
 #include <string.h>
@@ -127,7 +128,7 @@ libmpq__wave_probe_pcm16(const uint8_t *data, uint32_t size, libmpq_wave_info_s 
     info->channels = channels;
     info->data_offset = data_offset;
     info->data_size = data_size;
-    return 0;
+    return LIBMPQ_SUCCESS;
 }
 
 /* Validate a RIFF/WAVE prefix when later PCM bytes are not buffered yet.
@@ -176,7 +177,7 @@ libmpq__wave_probe_pcm16_prefix(
     info->channels = channels;
     info->data_offset = data_offset;
     info->data_size = data_size;
-    return 0;
+    return LIBMPQ_SUCCESS;
 }
 
 /* Encode one complete PCM sector using the MPQ mono/stereo ADPCM format.
@@ -227,7 +228,7 @@ libmpq__wave_compress(
     }
     *out_buf = out;
     *out_size = pos;
-    return 0;
+    return LIBMPQ_SUCCESS;
 }
 
 /* Decompress mono or stereo MPQ WAVE predictor data into PCM bytes.
