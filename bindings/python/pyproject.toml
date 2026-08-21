@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel", "packaging"]
+build-backend = "_build_backend"
+backend-path = ["."]
+
+[project]
+name = "libmpq"
+version = "0.6.1"
+description = "Python ctypes bindings for libmpq"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "LGPL-2.1-or-later"
+authors = [{ name = "Maik Broemme", email = "mbroemme@libmpq.org" }]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
+
+[tool.setuptools]
+py-modules = ["mpq"]
+packages = ["mpq_libs"]
+
+[tool.setuptools.package-data]
+mpq_libs = ["*.so", "*.dylib", "*.dll"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

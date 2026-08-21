@@ -230,3 +230,65 @@ jobs:
           mvn -f bindings/java/pom.xml test \
             -Dorg.libmpq.library="${GITHUB_WORKSPACE}/src/.libs/libmpq.so" \
             -Dlibmpq.sourceDir="${GITHUB_WORKSPACE}"
+
+  python:
+    name: Python bindings (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13', '3.14']
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install native build dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            build-essential \
+            ca-certificates \
+            libbz2-dev \
+            libtool \
+            zlib1g-dev
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: bindings/python/pyproject.toml
+
+      - name: Install Python test tools
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip pytest build setuptools wheel
+
+      - name: Build native library
+        run: |
+          set -euxo pipefail
+          sh autogen.sh
+          ./configure --prefix=/usr
+          make -j"$(nproc)" V=1
+
+      - name: Test Python bindings
+        env:
+          LIBMPQ_LIBRARY: ${{ github.workspace }}/src/.libs/libmpq.so
+          PYTHONPATH: ${{ github.workspace }}/bindings/python
+        run: |
+          set -euxo pipefail
+          python -m pytest bindings/python/tests
+
+      - name: Build Python package smoke artifact
+        working-directory: bindings/python
+        run: |
+          set -euxo pipefail
+          python -m build --wheel --no-isolation

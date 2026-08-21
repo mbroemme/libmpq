@@ -38,7 +38,7 @@ Huffman, zlib, PKWARE, bzip2, or mono/stereo WAVE ADPCM.
   and mono or stereo WAVE ADPCM payloads.
 * Generate an optional `(listfile)` entry during archive creation.
 * Provide a stable C API with installed headers under `include/libmpq`.
-* Provide optional Python 2 and 3 ctypes, D, and Java bindings.
+* Provide optional Python 3.11+, D, and Java bindings.
 * Install API manual pages for the library functions and `libmpq-config`.
 
 ## Requirements
@@ -191,13 +191,15 @@ cc -std=c99 -Wall -Wextra mpq-example.c -o mpq-example \
 
 The source tree contains bindings for the public C API:
 
-* `bindings/python/mpq.py` provides a Python 2 and 3 ctypes wrapper and
-  buffered archive/file readers.
+* `bindings/python/mpq.py` provides a Python 3.11+ ctypes wrapper with
+  archive creation, metadata, cloning, streaming, and buffered readers.
 * `bindings/d/mpq.d` provides the `libmpq.mpq` D module with declarations and
   helper classes for Phobos.
 
-The Python binding is included automatically when the required interpreter is
-found during configuration. The D binding is installed as
+The Python binding is included automatically when Python 3.11+ is found during
+configuration. Its canonical package metadata and pytest suite are in
+`bindings/python/pyproject.toml`; Autotools remains available for distro
+installs. The D binding is installed as
 `libmpq/mpq.d`, alongside the C header; import it with `import libmpq.mpq;`.
 
 ## Documentation

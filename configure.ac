@@ -48,8 +48,8 @@ AC_CHECK_LIB([z], [inflateEnd], [], [AC_MSG_ERROR([*** inflateEnd is required, i
 AC_CHECK_HEADER([bzlib.h], [], [AC_MSG_ERROR([*** bzlib.h is required, install bzip2 header files])])
 AC_CHECK_LIB([bz2], [BZ2_bzDecompressInit], [], [AC_MSG_ERROR([*** BZ2_bzDecompressInit is required, install bzip2 library files])])
 
-# Find Python for the optional Python binding.
-AM_PATH_PYTHON([2.4],,[:])
+# Find Python 3.11+ for the optional Python binding.
+AM_PATH_PYTHON([3.11],,[:])
 AM_CONDITIONAL([HAVE_PYTHON], [test "$PYTHON" != :])
 
 # Generate package metadata and the runtime configuration script.
