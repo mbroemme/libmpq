@@ -1,0 +1,175 @@
+# Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+#
+# This file is free software; you can redistribute it and/or modify it under
+# the terms of the GNU Lesser General Public License as published by the Free
+# Software Foundation; either version 2.1 of the License, or (at your option)
+# any later version.
+
+name: Release libmpq
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    name: Build source package
+    uses: ./.github/workflows/release-source.yml
+
+  python:
+    name: Build Python packages
+    uses: ./.github/workflows/release-python.yml
+
+  java:
+    name: Build Java package
+    uses: ./.github/workflows/release-java.yml
+
+  finalize:
+    name: Sign and publish release
+    needs: [source, python, java]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Download source package
+        uses: actions/download-artifact@v8
+        with:
+          name: libmpq-source-release
+          path: release/source
+
+      - name: Download Python package
+        uses: actions/download-artifact@v8
+        with:
+          name: libmpq-python-release
+          path: release/python
+
+      - name: Download Java package
+        uses: actions/download-artifact@v8
+        with:
+          name: libmpq-java-artifacts
+          path: release/java
+
+      - name: Collect release packages
+        id: packages
+        run: |
+          set -euxo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          mkdir -p dist
+
+          source_gz="$(find release/source -type f -name 'libmpq-*.tar.gz' -print -quit)"
+          source_bz2="$(find release/source -type f -name 'libmpq-*.tar.bz2' -print -quit)"
+          python_zip="$(find release/python -type f -name 'libmpq-python-*.zip' -print -quit)"
+          java_zip="$(find release/java -type f -name 'libmpq-java-*.zip' -print -quit)"
+
+          test -s "${source_gz}"
+          test -s "${source_bz2}"
+          test -s "${python_zip}"
+          test -s "${java_zip}"
+          test "$(basename "${source_gz}")" = "libmpq-${version}.tar.gz"
+          test "$(basename "${source_bz2}")" = "libmpq-${version}.tar.bz2"
+          test "$(basename "${python_zip}")" = "libmpq-python-${version}.zip"
+          test "$(basename "${java_zip}")" = "libmpq-java-${version}.zip"
+
+          cp "${source_gz}" "${source_bz2}" "${python_zip}" "${java_zip}" dist/
+          {
+            echo "version=${version}"
+            echo "source_gz=libmpq-${version}.tar.gz"
+            echo "source_bz2=libmpq-${version}.tar.bz2"
+            echo "python_zip=libmpq-python-${version}.zip"
+            echo "java_zip=libmpq-java-${version}.zip"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Create combined SHA256SUMS
+        run: |
+          set -euxo pipefail
+          cd dist
+          sha256sum \
+            "${{ steps.packages.outputs.source_gz }}" \
+            "${{ steps.packages.outputs.source_bz2 }}" \
+            "${{ steps.packages.outputs.python_zip }}" \
+            "${{ steps.packages.outputs.java_zip }}" \
+            > SHA256SUMS
+
+      - name: Sign combined SHA256SUMS
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GPG_PRIVATE_KEY}" ]]; then
+            echo 'GPG_PRIVATE_KEY is not configured. Refusing to publish unsigned release checksums.' >&2
+            echo 'Add GPG_PRIVATE_KEY and GPG_PASSPHRASE repository secrets, then rerun this workflow.' >&2
+            exit 1
+          fi
+          test -n "${GPG_PASSPHRASE}"
+          gpg_home="$(mktemp -d)"
+          export GNUPGHOME="${gpg_home}"
+          trap 'rm -rf "${gpg_home}"' EXIT
+          chmod 0700 "${GNUPGHOME}"
+
+          printf '%s\n' "${GPG_PRIVATE_KEY}" | gpg --batch --import
+          key_fingerprint="$(
+            gpg --batch --with-colons --list-secret-keys |
+              awk -F: '/^fpr:/ { print $10; exit }'
+          )"
+          test -n "${key_fingerprint}"
+          gpg --batch --armor --export "${key_fingerprint}" \
+            > dist/libmpq-release-signing-key.asc
+          printf '%s' "${GPG_PASSPHRASE}" |
+            gpg --batch --yes --pinentry-mode loopback \
+              --local-user "${key_fingerprint}" \
+              --passphrase-fd 0 --detach-sig --armor dist/SHA256SUMS
+          gpg --batch --verify dist/SHA256SUMS.asc dist/SHA256SUMS
+
+      - name: Upload finalized release bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-release
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euxo pipefail
+          tag="${GITHUB_REF_NAME}"
+          assets=(
+            "dist/${{ steps.packages.outputs.source_gz }}"
+            "dist/${{ steps.packages.outputs.source_bz2 }}"
+            "dist/${{ steps.packages.outputs.python_zip }}"
+            "dist/${{ steps.packages.outputs.java_zip }}"
+            dist/SHA256SUMS
+            dist/SHA256SUMS.asc
+            dist/libmpq-release-signing-key.asc
+          )
+
+          if ! gh release view "${tag}" >/dev/null 2>&1; then
+            if gh release create "${tag}" "${assets[@]}" \
+              --verify-tag --title "${tag}" --notes-from-tag; then
+              exit 0
+            fi
+            gh release view "${tag}" >/dev/null
+          fi
+
+          if [[ "$(gh release view "${tag}" --json isDraft --jq .isDraft)" == "true" ]]; then
+            echo "Release ${tag} exists as a draft; publish or delete it before uploading assets." >&2
+            exit 1
+          fi
+
+          gh release upload "${tag}" "${assets[@]}"

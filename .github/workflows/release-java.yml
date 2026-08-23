@@ -1,0 +1,100 @@
+# Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+#
+# This file is free software; you can redistribute it and/or modify it under
+# the terms of the GNU Lesser General Public License as published by the Free
+# Software Foundation; either version 2.1 of the License, or (at your option)
+# any later version.
+
+name: Build Java package
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Build Java release package
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install native build dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            build-essential \
+            ca-certificates \
+            libbz2-dev \
+            libtool \
+            unzip \
+            zlib1g-dev \
+            zip
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: bindings/java/pom.xml
+
+      - name: Build native library
+        run: |
+          set -euxo pipefail
+          sh autogen.sh
+          ./configure --prefix=/usr
+          make -j"$(nproc)" V=1
+
+      - name: Test and package Java bindings
+        run: |
+          set -euxo pipefail
+          mvn -B -f bindings/java/pom.xml clean package \
+            -Dorg.libmpq.library="${GITHUB_WORKSPACE}/src/.libs/libmpq.so" \
+            -Dlibmpq.sourceDir="${GITHUB_WORKSPACE}"
+
+      - name: Inspect Java artifacts
+        run: |
+          set -euxo pipefail
+          version="$(mvn -q -f bindings/java/pom.xml \
+            help:evaluate -Dexpression=project.version -DforceStdout)"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            tag_version="${GITHUB_REF_NAME#v}"
+            if [[ "${version}" != "${tag_version}" ]]; then
+              echo "Package version ${version} does not match tag ${GITHUB_REF_NAME}" >&2
+              exit 1
+            fi
+          fi
+          test -s "$(find bindings/java/target -maxdepth 1 -name 'libmpq-java-*.jar' -print -quit)"
+          (
+            cd bindings/java/target
+            zip -q "libmpq-java-${version}.zip" \
+              "libmpq-java-${version}.jar" \
+              "libmpq-java-${version}-sources.jar" \
+              "libmpq-java-${version}-javadoc.jar"
+          )
+          unzip -t "bindings/java/target/libmpq-java-${version}.zip"
+
+      - name: Upload Java artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-java-artifacts
+          path: |
+            bindings/java/target/libmpq-java-*.zip
+            bindings/java/pom.xml
+          if-no-files-found: error

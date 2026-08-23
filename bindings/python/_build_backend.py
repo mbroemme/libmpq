@@ -18,10 +18,10 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import zipfile
 
-from packaging import tags
 from setuptools import build_meta as _backend
 
 
@@ -77,10 +77,13 @@ def _record_hash(data):
 def _bundle_wheel(wheel_path, native_path, wheel_directory):
     """Add the native library and convert a pure wheel into a platform wheel."""
     wheel_path = Path(wheel_path)
-    platform_tag = next(tags.sys_tags()).platform
+    platform_tag = os.environ.get("LIBMPQ_WHEEL_PLATFORM")
+    if platform_tag is None:
+        platform_tag = sysconfig.get_platform().replace("-", "_") \
+            .replace(".", "_")
     # The ctypes wrapper contains no CPython extension module, so it is
     # compatible with every supported Python 3 ABI. Keep only the platform
-    # tag supplied by the build environment, including its manylinux tag.
+    # tag supplied by the local build or by the release repair step.
     output_name = "-".join(wheel_path.name[:-4].split("-")[:-1] + [platform_tag]) + ".whl"
     output_path = Path(wheel_directory) / output_name
     native_name = "libmpq" + native_path.suffix
