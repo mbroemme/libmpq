@@ -69,7 +69,7 @@ jobs:
             zlib1g-dev
 
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Trust repository checkout
         run: |
@@ -138,8 +138,10 @@ jobs:
           apt-get install -y --no-install-recommends \
             autoconf \
             automake \
+            binutils \
             build-essential \
             ca-certificates \
+            jq \
             git \
             libbz2-dev \
             libtool \
@@ -148,7 +150,7 @@ jobs:
             ${{ matrix.compiler.package }}
 
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Trust repository checkout
         run: |
@@ -174,6 +176,156 @@ jobs:
         run: |
           set -euxo pipefail
           make check V=1
+
+  d:
+    name: D bindings (${{ matrix.compiler.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - name: dmd
+            setup: dmd
+            dub: dmd
+          - name: ldc
+            setup: ldc
+            dub: ldc2
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install native build dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            binutils \
+            build-essential \
+            ca-certificates \
+            libbz2-dev \
+            jq \
+            libtool \
+            zlib1g-dev
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up D compiler
+        uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler.setup }}
+
+      - name: Build native library
+        run: |
+          set -euxo pipefail
+          sh autogen.sh
+          ./configure --prefix=/usr
+          make -j"$(nproc)" V=1
+
+      - name: Test D bindings
+        env:
+          LIBRARY_PATH: ${{ github.workspace }}/src/.libs
+          LD_LIBRARY_PATH: ${{ github.workspace }}/src/.libs
+        run: |
+          set -euxo pipefail
+          dub run --config=tests --compiler="${{ matrix.compiler.dub }}"
+
+      - name: Build D library
+        env:
+          LIBRARY_PATH: ${{ github.workspace }}/src/.libs
+        run: |
+          set -euxo pipefail
+          dub build --config=library --compiler="${{ matrix.compiler.dub }}" \
+            --build=release
+
+      - name: Test D binary package
+        env:
+          LIBMPQ_D_COMPILER_NAME: ${{ matrix.compiler.name }}
+          LIBMPQ_D_DUB_COMPILER: ${{ matrix.compiler.dub }}
+          LIBMPQ_D_LIBC: glibc
+        run: |
+          set -euxo pipefail
+          version="$(./configure --version |
+            sed -n '1s/^libmpq configure //p')"
+          LIBMPQ_D_VERSION="${version}" bash scripts/package-d-binary.sh
+
+  d-musl:
+    name: D musl package (${{ matrix.compiler.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - name: dmd
+            package: dmd
+            dub: dmd
+            dc: dmd
+          - name: ldc
+            package: ldc
+            dub: ldc2
+            dc: ldc2
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build and test musl package in Alpine
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          LIBMPQ_D_COMPILER_NAME: ${{ matrix.compiler.name }}
+          LIBMPQ_D_COMPILER_PACKAGE: ${{ matrix.compiler.package }}
+          LIBMPQ_D_DC: ${{ matrix.compiler.dc }}
+          LIBMPQ_D_DUB_COMPILER: ${{ matrix.compiler.dub }}
+          LIBMPQ_D_LIBC: musl
+        run: |
+          set -euxo pipefail
+          docker run --rm \
+            -e GITHUB_REF \
+            -e GITHUB_REF_NAME \
+            -e LIBMPQ_D_COMPILER_NAME \
+            -e LIBMPQ_D_COMPILER_PACKAGE \
+            -e LIBMPQ_D_DC \
+            -e LIBMPQ_D_DUB_COMPILER \
+            -e LIBMPQ_D_LIBC \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace alpine:3.22 sh -euxc '
+              apk add --no-cache autoconf automake bash binutils bzip2-dev \
+                build-base ca-certificates dub jq libtool linux-headers \
+                "${LIBMPQ_D_COMPILER_PACKAGE}" tar zlib-dev
+              sh autogen.sh
+              ./configure --prefix=/usr
+              project_version="$(./configure --version |
+                sed -n "1s/^libmpq configure //p")"
+              if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+                test "${project_version}" = "${GITHUB_REF_NAME#v}"
+              fi
+              make -j"$(getconf _NPROCESSORS_ONLN)" V=1
+              export DC="${LIBMPQ_D_DC}"
+              export LIBRARY_PATH="$PWD/src/.libs"
+              export LD_LIBRARY_PATH="$PWD/src/.libs"
+              dub run --config=tests --compiler="${LIBMPQ_D_DUB_COMPILER}"
+              dub build --config=library --compiler="${LIBMPQ_D_DUB_COMPILER}" \
+                --build=release
+              version="${GITHUB_REF_NAME#v}"
+              if [[ "${GITHUB_REF_NAME}" != v* ]]; then
+                version="${project_version}"
+              fi
+              export LIBMPQ_D_VERSION="${version}"
+              bash scripts/package-d-binary.sh
+            '
 
   java:
     name: Java bindings (JDK ${{ matrix.java }})
@@ -203,10 +355,10 @@ jobs:
             zlib1g-dev
 
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: ${{ matrix.java }}
@@ -258,10 +410,10 @@ jobs:
             zlib1g-dev
 
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip

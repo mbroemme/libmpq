@@ -193,8 +193,9 @@ The source tree contains bindings for the public C API:
 
 * `bindings/python/mpq.py` provides a Python 3.11+ ctypes wrapper with
   archive creation, metadata, cloning, streaming, and buffered readers.
-* `bindings/d/mpq.d` provides the `libmpq.mpq` D module with declarations and
-  helper classes for Phobos.
+* `bindings/d/source/libmpq/mpq.d` provides the `libmpq.mpq` D module with
+  declarations and helper classes for Phobos. The related D modules contain
+  archive, error, option, and native ABI definitions.
 
 The Python binding is included automatically when Python 3.11+ is found during
 configuration. Its canonical package metadata and pytest suite are in

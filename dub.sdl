@@ -1,0 +1,22 @@
+name "libmpq"
+description "D bindings for the libmpq MoPaQ archive library."
+authors "Maik Broemme"
+copyright "Copyright (c) 2026 Maik Broemme"
+license "LGPL-2.1-or-later"
+homepage "https://github.com/mbroemme/libmpq"
+targetType "library"
+sourcePaths "bindings/d/source"
+importPaths "bindings/d/source"
+libs "mpq"
+
+configuration "library" {
+    targetType "staticLibrary"
+    targetName "mpq"
+}
+
+configuration "tests" {
+    targetType "executable"
+    mainSourceFile "bindings/d/tests/main.d"
+    sourcePaths "bindings/d/source" "bindings/d/tests"
+    importPaths "bindings/d/source" "bindings/d/tests"
+}

@@ -1,0 +1,338 @@
+# Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+#
+# This file is free software; you can redistribute it and/or modify it under
+# the terms of the GNU Lesser General Public License as published by the Free
+# Software Foundation; either version 2.1 of the License, or (at your option)
+# any later version.
+
+name: Build D package
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  binary-glibc:
+    name: Build D glibc package (${{ matrix.compiler.name }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - name: dmd
+            setup: dmd
+            dub: dmd
+          - name: ldc
+            setup: ldc
+            dub: ldc2
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install native build dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf automake build-essential ca-certificates \
+            binutils jq libbz2-dev libtool zlib1g-dev
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up D compiler
+        uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler.setup }}
+
+      - name: Build native library
+        run: |
+          set -euxo pipefail
+          sh autogen.sh
+          ./configure --prefix=/usr
+          make -j"$(nproc)" V=1
+          project_version="$(./configure --version | sed -n '1s/^libmpq configure //p')"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            test "${project_version}" = "${GITHUB_REF_NAME#v}"
+          fi
+
+      - name: Test D binding
+        env:
+          LIBRARY_PATH: ${{ github.workspace }}/src/.libs
+          LD_LIBRARY_PATH: ${{ github.workspace }}/src/.libs
+        run: |
+          set -euxo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            dub_version="$(dub describe | awk -F'"' '/"version":/ { print $4; exit }')"
+            test -n "${dub_version}"
+            test "${dub_version}" = "${version}"
+          fi
+          dub run --config=tests --compiler="${{ matrix.compiler.dub }}"
+
+      - name: Build D library
+        env:
+          LIBRARY_PATH: ${{ github.workspace }}/src/.libs
+        run: |
+          set -euxo pipefail
+          dub build --config=library --compiler="${{ matrix.compiler.dub }}" \
+            --build=release
+
+      - name: Package compiler-specific D library
+        env:
+          LIBMPQ_D_COMPILER_NAME: ${{ matrix.compiler.name }}
+          LIBMPQ_D_DUB_COMPILER: ${{ matrix.compiler.dub }}
+          LIBMPQ_D_LIBC: glibc
+          LIBMPQ_D_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euxo pipefail
+          version="${LIBMPQ_D_VERSION#v}"
+          if [[ "${GITHUB_REF_NAME}" != v* ]]; then
+            version="$(./configure --version | sed -n '1s/^libmpq configure //p')"
+          fi
+          LIBMPQ_D_VERSION="${version}" bash scripts/package-d-binary.sh
+
+      - name: Upload compiler-specific D package
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-d-${{ matrix.compiler.name }}-package
+          path: release/libmpq-d-*-linux-glibc-x86_64.tar.gz
+          if-no-files-found: error
+
+  binary-musl:
+    name: Build D musl package (${{ matrix.compiler.name }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - name: dmd
+            package: dmd
+            dub: dmd
+            dc: dmd
+          - name: ldc
+            package: ldc
+            dub: ldc2
+            dc: ldc2
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Build and package in Alpine
+        env:
+          LIBMPQ_D_COMPILER_NAME: ${{ matrix.compiler.name }}
+          LIBMPQ_D_DUB_COMPILER: ${{ matrix.compiler.dub }}
+          LIBMPQ_D_COMPILER_PACKAGE: ${{ matrix.compiler.package }}
+          LIBMPQ_D_DC: ${{ matrix.compiler.dc }}
+          LIBMPQ_D_LIBC: musl
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          set -euxo pipefail
+          docker run --rm \
+            -e GITHUB_REF_NAME \
+            -e GITHUB_REF \
+            -e LIBMPQ_D_COMPILER_NAME \
+            -e LIBMPQ_D_DUB_COMPILER \
+            -e LIBMPQ_D_COMPILER_PACKAGE \
+            -e LIBMPQ_D_DC \
+            -e LIBMPQ_D_LIBC \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace alpine:3.22 sh -euxc '
+              apk add --no-cache autoconf automake bash binutils bzip2-dev \
+                build-base ca-certificates dub jq libtool linux-headers \
+                "${LIBMPQ_D_COMPILER_PACKAGE}" tar zlib-dev
+              sh autogen.sh
+              ./configure --prefix=/usr
+              project_version="$(./configure --version |
+                sed -n "1s/^libmpq configure //p")"
+              if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+                test "${project_version}" = "${GITHUB_REF_NAME#v}"
+              fi
+              make -j"$(getconf _NPROCESSORS_ONLN)" V=1
+              export DC="${LIBMPQ_D_DC}"
+              export LIBRARY_PATH="$PWD/src/.libs"
+              export LD_LIBRARY_PATH="$PWD/src/.libs"
+              dub run --config=tests --compiler="${LIBMPQ_D_DUB_COMPILER}"
+              dub build --config=library --compiler="${LIBMPQ_D_DUB_COMPILER}" \
+                --build=release
+              version="${GITHUB_REF_NAME#v}"
+              if [[ "${GITHUB_REF_NAME}" != v* ]]; then
+                version="${project_version}"
+              fi
+              export LIBMPQ_D_VERSION="${version}"
+              export LIBMPQ_D_LIBC="${LIBMPQ_D_LIBC}"
+              bash scripts/package-d-binary.sh
+            '
+
+      - name: Upload compiler-specific D package
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-d-${{ matrix.compiler.name }}-musl-package
+          path: release/libmpq-d-*-linux-musl-x86_64.tar.gz
+          if-no-files-found: error
+
+  source:
+    name: Build D source package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install source package dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf automake build-essential ca-certificates \
+            jq libbz2-dev libtool zlib1g-dev
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up DUB
+        uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: dmd
+
+      - name: Build D source package
+        run: |
+          set -euxo pipefail
+          sh autogen.sh
+          ./configure --prefix=/usr
+          make -j"$(nproc)" V=1
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          project_version="$(./configure --version | sed -n '1s/^libmpq configure //p')"
+          if [[ "${tag}" == v* ]]; then
+            test "${project_version}" = "${version}"
+          else
+            version="${project_version}"
+          fi
+
+          package_name="libmpq-d-${version}"
+          package_dir="release/${package_name}"
+          mkdir -p "${package_dir}/source" "${package_dir}/tests"
+          cp -a bindings/d/source/. "${package_dir}/source/"
+          cp bindings/d/tests/main.d "${package_dir}/tests/"
+          cp bindings/d/README.md COPYING COPYING.LESSER "${package_dir}/"
+          dub convert --recipe=dub.sdl --format=json --stdout |
+            jq --arg version "${version}" '
+              .version = $version
+              | .sourcePaths = ["source"]
+              | .importPaths = ["source"]
+              | .configurations |= map(
+                  if .name == "tests" then
+                    .sourcePaths = ["source", "tests"]
+                    | .importPaths = ["source", "tests"]
+                    | .mainSourceFile = "tests/main.d"
+                  else . end
+                )
+            ' > "${package_dir}/dub.json"
+          tar -czf "release/${package_name}-source.tar.gz" \
+            -C release "${package_name}"
+          extracted="$(mktemp -d)"
+          source_dub_home="$(mktemp -d)"
+          trap 'rm -rf "${extracted}" "${source_dub_home}"' EXIT
+          tar -xzf "release/${package_name}-source.tar.gz" -C "${extracted}"
+          source_root="${extracted}/${package_name}"
+          DUB_HOME="${source_dub_home}" \
+            dub describe --root="${source_root}" --compiler=dmd
+          DUB_HOME="${source_dub_home}" \
+            LIBRARY_PATH="${GITHUB_WORKSPACE}/src/.libs" \
+            LD_LIBRARY_PATH="${GITHUB_WORKSPACE}/src/.libs" \
+            dub run --root="${source_root}" --config=tests --compiler=dmd
+
+      - name: Upload D source package
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-d-source-package
+          path: release/libmpq-d-*-source.tar.gz
+          if-no-files-found: error
+
+  package:
+    name: Package D release
+    needs: [binary-glibc, binary-musl, source]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install packaging tools
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ca-certificates unzip zip
+
+      - name: Download D packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: libmpq-d-*-package
+          path: release/packages
+          merge-multiple: true
+
+      - name: Assemble D release ZIP
+        run: |
+          set -euxo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          if [[ "${tag}" != v* ]]; then
+            echo 'D release packaging requires a v* tag.' >&2
+            exit 1
+          fi
+          package_name="libmpq-d-${version}"
+          mkdir -p release/package
+          mapfile -t packages < <(
+            find release/packages -type f -name "${package_name}-*.tar.gz" \
+              -printf '%f\n' | sort
+          )
+          ((${#packages[@]} > 0))
+          source_count=0
+          binary_count=0
+          for package in "${packages[@]}"; do
+            if [[ "${package}" == *-source.tar.gz ]]; then
+              ((source_count += 1))
+            else
+              ((binary_count += 1))
+            fi
+          done
+          ((source_count > 0))
+          ((binary_count > 0))
+          for package in "${packages[@]}"; do
+            cp "release/packages/${package}" release/package/
+          done
+          (
+            cd release/package
+            zip -q "../${package_name}.zip" ./*
+          )
+          unzip -t "release/${package_name}.zip"
+
+      - name: Upload D release
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-d-release
+          path: release/libmpq-d-*.zip
+          if-no-files-found: error

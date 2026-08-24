@@ -32,9 +32,13 @@ jobs:
     name: Build Java package
     uses: ./.github/workflows/release-java.yml
 
+  d:
+    name: Build D package
+    uses: ./.github/workflows/release-d.yml
+
   finalize:
     name: Sign and publish release
-    needs: [source, python, java]
+    needs: [source, python, java, d]
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -62,6 +66,12 @@ jobs:
           name: libmpq-java-artifacts
           path: release/java
 
+      - name: Download D package
+        uses: actions/download-artifact@v8
+        with:
+          name: libmpq-d-release
+          path: release/d
+
       - name: Collect release packages
         id: packages
         run: |
@@ -74,23 +84,27 @@ jobs:
           source_bz2="$(find release/source -type f -name 'libmpq-*.tar.bz2' -print -quit)"
           python_zip="$(find release/python -type f -name 'libmpq-python-*.zip' -print -quit)"
           java_zip="$(find release/java -type f -name 'libmpq-java-*.zip' -print -quit)"
+          d_zip="$(find release/d -type f -name 'libmpq-d-*.zip' -print -quit)"
 
           test -s "${source_gz}"
           test -s "${source_bz2}"
           test -s "${python_zip}"
           test -s "${java_zip}"
+          test -s "${d_zip}"
           test "$(basename "${source_gz}")" = "libmpq-${version}.tar.gz"
           test "$(basename "${source_bz2}")" = "libmpq-${version}.tar.bz2"
           test "$(basename "${python_zip}")" = "libmpq-python-${version}.zip"
           test "$(basename "${java_zip}")" = "libmpq-java-${version}.zip"
+          test "$(basename "${d_zip}")" = "libmpq-d-${version}.zip"
 
-          cp "${source_gz}" "${source_bz2}" "${python_zip}" "${java_zip}" dist/
+          cp "${source_gz}" "${source_bz2}" "${python_zip}" "${java_zip}" "${d_zip}" dist/
           {
             echo "version=${version}"
             echo "source_gz=libmpq-${version}.tar.gz"
             echo "source_bz2=libmpq-${version}.tar.bz2"
             echo "python_zip=libmpq-python-${version}.zip"
             echo "java_zip=libmpq-java-${version}.zip"
+            echo "d_zip=libmpq-d-${version}.zip"
           } >> "${GITHUB_OUTPUT}"
 
       - name: Create combined SHA256SUMS
@@ -102,6 +116,7 @@ jobs:
             "${{ steps.packages.outputs.source_bz2 }}" \
             "${{ steps.packages.outputs.python_zip }}" \
             "${{ steps.packages.outputs.java_zip }}" \
+            "${{ steps.packages.outputs.d_zip }}" \
             > SHA256SUMS
 
       - name: Sign combined SHA256SUMS
@@ -154,6 +169,7 @@ jobs:
             "dist/${{ steps.packages.outputs.source_bz2 }}"
             "dist/${{ steps.packages.outputs.python_zip }}"
             "dist/${{ steps.packages.outputs.java_zip }}"
+            "dist/${{ steps.packages.outputs.d_zip }}"
             dist/SHA256SUMS
             dist/SHA256SUMS.asc
             dist/libmpq-release-signing-key.asc
