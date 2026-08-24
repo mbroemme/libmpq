@@ -7,6 +7,7 @@
 
 """End-to-end tests for the public Python binding and native libmpq ABI."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,16 @@ def test_version_errors_and_hashes():
     assert mpq.version()
     assert "format" in mpq.strerror(mpq.ERROR_FORMAT)
     assert len(mpq.file_hash("overview.txt")) == 3
+
+
+def test_wheel_uses_bundled_library():
+    """Wheel tests must load the private library shipped in mpq_libs."""
+    if not os.environ.get("LIBMPQ_EXPECT_BUNDLED"):
+        pytest.skip("only required for installed wheel tests")
+    native = Path(mpq.libmpq._name).resolve()
+    assert native.name == "libmpq.so"
+    assert native.parent.name == "mpq_libs"
+    assert mpq.version() == mpq.__version__
 
 
 @pytest.mark.parametrize("name,version", [

@@ -20,23 +20,54 @@ import subprocess
 import sys
 import sysconfig
 import tempfile
+import tomllib
 import zipfile
 
 from setuptools import build_meta as _backend
 
 
 _ROOT = Path(__file__).resolve().parent
+with (_ROOT / "pyproject.toml").open("rb") as _stream:
+    _VERSION = tomllib.load(_stream)["project"]["version"]
+
+_LICENSE_FILES = ("COPYING", "COPYING.LESSER")
+
+
+def _stage_license_files():
+    """Stage project licenses beside pyproject.toml for build metadata."""
+    license_root = _ROOT.parents[1]
+    if not (license_root / _LICENSE_FILES[0]).exists():
+        license_root = _ROOT
+    created = []
+    for license_name in _LICENSE_FILES:
+        license_path = _ROOT / license_name
+        if not license_path.exists():
+            shutil.copy2(license_root / license_name, license_path)
+            created.append(license_path)
+    return created
 
 
 def _native_sources(destination):
-    """Copy canonical C sources into an sdist staging directory."""
+    """Copy only canonical C sources into an sdist staging directory."""
     source_root = _ROOT / "native"
     if not source_root.exists():
         source_root = _ROOT.parents[1]
     destination = Path(destination)
-    destination.mkdir(parents=True, exist_ok=True)
-    for relative in ("src", "include"):
-        shutil.copytree(source_root / relative, destination / relative)
+    for relative, patterns in (
+        ("src", ("*.c", "*.h")),
+        ("include", ("*.h",)),
+    ):
+        source_directory = source_root / relative
+        for pattern in patterns:
+            for source_path in source_directory.rglob(pattern):
+                if not source_path.is_file():
+                    continue
+                relative_path = source_path.relative_to(source_directory)
+                if {".libs", ".deps"}.intersection(relative_path.parts):
+                    continue
+                target = destination / relative / relative_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source_path, target)
 
 
 def _build_native():
@@ -57,7 +88,13 @@ def _build_native():
     # would shadow the system <endian.h> included by glibc headers.
     includes = ["-I", str(source_root / "include")]
     compiler = os.environ.get("CC", "cc")
-    command = [compiler, "-std=c99", "-D_GNU_SOURCE", '-DVERSION="0.6.1"', "-fPIC"]
+    command = [
+        compiler,
+        "-std=c99",
+        "-D_GNU_SOURCE",
+        f'-DVERSION="{_VERSION}"',
+        "-fPIC",
+    ]
     command += includes + [str(path) for path in sources]
     if sys.platform == "darwin":
         command += ["-dynamiclib", "-o", str(output)]
@@ -122,12 +159,21 @@ def _bundle_wheel(wheel_path, native_path, wheel_directory):
 
 def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
     """Build a setuptools wheel and add the locally compiled native library."""
-    wheel = _backend.build_wheel(wheel_directory, config_settings, metadata_directory)
-    native, temporary = _build_native()
+    created_licenses = _stage_license_files()
     try:
-        return _bundle_wheel(Path(wheel_directory) / wheel, native, wheel_directory)
+        wheel = _backend.build_wheel(
+            wheel_directory, config_settings, metadata_directory
+        )
+        native, temporary = _build_native()
+        try:
+            return _bundle_wheel(
+                Path(wheel_directory) / wheel, native, wheel_directory
+            )
+        finally:
+            shutil.rmtree(temporary)
     finally:
-        shutil.rmtree(temporary)
+        for license_path in created_licenses:
+            license_path.unlink()
 
 
 def build_sdist(sdist_directory, config_settings=None):
@@ -136,15 +182,57 @@ def build_sdist(sdist_directory, config_settings=None):
     created = not native.exists()
     if created:
         _native_sources(native)
+    created_licenses = _stage_license_files()
     try:
         return _backend.build_sdist(sdist_directory, config_settings)
     finally:
         if created:
             shutil.rmtree(native)
+        for license_path in created_licenses:
+            license_path.unlink()
+
+
+def prepare_metadata_for_build_wheel(metadata_directory, config_settings=None):
+    """Prepare wheel metadata with the staged project license files."""
+    created_licenses = _stage_license_files()
+    try:
+        return _backend.prepare_metadata_for_build_wheel(
+            metadata_directory,
+            config_settings,
+        )
+    finally:
+        for license_path in created_licenses:
+            license_path.unlink()
+
+
+def prepare_metadata_for_build_editable(metadata_directory, config_settings=None):
+    """Prepare editable metadata with the staged project license files."""
+    created_licenses = _stage_license_files()
+    try:
+        return _backend.prepare_metadata_for_build_editable(
+            metadata_directory,
+            config_settings,
+        )
+    finally:
+        for license_path in created_licenses:
+            license_path.unlink()
+
+
+def build_editable(
+        wheel_directory, config_settings=None, metadata_directory=None):
+    """Build an editable wheel with the staged project license files."""
+    created_licenses = _stage_license_files()
+    try:
+        return _backend.build_editable(
+            wheel_directory,
+            config_settings,
+            metadata_directory,
+        )
+    finally:
+        for license_path in created_licenses:
+            license_path.unlink()
 
 
 get_requires_for_build_wheel = _backend.get_requires_for_build_wheel
 get_requires_for_build_sdist = _backend.get_requires_for_build_sdist
-prepare_metadata_for_build_wheel = _backend.prepare_metadata_for_build_wheel
-prepare_metadata_for_build_editable = _backend.prepare_metadata_for_build_editable
-build_editable = _backend.build_editable
+get_requires_for_build_editable = _backend.get_requires_for_build_editable

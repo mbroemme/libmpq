@@ -444,3 +444,21 @@ jobs:
         run: |
           set -euxo pipefail
           python -m build --wheel --no-isolation
+
+      - name: Test installed Python wheel
+        run: |
+          set -euxo pipefail
+          wheel="$(find bindings/python/dist -maxdepth 1 -name '*.whl' \
+            -print -quit)"
+          test -s "${wheel}"
+          temporary="$(mktemp -d)"
+          trap 'rm -rf "${temporary}"' EXIT
+          python -m venv --system-site-packages "${temporary}/venv"
+          "${temporary}/venv/bin/python" -m pip install "${wheel}"
+          (
+            cd /tmp
+            env -u LIBMPQ_LIBRARY -u PYTHONPATH \
+              LIBMPQ_EXPECT_BUNDLED=1 \
+              "${temporary}/venv/bin/python" -m pytest \
+              "${GITHUB_WORKSPACE}/bindings/python/tests"
+          )
