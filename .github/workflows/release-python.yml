@@ -15,10 +15,20 @@ permissions:
   contents: read
 
 jobs:
-  manylinux:
-    name: Build Python manylinux wheel
+  wheel:
+    name: Build Python ${{ matrix.platform }} wheel
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: manylinux
+            build: cp311-manylinux_x86_64
+            artifact: libmpq-python-manylinux-wheel
+          - platform: musllinux
+            build: cp311-musllinux_x86_64
+            artifact: libmpq-python-musllinux-wheel
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -28,66 +38,14 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v4.2.0
         env:
-          CIBW_BUILD: cp311-manylinux_x86_64
-          CIBW_ARCHS_LINUX: x86_64
-          CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
-          CIBW_BEFORE_ALL_LINUX: >-
-            yum install -y bzip2-devel zlib-devel
-            && auditwheel --version
-          CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
-            auditwheel repair --plat manylinux_2_17_x86_64
-            --only-plat
-            -w {dest_dir} {wheel}
-            && auditwheel show {dest_dir}/*.whl
-          CIBW_TEST_REQUIRES: pytest
-          CIBW_TEST_COMMAND: >-
-            LIBMPQ_EXPECT_BUNDLED=1 python -m pytest
-            {project}/bindings/python/tests
+          CIBW_BUILD: ${{ matrix.build }}
         with:
           package-dir: bindings/python
 
-      - name: Upload manylinux wheel
+      - name: Upload wheel
         uses: actions/upload-artifact@v7
         with:
-          name: libmpq-python-manylinux-wheel
-          path: wheelhouse/*.whl
-          if-no-files-found: error
-
-  musllinux:
-    name: Build Python musllinux wheel
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Build wheels
-        uses: pypa/cibuildwheel@v4.2.0
-        env:
-          CIBW_BUILD: cp311-musllinux_x86_64
-          CIBW_ARCHS_LINUX: x86_64
-          CIBW_MUSLLINUX_X86_64_IMAGE: musllinux_1_2
-          CIBW_BEFORE_ALL_LINUX: >-
-            apk add --no-cache bzip2-dev zlib-dev
-            && auditwheel --version
-          CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
-            auditwheel repair --plat musllinux_1_2_x86_64
-            --only-plat
-            -w {dest_dir} {wheel}
-            && auditwheel show {dest_dir}/*.whl
-          CIBW_TEST_REQUIRES: pytest
-          CIBW_TEST_COMMAND: >-
-            LIBMPQ_EXPECT_BUNDLED=1 python -m pytest
-            {project}/bindings/python/tests
-        with:
-          package-dir: bindings/python
-
-      - name: Upload musllinux wheel
-        uses: actions/upload-artifact@v7
-        with:
-          name: libmpq-python-musllinux-wheel
+          name: ${{ matrix.artifact }}
           path: wheelhouse/*.whl
           if-no-files-found: error
 
@@ -114,36 +72,10 @@ jobs:
           python-version: '3.11'
 
       - name: Build and inspect sdist
-        working-directory: bindings/python
         run: |
           set -euxo pipefail
           python -m pip install --upgrade build
-          python -m build --sdist
-          sdist="$(find dist -maxdepth 1 -name 'libmpq-*.tar.gz' -print -quit)"
-          test -s "${sdist}"
-          tar -tzf "${sdist}" | grep -E '/(src|include)/' >/dev/null
-          if tar -tzf "${sdist}" | grep -E '\.(so|dylib|dll)$'; then
-            echo 'sdist unexpectedly contains a native binary' >&2
-            exit 1
-          fi
-          extracted="$(mktemp -d)"
-          trap 'rm -rf "${extracted}"' EXIT
-          tar -xzf "${sdist}" -C "${extracted}"
-          source_dir="$(find "${extracted}" -mindepth 1 -maxdepth 1 \
-            -type d -print -quit)"
-          test -n "${source_dir}"
-          python -m build --wheel "${source_dir}" \
-            --outdir "${extracted}/wheelhouse"
-          python -m venv "${extracted}/venv"
-          "${extracted}/venv/bin/python" -m pip install --upgrade pip pytest
-          "${extracted}/venv/bin/python" -m pip install \
-            "${extracted}/wheelhouse/"*.whl
-          (
-            cd /tmp
-            LIBMPQ_EXPECT_BUNDLED=1 \
-              "${extracted}/venv/bin/python" -m pytest \
-              "${source_dir}/tests" -k 'not fixture_metadata_and_extraction'
-          )
+          scripts/test-python-sdist.sh bindings/python/dist
 
       - name: Upload source distribution
         uses: actions/upload-artifact@v7
@@ -154,21 +86,16 @@ jobs:
 
   package:
     name: Package Python release
-    needs: [manylinux, musllinux, sdist]
+    needs: [wheel, sdist]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Download manylinux wheel
+      - name: Download Python wheels
         uses: actions/download-artifact@v8
         with:
-          name: libmpq-python-manylinux-wheel
-          path: release/wheels/manylinux
-
-      - name: Download musllinux wheel
-        uses: actions/download-artifact@v8
-        with:
-          name: libmpq-python-musllinux-wheel
-          path: release/wheels/musllinux
+          pattern: libmpq-python-*-wheel
+          path: release/wheels
+          merge-multiple: true
 
       - name: Download source distribution
         uses: actions/download-artifact@v8

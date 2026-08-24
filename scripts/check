@@ -35,6 +35,7 @@ shell_scripts=(
 	scripts/check-c-identifiers
 	scripts/check-c-standards
 	scripts/package-d-binary.sh
+	scripts/test-python-sdist.sh
 )
 sh -n autogen.sh
 bash -n "${shell_scripts[@]}"
