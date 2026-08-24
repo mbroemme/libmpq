@@ -233,6 +233,31 @@ def build_editable(
             license_path.unlink()
 
 
-get_requires_for_build_wheel = _backend.get_requires_for_build_wheel
-get_requires_for_build_sdist = _backend.get_requires_for_build_sdist
-get_requires_for_build_editable = _backend.get_requires_for_build_editable
+def get_requires_for_build_wheel(config_settings=None):
+    """Discover wheel requirements with staged project license files."""
+    created_licenses = _stage_license_files()
+    try:
+        return _backend.get_requires_for_build_wheel(config_settings)
+    finally:
+        for license_path in created_licenses:
+            license_path.unlink()
+
+
+def get_requires_for_build_sdist(config_settings=None):
+    """Discover sdist requirements with staged project license files."""
+    created_licenses = _stage_license_files()
+    try:
+        return _backend.get_requires_for_build_sdist(config_settings)
+    finally:
+        for license_path in created_licenses:
+            license_path.unlink()
+
+
+def get_requires_for_build_editable(config_settings=None):
+    """Discover editable requirements with staged project license files."""
+    created_licenses = _stage_license_files()
+    try:
+        return _backend.get_requires_for_build_editable(config_settings)
+    finally:
+        for license_path in created_licenses:
+            license_path.unlink()
