@@ -188,6 +188,35 @@ cc -std=c99 -Wall -Wextra mpq-example.c -o mpq-example \
   $(libmpq-config --cflags) $(libmpq-config --libs)
 ```
 
+## Native C SDK packages
+
+The native binary release, `libmpq-native-X.Y.Z.zip`, contains relocatable
+x86_64 Linux SDK archives:
+
+* `libmpq-X.Y.Z-linux-glibc-x86_64.tar.gz` for glibc 2.17 and later.
+* `libmpq-X.Y.Z-linux-musl-x86_64.tar.gz` for musl 1.2 and later.
+
+The SDKs use the host's zlib and bzip2 shared libraries; those runtime and
+development dependencies are not bundled. Each archive extracts a single
+package directory containing the executable helper, public headers, shared
+library, pkg-config metadata, manual pages, licenses, README, and BUILDINFO.
+
+Extract the selected SDK anywhere convenient:
+
+```sh
+export LIBMPQ_ROOT="$PWD/libmpq-X.Y.Z"
+export PATH="${LIBMPQ_ROOT}/bin:${PATH}"
+export PKG_CONFIG_PATH="${LIBMPQ_ROOT}/lib/pkgconfig"
+export LD_LIBRARY_PATH="${LIBMPQ_ROOT}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+export MANPATH="${LIBMPQ_ROOT}/share/man${MANPATH:+:${MANPATH}}"
+
+pkg-config --cflags --libs libmpq
+libmpq-config --prefix="${LIBMPQ_ROOT}" --cflags
+libmpq-config --prefix="${LIBMPQ_ROOT}" --libs
+man libmpq-config
+man 3 libmpq
+```
+
 ## Bindings
 
 The source tree contains bindings for the public C API. Each binding has its
@@ -293,11 +322,13 @@ project metadata, and API information.
 
 ### Release package summary
 
-The top-level release workflow publishes one outer archive for each binding.
-These binding archives are included in the signed global `SHA256SUMS`:
+The top-level release workflow publishes outer archives for the language
+bindings and the native binary SDK. These archives are included in the signed
+global `SHA256SUMS`:
 
-| Binding | Release package | Contents |
+| Package | Release archive | Contents |
 | --- | --- | --- |
+| Native C SDK | `libmpq-native-X.Y.Z.zip` | glibc and musl x86_64 SDK packages |
 | Python | `libmpq-python-X.Y.Z.zip` | Python sdist and all wheels |
 | Java | `libmpq-java-X.Y.Z.zip` | Runtime, sources, Javadoc, licenses, and README |
 | D | `libmpq-d-X.Y.Z.zip` | D source and compiler/platform packages |

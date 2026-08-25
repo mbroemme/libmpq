@@ -20,6 +20,11 @@ check_PROGRAMS = \
 	test-writer
 TESTS = $(check_PROGRAMS)
 
+# Verify the generated build-tree helper honors configured installation paths.
+check-local:
+	test "$$($(top_builddir)/libmpq-config --cflags)" = "-I$(includedir)"
+	test "$$($(top_builddir)/libmpq-config --libs)" = "-L$(libdir) -lmpq -lbz2 -lz"
+
 # Compile shared assertions and deterministic-data helpers into every test.
 COMMON_SOURCES = test-mpq-helper.c test-mpq-helper.h
 test_compression_SOURCES = test-mpq-compression.c $(COMMON_SOURCES)

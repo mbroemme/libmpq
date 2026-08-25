@@ -165,7 +165,10 @@ jobs:
       - name: Configure
         run: |
           set -euxo pipefail
-          ./configure --prefix=/usr CC=${{ matrix.compiler.cc }}
+          ./configure --prefix=/opt/libmpq \
+            --includedir=/opt/libmpq/custom-include \
+            --libdir=/opt/libmpq/custom-lib \
+            CC=${{ matrix.compiler.cc }}
 
       - name: Build
         run: |
@@ -176,6 +179,81 @@ jobs:
         run: |
           set -euxo pipefail
           make check V=1
+
+  native-glibc:
+    name: Native C SDK package (glibc)
+    needs: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build and test the manylinux SDK package
+        run: |
+          set -euxo pipefail
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace quay.io/pypa/manylinux2014_x86_64 \
+            bash -euxo pipefail -c '
+              yum install -y autoconf automake binutils bzip2-devel findutils \
+                gcc libtool make pkgconfig tar zlib-devel
+              sh autogen.sh
+              ./configure --prefix=/usr
+              make -j"$(getconf _NPROCESSORS_ONLN)" V=1
+              version="$(./configure --version | sed -n "1s/^libmpq configure //p")"
+              LIBMPQ_NATIVE_LIBC=glibc \
+                LIBMPQ_NATIVE_VERSION="${version}" \
+                LIBMPQ_NATIVE_BUILD_ENVIRONMENT=manylinux2014_x86_64 \
+                LIBMPQ_NATIVE_GLIBC_BASELINE=2.17 \
+                bash scripts/package-native-binary.sh
+              bash scripts/test-native-package.sh \
+                "release/libmpq-${version}-linux-glibc-x86_64.tar.gz" \
+                tests/fixtures/mpq-v1-features.mpq
+            '
+
+  native-musl:
+    name: Native C SDK package (musl)
+    needs: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build and test the Alpine SDK package
+        run: |
+          set -euxo pipefail
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace quay.io/pypa/musllinux_1_2_x86_64 bash -euxo pipefail -c '
+              apk add --no-cache autoconf automake bash binutils bzip2-dev \
+                build-base libtool linux-headers pkgconf tar zlib-dev
+              sh autogen.sh
+              ./configure --prefix=/usr
+              make -j"$(getconf _NPROCESSORS_ONLN)" V=1
+              version="$(./configure --version | sed -n "1s/^libmpq configure //p")"
+              LIBMPQ_NATIVE_LIBC=musl \
+                LIBMPQ_NATIVE_VERSION="${version}" \
+                LIBMPQ_NATIVE_BUILD_ENVIRONMENT=musllinux_1_2_x86_64 \
+                LIBMPQ_NATIVE_MUSL_BASELINE=1.2 \
+                bash scripts/package-native-binary.sh
+              bash scripts/test-native-package.sh \
+                "release/libmpq-${version}-linux-musl-x86_64.tar.gz" \
+                tests/fixtures/mpq-v1-features.mpq
+            '
 
   d:
     name: D bindings (${{ matrix.compiler.name }})

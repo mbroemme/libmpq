@@ -42,6 +42,8 @@ shell_scripts=(
 	scripts/check-c-identifiers
 	scripts/check-c-standards
 	scripts/package-d-binary.sh
+	scripts/package-native-binary.sh
+	scripts/test-native-package.sh
 	scripts/test-java-package.sh
 	scripts/test-python-sdist.sh
 )
