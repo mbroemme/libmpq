@@ -1,9 +1,7 @@
-# Install the Python binding module for distro and Autotools users.
-python_PYTHON = mpq.py
-
 # Include the canonical Python package metadata, documentation, and tests in
-# source distributions; wheel builds are handled by pyproject.toml.
+# source distributions; installation and wheels are handled by pyproject.toml.
 EXTRA_DIST = \
+	mpq.py \
 	_build_backend.py \
 	MANIFEST.in \
 	pyproject.toml \

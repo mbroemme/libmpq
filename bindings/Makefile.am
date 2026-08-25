@@ -1,10 +1,3 @@
-# Subdirectories that are built and installed.
-SUBDIRS = d
-
-# The Java binding has its own Maven build and is included in distributions
-# without becoming part of the native Autotools build.
+# Keep language bindings in source distributions; their native package
+# managers own their builds and installations.
 DIST_SUBDIRS = d java python
-
-if HAVE_PYTHON
-SUBDIRS += python
-endif

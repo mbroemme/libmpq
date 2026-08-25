@@ -1,8 +1,8 @@
 # Subdirectories that are built and installed.
-SUBDIRS				= include/libmpq src bindings docs/man1 docs/man3 tests
+SUBDIRS				= include/libmpq src docs/man1 docs/man3 tests
 
 # Subdirectories included in source distributions.
-DIST_SUBDIRS			= $(SUBDIRS) tools
+DIST_SUBDIRS			= $(SUBDIRS) bindings tools
 
 # Install the libmpq runtime configuration script.
 bin_SCRIPTS			= libmpq-config
