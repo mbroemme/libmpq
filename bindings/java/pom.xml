@@ -10,7 +10,30 @@
   <version>0.6.1</version>
   <name>libmpq Java bindings</name>
   <description>Java Foreign Function API bindings for libmpq</description>
+  <url>https://github.com/mbroemme/libmpq</url>
   <packaging>jar</packaging>
+
+  <licenses>
+    <license>
+      <name>GNU Lesser General Public License, version 2.1 or later</name>
+      <url>https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>mbroemme</id>
+      <name>Maik Broemme</name>
+      <email>mbroemme@libmpq.org</email>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/mbroemme/libmpq.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/mbroemme/libmpq.git</developerConnection>
+    <url>https://github.com/mbroemme/libmpq</url>
+  </scm>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -34,7 +57,7 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.13.0</version>
         <configuration>
-          <release>22</release>
+          <release>${maven.compiler.release}</release>
           <showWarnings>true</showWarnings>
           <showDeprecation>true</showDeprecation>
         </configuration>

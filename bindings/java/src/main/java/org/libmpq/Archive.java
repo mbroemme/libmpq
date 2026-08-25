@@ -286,6 +286,7 @@ public final class Archive implements AutoCloseable {
      */
     public byte[] readBlock(int number, int block) throws LibmpqException {
         openBlockOffsets(number);
+        Throwable primary = null;
         try (Arena arena = Arena.ofConfined()) {
             long size = blockSize(number, block);
             byte[] result = new byte[Support.checkedArraySize(size)];
@@ -296,8 +297,19 @@ public final class Archive implements AutoCloseable {
                                                  size, transferred));
             Support.copyTo(output, result);
             return result;
+        } catch (LibmpqException | RuntimeException | Error exception) {
+            primary = exception;
+            throw exception;
         } finally {
-            closeBlockOffsets(number);
+            try {
+                closeBlockOffsets(number);
+            } catch (LibmpqException | RuntimeException | Error cleanup) {
+                if (primary != null) {
+                    primary.addSuppressed(cleanup);
+                } else {
+                    throw cleanup;
+                }
+            }
         }
     }
 

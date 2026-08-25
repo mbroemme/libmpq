@@ -30,8 +30,11 @@ class LibmpqTest {
     /** Skips integration tests when no native library path was configured. */
     @BeforeAll
     static void requireNativeLibrary() {
-        Assumptions.assumeTrue(System.getProperty("org.libmpq.library") != null,
-                               "set org.libmpq.library to run native integration tests");
+        boolean explicitLibrary = System.getProperty("org.libmpq.library") != null;
+        boolean loaderPathTest = Boolean.getBoolean("org.libmpq.test.loaderPath");
+        Assumptions.assumeTrue(explicitLibrary || loaderPathTest,
+                               "configure org.libmpq.library or "
+                               + "org.libmpq.test.loaderPath to run native integration tests");
     }
 
     /** Verifies version reporting and translation of a documented error code. */

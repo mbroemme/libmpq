@@ -68,6 +68,15 @@ jobs:
             -Dorg.libmpq.library="${GITHUB_WORKSPACE}/src/.libs/libmpq.so" \
             -Dlibmpq.sourceDir="${GITHUB_WORKSPACE}"
 
+      - name: Test Java bindings through loader path
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/src/.libs
+        run: |
+          set -euxo pipefail
+          mvn -B -f bindings/java/pom.xml test \
+            -Dorg.libmpq.test.loaderPath=true \
+            -Dlibmpq.sourceDir="${GITHUB_WORKSPACE}"
+
       - name: Inspect Java artifacts
         run: |
           set -euxo pipefail
@@ -80,15 +89,30 @@ jobs:
               exit 1
             fi
           fi
-          test -s "$(find bindings/java/target -maxdepth 1 -name 'libmpq-java-*.jar' -print -quit)"
+          test -s "bindings/java/target/libmpq-java-${version}.jar"
+          test -s "bindings/java/target/libmpq-java-${version}-sources.jar"
+          test -s "bindings/java/target/libmpq-java-${version}-javadoc.jar"
+          package_dir="$(mktemp -d)"
+          trap 'rm -rf -- "${package_dir}"' EXIT
+          cp "bindings/java/target/libmpq-java-${version}.jar" \
+            "bindings/java/target/libmpq-java-${version}-sources.jar" \
+            "bindings/java/target/libmpq-java-${version}-javadoc.jar" \
+            COPYING COPYING.LESSER bindings/java/README.md "${package_dir}/"
           (
-            cd bindings/java/target
-            zip -q "libmpq-java-${version}.zip" \
-              "libmpq-java-${version}.jar" \
-              "libmpq-java-${version}-sources.jar" \
-              "libmpq-java-${version}-javadoc.jar"
+            cd "${package_dir}"
+            zip -q "${GITHUB_WORKSPACE}/bindings/java/target/libmpq-java-${version}.zip" ./*
           )
           unzip -t "bindings/java/target/libmpq-java-${version}.zip"
+
+      - name: Test packaged Java release
+        run: |
+          set -euxo pipefail
+          version="$(mvn -q -f bindings/java/pom.xml \
+            help:evaluate -Dexpression=project.version -DforceStdout)"
+          scripts/test-java-package.sh \
+            "bindings/java/target/libmpq-java-${version}.zip" \
+            "${version}" \
+            "${GITHUB_WORKSPACE}/src/.libs"
 
       - name: Upload Java artifacts
         uses: actions/upload-artifact@v7
