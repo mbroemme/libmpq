@@ -344,6 +344,9 @@ The documentation includes manual pages for all available public API
 functions, together with a helper for retrieving the compiler and linker flags
 required to use libmpq.
 
+For an implementation-oriented overview of MPQ v1 through v4 headers, tables,
+encryption, sectors, and compression, see [MPQ format guide](MPQ.md).
+
 ## Limitations
 
 * Archive creation is currently limited to seekable MPQ v1 and v2 archives.
