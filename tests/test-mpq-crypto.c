@@ -1,8 +1,8 @@
 /* Exercise encrypted raw payloads and encrypted-file key recovery. */
-#include "helper.h"
+#include "test-mpq-helper.h"
 
-#include "../src/crypto.h"
-#include "../src/endian.h"
+#include "../src/mpq-crypto.h"
+#include "../src/mpq-endian.h"
 
 #include <stdio.h>
 #include <stdlib.h>

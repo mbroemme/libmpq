@@ -1,5 +1,5 @@
 /*
- *  pkware.c -- PKWARE Data Compression Library implementation.
+ *  mpq-pkware.c -- PKWARE Data Compression Library implementation.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -22,7 +22,7 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "pkware.h"
+#include "mpq-pkware.h"
 #include "mpq-internal.h"
 #include <libmpq/mpq.h>
 

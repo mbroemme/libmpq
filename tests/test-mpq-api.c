@@ -1,5 +1,5 @@
 /* Exercise the complete public archive, file, lookup, and block API. */
-#include "helper.h"
+#include "test-mpq-helper.h"
 
 #include <stdio.h>
 #include <stdlib.h>

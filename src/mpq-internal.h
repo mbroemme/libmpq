@@ -77,7 +77,7 @@
 #define TRUE 1
 #endif
 
-#include "pack_begin.h"
+#include "mpq-pack-begin.h"
 
 /*
  * The fixed portion of an MPQ archive header stored at the archive start.
@@ -170,7 +170,7 @@ typedef struct
     uint32_t block_table_indices; /* Block-table index for this public file number. */
     uint32_t block_table_diff;    /* Number of skipped invalid block entries before this file. */
 } PACK_STRUCT mpq_map_s;
-#include "pack_end.h"
+#include "mpq-pack-end.h"
 
 /*
  * Runtime handle for an opened or newly created MPQ archive. It owns the

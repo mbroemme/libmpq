@@ -1,5 +1,5 @@
 /*
- *  crypto.c -- internal hash, encryption and key-recovery helpers.
+ *  mpq-crypto.c -- internal hash, encryption and key-recovery helpers.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -17,9 +17,9 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "crypto.h"
-#include "crypt_buf.h"
-#include "endian.h"
+#include "mpq-crypto.h"
+#include "mpq-crypt-buf.h"
+#include "mpq-endian.h"
 #include "mpq-internal.h"
 #include <libmpq/mpq.h>
 

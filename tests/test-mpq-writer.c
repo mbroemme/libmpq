@@ -1,5 +1,5 @@
 /* Exercise archive creation, streaming writes, path insertion, and determinism. */
-#include "helper.h"
+#include "test-mpq-helper.h"
 
 #include <stdio.h>
 #include <stdlib.h>

@@ -1,5 +1,5 @@
 /* Verify every checked-in v1 and v2 fixture archive and extracted payload. */
-#include "helper.h"
+#include "test-mpq-helper.h"
 
 #include <stdio.h>
 #include <stdlib.h>

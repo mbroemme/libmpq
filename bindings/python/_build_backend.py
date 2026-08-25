@@ -84,8 +84,8 @@ def _build_native():
     if not source_root.exists():
         source_root = _ROOT.parents[1]
     sources = sorted((source_root / "src").glob("*.c"))
-    # Do not add src/ as an angle-bracket include directory: its endian.h
-    # would shadow the system <endian.h> included by glibc headers.
+    # Do not add src/ as an angle-bracket include directory. Private native
+    # headers use an mpq- namespace and must not become public include paths.
     includes = ["-I", str(source_root / "include")]
     compiler = os.environ.get("CC", "cc")
     command = [

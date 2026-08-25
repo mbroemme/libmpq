@@ -1,5 +1,5 @@
 /*
- *  pkware.h -- PKWARE Data Compression Library declarations.
+ *  mpq-pkware.h -- PKWARE Data Compression Library declarations.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -63,7 +63,7 @@
 /* A decoder input/output callback stopped the expansion before completion. */
 #define LIBMPQ_PKZIP_CMP_ABORT 4
 
-#include "pack_begin.h"
+#include "mpq-pack-begin.h"
 
 /* PKWARE explode decoder state; field offsets match the original workspace layout. */
 typedef struct
@@ -95,7 +95,7 @@ typedef struct
     uint8_t clen_bits[0x10];  /* 3104 - extra bit count per length prefix. */
     uint16_t len_base[0x10];  /* 3114 - base copy length per prefix. */
 } PACK_STRUCT pkzip_cmp_s;
-#include "pack_end.h"
+#include "mpq-pack-end.h"
 
 /* Callback state that connects the PKWARE decoder to libmpq input and output buffers. */
 typedef struct

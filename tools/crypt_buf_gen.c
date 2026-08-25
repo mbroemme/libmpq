@@ -20,7 +20,7 @@
  *
  *  Usage:
  *  $ make crypt_buf_gen
- *  $ ./crypt_buf_gen > crypt_buf.h
+ *  $ ./crypt_buf_gen > mpq-crypt-buf.h
  *
  */
 #include <stdint.h>

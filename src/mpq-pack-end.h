@@ -1,5 +1,5 @@
 /*
- *  pack_end.h -- header file for struct packing used by libmpq.
+ *  mpq-pack-end.h -- header file for struct packing used by libmpq.
  *
  *  Copyright (c) 2010-2026 Georg Lukas <georg@op-co.de>
  *
@@ -20,7 +20,7 @@
 #ifdef LIBMPQ_PACK_BEGIN
 #undef LIBMPQ_PACK_BEGIN
 #else
-#error "pack_begin.h must be included before pack_end.h"
+#error "mpq-pack-begin.h must be included before mpq-pack-end.h"
 #endif
 
 #ifdef _MSC_VER

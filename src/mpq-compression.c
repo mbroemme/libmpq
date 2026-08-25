@@ -1,5 +1,5 @@
 /*
- *  compression.c -- MPQ compression and decompression orchestration.
+ *  mpq-compression.c -- MPQ compression and decompression orchestration.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -17,12 +17,12 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "compression.h"
-#include "endian.h"
-#include "huffman.h"
+#include "mpq-compression.h"
+#include "mpq-endian.h"
+#include "mpq-huffman.h"
 #include "mpq-internal.h"
-#include "pkware.h"
-#include "wave.h"
+#include "mpq-pkware.h"
+#include "mpq-wave.h"
 #include <libmpq/mpq.h>
 
 #include <stdlib.h>

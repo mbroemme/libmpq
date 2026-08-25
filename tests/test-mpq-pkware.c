@@ -1,5 +1,5 @@
 /* Exercise extraction of PKWARE and implode fixture payloads. */
-#include "helper.h"
+#include "test-mpq-helper.h"
 
 #include <stdio.h>
 #include <stdlib.h>

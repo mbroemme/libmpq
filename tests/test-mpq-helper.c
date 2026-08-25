@@ -1,7 +1,7 @@
 /* Shared deterministic helpers for the libmpq C regression programs. */
 #define _POSIX_C_SOURCE 200809L
 
-#include "helper.h"
+#include "test-mpq-helper.h"
 
 #include <stdio.h>
 #include <stdlib.h>

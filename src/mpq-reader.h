@@ -1,5 +1,5 @@
 /*
- *  reader.h -- internal archive reader declarations.
+ *  mpq-reader.h -- internal archive reader declarations.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *

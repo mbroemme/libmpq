@@ -1,7 +1,7 @@
 /* Exercise the compiled little-endian serialization module. */
-#include "helper.h"
+#include "test-mpq-helper.h"
 
-#include "../src/endian.h"
+#include "../src/mpq-endian.h"
 
 #include <stdio.h>
 #include <stdlib.h>

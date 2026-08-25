@@ -1,5 +1,5 @@
 /*
- *  reader.c -- internal archive reader implementation.
+ *  mpq-reader.c -- internal archive reader implementation.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -21,11 +21,11 @@
 #include "config.h"
 #endif
 
-#include "crypto.h"
-#include "endian.h"
+#include "mpq-crypto.h"
+#include "mpq-endian.h"
 #include "mpq-internal.h"
-#include "platform.h"
-#include "reader.h"
+#include "mpq-platform.h"
+#include "mpq-reader.h"
 
 #include <errno.h>
 #include <stdlib.h>

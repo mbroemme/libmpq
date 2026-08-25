@@ -1,5 +1,5 @@
 /*
- *  platform.h -- header file for platform specific parts.
+ *  mpq-platform.h -- header file for platform specific parts.
  *
  *  Copyright (c) 2010-2026 Georg Lukas <georg@op-co.de>
  *

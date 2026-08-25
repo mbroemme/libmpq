@@ -1,6 +1,6 @@
 /* Exercise RIFF/WAVE-shaped payload handling and boundary payloads. */
-#include "../src/wave.h"
-#include "helper.h"
+#include "../src/mpq-wave.h"
+#include "test-mpq-helper.h"
 
 #include <stdio.h>
 #include <stdlib.h>

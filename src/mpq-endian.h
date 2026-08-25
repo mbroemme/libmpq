@@ -1,5 +1,5 @@
 /*
- *  endian.h -- little-endian serialization helpers for MPQ data.
+ *  mpq-endian.h -- little-endian serialization helpers for MPQ data.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *

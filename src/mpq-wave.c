@@ -1,5 +1,5 @@
 /*
- *  wave.c -- WAVE decompression helpers for MPQ audio payloads.
+ *  mpq-wave.c -- WAVE decompression helpers for MPQ audio payloads.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -23,8 +23,8 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "wave.h"
-#include "endian.h"
+#include "mpq-wave.h"
+#include "mpq-endian.h"
 #include "mpq-internal.h"
 #include <libmpq/mpq.h>
 #include <stdlib.h>

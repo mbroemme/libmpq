@@ -1,5 +1,5 @@
 /* Exercise extraction of the checked-in adaptive-Huffman fixture payload. */
-#include "helper.h"
+#include "test-mpq-helper.h"
 
 #include <stdio.h>
 #include <stdlib.h>

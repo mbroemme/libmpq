@@ -55,6 +55,14 @@ if git grep -nI '[[:blank:]]$' -- .; then
 	exit 1
 fi
 
+printf 'Checking private native filename namespace...\n'
+for source in src/*.c src/*.h; do
+	if [[ "$(basename -- "${source}")" != mpq-* ]]; then
+		printf 'Private native source/header is not namespaced: %s\n' "${source}" >&2
+		exit 1
+	fi
+done
+
 printf 'Checking C formatting...\n'
 mapfile -t sources < <(
 	git ls-files 'src/*.c' 'src/*.h' 'include/libmpq/*.h' 'tests/*.c' 'tests/*.h' |

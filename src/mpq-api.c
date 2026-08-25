@@ -1,5 +1,5 @@
 /*
- *  mpq.c -- public archive, file and block operations.
+ *  mpq-api.c -- public archive, file and block operations.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -21,13 +21,13 @@
 #include "config.h"
 #endif
 
-#include "compression.h"
-#include "crypto.h"
-#include "endian.h"
+#include "mpq-compression.h"
+#include "mpq-crypto.h"
+#include "mpq-endian.h"
 #include "mpq-internal.h"
-#include "platform.h"
-#include "reader.h"
-#include "writer.h"
+#include "mpq-platform.h"
+#include "mpq-reader.h"
+#include "mpq-writer.h"
 #include <libmpq/mpq.h>
 
 #include <errno.h>

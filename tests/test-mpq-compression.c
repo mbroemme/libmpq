@@ -1,5 +1,5 @@
 /* Exercise raw, zlib, bzip2, and invalid compression paths. */
-#include "helper.h"
+#include "test-mpq-helper.h"
 
 #include <stdio.h>
 #include <stdlib.h>

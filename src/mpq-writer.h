@@ -1,5 +1,5 @@
 /*
- *  writer.h -- internal archive writer declarations.
+ *  mpq-writer.h -- internal archive writer declarations.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *

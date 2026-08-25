@@ -1,5 +1,5 @@
 /*
- *  huffman.c -- adaptive Huffman decompression for MPQ block payloads.
+ *  mpq-huffman.c -- adaptive Huffman decompression for MPQ block payloads.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -28,8 +28,8 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "huffman.h"
-#include "endian.h"
+#include "mpq-huffman.h"
+#include "mpq-endian.h"
 #include "mpq-internal.h"
 #include <libmpq/mpq.h>
 

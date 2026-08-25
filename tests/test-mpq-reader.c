@@ -1,5 +1,5 @@
 /* Exercise fixture opening, file maps, sector offsets, and block reads. */
-#include "helper.h"
+#include "test-mpq-helper.h"
 
 #include <stdio.h>
 #include <stdlib.h>

@@ -1,5 +1,5 @@
 /*
- *  pack_begin.h -- header file for struct packing used by libmpq.
+ *  mpq-pack-begin.h -- header file for struct packing used by libmpq.
  *
  *  Copyright (c) 2010-2026 Georg Lukas <georg@op-co.de>
  *
@@ -20,7 +20,7 @@
 #ifndef LIBMPQ_PACK_BEGIN
 #define LIBMPQ_PACK_BEGIN
 #else
-#error "pack_begin.h may not be included twice!"
+#error "mpq-pack-begin.h may not be included twice!"
 #endif
 
 #ifdef _MSC_VER

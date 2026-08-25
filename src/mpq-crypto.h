@@ -1,5 +1,5 @@
 /*
- *  crypto.h -- internal hash, encryption and key-recovery helpers.
+ *  mpq-crypto.h -- internal hash, encryption and key-recovery helpers.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *

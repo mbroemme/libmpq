@@ -1,5 +1,5 @@
 /*
- *  compression.h -- MPQ compression and decompression declarations.
+ *  mpq-compression.h -- MPQ compression and decompression declarations.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
