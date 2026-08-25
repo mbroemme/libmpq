@@ -73,9 +73,11 @@ For registry publication, code.dlang.org discovers versions from Git tags such
 as `v0.6.0`; registration and registry credentials are intentionally kept out
 of the build and release workflows. See the [DUB publishing guide](https://dub.pm/dub-guide/publishing/).
 
-The repository/source package contains the D source files and expects a system
-libmpq installation. The precompiled release packages are a separate
-distribution format: they contain `.di` interfaces, compiler-specific static
-archives, and the native shared-library files needed at runtime. The outer D
-release ZIP also contains the source package so consumers can rebuild when a
-precompiled package is not suitable.
+Autotools includes the D sources in libmpq source archives but does not install
+the D package. DUB and code.dlang.org own D package installation and
+publication. The repository/source package contains the D source files and
+expects a system libmpq installation. The precompiled release packages are a
+separate distribution format: they contain `.di` interfaces,
+compiler-specific static archives, and the native shared-library files needed
+at runtime. The outer D release ZIP also contains the source package so
+consumers can rebuild when a precompiled package is not suitable.

@@ -5,15 +5,30 @@ These bindings use the Java Foreign Function and Memory API and require JDK
 through `org.libmpq.ffi.LibmpqNative` and safer `AutoCloseable` wrappers in
 `org.libmpq`.
 
-The JAR does not contain a native library. Build and install libmpq separately,
-then either set `org.libmpq.library` to the absolute native-library path or
-make `mpq` available through the platform library search path.
+The JAR does not contain a native library. Autotools does not install the
+Java binding; Maven builds the platform-independent runtime, sources, and
+Javadoc JARs. Build and install libmpq separately, then either set
+`org.libmpq.library` to the absolute native-library path or make `mpq`
+available through the platform library search path.
 
 For example:
 
 ```sh
 mvn test -Dorg.libmpq.library=/path/to/libmpq/src/.libs/libmpq.so
 ```
+
+To exercise the loader-path fallback explicitly, provide the native library
+directory through the platform loader and enable the integration test mode:
+
+```sh
+LD_LIBRARY_PATH=/path/to/libmpq/src/.libs \
+    mvn test -Dorg.libmpq.test.loaderPath=true
+```
+
+The release Java ZIP contains the runtime, sources, and Javadoc JARs together
+with `COPYING`, `COPYING.LESSER`, and this README. Release validation also
+builds an external consumer using only the packaged runtime JAR and tests
+both native-library loading modes.
 
 The high-level API uses `Archive.open`, `Archive.create`, and
 `MpqFileWriter`. All negative libmpq return codes are reported as

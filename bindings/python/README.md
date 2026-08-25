@@ -5,16 +5,31 @@ the historical `import mpq` API while adding explicit archive and reader
 lifecycle management, typed native errors, archive creation, cloning,
 metadata, block access, compression, encryption, and streaming writes.
 
-The binding does not currently bundle native binaries in source-tree or
-Autotools installs. Set `LIBMPQ_LIBRARY` to an absolute shared-library path,
-or build libmpq in the source tree and let the development fallback locate
-`src/.libs/libmpq.so`.
+The binding is distributed through Python packaging rather than Autotools.
+Autotools includes the binding sources in source archives but does not install
+the Python package. For a local package installation, use the PEP 517 build
+backend through `pip`:
+
+```sh
+python -m pip install .
+```
+
+For source-tree development, set `LIBMPQ_LIBRARY` to an absolute
+shared-library path, or build libmpq in the source tree and let the
+development fallback locate `src/.libs/libmpq.so`.
 
 ```sh
 ./configure
 make
 LIBMPQ_LIBRARY="$PWD/src/.libs/libmpq.so" python -m pytest bindings/python/tests
 ```
+
+Release wheels contain a private native library at `mpq_libs/libmpq.so`. It
+is loaded by its exact package path through `ctypes`, intentionally has no ELF
+`DT_SONAME`, and does not require a separate system libmpq installation. The
+release Python ZIP contains the sdist and all generated manylinux/musllinux
+wheels. The sdist contains the canonical C and header sources and is free of
+native build products.
 
 Typical usage is explicitly closeable and safe with context managers:
 

@@ -50,20 +50,21 @@ The build system requires:
 * zlib development headers and libraries.
 * bzip2 development headers and libraries.
 
-The Python binding is optional and is enabled when Python 2.4 or newer,
-including Python 3, is found. The D binding is installed as a D module and
-does not form part of the C library build.
+The Python, D, and Java bindings are maintained and distributed through their
+native package ecosystems. They are included in source distributions but are
+not installed by the native Autotools build.
 
 The Java binding is built independently with Maven and requires JDK 22 or
 newer. It uses the Foreign Function and Memory API, maps the stable public C
-API, and does not bundle native libraries. See `bindings/java/README.md` for
-library-loading and test instructions.
+API, and uses an externally supplied native library. See the binding-specific
+documentation below for build, test, and library-loading instructions.
 
 ## Building
 
-For build and install use the commands below and if `--prefix=/usr` is used,
-the `make install` command must be run as root user. It installs the shared
-library, public header, bindings, and manual pages.
+For build and install use the commands below. If `--prefix=/usr` is used, the
+`make install` command must be run as root. It installs the native shared
+library, public headers, tools, and manual pages. Language bindings are built
+and installed separately with their native package managers.
 
 ```sh
 ./configure --prefix=/usr &&
@@ -189,19 +190,122 @@ cc -std=c99 -Wall -Wextra mpq-example.c -o mpq-example \
 
 ## Bindings
 
-The source tree contains bindings for the public C API:
+The source tree contains bindings for the public C API. Each binding has its
+own package metadata, tests, and distribution workflow.
 
-* `bindings/python/mpq.py` provides a Python 3.11+ ctypes wrapper with
-  archive creation, metadata, cloning, streaming, and buffered readers.
-* `bindings/d/source/libmpq/mpq.d` provides the `libmpq.mpq` D module with
-  declarations and helper classes for Phobos. The related D modules contain
-  archive, error, option, and native ABI definitions.
+### Python
 
-The Python binding is included automatically when Python 3.11+ is found during
-configuration. Its canonical package metadata and pytest suite are in
-`bindings/python/pyproject.toml`; Autotools remains available for distro
-installs. The D binding is installed as
-`libmpq/mpq.d`, alongside the C header; import it with `import libmpq.mpq;`.
+The Python binding is a Python 3.11+ `ctypes` package. Its implementation is
+in `bindings/python/mpq.py`, package metadata is in
+`bindings/python/pyproject.toml`, and tests are in `bindings/python/tests`.
+Autotools does not detect or install the Python package; use the PEP 517
+backend and pip/PyPI instead.
+
+For development from a source checkout, build the native library and run the
+tests with an explicit native-library override:
+
+```sh
+sh autogen.sh
+./configure
+make
+LIBMPQ_LIBRARY="$PWD/src/.libs/libmpq.so" \
+    python -m pytest bindings/python/tests
+```
+
+The release wheels are built with cibuildwheel and repaired for
+`manylinux_2_17_x86_64` and `musllinux_1_2_x86_64`. They contain a private
+native library at `mpq_libs/libmpq.so`, loaded directly by package path; the
+wheel does not require a separately installed libmpq library. This private
+library intentionally has no ELF SONAME. The Python release archive,
+`libmpq-python-X.Y.Z.zip`, contains the sdist and all generated wheels.
+
+See [`bindings/python/README.md`](bindings/python/README.md) for API examples,
+package installation, native-library behavior, and test instructions.
+
+### D
+
+The D binding is a DUB package named `libmpq`. The manifest is
+[`dub.sdl`](dub.sdl), and the modules are under
+`bindings/d/source/libmpq`. Import the high-level API with:
+
+```d
+import libmpq.mpq;
+```
+
+Autotools includes the D sources in source distributions but does not install
+them. DUB/code.dlang.org owns D package installation. From a checkout, build
+the native library and run the tests with DMD or LDC:
+
+```sh
+sh autogen.sh
+./configure
+make
+LIBRARY_PATH="$PWD/src/.libs" LD_LIBRARY_PATH="$PWD/src/.libs" \
+    dub run --config=tests --compiler=dmd
+LIBRARY_PATH="$PWD/src/.libs" LD_LIBRARY_PATH="$PWD/src/.libs" \
+    dub run --config=tests --compiler=ldc2
+```
+
+The D release archive is `libmpq-d-X.Y.Z.zip`. It contains the D source
+package and compiler-specific binary packages for DMD and LDC on Linux
+x86_64, with separate glibc and musl variants. Binary packages include the
+precompiled D archive and the complete `libmpq.so` SONAME chain. Their bundled
+library directory is supplied automatically at link time; runtime loading may
+still require `LD_LIBRARY_PATH`. `BUILDINFO` records compiler and native build
+metadata.
+
+See [`bindings/d/README.md`](bindings/d/README.md) for DUB usage, compiler
+requirements, binary package details, and examples.
+
+### Java
+
+The Java binding is a Maven project under `bindings/java` and requires JDK 22
+or newer. It uses the Java Foreign Function and Memory API and exposes both
+the low-level `org.libmpq.ffi.LibmpqNative` mapping and higher-level
+`AutoCloseable` classes such as `Archive` and `MpqFileWriter`.
+
+The Java JAR is platform-independent and does not contain `libmpq.so`. Supply
+the native library explicitly:
+
+```sh
+mvn -B -f bindings/java/pom.xml test \
+    -Dorg.libmpq.library="$PWD/src/.libs/libmpq.so" \
+    -Dlibmpq.sourceDir="$PWD"
+```
+
+The binding also supports the normal system loader path:
+
+```sh
+LD_LIBRARY_PATH="$PWD/src/.libs" \
+    mvn -B -f bindings/java/pom.xml test \
+    -Dorg.libmpq.test.loaderPath=true \
+    -Dlibmpq.sourceDir="$PWD"
+```
+
+The Java release archive, `libmpq-java-X.Y.Z.zip`, contains the runtime,
+sources, and Javadoc JARs, together with `COPYING`, `COPYING.LESSER`, and the
+Java binding README. The release workflow validates the packaged runtime JAR
+with an external consumer before uploading it.
+
+See [`bindings/java/README.md`](bindings/java/README.md) and
+[`bindings/java/pom.xml`](bindings/java/pom.xml) for Maven configuration,
+project metadata, and API information.
+
+### Release package summary
+
+The top-level release workflow publishes one outer archive for each binding.
+These binding archives are included in the signed global `SHA256SUMS`:
+
+| Binding | Release package | Contents |
+| --- | --- | --- |
+| Python | `libmpq-python-X.Y.Z.zip` | Python sdist and all wheels |
+| Java | `libmpq-java-X.Y.Z.zip` | Runtime, sources, Javadoc, licenses, and README |
+| D | `libmpq-d-X.Y.Z.zip` | D source and compiler/platform packages |
+
+The native source archives remain separate top-level assets:
+`libmpq-X.Y.Z.tar.gz` and `libmpq-X.Y.Z.tar.bz2`. The release workflow builds,
+tests, collects, and validates all packages before generating the single
+global checksum manifest and its GPG signature.
 
 ## Documentation
 
