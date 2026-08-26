@@ -213,7 +213,7 @@ export MANPATH="${LIBMPQ_ROOT}/share/man${MANPATH:+:${MANPATH}}"
 pkg-config --cflags --libs libmpq
 libmpq-config --prefix="${LIBMPQ_ROOT}" --cflags
 libmpq-config --prefix="${LIBMPQ_ROOT}" --libs
-man libmpq-config
+man 1 libmpq-config
 man 3 libmpq
 ```
 
@@ -337,6 +337,44 @@ The native source archives remain separate top-level assets:
 `libmpq-X.Y.Z.tar.gz` and `libmpq-X.Y.Z.tar.bz2`. The release workflow builds,
 tests, collects, and validates all packages before generating the single
 global checksum manifest and its GPG signature.
+
+### Registry publication dispatch
+
+Registry workflows are separate from the signed GitHub Release workflow and
+are dispatched manually. Test Python packaging or Maven Central credentials
+from a branch:
+
+```sh
+gh workflow run publish-python.yml --ref <branch> -f target=testpypi
+gh workflow run publish-java.yml --ref <branch> -f mode=validate
+gh workflow run publish-d.yml --ref <branch> -f mode=validate
+```
+
+For a production registry release, select the exact tag ref:
+
+```sh
+gh workflow run publish-python.yml --ref vX.Y.Z -f target=pypi
+gh workflow run publish-java.yml --ref vX.Y.Z -f mode=release
+gh workflow run publish-d.yml --ref vX.Y.Z -f mode=release
+```
+
+Both Maven modes create a real Central Portal deployment and wait for
+`VALIDATED`; there is no sandbox. A `validate` deployment is for testing and
+must be dropped in the Central Portal. A `release` deployment remains
+USER_MANAGED until a maintainer manually chooses Publish or Drop.
+
+The Python publishing workflow reuses the same wheel, source-distribution, and
+metadata-validation pipeline as the signed GitHub Release. Likewise, Java
+release packaging and Maven Central validation share one package build and
+consumer-validation script.
+
+D `validate` may run from a branch or tag and validates the complete D release
+package set: source, DMD/glibc, DMD/musl, LDC/glibc, and LDC/musl. It performs
+no registry activity. D `release` requires an exact `v*` tag where the tag,
+native project, and DUB versions agree; code.dlang.org independently discovers
+that tag, and the workflow waits until the exact package version appears. It
+does not upload anything to code.dlang.org. Both modes reuse the canonical D
+package pipeline used by the signed GitHub Release.
 
 ## Documentation
 

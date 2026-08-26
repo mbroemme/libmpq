@@ -27,6 +27,9 @@ jobs:
   python:
     name: Build Python packages
     uses: ./.github/workflows/release-python.yml
+    with:
+      mode: release
+      assemble_release: true
 
   java:
     name: Build Java package
@@ -35,6 +38,9 @@ jobs:
   d:
     name: Build D package
     uses: ./.github/workflows/release-d.yml
+    with:
+      mode: release
+      assemble_release: true
 
   native:
     name: Build native C SDK package

@@ -1,0 +1,75 @@
+# Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+#
+# This file is free software; you can redistribute it and/or modify it under
+# the terms of the GNU Lesser General Public License as published by the Free
+# Software Foundation; either version 2.1 of the License, or (at your option)
+# any later version.
+
+name: Publish D bindings
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: D package publishing mode
+        required: true
+        type: choice
+        default: validate
+        options: [validate, release]
+
+concurrency:
+  group: publish-d-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-packages:
+    name: Validate D packages
+    uses: ./.github/workflows/release-d.yml
+    with:
+      mode: ${{ inputs.mode }}
+      assemble_release: false
+
+  complete-validation:
+    if: inputs.mode == 'validate'
+    needs: validate-packages
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo 'D package validation completed successfully.'
+          echo 'No registry publication or code.dlang.org discovery check was performed.'
+
+  verify-discovery:
+    if: inputs.mode == 'release'
+    needs: validate-packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Wait for code.dlang.org tag discovery
+        env:
+          LIBMPQ_D_VERSION: ${{ needs.validate-packages.outputs.package_version }}
+        run: |
+          set -euo pipefail
+          version="${LIBMPQ_D_VERSION}"
+          url="https://code.dlang.org/api/packages/libmpq/${version}/info"
+          response="$(mktemp)"
+          trap 'rm -f -- "${response}"' EXIT
+          for _ in $(seq 1 40); do
+            if curl --fail --silent --show-error --location "${url}" > "${response}" &&
+                python - "${response}" "${version}" <<'PY'
+          import json
+          import sys
+          with open(sys.argv[1], encoding="utf-8") as response:
+              metadata = json.load(response)
+          sys.exit(metadata.get("version") != sys.argv[2])
+          PY
+            then
+              echo "code.dlang.org successfully discovered libmpq version ${version}."
+              exit 0
+            fi
+            sleep 60
+          done
+          echo "code.dlang.org did not discover libmpq version ${version} within the allowed time: ${url}" >&2
+          exit 1

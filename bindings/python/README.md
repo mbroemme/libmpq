@@ -5,6 +5,12 @@ the historical `import mpq` API while adding explicit archive and reader
 lifecycle management, typed native errors, archive creation, cloning,
 metadata, block access, compression, encryption, and streaming writes.
 
+The canonical release installation path is [PyPI](https://pypi.org/project/libmpq/):
+
+```sh
+python -m pip install libmpq
+```
+
 The binding is distributed through Python packaging rather than Autotools.
 Autotools includes the binding sources in source archives but does not install
 the Python package. For a local package installation, use the PEP 517 build
@@ -28,8 +34,8 @@ Release wheels contain a private native library at `mpq_libs/libmpq.so`. It
 is loaded by its exact package path through `ctypes`, intentionally has no ELF
 `DT_SONAME`, and does not require a separate system libmpq installation. The
 release Python ZIP contains the sdist and all generated manylinux/musllinux
-wheels. The sdist contains the canonical C and header sources and is free of
-native build products.
+wheels as a supplementary GitHub Release download. The sdist contains the
+canonical C and header sources and is free of native build products.
 
 Typical usage is explicitly closeable and safe with context managers:
 

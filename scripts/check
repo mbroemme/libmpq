@@ -41,7 +41,10 @@ shell_scripts=(
 	scripts/check-function-spacing
 	scripts/check-c-identifiers
 	scripts/check-c-standards
+	scripts/build-d-binary-package.sh
+	scripts/build-java-package.sh
 	scripts/package-d-binary.sh
+	scripts/package-d-source.sh
 	scripts/package-native-binary.sh
 	scripts/test-native-package.sh
 	scripts/test-java-package.sh
