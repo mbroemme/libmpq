@@ -132,6 +132,7 @@ jobs:
             ca-certificates \
             clang \
             git \
+            libclang-rt-dev \
             libbz2-dev \
             libtool \
             zlib1g-dev
