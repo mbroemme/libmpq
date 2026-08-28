@@ -78,6 +78,7 @@ test_adpcm_codec(uint16_t channels)
     uint8_t *encoded = NULL;
     uint8_t *encoded_again = NULL;
     uint8_t *decoded = calloc(1, pcm_size);
+    uint8_t shift;
     uint32_t encoded_size = 0;
     uint32_t encoded_again_size = 0;
     int32_t decoded_size;
@@ -102,6 +103,7 @@ test_adpcm_codec(uint16_t channels)
         goto failure;
     if (encoded_size >= pcm_size)
         goto failure;
+    shift = encoded[1];
     decoded_size = libmpq__wave_decompress(
         decoded, (int32_t)pcm_size, encoded, (int32_t)encoded_size, channels
     );
@@ -119,6 +121,12 @@ test_adpcm_codec(uint16_t channels)
     }
     if (absolute_error / (pcm_size / 2) >= 6000 || maximum_error >= 16000)
         goto failure;
+    encoded[1] = 32;
+    if (libmpq__wave_decompress(
+            decoded, (int32_t)pcm_size, encoded, (int32_t)encoded_size, channels
+        ) != 0)
+        goto failure;
+    encoded[1] = shift;
     free(decoded);
     free(encoded_again);
     free(encoded);

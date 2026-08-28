@@ -246,8 +246,14 @@ libmpq__wave_decompress(
     int32_t step_indices[2];
     int32_t predictor_samples[2];
     int32_t count = 0;
+    uint32_t shift;
 
     if (channels < 1 || channels > 2 || in_length < 2 + channels * 2) {
+        return 0;
+    }
+
+    shift = in_buf[1];
+    if (shift >= 32) {
         return 0;
     }
 
@@ -341,7 +347,7 @@ libmpq__wave_decompress(
 
             /* Decode a signed delta from the current step-size table entry. */
             uint32_t temp1 = wave_step_sizes[step_indices[index]];
-            uint32_t temp2 = temp1 >> in_buf[1];
+            uint32_t temp2 = temp1 >> shift;
             int32_t temp3 = predictor_samples[index];
 
             if (one_byte & 0x01) {

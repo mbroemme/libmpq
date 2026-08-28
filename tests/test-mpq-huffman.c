@@ -1,9 +1,31 @@
 /* Exercise extraction of the checked-in adaptive-Huffman fixture payload. */
 #include "test-mpq-helper.h"
 
+#include "../src/mpq-huffman.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Verify bit lookahead and refill never read beyond a truncated stream tail. */
+static int
+test_truncated_input(void)
+{
+    const uint8_t tail[] = { 0 };
+    struct huffman_input_stream_s input = { tail, tail + sizeof(tail), 0, 6, 0 };
+    struct huffman_input_stream_s truncated = { tail, tail, 0, 0, 0 };
+    struct huffman_tree_s tree;
+    uint8_t output;
+
+    TEST_CHECK(libmpq__huffman_peek_seven_bits(&input) == 0);
+    TEST_CHECK(input.in_buf == input.in_end && input.bits == 14 && input.failed == 0);
+    input.bits = 0;
+    TEST_CHECK(libmpq__huffman_read_bit(&input) == 0 && input.failed != 0);
+
+    libmpq__huffman_tree_init(&tree, LIBMPQ_HUFF_DECOMPRESS);
+    TEST_CHECK(libmpq__huffman_decode(&tree, &truncated, &output, 1) == LIBMPQ_ERROR_UNPACK);
+    return 0;
+}
 
 /* Resolve and hash the Huffman-compressed fixture entry. */
 int
@@ -16,6 +38,7 @@ main(void)
     char hash[65];
     uint32_t number;
 
+    TEST_CHECK(test_truncated_input() == 0);
     TEST_CHECK(snprintf(path, sizeof(path), "%s/mpq-v1-features.mpq", FIXTURE_DIR) > 0);
     TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
     TEST_CHECK(libmpq__file_number(archive, "huffman.txt", &number) == 0);

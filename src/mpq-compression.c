@@ -77,7 +77,8 @@ libmpq__compression_decompress_huffman(
     /* The first four bytes seed the bit buffer; remaining bytes form the stream. */
     is->bit_buf = libmpq__load_le32(in_buf);
     in_buf += sizeof(int32_t);
-    is->in_buf = (uint8_t *)in_buf;
+    is->in_buf = in_buf;
+    is->in_end = in_buf + in_size - sizeof(uint32_t);
     is->bits = 32;
 
     libmpq__huffman_tree_init(ht, LIBMPQ_HUFF_DECOMPRESS);

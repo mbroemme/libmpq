@@ -423,24 +423,38 @@ libmpq__huffman_previous_item(struct huffman_tree_item_s *hi, long value)
     return hi->prev + value;
 }
 
-/* Read one bit from the Huffman input stream.
- * The low bit is consumed first, and the input buffer is refilled in 32-bit
- * little-endian chunks whenever the current chunk becomes empty. */
+/* Refill the bit accumulator with complete input bytes until it contains the
+ * requested number of bits. The final byte is handled without a word-sized
+ * lookahead, so a valid stream tail cannot read beyond its input buffer. */
+static int
+huffman_refill(struct huffman_input_stream_s *is, uint32_t required_bits)
+{
+    while (is->bits < required_bits && is->in_buf < is->in_end) {
+        is->bit_buf |= (uint32_t)*is->in_buf++ << is->bits;
+        is->bits += 8;
+    }
+
+    if (is->bits < required_bits) {
+        is->failed = 1;
+        return 0;
+    }
+
+    return 1;
+}
+
+/* Read one bit from the bounded Huffman input stream. */
 uint32_t
 libmpq__huffman_read_bit(struct huffman_input_stream_s *is)
 {
+    uint32_t bit;
 
-    /* Current bit before refilling the 32-bit input buffer if needed. */
-    uint32_t bit = (is->bit_buf & 1);
-
-    is->bit_buf >>= 1;
-
-    /* Refill the 32-bit buffer when all pending bits have been consumed. */
-    if (--is->bits == 0) {
-        is->bit_buf = libmpq__load_le32(is->in_buf);
-        is->in_buf += sizeof(int32_t);
-        is->bits = 32;
+    if (!huffman_refill(is, 1)) {
+        return 0;
     }
+
+    bit = is->bit_buf & 1;
+    is->bit_buf >>= 1;
+    is->bits--;
 
     return bit;
 }
@@ -453,18 +467,15 @@ libmpq__huffman_peek_seven_bits(struct huffman_input_stream_s *is)
 {
 
     /* Ensure the quick-decode prefix is fully available. */
-    if (is->bits <= 7) {
-        is->bit_buf |= (uint32_t)libmpq__load_le16(is->in_buf) << is->bits;
-        is->in_buf += sizeof(int16_t);
-        is->bits += 16;
+    if (!huffman_refill(is, 7)) {
+        return 0;
     }
 
     return (is->bit_buf & 0x7F);
 }
 
-/* Read one byte from the Huffman input stream.
- * At least sixteen fresh bits are loaded when necessary so byte extraction
- * remains safe even when the current bit cursor is near a word boundary. */
+/* Read one byte from the bounded Huffman input stream, refilling only from
+ * bytes that remain inside the compressed input range. */
 uint32_t
 libmpq__huffman_read_byte(struct huffman_input_stream_s *is)
 {
@@ -473,10 +484,8 @@ libmpq__huffman_read_byte(struct huffman_input_stream_s *is)
     uint32_t one_byte;
 
     /* Refill before consuming a byte that crosses the current bit buffer. */
-    if (is->bits <= 8) {
-        is->bit_buf |= (uint32_t)libmpq__load_le16(is->in_buf) << is->bits;
-        is->in_buf += sizeof(int16_t);
-        is->bits += 16;
+    if (!huffman_refill(is, 8)) {
+        return 0;
     }
 
     one_byte = (is->bit_buf & 0xFF);
@@ -915,6 +924,9 @@ libmpq__huffman_decode(
 
     /* The first byte selects the initial tree weights and decoder mode. */
     n8bits = libmpq__huffman_read_byte(is);
+    if (is->failed) {
+        return LIBMPQ_ERROR_UNPACK;
+    }
 
     libmpq__huffman_tree_build(ht, n8bits);
 
@@ -923,6 +935,9 @@ libmpq__huffman_decode(
 
     for (;;) {
         n7bits = libmpq__huffman_peek_seven_bits(is);
+        if (is->failed) {
+            return LIBMPQ_ERROR_UNPACK;
+        }
 
         /* Quick-decode entries cache symbols for seven-bit prefixes after tree updates. */
         qd = &ht->quick_decode_cache[n7bits];
@@ -973,6 +988,9 @@ libmpq__huffman_decode(
                         return 0;
                     }
                 }
+                if (is->failed) {
+                    return LIBMPQ_ERROR_UNPACK;
+                }
 
                 /* Store the seventh-level item so the quick cache can resume from it later. */
                 if (++bit_count == 7) {
@@ -1005,6 +1023,9 @@ libmpq__huffman_decode(
          * split the current escape node into an old branch and a new literal. */
         if (dcmp_byte == 0x101) {
             n8bits = libmpq__huffman_read_byte(is);
+            if (is->failed) {
+                return LIBMPQ_ERROR_UNPACK;
+            }
             p_item1 = (PTR_INT(ht->last) <= 0) ? NULL : ht->last;
             if (p_item1 == NULL) {
                 return 0;

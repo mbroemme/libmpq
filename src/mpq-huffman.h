@@ -69,9 +69,11 @@
 /* Bitstream cursor used by the adaptive Huffman decoder. */
 struct huffman_input_stream_s
 {
-    uint8_t *in_buf;  /* 00 - next unread input bytes. */
-    uint32_t bit_buf; /* 04 - pending bits. */
-    uint32_t bits;    /* 08 - number of valid bits in bit_buf. */
+    const uint8_t *in_buf; /* next unread input byte. */
+    const uint8_t *in_end; /* one byte past the compressed input. */
+    uint32_t bit_buf;      /* pending bits. */
+    uint32_t bits;         /* number of valid bits in bit_buf. */
+    int failed;            /* nonzero after input exhaustion. */
 };
 
 struct huffman_output_stream_s
@@ -142,7 +144,7 @@ void libmpq__huffman_remove_item(struct huffman_tree_s *ht, struct huffman_tree_
 struct huffman_tree_item_s *
 libmpq__huffman_previous_item(struct huffman_tree_item_s *hi, long value);
 
-/* Consume and return one low-order bit, refilling the stream in LE words. */
+/* Consume and return one low-order bit from the bounded input range. */
 uint32_t libmpq__huffman_read_bit(struct huffman_input_stream_s *is);
 
 /* Return the next seven low-order bits without advancing the input cursor. */
