@@ -45,7 +45,7 @@ The common 32-byte prefix is:
 
 For v2 combine a classic table position as `(high16 << 32) | low32`. The
 hi-block table is a `u16` array indexed by classic block index and supplies
-bits 32–47 of file positions. v4 records raw-table MD5 values; verify them
+bits 32-47 of file positions. v4 records raw-table MD5 values; verify them
 only after normal structural bounds checks.
 
 ## Classic tables
@@ -94,7 +94,7 @@ when decoding; a sector may instead be stored raw when compression loses.
 | `0x20` | sparse/run-length transform |
 | `0x40` | IMA ADPCM mono |
 | `0x80` | IMA ADPCM stereo |
-| `0x12` | LZMA; a special value, not `0x02 | 0x10` |
+| `0x12` | LZMA; a special value, not `0x02 \| 0x10` |
 
 The sparse, ADPCM, and LZMA variants are game-specific later extensions. Do
 not decode a mask until every required transform is implemented. Bound every
