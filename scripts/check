@@ -43,6 +43,7 @@ shell_scripts=(
 	scripts/check-c-standards
 	scripts/build-d-binary-package.sh
 	scripts/build-java-package.sh
+	scripts/generate-fuzz-corpus.sh
 	scripts/package-d-binary.sh
 	scripts/package-d-source.sh
 	scripts/package-native-binary.sh
@@ -70,7 +71,7 @@ done
 
 printf 'Checking C formatting...\n'
 mapfile -t sources < <(
-	git ls-files 'src/*.c' 'src/*.h' 'include/libmpq/*.h' 'tests/*.c' 'tests/*.h' |
+	git ls-files 'src/*.c' 'src/*.h' 'include/libmpq/*.h' 'tests/*.c' 'tests/*.h' 'fuzz/*.c' |
 	while IFS= read -r source; do
 		if [[ -f "${source}" ]]; then
 			printf '%s\n' "${source}"

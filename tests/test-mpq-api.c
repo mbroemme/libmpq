@@ -49,6 +49,43 @@ test_create_errors(void)
     return 0;
 }
 
+/* Reject malformed header fields before they can overflow shifts or allocations. */
+static int
+test_malformed_headers(void)
+{
+    char path[128];
+    uint8_t header[32] = { 'M',  'P', 'Q', 0x1A, 0x20, 0, 0, 0, 0x20, 0, 0, 0, 0, 0, 3, 0,
+                           0x20, 0,   0,   0,    0x20, 0, 0, 0, 0,    0, 0, 0, 0, 0, 0, 0 };
+    FILE *stream;
+    mpq_archive_s *archive = NULL;
+
+    TEST_CHECK(test_temp_path(path, sizeof(path), "malformed-header") == 0);
+    stream = fopen(path, "wb");
+    TEST_CHECK(stream != NULL);
+    TEST_CHECK(fwrite(header, 1, sizeof(header), stream) == sizeof(header));
+    TEST_CHECK(fclose(stream) == 0);
+
+    header[14] = 23;
+    stream = fopen(path, "wb");
+    TEST_CHECK(stream != NULL);
+    TEST_CHECK(fwrite(header, 1, sizeof(header), stream) == sizeof(header));
+    TEST_CHECK(fclose(stream) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == LIBMPQ_ERROR_FORMAT);
+    TEST_CHECK(archive == NULL);
+
+    header[14] = 3;
+    memset(header + 24, 0xFF, sizeof(uint32_t));
+    stream = fopen(path, "wb");
+    TEST_CHECK(stream != NULL);
+    TEST_CHECK(fwrite(header, 1, sizeof(header), stream) == sizeof(header));
+    TEST_CHECK(fclose(stream) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == LIBMPQ_ERROR_FORMAT);
+    TEST_CHECK(archive == NULL);
+    remove(path);
+
+    return 0;
+}
+
 /* Exercise writer argument validation while an archive is still writable. */
 static int
 test_writer_errors(mpq_archive_s *archive)
@@ -118,6 +155,7 @@ main(void)
     TEST_CHECK(libmpq__version() != NULL && *libmpq__version() != '\0');
     TEST_CHECK(test_error_strings() == 0);
     TEST_CHECK(test_create_errors() == 0);
+    TEST_CHECK(test_malformed_headers() == 0);
     TEST_CHECK(libmpq__archive_clone(NULL, NULL) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__archive_close(NULL) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(test_temp_path(archive_path, sizeof(archive_path), "api") == 0);

@@ -14,17 +14,32 @@ cd "${project_root}"
 
 status=0
 
+search_c_sources()
+{
+	if command -v rg >/dev/null 2>&1; then
+		rg -n --glob '*.c' --glob '*.h' -- "$1" src include tools tests fuzz
+	else
+		grep -R -n -E --include='*.c' --include='*.h' -- "$1" src include tools tests fuzz
+	fi
+}
+
+filter_identifier_exceptions()
+{
+	if command -v rg >/dev/null 2>&1; then
+		rg -v 'uInt|inflateInit|inflateEnd|deflateInit|deflateEnd|LLVMFuzzerInitialize|LLVMFuzzerTestOneInput|MPQ\\x1A'
+	else
+		grep -E -v 'uInt|inflateInit|inflateEnd|deflateInit|deflateEnd|LLVMFuzzerInitialize|LLVMFuzzerTestOneInput|MPQ\\x1A'
+	fi
+}
+
 printf 'Checking C identifier casing...\n'
-if rg -n --glob '*.c' --glob '*.h' \
-	'\b[a-z][a-z0-9_]*[A-Z][A-Za-z0-9_]*\b' src include tools tests |
-	rg -v 'uInt|inflateInit|inflateEnd|deflateInit|deflateEnd|MPQ\\x1A'; then
+if search_c_sources '\b[a-z][a-z0-9_]*[A-Z][A-Za-z0-9_]*\b' | filter_identifier_exceptions; then
 	printf 'Camel-case C identifiers found.\n' >&2
 	status=1
 fi
 
 printf 'Checking opaque generated identifier suffixes...\n'
-if rg -n --glob '*.c' --glob '*.h' \
-	'\b[A-Za-z_][A-Za-z0-9_]*_[0-9A-Fa-f]{6,}\b' src include tools tests; then
+if search_c_sources '\b[A-Za-z_][A-Za-z0-9_]*_[0-9A-Fa-f]{6,}\b'; then
 	printf 'Opaque hexadecimal C identifiers found.\n' >&2
 	status=1
 fi

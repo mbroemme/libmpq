@@ -109,6 +109,22 @@ jobs:
           fi
           clang-tidy-22 --quiet -p . "${sources[@]}"
 
+      - name: Run clang-tidy on fuzz harnesses
+        run: |
+          set -euxo pipefail
+          mapfile -t sources < <(git ls-files 'fuzz/*.c')
+          if ((${#sources[@]} == 0)); then
+            echo 'No fuzz harnesses found.' >&2
+            exit 1
+          fi
+          clang-tidy-22 --quiet --config-file=.clang-tidy "${sources[@]}" -- \
+            -DHAVE_CONFIG_H \
+            -I. \
+            -Iinclude \
+            -Isrc \
+            -std=c99 \
+            -fvisibility=hidden
+
   sanitizers:
     name: Sanitizers (ASan, UBSan, LSan)
     needs: lint
@@ -172,6 +188,13 @@ jobs:
         run: |
           set -euxo pipefail
           make check V=1
+
+  fuzz:
+    name: Fuzzing
+    needs: lint
+    uses: ./.github/workflows/fuzz.yml
+    with:
+      max_total_time: 60
 
   build:
     name: Build (${{ matrix.compiler.name }})

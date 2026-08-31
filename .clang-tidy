@@ -21,8 +21,8 @@ Checks: >
   readability-isolate-declaration
 WarningsAsErrors: '*'
 
-# Report diagnostics only from headers owned by this project.
-HeaderFilterRegex: '(^|.*/)((src/[^/]+\.[ch])|(include/libmpq/[^/]+\.h)|(tools/[^/]+\.c)|(tests/[^/]+\.[ch]))$'
+# Report diagnostics only from source files and headers owned by this project.
+HeaderFilterRegex: '(^|.*/)((src/[^/]+\.[ch])|(include/libmpq/[^/]+\.h)|(tools/[^/]+\.c)|(tests/[^/]+\.[ch])|(fuzz/[^/]+\.c))$'
 SystemHeaders: false
 
 CheckOptions:

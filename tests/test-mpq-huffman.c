@@ -14,6 +14,7 @@ test_truncated_input(void)
     const uint8_t tail[] = { 0 };
     struct huffman_input_stream_s input = { tail, tail + sizeof(tail), 0, 6, 0 };
     struct huffman_input_stream_s truncated = { tail, tail, 0, 0, 0 };
+    struct huffman_input_stream_s invalid_type = { tail, tail, 9, 32, 0 };
     struct huffman_tree_s tree;
     uint8_t output;
 
@@ -24,6 +25,8 @@ test_truncated_input(void)
 
     libmpq__huffman_tree_init(&tree, LIBMPQ_HUFF_DECOMPRESS);
     TEST_CHECK(libmpq__huffman_decode(&tree, &truncated, &output, 1) == LIBMPQ_ERROR_UNPACK);
+    libmpq__huffman_tree_init(&tree, LIBMPQ_HUFF_DECOMPRESS);
+    TEST_CHECK(libmpq__huffman_decode(&tree, &invalid_type, &output, 1) == LIBMPQ_ERROR_UNPACK);
     return 0;
 }
 

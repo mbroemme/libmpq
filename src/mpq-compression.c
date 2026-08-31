@@ -202,8 +202,27 @@ libmpq__compression_decompress_bzip2(
     strm.next_out = (char *)out_buf;
     strm.avail_out = out_size;
 
-    while (BZ2_bzDecompress(&strm) != BZ_STREAM_END)
-        ;
+    for (;;) {
+        uint32_t available_in = strm.avail_in;
+        uint32_t available_out = strm.avail_out;
+
+        result = BZ2_bzDecompress(&strm);
+        if (result == BZ_STREAM_END) {
+            break;
+        }
+        if (result != BZ_OK || (strm.avail_in == available_in && strm.avail_out == available_out)) {
+            BZ2_bzDecompressEnd(&strm);
+            return LIBMPQ_ERROR_UNPACK;
+        }
+        if (strm.avail_out == 0) {
+            BZ2_bzDecompressEnd(&strm);
+            return LIBMPQ_ERROR_SIZE;
+        }
+        if (strm.avail_in == 0) {
+            BZ2_bzDecompressEnd(&strm);
+            return LIBMPQ_ERROR_UNPACK;
+        }
+    }
 
     tb = strm.total_out_lo32;
 
@@ -268,6 +287,10 @@ libmpq__compression_decompress_multi(
     uint8_t decompress_flag;
     uint8_t decompress_unsupp;
     uint32_t i;
+
+    if (in_buf == NULL || out_buf == NULL || in_size == 0) {
+        return LIBMPQ_ERROR_UNPACK;
+    }
 
     /* First byte selects the chained decompression backends for this block. */
     decompress_flag = decompress_unsupp = *in_buf++;

@@ -160,6 +160,7 @@ libmpq__reader_archive_open_path(
     uint8_t header_ex_data[sizeof(mpq_header_ex_s)];
     uint8_t *table_data = NULL;
     size_t table_bytes = 0;
+    libmpq__off_t file_size;
 
     /* A sentinel offset requests the embedded-archive scan used by readers. */
     if (archive_offset == -1) {
@@ -194,6 +195,12 @@ libmpq__reader_archive_open_path(
     errno = 0;
     if (((*mpq_archive)->fp = fopen(mpq_filename, "rb")) == NULL) {
         result = errno == ENOENT ? LIBMPQ_ERROR_EXIST : LIBMPQ_ERROR_OPEN;
+        goto error;
+    }
+
+    if (fseeko((*mpq_archive)->fp, 0, SEEK_END) < 0 ||
+        (file_size = (libmpq__off_t)ftello((*mpq_archive)->fp)) < 0) {
+        result = LIBMPQ_ERROR_SEEK;
         goto error;
     }
 
@@ -243,8 +250,24 @@ libmpq__reader_archive_open_path(
         archive_offset += 512;
     }
 
-    (*mpq_archive)->block_size = 512 << (*mpq_archive)->mpq_header.block_size;
+    if ((*mpq_archive)->mpq_header.block_size > 22) {
+        result = LIBMPQ_ERROR_FORMAT;
+        goto error;
+    }
+
+    (*mpq_archive)->block_size = 512U << (*mpq_archive)->mpq_header.block_size;
     (*mpq_archive)->archive_offset = archive_offset;
+
+    if (table_size((*mpq_archive)->mpq_header.hash_table_count, sizeof(mpq_hash_s), &table_bytes) <
+            0 ||
+        (uint64_t)table_bytes > (uint64_t)file_size ||
+        table_size(
+            (*mpq_archive)->mpq_header.block_table_count, sizeof(mpq_block_s), &table_bytes
+        ) < 0 ||
+        (uint64_t)table_bytes > (uint64_t)file_size) {
+        result = LIBMPQ_ERROR_FORMAT;
+        goto error;
+    }
 
     /* MPQ v2 stores high table offsets in a separate extension immediately after v1. */
     if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO) {

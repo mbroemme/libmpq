@@ -9,6 +9,21 @@ AC_CANONICAL_TARGET
 AM_INIT_AUTOMAKE([no-dependencies])
 AC_CONFIG_HEADERS([config.h:config.h.in])
 
+# Keep libFuzzer targets opt-in so normal developer and release builds do not
+# require a compiler with the libFuzzer runtime.
+AC_ARG_ENABLE(
+	[fuzzing],
+	[AS_HELP_STRING([--enable-fuzzing], [build libFuzzer harnesses])],
+	[enable_fuzzing=$enableval],
+	[enable_fuzzing=no]
+)
+AS_CASE(
+	[$enable_fuzzing],
+	[yes|no], [],
+	[AC_MSG_ERROR([--enable-fuzzing accepts only yes or no])]
+)
+AM_CONDITIONAL([ENABLE_FUZZING], [test "x$enable_fuzzing" = xyes])
+
 # Check for the required build tools.
 AC_USE_SYSTEM_EXTENSIONS
 AC_PROG_CC
@@ -64,6 +79,7 @@ bindings/python/Makefile
 docs/man1/Makefile
 docs/man3/Makefile
 tests/Makefile
+fuzz/Makefile
 tools/Makefile
 ])
 

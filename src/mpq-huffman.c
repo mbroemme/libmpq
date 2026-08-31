@@ -211,6 +211,10 @@ static const uint8_t huffman_initial_weights[] = {
     0x00, 0x00
 };
 
+#define HUFFMAN_INITIAL_WEIGHT_BLOCK_SIZE 258U
+#define HUFFMAN_INITIAL_WEIGHT_TYPES                                                               \
+    (sizeof(huffman_initial_weights) / HUFFMAN_INITIAL_WEIGHT_BLOCK_SIZE)
+
 /* Append one least-significant-bit-first bit to the Huffman output stream.
  * The bit accumulator is flushed only after a complete byte is available,
  * and capacity failures are reported before writing beyond the destination. */
@@ -925,6 +929,9 @@ libmpq__huffman_decode(
     /* The first byte selects the initial tree weights and decoder mode. */
     n8bits = libmpq__huffman_read_byte(is);
     if (is->failed) {
+        return LIBMPQ_ERROR_UNPACK;
+    }
+    if (n8bits >= HUFFMAN_INITIAL_WEIGHT_TYPES) {
         return LIBMPQ_ERROR_UNPACK;
     }
 
