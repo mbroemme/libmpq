@@ -11,7 +11,7 @@ on:
   workflow_call:
     inputs:
       max_total_time:
-        description: Maximum fuzzing time in seconds for each target.
+        description: Total fuzzing time in seconds shared across all targets.
         required: false
         default: 60
         type: number
@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       max_total_time:
-        description: Maximum fuzzing time in seconds for each target.
+        description: Total fuzzing time in seconds shared across all targets.
         required: true
         default: 900
         type: choice
@@ -101,24 +101,36 @@ jobs:
         run: |
           set -euxo pipefail
           artifact_root="$RUNNER_TEMP/libmpq-fuzz-artifacts"
-          mkdir -p "$artifact_root/archive-open" "$artifact_root/sector-decode"
+          targets=(
+            'fuzz-archive-open:archive-open'
+            'fuzz-file-read:file-read'
+            'fuzz-writer-roundtrip:writer-roundtrip'
+            'fuzz-encrypted-archive:encrypted-archive'
+            'fuzz-sector-decode:sector-decode'
+            'fuzz-pkware-decode:pkware-decode'
+            'fuzz-huffman-decode:huffman-decode'
+            'fuzz-zlib-decode:zlib-decode'
+            'fuzz-bzip2-decode:bzip2-decode'
+            'fuzz-wave-decode:wave-decode'
+          )
+          target_seconds=$((FUZZ_SECONDS / ${#targets[@]}))
+          if ((target_seconds == 0)); then
+            target_seconds=1
+          fi
 
-          fuzz/fuzz-archive-open \
-            -artifact_prefix="$artifact_root/archive-open/" \
-            -max_len=1048576 \
-            -max_total_time="$FUZZ_SECONDS" \
-            -rss_limit_mb=512 \
-            -timeout=5 \
-            "$RUNNER_TEMP/libmpq-fuzz-corpus/archive-open" 2>&1 | \
-            tee "$artifact_root/archive-open.log"
-          fuzz/fuzz-sector-decode \
-            -artifact_prefix="$artifact_root/sector-decode/" \
-            -max_len=1048576 \
-            -max_total_time="$FUZZ_SECONDS" \
-            -rss_limit_mb=512 \
-            -timeout=5 \
-            "$RUNNER_TEMP/libmpq-fuzz-corpus/sector-decode" 2>&1 | \
-            tee "$artifact_root/sector-decode.log"
+          for target_spec in "${targets[@]}"; do
+            target="${target_spec%%:*}"
+            corpus="${target_spec##*:}"
+            mkdir -p "$artifact_root/$corpus"
+            "fuzz/$target" \
+              -artifact_prefix="$artifact_root/$corpus/" \
+              -max_len=1048576 \
+              -max_total_time="$target_seconds" \
+              -rss_limit_mb=512 \
+              -timeout=5 \
+              "$RUNNER_TEMP/libmpq-fuzz-corpus/$corpus" 2>&1 | \
+              tee "$artifact_root/$corpus.log"
+          done
 
       - name: Upload fuzzing failure artifacts
         if: failure()
