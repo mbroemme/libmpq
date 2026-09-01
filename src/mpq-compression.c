@@ -106,6 +106,7 @@ libmpq__compression_decompress_zlib(
     z_stream z;
 
     /* Zlib consumes the complete MPQ block and writes directly to the caller buffer. */
+    memset(&z, 0, sizeof(z));
     z.next_in = (Bytef *)in_buf;
     z.avail_in = (uInt)in_size;
     z.total_in = in_size;
@@ -121,6 +122,7 @@ libmpq__compression_decompress_zlib(
     }
 
     if ((result = inflate(&z, Z_FINISH)) != Z_STREAM_END) {
+        inflateEnd(&z);
         return result;
     }
 

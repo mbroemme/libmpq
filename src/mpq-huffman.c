@@ -502,6 +502,23 @@ libmpq__huffman_read_byte(struct huffman_input_stream_s *is)
 /* Allocate or recycle a Huffman tree item and move it to the front list.
  * Reuse keeps the fixed tree pool bounded while preserving the linked-list
  * ordering required by adaptive weight updates. */
+static int
+huffman_item_reference_valid(
+    const struct huffman_tree_s *ht, const struct huffman_tree_item_s *item
+)
+{
+    uintptr_t address = (uintptr_t)item;
+    uintptr_t first = (uintptr_t)&ht->node_pool[0];
+    uintptr_t end = (uintptr_t)&ht->node_pool[sizeof(ht->node_pool) / sizeof(ht->node_pool[0])];
+
+    if (item == PTR_PTR(&ht->current_sentinel) || item == PTR_PTR(&ht->first)) {
+        return TRUE;
+    }
+
+    return address >= first && address < end && (address - first) % sizeof(ht->node_pool[0]) == 0;
+}
+
+/* Acquire a bounded item from the adaptive tree's fixed node pool. */
 struct huffman_tree_item_s *
 libmpq__huffman_acquire_item(struct huffman_tree_s *ht)
 {
@@ -511,11 +528,17 @@ libmpq__huffman_acquire_item(struct huffman_tree_s *ht)
     /* Temporary item and pointer-array state used by the original tree update routine. */
     struct huffman_tree_item_s *p_next;
     struct huffman_tree_item_s *p_prev;
+
+    if (PTR_INT(p_item1) > 0 && !huffman_item_reference_valid(ht, p_item1)) {
+        return NULL;
+    }
+
     if (PTR_INT(p_item1) <= 0 || (p_item2 = p_item1) == NULL) {
-        if ((p_item2 = &ht->node_pool[ht->items++]) != NULL) {
+        if (ht->items < sizeof(ht->node_pool) / sizeof(ht->node_pool[0])) {
+            p_item2 = &ht->node_pool[ht->items++];
             p_item1 = p_item2;
         } else {
-            p_item1 = ht->first;
+            return NULL;
         }
     } else {
         p_item1 = p_item2;
@@ -1038,11 +1061,17 @@ libmpq__huffman_decode(
                 return 0;
             }
             p_item2 = libmpq__huffman_acquire_item(ht);
+            if (p_item2 == NULL) {
+                return LIBMPQ_ERROR_UNPACK;
+            }
             p_item2->parent = p_item1;
             p_item2->dcmp_byte = p_item1->dcmp_byte;
             p_item2->byte_value = p_item1->byte_value;
             ht->symbol_nodes[p_item2->dcmp_byte] = p_item2;
             p_item2 = libmpq__huffman_acquire_item(ht);
+            if (p_item2 == NULL) {
+                return LIBMPQ_ERROR_UNPACK;
+            }
             p_item2->parent = p_item1;
             p_item2->dcmp_byte = n8bits;
             p_item2->byte_value = 0;

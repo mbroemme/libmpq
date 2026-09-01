@@ -1,8 +1,30 @@
 /* Exercise extraction of PKWARE and implode fixture payloads. */
+#include "mpq-compression.h"
+#include "mpq-pkware.h"
 #include "test-mpq-helper.h"
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+/* Decode enough repeated data to flush and preserve the overlapping history window. */
+static int
+test_window_flush(void)
+{
+    uint8_t input[0x3000];
+    uint8_t output[sizeof(input)];
+    uint8_t *packed = NULL;
+    uint32_t packed_size = 0;
+    int32_t unpacked;
+
+    memset(input, 'A', sizeof(input));
+    TEST_CHECK(libmpq__pkzip_compress(input, sizeof(input), &packed, &packed_size) == 0);
+    unpacked = libmpq__compression_decompress_pkzip(packed, packed_size, output, sizeof(output));
+    free(packed);
+    TEST_CHECK(unpacked == (int32_t)sizeof(output));
+    TEST_CHECK(memcmp(output, input, sizeof(input)) == 0);
+    return 0;
+}
 
 /* Read both PKWARE-backed fixture entries to exercise the decoder path. */
 int
@@ -16,6 +38,7 @@ main(void)
     uint32_t number;
     size_t i;
 
+    TEST_CHECK(test_window_flush() == 0);
     TEST_CHECK(snprintf(path, sizeof(path), "%s/mpq-v1-features.mpq", FIXTURE_DIR) > 0);
     TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
     for (i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {

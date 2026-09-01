@@ -30,6 +30,30 @@ test_truncated_input(void)
     return 0;
 }
 
+/* Reject an invalid adaptive-tree reusable item before it can be dereferenced. */
+static int
+test_invalid_reusable_item(void)
+{
+    struct huffman_tree_s tree;
+
+    libmpq__huffman_tree_init(&tree, LIBMPQ_HUFF_DECOMPRESS);
+    tree.next_reusable_item = (struct huffman_tree_item_s *)(uintptr_t)1;
+    TEST_CHECK(libmpq__huffman_acquire_item(&tree) == NULL);
+    return 0;
+}
+
+/* Refuse malformed streams that exhaust the fixed adaptive-tree node pool. */
+static int
+test_exhausted_item_pool(void)
+{
+    struct huffman_tree_s tree;
+
+    libmpq__huffman_tree_init(&tree, LIBMPQ_HUFF_DECOMPRESS);
+    tree.items = sizeof(tree.node_pool) / sizeof(tree.node_pool[0]);
+    TEST_CHECK(libmpq__huffman_acquire_item(&tree) == NULL);
+    return 0;
+}
+
 /* Resolve and hash the Huffman-compressed fixture entry. */
 int
 main(void)
@@ -42,6 +66,8 @@ main(void)
     uint32_t number;
 
     TEST_CHECK(test_truncated_input() == 0);
+    TEST_CHECK(test_invalid_reusable_item() == 0);
+    TEST_CHECK(test_exhausted_item_pool() == 0);
     TEST_CHECK(snprintf(path, sizeof(path), "%s/mpq-v1-features.mpq", FIXTURE_DIR) > 0);
     TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
     TEST_CHECK(libmpq__file_number(archive, "huffman.txt", &number) == 0);

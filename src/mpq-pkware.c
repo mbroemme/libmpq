@@ -445,7 +445,7 @@ expand(pkzip_cmp_s *mpq_pkzip)
                 (char *)&mpq_pkzip->out_buf[0x1000], &copy_bytes, mpq_pkzip->param
             );
 
-            memcpy(mpq_pkzip->out_buf, &mpq_pkzip->out_buf[0x1000], mpq_pkzip->out_pos - 0x1000);
+            memmove(mpq_pkzip->out_buf, &mpq_pkzip->out_buf[0x1000], mpq_pkzip->out_pos - 0x1000);
             mpq_pkzip->out_pos -= 0x1000;
         }
     }

@@ -33,7 +33,13 @@ test_huffman_SOURCES = test-mpq-huffman.c ../src/mpq-huffman.c $(COMMON_SOURCES)
 test_endian_SOURCES = test-mpq-endian.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_fixtures_SOURCES = test-mpq-fixtures.c $(COMMON_SOURCES)
 test_mpq_SOURCES = test-mpq-api.c $(COMMON_SOURCES)
-test_pkware_SOURCES = test-mpq-pkware.c $(COMMON_SOURCES)
+test_pkware_SOURCES = test-mpq-pkware.c \
+	../src/mpq-compression.c \
+	../src/mpq-pkware.c \
+	../src/mpq-huffman.c \
+	../src/mpq-wave.c \
+	../src/mpq-endian.c \
+	$(COMMON_SOURCES)
 test_reader_SOURCES = test-mpq-reader.c $(COMMON_SOURCES)
 test_wave_SOURCES = test-mpq-wave.c ../src/mpq-wave.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_writer_SOURCES = test-mpq-writer.c $(COMMON_SOURCES)

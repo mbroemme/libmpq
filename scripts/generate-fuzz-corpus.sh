@@ -41,6 +41,7 @@ write_v1_header >> "${archive_output}/embedded-v1-header.bin"
 
 printf '\x00\x00\x00' > "${sector_output}/multi-empty"
 printf '\x01\x00\x00' > "${sector_output}/pkware-empty"
+printf '\x00\xfd\xff\x03' > "${sector_output}/multi-zlib-empty-large"
 for mask in 01 02 08 10 40 80 03 04; do
 	printf '%b' "\\x00\\x00\\x00\\x${mask}" > "${sector_output}/multi-mask-${mask}"
 done
