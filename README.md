@@ -1,6 +1,7 @@
 # libmpq
 
 [![CI](https://github.com/mbroemme/libmpq/actions/workflows/ci.yml/badge.svg)](https://github.com/mbroemme/libmpq/actions/workflows/ci.yml)
+[![Coverage](https://mbroemme.github.io/libmpq/coverage.svg)](https://mbroemme.github.io/libmpq/)
 [![GitHub release](https://img.shields.io/github/release/mbroemme/libmpq?style=flat&label=release&cacheSeconds=21600)](https://github.com/mbroemme/libmpq/releases)
 [![GitHub issues](https://img.shields.io/github/issues/mbroemme/libmpq?style=flat&label=issues&cacheSeconds=21600)](https://github.com/mbroemme/libmpq/issues)
 [![GitHub forks](https://img.shields.io/github/forks/mbroemme/libmpq?style=flat&label=forks&cacheSeconds=21600)](https://github.com/mbroemme/libmpq/network/members)

@@ -1,0 +1,150 @@
+# Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+#
+# This file is free software; you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation; either version 2.1 of the License, or
+# (at your option) any later version.
+
+name: Coverage PR report
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  report:
+    name: Update pull request coverage report
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out trusted reporting script
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Download coverage summaries and prepare comment
+        id: report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+
+          readonly repository="${GITHUB_REPOSITORY}"
+          readonly marker='<!-- libmpq-coverage-report -->'
+          temporary_directory="$(mktemp -d)"
+          readonly temporary_directory
+          trap 'rm -rf "${temporary_directory}"' EXIT
+
+          pull_request_number="$(gh api \
+            "/repos/${repository}/actions/runs/${WORKFLOW_RUN_ID}" \
+            --jq '.pull_requests[0].number // empty')"
+          readonly pull_request_number
+          if [[ -z "${pull_request_number}" ]]; then
+            printf 'The completed CI run is not associated with a pull request.\n'
+            exit 0
+          fi
+
+          mapfile -t pull_request_revisions < <(gh api \
+            "/repos/${repository}/pulls/${pull_request_number}" \
+            --jq '[.base.sha, .head.sha] | .[]')
+          if ((${#pull_request_revisions[@]} != 2)); then
+            printf 'Could not determine the pull request base and head revisions.\n' >&2
+            exit 1
+          fi
+          readonly base_sha="${pull_request_revisions[0]}"
+          readonly head_sha="${pull_request_revisions[1]}"
+
+          download_summary() {
+            local run_id="$1"
+            local output_path="$2"
+            local artifact_id
+
+            artifact_id="$(gh api \
+              "/repos/${repository}/actions/runs/${run_id}/artifacts?per_page=100" \
+              --jq '.artifacts[] | select(.name == "libmpq-gcc-coverage-summary" and (.expired | not)) | .id' \
+              | head -n 1)"
+            if [[ -z "${artifact_id}" ]]; then
+              return 1
+            fi
+
+            gh api \
+              "/repos/${repository}/actions/artifacts/${artifact_id}/zip" \
+              > "${temporary_directory}/artifact-${run_id}.zip"
+            unzip -p "${temporary_directory}/artifact-${run_id}.zip" summary.json > "${output_path}"
+          }
+
+          if ! download_summary "${WORKFLOW_RUN_ID}" "${temporary_directory}/current.json"; then
+            printf 'The completed CI run has no GCC coverage summary artifact.\n' >&2
+            exit 1
+          fi
+
+          base_run_id="$(gh api \
+            "/repos/${repository}/actions/workflows/ci.yml/runs?head_sha=${base_sha}&status=success&per_page=100" \
+            --jq '.workflow_runs[] | select(.conclusion == "success") | .id' \
+            | head -n 1)"
+          readonly base_run_id
+
+          if [[ -n "${base_run_id}" ]] && \
+            download_summary "${base_run_id}" "${temporary_directory}/base.json"; then
+            bash scripts/coverage-report.sh comment \
+              --base "${temporary_directory}/base.json" \
+              --current "${temporary_directory}/current.json" \
+              --base-sha "${base_sha}" \
+              --head-sha "${head_sha}" \
+              --report-url 'https://mbroemme.github.io/libmpq/' \
+              --output "${temporary_directory}/comment.md"
+          else
+            bash scripts/coverage-report.sh comment \
+              --current "${temporary_directory}/current.json" \
+              --head-sha "${head_sha}" \
+              --report-url 'https://mbroemme.github.io/libmpq/' \
+              --output "${temporary_directory}/comment.md"
+          fi
+
+          printf '%s\n' "${marker}" >> "${temporary_directory}/comment.md"
+          {
+            printf 'pull_request_number=%s\n' "${pull_request_number}"
+          } >> "${GITHUB_OUTPUT}"
+          cp "${temporary_directory}/comment.md" "${RUNNER_TEMP}/libmpq-coverage-comment.md"
+          printf 'comment_path=%s\n' "${RUNNER_TEMP}/libmpq-coverage-comment.md" >> "${GITHUB_OUTPUT}"
+
+      - name: Create or update pull request coverage report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PULL_REQUEST_NUMBER: ${{ steps.report.outputs.pull_request_number }}
+          COMMENT_PATH: ${{ steps.report.outputs.comment_path }}
+        run: |
+          set -euo pipefail
+
+          readonly repository="${GITHUB_REPOSITORY}"
+          bot_login="$(gh api /user --jq '.login')"
+          readonly bot_login
+          export BOT_LOGIN="${bot_login}"
+          comment_id="$(gh api --paginate \
+            "/repos/${repository}/issues/${PULL_REQUEST_NUMBER}/comments?per_page=100" \
+            --jq '.[] | select(.user.login == env.BOT_LOGIN and (.body | contains("<!-- libmpq-coverage-report -->"))) | .id' \
+            | head -n 1)"
+          readonly comment_id
+
+          if [[ -n "${comment_id}" ]]; then
+            gh api --method PATCH \
+              "/repos/${repository}/issues/comments/${comment_id}" \
+              -F "body=@${COMMENT_PATH}"
+          else
+            gh api --method POST \
+              "/repos/${repository}/issues/${PULL_REQUEST_NUMBER}/comments" \
+              -F "body=@${COMMENT_PATH}"
+          fi

@@ -267,6 +267,136 @@ jobs:
           set -euxo pipefail
           make check V=1
 
+  coverage:
+    name: GCC coverage
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: debian:trixie-slim
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install GCC coverage dependencies
+        run: |
+          set -euxo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            build-essential \
+            ca-certificates \
+            gcovr \
+            git \
+            jq \
+            libbz2-dev \
+            libtool \
+            zlib1g-dev
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Trust repository checkout
+        run: |
+          set -euxo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Generate build system
+        run: |
+          set -euxo pipefail
+          sh autogen.sh
+
+      - name: Configure GCC coverage build
+        env:
+          CC: gcc
+          CFLAGS: -O0 -g --coverage
+          LDFLAGS: --coverage
+        run: |
+          set -euxo pipefail
+          ./configure --prefix=/usr
+
+      - name: Build and test with GCC coverage
+        run: |
+          set -euxo pipefail
+          make -j"$(nproc)" V=1
+          make check V=1
+
+      - name: Generate coverage reports
+        run: |
+          set -euxo pipefail
+          rm -f a-conftest.gcno
+          mkdir -p coverage
+          gcovr \
+            --root "$GITHUB_WORKSPACE" \
+            --filter "$GITHUB_WORKSPACE/src/" \
+            --print-summary \
+            --xml-pretty \
+            --output coverage/cobertura.xml
+          gcovr \
+            --root "$GITHUB_WORKSPACE" \
+            --filter "$GITHUB_WORKSPACE/src/" \
+            --json-summary-pretty \
+            --json-summary coverage/summary.json
+          bash scripts/coverage-report.sh badge \
+            --input coverage/summary.json \
+            --output coverage/coverage.svg
+          gcovr \
+            --root "$GITHUB_WORKSPACE" \
+            --filter "$GITHUB_WORKSPACE/src/" \
+            --html-details coverage/index.html
+
+      - name: Upload GCC coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-gcc-coverage
+          path: coverage
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload GCC coverage summary
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-gcc-coverage-summary
+          path: coverage/summary.json
+          if-no-files-found: error
+          retention-days: 90
+
+  coverage-pages:
+    name: Publish coverage report
+    needs: coverage
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Download GCC coverage report
+        uses: actions/download-artifact@v7
+        with:
+          name: libmpq-gcc-coverage
+          path: coverage
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload coverage report to GitHub Pages
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: coverage
+
+      - name: Deploy coverage report
+        id: deployment
+        uses: actions/deploy-pages@v4
+
   native-glibc:
     name: Native C SDK package (glibc)
     needs: lint

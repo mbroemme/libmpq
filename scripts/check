@@ -43,6 +43,7 @@ shell_scripts=(
 	scripts/check-c-standards
 	scripts/build-d-binary-package.sh
 	scripts/build-java-package.sh
+	scripts/coverage-report.sh
 	scripts/generate-fuzz-corpus.sh
 	scripts/minimize-fuzz-crash.sh
 	scripts/package-d-binary.sh
