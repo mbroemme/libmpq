@@ -27,6 +27,10 @@ readonly zlib_output="${output_root}/zlib-decode"
 readonly bzip2_output="${output_root}/bzip2-decode"
 readonly wave_output="${output_root}/wave-decode"
 
+if [[ -d "${project_root}/fuzz/corpus" ]]; then
+	cp -a "${project_root}/fuzz/corpus/." "${output_root}/"
+fi
+
 mkdir -p \
 	"${archive_output}" \
 	"${encrypted_output}" \
@@ -81,10 +85,10 @@ printf '\x01../../not-a-member' > "${file_read_output}/mutated-path"
 printf '\x01dir\\entry.txt\xff\xff\xff\xff' > "${file_read_output}/separator-and-index"
 printf '%.0sA' {1..255} > "${file_read_output}/maximum-name"
 
-# Seed bounded archive creation with raw and supported compressed payloads.
-printf '\x00\x00hello writer' > "${writer_output}/v1-raw"
-printf '\x01\x01compressed writer payload compressed writer payload' > "${writer_output}/v2-zlib"
-printf '\x00\x03bzip2 candidate payload bzip2 candidate payload' > "${writer_output}/v1-bzip2"
+# Seed version, option, and sector-size selection for bounded archive creation.
+printf '\x00\x00\x00hello writer' > "${writer_output}/v1-raw-512"
+printf '\x01\x0d\x02compressed encrypted writer payload' > "${writer_output}/v2-zlib-encrypted"
+printf '\x00\x14\x03bzip2 single writer payload' > "${writer_output}/v1-bzip2-single"
 
 # Select encrypted seed header, hash/block table, and known-key mutation offsets.
 printf '\x00' > "${encrypted_output}/unmodified-seed"

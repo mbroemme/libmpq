@@ -484,17 +484,21 @@ libmpq__pkzip_compress(
 
     /* Encode runs as matches and leave non-repeating bytes as literals. */
     for (i = 0; i < in_size;) {
+        uint32_t run_length = 1;
+
         pkzip_put_bits(out + 2, &bit_count, 0, 1);
         pkzip_put_bits(out + 2, &bit_count, in_buf[i], 8);
-        if (i + 2 < in_size && in_buf[i + 1] == in_buf[i] && in_buf[i + 2] == in_buf[i]) {
-            uint32_t length = 3;
+        while (i + run_length < in_size && run_length < 0x207 &&
+               in_buf[i + run_length] == in_buf[i]) {
+            run_length++;
+        }
+        if (run_length >= 3) {
+            uint32_t match_length = run_length - 1;
             uint32_t value;
             uint32_t entry;
             uint32_t extra;
             uint32_t code;
-            while (i + length < in_size && length < 0x206 && in_buf[i + length] == in_buf[i])
-                length++;
-            value = length - 2;
+            value = match_length - 2;
             for (entry = 0; entry < 16; entry++) {
                 extra = pkzip_clen_bits[entry];
                 if (value >= pkzip_len_base[entry] && value < pkzip_len_base[entry] + (1u << extra))
@@ -508,10 +512,11 @@ libmpq__pkzip_compress(
                 out + 2, &bit_count, code, pkzip_slen_bits[entry] + pkzip_clen_bits[entry] + 1
             );
 
-            /* Distance one: distance prefix zero and a zero dictionary suffix. */
+            /* Distance one: short matches use a two-bit suffix; longer matches
+             * use the dictionary-width suffix selected in the stream header. */
             pkzip_put_bits(out + 2, &bit_count, pkzip_dist_code[0], pkzip_dist_bits[0]);
-            pkzip_put_bits(out + 2, &bit_count, 0, 4);
-            i += length;
+            pkzip_put_bits(out + 2, &bit_count, 0, match_length == 2 ? 2 : 4);
+            i += run_length;
         } else {
             i++;
         }

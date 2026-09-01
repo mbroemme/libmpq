@@ -103,6 +103,16 @@ stream_flush_sector(mpq_writer_s *writer)
         uint32_t packed32 = 0;
         result = libmpq__pkzip_compress(writer->data, writer->data_size, &packed, &packed32);
         packed_size = packed32;
+        if (result == LIBMPQ_SUCCESS && packed_size >= writer->data_size) {
+            free(packed);
+            packed = malloc(writer->data_size ? writer->data_size : 1);
+            if (packed == NULL)
+                result = LIBMPQ_ERROR_MALLOC;
+            else {
+                memcpy(packed, writer->data, writer->data_size);
+                packed_size = writer->data_size;
+            }
+        }
     } else {
         packed = malloc(packed_size ? packed_size : 1);
         result = packed == NULL ? LIBMPQ_ERROR_MALLOC : LIBMPQ_SUCCESS;

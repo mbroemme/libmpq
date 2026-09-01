@@ -37,7 +37,7 @@ create_seed_archive(void)
 {
     mpq_archive_s *archive = NULL;
     mpq_archive_create_options_s archive_options = { LIBMPQ_ARCHIVE_VERSION_ONE, 16, 4096,
-                                                      LIBMPQ_ARCHIVE_CREATE_LISTFILE };
+                                                     LIBMPQ_ARCHIVE_CREATE_LISTFILE };
     mpq_file_options_s raw = { LIBMPQ_FILE_FLAG_ENCRYPTED, 0, 0, 0, 0 };
     mpq_file_options_s compressed = { LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_COMPRESS,
                                       LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
@@ -47,8 +47,9 @@ create_seed_archive(void)
     memcpy(payload, "RIFF", 4);
     if (libmpq__archive_create(&archive, seed_path, &archive_options) != 0 ||
         libmpq__file_add(archive, "encrypted.raw", payload, sizeof(payload), &raw) != 0 ||
-        libmpq__file_add(archive, "encrypted-compressed.bin", payload, sizeof(payload), &compressed) !=
-            0 ||
+        libmpq__file_add(
+            archive, "encrypted-compressed.bin", payload, sizeof(payload), &compressed
+        ) != 0 ||
         libmpq__archive_close(archive) != 0) {
         return -1;
     }
@@ -132,7 +133,8 @@ LLVMFuzzerInitialize(int *argc, char ***argv)
 int
 LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
-    static const char *const names[] = { "encrypted.raw", "encrypted-compressed.bin", "(listfile)" };
+    static const char *const names[] = { "encrypted.raw", "encrypted-compressed.bin",
+                                         "(listfile)" };
     mpq_archive_s *archive = NULL;
     uint8_t *candidate;
     uint32_t number;

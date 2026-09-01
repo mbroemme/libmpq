@@ -122,6 +122,7 @@ jobs:
             target="${target_spec%%:*}"
             corpus="${target_spec##*:}"
             mkdir -p "$artifact_root/$corpus"
+            set +e
             "fuzz/$target" \
               -artifact_prefix="$artifact_root/$corpus/" \
               -max_len=1048576 \
@@ -130,6 +131,21 @@ jobs:
               -timeout=5 \
               "$RUNNER_TEMP/libmpq-fuzz-corpus/$corpus" 2>&1 | \
               tee "$artifact_root/$corpus.log"
+            status="${PIPESTATUS[0]}"
+            set -e
+            if ((status != 0)); then
+              while IFS= read -r -d '' crash_input; do
+                output="$artifact_root/minimized/$corpus/$(basename "$crash_input")"
+                mkdir -p "$(dirname "$output")"
+                if ! scripts/minimize-fuzz-crash.sh "$target" "$crash_input" "$output"; then
+                  cp "$crash_input" "$output"
+                fi
+              done < <(
+                find "$artifact_root/$corpus" -maxdepth 1 -type f \
+                  \( -name 'crash-*' -o -name 'leak-*' -o -name 'timeout-*' \) -print0
+              )
+              exit "$status"
+            fi
           done
 
       - name: Upload fuzzing failure artifacts

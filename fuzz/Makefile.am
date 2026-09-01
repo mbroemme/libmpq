@@ -62,6 +62,8 @@ fuzz_wave_decode_LDFLAGS = $(AM_LDFLAGS) -fsanitize=fuzzer,address,undefined
 # Include the harness sources and usage notes in source distributions.
 EXTRA_DIST = \
 	README.md \
+	corpus/README.md \
+	corpus/writer-roundtrip/pkware-short-runs.txt \
 	fuzz-archive-open.c \
 	fuzz-codec-decode.c \
 	fuzz-common.h \

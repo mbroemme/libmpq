@@ -34,7 +34,7 @@ create_seed_archive(void)
 {
     mpq_archive_s *archive = NULL;
     mpq_archive_create_options_s archive_options = { LIBMPQ_ARCHIVE_VERSION_ONE, 16, 4096,
-                                                      LIBMPQ_ARCHIVE_CREATE_LISTFILE };
+                                                     LIBMPQ_ARCHIVE_CREATE_LISTFILE };
     mpq_file_options_s raw = { 0, 0, 0, 0, 0 };
     mpq_file_options_s compressed = { LIBMPQ_FILE_FLAG_COMPRESS, LIBMPQ_COMPRESSION_ZLIB,
                                       LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
@@ -88,7 +88,8 @@ LLVMFuzzerInitialize(int *argc, char ***argv)
 static void
 make_name(const uint8_t *data, size_t size, char name[LIBMPQ_FUZZ_FILE_MAX_NAME + 1U])
 {
-    static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789./\\_-()";
+    static const char alphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789./\\_-()";
     size_t length = size < LIBMPQ_FUZZ_FILE_MAX_NAME ? size : LIBMPQ_FUZZ_FILE_MAX_NAME;
     size_t i;
 
@@ -134,8 +135,8 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     if (size >= 5) {
         number = libmpq_fuzz_le32(data + 1);
-        if (libmpq__file_size_unpacked(archive, number, &unpacked_size) == 0 && unpacked_size >= 0 &&
-            (uint64_t)unpacked_size <= LIBMPQ_FUZZ_FILE_MAX_OUTPUT) {
+        if (libmpq__file_size_unpacked(archive, number, &unpacked_size) == 0 &&
+            unpacked_size >= 0 && (uint64_t)unpacked_size <= LIBMPQ_FUZZ_FILE_MAX_OUTPUT) {
             output = malloc((size_t)unpacked_size == 0 ? 1U : (size_t)unpacked_size);
             if (output != NULL) {
                 (void)libmpq__file_read(archive, number, output, unpacked_size, &transferred);

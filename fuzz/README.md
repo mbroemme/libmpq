@@ -42,5 +42,8 @@ codec state easy to isolate without removing integration coverage.
 
 The corpus generator copies checked-in v1/v2 fixtures and creates structured
 v1/v2 headers, table offsets, truncation, oversized-field, encrypted-mutation,
-and codec frame inputs. Preserve new minimized crash reproducers only after
-review; CI never updates a corpus.
+and codec frame inputs. It also replays reviewed seeds from `fuzz/corpus/`.
+On failure, CI minimizes crash, leak, and timeout inputs before uploading them
+under `minimized/`; if minimization cannot reproduce the failure, it preserves
+the original input there. A maintainer must review and commit an accepted seed.
+CI never commits untrusted inputs.
