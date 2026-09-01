@@ -93,22 +93,40 @@ property_mode_supported(const writer_mode_s *mode, uint32_t sector_size, size_t 
 static int
 test_property_case(uint32_t version, uint32_t sector_size, size_t payload_size)
 {
-    char path[160];
-    uint8_t *payload;
-    uint8_t *output;
+    char path[160] = { 0 };
+    uint8_t *payload = NULL;
+    uint8_t *output = NULL;
     mpq_archive_s *archive = NULL;
     mpq_archive_create_options_s archive_options = { version, 32, sector_size, 0 };
     libmpq__off_t transferred;
     int32_t result;
     uint32_t number;
     size_t i;
+    int status = 1;
 
     payload = malloc(payload_size == 0 ? 1U : payload_size);
+    if (payload == NULL) {
+        test_failure(__FILE__, __LINE__, "payload != NULL");
+        goto cleanup;
+    }
     output = malloc(payload_size == 0 ? 1U : payload_size);
-    TEST_CHECK(payload != NULL && output != NULL);
+    if (output == NULL) {
+        test_failure(__FILE__, __LINE__, "output != NULL");
+        goto cleanup;
+    }
     fill_property_payload(payload, payload_size);
-    TEST_CHECK(test_temp_path(path, sizeof(path), "writer-property") == 0);
-    TEST_CHECK(libmpq__archive_create(&archive, path, &archive_options) == 0);
+    if (test_temp_path(path, sizeof(path), "writer-property") != 0) {
+        test_failure(
+            __FILE__, __LINE__, "test_temp_path(path, sizeof(path), \"writer-property\") == 0"
+        );
+        goto cleanup;
+    }
+    if (libmpq__archive_create(&archive, path, &archive_options) != 0) {
+        test_failure(
+            __FILE__, __LINE__, "libmpq__archive_create(&archive, path, &archive_options) == 0"
+        );
+        goto cleanup;
+    }
     for (i = 0; i < sizeof(writer_modes) / sizeof(writer_modes[0]); ++i) {
         int32_t add_result;
 
@@ -125,16 +143,31 @@ test_property_case(uint32_t version, uint32_t sector_size, size_t payload_size)
                 sector_size, payload_size, writer_modes[i].name, add_result
             );
         }
-        TEST_CHECK(add_result == 0);
+        if (add_result != 0) {
+            test_failure(__FILE__, __LINE__, "add_result == 0");
+            goto cleanup;
+        }
     }
-    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    if (libmpq__archive_close(archive) != 0) {
+        test_failure(__FILE__, __LINE__, "libmpq__archive_close(archive) == 0");
+        goto cleanup;
+    }
     archive = NULL;
-    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    if (libmpq__archive_open(&archive, path, 0) != 0) {
+        test_failure(__FILE__, __LINE__, "libmpq__archive_open(&archive, path, 0) == 0");
+        goto cleanup;
+    }
     for (i = 0; i < sizeof(writer_modes) / sizeof(writer_modes[0]); ++i) {
         if (!property_mode_supported(&writer_modes[i], sector_size, payload_size)) {
             continue;
         }
-        TEST_CHECK(libmpq__file_number(archive, writer_modes[i].name, &number) == 0);
+        if (libmpq__file_number(archive, writer_modes[i].name, &number) != 0) {
+            test_failure(
+                __FILE__, __LINE__,
+                "libmpq__file_number(archive, writer_modes[i].name, &number) == 0"
+            );
+            goto cleanup;
+        }
         result =
             libmpq__file_read(archive, number, output, (libmpq__off_t)payload_size, &transferred);
         if (result != 0) {
@@ -143,8 +176,14 @@ test_property_case(uint32_t version, uint32_t sector_size, size_t payload_size)
                 sector_size, payload_size, writer_modes[i].name, result
             );
         }
-        TEST_CHECK(result == 0);
-        TEST_CHECK(transferred == (libmpq__off_t)payload_size);
+        if (result != 0) {
+            test_failure(__FILE__, __LINE__, "result == 0");
+            goto cleanup;
+        }
+        if (transferred != (libmpq__off_t)payload_size) {
+            test_failure(__FILE__, __LINE__, "transferred == (libmpq__off_t)payload_size");
+            goto cleanup;
+        }
         if (memcmp(output, payload, payload_size) != 0) {
             size_t mismatch = 0;
 
@@ -157,13 +196,26 @@ test_property_case(uint32_t version, uint32_t sector_size, size_t payload_size)
                 output[mismatch], payload[mismatch]
             );
         }
-        TEST_CHECK(memcmp(output, payload, payload_size) == 0);
+        if (memcmp(output, payload, payload_size) != 0) {
+            test_failure(__FILE__, __LINE__, "memcmp(output, payload, payload_size) == 0");
+            goto cleanup;
+        }
     }
-    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    if (libmpq__archive_close(archive) != 0) {
+        test_failure(__FILE__, __LINE__, "libmpq__archive_close(archive) == 0");
+        goto cleanup;
+    }
+    archive = NULL;
+    status = 0;
+
+cleanup:
+    if (archive != NULL)
+        libmpq__archive_close(archive);
     free(output);
     free(payload);
-    remove(path);
-    return 0;
+    if (path[0] != '\0')
+        remove(path);
+    return status;
 }
 
 /* Cover archive versions, valid sector sizes, and every sector-boundary shape. */

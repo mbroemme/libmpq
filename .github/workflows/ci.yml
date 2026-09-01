@@ -65,6 +65,7 @@ jobs:
             libbz2-dev \
             libtool \
             pkg-config \
+            ripgrep \
             shellcheck \
             zlib1g-dev
 
@@ -102,17 +103,35 @@ jobs:
         run: |
           set -euxo pipefail
           mapfile -t sources < <(git ls-files \
-            'src/*.c' 'include/libmpq/*.h' 'tools/*.c' 'tests/*.c' 'tests/*.h')
+            'src/*.c' 'include/libmpq/*.h' 'tools/*.c')
           if ((${#sources[@]} == 0)); then
             echo 'No C translation units found.' >&2
             exit 1
           fi
           clang-tidy-22 --quiet -p . "${sources[@]}"
 
+      - name: Run clang-tidy on regression tests
+        run: |
+          set -euxo pipefail
+          mapfile -t sources < <(git ls-files 'tests/*.c' 'tests/*.h' | sed 's#^tests/##')
+          if ((${#sources[@]} == 0)); then
+            echo 'No regression test sources found.' >&2
+            exit 1
+          fi
+          (
+            cd tests
+            clang-tidy-22 --quiet -p .. "${sources[@]}"
+          )
+
       - name: Run clang-tidy on fuzz harnesses
         run: |
           set -euxo pipefail
-          mapfile -t sources < <(git ls-files 'fuzz/*.c')
+          sources=()
+          while IFS= read -r source; do
+            if [[ "${source}" != 'fuzz/fuzz-codec-decode.c' ]]; then
+              sources+=("${source}")
+            fi
+          done < <(git ls-files 'fuzz/*.c')
           if ((${#sources[@]} == 0)); then
             echo 'No fuzz harnesses found.' >&2
             exit 1
@@ -124,6 +143,16 @@ jobs:
             -Isrc \
             -std=c99 \
             -fvisibility=hidden
+          for codec in PKZIP HUFFMAN ZLIB BZIP2; do
+            clang-tidy-22 --quiet --config-file=.clang-tidy fuzz/fuzz-codec-decode.c -- \
+              -DHAVE_CONFIG_H \
+              -I. \
+              -Iinclude \
+              -Isrc \
+              -DLIBMPQ_FUZZ_CODEC=LIBMPQ_COMPRESSION_${codec} \
+              -std=c99 \
+              -fvisibility=hidden
+          done
 
   sanitizers:
     name: Sanitizers (ASan, UBSan, LSan)
