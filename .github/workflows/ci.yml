@@ -267,6 +267,49 @@ jobs:
           set -euxo pipefail
           make check V=1
 
+  big-endian:
+    name: Big-endian (s390x)
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU for s390x
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: s390x
+
+      - name: Build and test on big-endian s390x
+        run: |
+          set -euxo pipefail
+          docker run --rm --platform linux/s390x \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace debian:trixie-slim \
+            bash -euxo pipefail -c '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                autoconf \
+                automake \
+                build-essential \
+                ca-certificates \
+                libbz2-dev \
+                libtool \
+                zlib1g-dev
+              sh autogen.sh
+              ./configure --prefix=/usr
+              make -j"$(nproc)" V=1
+              make check V=1
+            '
+
   coverage:
     name: GCC coverage
     needs: lint
