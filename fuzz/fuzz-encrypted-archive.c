@@ -138,7 +138,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     uint32_t number;
     libmpq__off_t unpacked_size;
     uint8_t *output;
-    uint32_t transferred;
+    libmpq__off_t transferred;
     size_t offset;
     size_t i;
 

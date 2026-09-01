@@ -77,7 +77,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     mpq_file_options_s options;
     uint8_t *output = NULL;
     uint32_t number;
-    uint32_t transferred;
+    libmpq__off_t transferred;
     size_t payload_size;
     size_t first_chunk;
 

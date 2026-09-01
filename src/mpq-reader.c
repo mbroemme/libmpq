@@ -203,6 +203,7 @@ libmpq__reader_archive_open_path(
         result = LIBMPQ_ERROR_SEEK;
         goto error;
     }
+    (*mpq_archive)->file_size = (uint64_t)file_size;
 
     (*mpq_archive)->mpq_header.mpq_magic = 0;
     (*mpq_archive)->files = 0;

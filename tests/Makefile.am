@@ -11,6 +11,7 @@ check_PROGRAMS = \
 	test-compression \
 	test-crypto \
 	test-huffman \
+	test-malformed \
 	test-endian \
 	test-fixtures \
 	test-mpq \
@@ -30,6 +31,7 @@ COMMON_SOURCES = test-mpq-helper.c test-mpq-helper.h
 test_compression_SOURCES = test-mpq-compression.c $(COMMON_SOURCES)
 test_crypto_SOURCES = test-mpq-crypto.c ../src/mpq-crypto.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_huffman_SOURCES = test-mpq-huffman.c ../src/mpq-huffman.c $(COMMON_SOURCES)
+test_malformed_SOURCES = test-mpq-malformed.c $(COMMON_SOURCES)
 test_endian_SOURCES = test-mpq-endian.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_fixtures_SOURCES = test-mpq-fixtures.c $(COMMON_SOURCES)
 test_mpq_SOURCES = test-mpq-api.c $(COMMON_SOURCES)
@@ -58,6 +60,7 @@ EXTRA_DIST = \
 	test-mpq-compression.c \
 	test-mpq-crypto.c \
 	test-mpq-huffman.c \
+	test-mpq-malformed.c \
 	test-mpq-endian.c \
 	test-mpq-api.c \
 	test-mpq-pkware.c \
