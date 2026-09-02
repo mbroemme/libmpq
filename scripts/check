@@ -1,4 +1,11 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+# Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+#
+# This file is free software; you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published
+# by the Free Software Foundation; either version 2.1 of the License, or
+# (at your option) any later version.
 
 set -euo pipefail
 
@@ -34,6 +41,17 @@ shell_scripts=(
 	scripts/check-function-spacing
 	scripts/check-c-identifiers
 	scripts/check-c-standards
+	scripts/build-d-binary-package.sh
+	scripts/build-java-package.sh
+	scripts/coverage-report.sh
+	scripts/generate-fuzz-corpus.sh
+	scripts/minimize-fuzz-crash.sh
+	scripts/package-d-binary.sh
+	scripts/package-d-source.sh
+	scripts/package-native-binary.sh
+	scripts/test-native-package.sh
+	scripts/test-java-package.sh
+	scripts/test-python-sdist.sh
 )
 sh -n autogen.sh
 bash -n "${shell_scripts[@]}"
@@ -45,9 +63,17 @@ if git grep -nI '[[:blank:]]$' -- .; then
 	exit 1
 fi
 
+printf 'Checking private native filename namespace...\n'
+for source in src/*.c src/*.h; do
+	if [[ "$(basename -- "${source}")" != mpq-* ]]; then
+		printf 'Private native source/header is not namespaced: %s\n' "${source}" >&2
+		exit 1
+	fi
+done
+
 printf 'Checking C formatting...\n'
 mapfile -t sources < <(
-	git ls-files 'src/*.c' 'src/*.h' 'include/libmpq/*.h' 'tests/*.c' 'tests/*.h' |
+	git ls-files 'src/*.c' 'src/*.h' 'include/libmpq/*.h' 'tests/*.c' 'tests/*.h' 'fuzz/*.c' |
 	while IFS= read -r source; do
 		if [[ -f "${source}" ]]; then
 			printf '%s\n' "${source}"

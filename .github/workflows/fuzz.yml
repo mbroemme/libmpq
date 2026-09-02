@@ -1,0 +1,158 @@
+# Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+#
+# This file is free software; you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation; either version 2.1 of the License, or
+# (at your option) any later version.
+
+name: Fuzzing
+
+on:
+  workflow_call:
+    inputs:
+      max_total_time:
+        description: Total fuzzing time in seconds shared across all targets.
+        required: false
+        default: 60
+        type: number
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      max_total_time:
+        description: Total fuzzing time in seconds shared across all targets.
+        required: true
+        default: 900
+        type: choice
+        options:
+          - '60'
+          - '900'
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: libFuzzer (ASan, UBSan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container:
+      image: debian:trixie-slim
+    defaults:
+      run:
+        shell: bash
+    env:
+      FUZZ_SECONDS: ${{ inputs.max_total_time || '900' }}
+
+    steps:
+      - name: Install fuzzing build dependencies
+        run: |
+          set -euxo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            build-essential \
+            ca-certificates \
+            clang \
+            git \
+            libclang-rt-dev \
+            libbz2-dev \
+            libtool \
+            zlib1g-dev
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Trust repository checkout
+        run: |
+          set -euxo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Generate build system
+        run: |
+          set -euxo pipefail
+          sh autogen.sh
+
+      - name: Configure fuzzers
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+          CC: clang
+          CFLAGS: -O1 -g -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,address,undefined
+          LDFLAGS: -fsanitize=address,undefined
+        run: |
+          set -euxo pipefail
+          ./configure --prefix=/usr --enable-fuzzing
+
+      - name: Build fuzzers
+        run: |
+          set -euxo pipefail
+          make -j"$(nproc)" V=1
+
+      - name: Generate fuzzing corpus
+        run: |
+          set -euxo pipefail
+          scripts/generate-fuzz-corpus.sh "$RUNNER_TEMP/libmpq-fuzz-corpus"
+
+      - name: Run fuzzing campaigns
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -euxo pipefail
+          artifact_root="$RUNNER_TEMP/libmpq-fuzz-artifacts"
+          targets=(
+            'fuzz-archive-open:archive-open'
+            'fuzz-file-read:file-read'
+            'fuzz-writer-roundtrip:writer-roundtrip'
+            'fuzz-encrypted-archive:encrypted-archive'
+            'fuzz-sector-decode:sector-decode'
+            'fuzz-pkware-decode:pkware-decode'
+            'fuzz-huffman-decode:huffman-decode'
+            'fuzz-zlib-decode:zlib-decode'
+            'fuzz-bzip2-decode:bzip2-decode'
+            'fuzz-wave-decode:wave-decode'
+          )
+          target_seconds=$((FUZZ_SECONDS / ${#targets[@]}))
+          if ((target_seconds == 0)); then
+            target_seconds=1
+          fi
+
+          for target_spec in "${targets[@]}"; do
+            target="${target_spec%%:*}"
+            corpus="${target_spec##*:}"
+            mkdir -p "$artifact_root/$corpus"
+            set +e
+            "fuzz/$target" \
+              -artifact_prefix="$artifact_root/$corpus/" \
+              -max_len=1048576 \
+              -max_total_time="$target_seconds" \
+              -rss_limit_mb=512 \
+              -timeout=5 \
+              "$RUNNER_TEMP/libmpq-fuzz-corpus/$corpus" 2>&1 | \
+              tee "$artifact_root/$corpus.log"
+            status="${PIPESTATUS[0]}"
+            set -e
+            if ((status != 0)); then
+              while IFS= read -r -d '' crash_input; do
+                output="$artifact_root/minimized/$corpus/$(basename "$crash_input")"
+                mkdir -p "$(dirname "$output")"
+                if ! scripts/minimize-fuzz-crash.sh "$target" "$crash_input" "$output"; then
+                  cp "$crash_input" "$output"
+                fi
+              done < <(
+                find "$artifact_root/$corpus" -maxdepth 1 -type f \
+                  \( -name 'crash-*' -o -name 'leak-*' -o -name 'timeout-*' \) -print0
+              )
+              exit "$status"
+            fi
+          done
+
+      - name: Upload fuzzing failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-fuzz-failure-artifacts
+          path: ${{ runner.temp }}/libmpq-fuzz-artifacts
+          if-no-files-found: ignore
+          retention-days: 14

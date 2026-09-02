@@ -1,20 +1,29 @@
 # Build the shared library and keep private headers out of installations.
 lib_LTLIBRARIES			= libmpq.la
-noinst_HEADERS			= compression.h crypt_buf.h crypto.h endian.h huffman.h mpq-internal.h pack_begin.h pack_end.h pkware.h platform.h reader.h wave.h writer.h
+noinst_HEADERS			= mpq-compression.h mpq-crypt-buf.h mpq-crypto.h mpq-endian.h mpq-huffman.h mpq-internal.h mpq-pack-begin.h mpq-pack-end.h mpq-pkware.h mpq-platform.h mpq-reader.h mpq-wave.h mpq-writer.h
 
+# Use generated configuration and installed public headers when compiling.
 AM_CPPFLAGS			= -I$(top_builddir) -I$(top_srcdir)/include
 
+# Link the public library from the complete native implementation.
 libmpq_la_SOURCES		= $(GENERAL_SRCS)
 libmpq_la_LDFLAGS		= -version-info @LIBMPQ_ABI@
 
+# Fuzzers need private codec entry points without widening the installed ABI.
+# This convenience library is built only for --enable-fuzzing configurations.
+if ENABLE_FUZZING
+noinst_LTLIBRARIES		= libmpq-fuzz-internal.la
+libmpq_fuzz_internal_la_SOURCES	= $(GENERAL_SRCS)
+endif
+
 # Library source files.
 GENERAL_SRCS = \
-	compression.c \
-	crypto.c \
-	endian.c \
-	huffman.c \
-	mpq.c \
-	pkware.c \
-	reader.c \
-	wave.c \
-	writer.c
+	mpq-compression.c \
+	mpq-crypto.c \
+	mpq-endian.c \
+	mpq-huffman.c \
+	mpq-api.c \
+	mpq-pkware.c \
+	mpq-reader.c \
+	mpq-wave.c \
+	mpq-writer.c

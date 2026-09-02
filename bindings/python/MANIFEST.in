@@ -1,0 +1,4 @@
+include _build_backend.py
+recursive-include native *
+include COPYING COPYING.LESSER
+recursive-include tests *.py

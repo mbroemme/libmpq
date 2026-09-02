@@ -1,0 +1,117 @@
+# Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+#
+# This file is free software; you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as
+# published by the Free Software Foundation; either version 2.1 of the
+# License, or (at your option) any later version.
+#
+# This file is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this file; if not, see <https://www.gnu.org/licenses/>.
+
+name: Build source package
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Build source release archives
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install release dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            bzip2 \
+            build-essential \
+            coreutils \
+            gawk \
+            git \
+            gzip \
+            libbz2-dev \
+            libtool \
+            make \
+            tar \
+            zlib1g-dev
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare release metadata
+        id: release
+        run: |
+          set -euxo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+
+          if [[ "${tag}" == "${version}" ]]; then
+            echo "Release tags must start with 'v' (for example: v0.2.0)." >&2
+            exit 1
+          fi
+
+          {
+            echo "tag=${tag}"
+            echo "version=${version}"
+            echo "archive_base=libmpq-${version}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Generate configure-ready source tree
+        run: |
+          set -euxo pipefail
+          archive_base="${{ steps.release.outputs.archive_base }}"
+
+          mkdir -p dist/build
+          git archive --format=tar --prefix="${archive_base}/" "${GITHUB_REF_NAME}" | \
+            tar -xf - -C dist/build
+
+          cd "dist/build/${archive_base}"
+          sh autogen.sh
+          project_version="$(./configure --version | \
+            sed -n '1s/^libmpq configure //p')"
+          if [[ "${project_version}" != "${{ steps.release.outputs.version }}" ]]; then
+            echo "Package version ${project_version} does not match tag ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+          rm -rf .git .github autom4te.cache
+
+      - name: Create release archives
+        run: |
+          set -euxo pipefail
+          archive_base="${{ steps.release.outputs.archive_base }}"
+
+          cd "dist/build/${archive_base}"
+          ./configure --prefix=/usr
+          make distcheck
+          make dist-bzip2
+          mv "${archive_base}.tar.gz" ../../
+          mv "${archive_base}.tar.bz2" ../../
+
+      - name: Upload source release artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-source-release
+          path: |
+            dist/libmpq-*.tar.gz
+            dist/libmpq-*.tar.bz2
+          if-no-files-found: error

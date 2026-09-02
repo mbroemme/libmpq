@@ -11,6 +11,7 @@ check_PROGRAMS = \
 	test-compression \
 	test-crypto \
 	test-huffman \
+	test-malformed \
 	test-endian \
 	test-fixtures \
 	test-mpq \
@@ -20,18 +21,30 @@ check_PROGRAMS = \
 	test-writer
 TESTS = $(check_PROGRAMS)
 
+# Verify the generated build-tree helper honors configured installation paths.
+check-local:
+	test "$$($(top_builddir)/libmpq-config --cflags)" = "-I$(includedir)"
+	test "$$($(top_builddir)/libmpq-config --libs)" = "-L$(libdir) -lmpq -lbz2 -lz"
+
 # Compile shared assertions and deterministic-data helpers into every test.
-COMMON_SOURCES = helper.c helper.h
-test_compression_SOURCES = test-compression.c $(COMMON_SOURCES)
-test_crypto_SOURCES = test-crypto.c ../src/crypto.c ../src/endian.c $(COMMON_SOURCES)
-test_huffman_SOURCES = test-huffman.c $(COMMON_SOURCES)
-test_endian_SOURCES = test-endian.c ../src/endian.c $(COMMON_SOURCES)
-test_fixtures_SOURCES = test-fixtures.c $(COMMON_SOURCES)
-test_mpq_SOURCES = test-mpq.c $(COMMON_SOURCES)
-test_pkware_SOURCES = test-pkware.c $(COMMON_SOURCES)
-test_reader_SOURCES = test-reader.c $(COMMON_SOURCES)
-test_wave_SOURCES = test-wave.c ../src/wave.c ../src/endian.c $(COMMON_SOURCES)
-test_writer_SOURCES = test-writer.c $(COMMON_SOURCES)
+COMMON_SOURCES = test-mpq-helper.c test-mpq-helper.h
+test_compression_SOURCES = test-mpq-compression.c $(COMMON_SOURCES)
+test_crypto_SOURCES = test-mpq-crypto.c ../src/mpq-crypto.c ../src/mpq-endian.c $(COMMON_SOURCES)
+test_huffman_SOURCES = test-mpq-huffman.c ../src/mpq-huffman.c $(COMMON_SOURCES)
+test_malformed_SOURCES = test-mpq-malformed.c $(COMMON_SOURCES)
+test_endian_SOURCES = test-mpq-endian.c ../src/mpq-endian.c $(COMMON_SOURCES)
+test_fixtures_SOURCES = test-mpq-fixtures.c $(COMMON_SOURCES)
+test_mpq_SOURCES = test-mpq-api.c $(COMMON_SOURCES)
+test_pkware_SOURCES = test-mpq-pkware.c \
+	../src/mpq-compression.c \
+	../src/mpq-pkware.c \
+	../src/mpq-huffman.c \
+	../src/mpq-wave.c \
+	../src/mpq-endian.c \
+	$(COMMON_SOURCES)
+test_reader_SOURCES = test-mpq-reader.c $(COMMON_SOURCES)
+test_wave_SOURCES = test-mpq-wave.c ../src/mpq-wave.c ../src/mpq-endian.c $(COMMON_SOURCES)
+test_writer_SOURCES = test-mpq-writer.c $(COMMON_SOURCES)
 
 # Fixture-dependent tests resolve archives from the source tree, including
 # when Automake runs them from a separate VPATH or distcheck build directory.
@@ -42,18 +55,19 @@ test_reader_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtur
 
 # Ship the deterministic fixture corpus and all module-mapped test sources.
 EXTRA_DIST = \
-	helper.h \
-	helper.c \
-	test-compression.c \
-	test-crypto.c \
-	test-huffman.c \
-	test-endian.c \
-	test-mpq.c \
-	test-pkware.c \
-	test-reader.c \
-	test-wave.c \
-	test-writer.c \
-	test-fixtures.c \
+	test-mpq-helper.h \
+	test-mpq-helper.c \
+	test-mpq-compression.c \
+	test-mpq-crypto.c \
+	test-mpq-huffman.c \
+	test-mpq-malformed.c \
+	test-mpq-endian.c \
+	test-mpq-api.c \
+	test-mpq-pkware.c \
+	test-mpq-reader.c \
+	test-mpq-wave.c \
+	test-mpq-writer.c \
+	test-mpq-fixtures.c \
 	fixtures/README.md \
 	fixtures/mpq-v1-features.mpq \
 	fixtures/mpq-v2-features.mpq

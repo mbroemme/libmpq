@@ -1,0 +1,249 @@
+# Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+#
+# This file is free software; you can redistribute it and/or modify it under
+# the terms of the GNU Lesser General Public License as published by the Free
+# Software Foundation; either version 2.1 of the License, or (at your option)
+# any later version.
+
+name: Build D package
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        type: string
+        required: false
+        default: validate
+      assemble_release:
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      package_version:
+        value: ${{ jobs.prepare.outputs.package_version }}
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: D package build mode
+        type: choice
+        required: true
+        default: validate
+        options: [validate, release]
+      assemble_release:
+        description: Assemble the canonical outer D release ZIP
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Derive D package metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      package_version: ${{ steps.metadata.outputs.package_version }}
+    steps:
+      - name: Install metadata dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends autoconf automake build-essential libbz2-dev libtool zlib1g-dev
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: dmd
+      - id: metadata
+        name: Validate versions and inputs
+        run: |
+          set -euo pipefail
+          case "${{ inputs.mode }}" in validate|release) ;; *)
+            echo "Unsupported D package mode: ${{ inputs.mode }}" >&2; exit 1;; esac
+          if [[ "${{ inputs.assemble_release }}" == true ]] &&
+              [[ "${{ inputs.mode }}" != release || "${GITHUB_REF}" != refs/tags/v* ]]; then
+            echo 'assemble_release=true requires mode=release and a v* tag ref' >&2
+            exit 1
+          fi
+          sh autogen.sh
+          ./configure --prefix=/usr
+          project_version="$(./configure --version | sed -n '1s/^libmpq configure //p')"
+          test -n "${project_version}"
+          describe="$(mktemp)"
+          trap 'rm -f -- "${describe}"' EXIT
+          dub describe > "${describe}"
+          read -r package_name dub_version < <(
+            python - "${describe}" <<'PY'
+          import json
+          import sys
+          with open(sys.argv[1], encoding="utf-8") as source:
+              metadata = json.load(source)
+          package = next(p for p in metadata["packages"] if p["name"] == "libmpq")
+          print(package["name"], package["version"])
+          PY
+          )
+          test "${package_name}" = libmpq
+          test -n "${dub_version}"
+          package_version="${project_version}"
+          if [[ "${{ inputs.mode }}" == release ]]; then
+            [[ "${GITHUB_REF}" == refs/tags/v* ]] || {
+              echo 'release mode requires a v* Git tag ref' >&2; exit 1; }
+            tag_version="${GITHUB_REF_NAME#v}"
+            test "${tag_version}" = "${project_version}"
+            test "${tag_version}" = "${dub_version}"
+            package_version="${tag_version}"
+          fi
+          echo "package_version=${package_version}" >> "${GITHUB_OUTPUT}"
+
+  binary-glibc:
+    name: Build D ${{ matrix.compiler.name }} glibc package
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - name: dmd
+            setup: dmd
+            dub: dmd
+          - name: ldc
+            setup: ldc
+            dub: ldc2
+    steps:
+      - name: Install glibc package dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends autoconf automake binutils build-essential jq libbz2-dev libtool zlib1g-dev
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler.setup }}
+      - name: Build and validate binary package
+        env:
+          LIBMPQ_D_COMPILER_NAME: ${{ matrix.compiler.name }}
+          LIBMPQ_D_DUB_COMPILER: ${{ matrix.compiler.dub }}
+          LIBMPQ_D_LIBC: glibc
+          LIBMPQ_D_VERSION: ${{ needs.prepare.outputs.package_version }}
+          DC: ${{ matrix.compiler.dub }}
+        run: bash scripts/build-d-binary-package.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-d-${{ matrix.compiler.name }}-package
+          path: release/libmpq-d-*-linux-glibc-x86_64.tar.gz
+          if-no-files-found: error
+
+  binary-musl:
+    name: Build D ${{ matrix.compiler.name }} musl package
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - name: dmd
+            package: dmd
+            dub: dmd
+            dc: dmd
+          - name: ldc
+            package: ldc
+            dub: ldc2
+            dc: ldc2
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build and validate Alpine binary package
+        env:
+          LIBMPQ_D_COMPILER_NAME: ${{ matrix.compiler.name }}
+          LIBMPQ_D_DUB_COMPILER: ${{ matrix.compiler.dub }}
+          LIBMPQ_D_COMPILER_PACKAGE: ${{ matrix.compiler.package }}
+          LIBMPQ_D_DC: ${{ matrix.compiler.dc }}
+          LIBMPQ_D_LIBC: musl
+          LIBMPQ_D_VERSION: ${{ needs.prepare.outputs.package_version }}
+        run: |
+          set -euxo pipefail
+          docker run --rm \
+            -e LIBMPQ_D_COMPILER_NAME -e LIBMPQ_D_DUB_COMPILER \
+            -e LIBMPQ_D_COMPILER_PACKAGE -e LIBMPQ_D_DC -e LIBMPQ_D_LIBC \
+            -e LIBMPQ_D_VERSION -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace alpine:3.22 sh -euxc '
+              apk add --no-cache autoconf automake bash binutils bzip2-dev \
+                build-base ca-certificates dub jq libtool linux-headers \
+                "${LIBMPQ_D_COMPILER_PACKAGE}" tar zlib-dev
+              export DC="${LIBMPQ_D_DC}"
+              bash scripts/build-d-binary-package.sh
+            '
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-d-${{ matrix.compiler.name }}-musl-package
+          path: release/libmpq-d-*-linux-musl-x86_64.tar.gz
+          if-no-files-found: error
+
+  source:
+    name: Build D source package
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Install source package dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends autoconf automake binutils build-essential jq libbz2-dev libtool zlib1g-dev
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: dmd
+      - name: Build native library and validate source package
+        env:
+          LIBMPQ_D_VERSION: ${{ needs.prepare.outputs.package_version }}
+        run: |
+          set -euxo pipefail
+          sh autogen.sh
+          ./configure --prefix=/usr
+          make -j"$(nproc)" V=1
+          bash scripts/package-d-source.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-d-source-package
+          path: release/libmpq-d-*-source.tar.gz
+          if-no-files-found: error
+
+  package:
+    if: inputs.assemble_release
+    name: Package D release
+    needs: [prepare, binary-glibc, binary-musl, source]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install packaging tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends unzip zip
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: libmpq-d-*-package
+          path: release/packages
+          merge-multiple: true
+      - name: Assemble D release ZIP
+        env:
+          LIBMPQ_D_VERSION: ${{ needs.prepare.outputs.package_version }}
+        run: |
+          set -euxo pipefail
+          package_name="libmpq-d-${LIBMPQ_D_VERSION}"
+          mkdir -p release/package
+          mapfile -t packages < <(find release/packages -type f -name "${package_name}-*.tar.gz" -printf '%f\n' | sort)
+          ((${#packages[@]} > 0))
+          printf '%s\n' "${packages[@]}" | grep -- '-source.tar.gz$' >/dev/null
+          printf '%s\n' "${packages[@]}" | grep -- '-linux-.*-x86_64.tar.gz$' >/dev/null
+          for package in "${packages[@]}"; do cp "release/packages/${package}" release/package/; done
+          (cd release/package && zip -q "../${package_name}.zip" ./*)
+          unzip -t "release/${package_name}.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-d-release
+          path: release/libmpq-d-*.zip
+          if-no-files-found: error

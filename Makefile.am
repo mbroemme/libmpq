@@ -1,8 +1,13 @@
 # Subdirectories that are built and installed.
-SUBDIRS				= include/libmpq src bindings docs/man1 docs/man3 tests
+SUBDIRS				= include/libmpq src docs/man1 docs/man3 tests
+
+# Add fuzzing targets only for explicit fuzzing configurations.
+if ENABLE_FUZZING
+SUBDIRS				+= fuzz
+endif
 
 # Subdirectories included in source distributions.
-DIST_SUBDIRS			= $(SUBDIRS) tools
+DIST_SUBDIRS			= include/libmpq src docs/man1 docs/man3 tests fuzz bindings tools
 
 # Install the libmpq runtime configuration script.
 bin_SCRIPTS			= libmpq-config
@@ -16,4 +21,8 @@ EXTRA_DIST = \
 	COPYING \
 	COPYING.LESSER \
 	README.md \
-	RELICENSING.md
+	RELICENSING.md \
+	dub.sdl \
+	scripts/coverage-report.sh \
+	scripts/generate-fuzz-corpus.sh \
+	scripts/minimize-fuzz-crash.sh

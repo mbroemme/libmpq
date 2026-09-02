@@ -1,0 +1,199 @@
+# Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+#
+# This file is free software; you can redistribute it and/or modify it under
+# the terms of the GNU Lesser General Public License as published by the Free
+# Software Foundation; either version 2.1 of the License, or (at your option)
+# any later version.
+
+name: Build Python package
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        type: string
+        required: false
+        default: validate
+      assemble_release:
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      package_version:
+        value: ${{ jobs.prepare.outputs.package_version }}
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Python package build mode
+        required: true
+        type: choice
+        default: validate
+        options: [validate, release]
+      assemble_release:
+        description: Assemble the canonical outer Python release ZIP
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Derive Python package metadata
+    runs-on: ubuntu-latest
+    outputs:
+      package_version: ${{ steps.metadata.outputs.package_version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - id: metadata
+        name: Validate versions and inputs
+        run: |
+          set -euo pipefail
+          case "${{ inputs.mode }}" in validate|release) ;; *)
+            echo "Unsupported Python package mode: ${{ inputs.mode }}" >&2
+            exit 1
+          esac
+          if [[ "${{ inputs.assemble_release }}" == true ]] &&
+              [[ "${{ inputs.mode }}" != release || "${GITHUB_REF}" != refs/tags/v* ]]; then
+            echo 'assemble_release=true requires mode=release and a v* tag ref' >&2
+            exit 1
+          fi
+          package_version="$(python - <<'PY'
+          import tomllib
+          with open("bindings/python/pyproject.toml", "rb") as metadata:
+              print(tomllib.load(metadata)["project"]["version"])
+          PY
+          )"
+          test -n "${package_version}"
+          if [[ "${{ inputs.mode }}" == release ]]; then
+            [[ "${GITHUB_REF}" == refs/tags/v* ]] || {
+              echo 'release mode requires a v* Git tag ref' >&2
+              exit 1
+            }
+            test "${package_version}" = "${GITHUB_REF_NAME#v}" || {
+              echo "Python version ${package_version} does not match ${GITHUB_REF_NAME}." >&2
+              exit 1
+            }
+          fi
+          echo "package_version=${package_version}" >> "${GITHUB_OUTPUT}"
+
+  wheel:
+    name: Build Python ${{ matrix.platform }} wheel
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: manylinux
+            build: cp311-manylinux_x86_64
+            artifact: libmpq-python-manylinux-wheel
+          - platform: musllinux
+            build: cp311-musllinux_x86_64
+            artifact: libmpq-python-musllinux-wheel
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v4.2.0
+        env:
+          CIBW_BUILD: ${{ matrix.build }}
+        with:
+          package-dir: bindings/python
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: wheelhouse/*.whl
+          if-no-files-found: error
+
+  sdist:
+    name: Build Python release source
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential libbz2-dev zlib1g-dev
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Build and inspect sdist
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade build
+          scripts/test-python-sdist.sh bindings/python/dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-python-sdist
+          path: bindings/python/dist/*.tar.gz
+          if-no-files-found: error
+
+  validate-distributions:
+    name: Validate Python distributions
+    needs: [prepare, wheel, sdist]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: libmpq-python-*-wheel
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: libmpq-python-sdist
+          path: dist
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Validate release metadata
+        env:
+          LIBMPQ_PYTHON_VERSION: ${{ needs.prepare.outputs.package_version }}
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade twine
+          python -m twine check dist/*
+          test "$(find dist -maxdepth 1 -name "libmpq-${LIBMPQ_PYTHON_VERSION}.tar.gz" | wc -l)" -eq 1
+          test "$(find dist -maxdepth 1 -name "libmpq-${LIBMPQ_PYTHON_VERSION}-*.whl" | wc -l)" -eq 2
+
+  package:
+    if: inputs.assemble_release
+    name: Package Python release
+    needs: [prepare, validate-distributions]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: libmpq-python-*-wheel
+          path: release/wheels
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: libmpq-python-sdist
+          path: release/sdist
+      - name: Package Python release
+        env:
+          LIBMPQ_PYTHON_VERSION: ${{ needs.prepare.outputs.package_version }}
+        run: |
+          set -euxo pipefail
+          sdist="release/sdist/libmpq-${LIBMPQ_PYTHON_VERSION}.tar.gz"
+          test -s "${sdist}"
+          mkdir -p release/package
+          find release/wheels -type f -name "libmpq-${LIBMPQ_PYTHON_VERSION}-*.whl" -exec cp {} release/package/ \;
+          test "$(find release/package -maxdepth 1 -name '*.whl' | wc -l)" -eq 2
+          cp "${sdist}" release/package/
+          (cd release/package && zip -q "../libmpq-python-${LIBMPQ_PYTHON_VERSION}.zip" ./*)
+          unzip -t "release/libmpq-python-${LIBMPQ_PYTHON_VERSION}.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-python-release
+          path: release/libmpq-python-*.zip
+          if-no-files-found: error

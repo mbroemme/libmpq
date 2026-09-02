@@ -1,0 +1,121 @@
+# Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+#
+# This file is free software; you can redistribute it and/or modify it under
+# the terms of the GNU Lesser General Public License as published by the Free
+# Software Foundation; either version 2.1 of the License, or (at your option)
+# any later version.
+
+name: Publish Python bindings
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Python package registry
+        required: true
+        type: choice
+        default: testpypi
+        options: [testpypi, pypi]
+
+concurrency:
+  group: publish-python-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-packages:
+    name: Build and validate Python distributions
+    uses: ./.github/workflows/release-python.yml
+    with:
+      mode: ${{ inputs.target == 'pypi' && 'release' || 'validate' }}
+      assemble_release: false
+
+  publish-testpypi:
+    if: inputs.target == 'testpypi'
+    needs: validate-packages
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: libmpq-python-*-wheel
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: libmpq-python-sdist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          repository-url: https://test.pypi.org/legacy/
+
+  publish-pypi:
+    if: inputs.target == 'pypi'
+    needs: validate-packages
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: libmpq-python-*-wheel
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: libmpq-python-sdist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+
+  verify-testpypi:
+    if: inputs.target == 'testpypi'
+    needs: [validate-packages, publish-testpypi]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Install and exercise the exact TestPyPI package
+        env:
+          LIBMPQ_PYTHON_VERSION: ${{ needs.validate-packages.outputs.package_version }}
+        run: |
+          set -euo pipefail
+          temporary="$(mktemp -d)"
+          trap 'rm -rf -- "${temporary}"' EXIT
+          python -m venv "${temporary}/test-env"
+          python_bin="${temporary}/test-env/bin/python"
+          "${python_bin}" -m pip install --upgrade pip
+          installed=0
+          for _ in $(seq 1 20); do
+            if "${python_bin}" -m pip install --index-url https://test.pypi.org/simple/ --no-deps "libmpq==${LIBMPQ_PYTHON_VERSION}"; then
+              installed=1
+              break
+            fi
+            sleep 15
+          done
+          if [[ "${installed}" != 1 ]]; then
+            echo "TestPyPI did not make libmpq==${LIBMPQ_PYTHON_VERSION} installable within five minutes." >&2
+            exit 1
+          fi
+          cd "${temporary}"
+          env -u PYTHONPATH "${python_bin}" - "${LIBMPQ_PYTHON_VERSION}" <<'PY'
+          import sys
+          import mpq
+
+          expected = sys.argv[1]
+          if mpq.version() != expected or mpq.__version__ != expected:
+              raise SystemExit(f"installed libmpq version {mpq.version()} does not match {expected}")
+          if len(mpq.file_hash("overview.txt")) != 3:
+              raise SystemExit("installed libmpq package failed public API smoke test")
+          PY

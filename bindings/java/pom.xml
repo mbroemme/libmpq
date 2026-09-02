@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>org.libmpq</groupId>
+  <artifactId>libmpq-java</artifactId>
+  <version>0.6.1</version>
+  <name>libmpq Java bindings</name>
+  <description>Java Foreign Function API bindings for libmpq</description>
+  <url>https://github.com/mbroemme/libmpq</url>
+  <packaging>jar</packaging>
+
+  <licenses>
+    <license>
+      <name>GNU Lesser General Public License, version 2.1 or later</name>
+      <url>https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>mbroemme</id>
+      <name>Maik Broemme</name>
+      <email>mbroemme@libmpq.org</email>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/mbroemme/libmpq.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/mbroemme/libmpq.git</developerConnection>
+    <url>https://github.com/mbroemme/libmpq</url>
+  </scm>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>22</maven.compiler.release>
+    <junit.version>5.11.4</junit.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <release>${maven.compiler.release}</release>
+          <showWarnings>true</showWarnings>
+          <showDeprecation>true</showDeprecation>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.2</version>
+        <configuration>
+          <useModulePath>false</useModulePath>
+          <argLine>--enable-native-access=ALL-UNNAMED</argLine>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-source-plugin</artifactId>
+        <version>3.3.1</version>
+        <executions>
+          <execution>
+            <id>attach-sources</id>
+            <goals><goal>jar-no-fork</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <version>3.11.2</version>
+        <configuration>
+          <doclint>none</doclint>
+        </configuration>
+        <executions>
+          <execution>
+            <id>attach-javadocs</id>
+            <goals><goal>jar</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!-- Ordinary Maven builds never require a signing key or publish artifacts. -->
+    <profile>
+      <id>maven-central</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.2.8</version>
+            <configuration>
+              <bestPractices>true</bestPractices>
+            </configuration>
+            <executions>
+              <execution>
+                <id>sign-central-artifacts</id>
+                <phase>verify</phase>
+                <goals><goal>sign</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>0.11.0</version>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+              <autoPublish>false</autoPublish>
+              <waitUntil>validated</waitUntil>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

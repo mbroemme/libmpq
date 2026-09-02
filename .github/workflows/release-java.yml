@@ -1,0 +1,47 @@
+# Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+#
+# This file is free software; you can redistribute it and/or modify it under
+# the terms of the GNU Lesser General Public License as published by the Free
+# Software Foundation; either version 2.1 of the License, or (at your option)
+# any later version.
+
+name: Build Java package
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Build Java release package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends autoconf automake build-essential ca-certificates libbz2-dev libtool unzip zlib1g-dev zip
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: bindings/java/pom.xml
+      - name: Build and validate Java release package
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            export LIBMPQ_JAVA_EXPECTED_VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          bash scripts/build-java-package.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-java-artifacts
+          path: |
+            bindings/java/target/libmpq-java-*.zip
+            bindings/java/pom.xml
+          if-no-files-found: error

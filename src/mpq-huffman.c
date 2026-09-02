@@ -1,0 +1,1162 @@
+/*
+ *  mpq-huffman.c -- adaptive Huffman decompression for MPQ block payloads.
+ *
+ *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+ *
+ *  Differences between C++ and C version:
+ *
+ *    - Removed the object-oriented wrapper.
+ *    - Replaced translated goto flow with structured C control flow.
+ *
+ *  This source was adapted from the C++ version of huffman.cpp included
+ *  in stormlib. The C++ version belongs to the following authors:
+ *
+ *  Ladislav Zezula <ladik@zezula.net>
+ *  ShadowFlare <BlakFlare@hotmail.com>
+ *
+ *  This file is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU Lesser General Public License as published by
+ *  the Free Software Foundation; either version 2.1 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This file is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU Lesser General Public License for more details.
+ *
+ *  You should have received a copy of the GNU Lesser General Public License
+ *  along with this file; if not, see <https://www.gnu.org/licenses/>.
+ */
+
+#include "mpq-huffman.h"
+#include "mpq-endian.h"
+#include "mpq-internal.h"
+#include <libmpq/mpq.h>
+
+#include <stdlib.h>
+#include <string.h>
+
+/* Initial adaptive Huffman weights indexed by compression type. */
+static const uint8_t huffman_initial_weights[] = {
+
+    /* Compression type 0x00. */
+    0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
+    0x00, 0x00,
+
+    /* Compression type 0x01. */
+    0x54, 0x16, 0x16, 0x0D, 0x0C, 0x08, 0x06, 0x05, 0x06, 0x05, 0x06, 0x03, 0x04, 0x04, 0x03, 0x05,
+    0x0E, 0x0B, 0x14, 0x13, 0x13, 0x09, 0x0B, 0x06, 0x05, 0x04, 0x03, 0x02, 0x03, 0x02, 0x02, 0x02,
+    0x0D, 0x07, 0x09, 0x06, 0x06, 0x04, 0x03, 0x02, 0x04, 0x03, 0x03, 0x03, 0x03, 0x03, 0x02, 0x02,
+    0x09, 0x06, 0x04, 0x04, 0x04, 0x04, 0x03, 0x02, 0x03, 0x02, 0x02, 0x02, 0x02, 0x03, 0x02, 0x04,
+    0x08, 0x03, 0x04, 0x07, 0x09, 0x05, 0x03, 0x03, 0x03, 0x03, 0x02, 0x02, 0x02, 0x03, 0x02, 0x02,
+    0x03, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x01, 0x01, 0x01, 0x02, 0x01, 0x02, 0x02,
+    0x06, 0x0A, 0x08, 0x08, 0x06, 0x07, 0x04, 0x03, 0x04, 0x04, 0x02, 0x02, 0x04, 0x02, 0x03, 0x03,
+    0x04, 0x03, 0x07, 0x07, 0x09, 0x06, 0x04, 0x03, 0x03, 0x02, 0x01, 0x02, 0x02, 0x02, 0x02, 0x02,
+    0x0A, 0x02, 0x02, 0x03, 0x02, 0x02, 0x01, 0x01, 0x02, 0x02, 0x02, 0x06, 0x03, 0x05, 0x02, 0x03,
+    0x02, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x02, 0x03, 0x01, 0x01, 0x01,
+    0x02, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x02, 0x04, 0x04, 0x04, 0x07, 0x09, 0x08, 0x0C, 0x02,
+    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x02, 0x01, 0x01, 0x03,
+    0x04, 0x01, 0x02, 0x04, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01,
+    0x04, 0x01, 0x01, 0x01, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+    0x02, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x03, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+    0x02, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x02, 0x02, 0x01, 0x01, 0x02, 0x02, 0x02, 0x06, 0x4B,
+    0x00, 0x00,
+
+    /* Compression type 0x02. */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x27, 0x00, 0x00, 0x23, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xFF, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x02, 0x02, 0x01, 0x01, 0x06, 0x0E, 0x10, 0x04,
+    0x06, 0x08, 0x05, 0x04, 0x04, 0x03, 0x03, 0x02, 0x02, 0x03, 0x03, 0x01, 0x01, 0x02, 0x01, 0x01,
+    0x01, 0x04, 0x02, 0x04, 0x02, 0x02, 0x02, 0x01, 0x01, 0x04, 0x01, 0x01, 0x02, 0x03, 0x03, 0x02,
+    0x03, 0x01, 0x03, 0x06, 0x04, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x02, 0x01, 0x02, 0x01, 0x01,
+    0x01, 0x29, 0x07, 0x16, 0x12, 0x40, 0x0A, 0x0A, 0x11, 0x25, 0x01, 0x03, 0x17, 0x10, 0x26, 0x2A,
+    0x10, 0x01, 0x23, 0x23, 0x2F, 0x10, 0x06, 0x07, 0x02, 0x09, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00,
+
+    /* Compression type 0x03. */
+    0xFF, 0x0B, 0x07, 0x05, 0x0B, 0x02, 0x02, 0x02, 0x06, 0x02, 0x02, 0x01, 0x04, 0x02, 0x01, 0x03,
+    0x09, 0x01, 0x01, 0x01, 0x03, 0x04, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01,
+    0x05, 0x01, 0x01, 0x01, 0x0D, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+    0x02, 0x01, 0x01, 0x03, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01, 0x01,
+    0x0A, 0x04, 0x02, 0x01, 0x06, 0x03, 0x02, 0x01, 0x01, 0x01, 0x01, 0x01, 0x03, 0x01, 0x01, 0x01,
+    0x05, 0x02, 0x03, 0x04, 0x03, 0x03, 0x03, 0x02, 0x01, 0x01, 0x01, 0x02, 0x01, 0x02, 0x03, 0x03,
+    0x01, 0x03, 0x01, 0x01, 0x02, 0x05, 0x01, 0x01, 0x04, 0x03, 0x05, 0x01, 0x03, 0x01, 0x03, 0x03,
+    0x02, 0x01, 0x04, 0x03, 0x0A, 0x06, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+    0x02, 0x02, 0x01, 0x0A, 0x02, 0x05, 0x01, 0x01, 0x02, 0x07, 0x02, 0x17, 0x01, 0x05, 0x01, 0x01,
+    0x0E, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+    0x06, 0x02, 0x01, 0x04, 0x05, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01,
+    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x07, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01, 0x01,
+    0x02, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x11,
+    0x00, 0x00,
+
+    /* Compression type 0x04. */
+    0xFF, 0xFB, 0x98, 0x9A, 0x84, 0x85, 0x63, 0x64, 0x3E, 0x3E, 0x22, 0x22, 0x13, 0x13, 0x18, 0x17,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00,
+
+    /* Compression type 0x05. */
+    0xFF, 0xF1, 0x9D, 0x9E, 0x9A, 0x9B, 0x9A, 0x97, 0x93, 0x93, 0x8C, 0x8E, 0x86, 0x88, 0x80, 0x82,
+    0x7C, 0x7C, 0x72, 0x73, 0x69, 0x6B, 0x5F, 0x60, 0x55, 0x56, 0x4A, 0x4B, 0x40, 0x41, 0x37, 0x37,
+    0x2F, 0x2F, 0x27, 0x27, 0x21, 0x21, 0x1B, 0x1C, 0x17, 0x17, 0x13, 0x13, 0x10, 0x10, 0x0D, 0x0D,
+    0x0B, 0x0B, 0x09, 0x09, 0x08, 0x08, 0x07, 0x07, 0x06, 0x05, 0x05, 0x04, 0x04, 0x04, 0x19, 0x18,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00,
+
+    /* Compression type 0x06. */
+    0xC3, 0xCB, 0xF5, 0x41, 0xFF, 0x7B, 0xF7, 0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xBF, 0xCC, 0xF2, 0x40, 0xFD, 0x7C, 0xF7, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x7A, 0x46, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00,
+
+    /* Compression type 0x07. */
+    0xC3, 0xD9, 0xEF, 0x3D, 0xF9, 0x7C, 0xE9, 0x1E, 0xFD, 0xAB, 0xF1, 0x2C, 0xFC, 0x5B, 0xFE, 0x17,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xBD, 0xD9, 0xEC, 0x3D, 0xF5, 0x7D, 0xE8, 0x1D, 0xFB, 0xAE, 0xF0, 0x2C, 0xFB, 0x5C, 0xFF, 0x18,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x70, 0x6C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00,
+
+    /* Compression type 0x08. */
+    0xBA, 0xC5, 0xDA, 0x33, 0xE3, 0x6D, 0xD8, 0x18, 0xE5, 0x94, 0xDA, 0x23, 0xDF, 0x4A, 0xD1, 0x10,
+    0xEE, 0xAF, 0xE4, 0x2C, 0xEA, 0x5A, 0xDE, 0x15, 0xF4, 0x87, 0xE9, 0x21, 0xF6, 0x43, 0xFC, 0x12,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xB0, 0xC7, 0xD8, 0x33, 0xE3, 0x6B, 0xD6, 0x18, 0xE7, 0x95, 0xD8, 0x23, 0xDB, 0x49, 0xD0, 0x11,
+    0xE9, 0xB2, 0xE2, 0x2B, 0xE8, 0x5C, 0xDD, 0x15, 0xF1, 0x87, 0xE7, 0x20, 0xF7, 0x44, 0xFF, 0x13,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x5F, 0x9E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00
+};
+
+#define HUFFMAN_INITIAL_WEIGHT_BLOCK_SIZE 258U
+#define HUFFMAN_INITIAL_WEIGHT_TYPES                                                               \
+    (sizeof(huffman_initial_weights) / HUFFMAN_INITIAL_WEIGHT_BLOCK_SIZE)
+
+/* Append one least-significant-bit-first bit to the Huffman output stream.
+ * The bit accumulator is flushed only after a complete byte is available,
+ * and capacity failures are reported before writing beyond the destination. */
+static int32_t
+huffman_write_bit(struct huffman_output_stream_s *os, uint32_t bit)
+{
+    os->bit_buf |= (bit & 1u) << os->bits++;
+    if (os->bits == 8) {
+        if (os->out_pos >= os->capacity)
+            return LIBMPQ_ERROR_SIZE;
+        os->out_buf[os->out_pos++] = (uint8_t)os->bit_buf;
+        os->bit_buf = 0;
+        os->bits = 0;
+    }
+    return LIBMPQ_SUCCESS;
+}
+
+/* Append a little-endian run of bits to the Huffman output stream.
+ * Bits are emitted from the least significant end because that is the order
+ * used by the MPQ adaptive Huffman wire format. */
+static int32_t
+huffman_write_bits(struct huffman_output_stream_s *os, uint32_t value, uint32_t count)
+{
+    while (count-- != 0) {
+        int32_t result = huffman_write_bit(os, value);
+        if (result < 0)
+            return result;
+        value >>= 1;
+    }
+    return LIBMPQ_SUCCESS;
+}
+
+/* Emit the adaptive-tree path for one Huffman symbol.
+ * The path is reconstructed from the leaf toward the root and reversed by
+ * the bit writer so decoder traversal reaches the same symbol. */
+static int32_t
+huffman_encode_symbol(struct huffman_output_stream_s *os, struct huffman_tree_item_s *item)
+{
+    uint32_t bits = 0;
+    uint32_t count = 0;
+    struct huffman_tree_item_s *parent;
+    for (parent = item->parent; parent != NULL; parent = parent->parent) {
+        bits = (bits << 1) | (parent->child->prev == item ? 1u : 0u);
+        item = parent;
+        if (++count == 32)
+            return LIBMPQ_ERROR_FORMAT;
+    }
+    return huffman_write_bits(os, bits, count);
+}
+
+/* Replace the NYT node with an escape branch and the newly seen literal.
+ * Newly introduced bytes are encoded through the escape symbol before they
+ * receive a normal adaptive-tree entry and weight update. */
+static int32_t
+huffman_insert_literal(struct huffman_tree_s *ht, uint32_t value)
+{
+    struct huffman_tree_item_s *escape = ht->last;
+    struct huffman_tree_item_s *old;
+    struct huffman_tree_item_s *literal;
+    if (escape == NULL || PTR_INT(escape) <= 0)
+        return LIBMPQ_ERROR_FORMAT;
+    old = libmpq__huffman_acquire_item(ht);
+    literal = libmpq__huffman_acquire_item(ht);
+    if (old == NULL || literal == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    old->parent = escape;
+    old->dcmp_byte = escape->dcmp_byte;
+    old->byte_value = escape->byte_value;
+    literal->parent = escape;
+    literal->dcmp_byte = value;
+    literal->byte_value = 0;
+    escape->child = literal;
+    ht->symbol_nodes[old->dcmp_byte] = old;
+    ht->symbol_nodes[value] = literal;
+    libmpq__huffman_update_weights(ht, literal);
+    if (ht->compression_type_zero == 0)
+        libmpq__huffman_update_weights(ht, old);
+    return LIBMPQ_SUCCESS;
+}
+
+/* Insert a Huffman tree item before another item in the adaptive list.
+ * The list uses encoded relative links inherited from the StormLib layout,
+ * so each insertion preserves both ordinary and sentinel-linked neighbors. */
+void
+libmpq__huffman_insert_item(
+    struct huffman_tree_s *ht, struct huffman_tree_item_s *item, uint32_t where,
+    struct huffman_tree_item_s *item2
+)
+{
+    struct huffman_tree_item_s *next = item->next;
+
+    /* Previous item relative to the insertion point. */
+    struct huffman_tree_item_s *prev = item->prev;
+
+    struct huffman_tree_item_s *prev2;
+
+    /* Relative previous-link offset from the original pointer encoding. */
+    long next2;
+
+    if (next != 0) {
+
+        /* Resolve encoded previous-item references from the original tree layout. */
+        if (PTR_INT(prev) < 0) {
+            prev = PTR_NOT(prev);
+        } else {
+            prev += (item - next->prev);
+        }
+
+        prev->next = next;
+        next->prev = prev;
+
+        item->next = 0;
+        item->prev = 0;
+    }
+
+    if (item2 == NULL) {
+        item2 = PTR_PTR(&ht->first);
+    }
+
+    switch (where) {
+    case SWITCH_ITEMS:
+
+        /* Reinsert item before item2->next while preserving the encoded first-link slot. */
+        item->next = item2->next;
+        item->prev = item2->next->prev;
+        item2->next->prev = item;
+
+        item2->next = item;
+        return;
+    case INSERT_ITEM:
+
+        item->next = item2;
+        item->prev = item2->prev;
+        next2 = PTR_INT(ht->insertion_scratch);
+        prev2 = item2->prev;
+
+        if (PTR_INT(prev2) < 0) {
+            prev2 = PTR_NOT(prev);
+            prev2->next = item;
+
+            item2->prev = item;
+            return;
+        }
+
+        if (next2 < 0) {
+            next2 = item2 - item2->next->prev;
+        }
+
+        prev2 += next2;
+        prev2->next = item;
+        item2->prev = item;
+        return;
+    default:
+        return;
+    }
+}
+
+/* Remove a Huffman item from the adaptive linked list.
+ * Sentinel references and relative previous pointers are resolved before the
+ * item is detached, leaving it available for later tree-item reuse. */
+void
+libmpq__huffman_remove_item(struct huffman_tree_s *ht, struct huffman_tree_item_s *hi)
+{
+
+    /* Previous-link scratch value used while unlinking the item. */
+    struct huffman_tree_item_s *temp;
+
+    if (hi->next != NULL) {
+        temp = hi->prev;
+
+        if (PTR_INT(temp) <= 0) {
+            temp = PTR_NOT(temp);
+
+            if (temp == PTR_PTR(&ht->current_sentinel)) {
+                ht->current_sentinel = hi->next;
+            } else if (temp == PTR_PTR(&ht->first)) {
+                ht->first = hi->next;
+            }
+        } else {
+            temp += (hi - hi->next->prev);
+
+            temp->next = hi->next;
+        }
+
+        hi->next->prev = hi->prev;
+        hi->next = hi->prev = NULL;
+    }
+}
+
+/* Resolve the previous Huffman tree item, including encoded relative pointers.
+ * A negative link is a direct encoded reference, while a non-negative value
+ * is interpreted relative to the neighboring item and supplied offset. */
+struct huffman_tree_item_s *
+libmpq__huffman_previous_item(struct huffman_tree_item_s *hi, long value)
+{
+
+    /* Negative pointer values encode direct references in the original layout. */
+    if (PTR_INT(hi->prev) < 0) {
+        return PTR_NOT(hi->prev);
+    }
+
+    if (value < 0) {
+        value = hi - hi->next->prev;
+    }
+
+    if (hi->prev == NULL) {
+        return NULL;
+    }
+
+    return hi->prev + value;
+}
+
+/* Refill the bit accumulator with complete input bytes until it contains the
+ * requested number of bits. The final byte is handled without a word-sized
+ * lookahead, so a valid stream tail cannot read beyond its input buffer. */
+static int
+huffman_refill(struct huffman_input_stream_s *is, uint32_t required_bits)
+{
+    while (is->bits < required_bits && is->in_buf < is->in_end) {
+        is->bit_buf |= (uint32_t)*is->in_buf++ << is->bits;
+        is->bits += 8;
+    }
+
+    if (is->bits < required_bits) {
+        is->failed = 1;
+        return 0;
+    }
+
+    return 1;
+}
+
+/* Read one bit from the bounded Huffman input stream. */
+uint32_t
+libmpq__huffman_read_bit(struct huffman_input_stream_s *is)
+{
+    uint32_t bit;
+
+    if (!huffman_refill(is, 1)) {
+        return 0;
+    }
+
+    bit = is->bit_buf & 1;
+    is->bit_buf >>= 1;
+    is->bits--;
+
+    return bit;
+}
+
+/* Peek at the next seven Huffman bits without consuming them.
+ * The seven-bit prefix feeds the adaptive decoder's quick lookup cache, so
+ * refilling never changes the logical input position. */
+uint32_t
+libmpq__huffman_peek_seven_bits(struct huffman_input_stream_s *is)
+{
+
+    /* Ensure the quick-decode prefix is fully available. */
+    if (!huffman_refill(is, 7)) {
+        return 0;
+    }
+
+    return (is->bit_buf & 0x7F);
+}
+
+/* Read one byte from the bounded Huffman input stream, refilling only from
+ * bytes that remain inside the compressed input range. */
+uint32_t
+libmpq__huffman_read_byte(struct huffman_input_stream_s *is)
+{
+
+    /* Byte extracted from the low bits of the input buffer. */
+    uint32_t one_byte;
+
+    /* Refill before consuming a byte that crosses the current bit buffer. */
+    if (!huffman_refill(is, 8)) {
+        return 0;
+    }
+
+    one_byte = (is->bit_buf & 0xFF);
+    is->bit_buf >>= 8;
+    is->bits -= 8;
+
+    return one_byte;
+}
+
+/* Allocate or recycle a Huffman tree item and move it to the front list.
+ * Reuse keeps the fixed tree pool bounded while preserving the linked-list
+ * ordering required by adaptive weight updates. */
+static int
+huffman_item_reference_valid(
+    const struct huffman_tree_s *ht, const struct huffman_tree_item_s *item
+)
+{
+    uintptr_t address = (uintptr_t)item;
+    uintptr_t first = (uintptr_t)&ht->node_pool[0];
+    uintptr_t end = (uintptr_t)&ht->node_pool[sizeof(ht->node_pool) / sizeof(ht->node_pool[0])];
+
+    if (item == PTR_PTR(&ht->current_sentinel) || item == PTR_PTR(&ht->first)) {
+        return TRUE;
+    }
+
+    return address >= first && address < end && (address - first) % sizeof(ht->node_pool[0]) == 0;
+}
+
+/* Acquire a bounded item from the adaptive tree's fixed node pool. */
+struct huffman_tree_item_s *
+libmpq__huffman_acquire_item(struct huffman_tree_s *ht)
+{
+    struct huffman_tree_item_s *p_item1 = ht->next_reusable_item;
+    struct huffman_tree_item_s *p_item2;
+
+    /* Temporary item and pointer-array state used by the original tree update routine. */
+    struct huffman_tree_item_s *p_next;
+    struct huffman_tree_item_s *p_prev;
+
+    if (PTR_INT(p_item1) > 0 && !huffman_item_reference_valid(ht, p_item1)) {
+        return NULL;
+    }
+
+    if (PTR_INT(p_item1) <= 0 || (p_item2 = p_item1) == NULL) {
+        if (ht->items < sizeof(ht->node_pool) / sizeof(ht->node_pool[0])) {
+            p_item2 = &ht->node_pool[ht->items++];
+            p_item1 = p_item2;
+        } else {
+            return NULL;
+        }
+    } else {
+        p_item1 = p_item2;
+    }
+
+    p_next = p_item1->next;
+
+    if (p_next != NULL) {
+        p_prev = p_item1->prev;
+
+        if (PTR_INT(p_prev) <= 0) {
+            p_prev = PTR_NOT(p_prev);
+        } else {
+            p_prev += (p_item1 - p_item1->next->prev);
+        }
+
+        p_prev->next = p_next;
+        p_next->prev = p_prev;
+        p_item1->next = NULL;
+        p_item1->prev = NULL;
+    }
+
+    p_item1->next = PTR_PTR(&ht->first);
+    p_item1->prev = ht->last;
+
+    p_prev = ht->last;
+
+    if (PTR_INT(p_prev) <= 0) {
+        p_prev = PTR_NOT(p_prev);
+        p_prev->next = p_item1;
+        p_prev->prev = p_item2;
+        p_item2->parent = NULL;
+        p_item2->child = NULL;
+    } else {
+        if (PTR_INT(ht->insertion_scratch) < 0) {
+            p_prev += PTR_PTR(&ht->first) - ht->first->prev;
+        } else {
+            p_prev += PTR_INT(ht->insertion_scratch);
+        }
+
+        p_prev->next = p_item1;
+        ht->last = p_item2;
+        p_item2->parent = NULL;
+        p_item2->child = NULL;
+    }
+
+    return p_item2;
+}
+
+/* Increase adaptive Huffman weights and reorder items to keep the tree sorted.
+ * Every ancestor is updated, and nodes are moved when their new weight would
+ * violate the monotonic ordering used by the encoder and decoder. */
+void
+libmpq__huffman_update_weights(struct huffman_tree_s *ht, struct huffman_tree_item_s *p_item)
+{
+    struct huffman_tree_item_s *p_item1;
+    struct huffman_tree_item_s *p_item2 = NULL;
+    struct huffman_tree_item_s *p_item3;
+    struct huffman_tree_item_s *p_prev;
+
+    /* Walk toward the root, increasing weights and moving nodes forward as needed. */
+    for (; p_item != NULL; p_item = p_item->parent) {
+        p_item->byte_value++;
+
+        for (p_item1 = p_item;; p_item1 = p_prev) {
+            p_prev = p_item1->prev;
+
+            if (PTR_INT(p_prev) <= 0) {
+                p_prev = NULL;
+                break;
+            }
+
+            if (p_prev->byte_value >= p_item->byte_value) {
+                break;
+            }
+        }
+
+        if (p_item1 == p_item) {
+            continue;
+        }
+
+        if (p_item1->next != NULL) {
+            p_item2 = libmpq__huffman_previous_item(p_item1, -1);
+            p_item2->next = p_item1->next;
+            p_item1->next->prev = p_item1->prev;
+            p_item1->next = NULL;
+            p_item1->prev = NULL;
+        }
+
+        p_item2 = p_item->next;
+        p_item1->next = p_item2;
+        p_item1->prev = p_item2->prev;
+        p_item2->prev = p_item1;
+        p_item->next = p_item1;
+
+        if (p_item1 != NULL) {
+            p_item2 = libmpq__huffman_previous_item(p_item, -1);
+            p_item2->next = p_item->next;
+            p_item->next->prev = p_item->prev;
+            p_item->next = NULL;
+            p_item->prev = NULL;
+        }
+
+        if (p_prev == NULL) {
+            p_prev = PTR_PTR(&ht->first);
+        }
+
+        p_item2 = p_prev->next;
+        p_item->next = p_item2;
+        p_item->prev = p_item2->prev;
+        p_item2->prev = p_item;
+        p_prev->next = p_item;
+        p_item3 = p_item1->parent->child;
+        p_item2 = p_item->parent;
+
+        if (p_item2->child == p_item) {
+            p_item2->child = p_item1;
+        }
+
+        if (p_item3 == p_item1) {
+            p_item1->parent->child = p_item;
+        }
+
+        p_item2 = p_item->parent;
+        p_item->parent = p_item1->parent;
+        p_item1->parent = p_item2;
+
+        ht->tree_update_generation++;
+    }
+}
+
+/* Initialize the adaptive Huffman tree with fresh sentinels and lookup cache state.
+ * This resets the fixed node pool, encoded-link sentinels, reusable-item cursor,
+ * and decoder cache so no adaptive state leaks between MPQ blocks. */
+void
+libmpq__huffman_tree_init(struct huffman_tree_s *ht, uint32_t cmp)
+{
+
+    /* Tree item cursor and remaining item count. */
+    uint32_t count;
+    struct huffman_tree_item_s *hi;
+
+    for (hi = ht->node_pool, count = 0x203; count != 0; hi++, count--) {
+        hi->next = hi->prev = NULL;
+    }
+
+    /* Recreate the sentinel links used by the adaptive tree list. */
+    ht->encoded_sentinel = NULL;
+    ht->current_sentinel = PTR_PTR(&ht->current_sentinel);
+    ht->next_reusable_item = PTR_NOT(ht->current_sentinel);
+    ht->insertion_scratch = NULL;
+    ht->first = PTR_PTR(&ht->first);
+    ht->last = PTR_NOT(ht->first);
+    ht->tree_update_generation = 1;
+    ht->items = 0;
+
+    /* Decompression starts with an empty seven-bit quick-decode cache. */
+    if (cmp == LIBMPQ_HUFF_DECOMPRESS) {
+        for (count = 0;
+             count < sizeof(ht->quick_decode_cache) / sizeof(struct huffman_decompress_s);
+             count++) {
+            ht->quick_decode_cache[count].tree_update_generation = 0;
+        }
+    }
+}
+
+/* Build the adaptive Huffman tree using the first byte already loaded from the stream.
+ * The compression type selects the initial weight table, after which symbols
+ * and internal nodes are inserted in the canonical adaptive-list order. */
+void
+libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
+{
+
+    /* Greatest weight found while inserting initial symbols. */
+    uint32_t max_byte;
+
+    /* Compression-specific initial weight table. */
+    const uint8_t *byte_array;
+
+    /* Tracks whether the translated control flow found a matching insertion point. */
+    uint32_t found;
+
+    struct huffman_tree_item_s **p_item;
+    struct huffman_tree_item_s *child1;
+
+    /* Loop index used while rebuilding quick-decode tables. */
+    uint32_t i;
+
+    /* Move pending last-list items back into the main linked list. */
+    while (PTR_INT(ht->last) > 0) {
+        struct huffman_tree_item_s *temp;
+        if (ht->last->next != NULL) {
+            libmpq__huffman_remove_item(ht, ht->last);
+        }
+
+        ht->next_reusable_item = PTR_PTR(&ht->current_sentinel);
+        ht->last->prev = ht->next_reusable_item;
+        temp = libmpq__huffman_previous_item(
+            PTR_PTR(&ht->current_sentinel), PTR_INT(&ht->encoded_sentinel)
+        );
+        temp->next = ht->last;
+        ht->current_sentinel = ht->last;
+    }
+
+    /* Clear symbol lookup pointers before rebuilding the adaptive population. */
+    memset(ht->symbol_nodes, 0, sizeof(ht->symbol_nodes));
+
+    max_byte = 0;
+
+    p_item = (struct huffman_tree_item_s **)&ht->symbol_nodes;
+
+    cmp_type &= 0xFF;
+
+    /* Each compression type has 258 initial symbol weights. */
+    byte_array = huffman_initial_weights + cmp_type * 258;
+
+    /* Insert weighted literal symbols in the order required by the wire format. */
+    for (i = 0; i < 0x100; i++, p_item++) {
+
+        /* Reuse a pending tree item or allocate the next item from the static pool. */
+        struct huffman_tree_item_s *item = ht->next_reusable_item;
+        struct huffman_tree_item_s *p_item3;
+        uint8_t one_byte = byte_array[i];
+
+        if (byte_array[i] == 0) {
+            continue;
+        }
+
+        if (PTR_INT(item) <= 0) {
+            item = &ht->node_pool[ht->items++];
+        }
+
+        libmpq__huffman_insert_item(ht, item, SWITCH_ITEMS, NULL);
+
+        item->parent = NULL;
+        item->child = NULL;
+
+        *p_item = item;
+        item->dcmp_byte = i;
+        item->byte_value = one_byte;
+
+        if (one_byte >= max_byte) {
+            max_byte = one_byte;
+            continue;
+        }
+
+        /* Reinsert before the first node with a high enough adaptive weight. */
+        found = 0;
+
+        if (PTR_INT((p_item3 = ht->last)) > 0) {
+            if (p_item3 != NULL) {
+                do {
+                    if (p_item3->byte_value >= one_byte) {
+                        found = 1;
+                        break;
+                    }
+
+                    p_item3 = p_item3->prev;
+                } while (PTR_INT(p_item3) > 0);
+            }
+        }
+
+        if (found == 0) {
+            p_item3 = NULL;
+        }
+
+        if (item->next != NULL) {
+            libmpq__huffman_remove_item(ht, item);
+        }
+
+        if (p_item3 == NULL) {
+            p_item3 = PTR_PTR(&ht->first);
+        }
+
+        item->next = p_item3->next;
+        item->prev = p_item3->next->prev;
+        p_item3->next->prev = item;
+        p_item3->next = item;
+    }
+
+    /* Add the escape and end-of-stream control symbols after literal symbols. */
+    for (; i < 0x102; i++) {
+        struct huffman_tree_item_s **p_item2 = &ht->symbol_nodes[i];
+        struct huffman_tree_item_s *item2 = ht->next_reusable_item;
+
+        if (PTR_INT(item2) <= 0) {
+            item2 = &ht->node_pool[ht->items++];
+        }
+
+        libmpq__huffman_insert_item(ht, item2, INSERT_ITEM, NULL);
+
+        item2->dcmp_byte = i;
+        item2->byte_value = 1;
+        item2->parent = NULL;
+        item2->child = NULL;
+        *p_item2++ = item2;
+    }
+
+    /* Pair the lowest-weight nodes into parents until the tree has one root. */
+    if (PTR_INT((child1 = ht->last)) > 0) {
+        struct huffman_tree_item_s *child2;
+        struct huffman_tree_item_s *item;
+
+        while (PTR_INT((child2 = child1->prev)) > 0) {
+            if (PTR_INT((item = ht->next_reusable_item)) <= 0) {
+                item = &ht->node_pool[ht->items++];
+            }
+
+            libmpq__huffman_insert_item(ht, item, SWITCH_ITEMS, NULL);
+
+            item->parent = NULL;
+            item->child = NULL;
+
+            item->byte_value = child1->byte_value + child2->byte_value;
+
+            item->child = child1;
+            child1->parent = item;
+            child2->parent = item;
+
+            if (item->byte_value >= max_byte) {
+                max_byte = item->byte_value;
+            } else {
+                struct huffman_tree_item_s *p_item2 = child2->prev;
+                found = 0;
+
+                if (PTR_INT(p_item2) > 0) {
+                    do {
+                        if (p_item2->byte_value >= item->byte_value) {
+                            found = 1;
+                            break;
+                        }
+
+                        p_item2 = p_item2->prev;
+                    } while (PTR_INT(p_item2) > 0);
+                }
+
+                if (found == 0) {
+                    p_item2 = NULL;
+                }
+
+                if (item->next != 0) {
+
+                    /* Previous item resolved before unlinking this child. */
+                    struct huffman_tree_item_s *temp4 = libmpq__huffman_previous_item(item, -1);
+
+                    /* Relink the previous item to skip the removed child. */
+                    temp4->next = item->next;
+
+                    /* Preserve the encoded previous reference on the next item. */
+                    item->next->prev = item->prev;
+                    item->next = NULL;
+                    item->prev = NULL;
+                }
+
+                if (p_item2 == NULL) {
+                    p_item2 = PTR_PTR(&ht->first);
+                }
+
+                item->next = p_item2->next;
+                item->prev = p_item2->next->prev;
+
+                /* Insert the item before the next sibling. */
+                p_item2->next->prev = item;
+                p_item2->next = item;
+            }
+
+            if (PTR_INT((child1 = child2->prev)) <= 0) {
+                break;
+            }
+        }
+    }
+
+    ht->tree_update_generation = 1;
+}
+
+/* Decode the Huffman bitstream into the output buffer.
+ * It combines cached prefix traversal with adaptive tree walking, handles
+ * literal-introduction and end markers, and stops at the requested output size. */
+int32_t
+libmpq__huffman_decode(
+    struct huffman_tree_s *ht, struct huffman_input_stream_s *is, uint8_t *out_buf,
+    uint32_t out_length
+)
+{
+
+    /* Output cursor, decoded symbol and adaptive tree traversal state. */
+    uint32_t dcmp_byte = 0;
+    uint8_t *out_pos = out_buf;
+    uint32_t bit_count;
+    struct huffman_decompress_s *qd;
+    struct huffman_tree_item_s *p_item1;
+    struct huffman_tree_item_s *p_item2;
+
+    /* 8 bits loaded from input stream. */
+    uint32_t n8bits;
+
+    /* 7 bits loaded from input stream. */
+    uint32_t n7bits;
+
+    /* Tracks translated control flow that replaced gotos in the original source. */
+    uint32_t found;
+
+    /* Select whether the quick-decode table can satisfy the current bit prefix. */
+    uint32_t has_qd;
+
+    /* Nothing can be written when the caller requested a zero-length output. */
+    if (out_length == 0) {
+        return 0;
+    }
+
+    /* The first byte selects the initial tree weights and decoder mode. */
+    n8bits = libmpq__huffman_read_byte(is);
+    if (is->failed) {
+        return LIBMPQ_ERROR_UNPACK;
+    }
+    if (n8bits >= HUFFMAN_INITIAL_WEIGHT_TYPES) {
+        return LIBMPQ_ERROR_UNPACK;
+    }
+
+    libmpq__huffman_tree_build(ht, n8bits);
+
+    /* Compression type 0 uses 8-bit literal handling. */
+    ht->compression_type_zero = (n8bits == 0) ? TRUE : FALSE;
+
+    for (;;) {
+        n7bits = libmpq__huffman_peek_seven_bits(is);
+        if (is->failed) {
+            return LIBMPQ_ERROR_UNPACK;
+        }
+
+        /* Quick-decode entries cache symbols for seven-bit prefixes after tree updates. */
+        qd = &ht->quick_decode_cache[n7bits];
+        has_qd = (qd->tree_update_generation >= ht->tree_update_generation) ? TRUE : FALSE;
+
+        /* Prefer a cache entry, falling back to tree traversal after updates. */
+        if (has_qd) {
+            found = 0;
+            if (qd->bits > 7) {
+                is->bit_buf >>= 7;
+                is->bits -= 7;
+                p_item1 = qd->value.p_item;
+                found = 1;
+            }
+            if (found == 0) {
+                is->bit_buf >>= qd->bits;
+                is->bits -= qd->bits;
+                dcmp_byte = qd->value.dcmp_byte;
+            }
+        } else {
+            found = 1;
+            p_item1 = ht->first->next->prev;
+            if (PTR_INT(p_item1) <= 0) {
+                p_item1 = NULL;
+            }
+        }
+
+        if (found == 1) {
+            if (p_item1 == NULL) {
+                return 0;
+            }
+
+            bit_count = 0;
+            p_item2 = NULL;
+
+            /* Walk one adaptive branch per input bit until reaching a leaf. */
+            do {
+                p_item1 = p_item1->child;
+
+                if (p_item1 == NULL) {
+                    return 0;
+                }
+
+                if (libmpq__huffman_read_bit(is)) {
+                    p_item1 = p_item1->prev;
+
+                    if (p_item1 == NULL) {
+                        return 0;
+                    }
+                }
+                if (is->failed) {
+                    return LIBMPQ_ERROR_UNPACK;
+                }
+
+                /* Store the seventh-level item so the quick cache can resume from it later. */
+                if (++bit_count == 7) {
+                    p_item2 = p_item1;
+                }
+            } while (p_item1->child != NULL);
+
+            if (has_qd == FALSE) {
+                if (bit_count > 7) {
+                    qd->tree_update_generation = ht->tree_update_generation;
+                    qd->bits = bit_count;
+                    qd->value.p_item = p_item2;
+                } else {
+                    uint32_t index = n7bits & (0xFFFFFFFF >> (32 - bit_count));
+                    uint32_t add = (1 << bit_count);
+
+                    for (qd = &ht->quick_decode_cache[index]; index <= 0x7F;
+                         index += add, qd += add) {
+                        qd->tree_update_generation = ht->tree_update_generation;
+                        qd->bits = bit_count;
+                        qd->value.dcmp_byte = p_item1->dcmp_byte;
+                    }
+                }
+            }
+
+            dcmp_byte = p_item1->dcmp_byte;
+        }
+
+        /* Escape symbols carry a literal byte not yet present in the tree and
+         * split the current escape node into an old branch and a new literal. */
+        if (dcmp_byte == 0x101) {
+            n8bits = libmpq__huffman_read_byte(is);
+            if (is->failed) {
+                return LIBMPQ_ERROR_UNPACK;
+            }
+            p_item1 = (PTR_INT(ht->last) <= 0) ? NULL : ht->last;
+            if (p_item1 == NULL) {
+                return 0;
+            }
+            p_item2 = libmpq__huffman_acquire_item(ht);
+            if (p_item2 == NULL) {
+                return LIBMPQ_ERROR_UNPACK;
+            }
+            p_item2->parent = p_item1;
+            p_item2->dcmp_byte = p_item1->dcmp_byte;
+            p_item2->byte_value = p_item1->byte_value;
+            ht->symbol_nodes[p_item2->dcmp_byte] = p_item2;
+            p_item2 = libmpq__huffman_acquire_item(ht);
+            if (p_item2 == NULL) {
+                return LIBMPQ_ERROR_UNPACK;
+            }
+            p_item2->parent = p_item1;
+            p_item2->dcmp_byte = n8bits;
+            p_item2->byte_value = 0;
+            ht->symbol_nodes[p_item2->dcmp_byte] = p_item2;
+            p_item1->child = p_item2;
+
+            libmpq__huffman_update_weights(ht, p_item2);
+
+            if (ht->compression_type_zero == 0) {
+                libmpq__huffman_update_weights(ht, ht->symbol_nodes[n8bits]);
+            }
+
+            dcmp_byte = n8bits;
+        }
+
+        /* The end marker terminates decoding before another output byte is written. */
+        if (dcmp_byte == 0x100) {
+            break;
+        }
+
+        *out_pos++ = (uint8_t)dcmp_byte;
+        if (--out_length == 0) {
+            break;
+        }
+
+        if (ht->compression_type_zero) {
+            libmpq__huffman_update_weights(ht, ht->symbol_nodes[dcmp_byte]);
+        }
+    }
+
+    return (out_pos - out_buf);
+}
+
+/* Encode a byte stream using the MPQ adaptive Huffman wire format.
+ * The encoder emits the initial type byte, introduces unseen literals through
+ * the escape node, writes the end marker, and pads the stream to MPQ alignment. */
+int32_t
+libmpq__huffman_encode(
+    struct huffman_tree_s *ht, struct huffman_output_stream_s *os, const uint8_t *in_buf,
+    uint32_t in_length
+)
+{
+    uint32_t i;
+    if (ht == NULL || os == NULL || (in_length != 0 && in_buf == NULL) || os->capacity < 4)
+        return LIBMPQ_ERROR_FORMAT;
+
+    /* Reserve the first byte for the compression type before writing symbols. */
+    os->out_pos = 1;
+    os->bit_buf = 0;
+    os->bits = 0;
+    os->out_buf[0] = 0;
+    libmpq__huffman_tree_init(ht, LIBMPQ_HUFF_COMPRESS);
+    libmpq__huffman_tree_build(ht, 0);
+    ht->compression_type_zero = TRUE;
+
+    /* Encode each input byte while keeping the tree synchronized with decoding. */
+    for (i = 0; i < in_length; i++) {
+        uint32_t value = in_buf[i];
+        struct huffman_tree_item_s *item = ht->symbol_nodes[value];
+        if (item == NULL) {
+            if (huffman_encode_symbol(os, ht->symbol_nodes[0x101]) < 0 ||
+                huffman_write_bits(os, value, 8) < 0)
+                return LIBMPQ_ERROR_SIZE;
+            if (huffman_insert_literal(ht, value) < 0)
+                return LIBMPQ_ERROR_FORMAT;
+
+            /* The decoder updates a newly introduced literal once while
+             * splitting the escape node and once again after emitting it. */
+            libmpq__huffman_update_weights(ht, ht->symbol_nodes[value]);
+        } else if (huffman_encode_symbol(os, item) < 0) {
+            return LIBMPQ_ERROR_SIZE;
+        } else {
+            libmpq__huffman_update_weights(ht, item);
+        }
+    }
+
+    /* Mark the logical end of the stream after the final input symbol. */
+    if (huffman_encode_symbol(os, ht->symbol_nodes[0x100]) < 0)
+        return LIBMPQ_ERROR_SIZE;
+    if (os->bits != 0) {
+        if (os->out_pos >= os->capacity)
+            return LIBMPQ_ERROR_SIZE;
+        os->out_buf[os->out_pos++] = (uint8_t)os->bit_buf;
+    }
+    while (os->out_pos < 4)
+        os->out_buf[os->out_pos++] = 0;
+    return (int32_t)os->out_pos;
+}

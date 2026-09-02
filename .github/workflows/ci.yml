@@ -65,11 +65,12 @@ jobs:
             libbz2-dev \
             libtool \
             pkg-config \
+            ripgrep \
             shellcheck \
             zlib1g-dev
 
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Trust repository checkout
         run: |
@@ -102,12 +103,127 @@ jobs:
         run: |
           set -euxo pipefail
           mapfile -t sources < <(git ls-files \
-            'src/*.c' 'include/libmpq/*.h' 'tools/*.c' 'tests/*.c' 'tests/*.h')
+            'src/*.c' 'include/libmpq/*.h' 'tools/*.c')
           if ((${#sources[@]} == 0)); then
             echo 'No C translation units found.' >&2
             exit 1
           fi
           clang-tidy-22 --quiet -p . "${sources[@]}"
+
+      - name: Run clang-tidy on regression tests
+        run: |
+          set -euxo pipefail
+          mapfile -t sources < <(git ls-files 'tests/*.c' 'tests/*.h' | sed 's#^tests/##')
+          if ((${#sources[@]} == 0)); then
+            echo 'No regression test sources found.' >&2
+            exit 1
+          fi
+          (
+            cd tests
+            clang-tidy-22 --quiet -p .. "${sources[@]}"
+          )
+
+      - name: Run clang-tidy on fuzz harnesses
+        run: |
+          set -euxo pipefail
+          sources=()
+          while IFS= read -r source; do
+            if [[ "${source}" != 'fuzz/fuzz-codec-decode.c' ]]; then
+              sources+=("${source}")
+            fi
+          done < <(git ls-files 'fuzz/*.c')
+          if ((${#sources[@]} == 0)); then
+            echo 'No fuzz harnesses found.' >&2
+            exit 1
+          fi
+          clang-tidy-22 --quiet --config-file=.clang-tidy "${sources[@]}" -- \
+            -DHAVE_CONFIG_H \
+            -I. \
+            -Iinclude \
+            -Isrc \
+            -std=c99 \
+            -fvisibility=hidden
+          for codec in PKZIP HUFFMAN ZLIB BZIP2; do
+            clang-tidy-22 --quiet --config-file=.clang-tidy fuzz/fuzz-codec-decode.c -- \
+              -DHAVE_CONFIG_H \
+              -I. \
+              -Iinclude \
+              -Isrc \
+              -DLIBMPQ_FUZZ_CODEC=LIBMPQ_COMPRESSION_${codec} \
+              -std=c99 \
+              -fvisibility=hidden
+          done
+
+  sanitizers:
+    name: Sanitizers (ASan, UBSan, LSan)
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: debian:trixie-slim
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install sanitizer build dependencies
+        run: |
+          set -euxo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            build-essential \
+            ca-certificates \
+            clang \
+            git \
+            libclang-rt-dev \
+            libbz2-dev \
+            libtool \
+            zlib1g-dev
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Trust repository checkout
+        run: |
+          set -euxo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Generate build system
+        run: |
+          set -euxo pipefail
+          sh autogen.sh
+
+      - name: Configure sanitizers
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+          CC: clang
+          CFLAGS: -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined
+          LDFLAGS: -fsanitize=address,undefined
+        run: |
+          set -euxo pipefail
+          ./configure --prefix=/usr
+
+      - name: Build with sanitizers
+        run: |
+          set -euxo pipefail
+          make -j"$(nproc)" V=1
+
+      - name: Run sanitizer test suite
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -euxo pipefail
+          make check V=1
+
+  fuzz:
+    name: Fuzzing
+    needs: lint
+    uses: ./.github/workflows/fuzz.yml
+    with:
+      max_total_time: 60
 
   build:
     name: Build (${{ matrix.compiler.name }})
@@ -138,8 +254,10 @@ jobs:
           apt-get install -y --no-install-recommends \
             autoconf \
             automake \
+            binutils \
             build-essential \
             ca-certificates \
+            jq \
             git \
             libbz2-dev \
             libtool \
@@ -148,7 +266,7 @@ jobs:
             ${{ matrix.compiler.package }}
 
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Trust repository checkout
         run: |
@@ -163,7 +281,10 @@ jobs:
       - name: Configure
         run: |
           set -euxo pipefail
-          ./configure --prefix=/usr CC=${{ matrix.compiler.cc }}
+          ./configure --prefix=/opt/libmpq \
+            --includedir=/opt/libmpq/custom-include \
+            --libdir=/opt/libmpq/custom-lib \
+            CC=${{ matrix.compiler.cc }}
 
       - name: Build
         run: |
@@ -174,3 +295,394 @@ jobs:
         run: |
           set -euxo pipefail
           make check V=1
+
+  big-endian:
+    name: Big-endian (s390x)
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU for s390x
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: s390x
+
+      - name: Build and test on big-endian s390x
+        run: |
+          set -euxo pipefail
+          docker run --rm --platform linux/s390x \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace debian:trixie-slim \
+            bash -euxo pipefail -c '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                autoconf \
+                automake \
+                build-essential \
+                ca-certificates \
+                libbz2-dev \
+                libtool \
+                zlib1g-dev
+              sh autogen.sh
+              ./configure --prefix=/usr
+              make -j"$(nproc)" V=1
+              make check V=1
+            '
+
+  coverage:
+    name: GCC coverage
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: debian:trixie-slim
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install GCC coverage dependencies
+        run: |
+          set -euxo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            build-essential \
+            ca-certificates \
+            gcovr \
+            git \
+            jq \
+            libbz2-dev \
+            libtool \
+            zlib1g-dev
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Trust repository checkout
+        run: |
+          set -euxo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Generate build system
+        run: |
+          set -euxo pipefail
+          sh autogen.sh
+
+      - name: Configure GCC coverage build
+        env:
+          CC: gcc
+          CFLAGS: -O0 -g --coverage
+          LDFLAGS: --coverage
+        run: |
+          set -euxo pipefail
+          ./configure --prefix=/usr
+
+      - name: Build and test with GCC coverage
+        run: |
+          set -euxo pipefail
+          make -j"$(nproc)" V=1
+          make check V=1
+
+      - name: Generate coverage reports
+        run: |
+          set -euxo pipefail
+          rm -f a-conftest.gcno
+          mkdir -p coverage
+          gcovr \
+            --root "$GITHUB_WORKSPACE" \
+            --filter "$GITHUB_WORKSPACE/src/" \
+            --print-summary \
+            --xml-pretty \
+            --output coverage/cobertura.xml
+          gcovr \
+            --root "$GITHUB_WORKSPACE" \
+            --filter "$GITHUB_WORKSPACE/src/" \
+            --json-summary-pretty \
+            --json-summary coverage/summary.json
+          bash scripts/coverage-report.sh badge \
+            --input coverage/summary.json \
+            --output coverage/coverage.svg
+          gcovr \
+            --root "$GITHUB_WORKSPACE" \
+            --filter "$GITHUB_WORKSPACE/src/" \
+            --html-details coverage/index.html
+
+      - name: Upload GCC coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-gcc-coverage
+          path: coverage
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload GCC coverage summary
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-gcc-coverage-summary
+          path: coverage/summary.json
+          if-no-files-found: error
+          retention-days: 90
+
+  coverage-pages:
+    name: Publish coverage report
+    needs: coverage
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Download GCC coverage report
+        uses: actions/download-artifact@v7
+        with:
+          name: libmpq-gcc-coverage
+          path: coverage
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload coverage report to GitHub Pages
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: coverage
+
+      - name: Deploy coverage report
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  native-glibc:
+    name: Native C SDK package (glibc)
+    needs: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build and test the manylinux SDK package
+        run: |
+          set -euxo pipefail
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace quay.io/pypa/manylinux2014_x86_64 \
+            bash -euxo pipefail -c '
+              yum install -y autoconf automake binutils bzip2-devel findutils \
+                gcc libtool make pkgconfig tar zlib-devel
+              sh autogen.sh
+              ./configure --prefix=/usr
+              make -j"$(getconf _NPROCESSORS_ONLN)" V=1
+              version="$(./configure --version | sed -n "1s/^libmpq configure //p")"
+              LIBMPQ_NATIVE_LIBC=glibc \
+                LIBMPQ_NATIVE_VERSION="${version}" \
+                LIBMPQ_NATIVE_BUILD_ENVIRONMENT=manylinux2014_x86_64 \
+                LIBMPQ_NATIVE_GLIBC_BASELINE=2.17 \
+                bash scripts/package-native-binary.sh
+              bash scripts/test-native-package.sh \
+                "release/libmpq-${version}-linux-glibc-x86_64.tar.gz" \
+                tests/fixtures/mpq-v1-features.mpq
+            '
+
+  native-musl:
+    name: Native C SDK package (musl)
+    needs: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build and test the Alpine SDK package
+        run: |
+          set -euxo pipefail
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace quay.io/pypa/musllinux_1_2_x86_64 bash -euxo pipefail -c '
+              apk add --no-cache autoconf automake bash binutils bzip2-dev \
+                build-base libtool linux-headers pkgconf tar zlib-dev
+              sh autogen.sh
+              ./configure --prefix=/usr
+              make -j"$(getconf _NPROCESSORS_ONLN)" V=1
+              version="$(./configure --version | sed -n "1s/^libmpq configure //p")"
+              LIBMPQ_NATIVE_LIBC=musl \
+                LIBMPQ_NATIVE_VERSION="${version}" \
+                LIBMPQ_NATIVE_BUILD_ENVIRONMENT=musllinux_1_2_x86_64 \
+                LIBMPQ_NATIVE_MUSL_BASELINE=1.2 \
+                bash scripts/package-native-binary.sh
+              bash scripts/test-native-package.sh \
+                "release/libmpq-${version}-linux-musl-x86_64.tar.gz" \
+                tests/fixtures/mpq-v1-features.mpq
+            '
+
+  d-packages:
+    name: Validate D packages
+    uses: ./.github/workflows/release-d.yml
+    with:
+      mode: validate
+      assemble_release: false
+
+  java:
+    name: Java bindings (JDK ${{ matrix.java }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['22', '25']
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install native build dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            build-essential \
+            ca-certificates \
+            libbz2-dev \
+            libtool \
+            maven \
+            zlib1g-dev
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+          cache-dependency-path: bindings/java/pom.xml
+
+      - name: Generate build system
+        run: |
+          set -euxo pipefail
+          sh autogen.sh
+
+      - name: Build native library
+        run: |
+          set -euxo pipefail
+          ./configure --prefix=/usr
+          make -j"$(nproc)" V=1
+
+      - name: Test Java bindings
+        run: |
+          set -euxo pipefail
+          mvn -f bindings/java/pom.xml test \
+            -Dorg.libmpq.library="${GITHUB_WORKSPACE}/src/.libs/libmpq.so" \
+            -Dlibmpq.sourceDir="${GITHUB_WORKSPACE}"
+
+  python:
+    name: Python bindings (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13', '3.14']
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install native build dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            build-essential \
+            ca-certificates \
+            libbz2-dev \
+            libtool \
+            zlib1g-dev
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: bindings/python/pyproject.toml
+
+      - name: Install Python test tools
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip pytest build setuptools wheel
+
+      - name: Build native library
+        run: |
+          set -euxo pipefail
+          sh autogen.sh
+          ./configure --prefix=/usr
+          make -j"$(nproc)" V=1
+
+      - name: Test Python bindings
+        env:
+          LIBMPQ_LIBRARY: ${{ github.workspace }}/src/.libs/libmpq.so
+          PYTHONPATH: ${{ github.workspace }}/bindings/python
+        run: |
+          set -euxo pipefail
+          python -m pytest bindings/python/tests
+
+      - name: Build Python package smoke artifact
+        working-directory: bindings/python
+        run: |
+          set -euxo pipefail
+          python -m build --wheel --no-isolation
+
+      - name: Test installed Python wheel
+        run: |
+          set -euxo pipefail
+          wheel="$(find bindings/python/dist -maxdepth 1 -name '*.whl' \
+            -print -quit)"
+          test -s "${wheel}"
+          temporary="$(mktemp -d)"
+          trap 'rm -rf "${temporary}"' EXIT
+          python -m venv --system-site-packages "${temporary}/venv"
+          "${temporary}/venv/bin/python" -m pip install "${wheel}"
+          (
+            cd /tmp
+            env -u LIBMPQ_LIBRARY -u PYTHONPATH \
+              LIBMPQ_EXPECT_BUNDLED=1 \
+              "${temporary}/venv/bin/python" -m pytest \
+              "${GITHUB_WORKSPACE}/bindings/python/tests"
+          )
