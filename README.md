@@ -39,6 +39,8 @@ Huffman, zlib, PKWARE, bzip2, or mono/stereo WAVE ADPCM.
   and mono or stereo WAVE ADPCM payloads.
 * Generate an optional `(listfile)` entry during archive creation.
 * Provide a stable C API with installed headers under `include/libmpq`.
+* Support big-endian hosts through explicit little-endian serialization; CI
+  runs the full test suite on emulated s390x.
 * Provide optional Python 3.11+, D, and Java bindings.
 * Install API manual pages for the library functions and `libmpq-config`.
 
@@ -392,8 +394,6 @@ encryption, sectors, and compression, see [MPQ format guide](MPQ.md).
   MPQ v3/v4, HET/BET tables, and related format extensions are not supported.
 * Sparse and LZMA compression, attributes, signatures, checksums, patch
   metadata, and StormLib-specific key modes are not supported by the writer.
-* Big-endian hosts are supported through explicit little-endian serialization,
-  but are not currently covered by the default CI configuration.
 * Windows support is not currently tested or documented by the Autotools build.
 
 ## Contributing
