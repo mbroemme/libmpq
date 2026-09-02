@@ -102,13 +102,13 @@ badge_color() {
 	local percentage="$1"
 
 	if awk -v percentage="${percentage}" 'BEGIN { exit !(percentage >= 90) }'; then
-		printf 'brightgreen'
+		printf '4c1'
 	elif awk -v percentage="${percentage}" 'BEGIN { exit !(percentage >= 75) }'; then
-		printf 'yellowgreen'
+		printf '97ca00'
 	elif awk -v percentage="${percentage}" 'BEGIN { exit !(percentage >= 60) }'; then
-		printf 'yellow'
+		printf 'dfb317'
 	else
-		printf 'red'
+		printf 'e05d44'
 	fi
 }
 
