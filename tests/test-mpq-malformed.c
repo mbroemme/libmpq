@@ -44,6 +44,14 @@ static const uint8_t truncated_v2_extension[] = { 'M', 'P', 'Q', 0x1a, 0x2c, 0, 
                                                   1,   0,   3,   0,    0x2c, 0, 0, 0, 0x2c, 0, 0, 0,
                                                   0,   0,   0,   0,    0,    0, 0, 0 };
 
+/* Preserve format classification for a truncated v2 extended block table. */
+static const uint8_t truncated_v2_block_ex_table[] = {
+    'M', 'P',  'Q', 0x1a, 0x2c, 0, 0, 0, 0x4c, 0, 0, 0, 1, 0,    3, 0, 0x2c, 0, 0,
+    0,   0x3c, 0,   0,    0,    1, 0, 0, 0,    1, 0, 0, 0, 0x4c, 0, 0, 0,    0, 0,
+    0,   0,    0,   0,    0,    0, 0, 0, 0,    0, 0, 0, 0, 0,    0, 0, 0,    0, 0,
+    0,   0,    0,   0,    0,    0, 0, 0, 0,    0, 0, 0, 0, 0,    0, 0, 0,    0, 0
+};
+
 /* Reject table reads from a far offset even when the encoded count is small. */
 static const uint8_t hash_table_far_offset[] = { 'M',  'P',  'Q',  0x1a, 0x20, 0, 0, 0,
                                                  0x20, 0,    0,    0,    0,    0, 3, 0,
@@ -60,6 +68,8 @@ static const malformed_case_s malformed_cases[] = {
     { "block-table-at-eof", block_table_at_eof, sizeof(block_table_at_eof), LIBMPQ_ERROR_READ },
     { "truncated-v2-extension", truncated_v2_extension, sizeof(truncated_v2_extension),
       LIBMPQ_ERROR_FORMAT },
+    { "truncated-v2-block-ex-table", truncated_v2_block_ex_table,
+      sizeof(truncated_v2_block_ex_table), LIBMPQ_ERROR_FORMAT },
     { "hash-table-far-offset", hash_table_far_offset, sizeof(hash_table_far_offset),
       LIBMPQ_ERROR_READ }
 };

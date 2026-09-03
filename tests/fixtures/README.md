@@ -13,3 +13,10 @@ no binary WAVE payload is stored in these text-only regression archives.
 The descriptions inside the archives document archive creation and
 extraction, supported features, encryption ordering, standalone versus masked
 PKWARE, and valid compression chains.
+
+`mpq-v1-features.mpqe` and `mpq-v2-features.mpqe` are the corresponding full
+MPQE-encrypted byte streams. They use the deliberately non-secret 32-byte test
+authentication code `LIBMPQ-MPQE-TEST-AUTH-CODE-00001`. Each 64-byte logical
+chunk, including the final 62-byte physical chunk, is transformed separately;
+only the physical bytes are stored. These fixtures are public interoperability
+vectors for MPQE stream implementations and are not installer credentials.

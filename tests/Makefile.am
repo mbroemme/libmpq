@@ -12,6 +12,7 @@ check_PROGRAMS = \
 	test-crypto \
 	test-huffman \
 	test-malformed \
+	test-mpqe \
 	test-endian \
 	test-fixtures \
 	test-mpq \
@@ -32,6 +33,7 @@ test_compression_SOURCES = test-mpq-compression.c $(COMMON_SOURCES)
 test_crypto_SOURCES = test-mpq-crypto.c ../src/mpq-crypto.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_huffman_SOURCES = test-mpq-huffman.c ../src/mpq-huffman.c $(COMMON_SOURCES)
 test_malformed_SOURCES = test-mpq-malformed.c $(COMMON_SOURCES)
+test_mpqe_SOURCES = test-mpq-mpqe.c ../src/mpq-stream.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_endian_SOURCES = test-mpq-endian.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_fixtures_SOURCES = test-mpq-fixtures.c $(COMMON_SOURCES)
 test_mpq_SOURCES = test-mpq-api.c $(COMMON_SOURCES)
@@ -50,6 +52,7 @@ test_writer_SOURCES = test-mpq-writer.c $(COMMON_SOURCES)
 # when Automake runs them from a separate VPATH or distcheck build directory.
 test_huffman_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_fixtures_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_mpqe_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"' -DLIBMPQ_TESTING
 test_pkware_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_reader_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 
@@ -61,6 +64,7 @@ EXTRA_DIST = \
 	test-mpq-crypto.c \
 	test-mpq-huffman.c \
 	test-mpq-malformed.c \
+	test-mpq-mpqe.c \
 	test-mpq-endian.c \
 	test-mpq-api.c \
 	test-mpq-pkware.c \
@@ -70,4 +74,6 @@ EXTRA_DIST = \
 	test-mpq-fixtures.c \
 	fixtures/README.md \
 	fixtures/mpq-v1-features.mpq \
-	fixtures/mpq-v2-features.mpq
+	fixtures/mpq-v2-features.mpq \
+	fixtures/mpq-v1-features.mpqe \
+	fixtures/mpq-v2-features.mpqe

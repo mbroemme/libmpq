@@ -104,6 +104,7 @@ jobs:
           # Keep each target within its useful input domain and ASan memory budget.
           targets=(
             'fuzz-archive-open:archive-open:1048576'
+            'fuzz-mpqe-open:mpqe-open:1048576'
             'fuzz-file-read:file-read:65536'
             'fuzz-writer-roundtrip:writer-roundtrip:65536'
             'fuzz-encrypted-archive:encrypted-archive:1048576'

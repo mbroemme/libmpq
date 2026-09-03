@@ -1,6 +1,7 @@
 # Build opt-in libFuzzer targets. They are not installed or part of make check.
 noinst_PROGRAMS = \
 	fuzz-archive-open \
+	fuzz-mpqe-open \
 	fuzz-file-read \
 	fuzz-writer-roundtrip \
 	fuzz-encrypted-archive \
@@ -21,6 +22,11 @@ AM_LDFLAGS = -no-install
 fuzz_archive_open_SOURCES = fuzz-archive-open.c
 fuzz_archive_open_LDADD = $(top_builddir)/src/libmpq.la
 fuzz_archive_open_LDFLAGS = $(AM_LDFLAGS) -fsanitize=fuzzer,address,undefined
+
+# Link the caller-authenticated MPQE stream target with the normal shared library.
+fuzz_mpqe_open_SOURCES = fuzz-mpqe-open.c fuzz-common.h
+fuzz_mpqe_open_LDADD = $(top_builddir)/src/libmpq.la
+fuzz_mpqe_open_LDFLAGS = $(AM_LDFLAGS) -fsanitize=fuzzer,address,undefined
 
 # Link reader and writer API targets with the normal shared library.
 fuzz_file_read_SOURCES = fuzz-file-read.c fuzz-common.h
@@ -69,6 +75,7 @@ EXTRA_DIST = \
 	fuzz-common.h \
 	fuzz-encrypted-archive.c \
 	fuzz-file-read.c \
+	fuzz-mpqe-open.c \
 	fuzz-sector-decode.c \
 	fuzz-wave-decode.c \
 	fuzz-writer-roundtrip.c
