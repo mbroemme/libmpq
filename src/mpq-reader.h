@@ -21,16 +21,22 @@
 #define LIBMPQ_READER_H
 
 #include <libmpq/mpq.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /*
  * Open and parse an archive at archive_offset. A negative offset enables the
  * embedded-archive scan; otherwise the offset is interpreted as an absolute
- * file position. On success the returned archive owns its FILE and metadata.
+ * file position. On success the returned archive owns its input stream and metadata.
  */
 int32_t libmpq__reader_archive_open_path(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset
 );
+int32_t libmpq__reader_archive_open_mpqe(
+    mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset,
+    const uint8_t *authentication_code, size_t authentication_code_size
+);
+int32_t libmpq__reader_archive_clone(mpq_archive_s **clone, const mpq_archive_s *source);
 
 /* Decode count serialized little-endian uint32 values into native storage. */
 void libmpq__reader_decode_uint32_table(uint32_t *table, const uint8_t *raw, uint32_t count);

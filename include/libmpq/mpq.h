@@ -27,6 +27,7 @@
 #ifndef LIBMPQ_MPQ_H
 #define LIBMPQ_MPQ_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -183,11 +184,31 @@ extern LIBMPQ_API const char *libmpq__strerror(int32_t return_code);
  * Open an MPQ archive from a path and return a newly allocated read handle.
  * A negative archive_offset requests embedded-header scanning; a nonnegative
  * value restricts parsing to that absolute archive-relative location. On
- * success the caller owns the handle and must close it, while failure leaves
- * no usable handle and returns a negative LIBMPQ_ERROR_* code.
+ * success the caller owns the handle and must close it. On failure the output
+ * handle is set to NULL and the function returns a negative LIBMPQ_ERROR_* code.
  */
 extern LIBMPQ_API int32_t libmpq__archive_open(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset
+);
+
+/*
+ * Open a read-only MPQE-encrypted stream containing an MPQ archive. MPQE is
+ * an installer transport layer and is decrypted before the normal MPQ header,
+ * table, and file processing begins. authentication_code is an opaque
+ * caller-owned buffer: at least its first 32 bytes must be available for the
+ * legacy MPQE key derivation. The buffer is neither retained nor modified.
+ *
+ * The function supports only MPQ versions otherwise supported by libmpq. It
+ * does not discover, store, or retrieve installer keys. A NULL or too-short
+ * authentication-code buffer returns LIBMPQ_ERROR_DECRYPT. A structurally
+ * valid but wrong code cannot be identified by MPQE itself. The resulting
+ * bytes are parsed normally and can produce LIBMPQ_ERROR_FORMAT or another
+ * ordinary parser error. On failure, mpq_archive is set to NULL when it is
+ * non-NULL.
+ */
+extern LIBMPQ_API int32_t libmpq__archive_open_mpqe(
+    mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset,
+    const uint8_t *authentication_code, size_t authentication_code_size
 );
 
 /*
@@ -263,7 +284,8 @@ extern LIBMPQ_API int32_t libmpq__archive_clone(mpq_archive_s **clone, mpq_archi
 /*
  * Close an archive handle and release all decoded tables, caches, and streams.
  * For writer handles this also finalizes the archive header and encrypted
- * metadata tables. The handle must not be used again after this call.
+ * metadata tables. A reader close failure leaves the handle intact so the
+ * caller may retry; otherwise the handle must not be used again after this call.
  */
 extern LIBMPQ_API int32_t libmpq__archive_close(mpq_archive_s *mpq_archive);
 

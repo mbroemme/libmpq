@@ -1,0 +1,62 @@
+.\" Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.TH LIBMPQ__ARCHIVE_OPEN_MPQE 3 2026-09-04 "The MoPaQ archive library"
+.SH NAME
+libmpq__archive_open_mpqe \- open an MPQE-wrapped MPQ archive for reading.
+.SH SYNOPSIS
+.nf
+.B
+#include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__archive_open_mpqe("
+.BI "        mpq_archive_s **" "mpq_archive,"
+.BI "        const char     *" "mpq_filename,"
+.BI "        libmpq__off_t   " "archive_offset,"
+.BI "        const uint8_t  *" "authentication_code,"
+.BI "        size_t          " "authentication_code_size"
+.BI ");"
+.fi
+.SH DESCRIPTION
+.PP
+Call \fBlibmpq__archive_open_mpqe\fP() to open an MPQ archive whose outer
+byte stream uses MPQE chunk encryption. The function decrypts the stream while
+reading and then performs the ordinary MPQ parser and file-reading operations.
+On success, close the allocated archive handle with
+\fBlibmpq__archive_close\fP().
+.LP
+\fIauthentication_code\fP is supplied by the caller. At least the first 32
+bytes are required; additional bytes are ignored. libmpq does not provide,
+discover, log, persist, or otherwise manage authentication codes. MPQE cannot
+identify a well-formed but incorrect code. libmpq parses the resulting bytes
+normally, which can produce \fBLIBMPQ_ERROR_FORMAT\fP or another ordinary
+parser error.
+.LP
+Set \fIarchive_offset\fP to -1 to search the decrypted stream for an embedded
+archive header, or provide a known decrypted-stream offset.
+.SH RETURN VALUE
+On success, *\fImpq_archive\fP is set to a new \fBmpq_archive_s\fP and zero
+is returned. On failure, the output handle is set to NULL. In addition to the
+errors documented for
+\fBlibmpq__archive_open\fP(), the function returns the following error.
+.TP
+.B LIBMPQ_ERROR_DECRYPT
+\fIauthentication_code\fP is NULL or shorter than 32 bytes.
+.SH SEE ALSO
+.BR libmpq__archive_open (3),
+.BR libmpq__archive_close (3),
+.BR libmpq__archive_clone (3)
+.SH AUTHOR
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>
+.SH COPYRIGHT
+Copyright 2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.

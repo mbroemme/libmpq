@@ -9,6 +9,7 @@ man_MANS = \
 	libmpq__archive_files.3 \
 	libmpq__archive_offset.3 \
 	libmpq__archive_open.3 \
+	libmpq__archive_open_mpqe.3 \
 	libmpq__archive_size_packed.3 \
 	libmpq__archive_size_unpacked.3 \
 	libmpq__archive_version.3 \

@@ -27,6 +27,7 @@
 #include "mpq-internal.h"
 #include "mpq-platform.h"
 #include "mpq-reader.h"
+#include "mpq-stream.h"
 #include "mpq-writer.h"
 #include <libmpq/mpq.h>
 
@@ -187,6 +188,18 @@ libmpq__archive_open(
     return libmpq__reader_archive_open_path(mpq_archive, mpq_filename, archive_offset);
 }
 
+/* Open a caller-authenticated MPQE stream before parsing the contained MPQ. */
+int32_t
+libmpq__archive_open_mpqe(
+    mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset,
+    const uint8_t *authentication_code, size_t authentication_code_size
+)
+{
+    return libmpq__reader_archive_open_mpqe(
+        mpq_archive, mpq_filename, archive_offset, authentication_code, authentication_code_size
+    );
+}
+
 /* Reopen an archive with independent file I/O, metadata, and lazy caches.
  * Cloning rejects writer handles and verifies the source path still identifies
  * the same file before reparsing it into a separate archive object. */
@@ -214,7 +227,7 @@ libmpq__archive_clone(mpq_archive_s **clone, mpq_archive_s *source)
     }
 #endif
 
-    return libmpq__reader_archive_open_path(clone, source->filename, source->archive_offset);
+    return libmpq__reader_archive_clone(clone, source);
 }
 
 /* Close the archive file and release all metadata tables allocated during archive open.
@@ -248,11 +261,9 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
         return result;
     }
 
-    if ((fclose(mpq_archive->fp)) < 0) {
-
-        /* Keep the handle intact so the caller may retry closing it. */
-        return LIBMPQ_ERROR_CLOSE;
-    }
+    result = libmpq__stream_close(mpq_archive->stream);
+    if (result != LIBMPQ_SUCCESS)
+        return result;
 
     for (i = 0; i < mpq_archive->mpq_header.block_table_count; i++) {
         if (mpq_archive->mpq_file[i] != NULL) {
@@ -269,7 +280,7 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
     free(mpq_archive->filename);
     free(mpq_archive);
 
-    return LIBMPQ_SUCCESS;
+    return result;
 }
 
 /* Return the sum of packed sizes for all files in the archive block table.
@@ -660,24 +671,17 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
             result = LIBMPQ_ERROR_FORMAT;
             goto error;
         }
-        if (fseeko(
-                mpq_archive->fp,
-                mpq_archive->mpq_block[block_table_index].offset +
-                    (((long long)mpq_archive->mpq_block_ex[block_table_index].offset_high) << 32) +
-                    mpq_archive->archive_offset,
-                SEEK_SET
-            ) < 0) {
-            result = LIBMPQ_ERROR_SEEK;
-            goto error;
-        }
-
         if ((packed_data = malloc(packed_size)) == NULL) {
             result = LIBMPQ_ERROR_MALLOC;
             goto error;
         }
-
-        if (fread(packed_data, 1, packed_size, mpq_archive->fp) != packed_size) {
-            result = LIBMPQ_ERROR_READ;
+        if ((result = libmpq__stream_read_at(
+                 mpq_archive->stream,
+                 mpq_archive->mpq_block[block_table_index].offset +
+                     ((uint64_t)mpq_archive->mpq_block_ex[block_table_index].offset_high << 32) +
+                     (uint64_t)mpq_archive->archive_offset,
+                 packed_data, packed_size
+             )) < 0) {
             goto error;
         }
 
@@ -786,19 +790,17 @@ libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
             goto error;
         }
 
-        if (fseeko(
-                mpq_archive->fp,
-                mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices]
-                        .offset +
-                    (((long long)mpq_archive
+        if ((result = libmpq__stream_read_at(
+                 mpq_archive->stream,
+                 mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices]
+                         .offset +
+                     ((uint64_t)mpq_archive
                           ->mpq_block_ex[mpq_archive->mpq_map[file_number].block_table_indices]
-                          .offset_high)
-                     << 32) +
-                    mpq_archive->archive_offset,
-                SEEK_SET
-            ) < 0 ||
-            fread(first_block, 1, sizeof(first_block), mpq_archive->fp) != sizeof(first_block)) {
-            result = LIBMPQ_ERROR_READ;
+                          .offset_high
+                      << 32) +
+                     (uint64_t)mpq_archive->archive_offset,
+                 first_block, sizeof(first_block)
+             )) < 0) {
             goto error;
         }
 
@@ -992,10 +994,6 @@ libmpq__block_read(
     /* Raw unencrypted blocks can be read directly into the caller's buffer. */
     use_out_buf = !encrypted && !compressed && !imploded && in_size <= out_size;
 
-    if (fseeko(mpq_archive->fp, block_offset + mpq_archive->archive_offset, SEEK_SET) < 0) {
-        return LIBMPQ_ERROR_SEEK;
-    }
-
     if (use_out_buf) {
 
         /* Raw data can bypass a temporary allocation when no transform is needed. */
@@ -1006,11 +1004,14 @@ libmpq__block_read(
         }
     }
 
-    if (fread(in_buf, 1, (size_t)in_size, mpq_archive->fp) != (size_t)in_size) {
+    if ((tb = libmpq__stream_read_at(
+             mpq_archive->stream, (uint64_t)block_offset + (uint64_t)mpq_archive->archive_offset,
+             in_buf, (size_t)in_size
+         )) < 0) {
         if (!use_out_buf) {
             free(in_buf);
         }
-        return LIBMPQ_ERROR_READ;
+        return tb;
     }
 
     if (encrypted) {
