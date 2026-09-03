@@ -93,6 +93,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     libmpq__off_t transferred;
     size_t payload_size;
     size_t first_chunk;
+    int32_t result;
 
     static const uint32_t sector_sizes[] = { 512, 1024, 4096, 16384 };
 
@@ -128,32 +129,28 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
     unlink(archive_path);
 
-    if (libmpq__archive_create(&archive, archive_path, &archive_options) != 0 ||
-        libmpq__file_begin(
+    if (libmpq__archive_create(&archive, archive_path, &archive_options) != 0)
+        goto cleanup;
+    if (libmpq__file_begin(
             archive, "roundtrip.bin", (libmpq__off_t)payload_size, &options, &writer
-        ) != 0) {
-        if (archive != NULL) {
-            libmpq__archive_close(archive);
-        }
-        unlink(archive_path);
-        free(encrypted_payload);
-        return 0;
-    }
+        ) != 0)
+        goto cleanup;
 
     first_chunk = payload_size / 2U;
     if (libmpq__file_write(writer, payload, (libmpq__off_t)first_chunk) != 0 ||
         libmpq__file_write(
             writer, payload + first_chunk, (libmpq__off_t)(payload_size - first_chunk)
         ) != 0 ||
-        libmpq__file_finish(writer) != 0 || libmpq__archive_close(archive) != 0) {
-        unlink(archive_path);
-        free(encrypted_payload);
-        return 0;
-    }
+        libmpq__file_finish(writer) != 0)
+        goto cleanup;
 
+    result = libmpq__archive_close(archive);
     archive = NULL;
-    if (libmpq__archive_open(&archive, archive_path, 0) == 0 &&
-        libmpq__file_number(archive, "roundtrip.bin", &number) == 0) {
+    if (result != 0)
+        goto cleanup;
+    if (libmpq__archive_open(&archive, archive_path, 0) == 0) {
+        if (libmpq__file_number(archive, "roundtrip.bin", &number) != 0)
+            goto cleanup;
         output = malloc(payload_size == 0 ? 1U : payload_size);
         if (output != NULL &&
             libmpq__file_read(archive, number, output, (libmpq__off_t)payload_size, &transferred) ==
@@ -162,10 +159,14 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             abort();
         }
         free(output);
-        libmpq__archive_close(archive);
+        output = NULL;
     }
 
+cleanup:
+    if (archive != NULL)
+        (void)libmpq__archive_close(archive);
     unlink(archive_path);
+    free(output);
     free(encrypted_payload);
     return 0;
 }

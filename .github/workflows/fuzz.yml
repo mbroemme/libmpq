@@ -101,17 +101,18 @@ jobs:
         run: |
           set -euxo pipefail
           artifact_root="$RUNNER_TEMP/libmpq-fuzz-artifacts"
+          # Keep each target within its useful input domain and ASan memory budget.
           targets=(
-            'fuzz-archive-open:archive-open'
-            'fuzz-file-read:file-read'
-            'fuzz-writer-roundtrip:writer-roundtrip'
-            'fuzz-encrypted-archive:encrypted-archive'
-            'fuzz-sector-decode:sector-decode'
-            'fuzz-pkware-decode:pkware-decode'
-            'fuzz-huffman-decode:huffman-decode'
-            'fuzz-zlib-decode:zlib-decode'
-            'fuzz-bzip2-decode:bzip2-decode'
-            'fuzz-wave-decode:wave-decode'
+            'fuzz-archive-open:archive-open:1048576'
+            'fuzz-file-read:file-read:65536'
+            'fuzz-writer-roundtrip:writer-roundtrip:65536'
+            'fuzz-encrypted-archive:encrypted-archive:1048576'
+            'fuzz-sector-decode:sector-decode:131072'
+            'fuzz-pkware-decode:pkware-decode:131072'
+            'fuzz-huffman-decode:huffman-decode:131072'
+            'fuzz-zlib-decode:zlib-decode:131072'
+            'fuzz-bzip2-decode:bzip2-decode:131072'
+            'fuzz-wave-decode:wave-decode:131072'
           )
           target_seconds=$((FUZZ_SECONDS / ${#targets[@]}))
           if ((target_seconds == 0)); then
@@ -120,14 +121,16 @@ jobs:
 
           for target_spec in "${targets[@]}"; do
             target="${target_spec%%:*}"
-            corpus="${target_spec##*:}"
+            target_spec="${target_spec#*:}"
+            corpus="${target_spec%%:*}"
+            maximum_length="${target_spec##*:}"
             mkdir -p "$artifact_root/$corpus"
             set +e
             "fuzz/$target" \
               -artifact_prefix="$artifact_root/$corpus/" \
-              -max_len=1048576 \
+              -max_len="$maximum_length" \
               -max_total_time="$target_seconds" \
-              -rss_limit_mb=512 \
+              -rss_limit_mb=1024 \
               -timeout=5 \
               "$RUNNER_TEMP/libmpq-fuzz-corpus/$corpus" 2>&1 | \
               tee "$artifact_root/$corpus.log"
