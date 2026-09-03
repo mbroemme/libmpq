@@ -5,7 +5,7 @@ backend-path = ["."]
 
 [project]
 name = "libmpq"
-version = "0.6.1"
+version = "0.7.0"
 description = "Python ctypes bindings for libmpq"
 readme = "README.md"
 requires-python = ">=3.11"
