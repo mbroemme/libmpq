@@ -22,6 +22,7 @@
 #define LIBMPQ_FUZZ_WRITER_MAX_INPUT 65536U
 
 static char archive_path[] = "/tmp/libmpq-fuzz-writer.XXXXXX";
+static const uint8_t mpqe_authentication_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
 
 /* Release the output path created for this fuzzer process. */
 static void
@@ -93,6 +94,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     libmpq__off_t transferred;
     size_t payload_size;
     size_t first_chunk;
+    int mpqe;
     int32_t result;
 
     static const uint32_t sector_sizes[] = { 512, 1024, 4096, 16384 };
@@ -108,6 +110,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     archive_options.sector_size =
         sector_sizes[data[2] % (sizeof(sector_sizes) / sizeof(sector_sizes[0]))];
     archive_options.flags = LIBMPQ_ARCHIVE_CREATE_LISTFILE;
+    mpqe = (data[0] & 0x04U) != 0U;
     options = file_options(data[1]);
     payload = data + 3;
     if ((options.flags & LIBMPQ_FILE_FLAG_ENCRYPTED) != 0) {
@@ -129,7 +132,11 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
     unlink(archive_path);
 
-    if (libmpq__archive_create(&archive, archive_path, &archive_options) != 0)
+    if ((mpqe ? libmpq__archive_create_mpqe(
+                    &archive, archive_path, mpqe_authentication_code,
+                    sizeof(mpqe_authentication_code) - 1U, &archive_options
+                )
+              : libmpq__archive_create(&archive, archive_path, &archive_options)) != 0)
         goto cleanup;
     if (libmpq__file_begin(
             archive, "roundtrip.bin", (libmpq__off_t)payload_size, &options, &writer
@@ -148,7 +155,11 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     archive = NULL;
     if (result != 0)
         goto cleanup;
-    if (libmpq__archive_open(&archive, archive_path, 0) == 0) {
+    if ((mpqe ? libmpq__archive_open_mpqe(
+                    &archive, archive_path, 0, mpqe_authentication_code,
+                    sizeof(mpqe_authentication_code) - 1U
+                )
+              : libmpq__archive_open(&archive, archive_path, 0)) == 0) {
         if (libmpq__file_number(archive, "roundtrip.bin", &number) != 0)
             goto cleanup;
         output = malloc(payload_size == 0 ? 1U : payload_size);
