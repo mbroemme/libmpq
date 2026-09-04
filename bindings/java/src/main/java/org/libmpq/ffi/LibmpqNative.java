@@ -28,10 +28,12 @@ import java.util.Objects;
  * strings and buffers, and translates failures into {@code LibmpqException}.
  */
 public final class LibmpqNative {
+    private static final Linker LINKER = Linker.nativeLinker();
     private static final ValueLayout.OfInt C_INT = ValueLayout.JAVA_INT.withOrder(ByteOrder.nativeOrder());
     private static final ValueLayout.OfShort C_SHORT =
         ValueLayout.JAVA_SHORT.withOrder(ByteOrder.nativeOrder());
     private static final ValueLayout.OfLong C_LONG = ValueLayout.JAVA_LONG.withOrder(ByteOrder.nativeOrder());
+    private static final ValueLayout C_SIZE_T = canonicalValueLayout("size_t");
 
     /**
      * Native layout of {@code struct mpq_archive_create_options_s}: four
@@ -84,7 +86,7 @@ public final class LibmpqNative {
 
     static {
         SymbolLookup lookup = loadLibrary();
-        Linker linker = Linker.nativeLinker();
+        Linker linker = LINKER;
         VERSION = function(linker, lookup, "libmpq__version",
                            FunctionDescriptor.of(ValueLayout.ADDRESS));
         STRERROR = function(linker, lookup, "libmpq__strerror",
@@ -95,7 +97,7 @@ public final class LibmpqNative {
         ARCHIVE_OPEN_MPQE = function(linker, lookup, "libmpq__archive_open_mpqe",
                                      FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                            ValueLayout.ADDRESS, C_LONG,
-                                                           ValueLayout.ADDRESS, C_LONG));
+                                                           ValueLayout.ADDRESS, C_SIZE_T));
         ARCHIVE_CREATE = function(linker, lookup, "libmpq__archive_create",
                                   FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                         ValueLayout.ADDRESS, ValueLayout.ADDRESS));
@@ -180,6 +182,34 @@ public final class LibmpqNative {
         return linker.downcallHandle(address, descriptor);
     }
 
+    /** Returns the platform linker layout for one named native scalar type. */
+    private static ValueLayout canonicalValueLayout(String name) {
+        MemoryLayout layout = LINKER.canonicalLayouts().get(name);
+        if (!(layout instanceof ValueLayout valueLayout)) {
+            throw new IllegalStateException("Missing native value layout: " + name);
+        }
+        return valueLayout;
+    }
+
+    /** Converts a non-negative Java length without truncating native size_t. */
+    private static Object nativeSizeT(long value) {
+        Class<?> carrier = C_SIZE_T.carrier();
+
+        if (value < 0) {
+            throw new IllegalArgumentException("size_t value must not be negative: " + value);
+        }
+        if (carrier == long.class) {
+            return value;
+        }
+        if (carrier == int.class) {
+            if (value > Integer.toUnsignedLong(-1)) {
+                throw new IllegalArgumentException("size_t value is too large: " + value);
+            }
+            return (int) value;
+        }
+        throw new IllegalStateException("Unsupported native size_t carrier: " + carrier);
+    }
+
     /** Builds a handle for archive int64 output queries returning a status. */
     private static MethodHandle metadata(Linker linker, SymbolLookup lookup, String name) {
         return function(linker, lookup, name,
@@ -249,7 +279,7 @@ public final class LibmpqNative {
     public static int archiveOpenMpqe(MemorySegment out, MemorySegment path, long offset,
                                       MemorySegment authenticationCode, long authenticationCodeSize) {
         return callInt(ARCHIVE_OPEN_MPQE, out, path, offset, authenticationCode,
-                       authenticationCodeSize);
+                       nativeSizeT(authenticationCodeSize));
     }
     /** Calls {@code libmpq__archive_create} with a native options struct. */
     public static int archiveCreate(MemorySegment out, MemorySegment path, MemorySegment options) {
