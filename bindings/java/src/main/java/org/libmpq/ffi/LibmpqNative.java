@@ -52,6 +52,7 @@ public final class LibmpqNative {
     private static final MethodHandle VERSION;
     private static final MethodHandle STRERROR;
     private static final MethodHandle ARCHIVE_OPEN;
+    private static final MethodHandle ARCHIVE_OPEN_MPQE;
     private static final MethodHandle ARCHIVE_CREATE;
     private static final MethodHandle FILE_BEGIN;
     private static final MethodHandle FILE_WRITE;
@@ -91,6 +92,10 @@ public final class LibmpqNative {
         ARCHIVE_OPEN = function(linker, lookup, "libmpq__archive_open",
                                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                       ValueLayout.ADDRESS, C_LONG));
+        ARCHIVE_OPEN_MPQE = function(linker, lookup, "libmpq__archive_open_mpqe",
+                                     FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
+                                                           ValueLayout.ADDRESS, C_LONG,
+                                                           ValueLayout.ADDRESS, C_LONG));
         ARCHIVE_CREATE = function(linker, lookup, "libmpq__archive_create",
                                   FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                         ValueLayout.ADDRESS, ValueLayout.ADDRESS));
@@ -239,6 +244,12 @@ public final class LibmpqNative {
     /** Calls {@code libmpq__archive_open} and writes the resulting handle to out. */
     public static int archiveOpen(MemorySegment out, MemorySegment path, long offset) {
         return callInt(ARCHIVE_OPEN, out, path, offset);
+    }
+    /** Calls {@code libmpq__archive_open_mpqe} with borrowed authentication bytes. */
+    public static int archiveOpenMpqe(MemorySegment out, MemorySegment path, long offset,
+                                      MemorySegment authenticationCode, long authenticationCodeSize) {
+        return callInt(ARCHIVE_OPEN_MPQE, out, path, offset, authenticationCode,
+                       authenticationCodeSize);
     }
     /** Calls {@code libmpq__archive_create} with a native options struct. */
     public static int archiveCreate(MemorySegment out, MemorySegment path, MemorySegment options) {

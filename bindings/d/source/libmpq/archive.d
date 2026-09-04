@@ -62,6 +62,19 @@ class Archive {
         return new Archive(path, offset);
     }
 
+    /** Open a caller-authenticated MPQE stream containing an MPQ archive. */
+    static Archive openMpqe(string path, const(ubyte)[] authenticationCode,
+                            off_t offset = -1) {
+        mpq_archive_s* result;
+        auto authenticationPointer = authenticationCode.length == 0 ? null :
+            authenticationCode.ptr;
+        checkStatus(libmpq__archive_open_mpqe(&result, toStringz(path), offset,
+                                               authenticationPointer,
+                                               authenticationCode.length),
+                    "libmpq__archive_open_mpqe");
+        return new Archive(result);
+    }
+
     /** Create an archive using explicit v1/v2 and storage options. */
     static Archive create(string path,
                           ArchiveCreateOptions options = ArchiveCreateOptions.v1()) {

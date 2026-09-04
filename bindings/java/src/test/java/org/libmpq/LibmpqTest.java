@@ -10,6 +10,7 @@ package org.libmpq;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -63,6 +64,26 @@ class LibmpqTest {
             assertTrue(new String(data, StandardCharsets.UTF_8).contains("libmpq"));
             assertTrue(archive.fileCount() > 0);
         }
+    }
+
+    /** Exercises MPQE v1/v2 opening, credential validation, and independent cloning. */
+    @Test
+    void opensMpqeFixturesAndClones() throws Exception {
+        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
+        Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
+
+        try (Archive v1 = Archive.openMpqe(root.resolve("mpq-v1-features.mpqe"), code);
+             Archive v2 = Archive.openMpqe(root.resolve("mpq-v2-features.mpqe"), code, -1);
+             Archive clone = v1.cloneArchive()) {
+            assertEquals(1, v1.version());
+            assertEquals(2, v2.version());
+            assertArrayEquals(v1.readFile(v1.fileNumber("overview.txt")),
+                              clone.readFile(clone.fileNumber("overview.txt")));
+        }
+        LibmpqException error = assertThrows(LibmpqException.class,
+            () -> Archive.openMpqe(root.resolve("mpq-v1-features.mpqe"),
+                                   java.util.Arrays.copyOf(code, code.length - 1)));
+        assertEquals(Mpq.ERROR_DECRYPT, error.code());
     }
 
     /** Exercises v2 creation, compression, path addition, cloning, and blocks. */

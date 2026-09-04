@@ -51,6 +51,25 @@ def test_fixture_metadata_and_extraction(name, version):
         assert entry.metadata().unpacked_size == entry.unpacked_size
 
 
+@pytest.mark.parametrize("name,version,offset", [
+    ("mpq-v1-features.mpqe", 1, 0),
+    ("mpq-v2-features.mpqe", 2, -1),
+])
+def test_mpqe_fixture_metadata_extraction_and_clone(name, version, offset):
+    """MPQE opening uses borrowed credentials and supports independent clones."""
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    with mpq.Archive.open_mpqe(FIXTURES / name, memoryview(code), offset) as archive:
+        assert archive.version == version
+        assert b"libmpq" in archive["overview.txt"].read()
+        clone = archive.clone()
+        try:
+            assert clone["overview.txt"].read() == archive["overview.txt"].read()
+        finally:
+            clone.close()
+    with pytest.raises(mpq.LibmpqDecryptError):
+        mpq.Archive.open_mpqe(FIXTURES / name, code[:-1], offset)
+
+
 def test_creation_streaming_compression_clone_and_blocks(tmp_path):
     """Creation APIs round-trip raw, compressed, path, stream, clone, and blocks."""
     archive_path = tmp_path / "created.mpq"

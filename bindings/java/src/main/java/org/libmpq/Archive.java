@@ -12,6 +12,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.file.Path;
+import java.util.Objects;
 import org.libmpq.ffi.LibmpqNative;
 
 /**
@@ -55,6 +56,44 @@ public final class Archive implements AutoCloseable {
      */
     public static Archive open(Path path) throws LibmpqException {
         return open(path, 0);
+    }
+
+    /**
+     * Opens an MPQE transport stream containing an archive at its initial offset.
+     * The authentication code is copied for the duration of the native call and
+     * is not retained by this Java binding.
+     *
+     * @param path MPQE stream to open
+     * @param authenticationCode caller-supplied MPQE authentication code
+     * @return an owned archive handle
+     * @throws LibmpqException if credentials are invalid or the decrypted data cannot be parsed
+     */
+    public static Archive openMpqe(Path path, byte[] authenticationCode) throws LibmpqException {
+        return openMpqe(path, authenticationCode, 0);
+    }
+
+    /**
+     * Opens an MPQE transport stream. A negative offset asks libmpq to scan
+     * the decrypted stream for an embedded MPQ header.
+     *
+     * @param path MPQE stream to open
+     * @param authenticationCode caller-supplied MPQE authentication code
+     * @param offset standalone or embedded archive offset
+     * @return an owned archive handle
+     * @throws LibmpqException if credentials are invalid or the decrypted data cannot be parsed
+     */
+    public static Archive openMpqe(Path path, byte[] authenticationCode, long offset)
+        throws LibmpqException {
+        Objects.requireNonNull(path, "path");
+        Objects.requireNonNull(authenticationCode, "authenticationCode");
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
+            MemorySegment code = Support.bytes(arena, authenticationCode);
+            Support.check(LibmpqNative.archiveOpenMpqe(
+                output, Support.text(arena, path.toString()), offset, code, authenticationCode.length
+            ));
+            return new Archive(LibmpqNative.getAddress(output));
+        }
     }
 
     /**

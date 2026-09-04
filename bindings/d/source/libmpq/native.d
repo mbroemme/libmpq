@@ -111,6 +111,12 @@ extern(C) {
     int libmpq__archive_open(mpq_archive_s** archive, const(char)* path,
                              off_t offset);
 
+    /** Open a read-only MPQE stream and parse its contained MPQ archive. */
+    int libmpq__archive_open_mpqe(mpq_archive_s** archive, const(char)* path,
+                                  off_t offset,
+                                  const(ubyte)* authentication_code,
+                                  size_t authentication_code_size);
+
     /** Create an archive using the supplied native option structure. */
     int libmpq__archive_create(mpq_archive_s** archive, const(char)* path,
                                const(mpq_archive_create_options_s)* options);

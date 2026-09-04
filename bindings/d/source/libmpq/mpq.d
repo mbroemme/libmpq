@@ -46,6 +46,7 @@ alias libmpq__version libversion;
 
 /* Retain the original low-level names for source compatibility. */
 alias libmpq__archive_open archive_open;
+alias libmpq__archive_open_mpqe archive_open_mpqe;
 alias libmpq__archive_create archive_create;
 alias libmpq__archive_clone archive_clone;
 alias libmpq__archive_close archive_close;

@@ -103,10 +103,30 @@ private void testFixture() {
     assert(archive.fileNumber(Mpq.fileHash("(listfile)")) == listfile.no());
 }
 
+private void testMpqeFixture() {
+    auto root = environment.get("LIBMPQ_SOURCE_DIR", ".");
+    auto path = buildPath(root, "tests", "fixtures", "mpq-v1-features.mpqe");
+    immutable ubyte[] authenticationCode =
+        cast(immutable(ubyte)[])"LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+    auto archive = Archive.openMpqe(path, authenticationCode, 0);
+    scope(exit) archive.close();
+    assert(archive.version_() == 1);
+    assert(archive.file("overview.txt").read().length > 0);
+
+    bool failed;
+    try {
+        auto unused = Archive.openMpqe(path, authenticationCode[0 .. $ - 1], 0);
+    } catch (MPQException error) {
+        failed = error.code == ERROR_DECRYPT;
+    }
+    assert(failed);
+}
+
 void main() {
     testVersionAndErrors();
     testCreateReadAndMetadata(ARCHIVE_VERSION_ONE);
     testCreateReadAndMetadata(ARCHIVE_VERSION_TWO);
     testFixture();
+    testMpqeFixture();
     testFailures();
 }

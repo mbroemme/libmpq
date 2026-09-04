@@ -160,6 +160,14 @@ def _as_bytes(value):
     raise TypeError("expected str, bytes, or path-like value")
 
 
+def _authentication_code_bytes(value):
+    """Return an owned byte copy of a bytes-like MPQE authentication code."""
+    try:
+        return memoryview(value).tobytes()
+    except TypeError as error:
+        raise TypeError("authentication_code must be bytes-like") from error
+
+
 def strerror(code):
     """Return libmpq's static diagnostic text for a native return code."""
     return _decode(libmpq.libmpq__strerror(int(code)))
@@ -187,6 +195,7 @@ def _configure(name, restype, *argtypes):
 _configure("libmpq__version", ctypes.c_char_p)
 _configure("libmpq__strerror", ctypes.c_char_p, ctypes.c_int32)
 _configure("libmpq__archive_open", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _OFF_T)
+_configure("libmpq__archive_open_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _OFF_T, _BYTE_PTR, ctypes.c_size_t)
 _configure("libmpq__archive_create", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__file_begin", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _OFF_T, _VOID_PTR, ctypes.POINTER(_VOID_PTR))
 _configure("libmpq__file_write", ctypes.c_int32, _VOID_PTR, _BYTE_PTR, _OFF_T)
@@ -610,6 +619,23 @@ class Archive:
     def open(cls, source, offset=-1):
         """Open a path with an explicit offset or embedded-header scanning."""
         return cls(source, offset)
+
+    @classmethod
+    def open_mpqe(cls, path, authentication_code, offset=-1):
+        """Open a caller-authenticated MPQE stream containing an MPQ archive."""
+        code = _authentication_code_bytes(authentication_code)
+        archive = object.__new__(cls)
+        archive._source = path
+        archive.filename = os.fspath(path)
+        archive._mpq = _VOID_PTR()
+        buffer = None if not code else (ctypes.c_uint8 * len(code)).from_buffer_copy(code)
+        pointer = None if buffer is None else ctypes.cast(buffer, _BYTE_PTR)
+        libmpq.libmpq__archive_open_mpqe(
+            ctypes.byref(archive._mpq), _as_bytes(archive.filename), offset, pointer, len(code)
+        )
+        archive._opened = True
+        archive._load_metadata()
+        return archive
 
     def _load_metadata(self):
         """Populate compatibility attributes from native metadata queries."""
