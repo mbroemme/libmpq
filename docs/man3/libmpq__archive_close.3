@@ -26,11 +26,16 @@ libmpq__archive_close \- close an opened MPQ archive.
 .fi
 .SH DESCRIPTION
 .PP
-Call \fBlibmpq__archive_close\fP() to close an MPQ archive opened by
-\fBlibmpq__archive_open\fP(). The function frees the archive structure and
-its contents.
+Call \fBlibmpq__archive_close\fP() to close an MPQ archive opened or created
+by libmpq. A successful close frees the archive structure and its contents.
 .LP
-The \fBlibmpq__archive_close\fP() function takes the archive handle returned by \fBlibmpq__archive_open\fP().
+If a reader stream close fails, the reader handle remains valid so the caller
+may retry the close. Writer handles are always consumed by close, including
+when finalization or output close reports an error; callers must not use or
+close a writer handle again after the call.
+.LP
+The \fBlibmpq__archive_close\fP() function takes the archive handle returned by
+an archive open or create function. It does not take an output pointer.
 .SH RETURN VALUE
 On success, a zero is returned and on error one of the following constants.
 .TP

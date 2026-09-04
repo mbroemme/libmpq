@@ -26,6 +26,10 @@
 int32_t libmpq__writer_archive_create(
     mpq_archive_s **out, const char *path, const mpq_archive_create_options_s *options
 );
+int32_t libmpq__writer_archive_create_mpqe(
+    mpq_archive_s **out, const char *path, const uint8_t *authentication_code,
+    size_t authentication_code_size, const mpq_archive_create_options_s *options
+);
 
 /* Begin one named file and return a stateful streaming writer for its payload. */
 int32_t libmpq__writer_file_begin(
@@ -52,5 +56,21 @@ int32_t libmpq__writer_file_add_path(
 
 /* Write final tables, optional listfile, and the completed archive header. */
 int32_t libmpq__writer_finalize(mpq_archive_s *archive);
+int32_t libmpq__writer_finalize_mpqe(mpq_archive_s *archive);
+void libmpq__writer_mpqe_cleanup(mpq_archive_s *archive);
+
+#ifdef LIBMPQ_TESTING
+typedef enum
+{
+    LIBMPQ_WRITER_TEST_FAULT_NONE,
+    LIBMPQ_WRITER_TEST_FAULT_FINALIZE,
+    LIBMPQ_WRITER_TEST_FAULT_TRANSFORM,
+    LIBMPQ_WRITER_TEST_FAULT_OUTPUT_CLOSE,
+    LIBMPQ_WRITER_TEST_FAULT_PUBLISH
+} libmpq_writer_test_fault_e;
+
+/* Test-only deterministic failure injection for MPQE writer cleanup coverage. */
+void libmpq__writer_test_fault_set(libmpq_writer_test_fault_e fault);
+#endif
 
 #endif /* LIBMPQ_WRITER_H */

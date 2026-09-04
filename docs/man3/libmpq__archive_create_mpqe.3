@@ -1,0 +1,27 @@
+.TH LIBMPQ__ARCHIVE_CREATE_MPQE 3 2026-09-04 "The MoPaQ archive library"
+.SH NAME
+libmpq__archive_create_mpqe \- create an MPQE-wrapped MPQ archive
+.SH SYNOPSIS
+.B #include <libmpq/mpq.h>
+.PP
+.B int32_t libmpq__archive_create_mpqe(mpq_archive_s **archive, const char *path, const uint8_t *authentication_code, size_t authentication_code_size, const mpq_archive_create_options_s *options);
+.SH DESCRIPTION
+Creates a new MPQE stream containing an MPQ v1 or v2 archive. The caller
+supplies at least 32 authentication-code bytes. The normal writer first
+finalizes a private temporary MPQ, then encrypts it and atomically publishes
+the result when
+.BR libmpq__archive_close (3)
+succeeds.
+.PP
+Existing MPQE archives cannot be modified. Creation uses temporary plaintext
+storage in the destination directory. That temporary file is owner-only; the
+completed MPQE archive uses normal output permissions determined by the
+caller's umask. Cleanup is best effort, so a crash can leave an owner-only
+plaintext temporary file behind.
+.SH RETURN VALUE
+Returns zero on success or a negative LIBMPQ_ERROR_* code. Missing or short
+authentication data returns LIBMPQ_ERROR_DECRYPT.
+.SH SEE ALSO
+.BR libmpq__archive_create (3),
+.BR libmpq__archive_open_mpqe (3),
+.BR libmpq__archive_close (3)
