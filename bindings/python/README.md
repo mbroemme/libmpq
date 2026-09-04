@@ -48,7 +48,18 @@ with mpq.Archive("data.mpq", offset=0) as archive:
 
 with mpq.Writer("created.mpq", version=mpq.ARCHIVE_VERSION_TWO) as writer:
     writer.add("payload.bin", b"payload", mpq.FileCreateOptions.raw())
+
+with mpq.Writer.create_mpqe(
+    "created.mpqe", b"LIBMPQ-MPQE-EXAMPLE-AUTH-CODE-01"
+) as writer:
+    writer.add("payload.bin", b"payload")
 ```
+
+MPQE creation writes a private plaintext temporary file before atomically
+replacing the destination with the encrypted archive. It cannot modify an
+existing MPQE archive; cleanup is best effort if the process crashes. The
+example authentication code is illustrative and non-secret; real callers must
+provide their own authentication code of at least 32 bytes.
 
 Native failures raise `LibmpqError` subclasses with `.code` and `.message`
 attributes. I/O and missing-file subclasses remain compatible with the

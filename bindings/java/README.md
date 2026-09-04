@@ -40,6 +40,9 @@ runtime, sources, and Javadoc JARs together with `COPYING`, `COPYING.LESSER`,
 and this README. Release validation also builds an external consumer using
 only the packaged runtime JAR and tests both native-library loading modes.
 
-The high-level API uses `Archive.open`, `Archive.create`, and
-`MpqFileWriter`. All negative libmpq return codes are reported as
+The high-level API uses `Archive.open`, `Archive.openMpqe`, `Archive.create`,
+`Archive.createMpqe`, and `MpqFileWriter`. MPQE creation uses a private
+plaintext temporary file before atomically replacing the destination; it
+cannot modify an existing MPQE archive and crash cleanup is best effort. All
+negative libmpq return codes are reported as
 `LibmpqException` values containing the original code and diagnostic text.

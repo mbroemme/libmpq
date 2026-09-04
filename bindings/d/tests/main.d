@@ -122,11 +122,27 @@ private void testMpqeFixture() {
     assert(failed);
 }
 
+private void testMpqeCreate() {
+    auto path = temporaryArchive("created.mpqe");
+    immutable ubyte[] authenticationCode =
+        cast(immutable(ubyte)[])"LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+    write(path, cast(const(ubyte)[])"previous destination");
+    auto archive = Archive.createMpqe(path, authenticationCode, ArchiveCreateOptions.v2());
+    archive.add("payload.txt", cast(const(ubyte)[])"D MPQE writer regression\n");
+    archive.close();
+    auto reopened = Archive.openMpqe(path, authenticationCode, 0);
+    scope(exit) { reopened.close(); remove(path); }
+    assert(reopened.version_() == 2);
+    assert(reopened.file("payload.txt").read() ==
+           cast(const(ubyte)[])"D MPQE writer regression\n");
+}
+
 void main() {
     testVersionAndErrors();
     testCreateReadAndMetadata(ARCHIVE_VERSION_ONE);
     testCreateReadAndMetadata(ARCHIVE_VERSION_TWO);
     testFixture();
     testMpqeFixture();
+    testMpqeCreate();
     testFailures();
 }

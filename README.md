@@ -27,7 +27,8 @@ Huffman, zlib, PKWARE, bzip2, or mono/stereo WAVE ADPCM.
 ## Features
 
 * Read MPQ archives and embedded archives located at a file offset.
-* Read MPQE-wrapped MPQ streams through a caller-supplied authentication code.
+* Read MPQE-wrapped MPQ streams and create new MPQE archives with a
+  caller-supplied authentication code.
 * Read archive metadata, file names, file sizes, flags, and block information.
 * Create seekable MPQ v1 and v2 archives with fixed file-table capacity.
 * Add files through streaming, memory-buffer, or filesystem-path APIs.
@@ -393,8 +394,11 @@ encryption, sectors, and compression, see [MPQ format guide](MPQ.md).
 
 * Archive creation is currently limited to seekable MPQ v1 and v2 archives.
   MPQ v3/v4, HET/BET tables, and related format extensions are not supported.
-* MPQE support is read-only and requires a caller-supplied authentication code;
-  libmpq does not ship, discover, or retain the caller's credential buffer.
+* MPQE supports reading and creation of new archives with a caller-supplied
+  authentication code. Existing MPQE archives cannot be modified and encrypted
+  random-access writing is unsupported. Creation uses an owner-only plaintext
+  temporary file; the completed archive uses normal caller-umask permissions.
+  Cleanup is best effort, so a crash can leave the plaintext temporary behind.
 * Sparse and LZMA compression, attributes, signatures, checksums, patch
   metadata, and StormLib-specific key modes are not supported by the writer.
 * Windows support is not currently tested or documented by the Autotools build.

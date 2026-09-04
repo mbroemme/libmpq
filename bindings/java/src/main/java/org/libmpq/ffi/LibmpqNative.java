@@ -56,6 +56,7 @@ public final class LibmpqNative {
     private static final MethodHandle ARCHIVE_OPEN;
     private static final MethodHandle ARCHIVE_OPEN_MPQE;
     private static final MethodHandle ARCHIVE_CREATE;
+    private static final MethodHandle ARCHIVE_CREATE_MPQE;
     private static final MethodHandle FILE_BEGIN;
     private static final MethodHandle FILE_WRITE;
     private static final MethodHandle FILE_FINISH;
@@ -117,7 +118,11 @@ public final class LibmpqNative {
         FILE_ADD_PATH = function(linker, lookup, "libmpq__file_add_path",
                                  FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                        ValueLayout.ADDRESS, ValueLayout.ADDRESS,
-                                                       ValueLayout.ADDRESS));
+                                                        ValueLayout.ADDRESS));
+        ARCHIVE_CREATE_MPQE = function(linker, lookup, "libmpq__archive_create_mpqe",
+                                       FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
+                                                             ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                                             C_SIZE_T, ValueLayout.ADDRESS));
         ARCHIVE_CLONE = function(linker, lookup, "libmpq__archive_clone",
                                  FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                        ValueLayout.ADDRESS));
@@ -284,6 +289,13 @@ public final class LibmpqNative {
     /** Calls {@code libmpq__archive_create} with a native options struct. */
     public static int archiveCreate(MemorySegment out, MemorySegment path, MemorySegment options) {
         return callInt(ARCHIVE_CREATE, out, path, options);
+    }
+    /** Calls {@code libmpq__archive_create_mpqe} with borrowed authentication bytes. */
+    public static int archiveCreateMpqe(MemorySegment out, MemorySegment path,
+                                        MemorySegment authenticationCode, long authenticationCodeSize,
+                                        MemorySegment options) {
+        return callInt(ARCHIVE_CREATE_MPQE, out, path, authenticationCode,
+                       nativeSizeT(authenticationCodeSize), options);
     }
     /** Starts a native streaming entry and writes its writer handle to out. */
     public static int fileBegin(MemorySegment archive, MemorySegment name, long size,

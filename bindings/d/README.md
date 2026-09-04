@@ -60,6 +60,11 @@ scope(exit) archive.close();
 archive.add("hello.txt", cast(const(ubyte)[])"hello\n");
 ```
 
+`Archive.createMpqe` creates a new encrypted MPQE stream from borrowed
+authentication bytes. It finalizes a private plaintext temporary file before
+atomically replacing the destination; existing MPQE streams cannot be modified
+and crash cleanup is best effort.
+
 All arrays passed to the writer are borrowed for the duration of the call.
 Arrays returned by `read` and `readBlock` are owned by the caller. Always close
 archives explicitly; a destructor performs only best-effort cleanup because D

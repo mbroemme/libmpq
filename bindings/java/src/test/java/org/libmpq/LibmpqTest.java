@@ -86,6 +86,26 @@ class LibmpqTest {
         assertEquals(Mpq.ERROR_DECRYPT, error.code());
     }
 
+    /** Creates MPQE output, replaces an existing target, and reads it back. */
+    @Test
+    void createsMpqeArchive(@TempDir Path directory) throws Exception {
+        Path path = directory.resolve("created.mpqe");
+        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
+        byte[] payload = "Java MPQE writer regression\n".getBytes(StandardCharsets.UTF_8);
+        Files.write(path, "previous destination".getBytes(StandardCharsets.UTF_8));
+        try (Archive archive = Archive.createMpqe(path, code, ArchiveCreateOptions.v2())) {
+            archive.add("payload.txt", payload, FileOptions.raw());
+        }
+        try (Archive archive = Archive.openMpqe(path, code, 0)) {
+            assertEquals(2, archive.version());
+            assertArrayEquals(payload, archive.readFile(archive.fileNumber("payload.txt")));
+        }
+        LibmpqException error = assertThrows(LibmpqException.class,
+            () -> Archive.createMpqe(path, java.util.Arrays.copyOf(code, code.length - 1),
+                                     ArchiveCreateOptions.v1()));
+        assertEquals(Mpq.ERROR_DECRYPT, error.code());
+    }
+
     /** Exercises v2 creation, compression, path addition, cloning, and blocks. */
     @Test
     void createsReadsAndClonesArchive(@TempDir Path directory) throws Exception {

@@ -197,6 +197,7 @@ _configure("libmpq__strerror", ctypes.c_char_p, ctypes.c_int32)
 _configure("libmpq__archive_open", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _OFF_T)
 _configure("libmpq__archive_open_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _OFF_T, _BYTE_PTR, ctypes.c_size_t)
 _configure("libmpq__archive_create", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _VOID_PTR)
+_configure("libmpq__archive_create_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _BYTE_PTR, ctypes.c_size_t, _VOID_PTR)
 _configure("libmpq__file_begin", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _OFF_T, _VOID_PTR, ctypes.POINTER(_VOID_PTR))
 _configure("libmpq__file_write", ctypes.c_int32, _VOID_PTR, _BYTE_PTR, _OFF_T)
 _configure("libmpq__file_finish", ctypes.c_int32, _VOID_PTR)
@@ -370,6 +371,21 @@ class Writer:
         self._mpq = _VOID_PTR()
         libmpq.libmpq__archive_create(ctypes.byref(self._mpq), _as_bytes(filename), ctypes.byref(options))
         self.filename, self._opened = filename, True
+
+    @classmethod
+    def create_mpqe(cls, filename, authentication_code, version=ARCHIVE_VERSION_ONE,
+                    max_files=0, sector_size=0, flags=0):
+        """Create an MPQE-wrapped archive using caller-supplied authentication bytes."""
+        code = _authentication_code_bytes(authentication_code)
+        options = ArchiveCreateOptions(version, max_files, sector_size, flags)
+        writer = cls.__new__(cls)
+        writer._mpq = _VOID_PTR()
+        pointer = (ctypes.c_uint8 * len(code)).from_buffer_copy(code) if code else None
+        libmpq.libmpq__archive_create_mpqe(
+            ctypes.byref(writer._mpq), _as_bytes(filename), pointer, len(code), ctypes.byref(options)
+        )
+        writer.filename, writer._opened = filename, True
+        return writer
 
     def add(self, name, data, options=None):
         """Add complete bytes using raw storage or supplied options."""

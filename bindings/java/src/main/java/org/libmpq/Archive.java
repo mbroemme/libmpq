@@ -123,6 +123,29 @@ public final class Archive implements AutoCloseable {
         }
     }
 
+    /** Creates a new MPQE-wrapped archive using caller-supplied authentication bytes. */
+    public static Archive createMpqe(Path path, byte[] authenticationCode,
+                                     ArchiveCreateOptions options) throws LibmpqException {
+        Objects.requireNonNull(path, "path");
+        Objects.requireNonNull(authenticationCode, "authenticationCode");
+        if (options == null) {
+            options = ArchiveCreateOptions.defaults();
+        }
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
+            MemorySegment nativeOptions = arena.allocate(LibmpqNative.ARCHIVE_OPTIONS);
+            LibmpqNative.setArchiveOptions(nativeOptions, options.version(),
+                                            Support.uint32(options.maxFiles(), "maxFiles"),
+                                            Support.uint32(options.sectorSize(), "sectorSize"),
+                                            options.flags());
+            Support.check(LibmpqNative.archiveCreateMpqe(
+                output, Support.text(arena, path.toString()), Support.bytes(arena, authenticationCode),
+                authenticationCode.length, nativeOptions
+            ));
+            return new Archive(LibmpqNative.getAddress(output));
+        }
+    }
+
     /**
      * Reopens this archive through an independent native handle.  The clone
      * has its own file stream and can outlive this object or be closed before

@@ -120,6 +120,10 @@ extern(C) {
     /** Create an archive using the supplied native option structure. */
     int libmpq__archive_create(mpq_archive_s** archive, const(char)* path,
                                const(mpq_archive_create_options_s)* options);
+    int libmpq__archive_create_mpqe(mpq_archive_s** archive, const(char)* path,
+                                    const(ubyte)* authentication_code,
+                                    size_t authentication_code_size,
+                                    const(mpq_archive_create_options_s)* options);
 
     /** Begin one streamed archive entry. */
     int libmpq__file_begin(mpq_archive_s* archive, const(char)* filename,

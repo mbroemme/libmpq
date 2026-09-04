@@ -86,6 +86,19 @@ class Archive {
         return new Archive(result);
     }
 
+    /** Create a new MPQE-wrapped archive with borrowed authentication bytes. */
+    static Archive createMpqe(string path, const(ubyte)[] authenticationCode,
+                              ArchiveCreateOptions options = ArchiveCreateOptions.v1()) {
+        auto nativeOptions = options.nativeOptions();
+        mpq_archive_s* result;
+        auto authenticationPointer = authenticationCode.length == 0 ? null :
+            authenticationCode.ptr;
+        checkStatus(libmpq__archive_create_mpqe(&result, toStringz(path), authenticationPointer,
+                                                 authenticationCode.length, &nativeOptions),
+                    "libmpq__archive_create_mpqe");
+        return new Archive(result);
+    }
+
     /** Return an independently parsed clone of this archive. */
     Archive clone() {
         ensureOpen();

@@ -48,6 +48,7 @@ alias libmpq__version libversion;
 alias libmpq__archive_open archive_open;
 alias libmpq__archive_open_mpqe archive_open_mpqe;
 alias libmpq__archive_create archive_create;
+alias libmpq__archive_create_mpqe archive_create_mpqe;
 alias libmpq__archive_clone archive_clone;
 alias libmpq__archive_close archive_close;
 alias libmpq__archive_size_packed archive_size_packed;

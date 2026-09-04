@@ -70,6 +70,20 @@ def test_mpqe_fixture_metadata_extraction_and_clone(name, version, offset):
         mpq.Archive.open_mpqe(FIXTURES / name, code[:-1], offset)
 
 
+def test_mpqe_creation_replaces_destination(tmp_path):
+    """MPQE creation publishes a complete archive over an existing target."""
+    path = tmp_path / "created.mpqe"
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    path.write_bytes(b"previous destination")
+    with mpq.Writer.create_mpqe(path, code, version=mpq.ARCHIVE_VERSION_TWO) as writer:
+        writer.add("payload.txt", b"Python MPQE writer regression\n")
+    with mpq.Archive.open_mpqe(path, code, offset=0) as archive:
+        assert archive.version == 2
+        assert archive["payload.txt"].read() == b"Python MPQE writer regression\n"
+    with pytest.raises(mpq.LibmpqDecryptError):
+        mpq.Writer.create_mpqe(path, code[:-1])
+
+
 def test_creation_streaming_compression_clone_and_blocks(tmp_path):
     """Creation APIs round-trip raw, compressed, path, stream, clone, and blocks."""
     archive_path = tmp_path / "created.mpq"
