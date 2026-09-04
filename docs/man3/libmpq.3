@@ -30,6 +30,28 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        libmpq__off_t   " "archive_offset"
 .BI ");"
 .sp
+.BI "int32_t libmpq__archive_open_mpqe("
+.BI "        mpq_archive_s **" "mpq_archive",
+.BI "        const char     *" "mpq_filename",
+.BI "        libmpq__off_t   " "archive_offset",
+.BI "        const uint8_t  *" "authentication_code",
+.BI "        size_t          " "authentication_code_size"
+.BI ");"
+.sp
+.BI "int32_t libmpq__archive_create("
+.BI "        mpq_archive_s                    **" "mpq_archive",
+.BI "        const char                        *" "mpq_filename",
+.BI "        const mpq_archive_create_options_s *" "options"
+.BI ");"
+.sp
+.BI "int32_t libmpq__archive_create_mpqe("
+.BI "        mpq_archive_s                    **" "mpq_archive",
+.BI "        const char                        *" "mpq_filename",
+.BI "        const uint8_t                     *" "authentication_code",
+.BI "        size_t                             " "authentication_code_size",
+.BI "        const mpq_archive_create_options_s *" "options"
+.BI ");"
+.sp
 .BI "int32_t libmpq__archive_clone("
 .BI "        mpq_archive_s **" "clone",
 .BI "        mpq_archive_s  *" "source"
@@ -179,8 +201,11 @@ clones are created or used.
 .BR libmpq__version (3),
 .BR libmpq__strerror (3),
 .BR libmpq__archive_open (3),
+.BR libmpq__archive_open_mpqe (3),
 .BR libmpq__archive_clone (3),
 .BR libmpq__archive_close (3),
+.BR libmpq__archive_create (3),
+.BR libmpq__archive_create_mpqe (3),
 .BR libmpq__archive_size_packed (3),
 .BR libmpq__archive_size_unpacked (3),
 .BR libmpq__archive_offset (3),

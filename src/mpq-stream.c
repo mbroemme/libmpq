@@ -24,9 +24,7 @@
 #include <string.h>
 #include <sys/types.h>
 
-#define LIBMPQ_MPQE_CHUNK_SIZE 64U
 #define LIBMPQ_MPQE_READ_BUFFER_SIZE (LIBMPQ_MPQE_CHUNK_SIZE * 64U)
-#define LIBMPQ_MPQE_AUTH_CODE_MINIMUM 32U
 
 typedef enum
 {
@@ -43,8 +41,8 @@ struct mpq_stream
 };
 
 /* Clear key material without allowing the compiler to elide the writes. */
-static void
-libmpq__stream_clear(void *buffer, size_t size)
+void
+libmpq__mpqe_clear(void *buffer, size_t size)
 {
     volatile uint8_t *bytes = buffer;
 
@@ -68,8 +66,11 @@ libmpq__stream_bswap32(uint32_t value)
 }
 
 /* Derive the MPQE working key from the installer authentication-code bytes. */
-static void
-libmpq__stream_mpqe_key(uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE], const uint8_t *authentication_code)
+int32_t
+libmpq__mpqe_key(
+    uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE], const uint8_t *authentication_code,
+    size_t authentication_code_size
+)
 {
     static const char template_key[] =
         "expand 32-byte k000000000000000000000000000000000000000000000000";
@@ -78,6 +79,9 @@ libmpq__stream_mpqe_key(uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE], const uint8_t *auth
     uint8_t native_key[LIBMPQ_MPQE_CHUNK_SIZE];
     size_t i;
 
+    if (key == NULL || authentication_code == NULL ||
+        authentication_code_size < LIBMPQ_MPQE_AUTH_CODE_MINIMUM)
+        return LIBMPQ_ERROR_DECRYPT;
     memcpy(native_key, template_key, sizeof(native_key));
     for (i = 0; i < sizeof(source_words); ++i) {
         uint32_t value =
@@ -93,12 +97,13 @@ libmpq__stream_mpqe_key(uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE], const uint8_t *auth
         key[i * sizeof(uint32_t) + 2] = (uint8_t)(value >> 8);
         key[i * sizeof(uint32_t) + 3] = (uint8_t)value;
     }
-    libmpq__stream_clear(native_key, sizeof(native_key));
+    libmpq__mpqe_clear(native_key, sizeof(native_key));
+    return LIBMPQ_SUCCESS;
 }
 
 /* Decrypt one zero-padded MPQE chunk in place using its absolute stream position. */
-static void
-libmpq__stream_mpqe_decrypt_chunk(
+void
+libmpq__mpqe_transform_chunk(
     uint8_t chunk[LIBMPQ_MPQE_CHUNK_SIZE], const uint8_t key[64], uint64_t offset
 )
 {
@@ -185,9 +190,9 @@ libmpq__stream_mpqe_decrypt_chunk(
     mirror[15] ^= shuffled[15] + key_mirror[3];
     for (i = 0; i < 16; ++i)
         libmpq__store_le32(chunk + i * sizeof(uint32_t), libmpq__stream_bswap32(mirror[i]));
-    libmpq__stream_clear(shuffled, sizeof(shuffled));
-    libmpq__stream_clear(key_mirror, sizeof(key_mirror));
-    libmpq__stream_clear(mirror, sizeof(mirror));
+    libmpq__mpqe_clear(shuffled, sizeof(shuffled));
+    libmpq__mpqe_clear(key_mirror, sizeof(key_mirror));
+    libmpq__mpqe_clear(mirror, sizeof(mirror));
 }
 
 #ifdef LIBMPQ_TESTING
@@ -200,9 +205,9 @@ libmpq__stream_mpqe_test_transform_chunk(
 {
     uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE];
 
-    libmpq__stream_mpqe_key(key, authentication_code);
-    libmpq__stream_mpqe_decrypt_chunk(chunk, key, offset);
-    libmpq__stream_clear(key, sizeof(key));
+    if (libmpq__mpqe_key(key, authentication_code, LIBMPQ_MPQE_AUTH_CODE_MINIMUM) == LIBMPQ_SUCCESS)
+        libmpq__mpqe_transform_chunk(chunk, key, offset);
+    libmpq__mpqe_clear(key, sizeof(key));
 }
 #endif
 
@@ -284,18 +289,23 @@ libmpq__stream_open_mpqe(
     size_t authentication_code_size
 )
 {
+    uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE];
     int32_t result;
 
     if (stream == NULL)
         return LIBMPQ_ERROR_EXIST;
     *stream = NULL;
-    if (authentication_code == NULL || authentication_code_size < LIBMPQ_MPQE_AUTH_CODE_MINIMUM)
-        return LIBMPQ_ERROR_DECRYPT;
-    result = libmpq__stream_open_common(stream, path);
+    result = libmpq__mpqe_key(key, authentication_code, authentication_code_size);
     if (result != LIBMPQ_SUCCESS)
         return result;
+    result = libmpq__stream_open_common(stream, path);
+    if (result != LIBMPQ_SUCCESS) {
+        libmpq__mpqe_clear(key, sizeof(key));
+        return result;
+    }
     (*stream)->provider = LIBMPQ_STREAM_MPQE;
-    libmpq__stream_mpqe_key((*stream)->key, authentication_code);
+    memcpy((*stream)->key, key, sizeof(key));
+    libmpq__mpqe_clear(key, sizeof(key));
     return LIBMPQ_SUCCESS;
 }
 
@@ -347,7 +357,7 @@ libmpq__stream_read_at(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, s
         int32_t result;
 
         if (required > UINT64_MAX - (LIBMPQ_MPQE_CHUNK_SIZE - 1U)) {
-            libmpq__stream_clear(chunks, sizeof(chunks));
+            libmpq__mpqe_clear(chunks, sizeof(chunks));
             return LIBMPQ_ERROR_SIZE;
         }
         rounded_required =
@@ -356,7 +366,7 @@ libmpq__stream_read_at(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, s
             rounded_required = sizeof(chunks);
         physical_u64 = remaining < rounded_required ? remaining : rounded_required;
         if (physical_u64 > sizeof(chunks)) {
-            libmpq__stream_clear(chunks, sizeof(chunks));
+            libmpq__mpqe_clear(chunks, sizeof(chunks));
             return LIBMPQ_ERROR_SIZE;
         }
         physical = (size_t)physical_u64;
@@ -364,16 +374,16 @@ libmpq__stream_read_at(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, s
             (physical + (LIBMPQ_MPQE_CHUNK_SIZE - 1U)) & ~(size_t)(LIBMPQ_MPQE_CHUNK_SIZE - 1U);
 
         if (chunk_offset >= stream->size || physical <= batch_start) {
-            libmpq__stream_clear(chunks, sizeof(chunks));
+            libmpq__mpqe_clear(chunks, sizeof(chunks));
             return LIBMPQ_ERROR_READ;
         }
         result = libmpq__stream_file_read_at(stream, chunk_offset, chunks, physical);
         if (result != LIBMPQ_SUCCESS) {
-            libmpq__stream_clear(chunks, sizeof(chunks));
+            libmpq__mpqe_clear(chunks, sizeof(chunks));
             return result;
         }
         for (chunk = 0; chunk < decrypt_size; chunk += LIBMPQ_MPQE_CHUNK_SIZE) {
-            libmpq__stream_mpqe_decrypt_chunk(
+            libmpq__mpqe_transform_chunk(
                 chunks + chunk, stream->key, chunk_offset + (uint64_t)chunk
             );
         }
@@ -382,7 +392,7 @@ libmpq__stream_read_at(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, s
             available = size - copied;
         memcpy(buffer + copied, chunks + batch_start, available);
         copied += available;
-        libmpq__stream_clear(chunks, sizeof(chunks));
+        libmpq__mpqe_clear(chunks, sizeof(chunks));
     }
     return LIBMPQ_SUCCESS;
 }
@@ -400,7 +410,7 @@ libmpq__stream_close(mpq_stream_s *stream)
         return LIBMPQ_ERROR_EXIST;
     if (stream->file != NULL && fclose(stream->file) != 0)
         return LIBMPQ_ERROR_CLOSE;
-    libmpq__stream_clear(stream->key, sizeof(stream->key));
+    libmpq__mpqe_clear(stream->key, sizeof(stream->key));
     free(stream);
     return LIBMPQ_SUCCESS;
 }
@@ -412,6 +422,6 @@ libmpq__stream_discard(mpq_stream_s *stream)
         return;
     if (stream->file != NULL)
         (void)fclose(stream->file);
-    libmpq__stream_clear(stream->key, sizeof(stream->key));
+    libmpq__mpqe_clear(stream->key, sizeof(stream->key));
     free(stream);
 }

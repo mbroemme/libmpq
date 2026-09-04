@@ -124,6 +124,18 @@ libmpq__archive_create(
     return libmpq__writer_archive_create(out, path, options);
 }
 
+/* Create an MPQE-wrapped archive through the normal writer and private final transform. */
+int32_t
+libmpq__archive_create_mpqe(
+    mpq_archive_s **out, const char *path, const uint8_t *authentication_code,
+    size_t authentication_code_size, const mpq_archive_create_options_s *options
+)
+{
+    return libmpq__writer_archive_create_mpqe(
+        out, path, authentication_code, authentication_code_size, options
+    );
+}
+
 /* Begin a streamed file through the internal writer implementation.
  * The returned opaque writer owns the in-progress file state until finish or
  * an error closes the stream. */
@@ -246,8 +258,11 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
 
         /* Writer closure must serialize tables before releasing writer storage. */
         result = libmpq__writer_finalize(mpq_archive);
+        if (result == LIBMPQ_SUCCESS && mpq_archive->write_mpqe)
+            result = libmpq__writer_finalize_mpqe(mpq_archive);
         if (mpq_archive->fp != NULL && fclose(mpq_archive->fp) < 0 && result == LIBMPQ_SUCCESS)
             result = LIBMPQ_ERROR_CLOSE;
+        libmpq__writer_mpqe_cleanup(mpq_archive);
         for (i = 0; i < mpq_archive->write_capacity; i++)
             free(mpq_archive->write_names ? mpq_archive->write_names[i] : NULL);
         free(mpq_archive->write_names);
@@ -257,6 +272,8 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
         free(mpq_archive->mpq_block);
         free(mpq_archive->mpq_block_ex);
         free(mpq_archive->filename);
+        free(mpq_archive->write_mpqe_destination);
+        free(mpq_archive->write_mpqe_output_path);
         free(mpq_archive);
         return result;
     }
