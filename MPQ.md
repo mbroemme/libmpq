@@ -20,6 +20,19 @@ the real header and contains a user-data size and header offset. Locate and
 validate the actual `MPQ\x1A` header before resolving archive-relative values.
 Table placement is not fixed; do not infer it from file order.
 
+## MPQE-wrapped streams
+
+Some installer archives encrypt the complete outer byte stream in 64-byte MPQE
+chunks before the usual `MPQ\x1A` header. MPQE is a stream provider, not a
+new MPQ header version: decrypt it first, then parse the contained MPQ using
+the normal header and table rules. The chunk transform depends on a
+caller-supplied authentication code and the absolute chunk position. Keep
+authentication-code provisioning outside archive parsing; libmpq's C API does
+not embed, discover, log, or persist such codes. A missing or too-short code
+buffer is rejected as a decryption error. MPQE has no authentication check, so
+a well-formed but incorrect code is parsed as ordinary invalid MPQ data and
+can produce a format or another parser error.
+
 ## Header versions
 
 The common 32-byte prefix is:
