@@ -27,8 +27,8 @@ int32_t libmpq__writer_archive_create(
     mpq_archive_s **out, const char *path, const mpq_archive_create_options_s *options
 );
 int32_t libmpq__writer_archive_create_mpqe(
-    mpq_archive_s **out, const char *path, const uint8_t *authentication_code,
-    size_t authentication_code_size, const mpq_archive_create_options_s *options
+    mpq_archive_s **out, const char *path, const uint8_t *auth_code, size_t auth_code_size,
+    const mpq_archive_create_options_s *options
 );
 
 /* Begin one named file and return a stateful streaming writer for its payload. */

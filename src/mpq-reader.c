@@ -465,7 +465,7 @@ libmpq__reader_archive_open_path(
 int32_t
 libmpq__reader_archive_open_mpqe(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset,
-    const uint8_t *authentication_code, size_t authentication_code_size
+    const uint8_t *auth_code, size_t auth_code_size
 )
 {
     mpq_stream_s *stream = NULL;
@@ -474,9 +474,7 @@ libmpq__reader_archive_open_mpqe(
     if (mpq_archive == NULL)
         return LIBMPQ_ERROR_EXIST;
     *mpq_archive = NULL;
-    result = libmpq__stream_open_mpqe(
-        &stream, mpq_filename, authentication_code, authentication_code_size
-    );
+    result = libmpq__stream_open_mpqe(&stream, mpq_filename, auth_code, auth_code_size);
 
     return result == LIBMPQ_SUCCESS ? libmpq__reader_archive_open_stream(
                                           mpq_archive, mpq_filename, archive_offset, stream

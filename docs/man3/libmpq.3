@@ -34,8 +34,8 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        mpq_archive_s **" "mpq_archive",
 .BI "        const char     *" "mpq_filename",
 .BI "        libmpq__off_t   " "archive_offset",
-.BI "        const uint8_t  *" "authentication_code",
-.BI "        size_t          " "authentication_code_size"
+.BI "        const uint8_t  *" "auth_code",
+.BI "        size_t          " "auth_code_size"
 .BI ");"
 .sp
 .BI "int32_t libmpq__archive_create("
@@ -47,8 +47,8 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "int32_t libmpq__archive_create_mpqe("
 .BI "        mpq_archive_s                    **" "mpq_archive",
 .BI "        const char                        *" "mpq_filename",
-.BI "        const uint8_t                     *" "authentication_code",
-.BI "        size_t                             " "authentication_code_size",
+.BI "        const uint8_t                     *" "auth_code",
+.BI "        size_t                             " "auth_code_size",
 .BI "        const mpq_archive_create_options_s *" "options"
 .BI ");"
 .sp

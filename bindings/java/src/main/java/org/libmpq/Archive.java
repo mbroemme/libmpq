@@ -64,12 +64,12 @@ public final class Archive implements AutoCloseable {
      * is not retained by this Java binding.
      *
      * @param path MPQE stream to open
-     * @param authenticationCode caller-supplied MPQE authentication code
+     * @param authCode caller-supplied MPQE authentication code
      * @return an owned archive handle
      * @throws LibmpqException if credentials are invalid or the decrypted data cannot be parsed
      */
-    public static Archive openMpqe(Path path, byte[] authenticationCode) throws LibmpqException {
-        return openMpqe(path, authenticationCode, 0);
+    public static Archive openMpqe(Path path, byte[] authCode) throws LibmpqException {
+        return openMpqe(path, authCode, 0);
     }
 
     /**
@@ -77,20 +77,20 @@ public final class Archive implements AutoCloseable {
      * the decrypted stream for an embedded MPQ header.
      *
      * @param path MPQE stream to open
-     * @param authenticationCode caller-supplied MPQE authentication code
+     * @param authCode caller-supplied MPQE authentication code
      * @param offset standalone or embedded archive offset
      * @return an owned archive handle
      * @throws LibmpqException if credentials are invalid or the decrypted data cannot be parsed
      */
-    public static Archive openMpqe(Path path, byte[] authenticationCode, long offset)
+    public static Archive openMpqe(Path path, byte[] authCode, long offset)
         throws LibmpqException {
         Objects.requireNonNull(path, "path");
-        Objects.requireNonNull(authenticationCode, "authenticationCode");
+        Objects.requireNonNull(authCode, "authCode");
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
-            MemorySegment code = Support.bytes(arena, authenticationCode);
+            MemorySegment authCodeSegment = Support.bytes(arena, authCode);
             Support.check(LibmpqNative.archiveOpenMpqe(
-                output, Support.text(arena, path.toString()), offset, code, authenticationCode.length
+                output, Support.text(arena, path.toString()), offset, authCodeSegment, authCode.length
             ));
             return new Archive(LibmpqNative.getAddress(output));
         }
@@ -124,10 +124,10 @@ public final class Archive implements AutoCloseable {
     }
 
     /** Creates a new MPQE-wrapped archive using caller-supplied authentication bytes. */
-    public static Archive createMpqe(Path path, byte[] authenticationCode,
+    public static Archive createMpqe(Path path, byte[] authCode,
                                      ArchiveCreateOptions options) throws LibmpqException {
         Objects.requireNonNull(path, "path");
-        Objects.requireNonNull(authenticationCode, "authenticationCode");
+        Objects.requireNonNull(authCode, "authCode");
         if (options == null) {
             options = ArchiveCreateOptions.defaults();
         }
@@ -139,8 +139,8 @@ public final class Archive implements AutoCloseable {
                                             Support.uint32(options.sectorSize(), "sectorSize"),
                                             options.flags());
             Support.check(LibmpqNative.archiveCreateMpqe(
-                output, Support.text(arena, path.toString()), Support.bytes(arena, authenticationCode),
-                authenticationCode.length, nativeOptions
+                output, Support.text(arena, path.toString()), Support.bytes(arena, authCode),
+                authCode.length, nativeOptions
             ));
             return new Archive(LibmpqNative.getAddress(output));
         }

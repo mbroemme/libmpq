@@ -57,7 +57,7 @@ static const writer_mode_s writer_modes[] = {
         LIBMPQ_COMPRESSION_ZLIB, 0, 0 } }
 };
 
-static const uint8_t mpqe_authentication_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+static const uint8_t mpqe_auth_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
 
 /* Write a sentinel destination used to prove failed publication never replaces it. */
 static int
@@ -176,7 +176,7 @@ test_mpqe_writer_roundtrip(uint32_t version, int replace_existing)
     mpqe_payload(raw, sizeof(raw), 7);
     mpqe_payload(packed, sizeof(packed), 23);
     result = libmpq__archive_create_mpqe(
-        &archive, path, mpqe_authentication_code, sizeof(mpqe_authentication_code) - 1U, &options
+        &archive, path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1U, &options
     );
     if (result == 0)
         result = add_mpqe_feature_files(archive) == 0 ? 0 : LIBMPQ_ERROR_WRITE;
@@ -186,9 +186,8 @@ test_mpqe_writer_roundtrip(uint32_t version, int replace_existing)
     }
     if (result != 0)
         goto cleanup;
-    result = libmpq__archive_open_mpqe(
-        &reader, path, 0, mpqe_authentication_code, sizeof(mpqe_authentication_code) - 1U
-    );
+    result =
+        libmpq__archive_open_mpqe(&reader, path, 0, mpqe_auth_code, sizeof(mpqe_auth_code) - 1U);
     if (result != 0 || verify_mpqe_file(reader, "raw.bin", raw, sizeof(raw)) != 0)
         goto cleanup;
     if (verify_mpqe_file(reader, "compressed.bin", packed, sizeof(packed)) != 0)
@@ -227,7 +226,7 @@ test_mpqe_writer_credential_validation(void)
     remove(path);
     TEST_CHECK(
         libmpq__archive_create_mpqe(
-            &archive, path, mpqe_authentication_code, sizeof(mpqe_authentication_code) - 2U, NULL
+            &archive, path, mpqe_auth_code, sizeof(mpqe_auth_code) - 2U, NULL
         ) == LIBMPQ_ERROR_DECRYPT
     );
     TEST_CHECK(archive == NULL);
@@ -251,7 +250,7 @@ decrypt_mpqe_path(const char *path, uint8_t **data, size_t *size)
             physical = sizeof(chunk);
         memset(chunk, 0, sizeof(chunk));
         memcpy(chunk, *data + offset, physical);
-        libmpq__stream_mpqe_test_transform_chunk(chunk, mpqe_authentication_code, offset);
+        libmpq__stream_mpqe_test_transform_chunk(chunk, mpqe_auth_code, offset);
         memcpy(*data + offset, chunk, physical);
     }
     return 0;
@@ -288,8 +287,7 @@ test_mpqe_writer_byte_equality(uint32_t version)
     if (result != 0)
         goto cleanup;
     if (libmpq__archive_create_mpqe(
-            &mpqe_archive, mpqe_path, mpqe_authentication_code,
-            sizeof(mpqe_authentication_code) - 1U, &options
+            &mpqe_archive, mpqe_path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1U, &options
         ) != 0 ||
         libmpq__file_add(mpqe_archive, "partial.bin", payload, sizeof(payload), NULL) != 0)
         goto cleanup;
@@ -359,7 +357,7 @@ test_mpqe_writer_fault(libmpq_writer_test_fault_e fault)
     if (write_test_path(path, original, sizeof(original) - 1U) != 0)
         goto cleanup;
     if (libmpq__archive_create_mpqe(
-            &archive, path, mpqe_authentication_code, sizeof(mpqe_authentication_code) - 1U, NULL
+            &archive, path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1U, NULL
         ) != 0 ||
         libmpq__file_add(archive, "payload.bin", original, sizeof(original) - 1U, NULL) != 0)
         goto cleanup;
@@ -413,8 +411,7 @@ test_mpqe_writer_chdir(void)
         goto cleanup;
     changed_directory = 1;
     if (libmpq__archive_create_mpqe(
-            &archive, "archive.mpqe", mpqe_authentication_code,
-            sizeof(mpqe_authentication_code) - 1U, NULL
+            &archive, "archive.mpqe", mpqe_auth_code, sizeof(mpqe_auth_code) - 1U, NULL
         ) != 0 ||
         libmpq__file_add(archive, "cwd.txt", payload, sizeof(payload) - 1U, NULL) != 0 ||
         chdir("../other") != 0)
@@ -425,8 +422,7 @@ test_mpqe_writer_chdir(void)
         goto cleanup;
     changed_directory = 0;
     if (libmpq__archive_open_mpqe(
-            &reader, archive_path, 0, mpqe_authentication_code,
-            sizeof(mpqe_authentication_code) - 1U
+            &reader, archive_path, 0, mpqe_auth_code, sizeof(mpqe_auth_code) - 1U
         ) != 0 ||
         libmpq__file_number(reader, "cwd.txt", &number) != 0 ||
         verify_mpqe_file(reader, "cwd.txt", payload, sizeof(payload) - 1U) != 0 ||
