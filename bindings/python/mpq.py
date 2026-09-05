@@ -160,12 +160,12 @@ def _as_bytes(value):
     raise TypeError("expected str, bytes, or path-like value")
 
 
-def _authentication_code_bytes(value):
+def _auth_code_bytes(value):
     """Return an owned byte copy of a bytes-like MPQE authentication code."""
     try:
         return memoryview(value).tobytes()
     except TypeError as error:
-        raise TypeError("authentication_code must be bytes-like") from error
+        raise TypeError("auth_code must be bytes-like") from error
 
 
 def strerror(code):
@@ -373,10 +373,10 @@ class Writer:
         self.filename, self._opened = filename, True
 
     @classmethod
-    def create_mpqe(cls, filename, authentication_code, version=ARCHIVE_VERSION_ONE,
+    def create_mpqe(cls, filename, auth_code, version=ARCHIVE_VERSION_ONE,
                     max_files=0, sector_size=0, flags=0):
         """Create an MPQE-wrapped archive using caller-supplied authentication bytes."""
-        code = _authentication_code_bytes(authentication_code)
+        code = _auth_code_bytes(auth_code)
         options = ArchiveCreateOptions(version, max_files, sector_size, flags)
         writer = cls.__new__(cls)
         writer._mpq = _VOID_PTR()
@@ -637,9 +637,9 @@ class Archive:
         return cls(source, offset)
 
     @classmethod
-    def open_mpqe(cls, path, authentication_code, offset=-1):
+    def open_mpqe(cls, path, auth_code, offset=-1):
         """Open a caller-authenticated MPQE stream containing an MPQ archive."""
-        code = _authentication_code_bytes(authentication_code)
+        code = _auth_code_bytes(auth_code)
         archive = object.__new__(cls)
         archive._source = path
         archive.filename = os.fspath(path)

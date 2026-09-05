@@ -127,13 +127,11 @@ libmpq__archive_create(
 /* Create an MPQE-wrapped archive through the normal writer and private final transform. */
 int32_t
 libmpq__archive_create_mpqe(
-    mpq_archive_s **out, const char *path, const uint8_t *authentication_code,
-    size_t authentication_code_size, const mpq_archive_create_options_s *options
+    mpq_archive_s **out, const char *path, const uint8_t *auth_code, size_t auth_code_size,
+    const mpq_archive_create_options_s *options
 )
 {
-    return libmpq__writer_archive_create_mpqe(
-        out, path, authentication_code, authentication_code_size, options
-    );
+    return libmpq__writer_archive_create_mpqe(out, path, auth_code, auth_code_size, options);
 }
 
 /* Begin a streamed file through the internal writer implementation.
@@ -204,11 +202,11 @@ libmpq__archive_open(
 int32_t
 libmpq__archive_open_mpqe(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset,
-    const uint8_t *authentication_code, size_t authentication_code_size
+    const uint8_t *auth_code, size_t auth_code_size
 )
 {
     return libmpq__reader_archive_open_mpqe(
-        mpq_archive, mpq_filename, archive_offset, authentication_code, authentication_code_size
+        mpq_archive, mpq_filename, archive_offset, auth_code, auth_code_size
     );
 }
 

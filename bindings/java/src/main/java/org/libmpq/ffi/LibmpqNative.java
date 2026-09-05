@@ -282,9 +282,8 @@ public final class LibmpqNative {
     }
     /** Calls {@code libmpq__archive_open_mpqe} with borrowed authentication bytes. */
     public static int archiveOpenMpqe(MemorySegment out, MemorySegment path, long offset,
-                                      MemorySegment authenticationCode, long authenticationCodeSize) {
-        return callInt(ARCHIVE_OPEN_MPQE, out, path, offset, authenticationCode,
-                       nativeSizeT(authenticationCodeSize));
+                                      MemorySegment authCode, long authCodeSize) {
+        return callInt(ARCHIVE_OPEN_MPQE, out, path, offset, authCode, nativeSizeT(authCodeSize));
     }
     /** Calls {@code libmpq__archive_create} with a native options struct. */
     public static int archiveCreate(MemorySegment out, MemorySegment path, MemorySegment options) {
@@ -292,10 +291,9 @@ public final class LibmpqNative {
     }
     /** Calls {@code libmpq__archive_create_mpqe} with borrowed authentication bytes. */
     public static int archiveCreateMpqe(MemorySegment out, MemorySegment path,
-                                        MemorySegment authenticationCode, long authenticationCodeSize,
+                                        MemorySegment authCode, long authCodeSize,
                                         MemorySegment options) {
-        return callInt(ARCHIVE_CREATE_MPQE, out, path, authenticationCode,
-                       nativeSizeT(authenticationCodeSize), options);
+        return callInt(ARCHIVE_CREATE_MPQE, out, path, authCode, nativeSizeT(authCodeSize), options);
     }
     /** Starts a native streaming entry and writes its writer handle to out. */
     public static int fileBegin(MemorySegment archive, MemorySegment name, long size,

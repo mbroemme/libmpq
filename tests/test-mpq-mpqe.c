@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const uint8_t authentication_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+static const uint8_t auth_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
 
 /* The raw and MPQE fixtures are paired archive streams with matching bytes. */
 typedef struct
@@ -48,9 +48,7 @@ test_stream_reads(const char *raw_path, const char *mpqe_path)
     TEST_CHECK(test_read_path(raw_path, &raw_data, &raw_size) == 0);
     TEST_CHECK(raw_size > sizeof(cross_chunk) && raw_size % 64U != 0U);
     TEST_CHECK(
-        libmpq__stream_open_mpqe(
-            &stream, mpqe_path, authentication_code, sizeof(authentication_code) - 1U
-        ) == 0
+        libmpq__stream_open_mpqe(&stream, mpqe_path, auth_code, sizeof(auth_code) - 1U) == 0
     );
     TEST_CHECK(libmpq__stream_size(stream) == raw_size);
     TEST_CHECK(libmpq__stream_read_at(stream, 32, cross_chunk, sizeof(cross_chunk)) == 0);
@@ -92,7 +90,7 @@ test_stream_cross_batch(void)
         if (bytes > sizeof(block))
             bytes = sizeof(block);
         memcpy(block, encrypted + chunk, bytes);
-        libmpq__stream_mpqe_test_transform_chunk(block, authentication_code, chunk);
+        libmpq__stream_mpqe_test_transform_chunk(block, auth_code, chunk);
         memcpy(encrypted + chunk, block, bytes);
     }
     TEST_CHECK(test_temp_path(path, sizeof(path), "mpqe-batch") == 0);
@@ -100,11 +98,7 @@ test_stream_cross_batch(void)
     TEST_CHECK(file != NULL);
     TEST_CHECK(fwrite(encrypted, 1, sizeof(encrypted), file) == sizeof(encrypted));
     TEST_CHECK(fclose(file) == 0);
-    TEST_CHECK(
-        libmpq__stream_open_mpqe(
-            &stream, path, authentication_code, sizeof(authentication_code) - 1U
-        ) == 0
-    );
+    TEST_CHECK(libmpq__stream_open_mpqe(&stream, path, auth_code, sizeof(auth_code) - 1U) == 0);
     TEST_CHECK(libmpq__stream_read_at(stream, read_offset, read_data, sizeof(read_data)) == 0);
     TEST_CHECK(memcmp(read_data, plain + read_offset, sizeof(read_data)) == 0);
     TEST_CHECK(libmpq__stream_close(stream) == 0);
@@ -120,7 +114,7 @@ test_fixture(const mpqe_fixture_s *fixture, size_t index)
     char mpqe_path[512];
     mpq_archive_s *archive = NULL;
     mpq_archive_s *clone = NULL;
-    uint8_t wrong_code[sizeof(authentication_code) - 1U];
+    uint8_t wrong_code[sizeof(auth_code) - 1U];
     uint8_t *data = NULL;
     size_t size;
     char hash[65];
@@ -141,12 +135,11 @@ test_fixture(const mpqe_fixture_s *fixture, size_t index)
         );
         TEST_CHECK(archive == NULL);
         TEST_CHECK(
-            libmpq__archive_open_mpqe(
-                &archive, mpqe_path, 0, authentication_code, sizeof(authentication_code) - 2U
-            ) == LIBMPQ_ERROR_DECRYPT
+            libmpq__archive_open_mpqe(&archive, mpqe_path, 0, auth_code, sizeof(auth_code) - 2U) ==
+            LIBMPQ_ERROR_DECRYPT
         );
         TEST_CHECK(archive == NULL);
-        memcpy(wrong_code, authentication_code, sizeof(wrong_code));
+        memcpy(wrong_code, auth_code, sizeof(wrong_code));
         wrong_code[0] ^= 1U;
         result = libmpq__archive_open_mpqe(&archive, mpqe_path, 0, wrong_code, sizeof(wrong_code));
         TEST_CHECK(result < 0);
@@ -154,8 +147,7 @@ test_fixture(const mpqe_fixture_s *fixture, size_t index)
     }
     TEST_CHECK(
         libmpq__archive_open_mpqe(
-            &archive, mpqe_path, index == 0 ? 0 : -1, authentication_code,
-            sizeof(authentication_code) - 1U
+            &archive, mpqe_path, index == 0 ? 0 : -1, auth_code, sizeof(auth_code) - 1U
         ) == 0
     );
     TEST_CHECK(libmpq__archive_version(archive, &version) == 0 && version == fixture->version);
@@ -193,24 +185,21 @@ test_open_failure_output(void)
 
     archive = (mpq_archive_s *)(uintptr_t)1;
     TEST_CHECK(
-        libmpq__archive_open_mpqe(
-            &archive, missing_path, 0, authentication_code, sizeof(authentication_code) - 2U
-        ) == LIBMPQ_ERROR_DECRYPT
+        libmpq__archive_open_mpqe(&archive, missing_path, 0, auth_code, sizeof(auth_code) - 2U) ==
+        LIBMPQ_ERROR_DECRYPT
     );
     TEST_CHECK(archive == NULL);
 
     archive = (mpq_archive_s *)(uintptr_t)1;
     TEST_CHECK(
-        libmpq__archive_open_mpqe(
-            &archive, missing_path, 0, authentication_code, sizeof(authentication_code) - 1U
-        ) == LIBMPQ_ERROR_EXIST
+        libmpq__archive_open_mpqe(&archive, missing_path, 0, auth_code, sizeof(auth_code) - 1U) ==
+        LIBMPQ_ERROR_EXIST
     );
     TEST_CHECK(archive == NULL);
     TEST_CHECK(libmpq__archive_open(NULL, missing_path, 0) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(
-        libmpq__archive_open_mpqe(
-            NULL, missing_path, 0, authentication_code, sizeof(authentication_code) - 1U
-        ) == LIBMPQ_ERROR_EXIST
+        libmpq__archive_open_mpqe(NULL, missing_path, 0, auth_code, sizeof(auth_code) - 1U) ==
+        LIBMPQ_ERROR_EXIST
     );
     return 0;
 }

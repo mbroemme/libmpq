@@ -63,14 +63,12 @@ class Archive {
     }
 
     /** Open a caller-authenticated MPQE stream containing an MPQ archive. */
-    static Archive openMpqe(string path, const(ubyte)[] authenticationCode,
+    static Archive openMpqe(string path, const(ubyte)[] authCode,
                             off_t offset = -1) {
         mpq_archive_s* result;
-        auto authenticationPointer = authenticationCode.length == 0 ? null :
-            authenticationCode.ptr;
-        checkStatus(libmpq__archive_open_mpqe(&result, toStringz(path), offset,
-                                               authenticationPointer,
-                                               authenticationCode.length),
+        auto authPointer = authCode.length == 0 ? null : authCode.ptr;
+        checkStatus(libmpq__archive_open_mpqe(&result, toStringz(path), offset, authPointer,
+                                               authCode.length),
                     "libmpq__archive_open_mpqe");
         return new Archive(result);
     }
@@ -87,14 +85,13 @@ class Archive {
     }
 
     /** Create a new MPQE-wrapped archive with borrowed authentication bytes. */
-    static Archive createMpqe(string path, const(ubyte)[] authenticationCode,
+    static Archive createMpqe(string path, const(ubyte)[] authCode,
                               ArchiveCreateOptions options = ArchiveCreateOptions.v1()) {
         auto nativeOptions = options.nativeOptions();
         mpq_archive_s* result;
-        auto authenticationPointer = authenticationCode.length == 0 ? null :
-            authenticationCode.ptr;
-        checkStatus(libmpq__archive_create_mpqe(&result, toStringz(path), authenticationPointer,
-                                                 authenticationCode.length, &nativeOptions),
+        auto authPointer = authCode.length == 0 ? null : authCode.ptr;
+        checkStatus(libmpq__archive_create_mpqe(&result, toStringz(path), authPointer,
+                                                 authCode.length, &nativeOptions),
                     "libmpq__archive_create_mpqe");
         return new Archive(result);
     }

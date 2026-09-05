@@ -851,8 +851,8 @@ libmpq__writer_archive_create(
  */
 int32_t
 libmpq__writer_archive_create_mpqe(
-    mpq_archive_s **out, const char *path, const uint8_t *authentication_code,
-    size_t authentication_code_size, const mpq_archive_create_options_s *options
+    mpq_archive_s **out, const char *path, const uint8_t *auth_code, size_t auth_code_size,
+    const mpq_archive_create_options_s *options
 )
 {
     FILE *raw = NULL;
@@ -867,7 +867,7 @@ libmpq__writer_archive_create_mpqe(
     if (out == NULL)
         return LIBMPQ_ERROR_EXIST;
     *out = NULL;
-    result = libmpq__mpqe_key(key, authentication_code, authentication_code_size);
+    result = libmpq__mpqe_key(key, auth_code, auth_code_size);
     if (result != LIBMPQ_SUCCESS)
         return result;
     result = writer_validate_options(options);

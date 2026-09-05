@@ -106,16 +106,16 @@ private void testFixture() {
 private void testMpqeFixture() {
     auto root = environment.get("LIBMPQ_SOURCE_DIR", ".");
     auto path = buildPath(root, "tests", "fixtures", "mpq-v1-features.mpqe");
-    immutable ubyte[] authenticationCode =
+    immutable ubyte[] authCode =
         cast(immutable(ubyte)[])"LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
-    auto archive = Archive.openMpqe(path, authenticationCode, 0);
+    auto archive = Archive.openMpqe(path, authCode, 0);
     scope(exit) archive.close();
     assert(archive.version_() == 1);
     assert(archive.file("overview.txt").read().length > 0);
 
     bool failed;
     try {
-        auto unused = Archive.openMpqe(path, authenticationCode[0 .. $ - 1], 0);
+        auto unused = Archive.openMpqe(path, authCode[0 .. $ - 1], 0);
     } catch (MPQException error) {
         failed = error.code == ERROR_DECRYPT;
     }
@@ -124,13 +124,13 @@ private void testMpqeFixture() {
 
 private void testMpqeCreate() {
     auto path = temporaryArchive("created.mpqe");
-    immutable ubyte[] authenticationCode =
+    immutable ubyte[] authCode =
         cast(immutable(ubyte)[])"LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
     write(path, cast(const(ubyte)[])"previous destination");
-    auto archive = Archive.createMpqe(path, authenticationCode, ArchiveCreateOptions.v2());
+    auto archive = Archive.createMpqe(path, authCode, ArchiveCreateOptions.v2());
     archive.add("payload.txt", cast(const(ubyte)[])"D MPQE writer regression\n");
     archive.close();
-    auto reopened = Archive.openMpqe(path, authenticationCode, 0);
+    auto reopened = Archive.openMpqe(path, authCode, 0);
     scope(exit) { reopened.close(); remove(path); }
     assert(reopened.version_() == 2);
     assert(reopened.file("payload.txt").read() ==

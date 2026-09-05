@@ -34,7 +34,7 @@ int32_t libmpq__reader_archive_open_path(
 );
 int32_t libmpq__reader_archive_open_mpqe(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset,
-    const uint8_t *authentication_code, size_t authentication_code_size
+    const uint8_t *auth_code, size_t auth_code_size
 );
 int32_t libmpq__reader_archive_clone(mpq_archive_s **clone, const mpq_archive_s *source);
 

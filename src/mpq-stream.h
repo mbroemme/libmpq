@@ -24,8 +24,7 @@ typedef struct mpq_stream mpq_stream_s;
 
 int32_t libmpq__stream_open_file(mpq_stream_s **stream, const char *path);
 int32_t libmpq__stream_open_mpqe(
-    mpq_stream_s **stream, const char *path, const uint8_t *authentication_code,
-    size_t authentication_code_size
+    mpq_stream_s **stream, const char *path, const uint8_t *auth_code, size_t auth_code_size
 );
 int32_t libmpq__stream_clone(mpq_stream_s **stream, const mpq_stream_s *source, const char *path);
 int32_t libmpq__stream_read_at(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size);
@@ -34,8 +33,7 @@ int32_t libmpq__stream_close(mpq_stream_s *stream);
 void libmpq__stream_discard(mpq_stream_s *stream);
 
 int32_t libmpq__mpqe_key(
-    uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE], const uint8_t *authentication_code,
-    size_t authentication_code_size
+    uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE], const uint8_t *auth_code, size_t auth_code_size
 );
 void libmpq__mpqe_transform_chunk(
     uint8_t chunk[LIBMPQ_MPQE_CHUNK_SIZE], const uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE],
@@ -45,7 +43,7 @@ void libmpq__mpqe_clear(void *buffer, size_t size);
 
 #ifdef LIBMPQ_TESTING
 void libmpq__stream_mpqe_test_transform_chunk(
-    uint8_t chunk[64], const uint8_t *authentication_code, uint64_t offset
+    uint8_t chunk[64], const uint8_t *auth_code, uint64_t offset
 );
 #endif
 

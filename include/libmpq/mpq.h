@@ -194,7 +194,7 @@ extern LIBMPQ_API int32_t libmpq__archive_open(
 /*
  * Open a read-only MPQE-encrypted stream containing an MPQ archive. MPQE is
  * an installer transport layer and is decrypted before the normal MPQ header,
- * table, and file processing begins. authentication_code is an opaque
+ * table, and file processing begins. auth_code is an opaque
  * caller-owned buffer: at least its first 32 bytes must be available for the
  * legacy MPQE key derivation. The buffer is neither retained nor modified.
  *
@@ -208,7 +208,7 @@ extern LIBMPQ_API int32_t libmpq__archive_open(
  */
 extern LIBMPQ_API int32_t libmpq__archive_open_mpqe(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset,
-    const uint8_t *authentication_code, size_t authentication_code_size
+    const uint8_t *auth_code, size_t auth_code_size
 );
 
 /*
@@ -227,7 +227,7 @@ extern LIBMPQ_API int32_t libmpq__archive_create(
  * Create a new MPQE-encrypted stream containing an MPQ v1 or v2 archive.
  * The archive is first finalized in a private temporary file, then encrypted
  * and atomically published at mpqe_filename when libmpq__archive_close()
- * succeeds. authentication_code is borrowed only during this call; at least
+ * succeeds. auth_code is borrowed only during this call; at least
  * 32 bytes are required and invalid input returns LIBMPQ_ERROR_DECRYPT.
  *
  * Existing MPQE streams cannot be modified. Creation requires temporary
@@ -237,8 +237,8 @@ extern LIBMPQ_API int32_t libmpq__archive_create(
  * owner-only temporary plaintext file behind.
  */
 extern LIBMPQ_API int32_t libmpq__archive_create_mpqe(
-    mpq_archive_s **mpq_archive, const char *mpqe_filename, const uint8_t *authentication_code,
-    size_t authentication_code_size, const mpq_archive_create_options_s *options
+    mpq_archive_s **mpq_archive, const char *mpqe_filename, const uint8_t *auth_code,
+    size_t auth_code_size, const mpq_archive_create_options_s *options
 );
 
 /*

@@ -68,8 +68,7 @@ libmpq__stream_bswap32(uint32_t value)
 /* Derive the MPQE working key from the installer authentication-code bytes. */
 int32_t
 libmpq__mpqe_key(
-    uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE], const uint8_t *authentication_code,
-    size_t authentication_code_size
+    uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE], const uint8_t *auth_code, size_t auth_code_size
 )
 {
     static const char template_key[] =
@@ -79,13 +78,11 @@ libmpq__mpqe_key(
     uint8_t native_key[LIBMPQ_MPQE_CHUNK_SIZE];
     size_t i;
 
-    if (key == NULL || authentication_code == NULL ||
-        authentication_code_size < LIBMPQ_MPQE_AUTH_CODE_MINIMUM)
+    if (key == NULL || auth_code == NULL || auth_code_size < LIBMPQ_MPQE_AUTH_CODE_MINIMUM)
         return LIBMPQ_ERROR_DECRYPT;
     memcpy(native_key, template_key, sizeof(native_key));
     for (i = 0; i < sizeof(source_words); ++i) {
-        uint32_t value =
-            libmpq__load_le32(authentication_code + source_words[i] * sizeof(uint32_t));
+        uint32_t value = libmpq__load_le32(auth_code + source_words[i] * sizeof(uint32_t));
 
         libmpq__store_le32(native_key + (4U + target_words[i]) * sizeof(uint32_t), value);
     }
@@ -200,12 +197,12 @@ libmpq__mpqe_transform_chunk(
 /* Build deterministic test ciphertext with the same symmetric MPQE transform. */
 void
 libmpq__stream_mpqe_test_transform_chunk(
-    uint8_t chunk[LIBMPQ_MPQE_CHUNK_SIZE], const uint8_t *authentication_code, uint64_t offset
+    uint8_t chunk[LIBMPQ_MPQE_CHUNK_SIZE], const uint8_t *auth_code, uint64_t offset
 )
 {
     uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE];
 
-    if (libmpq__mpqe_key(key, authentication_code, LIBMPQ_MPQE_AUTH_CODE_MINIMUM) == LIBMPQ_SUCCESS)
+    if (libmpq__mpqe_key(key, auth_code, LIBMPQ_MPQE_AUTH_CODE_MINIMUM) == LIBMPQ_SUCCESS)
         libmpq__mpqe_transform_chunk(chunk, key, offset);
     libmpq__mpqe_clear(key, sizeof(key));
 }
@@ -285,8 +282,7 @@ libmpq__stream_open_file(mpq_stream_s **stream, const char *path)
 
 int32_t
 libmpq__stream_open_mpqe(
-    mpq_stream_s **stream, const char *path, const uint8_t *authentication_code,
-    size_t authentication_code_size
+    mpq_stream_s **stream, const char *path, const uint8_t *auth_code, size_t auth_code_size
 )
 {
     uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE];
@@ -295,7 +291,7 @@ libmpq__stream_open_mpqe(
     if (stream == NULL)
         return LIBMPQ_ERROR_EXIST;
     *stream = NULL;
-    result = libmpq__mpqe_key(key, authentication_code, authentication_code_size);
+    result = libmpq__mpqe_key(key, auth_code, auth_code_size);
     if (result != LIBMPQ_SUCCESS)
         return result;
     result = libmpq__stream_open_common(stream, path);

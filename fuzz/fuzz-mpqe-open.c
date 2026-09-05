@@ -24,7 +24,7 @@
 
 #define LIBMPQ_FUZZ_MAX_INPUT (1024U * 1024U)
 
-static const uint8_t authentication_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+static const uint8_t auth_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
 static int archive_fd = -1;
 static char archive_path[] = "/tmp/libmpq-fuzz-mpqe.XXXXXX";
 
@@ -70,8 +70,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         mpq_archive_s *archive = NULL;
 
         if (libmpq__archive_open_mpqe(
-                &archive, archive_path, archive_offsets[i], authentication_code,
-                sizeof(authentication_code) - 1
+                &archive, archive_path, archive_offsets[i], auth_code, sizeof(auth_code) - 1
             ) == 0) {
             libmpq__archive_close(archive);
         }

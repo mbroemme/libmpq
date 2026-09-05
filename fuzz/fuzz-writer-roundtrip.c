@@ -22,7 +22,7 @@
 #define LIBMPQ_FUZZ_WRITER_MAX_INPUT 65536U
 
 static char archive_path[] = "/tmp/libmpq-fuzz-writer.XXXXXX";
-static const uint8_t mpqe_authentication_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+static const uint8_t mpqe_auth_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
 
 /* Release the output path created for this fuzzer process. */
 static void
@@ -133,8 +133,8 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     unlink(archive_path);
 
     if ((mpqe ? libmpq__archive_create_mpqe(
-                    &archive, archive_path, mpqe_authentication_code,
-                    sizeof(mpqe_authentication_code) - 1U, &archive_options
+                    &archive, archive_path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1U,
+                    &archive_options
                 )
               : libmpq__archive_create(&archive, archive_path, &archive_options)) != 0)
         goto cleanup;
@@ -156,8 +156,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     if (result != 0)
         goto cleanup;
     if ((mpqe ? libmpq__archive_open_mpqe(
-                    &archive, archive_path, 0, mpqe_authentication_code,
-                    sizeof(mpqe_authentication_code) - 1U
+                    &archive, archive_path, 0, mpqe_auth_code, sizeof(mpqe_auth_code) - 1U
                 )
               : libmpq__archive_open(&archive, archive_path, 0)) == 0) {
         if (libmpq__file_number(archive, "roundtrip.bin", &number) != 0)

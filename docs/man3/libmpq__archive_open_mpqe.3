@@ -17,8 +17,8 @@ libmpq__archive_open_mpqe \- open an MPQE-wrapped MPQ archive for reading.
 .BI "        mpq_archive_s **" "mpq_archive,"
 .BI "        const char     *" "mpq_filename,"
 .BI "        libmpq__off_t   " "archive_offset,"
-.BI "        const uint8_t  *" "authentication_code,"
-.BI "        size_t          " "authentication_code_size"
+.BI "        const uint8_t  *" "auth_code,"
+.BI "        size_t          " "auth_code_size"
 .BI ");"
 .fi
 .SH DESCRIPTION
@@ -29,7 +29,7 @@ reading and then performs the ordinary MPQ parser and file-reading operations.
 On success, close the allocated archive handle with
 \fBlibmpq__archive_close\fP().
 .LP
-\fIauthentication_code\fP is supplied by the caller. At least the first 32
+\fIauth_code\fP is supplied by the caller. At least the first 32
 bytes are required; additional bytes are ignored. libmpq does not provide,
 discover, log, persist, or otherwise manage authentication codes. MPQE cannot
 identify a well-formed but incorrect code. libmpq parses the resulting bytes
@@ -45,7 +45,7 @@ errors documented for
 \fBlibmpq__archive_open\fP(), the function returns the following error.
 .TP
 .B LIBMPQ_ERROR_DECRYPT
-\fIauthentication_code\fP is NULL or shorter than 32 bytes.
+\fIauth_code\fP is NULL or shorter than 32 bytes.
 .SH SEE ALSO
 .BR libmpq__archive_open (3),
 .BR libmpq__archive_close (3),
