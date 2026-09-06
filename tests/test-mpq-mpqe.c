@@ -10,6 +10,20 @@
 
 static const uint8_t auth_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
 
+/* Apply the private symmetric transform with a test-owned derived MPQE key. */
+static int32_t
+transform_chunk(uint8_t chunk[LIBMPQ_MPQE_CHUNK_SIZE], uint64_t offset)
+{
+    uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE];
+    int32_t result;
+
+    result = libmpq__mpqe_key(key, auth_code, sizeof(auth_code) - 1U);
+    if (result == 0)
+        libmpq__mpqe_transform_chunk(chunk, key, offset);
+    libmpq__mpqe_clear(key, sizeof(key));
+    return result;
+}
+
 /* The raw and MPQE fixtures are paired archive streams with matching bytes. */
 typedef struct
 {
@@ -90,7 +104,7 @@ test_stream_cross_batch(void)
         if (bytes > sizeof(block))
             bytes = sizeof(block);
         memcpy(block, encrypted + chunk, bytes);
-        libmpq__stream_mpqe_test_transform_chunk(block, auth_code, chunk);
+        TEST_CHECK(transform_chunk(block, chunk) == 0);
         memcpy(encrypted + chunk, block, bytes);
     }
     TEST_CHECK(test_temp_path(path, sizeof(path), "mpqe-batch") == 0);

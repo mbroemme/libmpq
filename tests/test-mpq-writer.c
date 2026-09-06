@@ -1,4 +1,5 @@
 /* Exercise deterministic writer output and generated writer/readback properties. */
+#include "mpq-internal.h"
 #include "mpq-stream.h"
 #include "mpq-writer.h"
 #include "test-mpq-helper.h"
@@ -58,6 +59,76 @@ static const writer_mode_s writer_modes[] = {
 };
 
 static const uint8_t mpqe_auth_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+
+typedef enum
+{
+    MPQE_WRITER_FAULT_FINALIZE,
+    MPQE_WRITER_FAULT_TRANSFORM,
+    MPQE_WRITER_FAULT_OUTPUT_CLOSE,
+    MPQE_WRITER_FAULT_PUBLISH
+} mpqe_writer_fault_e;
+
+/* Per-archive operations fail deterministically without affecting other writers. */
+static int32_t
+fail_finalize(mpq_archive_s *archive)
+{
+    (void)archive;
+    return LIBMPQ_ERROR_WRITE;
+}
+
+static int32_t
+fail_transform(mpq_archive_s *archive)
+{
+    (void)archive;
+    return LIBMPQ_ERROR_WRITE;
+}
+
+static int
+fail_close_output(FILE *output)
+{
+    (void)fclose(output);
+    return EOF;
+}
+
+static int32_t
+fail_publish(int directory, const char *temporary, const char *destination)
+{
+    (void)directory;
+    (void)temporary;
+    (void)destination;
+    return LIBMPQ_ERROR_WRITE;
+}
+
+static void
+apply_finalize_fault(mpq_writer_mpqe_ops_s *ops)
+{
+    ops->finalize = fail_finalize;
+}
+
+static void
+apply_transform_fault(mpq_writer_mpqe_ops_s *ops)
+{
+    ops->transform = fail_transform;
+}
+
+static void
+apply_output_close_fault(mpq_writer_mpqe_ops_s *ops)
+{
+    ops->close_output = fail_close_output;
+}
+
+static void
+apply_publish_fault(mpq_writer_mpqe_ops_s *ops)
+{
+    ops->publish = fail_publish;
+}
+
+static void (*const fault_appliers[])(mpq_writer_mpqe_ops_s *) = {
+    apply_finalize_fault,
+    apply_transform_fault,
+    apply_output_close_fault,
+    apply_publish_fault,
+};
 
 /* Write a sentinel destination used to prove failed publication never replaces it. */
 static int
@@ -234,6 +305,20 @@ test_mpqe_writer_credential_validation(void)
     return 0;
 }
 
+/* Apply the private symmetric transform with a test-owned derived MPQE key. */
+static int32_t
+transform_mpqe_chunk(uint8_t chunk[LIBMPQ_MPQE_CHUNK_SIZE], uint64_t offset)
+{
+    uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE];
+    int32_t result;
+
+    result = libmpq__mpqe_key(key, mpqe_auth_code, sizeof(mpqe_auth_code) - 1U);
+    if (result == LIBMPQ_SUCCESS)
+        libmpq__mpqe_transform_chunk(chunk, key, offset);
+    libmpq__mpqe_clear(key, sizeof(key));
+    return result;
+}
+
 /* Decrypt one generated MPQE file with the private test transform for byte equality checks. */
 static int
 decrypt_mpqe_path(const char *path, uint8_t **data, size_t *size)
@@ -250,7 +335,13 @@ decrypt_mpqe_path(const char *path, uint8_t **data, size_t *size)
             physical = sizeof(chunk);
         memset(chunk, 0, sizeof(chunk));
         memcpy(chunk, *data + offset, physical);
-        libmpq__stream_mpqe_test_transform_chunk(chunk, mpqe_auth_code, offset);
+        if (transform_mpqe_chunk(chunk, offset) != LIBMPQ_SUCCESS) {
+            libmpq__mpqe_clear(chunk, sizeof(chunk));
+            free(*data);
+            *data = NULL;
+            *size = 0;
+            return 1;
+        }
         memcpy(*data + offset, chunk, physical);
     }
     return 0;
@@ -339,7 +430,7 @@ count_mpqe_temps(const char *directory)
 
 /* A handled finalization failure must consume the writer and preserve an existing destination. */
 static int
-test_mpqe_writer_fault(libmpq_writer_test_fault_e fault)
+test_mpqe_writer_fault(mpqe_writer_fault_e fault)
 {
     char directory[160] = { 0 };
     char path[176] = { 0 };
@@ -347,6 +438,7 @@ test_mpqe_writer_fault(libmpq_writer_test_fault_e fault)
     uint8_t *actual = NULL;
     size_t actual_size;
     mpq_archive_s *archive = NULL;
+    mpq_writer_mpqe_ops_s ops;
     int32_t result;
     int status = 1;
 
@@ -361,19 +453,23 @@ test_mpqe_writer_fault(libmpq_writer_test_fault_e fault)
         ) != 0 ||
         libmpq__file_add(archive, "payload.bin", original, sizeof(original) - 1U, NULL) != 0)
         goto cleanup;
-    libmpq__writer_test_fault_set(fault);
+    if (archive->write_mpqe_ops == NULL)
+        goto cleanup;
+    ops = *archive->write_mpqe_ops;
+    if ((size_t)fault >= sizeof(fault_appliers) / sizeof(fault_appliers[0]))
+        goto cleanup;
+    fault_appliers[fault](&ops);
+    archive->write_mpqe_ops = &ops;
     result = libmpq__archive_close(archive);
     archive = NULL;
     if (result == 0)
         goto cleanup;
-    libmpq__writer_test_fault_set(LIBMPQ_WRITER_TEST_FAULT_NONE);
     if (test_read_path(path, &actual, &actual_size) != 0 || actual_size != sizeof(original) - 1U ||
         memcmp(actual, original, actual_size) != 0 || count_mpqe_temps(directory) != 0)
         goto cleanup;
     status = 0;
 
 cleanup:
-    libmpq__writer_test_fault_set(LIBMPQ_WRITER_TEST_FAULT_NONE);
     if (archive != NULL)
         (void)libmpq__archive_close(archive);
     free(actual);
@@ -723,9 +819,9 @@ main(void)
     TEST_CHECK(test_mpqe_writer_byte_equality(LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
     TEST_CHECK(test_mpqe_writer_byte_equality(LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
     TEST_CHECK(test_mpqe_writer_chdir() == 0);
-    TEST_CHECK(test_mpqe_writer_fault(LIBMPQ_WRITER_TEST_FAULT_FINALIZE) == 0);
-    TEST_CHECK(test_mpqe_writer_fault(LIBMPQ_WRITER_TEST_FAULT_TRANSFORM) == 0);
-    TEST_CHECK(test_mpqe_writer_fault(LIBMPQ_WRITER_TEST_FAULT_OUTPUT_CLOSE) == 0);
-    TEST_CHECK(test_mpqe_writer_fault(LIBMPQ_WRITER_TEST_FAULT_PUBLISH) == 0);
+    TEST_CHECK(test_mpqe_writer_fault(MPQE_WRITER_FAULT_FINALIZE) == 0);
+    TEST_CHECK(test_mpqe_writer_fault(MPQE_WRITER_FAULT_TRANSFORM) == 0);
+    TEST_CHECK(test_mpqe_writer_fault(MPQE_WRITER_FAULT_OUTPUT_CLOSE) == 0);
+    TEST_CHECK(test_mpqe_writer_fault(MPQE_WRITER_FAULT_PUBLISH) == 0);
     return 0;
 }

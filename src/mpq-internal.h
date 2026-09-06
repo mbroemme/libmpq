@@ -172,6 +172,8 @@ typedef struct
 } PACK_STRUCT mpq_map_s;
 #include "mpq-pack-end.h"
 
+struct mpq_writer_mpqe_ops;
+
 /*
  * Runtime handle for an opened or newly created MPQ archive. It owns the
  * backing stream, decoded header and tables, file mappings, and per-file
@@ -219,6 +221,7 @@ struct mpq_archive
     int write_mpqe_directory;     /* Destination directory descriptor for anchored operations. */
     char *write_mpqe_destination; /* Final MPQE destination basename in that directory. */
     char *write_mpqe_output_path; /* Secure encrypted temporary basename in that directory. */
+    const struct mpq_writer_mpqe_ops *write_mpqe_ops; /* Private MPQE finalization operations. */
 };
 
 /*

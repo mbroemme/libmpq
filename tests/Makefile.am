@@ -33,7 +33,7 @@ test_compression_SOURCES = test-mpq-compression.c $(COMMON_SOURCES)
 test_crypto_SOURCES = test-mpq-crypto.c ../src/mpq-crypto.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_huffman_SOURCES = test-mpq-huffman.c ../src/mpq-huffman.c $(COMMON_SOURCES)
 test_malformed_SOURCES = test-mpq-malformed.c $(COMMON_SOURCES)
-test_mpqe_SOURCES = test-mpq-mpqe.c ../src/mpq-stream.c ../src/mpq-endian.c $(COMMON_SOURCES)
+test_mpqe_SOURCES = test-mpq-mpqe.c $(COMMON_SOURCES)
 test_endian_SOURCES = test-mpq-endian.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_fixtures_SOURCES = test-mpq-fixtures.c $(COMMON_SOURCES)
 test_mpq_SOURCES = test-mpq-api.c $(COMMON_SOURCES)
@@ -46,29 +46,20 @@ test_pkware_SOURCES = test-mpq-pkware.c \
 	$(COMMON_SOURCES)
 test_reader_SOURCES = test-mpq-reader.c $(COMMON_SOURCES)
 test_wave_SOURCES = test-mpq-wave.c ../src/mpq-wave.c ../src/mpq-endian.c $(COMMON_SOURCES)
-# Build this target's private library copy with deterministic MPQE fault hooks.
-test_writer_SOURCES = \
-	test-mpq-writer.c \
-	../src/mpq-compression.c \
-	../src/mpq-crypto.c \
-	../src/mpq-endian.c \
-	../src/mpq-huffman.c \
-	../src/mpq-api.c \
-	../src/mpq-pkware.c \
-	../src/mpq-reader.c \
-	../src/mpq-stream.c \
-	../src/mpq-wave.c \
-	../src/mpq-writer.c \
-	$(COMMON_SOURCES)
+test_writer_SOURCES = test-mpq-writer.c $(COMMON_SOURCES)
+
+# Reuse the library's already-built hidden MPQE stream objects for private checks.
+PRIVATE_STREAM_LDADD = $(top_builddir)/src/mpq-stream.lo $(top_builddir)/src/mpq-endian.lo
+test_mpqe_LDADD = $(PRIVATE_STREAM_LDADD) $(LDADD)
+test_writer_LDADD = $(PRIVATE_STREAM_LDADD) $(LDADD)
 
 # Fixture-dependent tests resolve archives from the source tree, including
 # when Automake runs them from a separate VPATH or distcheck build directory.
 test_huffman_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_fixtures_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
-test_mpqe_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"' -DLIBMPQ_TESTING
+test_mpqe_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_pkware_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_reader_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
-test_writer_CPPFLAGS = $(AM_CPPFLAGS) -DLIBMPQ_TESTING
 
 # Ship the deterministic fixture corpus and all module-mapped test sources.
 EXTRA_DIST = \

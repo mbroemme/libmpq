@@ -41,10 +41,4 @@ void libmpq__mpqe_transform_chunk(
 );
 void libmpq__mpqe_clear(void *buffer, size_t size);
 
-#ifdef LIBMPQ_TESTING
-void libmpq__stream_mpqe_test_transform_chunk(
-    uint8_t chunk[64], const uint8_t *auth_code, uint64_t offset
-);
-#endif
-
 #endif /* LIBMPQ_STREAM_H */

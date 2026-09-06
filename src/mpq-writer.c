@@ -38,24 +38,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#ifdef LIBMPQ_TESTING
-static libmpq_writer_test_fault_e libmpq__writer_test_fault;
-
-void
-libmpq__writer_test_fault_set(libmpq_writer_test_fault_e fault)
-{
-    libmpq__writer_test_fault = fault;
-}
-
-static int
-writer_test_fault_active(libmpq_writer_test_fault_e fault)
-{
-    return libmpq__writer_test_fault == fault;
-}
-#else
-#define writer_test_fault_active(fault) FALSE
-#endif
-
 /* Return the smallest supported power-of-two table capacity at or above value.
  * MPQ hash tables use power-of-two probing, so this helper provides the next
  * legal capacity without exceeding the format's 32-bit range. */
@@ -274,9 +256,6 @@ finalize_archive(mpq_archive_s *a)
     size_t bytes;
     uint64_t end;
     uint8_t header[44];
-
-    if (a->write_mpqe && writer_test_fault_active(LIBMPQ_WRITER_TEST_FAULT_FINALIZE))
-        return LIBMPQ_ERROR_WRITE;
 
     /* An unfinished streamed file would leave archive tables inconsistent. */
     if (a->write_current)
@@ -613,8 +592,6 @@ transform_mpqe(mpq_archive_s *a)
     uint64_t offset = 0;
     size_t read;
 
-    if (writer_test_fault_active(LIBMPQ_WRITER_TEST_FAULT_TRANSFORM))
-        return LIBMPQ_ERROR_WRITE;
     if (fflush(a->fp) != 0)
         return LIBMPQ_ERROR_WRITE;
     if (fseeko(a->fp, 0, SEEK_SET) < 0)
@@ -635,15 +612,27 @@ transform_mpqe(mpq_archive_s *a)
     return LIBMPQ_SUCCESS;
 }
 
+/* Production MPQE finalization operations used by every newly created MPQE archive. */
+static const mpq_writer_mpqe_ops_s default_mpqe_ops = {
+    finalize_archive,
+    transform_mpqe,
+    fclose,
+    atomic_replace,
+};
+
 /* Finish MPQE output only after the ordinary MPQ writer has finalized its raw stream. */
 int32_t
 libmpq__writer_finalize_mpqe(mpq_archive_s *a)
 {
+    const mpq_writer_mpqe_ops_s *ops;
     int32_t result;
 
     if (a == NULL || !a->write_mpqe)
         return LIBMPQ_ERROR_EXIST;
-    result = transform_mpqe(a);
+    ops = a->write_mpqe_ops;
+    if (ops == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    result = ops->transform(a);
     if (a->fp != NULL && fclose(a->fp) != 0 && result == LIBMPQ_SUCCESS)
         result = LIBMPQ_ERROR_CLOSE;
     a->fp = NULL;
@@ -651,21 +640,13 @@ libmpq__writer_finalize_mpqe(mpq_archive_s *a)
         return result;
     if (unlinkat(a->write_mpqe_directory, a->filename, 0) != 0)
         return LIBMPQ_ERROR_WRITE;
-    if (writer_test_fault_active(LIBMPQ_WRITER_TEST_FAULT_OUTPUT_CLOSE)) {
-        (void)fclose(a->write_mpqe_output);
-        a->write_mpqe_output = NULL;
-        return LIBMPQ_ERROR_CLOSE;
-    }
-    if (fclose(a->write_mpqe_output) != 0) {
+    if (ops->close_output(a->write_mpqe_output) != 0) {
         a->write_mpqe_output = NULL;
         return LIBMPQ_ERROR_CLOSE;
     }
     a->write_mpqe_output = NULL;
-    result = writer_test_fault_active(LIBMPQ_WRITER_TEST_FAULT_PUBLISH)
-                 ? LIBMPQ_ERROR_WRITE
-                 : atomic_replace(
-                       a->write_mpqe_directory, a->write_mpqe_output_path, a->write_mpqe_destination
-                   );
+    result =
+        ops->publish(a->write_mpqe_directory, a->write_mpqe_output_path, a->write_mpqe_destination);
     if (result == LIBMPQ_SUCCESS)
         a->write_finalized = TRUE;
     return result;
@@ -912,6 +893,7 @@ libmpq__writer_archive_create_mpqe(
     (*out)->write_mpqe_directory = directory;
     (*out)->write_mpqe_destination = destination;
     (*out)->write_mpqe_output_path = encrypted_path;
+    (*out)->write_mpqe_ops = &default_mpqe_ops;
     encrypted = NULL;
     encrypted_path = NULL;
     destination = NULL;
@@ -1167,5 +1149,9 @@ libmpq__writer_file_add_path(
 int32_t
 libmpq__writer_finalize(mpq_archive_s *a)
 {
+    if (a == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (a->write_mpqe && a->write_mpqe_ops != NULL)
+        return a->write_mpqe_ops->finalize(a);
     return finalize_archive(a);
 }

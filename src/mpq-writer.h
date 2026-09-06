@@ -21,6 +21,16 @@
 #define LIBMPQ_WRITER_H
 
 #include <libmpq/mpq.h>
+#include <stdio.h>
+
+/* Private backend operations used during MPQE writer finalization. */
+typedef struct mpq_writer_mpqe_ops
+{
+    int32_t (*finalize)(mpq_archive_s *archive);
+    int32_t (*transform)(mpq_archive_s *archive);
+    int (*close_output)(FILE *output);
+    int32_t (*publish)(int directory, const char *temporary, const char *destination);
+} mpq_writer_mpqe_ops_s;
 
 /* Create a seekable archive and initialize its writer metadata from options. */
 int32_t libmpq__writer_archive_create(
@@ -58,19 +68,5 @@ int32_t libmpq__writer_file_add_path(
 int32_t libmpq__writer_finalize(mpq_archive_s *archive);
 int32_t libmpq__writer_finalize_mpqe(mpq_archive_s *archive);
 void libmpq__writer_mpqe_cleanup(mpq_archive_s *archive);
-
-#ifdef LIBMPQ_TESTING
-typedef enum
-{
-    LIBMPQ_WRITER_TEST_FAULT_NONE,
-    LIBMPQ_WRITER_TEST_FAULT_FINALIZE,
-    LIBMPQ_WRITER_TEST_FAULT_TRANSFORM,
-    LIBMPQ_WRITER_TEST_FAULT_OUTPUT_CLOSE,
-    LIBMPQ_WRITER_TEST_FAULT_PUBLISH
-} libmpq_writer_test_fault_e;
-
-/* Test-only deterministic failure injection for MPQE writer cleanup coverage. */
-void libmpq__writer_test_fault_set(libmpq_writer_test_fault_e fault);
-#endif
 
 #endif /* LIBMPQ_WRITER_H */

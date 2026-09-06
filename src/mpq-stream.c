@@ -192,22 +192,6 @@ libmpq__mpqe_transform_chunk(
     libmpq__mpqe_clear(mirror, sizeof(mirror));
 }
 
-#ifdef LIBMPQ_TESTING
-
-/* Build deterministic test ciphertext with the same symmetric MPQE transform. */
-void
-libmpq__stream_mpqe_test_transform_chunk(
-    uint8_t chunk[LIBMPQ_MPQE_CHUNK_SIZE], const uint8_t *auth_code, uint64_t offset
-)
-{
-    uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE];
-
-    if (libmpq__mpqe_key(key, auth_code, LIBMPQ_MPQE_AUTH_CODE_MINIMUM) == LIBMPQ_SUCCESS)
-        libmpq__mpqe_transform_chunk(chunk, key, offset);
-    libmpq__mpqe_clear(key, sizeof(key));
-}
-#endif
-
 /* Seek through the project offset type without narrowing large file positions. */
 static int32_t
 libmpq__stream_file_seek(mpq_stream_s *stream, uint64_t offset)
