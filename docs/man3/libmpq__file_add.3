@@ -2,9 +2,18 @@
 .SH NAME
 libmpq__file_add \- add an in-memory file to an MPQ archive
 .SH SYNOPSIS
-.B #include <libmpq/mpq.h>
-.PP
-.B int32_t libmpq__file_add(mpq_archive_s *archive, const char *name, const uint8_t *buffer, libmpq__off_t size, const mpq_file_options_s *options);
+.nf
+.B
+#include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__file_add("
+.BI "        mpq_archive_s  *" "archive,"
+.BI "        const char     *" "name,"
+.BI "        const uint8_t  *" "buffer,"
+.BI "        libmpq__off_t   " "size,"
+.BI "        const mpq_file_options_s *" "options"
+.BI ");"
+.fi
 .SH DESCRIPTION
 Adds a complete memory buffer using the same options as the streaming writer.
 .SH SEE ALSO

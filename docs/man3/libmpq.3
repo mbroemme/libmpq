@@ -39,16 +39,16 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI ");"
 .sp
 .BI "int32_t libmpq__archive_create("
-.BI "        mpq_archive_s                    **" "mpq_archive",
-.BI "        const char                        *" "mpq_filename",
+.BI "        mpq_archive_s **" "mpq_archive",
+.BI "        const char     *" "mpq_filename",
 .BI "        const mpq_archive_create_options_s *" "options"
 .BI ");"
 .sp
 .BI "int32_t libmpq__archive_create_mpqe("
-.BI "        mpq_archive_s                    **" "mpq_archive",
-.BI "        const char                        *" "mpq_filename",
-.BI "        const uint8_t                     *" "auth_code",
-.BI "        size_t                             " "auth_code_size",
+.BI "        mpq_archive_s **" "mpq_archive",
+.BI "        const char     *" "mpq_filename",
+.BI "        const uint8_t  *" "auth_code",
+.BI "        size_t          " "auth_code_size",
 .BI "        const mpq_archive_create_options_s *" "options"
 .BI ");"
 .sp
@@ -63,17 +63,17 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .sp
 .BI "int32_t libmpq__archive_size_packed("
 .BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        libmpq__off_t *" "packed_size"
+.BI "        libmpq__off_t  *" "packed_size"
 .BI ");"
 .sp
 .BI "int32_t libmpq__archive_size_unpacked("
 .BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        libmpq__off_t *" "unpacked_size"
+.BI "        libmpq__off_t  *" "unpacked_size"
 .BI ");"
 .sp
 .BI "int32_t libmpq__archive_offset("
 .BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        libmpq__off_t *" "offset"
+.BI "        libmpq__off_t  *" "offset"
 .BI ");"
 .sp
 .BI "int32_t libmpq__archive_version("
@@ -89,19 +89,19 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "int32_t libmpq__file_size_packed("
 .BI "        mpq_archive_s  *" "mpq_archive",
 .BI "        uint32_t        " "file_number",
-.BI "        libmpq__off_t *" "packed_size"
+.BI "        libmpq__off_t  *" "packed_size"
 .BI ");"
 .sp
 .BI "int32_t libmpq__file_size_unpacked("
 .BI "        mpq_archive_s  *" "mpq_archive",
 .BI "        uint32_t        " "file_number",
-.BI "        libmpq__off_t *" "unpacked_size"
+.BI "        libmpq__off_t  *" "unpacked_size"
 .BI ");"
 .sp
 .BI "int32_t libmpq__file_offset("
 .BI "        mpq_archive_s  *" "mpq_archive",
 .BI "        uint32_t        " "file_number",
-.BI "        libmpq__off_t *" "offset"
+.BI "        libmpq__off_t  *" "offset"
 .BI ");"
 .sp
 .BI "int32_t libmpq__file_blocks("
@@ -154,7 +154,7 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        uint32_t        " "file_number",
 .BI "        uint8_t        *" "out_buf",
 .BI "        libmpq__off_t   " "out_size",
-.BI "        libmpq__off_t *" "transferred"
+.BI "        libmpq__off_t  *" "transferred"
 .BI ");"
 .sp
 .BI "int32_t libmpq__block_open_offset("
@@ -171,7 +171,7 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        mpq_archive_s  *" "mpq_archive",
 .BI "        uint32_t        " "file_number",
 .BI "        uint32_t        " "block_number",
-.BI "        libmpq__off_t *" "unpacked_size"
+.BI "        libmpq__off_t  *" "unpacked_size"
 .BI ");"
 .sp
 .BI "int32_t libmpq__block_read("
@@ -180,7 +180,7 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        uint32_t        " "block_number",
 .BI "        uint8_t        *" "out_buf",
 .BI "        libmpq__off_t   " "out_size",
-.BI "        libmpq__off_t *" "transferred"
+.BI "        libmpq__off_t  *" "transferred"
 .BI ");"
 .fi
 .SH DESCRIPTION

@@ -2,9 +2,16 @@
 .SH NAME
 libmpq__archive_create \- create a seekable MPQ archive
 .SH SYNOPSIS
-.B #include <libmpq/mpq.h>
-.PP
-.B int32_t libmpq__archive_create(mpq_archive_s **archive, const char *path, const mpq_archive_create_options_s *options);
+.nf
+.B
+#include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__archive_create("
+.BI "        mpq_archive_s **" "archive,"
+.BI "        const char     *" "path,"
+.BI "        const mpq_archive_create_options_s *" "options"
+.BI ");"
+.fi
 .SH DESCRIPTION
 Creates a v1 or v2 archive at \fIpath\fP. The archive is finalized by
 libmpq__archive_close(3). The options select a fixed entry capacity, sector

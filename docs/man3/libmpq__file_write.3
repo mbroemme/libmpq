@@ -2,9 +2,16 @@
 .SH NAME
 libmpq__file_write \- write bytes to a streamed MPQ file
 .SH SYNOPSIS
-.B #include <libmpq/mpq.h>
-.PP
-.B int32_t libmpq__file_write(mpq_writer_s *writer, const uint8_t *buffer, libmpq__off_t size);
+.nf
+.B
+#include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__file_write("
+.BI "        mpq_writer_s   *" "writer,"
+.BI "        const uint8_t  *" "buffer,"
+.BI "        libmpq__off_t   " "size"
+.BI ");"
+.fi
 .SH DESCRIPTION
 Appends bytes to the writer returned by libmpq__file_begin(3). Writes beyond
 the declared unpacked size are rejected.

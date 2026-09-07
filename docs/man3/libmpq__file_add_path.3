@@ -2,9 +2,17 @@
 .SH NAME
 libmpq__file_add_path \- add a filesystem file to an MPQ archive
 .SH SYNOPSIS
-.B #include <libmpq/mpq.h>
-.PP
-.B int32_t libmpq__file_add_path(mpq_archive_s *archive, const char *name, const char *source_path, const mpq_file_options_s *options);
+.nf
+.B
+#include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__file_add_path("
+.BI "        mpq_archive_s  *" "archive,"
+.BI "        const char     *" "name,"
+.BI "        const char     *" "source_path,"
+.BI "        const mpq_file_options_s *" "options"
+.BI ");"
+.fi
 .SH DESCRIPTION
 Reads \fIsource_path\fP and adds it under the archive name \fIname\fP.
 .SH SEE ALSO

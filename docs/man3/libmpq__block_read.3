@@ -23,10 +23,10 @@ libmpq__block_read \- read, decrypt, and decompress one archive block.
 .BI "int32_t libmpq__block_read("
 .BI "        mpq_archive_s  *" "mpq_archive",
 .BI "        uint32_t        " "file_number",
-.BI "        uint32_t        " "block_number,
+.BI "        uint32_t        " "block_number",
 .BI "        uint8_t        *" "out_buf",
 .BI "        libmpq__off_t   " "out_size",
-.BI "        libmpq__off_t *" "transferred"
+.BI "        libmpq__off_t  *" "transferred"
 .BI ");"
 .fi
 .SH DESCRIPTION
