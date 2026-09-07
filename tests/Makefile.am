@@ -9,6 +9,7 @@ LDADD = $(top_builddir)/src/libmpq.la
 # Each executable mirrors one implementation module in src/.
 check_PROGRAMS = \
 	test-compression \
+	test-lzma \
 	test-crypto \
 	test-huffman \
 	test-malformed \
@@ -25,11 +26,12 @@ TESTS = $(check_PROGRAMS)
 # Verify the generated build-tree helper honors configured installation paths.
 check-local:
 	test "$$($(top_builddir)/libmpq-config --cflags)" = "-I$(includedir)"
-	test "$$($(top_builddir)/libmpq-config --libs)" = "-L$(libdir) -lmpq -lbz2 -lz"
+	test "$$($(top_builddir)/libmpq-config --libs)" = "-L$(libdir) -lmpq -lbz2 -lz -llzma"
 
 # Compile shared assertions and deterministic-data helpers into every test.
 COMMON_SOURCES = test-mpq-helper.c test-mpq-helper.h
 test_compression_SOURCES = test-mpq-compression.c $(COMMON_SOURCES)
+test_lzma_SOURCES = test-mpq-lzma.c $(COMMON_SOURCES)
 test_crypto_SOURCES = test-mpq-crypto.c ../src/mpq-crypto.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_huffman_SOURCES = test-mpq-huffman.c ../src/mpq-huffman.c $(COMMON_SOURCES)
 test_malformed_SOURCES = test-mpq-malformed.c $(COMMON_SOURCES)
@@ -51,11 +53,22 @@ test_writer_SOURCES = test-mpq-writer.c $(COMMON_SOURCES)
 # Reuse the library's already-built hidden MPQE helper objects for private checks.
 PRIVATE_MPQE_LDADD = $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-endian.lo
 test_mpqe_LDADD = $(top_builddir)/src/mpq-stream.lo $(PRIVATE_MPQE_LDADD) $(LDADD)
+
+# Reuse production codec objects for direct malformed-LZMA regressions.
+PRIVATE_COMPRESSION_LDADD = \
+	$(top_builddir)/src/mpq-compression.lo \
+	$(top_builddir)/src/mpq-pkware.lo \
+	$(top_builddir)/src/mpq-huffman.lo \
+	$(top_builddir)/src/mpq-wave.lo \
+	$(top_builddir)/src/mpq-endian.lo
+test_lzma_LDADD = $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
+
 test_writer_LDADD = $(PRIVATE_MPQE_LDADD) $(LDADD)
 
 # Fixture-dependent tests resolve archives from the source tree, including
 # when Automake runs them from a separate VPATH or distcheck build directory.
 test_huffman_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_lzma_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_fixtures_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_mpqe_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_pkware_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
@@ -66,6 +79,7 @@ EXTRA_DIST = \
 	test-mpq-helper.h \
 	test-mpq-helper.c \
 	test-mpq-compression.c \
+	test-mpq-lzma.c \
 	test-mpq-crypto.c \
 	test-mpq-huffman.c \
 	test-mpq-malformed.c \
