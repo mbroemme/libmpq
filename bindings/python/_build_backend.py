@@ -100,7 +100,7 @@ def _build_native():
         command += ["-dynamiclib", "-o", str(output)]
     else:
         command += ["-shared", "-o", str(output)]
-    command += ["-lbz2", "-lz"]
+    command += ["-lbz2", "-lz", "-llzma"]
     subprocess.run(command, check=True, cwd=source_root)
     return output, output_dir
 

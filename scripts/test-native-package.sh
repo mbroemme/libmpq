@@ -181,7 +181,7 @@ readonly config_cflags="$("${sdk_root}/bin/libmpq-config" \
 readonly config_libs="$("${sdk_root}/bin/libmpq-config" \
 	--prefix="${sdk_root}" --libs)"
 if [[ "${config_cflags}" != "-I${sdk_root}/include" ]] ||
-	[[ "${config_libs}" != "-L${sdk_root}/lib -lmpq -lbz2 -lz" ]]; then
+	[[ "${config_libs}" != "-L${sdk_root}/lib -lmpq -lbz2 -lz -llzma" ]]; then
 	printf 'Packaged libmpq-config does not describe the extracted SDK layout.\n' >&2
 	exit 1
 fi

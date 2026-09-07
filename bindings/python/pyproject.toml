@@ -40,11 +40,11 @@ test-command = "LIBMPQ_EXPECT_BUNDLED=1 python -m pytest {package}/tests"
 [[tool.cibuildwheel.overrides]]
 select = "*-manylinux*"
 manylinux-x86_64-image = "manylinux2014"
-before-all = "yum install -y bzip2-devel zlib-devel && auditwheel --version"
+before-all = "yum install -y bzip2-devel xz-devel zlib-devel && auditwheel --version"
 repair-wheel-command = "auditwheel repair --plat manylinux_2_17_x86_64 --only-plat -w {dest_dir} {wheel} && auditwheel show {dest_dir}/*.whl"
 
 [[tool.cibuildwheel.overrides]]
 select = "*-musllinux*"
 musllinux-x86_64-image = "musllinux_1_2"
-before-all = "apk add --no-cache bzip2-dev zlib-dev && auditwheel --version"
+before-all = "apk add --no-cache bzip2-dev xz-dev zlib-dev && auditwheel --version"
 repair-wheel-command = "auditwheel repair --plat musllinux_1_2_x86_64 --only-plat -w {dest_dir} {wheel} && auditwheel show {dest_dir}/*.whl"

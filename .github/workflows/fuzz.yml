@@ -58,6 +58,7 @@ jobs:
             git \
             libclang-rt-dev \
             libbz2-dev \
+            liblzma-dev \
             libtool \
             zlib1g-dev
 
@@ -113,6 +114,7 @@ jobs:
             'fuzz-huffman-decode:huffman-decode:131072'
             'fuzz-zlib-decode:zlib-decode:131072'
             'fuzz-bzip2-decode:bzip2-decode:131072'
+            'fuzz-lzma-decode:lzma-decode:131072'
             'fuzz-wave-decode:wave-decode:131072'
           )
           target_seconds=$((FUZZ_SECONDS / ${#targets[@]}))
