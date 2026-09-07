@@ -4,11 +4,14 @@
 created with libmpq. They contain the same feature descriptions and payloads,
 with only the MPQ archive format version differing.
 
-The archives contain only `.txt` fixtures for raw storage, PKWARE implode,
-masked Huffman, zlib, PKWARE, bzip2, chained compression, and encrypted
-compression. The `wave-adpcm.txt` description documents valid 16-bit PCM
-WAVE input, mono/stereo IMA ADPCM, and the first-sector lossless requirement;
-no binary WAVE payload is stored in these text-only regression archives.
+The archives contain `.txt` fixtures for raw storage, PKWARE implode, masked
+Huffman, zlib, PKWARE, bzip2, LZMA in the v2 fixture, chained compression,
+and encrypted compression. Codec fixture text is deliberately repeated and
+compressible so it is stored using its advertised codec rather than raw
+fallback. The `wave-adpcm.txt` entry is only a description of valid 16-bit PCM
+WAVE input, mono/stereo IMA ADPCM, and the first-sector lossless requirement.
+The dedicated WAVE regression test generates binary input and verifies the
+lossy ADPCM path; no binary WAVE payload is stored in these archives.
 
 The descriptions inside the archives document archive creation and
 extraction, supported features, encryption ordering, standalone versus masked
@@ -20,3 +23,8 @@ authentication code `LIBMPQ-MPQE-TEST-AUTH-CODE-00001`. Each 64-byte logical
 chunk, including the final 62-byte physical chunk, is transformed separately;
 only the physical bytes are stored. These fixtures are public interoperability
 vectors for MPQE stream implementations and are not installer credentials.
+
+`mpq-v2-features.mpq` and `mpq-v2-features.mpqe` additionally contain
+`lzma.txt`, stored using MPQ method `0x12`. Its text describes LZMA as an
+exclusive MPQ compression method and is repeated 32 times to prevent raw
+fallback, so both raw and MPQE fixture paths exercise the same LZMA member.

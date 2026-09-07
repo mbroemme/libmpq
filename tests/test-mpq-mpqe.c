@@ -92,16 +92,53 @@ static const mpqe_fixture_s fixtures[] = {
     {
         "mpq-v1-features.mpq",
         "mpq-v1-features.mpqe",
-        "c974912482320e001e3550b36f7eda21a8df2c57c9ef7c9fa84154579c21b8d9",
+        "722f1acc2acd306abaed0466ffbbfd568e09f5e7da8d63eba86f19c1c2adde73",
         1,
     },
     {
         "mpq-v2-features.mpq",
         "mpq-v2-features.mpqe",
-        "5b82917a5cb24bee72be9b0526c6f28b5a3e977d31156398b129502fd191ad0b",
+        "722f1acc2acd306abaed0466ffbbfd568e09f5e7da8d63eba86f19c1c2adde73",
         2,
     },
 };
+
+/* Extract every advertised fixture member through both raw and MPQE streams. */
+static int
+test_fixture_members(mpq_archive_s *archive, const char *raw_path, uint32_t version)
+{
+    static const char *const names[] = {
+        "overview.txt",   "implode.txt", "huffman.txt", "zlib.txt",
+        "pkware.txt",     "bzip2.txt",   "chain.txt",   "encrypted-compress.txt",
+        "wave-adpcm.txt", "lzma.txt",    "(listfile)",
+    };
+    mpq_archive_s *raw_archive = NULL;
+    uint8_t *raw_data = NULL;
+    uint8_t *mpqe_data = NULL;
+    size_t raw_size;
+    size_t mpqe_size;
+    size_t i;
+
+    TEST_CHECK(libmpq__archive_open(&raw_archive, raw_path, 0) == 0);
+    for (i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
+        uint32_t raw_number;
+        uint32_t mpqe_number;
+
+        if (version == 1 && strcmp(names[i], "lzma.txt") == 0)
+            continue;
+        TEST_CHECK(libmpq__file_number(raw_archive, names[i], &raw_number) == 0);
+        TEST_CHECK(libmpq__file_number(archive, names[i], &mpqe_number) == 0);
+        TEST_CHECK(test_archive_read(raw_archive, raw_number, &raw_data, &raw_size) == 0);
+        TEST_CHECK(test_archive_read(archive, mpqe_number, &mpqe_data, &mpqe_size) == 0);
+        TEST_CHECK(raw_size == mpqe_size && memcmp(raw_data, mpqe_data, raw_size) == 0);
+        free(raw_data);
+        free(mpqe_data);
+        raw_data = NULL;
+        mpqe_data = NULL;
+    }
+    TEST_CHECK(libmpq__archive_close(raw_archive) == 0);
+    return 0;
+}
 
 /* Compare random-access MPQE reads with the corresponding raw MPQ fixture. */
 static int
@@ -220,13 +257,16 @@ test_fixture(const mpqe_fixture_s *fixture, size_t index)
         ) == 0
     );
     TEST_CHECK(libmpq__archive_version(archive, &version) == 0 && version == fixture->version);
-    TEST_CHECK(libmpq__archive_files(archive, &files) == 0 && files == 10);
+    TEST_CHECK(
+        libmpq__archive_files(archive, &files) == 0 && files == (fixture->version == 2 ? 11 : 10)
+    );
     TEST_CHECK(libmpq__file_number(archive, "overview.txt", &number) == 0);
     TEST_CHECK(test_archive_read(archive, number, &data, &size) == 0);
     TEST_CHECK(test_sha256(data, size, hash) == 0);
     TEST_CHECK(strcmp(hash, fixture->overview_hash) == 0);
     free(data);
     data = NULL;
+    TEST_CHECK(test_fixture_members(archive, raw_path, fixture->version) == 0);
     TEST_CHECK(libmpq__archive_clone(&clone, archive) == 0);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     archive = NULL;
