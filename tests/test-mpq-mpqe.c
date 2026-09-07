@@ -1,6 +1,7 @@
 /* Verify read-only MPQE stream-provider opening with public fixtures. */
 #include "test-mpq-helper.h"
 
+#include "mpq-mpqe.h"
 #include "mpq-stream.h"
 
 #include <stdint.h>

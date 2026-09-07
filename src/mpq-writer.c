@@ -24,8 +24,8 @@
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
 #include "mpq-internal.h"
+#include "mpq-mpqe.h"
 #include "mpq-pkware.h"
-#include "mpq-stream.h"
 #include "mpq-wave.h"
 #include "mpq-writer.h"
 #include <libmpq/mpq.h>

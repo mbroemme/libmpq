@@ -25,6 +25,8 @@
 #include <stdio.h>
 #include <sys/types.h>
 
+#include "mpq-mpqe.h"
+
 /* Common success return code used by libmpq functions. */
 #define LIBMPQ_SUCCESS 0
 
@@ -216,8 +218,9 @@ struct mpq_archive
     uint16_t *write_platforms;    /* Platforms corresponding to assigned file entries. */
     mpq_writer_s *write_current;  /* Active file writer; only one file may be streamed at once. */
     uint8_t write_mpqe;           /* Whether finalization publishes an MPQE stream. */
-    uint8_t write_mpqe_key[64];   /* Derived MPQE key retained only while writing. */
-    FILE *write_mpqe_output;      /* Secure temporary encrypted output handle. */
+    uint8_t
+        write_mpqe_key[LIBMPQ_MPQE_CHUNK_SIZE]; /* Derived MPQE key retained only while writing. */
+    FILE *write_mpqe_output;                    /* Secure temporary encrypted output handle. */
     int write_mpqe_directory;     /* Destination directory descriptor for anchored operations. */
     char *write_mpqe_destination; /* Final MPQE destination basename in that directory. */
     char *write_mpqe_output_path; /* Secure encrypted temporary basename in that directory. */

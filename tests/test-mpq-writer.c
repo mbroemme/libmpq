@@ -1,6 +1,6 @@
 /* Exercise deterministic writer output and generated writer/readback properties. */
 #include "mpq-internal.h"
-#include "mpq-stream.h"
+#include "mpq-mpqe.h"
 #include "mpq-writer.h"
 #include "test-mpq-helper.h"
 

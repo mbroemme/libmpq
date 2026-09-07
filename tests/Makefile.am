@@ -48,10 +48,10 @@ test_reader_SOURCES = test-mpq-reader.c $(COMMON_SOURCES)
 test_wave_SOURCES = test-mpq-wave.c ../src/mpq-wave.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_writer_SOURCES = test-mpq-writer.c $(COMMON_SOURCES)
 
-# Reuse the library's already-built hidden MPQE stream objects for private checks.
-PRIVATE_STREAM_LDADD = $(top_builddir)/src/mpq-stream.lo $(top_builddir)/src/mpq-endian.lo
-test_mpqe_LDADD = $(PRIVATE_STREAM_LDADD) $(LDADD)
-test_writer_LDADD = $(PRIVATE_STREAM_LDADD) $(LDADD)
+# Reuse the library's already-built hidden MPQE helper objects for private checks.
+PRIVATE_MPQE_LDADD = $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-endian.lo
+test_mpqe_LDADD = $(top_builddir)/src/mpq-stream.lo $(PRIVATE_MPQE_LDADD) $(LDADD)
+test_writer_LDADD = $(PRIVATE_MPQE_LDADD) $(LDADD)
 
 # Fixture-dependent tests resolve archives from the source tree, including
 # when Automake runs them from a separate VPATH or distcheck build directory.
