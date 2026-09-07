@@ -7,3 +7,7 @@ libmpq__file_add_path \- add a filesystem file to an MPQ archive
 .B int32_t libmpq__file_add_path(mpq_archive_s *archive, const char *name, const char *source_path, const mpq_file_options_s *options);
 .SH DESCRIPTION
 Reads \fIsource_path\fP and adds it under the archive name \fIname\fP.
+.SH SEE ALSO
+.BR libmpq__archive_create (3),
+.BR libmpq__file_add (3),
+.BR libmpq__file_begin (3)
