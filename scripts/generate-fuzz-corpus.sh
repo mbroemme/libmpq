@@ -26,6 +26,7 @@ readonly pkware_output="${output_root}/pkware-decode"
 readonly huffman_output="${output_root}/huffman-decode"
 readonly zlib_output="${output_root}/zlib-decode"
 readonly bzip2_output="${output_root}/bzip2-decode"
+readonly lzma_output="${output_root}/lzma-decode"
 readonly wave_output="${output_root}/wave-decode"
 
 if [[ -d "${project_root}/fuzz/corpus" ]]; then
@@ -43,6 +44,7 @@ mkdir -p \
 	"${huffman_output}" \
 	"${zlib_output}" \
 	"${bzip2_output}" \
+	"${lzma_output}" \
 	"${wave_output}"
 
 cp "${project_root}/tests/fixtures/mpq-v1-features.mpq" "${archive_output}/fixture-v1.mpq"
@@ -95,6 +97,8 @@ printf '%.0sA' {1..255} > "${file_read_output}/maximum-name"
 # Seed version, option, and sector-size selection for bounded archive creation.
 printf '\x00\x00\x00hello writer' > "${writer_output}/v1-raw-512"
 printf '\x01\x0d\x02compressed encrypted writer payload' > "${writer_output}/v2-zlib-encrypted"
+printf '\x01\x20\x02lzma writer payload with repeated bytes LLLLLLLLLLLLLLLLL' > \
+	"${writer_output}/v2-lzma"
 printf '\x00\x14\x03bzip2 single writer payload' > "${writer_output}/v1-bzip2-single"
 
 # Select encrypted seed header, hash/block table, and known-key mutation offsets.
@@ -116,5 +120,8 @@ printf '\x00\x00\x00' > "${pkware_output}/empty"
 printf '\x00\x00\x00\x00\x00' > "${huffman_output}/empty"
 printf '\x00\x00\x78\x9c\x73\x04\x00\x00\x42\x00\x42' > "${zlib_output}/single-byte"
 printf '\x00\x00BZh' > "${bzip2_output}/truncated-header"
+printf '\x00\x00\x12\x00' > "${lzma_output}/truncated-header"
+printf '\x00\x00\x12\x01\x5d\x00\x00\x10\x00\x00\x00\x00\x00\x00' > \
+	"${lzma_output}/unsupported-filter"
 printf '\x00\x00\x00\x00' > "${wave_output}/mono-empty"
 printf '\x01\x00\x00\x00' > "${wave_output}/stereo-empty"

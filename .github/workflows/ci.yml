@@ -144,7 +144,7 @@ jobs:
             -Isrc \
             -std=c99 \
             -fvisibility=hidden
-          for codec in PKZIP HUFFMAN ZLIB BZIP2; do
+          for codec in PKZIP HUFFMAN ZLIB BZIP2 LZMA; do
             clang-tidy-22 --quiet --config-file=.clang-tidy fuzz/fuzz-codec-decode.c -- \
               -DHAVE_CONFIG_H \
               -I. \

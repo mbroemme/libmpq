@@ -33,7 +33,7 @@ archive_cleanup(void)
 
 /* Choose a writer-supported storage, encryption, and single-unit combination. */
 static mpq_file_options_s
-file_options(uint8_t selector)
+file_options(uint8_t selector, uint32_t version)
 {
     static const uint32_t codecs[] = { 0,
                                        LIBMPQ_COMPRESSION_ZLIB,
@@ -42,8 +42,20 @@ file_options(uint8_t selector)
                                        LIBMPQ_COMPRESSION_HUFFMAN,
                                        LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_ZLIB |
                                            LIBMPQ_COMPRESSION_PKZIP | LIBMPQ_COMPRESSION_BZIP2 };
-    uint32_t codec = codecs[selector % (sizeof(codecs) / sizeof(codecs[0]))];
+    uint32_t codec;
     mpq_file_options_s options = { 0, 0, 0, 0, 0 };
+
+    if (version == LIBMPQ_ARCHIVE_VERSION_TWO && (selector & 0x20U) != 0U)
+        codec = LIBMPQ_COMPRESSION_LZMA;
+    else
+        codec = codecs[selector % (sizeof(codecs) / sizeof(codecs[0]))];
+
+    /* MPQ v2 reserves serialized 0x12 for LZMA, not zlib plus bzip2. */
+    if (version == LIBMPQ_ARCHIVE_VERSION_TWO &&
+        (codec & (LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) ==
+            (LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) {
+        codec = LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_PKZIP;
+    }
 
     if (codec != 0) {
         options.flags = LIBMPQ_FILE_FLAG_COMPRESS;
@@ -111,7 +123,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         sector_sizes[data[2] % (sizeof(sector_sizes) / sizeof(sector_sizes[0]))];
     archive_options.flags = LIBMPQ_ARCHIVE_CREATE_LISTFILE;
     mpqe = (data[0] & 0x04U) != 0U;
-    options = file_options(data[1]);
+    options = file_options(data[1], archive_options.version);
     payload = data + 3;
     if ((options.flags & LIBMPQ_FILE_FLAG_ENCRYPTED) != 0) {
         if (payload_size < 8U) {
