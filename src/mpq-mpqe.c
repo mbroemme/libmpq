@@ -36,14 +36,6 @@ rol32(uint32_t value, unsigned count)
     return (value << count) | (value >> (32U - count));
 }
 
-/* Reverse a 32-bit word while retaining byte-oriented stream storage. */
-static uint32_t
-bswap32(uint32_t value)
-{
-    return ((value & 0x000000ffU) << 24) | ((value & 0x0000ff00U) << 8) |
-           ((value & 0x00ff0000U) >> 8) | ((value & 0xff000000U) >> 24);
-}
-
 /* Derive the MPQE working key from the installer authentication-code bytes. */
 int32_t
 libmpq__mpqe_key(
@@ -54,26 +46,19 @@ libmpq__mpqe_key(
         "expand 32-byte k000000000000000000000000000000000000000000000000";
     static const uint8_t source_words[8] = { 3, 7, 2, 6, 1, 5, 0, 4 };
     static const uint8_t target_words[8] = { 0, 2, 3, 5, 6, 8, 9, 11 };
-    uint8_t native_key[LIBMPQ_MPQE_CHUNK_SIZE];
+    uint8_t derived_key[LIBMPQ_MPQE_CHUNK_SIZE];
     size_t i;
 
     if (key == NULL || auth_code == NULL || auth_code_size < LIBMPQ_MPQE_AUTH_CODE_MINIMUM)
         return LIBMPQ_ERROR_DECRYPT;
-    memcpy(native_key, template_key, sizeof(native_key));
+    memcpy(derived_key, template_key, sizeof(derived_key));
     for (i = 0; i < sizeof(source_words); ++i) {
         uint32_t value = libmpq__load_le32(auth_code + source_words[i] * sizeof(uint32_t));
 
-        libmpq__store_le32(native_key + (4U + target_words[i]) * sizeof(uint32_t), value);
+        libmpq__store_le32(derived_key + (4U + target_words[i]) * sizeof(uint32_t), value);
     }
-    for (i = 0; i < LIBMPQ_MPQE_CHUNK_SIZE / sizeof(uint32_t); ++i) {
-        uint32_t value = libmpq__load_le32(native_key + i * sizeof(uint32_t));
-
-        key[i * sizeof(uint32_t) + 0] = (uint8_t)(value >> 24);
-        key[i * sizeof(uint32_t) + 1] = (uint8_t)(value >> 16);
-        key[i * sizeof(uint32_t) + 2] = (uint8_t)(value >> 8);
-        key[i * sizeof(uint32_t) + 3] = (uint8_t)value;
-    }
-    libmpq__mpqe_clear(native_key, sizeof(native_key));
+    memcpy(key, derived_key, sizeof(derived_key));
+    libmpq__mpqe_clear(derived_key, sizeof(derived_key));
     return LIBMPQ_SUCCESS;
 }
 
@@ -92,8 +77,7 @@ libmpq__mpqe_transform_chunk(
     unsigned i;
 
     for (i = 0; i < 16; ++i)
-        key_mirror[i] = ((uint32_t)key[i * 4] << 24) | ((uint32_t)key[i * 4 + 1] << 16) |
-                        ((uint32_t)key[i * 4 + 2] << 8) | key[i * 4 + 3];
+        key_mirror[i] = libmpq__load_le32(key + i * sizeof(uint32_t));
     key_mirror[5] = (uint32_t)(chunk_number >> 32);
     key_mirror[8] = (uint32_t)chunk_number;
     shuffled[14] = key_mirror[0];
@@ -147,8 +131,7 @@ libmpq__mpqe_transform_chunk(
         shuffled[15] ^= rol32(shuffled[11] + shuffled[6], 18);
     }
     for (i = 0; i < 16; ++i)
-        mirror[i] = ((uint32_t)chunk[i * 4] << 24) | ((uint32_t)chunk[i * 4 + 1] << 16) |
-                    ((uint32_t)chunk[i * 4 + 2] << 8) | chunk[i * 4 + 3];
+        mirror[i] = libmpq__load_le32(chunk + i * sizeof(uint32_t));
     mirror[0] ^= shuffled[14] + key_mirror[0];
     mirror[1] ^= shuffled[4] + key_mirror[13];
     mirror[2] ^= shuffled[8] + key_mirror[10];
@@ -166,7 +149,7 @@ libmpq__mpqe_transform_chunk(
     mirror[14] ^= shuffled[11] + key_mirror[6];
     mirror[15] ^= shuffled[15] + key_mirror[3];
     for (i = 0; i < 16; ++i)
-        libmpq__store_le32(chunk + i * sizeof(uint32_t), bswap32(mirror[i]));
+        libmpq__store_le32(chunk + i * sizeof(uint32_t), mirror[i]);
     libmpq__mpqe_clear(shuffled, sizeof(shuffled));
     libmpq__mpqe_clear(key_mirror, sizeof(key_mirror));
     libmpq__mpqe_clear(mirror, sizeof(mirror));
