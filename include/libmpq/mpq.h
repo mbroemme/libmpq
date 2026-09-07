@@ -45,7 +45,7 @@ extern "C" {
  * API return codes shared by archive, file, and block operations.
  * Successful calls return zero; failures return one of these negative values
  * so callers can distinguish I/O, format, allocation, size, and unpacking
- * failures without relying on a process-global error variable.  Functions
+ * failures without relying on a process-global error variable. Functions
  * that return a pointer or have a void result document their separate result
  * behavior at the declaration site.
  */
@@ -80,7 +80,7 @@ typedef struct mpq_writer mpq_writer_s;
 /*
  * Archive format selectors accepted by mpq_archive_create_options_s.version.
  * Version one writes the classic 32-bit-offset MPQ header, while version two
- * adds the high-offset table required by the extended v2 layout.  The values
+ * adds the high-offset table required by the extended v2 layout. The values
  * are selectors rather than the raw on-disk version numbers and must not be
  * combined with one another.
  */
@@ -91,7 +91,7 @@ typedef struct mpq_writer mpq_writer_s;
  * Archive-creation flags accepted by mpq_archive_create_options_s.flags.
  * LIBMPQ_ARCHIVE_CREATE_LISTFILE asks the writer to generate an internal
  * `(listfile)` entry containing the names added to the archive in insertion
- * order.  This improves name discovery in external MPQ tools and has no
+ * order. This improves name discovery in external MPQ tools and has no
  * effect on the payload compression or encryption of user files.
  */
 #define LIBMPQ_ARCHIVE_CREATE_LISTFILE 0x00000001u
@@ -113,11 +113,13 @@ typedef struct mpq_writer mpq_writer_s;
 
 /*
  * Compression-stage bits accepted by mpq_file_options_s.compression_first and
- * compression_next.  Each selected stage is attempted in registry order and
+ * compression_next. Each selected stage is attempted in registry order and
  * only successful size-reducing stages are emitted in the sector mask.
  * The first-sector mask may differ from the mask used for later sectors, and
- * the reader reverses the successful stages when unpacking a sector.  The
- * mono and stereo WAVE ADPCM bits are mutually exclusive.
+ * the reader reverses the successful stages when unpacking a sector. The
+ * mono and stereo WAVE ADPCM bits are mutually exclusive. For MPQ v2+, the
+ * writer rejects chains containing both zlib and bzip2 because the resulting
+ * successful-stage mask could be 0x12, which is reserved for LZMA.
  */
 #ifndef LIBMPQ_COMPRESSION_HUFFMAN
 #define LIBMPQ_COMPRESSION_HUFFMAN 0x01u
@@ -126,6 +128,15 @@ typedef struct mpq_writer mpq_writer_s;
 #define LIBMPQ_COMPRESSION_BZIP2 0x10u
 #define LIBMPQ_COMPRESSION_WAVE_MONO 0x40u
 #define LIBMPQ_COMPRESSION_WAVE_STEREO 0x80u
+#endif
+
+/*
+ * Exclusive MPQ v2+ LZMA writer selector. This API-only value is outside the
+ * serialized one-byte MPQ compression mask: the writer maps it to on-disk
+ * method 0x12. It must not be combined with compression-stage bits.
+ */
+#ifndef LIBMPQ_COMPRESSION_LZMA
+#define LIBMPQ_COMPRESSION_LZMA 0x00000100u
 #endif
 
 /*
@@ -146,8 +157,10 @@ typedef struct
  * Options controlling how one file is stored in a newly created archive.
  * Compression masks select the first-sector and later-sector pipelines, while
  * flags select raw, compressed, encrypted, imploded, or single-unit storage.
- * The locale and platform fields participate in duplicate detection and hash
- * lookup; the structure is copied when a file writer is started.
+ * LIBMPQ_COMPRESSION_LZMA is an exclusive MPQ v2+ selector rather than a
+ * chainable pipeline mask. The locale and platform fields participate in
+ * duplicate detection and hash lookup; the structure is copied when a file
+ * writer is started.
  */
 typedef struct mpq_file_options
 {

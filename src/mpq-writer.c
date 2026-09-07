@@ -102,7 +102,8 @@ stream_flush_sector(mpq_writer_s *writer)
         return LIBMPQ_ERROR_SIZE;
     if ((writer->options.flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0)
         result = libmpq__compression_encode_sector(
-            writer->data, writer->data_size, requested, &packed, &packed_size, &emitted
+            writer->data, writer->data_size, requested, archive->mpq_header.version, &packed,
+            &packed_size, &emitted
         );
     else if ((writer->options.flags & LIBMPQ_FILE_FLAG_IMPLODE) != 0) {
         uint32_t packed32 = 0;
@@ -931,8 +932,8 @@ libmpq__writer_file_begin(
         return LIBMPQ_ERROR_FORMAT;
     }
     if ((options->flags & LIBMPQ_FILE_FLAG_COMPRESS) &&
-        (!libmpq__compression_supported_mask(options->compression_first) ||
-         !libmpq__compression_supported_mask(options->compression_next))) {
+        (!libmpq__compression_supported_mask(options->compression_first, a->mpq_header.version) ||
+         !libmpq__compression_supported_mask(options->compression_next, a->mpq_header.version))) {
         free(w);
         return LIBMPQ_ERROR_FORMAT;
     }

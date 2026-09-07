@@ -29,6 +29,8 @@
 #include <string.h>
 
 #include <bzlib.h>
+#include <limits.h>
+#include <lzma.h>
 #include <zlib.h>
 
 /* Map MPQ compression flags to the backend that can decode that payload. */
@@ -42,6 +44,154 @@ static decompress_table_s dcmp_table[] = {
     { LIBMPQ_COMPRESSION_WAVE_STEREO, libmpq__compression_decompress_wave_stereo },
     { LIBMPQ_COMPRESSION_WAVE_MONO, libmpq__compression_decompress_wave_mono }
 };
+
+/* Return a raw-sector copy when a requested codec cannot beat raw storage. */
+static int32_t
+copy_raw(
+    const uint8_t *input, size_t input_size, uint8_t **output, size_t *output_size,
+    uint8_t *emitted_mask
+)
+{
+    uint8_t *data = malloc(input_size ? input_size : 1);
+
+    if (data == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    memcpy(data, input, input_size);
+    *output = data;
+    *output_size = input_size;
+    *emitted_mask = 0;
+    return LIBMPQ_SUCCESS;
+}
+
+/* Decode the MPQ v2+ LZMA framing using the caller-known unpacked sector size. */
+static int32_t
+decompress_lzma(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size)
+{
+    lzma_filter filters[2] = { { LZMA_FILTER_LZMA1, NULL }, { LZMA_VLI_UNKNOWN, NULL } };
+    lzma_stream strm = LZMA_STREAM_INIT;
+    uint64_t memusage;
+    lzma_ret ret;
+    int decoder_initialized = 0;
+    int32_t result = LIBMPQ_ERROR_UNPACK;
+
+    if (in_buf == NULL || out_buf == NULL || in_size <= LIBMPQ_LZMA_HEADER_SIZE)
+        return LIBMPQ_ERROR_UNPACK;
+    if (in_buf[0] != LIBMPQ_LZMA_USE_FILTER)
+        return LIBMPQ_ERROR_UNPACK;
+    if (out_size > INT32_MAX)
+        return LIBMPQ_ERROR_SIZE;
+
+    ret = lzma_properties_decode(&filters[0], NULL, in_buf + 1, LIBMPQ_LZMA_PROPERTIES_SIZE);
+    if (ret == LZMA_MEM_ERROR)
+        return LIBMPQ_ERROR_MALLOC;
+    if (ret != LZMA_OK)
+        return LIBMPQ_ERROR_UNPACK;
+
+    memusage = lzma_raw_decoder_memusage(filters);
+    if (memusage == UINT64_MAX || memusage > LIBMPQ_LZMA_DECODER_MEMORY_MAX)
+        goto cleanup;
+
+    ret = lzma_raw_decoder(&strm, filters);
+    if (ret == LZMA_MEM_ERROR) {
+        result = LIBMPQ_ERROR_MALLOC;
+        goto cleanup;
+    }
+    if (ret != LZMA_OK)
+        goto cleanup;
+    decoder_initialized = 1;
+    strm.next_in = in_buf + LIBMPQ_LZMA_HEADER_SIZE;
+    strm.avail_in = in_size - LIBMPQ_LZMA_HEADER_SIZE;
+    strm.next_out = out_buf;
+    strm.avail_out = out_size;
+
+    do {
+        ret = lzma_code(&strm, LZMA_FINISH);
+    } while (ret == LZMA_OK);
+
+    /*
+     * Raw LZMA1 with an EOPM returns STREAM_END. StormLib streams omit the
+     * marker and finish with BUF_ERROR. Accept that only when all supplied
+     * input was consumed and the expected output size was produced.
+     */
+    if ((ret == LZMA_STREAM_END || ret == LZMA_BUF_ERROR) && strm.total_out == out_size &&
+        strm.avail_out == 0 && strm.avail_in == 0) {
+        result = (int32_t)out_size;
+    }
+
+cleanup:
+    if (decoder_initialized)
+        lzma_end(&strm);
+    free(filters[0].options);
+    return result;
+}
+
+/* Encode one MPQ v2+ LZMA sector with an EOPM or return raw data when it cannot win. */
+static int32_t
+encode_lzma(
+    const uint8_t *input, size_t input_size, uint8_t **output, size_t *output_size,
+    uint8_t *emitted_mask
+)
+{
+    lzma_options_lzma options;
+    lzma_filter filters[2] = { { LZMA_FILTER_LZMA1, &options }, { LZMA_VLI_UNKNOWN, NULL } };
+    uint8_t *packed;
+    size_t encoded_size = 0;
+    size_t candidate_capacity;
+    uint32_t properties_size;
+    lzma_ret ret;
+
+    if (input_size <= LIBMPQ_LZMA_TOTAL_OVERHEAD)
+        return copy_raw(input, input_size, output, output_size, emitted_mask);
+
+    /* 15 + raw_lzma_size < input_size, so only input_size - 16 can win. */
+    candidate_capacity = input_size - LIBMPQ_LZMA_TOTAL_OVERHEAD - 1;
+    packed = malloc(LIBMPQ_LZMA_TOTAL_OVERHEAD + candidate_capacity);
+    if (packed == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+
+    memset(&options, 0, sizeof(options));
+    if (lzma_lzma_preset(&options, 6)) {
+        free(packed);
+        return LIBMPQ_ERROR_UNPACK;
+    }
+    options.dict_size = 1U << 20;
+    options.lc = 3;
+    options.lp = 0;
+    options.pb = 2;
+    ret = lzma_properties_size(&properties_size, &filters[0]);
+    if (ret != LZMA_OK || properties_size != LIBMPQ_LZMA_PROPERTIES_SIZE) {
+        free(packed);
+        return LIBMPQ_ERROR_UNPACK;
+    }
+
+    packed[0] = LIBMPQ_COMPRESSION_LZMA_METHOD;
+    packed[1] = LIBMPQ_LZMA_USE_FILTER;
+    if (lzma_properties_encode(&filters[0], packed + 2) != LZMA_OK) {
+        free(packed);
+        return LIBMPQ_ERROR_UNPACK;
+    }
+    libmpq__store_le64(packed + 7, input_size);
+    ret = lzma_raw_buffer_encode(
+        filters, NULL, input, input_size, packed + LIBMPQ_LZMA_TOTAL_OVERHEAD, &encoded_size,
+        candidate_capacity
+    );
+    if (ret == LZMA_BUF_ERROR) {
+        free(packed);
+        return copy_raw(input, input_size, output, output_size, emitted_mask);
+    }
+    if (ret == LZMA_MEM_ERROR) {
+        free(packed);
+        return LIBMPQ_ERROR_MALLOC;
+    }
+    if (ret != LZMA_OK) {
+        free(packed);
+        return LIBMPQ_ERROR_UNPACK;
+    }
+    *output = packed;
+    *output_size = LIBMPQ_LZMA_TOTAL_OVERHEAD + encoded_size;
+    *emitted_mask = LIBMPQ_COMPRESSION_LZMA_METHOD;
+    return LIBMPQ_SUCCESS;
+}
 
 /* Decompress an MPQ Huffman-compressed stream into the caller-provided buffer.
  * The stream owns adaptive tree state, so the function initializes and frees
@@ -276,7 +426,7 @@ libmpq__compression_decompress_wave_stereo(
  * each stage's output while the next stage consumes it. */
 int32_t
 libmpq__compression_decompress_multi(
-    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size, uint32_t format_version
 )
 {
 
@@ -298,6 +448,12 @@ libmpq__compression_decompress_multi(
     decompress_flag = decompress_unsupp = *in_buf++;
 
     in_size--;
+
+    /* MPQ v2+ serializes LZMA as special method 0x12, not a bitmask chain. */
+    if (format_version >= LIBMPQ_ARCHIVE_VERSION_TWO &&
+        decompress_flag == LIBMPQ_COMPRESSION_LZMA_METHOD) {
+        return decompress_lzma(in_buf, in_size, out_buf, out_size);
+    }
 
     /* Count supported algorithms and remember flags that have no local backend. */
     for (i = 0; i < entries; i++) {
@@ -364,8 +520,17 @@ libmpq__compression_decompress_multi(
 /* Return whether every requested compression bit has a local implementation.
  * Unknown bits are rejected before any codec or archive state is modified. */
 int
-libmpq__compression_supported_mask(uint32_t mask)
+libmpq__compression_supported_mask(uint32_t mask, uint32_t format_version)
 {
+    if (mask == LIBMPQ_COMPRESSION_LZMA)
+        return format_version >= LIBMPQ_ARCHIVE_VERSION_TWO;
+    if (mask & LIBMPQ_COMPRESSION_LZMA)
+        return 0;
+    if (format_version >= LIBMPQ_ARCHIVE_VERSION_TWO &&
+        (mask & (LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) ==
+            (LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) {
+        return 0;
+    }
     return (mask & ~(LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_ZLIB |
                      LIBMPQ_COMPRESSION_PKZIP | LIBMPQ_COMPRESSION_BZIP2 |
                      LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO)) == 0;
@@ -485,8 +650,8 @@ compression_stage(uint8_t **data, size_t *size, uint32_t mask)
  * at least two bytes; the emitted mask therefore describes actual reductions. */
 int32_t
 libmpq__compression_encode_sector(
-    const uint8_t *input, size_t input_size, uint32_t requested, uint8_t **output,
-    size_t *output_size, uint8_t *emitted_mask
+    const uint8_t *input, size_t input_size, uint32_t requested, uint32_t format_version,
+    uint8_t **output, size_t *output_size, uint8_t *emitted_mask
 )
 {
     uint8_t *data;
@@ -496,8 +661,10 @@ libmpq__compression_encode_sector(
                          LIBMPQ_COMPRESSION_PKZIP,     LIBMPQ_COMPRESSION_BZIP2 };
     size_t i;
 
-    if (!libmpq__compression_supported_mask(requested))
+    if (!libmpq__compression_supported_mask(requested, format_version))
         return LIBMPQ_ERROR_FORMAT;
+    if (requested == LIBMPQ_COMPRESSION_LZMA)
+        return encode_lzma(input, input_size, output, output_size, emitted_mask);
     data = malloc(input_size ? input_size : 1);
     if (data == NULL)
         return LIBMPQ_ERROR_MALLOC;
@@ -556,7 +723,7 @@ libmpq__compression_encode_sector(
 int32_t
 libmpq__compression_decompress_block(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size,
-    uint32_t compression_type
+    uint32_t compression_type, uint32_t format_version
 )
 {
     int32_t tb = 0;
@@ -578,7 +745,9 @@ libmpq__compression_decompress_block(
                 return tb;
             }
         } else if (in_size < out_size) {
-            if ((tb = libmpq__compression_decompress_multi(in_buf, in_size, out_buf, out_size)) < 0)
+            if ((tb = libmpq__compression_decompress_multi(
+                     in_buf, in_size, out_buf, out_size, format_version
+                 )) < 0)
                 return tb;
         } else {
             memcpy(out_buf, in_buf, out_size);

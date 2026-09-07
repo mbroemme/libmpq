@@ -34,6 +34,8 @@ static const writer_mode_s writer_modes[] = {
       { LIBMPQ_FILE_FLAG_COMPRESS, LIBMPQ_COMPRESSION_PKZIP, LIBMPQ_COMPRESSION_PKZIP, 0, 0 } },
     { "bzip2",
       { LIBMPQ_FILE_FLAG_COMPRESS, LIBMPQ_COMPRESSION_BZIP2, LIBMPQ_COMPRESSION_BZIP2, 0, 0 } },
+    { "lzma",
+      { LIBMPQ_FILE_FLAG_COMPRESS, LIBMPQ_COMPRESSION_LZMA, LIBMPQ_COMPRESSION_LZMA, 0, 0 } },
     { "multi",
       { LIBMPQ_FILE_FLAG_COMPRESS,
         LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_PKZIP |
@@ -46,6 +48,9 @@ static const writer_mode_s writer_modes[] = {
     { "zlib-encrypted",
       { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED, LIBMPQ_COMPRESSION_ZLIB,
         LIBMPQ_COMPRESSION_ZLIB, 0, 0 } },
+    { "lzma-encrypted",
+      { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED, LIBMPQ_COMPRESSION_LZMA,
+        LIBMPQ_COMPRESSION_LZMA, 0, 0 } },
     { "multi-encrypted",
       { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED,
         LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_PKZIP |
@@ -55,7 +60,10 @@ static const writer_mode_s writer_modes[] = {
         0, 0 } },
     { "zlib-single",
       { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SINGLE, LIBMPQ_COMPRESSION_ZLIB,
-        LIBMPQ_COMPRESSION_ZLIB, 0, 0 } }
+        LIBMPQ_COMPRESSION_ZLIB, 0, 0 } },
+    { "lzma-single",
+      { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SINGLE, LIBMPQ_COMPRESSION_LZMA,
+        LIBMPQ_COMPRESSION_LZMA, 0, 0 } }
 };
 
 static const uint8_t mpqe_auth_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
@@ -564,8 +572,19 @@ fill_property_payload(uint8_t *data, size_t size)
 
 /* Select combinations the MPQ writer can represent for this payload shape. */
 static int
-property_mode_supported(const writer_mode_s *mode, uint32_t sector_size, size_t payload_size)
+property_mode_supported(
+    const writer_mode_s *mode, uint32_t version, uint32_t sector_size, size_t payload_size
+)
 {
+    uint32_t mask = mode->options.compression_first | mode->options.compression_next;
+
+    if (version == LIBMPQ_ARCHIVE_VERSION_ONE && (mask & LIBMPQ_COMPRESSION_LZMA) != 0)
+        return 0;
+    if (version >= LIBMPQ_ARCHIVE_VERSION_TWO &&
+        (mask & (LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) ==
+            (LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) {
+        return 0;
+    }
     if (payload_size == 0 &&
         (mode->options.flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE |
                                 LIBMPQ_FILE_FLAG_ENCRYPTED)) != 0) {
@@ -619,7 +638,7 @@ test_property_case(uint32_t version, uint32_t sector_size, size_t payload_size)
     for (i = 0; i < sizeof(writer_modes) / sizeof(writer_modes[0]); ++i) {
         int32_t add_result;
 
-        if (!property_mode_supported(&writer_modes[i], sector_size, payload_size)) {
+        if (!property_mode_supported(&writer_modes[i], version, sector_size, payload_size)) {
             continue;
         }
         add_result = libmpq__file_add(
@@ -648,7 +667,7 @@ test_property_case(uint32_t version, uint32_t sector_size, size_t payload_size)
         goto cleanup;
     }
     for (i = 0; i < sizeof(writer_modes) / sizeof(writer_modes[0]); ++i) {
-        if (!property_mode_supported(&writer_modes[i], sector_size, payload_size)) {
+        if (!property_mode_supported(&writer_modes[i], version, sector_size, payload_size)) {
             continue;
         }
         if (libmpq__file_number(archive, writer_modes[i].name, &number) != 0) {
