@@ -67,12 +67,12 @@ struct FileOptions {
         return FileOptions();
     }
 
-    /** Store a file through MPQ multi-compression masks. */
+    /** Store a file through MPQ multi-compression masks or the exclusive v2+ LZMA selector. */
     static FileOptions compressed(uint first) {
         return compressed(first, first);
     }
 
-    /** Store a file with distinct first-sector and later-sector masks. */
+    /** Store a file with distinct first-sector and later-sector masks or LZMA selectors. */
     static FileOptions compressed(uint first, uint next) {
         auto result = FileOptions();
         result.flags = FILE_FLAG_COMPRESS;

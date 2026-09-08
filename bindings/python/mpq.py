@@ -41,6 +41,9 @@ COMPRESSION_BZIP2 = 0x10
 COMPRESSION_WAVE_MONO = 0x40
 COMPRESSION_WAVE_STEREO = 0x80
 
+# Exclusive MPQ v2+ LZMA selector; it is not a chainable compression mask bit.
+COMPRESSION_LZMA = 0x00000100
+
 _OFF_T = ctypes.c_int64
 _BYTE_PTR = ctypes.POINTER(ctypes.c_uint8)
 _VOID_PTR = ctypes.c_void_p

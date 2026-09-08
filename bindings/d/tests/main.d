@@ -43,6 +43,10 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
     repetitive[] = cast(ubyte) 'D';
     archive.add("compressed.txt", repetitive,
                 FileOptions.compressed(COMPRESSION_ZLIB, COMPRESSION_ZLIB));
+    if (archiveVersion == ARCHIVE_VERSION_TWO) {
+        archive.add("lzma.txt", repetitive,
+                    FileOptions.compressed(COMPRESSION_LZMA, COMPRESSION_LZMA));
+    }
     auto sourcePath = path ~ ".source";
     write(sourcePath, cast(const(ubyte)[])"path payload");
     scope(exit) remove(sourcePath);
@@ -66,6 +70,8 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
     assert(reopened.fileCount() >= 4);
     assert(reopened.file("stream.bin").read() == cast(const(ubyte)[])"abcdef");
     assert(reopened.file("compressed.txt").read() == repetitive);
+    if (archiveVersion == ARCHIVE_VERSION_TWO)
+        assert(reopened.file("lzma.txt").read() == repetitive);
     assert(reopened.file("source.txt").read() == cast(const(ubyte)[])"path payload");
     auto clone = reopened.clone();
     scope(exit) clone.close();

@@ -11,8 +11,9 @@ package org.libmpq;
 /**
  * Immutable options controlling how one file is stored in an MPQ archive.
  * Compression masks use the native MPQ bit assignments exposed by
- * {@link Mpq}; the first mask applies to the first sector and the next mask
- * applies to subsequent sectors.
+ * {@link Mpq}; the exclusive {@link Mpq#COMPRESSION_LZMA} selector is valid
+ * only for MPQ v2+ archives. The first mask applies to the first sector and
+ * the next mask applies to subsequent sectors.
  *
  * @param flags MPQ file flags such as compression and encryption
  * @param compressionFirst compression mask for the first sector
@@ -33,7 +34,8 @@ public record FileOptions(int flags, int compressionFirst, int compressionNext,
     /**
      * Returns options requesting MPQ multi-compression for the first and
      * subsequent sectors.  The native writer may reject unsupported codec
-     * combinations and reports the documented libmpq error code.
+     * combinations and reports the documented libmpq error code. LZMA is an
+     * exclusive MPQ v2+ selector, not a chainable compression bit.
      *
      * @param firstMask compression mask for the first sector
      * @param nextMask compression mask for subsequent sectors

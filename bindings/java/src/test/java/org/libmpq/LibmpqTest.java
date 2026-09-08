@@ -119,6 +119,8 @@ class LibmpqTest {
             archive.add("payload.txt", payload, FileOptions.raw());
             archive.add("compressed.txt", repetitive,
                         FileOptions.compressed(Mpq.COMPRESSION_ZLIB, Mpq.COMPRESSION_ZLIB));
+            archive.add("lzma.txt", repetitive,
+                        FileOptions.compressed(Mpq.COMPRESSION_LZMA, Mpq.COMPRESSION_LZMA));
             archive.addPath("source.txt", source, FileOptions.raw());
         }
         try (Archive archive = Archive.open(path); Archive clone = archive.cloneArchive()) {
@@ -131,6 +133,7 @@ class LibmpqTest {
             assertEquals(payload.length, fileMetadata.unpackedSize());
             assertArrayEquals(payload, archive.readBlock(number, 0));
             assertArrayEquals(repetitive, archive.readFile(archive.fileNumber("compressed.txt")));
+            assertArrayEquals(repetitive, archive.readFile(archive.fileNumber("lzma.txt")));
             assertArrayEquals("path payload".getBytes(StandardCharsets.UTF_8),
                               archive.readFile(archive.fileNumber("source.txt")));
         }

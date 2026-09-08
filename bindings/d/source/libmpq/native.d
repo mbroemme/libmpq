@@ -32,7 +32,7 @@ enum ERROR_EXIST = -10;
 enum ERROR_DECRYPT = -11;
 enum ERROR_UNPACK = -12;
 
-/* Keep the names used by the original D binding as public aliases. */
+/** Keep the names used by the original D binding as public aliases. */
 alias LIBMPQ_ERROR_OPEN = ERROR_OPEN;
 alias LIBMPQ_ERROR_CLOSE = ERROR_CLOSE;
 alias LIBMPQ_ERROR_SEEK = ERROR_SEEK;
@@ -70,12 +70,16 @@ enum COMPRESSION_PKZIP = 0x08u;
 enum COMPRESSION_BZIP2 = 0x10u;
 enum COMPRESSION_WAVE_MONO = 0x40u;
 enum COMPRESSION_WAVE_STEREO = 0x80u;
+
+/** Exclusive MPQ v2+ LZMA selector; it is not a chainable mask bit. */
+enum COMPRESSION_LZMA = 0x00000100u;
 alias LIBMPQ_COMPRESSION_HUFFMAN = COMPRESSION_HUFFMAN;
 alias LIBMPQ_COMPRESSION_ZLIB = COMPRESSION_ZLIB;
 alias LIBMPQ_COMPRESSION_PKZIP = COMPRESSION_PKZIP;
 alias LIBMPQ_COMPRESSION_BZIP2 = COMPRESSION_BZIP2;
 alias LIBMPQ_COMPRESSION_WAVE_MONO = COMPRESSION_WAVE_MONO;
 alias LIBMPQ_COMPRESSION_WAVE_STEREO = COMPRESSION_WAVE_STEREO;
+alias LIBMPQ_COMPRESSION_LZMA = COMPRESSION_LZMA;
 
 /** Opaque native archive state owned by libmpq. */
 extern(C) struct mpq_archive_s;
@@ -101,6 +105,7 @@ extern(C) struct mpq_file_options_s {
 }
 
 extern(C) {
+
     /** Return the static package version string. */
     const(char)* libmpq__version();
 

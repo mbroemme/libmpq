@@ -70,6 +70,8 @@ public final class Mpq {
     public static final int COMPRESSION_WAVE_MONO = 0x40;
     /** MPQ stereo WAVE ADPCM compression mask bit. */
     public static final int COMPRESSION_WAVE_STEREO = 0x80;
+    /** Exclusive MPQ v2+ LZMA selector; it is not a chainable mask bit. */
+    public static final int COMPRESSION_LZMA = 0x00000100;
 
     private Mpq() { }
 

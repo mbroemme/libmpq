@@ -98,6 +98,9 @@ def test_creation_streaming_compression_clone_and_blocks(tmp_path):
         writer.add("compressed.bin", repetitive,
                    mpq.FileCreateOptions.compressed(mpq.COMPRESSION_ZLIB,
                                                     mpq.COMPRESSION_ZLIB))
+        writer.add("lzma.bin", repetitive,
+                   mpq.FileCreateOptions.compressed(mpq.COMPRESSION_LZMA,
+                                                    mpq.COMPRESSION_LZMA))
         writer.add_path("path.txt", source_path)
         with writer.begin("stream.bin", len(streamed)) as stream:
             stream.write(streamed[:1000])
@@ -108,6 +111,7 @@ def test_creation_streaming_compression_clone_and_blocks(tmp_path):
         try:
             assert clone["raw.bin"].read() == b"raw payload"
             assert archive["compressed.bin"].read() == repetitive
+            assert archive["lzma.bin"].read() == repetitive
             assert archive["path.txt"].read() == b"path payload"
             assert archive["stream.bin"].read() == streamed
             assert archive["raw.bin"].read_block(0) == b"raw payload"
