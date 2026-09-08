@@ -21,8 +21,9 @@ Battle.net Edition, Warcraft III, and World of Warcraft.
 libmpq provides a C API for applications that need to inspect, create, and
 extract MPQ archives. Creation supports seekable v1 and v2 archives, streaming
 or buffer/path file addition, encrypted tables and payloads, optional listfiles,
-raw and single-unit files, PKWARE implode, and multi-compression sectors using
-Huffman, zlib, PKWARE, bzip2, or mono/stereo WAVE ADPCM.
+raw and single-unit files, PKWARE implode, multi-compression sectors using
+Huffman, zlib, PKWARE, bzip2, or mono/stereo WAVE ADPCM, and the exclusive
+MPQ v2+ LZMA method.
 
 ## Features
 
@@ -37,14 +38,19 @@ Huffman, zlib, PKWARE, bzip2, or mono/stereo WAVE ADPCM.
 * Create raw, single-unit, sectorized, and multi-sector file entries.
 * Compress file sectors with PKWARE implode, Huffman, zlib, bzip2, or WAVE
   ADPCM using separate first-sector and later-sector masks.
-* Decompress zlib, bzip2, Huffman, PKWARE implode, Blizzard multi-compression,
-  and mono or stereo WAVE ADPCM payloads.
+* Compress MPQ v2+ file sectors with the exclusive LZMA compression method.
+* Decompress zlib, bzip2, MPQ v2+ LZMA, Huffman, PKWARE implode, Blizzard
+  multi-compression, and mono or stereo WAVE ADPCM payloads.
 * Generate an optional `(listfile)` entry during archive creation.
-* Provide a stable C API with installed headers under `include/libmpq`.
 * Support big-endian hosts through explicit little-endian serialization; CI
   runs the full test suite on emulated s390x.
 * Provide optional Python 3.11+, D, and Java bindings.
 * Install API manual pages for the library functions and `libmpq-config`.
+* Provide a stable C API with installed headers under `include/libmpq`.
+
+For MPQ v2+ creation, `LIBMPQ_COMPRESSION_LZMA` is an exclusive API selector,
+not a chainable multi-compression bit. It maps to serialized method `0x12`;
+that byte retains its legacy bzip2-plus-zlib meaning in MPQ v1.
 
 ## Requirements
 
@@ -54,6 +60,7 @@ The build system requires:
 * GNU Autoconf, Automake, and Libtool.
 * zlib development headers and libraries.
 * bzip2 development headers and libraries.
+* xz development headers and libraries.
 
 The Python, D, and Java bindings are maintained and distributed through their
 native package ecosystems. They are included in source distributions but are
@@ -83,7 +90,7 @@ Install the build tools and compression-library development packages with:
 
 ```sh
 sudo apt install build-essential autoconf automake libtool \
-  zlib1g-dev libbz2-dev
+  zlib1g-dev libbz2-dev liblzma-dev
 ```
 
 ### Fedora
@@ -93,7 +100,7 @@ with:
 
 ```sh
 sudo dnf install gcc make autoconf automake libtool \
-  zlib-devel bzip2-devel
+  zlib-devel bzip2-devel xz-devel
 ```
 
 ### openSUSE
@@ -103,7 +110,7 @@ with:
 
 ```sh
 sudo zypper install gcc make autoconf automake libtool \
-  zlib-devel libbz2-devel
+  zlib-devel libbz2-devel liblzma-devel
 ```
 
 ### Arch Linux
@@ -112,7 +119,7 @@ Install the base build tools and required libraries with:
 
 ```sh
 sudo pacman -S --needed base-devel autoconf automake libtool \
-  zlib bzip2
+  zlib bzip2 xz
 ```
 
 Use `./configure --prefix=DIR` to select a different installation prefix. Use
@@ -201,10 +208,11 @@ x86_64 Linux SDK archives:
 * `libmpq-X.Y.Z-linux-glibc-x86_64.tar.gz` for glibc 2.17 and later.
 * `libmpq-X.Y.Z-linux-musl-x86_64.tar.gz` for musl 1.2 and later.
 
-The SDKs use the host's zlib and bzip2 shared libraries; those runtime and
-development dependencies are not bundled. Each archive extracts a single
-package directory containing the executable helper, public headers, shared
-library, pkg-config metadata, manual pages, licenses, README, and BUILDINFO.
+The SDKs use the host's zlib, bzip2, and liblzma shared libraries; those
+runtime and development dependencies are not bundled. The glibc baseline
+applies to libmpq itself. Each archive extracts a single package directory
+containing the executable helper, public headers, shared library, pkg-config
+metadata, manual pages, licenses, README, and BUILDINFO.
 
 Extract the selected SDK anywhere convenient:
 
@@ -399,7 +407,7 @@ encryption, sectors, and compression, see [MPQ format guide](MPQ.md).
   random-access writing is unsupported. Creation uses an owner-only plaintext
   temporary file; the completed archive uses normal caller-umask permissions.
   Cleanup is best effort, so a crash can leave the plaintext temporary behind.
-* Sparse and LZMA compression, attributes, signatures, checksums, patch
+* Sparse compression, attributes, signatures, checksums, patch
   metadata, and StormLib-specific key modes are not supported by the writer.
 * Windows support is not currently tested or documented by the Autotools build.
 

@@ -7,9 +7,9 @@ negative C status values into `MPQException` while retaining the low-level
 
 ## Requirements
 
-The native libmpq library and its zlib and bzip2 dependencies must be installed
-or available to the linker. From a libmpq checkout, build the native library
-first:
+The native libmpq library and its zlib, bzip2, and lzma dependencies must be
+installed or available to the linker. From a libmpq checkout, build the native
+library first:
 
 ```sh
 sh autogen.sh

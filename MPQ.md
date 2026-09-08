@@ -107,11 +107,15 @@ when decoding; a sector may instead be stored raw when compression loses.
 | `0x20` | sparse/run-length transform |
 | `0x40` | IMA ADPCM mono |
 | `0x80` | IMA ADPCM stereo |
-| `0x12` | LZMA; a special value, not `0x02 \| 0x10` |
+| `0x12` | MPQ v2+ LZMA exclusive method; not `0x02 \| 0x10` |
 
-The sparse, ADPCM, and LZMA variants are game-specific later extensions. Do
-not decode a mask until every required transform is implemented. Bound every
-decoder by the expected unpacked sector length.
+For MPQ v1, `0x12` retains its legacy BZIP2 + zlib chain meaning. For MPQ v2+,
+it is LZMA and its payload is `useFilter` zero, five LZMA1 property bytes, an
+advisory little-endian 64-bit original size, and raw LZMA1 data normally
+without an end marker. StormLib normally writes those no-EOPM streams; libmpq
+writes LZMA1 streams with an EOPM and accepts both forms when reading. libmpq
+also rejects LZMA properties that require more than 64 MiB of decoder memory.
+Bound every decoder by the expected unpacked sector length.
 
 ## Hashing and the table cipher
 

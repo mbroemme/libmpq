@@ -186,11 +186,17 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .SH DESCRIPTION
 .PP
 The \fIlibmpq\fP library creates and reads MPQ archives, decrypts and
-decompresses file data, and extracts files compressed with zlib, bzip2, or
-PKWARE implosion. Creation uses seekable v1 or v2 archives and may be driven
-through a streaming writer or buffer/path convenience functions. The current
-writer supports raw sectors, encrypted tables and payloads, generated
-listfiles, and zlib or bzip2 multi-compression.
+decompresses file data, and extracts files compressed with Huffman, zlib,
+bzip2, PKWARE implosion, or the exclusive MPQ v2+ LZMA compression method.
+Creation uses seekable v1 or v2 archives and
+may be driven through a streaming writer or buffer/path convenience functions.
+The current writer supports raw sectors, encrypted tables and payloads, generated
+listfiles, zlib or bzip2 multi-compression, and exclusive MPQ v2+ LZMA
+compression.
+.PP
+For MPQ v2+ creation, \fBLIBMPQ_COMPRESSION_LZMA\fP is an exclusive API
+selector that serializes as method 0x12. It is not a multi-compression bit;
+0x12 keeps its legacy bzip2-plus-zlib interpretation in MPQ v1 archives.
 .PP
 An archive handle is not safe for concurrent operations. Use
 \fBlibmpq__archive_clone\fP() to create one independent reader per worker.
