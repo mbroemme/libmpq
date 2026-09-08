@@ -15,8 +15,9 @@ import pytest
 import mpq
 
 
-ROOT = Path(__file__).resolve().parents[3]
-FIXTURES = ROOT / "tests" / "fixtures"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+if not FIXTURES.is_dir():
+    FIXTURES = Path(__file__).resolve().parents[3] / "tests" / "fixtures"
 
 
 def test_version_errors_and_hashes():
