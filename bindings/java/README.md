@@ -5,6 +5,13 @@ These bindings use the Java Foreign Function and Memory API and require JDK
 through `org.libmpq.ffi.LibmpqNative` and safer `AutoCloseable` wrappers in
 `org.libmpq`.
 
+Creation defaults to `Mpq.COMPRESSION_POLICY_STANDARD`. Set
+`Mpq.ARCHIVE_CREATE_COMPRESSION_EXTENDED` in `ArchiveCreateOptions.flags`
+for additional, potentially less interoperable compression forms. Use
+`Mpq.archiveCompressionAllowed(version, mask, policy)` to query whether a
+compression selection is allowed by the writer policy, using zero-based
+`Mpq.ARCHIVE_VERSION_*` selectors. Readers remain permissive.
+
 The JAR does not contain a native library. Autotools does not install the
 Java binding; Maven builds the platform-independent runtime, sources, and
 Javadoc JARs. Build and install libmpq separately, then either set

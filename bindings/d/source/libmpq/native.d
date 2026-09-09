@@ -49,6 +49,14 @@ alias LIBMPQ_ERROR_UNPACK = ERROR_UNPACK;
 enum ARCHIVE_VERSION_ONE = 0u;
 enum ARCHIVE_VERSION_TWO = 1u;
 enum ARCHIVE_CREATE_LISTFILE = 0x00000001u;
+enum ARCHIVE_CREATE_COMPRESSION_EXTENDED = 0x00000002u;
+enum COMPRESSION_POLICY_STANDARD = 0;
+enum COMPRESSION_POLICY_EXTENDED = 1;
+/** The native policy is int32_t; D int is a signed 32-bit integer. */
+alias libmpq_compression_policy_t = int;
+alias LIBMPQ_COMPRESSION_POLICY_STANDARD = COMPRESSION_POLICY_STANDARD;
+alias LIBMPQ_COMPRESSION_POLICY_EXTENDED = COMPRESSION_POLICY_EXTENDED;
+alias LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED = ARCHIVE_CREATE_COMPRESSION_EXTENDED;
 alias LIBMPQ_ARCHIVE_VERSION_ONE = ARCHIVE_VERSION_ONE;
 alias LIBMPQ_ARCHIVE_VERSION_TWO = ARCHIVE_VERSION_TWO;
 alias LIBMPQ_ARCHIVE_CREATE_LISTFILE = ARCHIVE_CREATE_LISTFILE;
@@ -111,6 +119,10 @@ extern(C) {
 
     /** Translate a libmpq status code into a static diagnostic string. */
     const(char)* libmpq__strerror(int return_code);
+
+    /** Query whether writer compression is allowed; archive versions are zero-based selectors. */
+    int libmpq__archive_compression_allowed(uint archive_version, uint compression_mask,
+                                          libmpq_compression_policy_t policy);
 
     /** Open an archive and return its owned native handle through output. */
     int libmpq__archive_open(mpq_archive_s** archive, const(char)* path,

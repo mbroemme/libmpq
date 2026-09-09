@@ -21,6 +21,13 @@ public import libmpq.options;
 
 /** Convenience entry point for constants and stateless MPQ operations. */
 final class Mpq {
+    /** Query whether writer compression is allowed using zero-based version and policy selectors. */
+    static bool archiveCompressionAllowed(uint version_, uint mask,
+                                         libmpq_compression_policy_t policy =
+                                             COMPRESSION_POLICY_STANDARD) {
+        return libmpq__archive_compression_allowed(version_, mask, policy) != 0;
+    }
+
     /** Return the libmpq package version. */
     static string version_() {
         auto message = libmpq__version();

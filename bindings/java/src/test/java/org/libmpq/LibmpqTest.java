@@ -10,6 +10,7 @@ package org.libmpq;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -50,6 +51,10 @@ class LibmpqTest {
     void preservesNativeStructLayouts() {
         assertEquals(16, LibmpqNative.ARCHIVE_OPTIONS.byteSize());
         assertEquals(16, LibmpqNative.FILE_OPTIONS.byteSize());
+        assertFalse(Mpq.archiveCompressionAllowed(Mpq.ARCHIVE_VERSION_TWO,
+            Mpq.COMPRESSION_HUFFMAN, Mpq.COMPRESSION_POLICY_STANDARD));
+        assertTrue(Mpq.archiveCompressionAllowed(Mpq.ARCHIVE_VERSION_TWO,
+            Mpq.COMPRESSION_HUFFMAN, Mpq.COMPRESSION_POLICY_EXTENDED));
     }
 
     /** Resolves a Storm hash and reads a known fixture through the facade. */

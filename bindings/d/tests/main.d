@@ -26,6 +26,9 @@ private void testVersionAndErrors() {
     assert(Mpq.version_().length > 0);
     assert(Mpq.strerror(ERROR_OPEN).length > 0);
     assert(Mpq.strerror(-999).length > 0);
+    assert(!Mpq.archiveCompressionAllowed(ARCHIVE_VERSION_TWO, COMPRESSION_HUFFMAN));
+    assert(Mpq.archiveCompressionAllowed(ARCHIVE_VERSION_TWO, COMPRESSION_HUFFMAN,
+                                   COMPRESSION_POLICY_EXTENDED));
 }
 
 private void testCreateReadAndMetadata(uint archiveVersion) {

@@ -5,6 +5,13 @@ module. The high-level `Archive`, `File`, and `MpqFileWriter` classes translate
 negative C status values into `MPQException` while retaining the low-level
 `extern(C)` declarations for applications that need direct ABI access.
 
+Creation defaults to `COMPRESSION_POLICY_STANDARD`. Set
+`ARCHIVE_CREATE_COMPRESSION_EXTENDED` in `ArchiveCreateOptions.flags` for
+additional, potentially less interoperable compression forms. Use
+`Mpq.archiveCompressionAllowed(version, mask, policy)` to query whether a
+compression selection is allowed by the writer policy, using zero-based
+`ARCHIVE_VERSION_*` selectors. Readers remain permissive.
+
 ## Requirements
 
 The native libmpq library and its zlib, bzip2, and lzma dependencies must be

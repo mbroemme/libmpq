@@ -50,6 +50,12 @@ public final class Mpq {
     public static final int ARCHIVE_VERSION_TWO = 1;
     /** Creation flag requesting a generated {@code (listfile)} entry. */
     public static final int ARCHIVE_CREATE_LISTFILE = 0x00000001;
+    /** Select EXTENDED compression in archive creation flags; zero defaults to STANDARD. */
+    public static final int ARCHIVE_CREATE_COMPRESSION_EXTENDED = 0x00000002;
+    /** Interoperability-oriented writer compression policy. */
+    public static final int COMPRESSION_POLICY_STANDARD = 0;
+    /** Permit implemented compression forms that may be less interoperable. */
+    public static final int COMPRESSION_POLICY_EXTENDED = 1;
     /** MPQ flag for standalone PKWARE implode storage. */
     public static final int FILE_FLAG_IMPLODE = 0x00000100;
     /** MPQ flag for multi-compression storage. */
@@ -93,6 +99,11 @@ public final class Mpq {
      */
     public static String strerror(int code) {
         return Support.cString(LibmpqNative.strerror(code));
+    }
+
+    /** Query whether writer compression is allowed using zero-based version and policy selectors. */
+    public static boolean archiveCompressionAllowed(int version, int mask, int policy) {
+        return LibmpqNative.archiveCompressionAllowed(version, mask, policy) != 0;
     }
 
     /**

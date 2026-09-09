@@ -53,6 +53,7 @@ public final class LibmpqNative {
 
     private static final MethodHandle VERSION;
     private static final MethodHandle STRERROR;
+    private static final MethodHandle ARCHIVE_COMPRESSION_ALLOWED;
     private static final MethodHandle ARCHIVE_OPEN;
     private static final MethodHandle ARCHIVE_OPEN_MPQE;
     private static final MethodHandle ARCHIVE_CREATE;
@@ -92,6 +93,8 @@ public final class LibmpqNative {
                            FunctionDescriptor.of(ValueLayout.ADDRESS));
         STRERROR = function(linker, lookup, "libmpq__strerror",
                             FunctionDescriptor.of(ValueLayout.ADDRESS, C_INT));
+        ARCHIVE_COMPRESSION_ALLOWED = function(linker, lookup, "libmpq__archive_compression_allowed",
+                                         FunctionDescriptor.of(C_INT, C_INT, C_INT, C_INT));
         ARCHIVE_OPEN = function(linker, lookup, "libmpq__archive_open",
                                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                       ValueLayout.ADDRESS, C_LONG));
@@ -276,6 +279,13 @@ public final class LibmpqNative {
      * The pointer is borrowed and has static-library lifetime.
      */
     public static MemorySegment strerror(int code) { return callAddress(STRERROR, code); }
+    /**
+     * Returns 1 if compression is allowed for the version and policy, otherwise 0.
+     * Both policy and the return value are native int32_t values.
+     */
+    public static int archiveCompressionAllowed(int version, int mask, int policy) {
+        return callInt(ARCHIVE_COMPRESSION_ALLOWED, version, mask, policy);
+    }
     /** Calls {@code libmpq__archive_open} and writes the resulting handle to out. */
     public static int archiveOpen(MemorySegment out, MemorySegment path, long offset) {
         return callInt(ARCHIVE_OPEN, out, path, offset);

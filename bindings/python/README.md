@@ -5,6 +5,14 @@ the historical `import mpq` API while adding explicit archive and reader
 lifecycle management, typed native errors, archive creation, cloning,
 metadata, block access, compression, encryption, and streaming writes.
 
+Creation defaults to `COMPRESSION_POLICY_STANDARD`. Pass
+`flags=mpq.ARCHIVE_CREATE_COMPRESSION_EXTENDED` to `Writer` or
+`Writer.create_mpqe` for additional, potentially less interoperable methods.
+Use `mpq.archive_compression_allowed(version, mask, policy)` to query whether
+a compression selection is allowed by the writer policy. Version uses
+`ARCHIVE_VERSION_ONE` or `ARCHIVE_VERSION_TWO`. Readers remain permissive
+regardless of the creation policy.
+
 The canonical release installation path is [PyPI](https://pypi.org/project/libmpq/):
 
 ```sh

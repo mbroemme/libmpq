@@ -30,6 +30,9 @@ ERROR_UNPACK = -12
 ARCHIVE_VERSION_ONE = 0
 ARCHIVE_VERSION_TWO = 1
 ARCHIVE_CREATE_LISTFILE = 0x00000001
+ARCHIVE_CREATE_COMPRESSION_EXTENDED = 0x00000002
+COMPRESSION_POLICY_STANDARD = 0
+COMPRESSION_POLICY_EXTENDED = 1
 FILE_FLAG_IMPLODE = 0x00000100
 FILE_FLAG_COMPRESS = 0x00000200
 FILE_FLAG_ENCRYPTED = 0x00010000
@@ -197,6 +200,7 @@ def _configure(name, restype, *argtypes):
 
 _configure("libmpq__version", ctypes.c_char_p)
 _configure("libmpq__strerror", ctypes.c_char_p, ctypes.c_int32)
+_configure("libmpq__archive_compression_allowed", ctypes.c_int32, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_int32)
 _configure("libmpq__archive_open", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _OFF_T)
 _configure("libmpq__archive_open_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _OFF_T, _BYTE_PTR, ctypes.c_size_t)
 _configure("libmpq__archive_create", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _VOID_PTR)
@@ -226,6 +230,11 @@ _configure("libmpq__block_open_offset", ctypes.c_int32, _VOID_PTR, ctypes.c_uint
 _configure("libmpq__block_close_offset", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32)
 _configure("libmpq__block_size_unpacked", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(_OFF_T))
 _configure("libmpq__block_read", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, _BYTE_PTR, _OFF_T, ctypes.POINTER(_OFF_T))
+
+
+def archive_compression_allowed(archive_version, compression_mask, policy=COMPRESSION_POLICY_STANDARD):
+    """Query whether writer compression is allowed using zero-based version and policy selectors."""
+    return bool(libmpq.libmpq__archive_compression_allowed(archive_version, compression_mask, policy))
 
 
 def version():

@@ -7,6 +7,7 @@
 
 """End-to-end tests for the public Python binding and native libmpq ABI."""
 
+import ctypes
 import os
 from pathlib import Path
 
@@ -25,6 +26,12 @@ def test_version_errors_and_hashes():
     assert mpq.version()
     assert "format" in mpq.strerror(mpq.ERROR_FORMAT)
     assert len(mpq.file_hash("overview.txt")) == 3
+    query = mpq.libmpq.libmpq__archive_compression_allowed
+    assert query.restype == ctypes.c_int32
+    assert query.argtypes == [ctypes.c_uint32, ctypes.c_uint32, ctypes.c_int32]
+    assert not mpq.archive_compression_allowed(mpq.ARCHIVE_VERSION_TWO, mpq.COMPRESSION_HUFFMAN)
+    assert mpq.archive_compression_allowed(mpq.ARCHIVE_VERSION_TWO, mpq.COMPRESSION_HUFFMAN,
+                                     mpq.COMPRESSION_POLICY_EXTENDED)
 
 
 def test_wheel_uses_bundled_library():
