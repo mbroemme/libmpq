@@ -10,6 +10,56 @@
 #include <bzlib.h>
 #include <zlib.h>
 
+/* STANDARD restores raw data if only one stage of an ADPCM pair survives. */
+static int
+test_partial_chains(void)
+{
+    static const size_t sizes[] = { 2047, 12 };
+    uint8_t input[2047];
+    uint8_t *packed = NULL;
+    uint8_t emitted;
+    size_t packed_size;
+    size_t size;
+    size_t i;
+    size_t j;
+    uint32_t mask;
+    uint32_t state = 1;
+    int matches;
+
+    /* Odd input skips ADPCM; short PCM skips Huffman after lossy encoding. */
+    for (j = 0; j < sizeof(sizes) / sizeof(sizes[0]); ++j) {
+        size = sizes[j];
+        memset(input, 'C', sizeof(input));
+        if (size == 12) {
+            for (i = 0; i < size; ++i) {
+                state = state * 1664525U + 1013904223U;
+                input[i] = (uint8_t)(state >> 24);
+            }
+        }
+        for (mask = 0x41; mask <= 0x81; mask += 0x40) {
+            TEST_CHECK(
+                libmpq__compression_encode_sector(
+                    input, size, mask, LIBMPQ_ARCHIVE_VERSION_TWO,
+                    LIBMPQ_COMPRESSION_POLICY_EXTENDED, &packed, &packed_size, &emitted
+                ) == 0
+            );
+            matches = emitted == (size == 12 ? mask & ~1U : 1U);
+            free(packed);
+            TEST_CHECK(matches);
+            TEST_CHECK(
+                libmpq__compression_encode_sector(
+                    input, size, mask, LIBMPQ_ARCHIVE_VERSION_TWO,
+                    LIBMPQ_COMPRESSION_POLICY_STANDARD, &packed, &packed_size, &emitted
+                ) == 0
+            );
+            matches = emitted == 0 && packed_size == size && memcmp(packed, input, size) == 0;
+            free(packed);
+            TEST_CHECK(matches);
+        }
+    }
+    return 0;
+}
+
 /* Round-trip one bounded payload and optionally require useful compression. */
 static int
 test_round_trip(const uint8_t *input, uint32_t size, int compressible)
@@ -185,6 +235,7 @@ main(void)
     size_t i;
 
     TEST_CHECK(test_window_flush() == 0);
+    TEST_CHECK(test_partial_chains() == 0);
     TEST_CHECK(test_general_matches() == 0);
     TEST_CHECK(test_match_boundaries() == 0);
     TEST_CHECK(test_literal_stream() == 0);

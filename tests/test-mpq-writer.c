@@ -576,13 +576,12 @@ property_mode_supported(
     const writer_mode_s *mode, uint32_t version, uint32_t sector_size, size_t payload_size
 )
 {
-    uint32_t mask = mode->options.compression_first | mode->options.compression_next;
-
-    if (version == LIBMPQ_ARCHIVE_VERSION_ONE && (mask & LIBMPQ_COMPRESSION_LZMA) != 0)
-        return 0;
-    if (version >= LIBMPQ_ARCHIVE_VERSION_TWO &&
-        (mask & (LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) ==
-            (LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) {
+    if (!libmpq__archive_compression_allowed(
+            version, mode->options.compression_first, LIBMPQ_COMPRESSION_POLICY_EXTENDED
+        ) ||
+        !libmpq__archive_compression_allowed(
+            version, mode->options.compression_next, LIBMPQ_COMPRESSION_POLICY_EXTENDED
+        )) {
         return 0;
     }
     if (payload_size == 0 &&
@@ -605,7 +604,8 @@ test_property_case(uint32_t version, uint32_t sector_size, size_t payload_size)
     uint8_t *payload = NULL;
     uint8_t *output = NULL;
     mpq_archive_s *archive = NULL;
-    mpq_archive_create_options_s archive_options = { version, 32, sector_size, 0 };
+    mpq_archive_create_options_s archive_options = { version, 32, sector_size,
+                                                     LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED };
     libmpq__off_t transferred;
     int32_t result;
     uint32_t number;

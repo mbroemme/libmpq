@@ -97,6 +97,15 @@ libmpq__version(void)
     return VERSION;
 }
 
+/* Query whether writer compression is allowed without restricting archive decoding. */
+int32_t
+libmpq__archive_compression_allowed(
+    uint32_t archive_version, uint32_t compression_mask, libmpq_compression_policy_t policy
+)
+{
+    return libmpq__compression_allowed(archive_version, compression_mask, policy);
+}
+
 /* Translate a libmpq return code into a static diagnostic string.
  * Valid codes index an internal immutable table; invalid positive or out-of-
  * range negative values return NULL instead of reading outside that table. */

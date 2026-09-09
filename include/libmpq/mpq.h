@@ -96,6 +96,19 @@ typedef struct mpq_writer mpq_writer_s;
  */
 #define LIBMPQ_ARCHIVE_CREATE_LISTFILE 0x00000001u
 
+/* Opt into EXTENDED writer compression; absence selects STANDARD. */
+#define LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED 0x00000002u
+
+/* Fixed-width writer policy; readers never require a policy selection. */
+typedef int32_t libmpq_compression_policy_t;
+
+/* Writer interoperability policy values. */
+enum
+{
+    LIBMPQ_COMPRESSION_POLICY_STANDARD = 0,
+    LIBMPQ_COMPRESSION_POLICY_EXTENDED = 1
+};
+
 /*
  * File-storage flags accepted by mpq_file_options_s.flags.
  * IMPLODE selects standalone PKWARE storage, while COMPRESS selects the MPQ
@@ -120,6 +133,9 @@ typedef struct mpq_writer mpq_writer_s;
  * mono and stereo WAVE ADPCM bits are mutually exclusive. For MPQ v2+, the
  * writer rejects chains containing both zlib and bzip2 because the resulting
  * successful-stage mask could be 0x12, which is reserved for LZMA.
+ * STANDARD further limits v2 to zlib, PKWARE, bzip2, LZMA, and Huffman paired
+ * with exactly one WAVE ADPCM bit. EXTENDED permits other implemented chains
+ * and standalone Huffman, which may be less interoperable with other readers.
  */
 #ifndef LIBMPQ_COMPRESSION_HUFFMAN
 #define LIBMPQ_COMPRESSION_HUFFMAN 0x01u
@@ -150,7 +166,7 @@ typedef struct
     uint32_t version;     /* Archive format selector; LIBMPQ_ARCHIVE_VERSION_* is required. */
     uint32_t max_files;   /* Reserved file-entry capacity; zero selects the default capacity. */
     uint32_t sector_size; /* Power-of-two unpacked sector size; zero selects 4096 bytes. */
-    uint32_t flags;       /* LIBMPQ_ARCHIVE_CREATE_* options applied during finalization. */
+    uint32_t flags;       /* LIBMPQ_ARCHIVE_CREATE_* policy and finalization options. */
 } mpq_archive_create_options_s;
 
 /*
@@ -192,6 +208,19 @@ extern LIBMPQ_API const char *libmpq__version(void);
  * diagnostic rather than causing an allocation or other side effect.
  */
 extern LIBMPQ_API const char *libmpq__strerror(int32_t return_code);
+
+/*
+ * Return 1 if the compression selection is allowed for the archive version
+ * and policy, otherwise 0. archive_version uses
+ * LIBMPQ_ARCHIVE_VERSION_* selectors (0=v1, 1=v2), not the one-based value
+ * returned by libmpq__archive_version. Zero means raw storage. LZMA requires
+ * the exclusive LIBMPQ_COMPRESSION_LZMA selector, not on-disk method 0x12.
+ * WAVE input and file-storage constraints still apply when adding a file.
+ * Sparse compression is not implemented. This query does not restrict reads.
+ */
+extern LIBMPQ_API int32_t libmpq__archive_compression_allowed(
+    uint32_t archive_version, uint32_t compression_mask, libmpq_compression_policy_t policy
+);
 
 /*
  * Open an MPQ archive from a path and return a newly allocated read handle.

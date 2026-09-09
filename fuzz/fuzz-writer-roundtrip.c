@@ -122,8 +122,19 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     archive_options.sector_size =
         sector_sizes[data[2] % (sizeof(sector_sizes) / sizeof(sector_sizes[0]))];
     archive_options.flags = LIBMPQ_ARCHIVE_CREATE_LISTFILE;
+    if ((data[0] & 0x08U) != 0U)
+        archive_options.flags |= LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED;
     mpqe = (data[0] & 0x04U) != 0U;
     options = file_options(data[1], archive_options.version);
+    if (!libmpq__archive_compression_allowed(
+            archive_options.version, options.compression_first,
+            (archive_options.flags & LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED) != 0
+                ? LIBMPQ_COMPRESSION_POLICY_EXTENDED
+                : LIBMPQ_COMPRESSION_POLICY_STANDARD
+        )) {
+        options.compression_first = LIBMPQ_COMPRESSION_ZLIB;
+        options.compression_next = LIBMPQ_COMPRESSION_ZLIB;
+    }
     payload = data + 3;
     if ((options.flags & LIBMPQ_FILE_FLAG_ENCRYPTED) != 0) {
         if (payload_size < 8U) {

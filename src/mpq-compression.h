@@ -60,6 +60,9 @@
 /* Reject raw-LZMA1 properties that require more than 64 MiB to decode. */
 #define LIBMPQ_LZMA_DECODER_MEMORY_MAX (64u * 1024u * 1024u)
 
+/* Public writer policies and selectors shared by the encoding interface. */
+#include <libmpq/mpq.h>
+
 /*
  * Codec callback signature used by the multi-compression dispatcher. The
  * input and output buffers are owned by the caller; a successful codec
@@ -127,12 +130,10 @@ extern int32_t libmpq__compression_decompress_multi(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size, uint32_t format_version
 );
 
-/*
- * Report whether mask contains only codec bits implemented by this build.
- * Zero is accepted because it describes an uncompressed sector; reserved or
- * unsupported bits return false.
- */
-int libmpq__compression_supported_mask(uint32_t mask, uint32_t format_version);
+/* Validate a writer policy and mask for the serialized MPQ version (0=v1, 1=v2). */
+int32_t libmpq__compression_allowed(
+    uint32_t format_version, uint32_t mask, libmpq_compression_policy_t policy
+);
 
 /*
  * Encode one sector through the requested codec chain.
@@ -144,7 +145,7 @@ int libmpq__compression_supported_mask(uint32_t mask, uint32_t format_version);
  */
 int32_t libmpq__compression_encode_sector(
     const uint8_t *input, size_t input_size, uint32_t requested, uint32_t format_version,
-    uint8_t **output, size_t *output_size, uint8_t *emitted_mask
+    libmpq_compression_policy_t policy, uint8_t **output, size_t *output_size, uint8_t *emitted_mask
 );
 
 /*

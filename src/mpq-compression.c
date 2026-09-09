@@ -517,20 +517,37 @@ libmpq__compression_decompress_multi(
     return tb;
 }
 
-/* Return whether every requested compression bit has a local implementation.
- * Unknown bits are rejected before any codec or archive state is modified. */
-int
-libmpq__compression_supported_mask(uint32_t mask, uint32_t format_version)
+/* Return whether the compression mask is allowed for this archive version
+ * and writer policy. */
+int32_t
+libmpq__compression_allowed(
+    uint32_t format_version, uint32_t mask, libmpq_compression_policy_t policy
+)
 {
+    if (format_version > LIBMPQ_ARCHIVE_VERSION_TWO ||
+        (policy != LIBMPQ_COMPRESSION_POLICY_STANDARD &&
+         policy != LIBMPQ_COMPRESSION_POLICY_EXTENDED))
+        return 0;
     if (mask == LIBMPQ_COMPRESSION_LZMA)
         return format_version >= LIBMPQ_ARCHIVE_VERSION_TWO;
     if (mask & LIBMPQ_COMPRESSION_LZMA)
+        return 0;
+    if ((mask & (LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO)) ==
+        (LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO))
         return 0;
     if (format_version >= LIBMPQ_ARCHIVE_VERSION_TWO &&
         (mask & (LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) ==
             (LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) {
         return 0;
     }
+
+    /* STANDARD v2 uses a fixed method list instead of arbitrary chains. */
+    if (format_version >= LIBMPQ_ARCHIVE_VERSION_TWO &&
+        policy == LIBMPQ_COMPRESSION_POLICY_STANDARD)
+        return mask == 0 || mask == LIBMPQ_COMPRESSION_ZLIB || mask == LIBMPQ_COMPRESSION_PKZIP ||
+               mask == LIBMPQ_COMPRESSION_BZIP2 ||
+               mask == (LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_WAVE_MONO) ||
+               mask == (LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_WAVE_STEREO);
     return (mask & ~(LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_ZLIB |
                      LIBMPQ_COMPRESSION_PKZIP | LIBMPQ_COMPRESSION_BZIP2 |
                      LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO)) == 0;
@@ -651,7 +668,7 @@ compression_stage(uint8_t **data, size_t *size, uint32_t mask)
 int32_t
 libmpq__compression_encode_sector(
     const uint8_t *input, size_t input_size, uint32_t requested, uint32_t format_version,
-    uint8_t **output, size_t *output_size, uint8_t *emitted_mask
+    libmpq_compression_policy_t policy, uint8_t **output, size_t *output_size, uint8_t *emitted_mask
 )
 {
     uint8_t *data;
@@ -661,7 +678,7 @@ libmpq__compression_encode_sector(
                          LIBMPQ_COMPRESSION_PKZIP,     LIBMPQ_COMPRESSION_BZIP2 };
     size_t i;
 
-    if (!libmpq__compression_supported_mask(requested, format_version))
+    if (!libmpq__compression_allowed(format_version, requested, policy))
         return LIBMPQ_ERROR_FORMAT;
     if (requested == LIBMPQ_COMPRESSION_LZMA)
         return encode_lzma(input, input_size, output, output_size, emitted_mask);
@@ -698,6 +715,17 @@ libmpq__compression_encode_sector(
             }
             free(saved);
         }
+    }
+
+    /* Skipped stages must not leave a disallowed method; restore raw input. */
+    if (!libmpq__compression_allowed(format_version, *emitted_mask, policy)) {
+        free(data);
+        data = malloc(input_size ? input_size : 1);
+        if (data == NULL)
+            return LIBMPQ_ERROR_MALLOC;
+        memcpy(data, input, input_size);
+        size = input_size;
+        *emitted_mask = 0;
     }
     if (*emitted_mask == 0 || size + 1 >= input_size) {
         *emitted_mask = 0;

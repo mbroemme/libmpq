@@ -144,7 +144,7 @@ failure:
 
 /* Prove that archive sectors after the lossless WAVE header use ADPCM. */
 static int
-test_adpcm_archive(void)
+test_adpcm_archive(uint32_t version)
 {
     char path[128];
     uint8_t *wave;
@@ -167,7 +167,8 @@ test_adpcm_archive(void)
     TEST_CHECK(test_temp_path(path, sizeof(path), "wave-adpcm") == 0);
     wave = make_wave(7000, 1, &wave_size);
     TEST_CHECK(wave != NULL);
-    TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_ONE, 0) == 0);
+    options.compression_first = options.compression_next;
+    TEST_CHECK(test_add_archive(&archive, path, version, 0) == 0);
     TEST_CHECK(libmpq__file_add(archive, "tone.wav", wave, wave_size, &options) == 0);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     archive = NULL;
@@ -248,7 +249,8 @@ main(void)
     TEST_CHECK(test_temp_path(path, sizeof(path), "wave") == 0);
     TEST_CHECK(test_adpcm_codec(1) == 0);
     TEST_CHECK(test_adpcm_codec(2) == 0);
-    TEST_CHECK(test_adpcm_archive() == 0);
+    TEST_CHECK(test_adpcm_archive(LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
+    TEST_CHECK(test_adpcm_archive(LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
     TEST_CHECK(test_adpcm_rejects_invalid_wave() == 0);
     TEST_CHECK(test_temp_path(inner_path, sizeof(inner_path), "wave-inner") == 0);
     TEST_CHECK(test_temp_path(extracted_path, sizeof(extracted_path), "wave-extracted") == 0);

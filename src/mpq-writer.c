@@ -38,6 +38,15 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+/* Resolve the private writer policy from the existing archive-creation flags. */
+static libmpq_compression_policy_t
+compression_policy(const mpq_archive_s *archive)
+{
+    return (archive->write_flags & LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED) != 0
+               ? LIBMPQ_COMPRESSION_POLICY_EXTENDED
+               : LIBMPQ_COMPRESSION_POLICY_STANDARD;
+}
+
 /* Return the smallest supported power-of-two table capacity at or above value.
  * MPQ hash tables use power-of-two probing, so this helper provides the next
  * legal capacity without exceeding the format's 32-bit range. */
@@ -102,8 +111,8 @@ stream_flush_sector(mpq_writer_s *writer)
         return LIBMPQ_ERROR_SIZE;
     if ((writer->options.flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0)
         result = libmpq__compression_encode_sector(
-            writer->data, writer->data_size, requested, archive->mpq_header.version, &packed,
-            &packed_size, &emitted
+            writer->data, writer->data_size, requested, archive->mpq_header.version,
+            compression_policy(archive), &packed, &packed_size, &emitted
         );
     else if ((writer->options.flags & LIBMPQ_FILE_FLAG_IMPLODE) != 0) {
         uint32_t packed32 = 0;
@@ -932,8 +941,12 @@ libmpq__writer_file_begin(
         return LIBMPQ_ERROR_FORMAT;
     }
     if ((options->flags & LIBMPQ_FILE_FLAG_COMPRESS) &&
-        (!libmpq__compression_supported_mask(options->compression_first, a->mpq_header.version) ||
-         !libmpq__compression_supported_mask(options->compression_next, a->mpq_header.version))) {
+        (!libmpq__compression_allowed(
+             a->mpq_header.version, options->compression_first, compression_policy(a)
+         ) ||
+         !libmpq__compression_allowed(
+             a->mpq_header.version, options->compression_next, compression_policy(a)
+         ))) {
         free(w);
         return LIBMPQ_ERROR_FORMAT;
     }
@@ -978,6 +991,12 @@ libmpq__writer_file_begin(
     w->options = *options;
     w->options.compression_first &=
         ~(LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO);
+
+    /* STANDARD v2 keeps the first WAVE sector lossless without standalone Huffman. */
+    if (!libmpq__compression_allowed(
+            a->mpq_header.version, w->options.compression_first, compression_policy(a)
+        ))
+        w->options.compression_first = LIBMPQ_COMPRESSION_ZLIB;
     if (w->options.compression_next == 0)
         w->options.compression_next = w->options.compression_first;
     if (a->write_sector_size == 0) {
