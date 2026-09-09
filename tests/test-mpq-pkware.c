@@ -10,6 +10,80 @@
 #include <bzlib.h>
 #include <zlib.h>
 
+/* Round-trip one bounded payload and optionally require useful compression. */
+static int
+test_round_trip(const uint8_t *input, uint32_t size, int compressible)
+{
+    uint8_t *output = malloc(size ? size : 1u);
+    uint8_t *packed = NULL;
+    uint32_t packed_size = 0;
+    int32_t result;
+
+    TEST_CHECK(output != NULL);
+    result = libmpq__pkzip_compress(input, size, &packed, &packed_size);
+    if (result != 0) {
+        free(output);
+        TEST_CHECK(result == 0);
+    }
+    result = libmpq__compression_decompress_pkzip(packed, packed_size, output, size);
+    free(packed);
+    if (result != (int32_t)size || memcmp(input, output, size) != 0) {
+        free(output);
+        TEST_CHECK(0);
+    }
+    free(output);
+    if (compressible)
+        TEST_CHECK(packed_size < size / 2u);
+    return 0;
+}
+
+/* Repeated prose must compress without adding artificial single-byte runs. */
+static int
+test_general_matches(void)
+{
+    static const char text[] = "This text uses PKWARE compression as a masked COMPRESS stage.\n";
+    uint8_t input[16384];
+    size_t i;
+
+    for (i = 0; i < sizeof(input); ++i)
+        input[i] = (uint8_t)text[i % (sizeof(text) - 1u)];
+    TEST_CHECK(test_round_trip(input, sizeof(input), 1) == 0);
+
+    /* Two- and three-byte overlapping patterns span many maximum-length matches. */
+    for (i = 0; i < sizeof(input); ++i)
+        input[i] = (uint8_t)('a' + i % 2u);
+    TEST_CHECK(test_round_trip(input, sizeof(input), 1) == 0);
+    for (i = 0; i < sizeof(input); ++i)
+        input[i] = (uint8_t)('a' + i % 3u);
+    TEST_CHECK(test_round_trip(input, sizeof(input), 1) == 0);
+    return 0;
+}
+
+/* Exercise distance suffix transitions, dictionary wrap, and short final matches. */
+static int
+test_match_boundaries(void)
+{
+    static const uint32_t distances[] = { 1,   2,    3,    63,   64,   65,   255, 256,
+                                          257, 1023, 1024, 2048, 4095, 4096, 4097 };
+    static const uint32_t lengths[] = { 0,  1,  2,   3,   8,   10,  14,  22,
+                                        38, 70, 134, 262, 515, 516, 517, 1033 };
+    uint8_t input[8192];
+    size_t i;
+    size_t j;
+    uint32_t k;
+
+    for (i = 0; i < sizeof(distances) / sizeof(distances[0]); ++i) {
+        for (j = 0; j < sizeof(lengths) / sizeof(lengths[0]); ++j) {
+            test_payload(input, distances[i], 71);
+            for (k = 0; k < lengths[j]; ++k)
+                input[distances[i] + k] = input[k];
+            TEST_CHECK(test_round_trip(input, distances[i] + lengths[j], 0) == 0);
+        }
+    }
+    TEST_CHECK(test_round_trip(input, 0, 0) == 0);
+    return 0;
+}
+
 /* Keep the MPQ v1 serialized 0x12 interpretation as bzip2 followed by zlib. */
 static int
 test_v1_legacy_0x12(void)
@@ -111,6 +185,8 @@ main(void)
     size_t i;
 
     TEST_CHECK(test_window_flush() == 0);
+    TEST_CHECK(test_general_matches() == 0);
+    TEST_CHECK(test_match_boundaries() == 0);
     TEST_CHECK(test_literal_stream() == 0);
     TEST_CHECK(test_short_runs() == 0);
     TEST_CHECK(test_v1_legacy_0x12() == 0);

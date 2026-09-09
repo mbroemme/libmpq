@@ -116,10 +116,10 @@ typedef struct
 uint32_t libmpq__pkzip_decompress(uint8_t *work_buf, void *param);
 
 /*
- * Encode binary input as a newly allocated DCL stream using literal and
- * distance-one run forms. out_buf is returned to the caller for release and
- * out_size reports its serialized length; invalid arguments or allocation
- * failure return a negative libmpq error.
+ * Encode binary input as a newly allocated DCL stream using literals and
+ * bounded 4 KiB dictionary matches. out_buf is returned to the caller for
+ * release and out_size reports its serialized length; invalid arguments,
+ * unrepresentable sizes, or allocation failure return a negative libmpq error.
  */
 int32_t libmpq__pkzip_compress(
     const uint8_t *in_buf, uint32_t in_size, uint8_t **out_buf, uint32_t *out_size

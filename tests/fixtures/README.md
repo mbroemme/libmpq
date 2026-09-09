@@ -1,8 +1,8 @@
 # MPQ regression fixtures
 
 `mpq-v1-features.mpq` and `mpq-v2-features.mpq` are deterministic archives
-created with libmpq. They contain the same feature descriptions and payloads,
-with only the MPQ archive format version differing.
+created with libmpq. They share the feature descriptions and payloads, with
+an additional LZMA member in the v2 archive.
 
 The archives contain `.txt` fixtures for raw storage, PKWARE implode, masked
 Huffman, zlib, PKWARE, bzip2, LZMA in the v2 fixture, chained compression,
@@ -13,6 +13,11 @@ WAVE input, mono/stereo IMA ADPCM, and the first-sector lossless requirement.
 The dedicated WAVE regression test generates binary input and verifies the
 lossy ADPCM path; no binary WAVE payload is stored in these archives.
 
+`pkware.txt` and `implode.txt` each contain their descriptive sentence and
+newline repeated 32 times, without single-byte padding runs. They exercise
+general PKWARE length/distance matches for masked COMPRESS and standalone
+implode storage.
+
 The descriptions inside the archives document archive creation and
 extraction, supported features, encryption ordering, standalone versus masked
 PKWARE, and valid compression chains.
@@ -20,7 +25,7 @@ PKWARE, and valid compression chains.
 `mpq-v1-features.mpqe` and `mpq-v2-features.mpqe` are the corresponding full
 MPQE-encrypted byte streams. They use the deliberately non-secret 32-byte test
 authentication code `LIBMPQ-MPQE-TEST-AUTH-CODE-00001`. Each 64-byte logical
-chunk, including the final 62-byte physical chunk, is transformed separately;
+chunk, including the final partial physical chunk, is transformed separately;
 only the physical bytes are stored. These fixtures are public interoperability
 vectors for MPQE stream implementations and are not installer credentials.
 

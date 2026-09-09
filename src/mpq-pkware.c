@@ -456,48 +456,105 @@ expand(pkzip_cmp_s *mpq_pkzip)
     return result;
 }
 
-/* Encode binary input as a PKWARE DCL stream for MPQ implode storage.
- * Repeated bytes become distance-one matches, while other bytes are emitted
- * literally; the output ends with the canonical DCL terminator. */
+/* Bound match history and search work independently of the input size. */
+#define PKZIP_DICTIONARY_SIZE 4096u
+#define PKZIP_MATCH_MAX 516u
+#define PKZIP_SEARCH_MAX 256u
+
+/* Hash chains retain absolute positions in a circular dictionary. */
+typedef struct
+{
+    uint32_t head[PKZIP_DICTIONARY_SIZE];
+    uint32_t previous[PKZIP_DICTIONARY_SIZE];
+} pkzip_match_s;
+
+/* Hash a byte pair so two-byte matches remain discoverable. */
+static uint32_t
+pair_hash(const uint8_t *data)
+{
+    return ((uint32_t)data[0] * 251u + data[1]) & (PKZIP_DICTIONARY_SIZE - 1u);
+}
+
+/* Find the longest recent match, allowing copies to overlap their source. */
+static uint32_t
+find_match(
+    const pkzip_match_s *history, const uint8_t *input, uint32_t size, uint32_t position,
+    uint32_t *distance
+)
+{
+    uint32_t limit = size - position;
+    uint32_t best = 1;
+    uint32_t candidate;
+    uint32_t probes = 0;
+
+    if (limit < 2)
+        return best;
+    if (limit > PKZIP_MATCH_MAX)
+        limit = PKZIP_MATCH_MAX;
+    candidate = history->head[pair_hash(input + position)];
+    while (candidate != UINT32_MAX && position - candidate <= PKZIP_DICTIONARY_SIZE &&
+           probes++ < PKZIP_SEARCH_MAX) {
+        uint32_t length = 0;
+        uint32_t back = position - candidate;
+
+        while (length < limit && input[candidate + length] == input[position + length])
+            ++length;
+
+        /* Length two has only two distance suffix bits, hence a 256-byte range. */
+        if (length > best && (length > 2 || back <= 256u)) {
+            best = length;
+            *distance = back;
+            if (best == limit)
+                break;
+        }
+        candidate = history->previous[candidate & (PKZIP_DICTIONARY_SIZE - 1u)];
+    }
+    return best;
+}
+
+/* Encode binary input with general dictionary matches and the DCL terminator. */
 int32_t
 libmpq__pkzip_compress(
     const uint8_t *in_buf, uint32_t in_size, uint8_t **out_buf, uint32_t *out_size
 )
 {
-    size_t bit_count = (size_t)in_size * 9 + 16;
-    size_t bytes = 2 + (bit_count + 7) / 8;
+    uint64_t maximum_bits = (uint64_t)in_size * 9u + 16u;
+    uint64_t maximum_bytes = 2u + (maximum_bits + 7u) / 8u;
+    size_t bit_count = 0;
+    pkzip_match_s *history;
     uint8_t *out;
     uint32_t i;
 
     if (out_buf == NULL || out_size == NULL || (in_size != 0 && in_buf == NULL))
         return LIBMPQ_ERROR_FORMAT;
-    if (bytes < 2)
-        return LIBMPQ_ERROR_FORMAT;
-    out = calloc(1, bytes ? bytes : 1);
+    if (maximum_bits > SIZE_MAX || maximum_bytes > UINT32_MAX || maximum_bytes > SIZE_MAX)
+        return LIBMPQ_ERROR_SIZE;
+    out = calloc(1, (size_t)maximum_bytes);
     if (out == NULL)
         return LIBMPQ_ERROR_MALLOC;
+    history = malloc(sizeof(*history));
+    if (history == NULL) {
+        free(out);
+        return LIBMPQ_ERROR_MALLOC;
+    }
+    memset(history, 0xff, sizeof(*history));
     out[0] = LIBMPQ_PKZIP_CMP_BINARY;
-    out[1] = 4;
+    out[1] = 6;
 
-    /* The first two bytes identify binary mode and the four-bit dictionary. */
-    bit_count = 0;
-
-    /* Encode runs as matches and leave non-repeating bytes as literals. */
+    /* Six distance suffix bits select the full 4 KiB dictionary. */
     for (i = 0; i < in_size;) {
-        uint32_t run_length = 1;
+        uint32_t distance = 0;
+        uint32_t match_length = find_match(history, in_buf, in_size, i, &distance);
+        uint32_t end = i + match_length;
 
-        pkzip_put_bits(out + 2, &bit_count, 0, 1);
-        pkzip_put_bits(out + 2, &bit_count, in_buf[i], 8);
-        while (i + run_length < in_size && run_length < 0x207 &&
-               in_buf[i + run_length] == in_buf[i]) {
-            run_length++;
-        }
-        if (run_length >= 3) {
-            uint32_t match_length = run_length - 1;
+        if (match_length >= 2) {
             uint32_t value;
             uint32_t entry;
             uint32_t extra;
             uint32_t code;
+            uint32_t suffix = match_length == 2 ? 2u : 6u;
+            uint32_t encoded_distance = distance - 1u;
+            uint32_t prefix = encoded_distance >> suffix;
             value = match_length - 2;
             for (entry = 0; entry < 16; entry++) {
                 extra = pkzip_clen_bits[entry];
@@ -512,18 +569,27 @@ libmpq__pkzip_compress(
                 out + 2, &bit_count, code, pkzip_slen_bits[entry] + pkzip_clen_bits[entry] + 1
             );
 
-            /* Distance one: short matches use a two-bit suffix; longer matches
-             * use the dictionary-width suffix selected in the stream header. */
-            pkzip_put_bits(out + 2, &bit_count, pkzip_dist_code[0], pkzip_dist_bits[0]);
-            pkzip_put_bits(out + 2, &bit_count, 0, match_length == 2 ? 2 : 4);
-            i += run_length;
+            pkzip_put_bits(out + 2, &bit_count, pkzip_dist_code[prefix], pkzip_dist_bits[prefix]);
+            pkzip_put_bits(out + 2, &bit_count, encoded_distance & ((1u << suffix) - 1u), suffix);
         } else {
-            i++;
+            pkzip_put_bits(out + 2, &bit_count, 0, 1);
+            pkzip_put_bits(out + 2, &bit_count, in_buf[i], 8);
+        }
+
+        /* Index every consumed position, including positions inside a match. */
+        for (; i < end; ++i) {
+            if (in_size - i >= 2) {
+                uint32_t hash = pair_hash(in_buf + i);
+
+                history->previous[i & (PKZIP_DICTIONARY_SIZE - 1u)] = history->head[hash];
+                history->head[hash] = i;
+            }
         }
     }
 
     /* Length table 15, extra value 255: the canonical 0x305 terminator. */
     pkzip_put_bits(out + 2, &bit_count, 0xFF01u, 16);
+    free(history);
     *out_buf = out;
     *out_size = (uint32_t)(2 + (bit_count + 7) / 8);
     return LIBMPQ_SUCCESS;
