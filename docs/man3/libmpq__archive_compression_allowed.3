@@ -1,0 +1,85 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__ARCHIVE_COMPRESSION_ALLOWED 3 2026-09-09 "The MoPaQ archive library"
+.SH NAME
+libmpq__archive_compression_allowed \- query whether writer compression is allowed
+.SH SYNOPSIS
+.nf
+.B
+#include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__archive_compression_allowed("
+.BI "        uint32_t                    " "archive_version",
+.BI "        uint32_t                    " "compression_mask",
+.BI "        libmpq_compression_policy_t " "policy"
+.BI ");"
+.fi
+.SH DESCRIPTION
+The policy type libmpq_compression_policy_t is a signed int32_t.
+.PP
+The version uses LIBMPQ_ARCHIVE_VERSION_ONE (0) or
+LIBMPQ_ARCHIVE_VERSION_TWO (1), not the one-based archive-version accessor.
+A zero mask selects raw storage. LZMA uses LIBMPQ_COMPRESSION_LZMA (0x100),
+an exclusive selector available only for v2; it serializes as method 0x12.
+.PP
+LIBMPQ_COMPRESSION_POLICY_STANDARD (0) is the default writer policy.
+For v2 it permits zlib, PKWARE, bzip2, LZMA, and Huffman paired with
+mono or stereo ADPCM. Sparse encoding is not implemented.
+.PP
+LIBMPQ_COMPRESSION_POLICY_EXTENDED (1) permits additional implemented
+combinations, including standalone Huffman in v2. These may be less
+interoperable with StormLib or other MPQ implementations; they are not
+classified as invalid MPQ.
+.PP
+Both policies retain v1 mask behavior. Unknown bits, conflicting ADPCM
+channels, and v2 masks containing both zlib and bzip2 are rejected. The latter
+could otherwise emit method 0x12, reserved for LZMA. Invalid policies or
+unsupported archive versions are rejected too.
+.PP
+Select EXTENDED for a writer by setting
+LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED in its archive-creation flags.
+The options struct layout is unchanged. Both sector selections are validated.
+Input-specific WAVE and file-storage constraints still apply.
+.PP
+If skipped stages leave a method disallowed by the policy, the writer stores
+the original sector raw. The first WAVE sector stays lossless, using zlib
+instead of standalone Huffman under STANDARD v2.
+Readers remain permissive and never require this policy setting.
+.SH RETURN VALUE
+Returns 1 if the compression selection is allowed for the archive version
+and policy, otherwise 0.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__archive_create (3),
+.BR libmpq__archive_create_mpqe (3),
+.BR libmpq__file_begin (3)
+.SH AUTHOR
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

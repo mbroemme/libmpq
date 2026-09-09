@@ -117,6 +117,16 @@ writes LZMA1 streams with an EOPM and accepts both forms when reading. libmpq
 also rejects LZMA properties that require more than 64 MiB of decoder memory.
 Bound every decoder by the expected unpacked sector length.
 
+Writer compatibility is separate from permissive decoder support. STANDARD
+is the default and follows the fixed v2 method set: `0x02`, `0x08`, `0x10`,
+`0x12`, `0x20`, `0x22`, `0x30`, `0x41`, and `0x81`. libmpq cannot yet encode
+the sparse methods (`0x20`, `0x22`, `0x30`), so queries reject them in both
+policies. EXTENDED permits additional implemented chains and standalone
+Huffman in v2; these may be less interoperable with other implementations.
+Neither policy permits v2 chains containing both zlib and bzip2, since
+stage omission could emit reserved method `0x12`. V1 keeps its usual mask
+semantics. The reader has no compatibility setting and is unchanged.
+
 ## Hashing and the table cipher
 
 The traditional algorithm builds a 0x500-word crypt table from seed

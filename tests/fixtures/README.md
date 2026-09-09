@@ -4,6 +4,12 @@
 created with libmpq. They share the feature descriptions and payloads, with
 an additional LZMA member in the v2 archive.
 
+The existing v2 MPQ and MPQE fixtures illustrate EXTENDED writer compression:
+`huffman.txt` uses standalone Huffman and `chain.txt` uses Huffman + zlib.
+These methods remain readable by libmpq but may not be accepted by StormLib's
+v2 reader. Recreating them requires `LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED`;
+STANDARD v2 creation rejects these selections.
+
 The archives contain `.txt` fixtures for raw storage, PKWARE implode, masked
 Huffman, zlib, PKWARE, bzip2, LZMA in the v2 fixture, chained compression,
 and encrypted compression. Codec fixture text is deliberately repeated and

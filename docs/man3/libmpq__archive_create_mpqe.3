@@ -22,6 +22,10 @@ the result when
 .BR libmpq__archive_close (3)
 succeeds.
 .PP
+Compression defaults to STANDARD. Add
+LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED to options.flags to select
+EXTENDED. The policy affects writer validation only, not decoding.
+.PP
 Existing MPQE archives cannot be modified. Creation uses temporary plaintext
 storage in the destination directory. That temporary file is owner-only; the
 completed MPQE archive uses normal output permissions determined by the
@@ -31,6 +35,7 @@ plaintext temporary file behind.
 Returns zero on success or a negative LIBMPQ_ERROR_* code. Missing or short
 authentication data returns LIBMPQ_ERROR_DECRYPT.
 .SH SEE ALSO
+.BR libmpq__archive_compression_allowed (3),
 .BR libmpq__archive_create (3),
 .BR libmpq__archive_open_mpqe (3),
 .BR libmpq__archive_close (3)

@@ -24,6 +24,12 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .sp
 .BI "const char *libmpq__strerror(int32_t return_code);"
 .sp
+.BI "int32_t libmpq__archive_compression_allowed("
+.BI "        uint32_t                    " "archive_version",
+.BI "        uint32_t                    " "compression_mask",
+.BI "        libmpq_compression_policy_t " "policy"
+.BI ");"
+.sp
 .BI "int32_t libmpq__archive_open("
 .BI "        mpq_archive_s **" "mpq_archive",
 .BI "        const char     *" "mpq_filename",
@@ -198,12 +204,21 @@ For MPQ v2+ creation, \fBLIBMPQ_COMPRESSION_LZMA\fP is an exclusive API
 selector that serializes as method 0x12. It is not a multi-compression bit;
 0x12 keeps its legacy bzip2-plus-zlib interpretation in MPQ v1 archives.
 .PP
+Writer compression defaults to STANDARD for interoperability. Set
+LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED in the creation flags to allow
+additional implemented combinations such as standalone Huffman in MPQ v2.
+EXTENDED output may be less interoperable with other MPQ implementations.
+Readers remain permissive and do not use this setting. Query whether a
+compression selection is allowed by the writer policy with
+.BR libmpq__archive_compression_allowed (3).
+.PP
 An archive handle is not safe for concurrent operations. Use
 \fBlibmpq__archive_clone\fP() to create one independent reader per worker.
 Cloning reopens the original backing path and reparses its metadata; it is
 not snapshot semantics. The path must remain readable and unchanged while
 clones are created or used.
 .SH SEE ALSO
+.BR libmpq__archive_compression_allowed (3),
 .BR libmpq__version (3),
 .BR libmpq__strerror (3),
 .BR libmpq__archive_open (3),

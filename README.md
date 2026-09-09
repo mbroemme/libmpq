@@ -52,6 +52,23 @@ For MPQ v2+ creation, `LIBMPQ_COMPRESSION_LZMA` is an exclusive API selector,
 not a chainable multi-compression bit. It maps to serialized method `0x12`;
 that byte retains its legacy bzip2-plus-zlib meaning in MPQ v1.
 
+Writer compression defaults to `LIBMPQ_COMPRESSION_POLICY_STANDARD`,
+favoring interoperability. For MPQ v2+, this permits zlib, PKWARE, bzip2,
+LZMA, and Huffman paired with mono or stereo WAVE ADPCM. Add
+`LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED` to the archive creation flags
+to permit other implemented combinations, including standalone Huffman in
+v2. `EXTENDED` output may be less interoperable with StormLib and other MPQ
+implementations; it is not classified as invalid MPQ. Readers stay permissive.
+
+Use `libmpq__archive_compression_allowed(version, mask, policy)` to query
+whether a compression selection is allowed by the writer policy.
+Version uses the zero-based `LIBMPQ_ARCHIVE_VERSION_*`
+selectors. Both policies reject unknown bits, conflicting ADPCM channels,
+and v2 chains containing both zlib and bzip2, whose surviving stages could
+collide with LZMA's `0x12`. Sparse encoding is not implemented. If skipped
+stages leave a method disallowed by the selected policy, the original sector
+is stored raw. The first WAVE sector stays lossless (zlib for STANDARD v2).
+
 ## Requirements
 
 The build system requires:
