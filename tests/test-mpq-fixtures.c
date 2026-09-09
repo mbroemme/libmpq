@@ -7,14 +7,15 @@
 
 /* The listfile names are the complete user-file corpus in insertion order. */
 static const char *const fixture_names[] = {
-    "overview.txt",   "implode.txt", "huffman.txt", "zlib.txt",
-    "pkware.txt",     "bzip2.txt",   "chain.txt",   "encrypted-compress.txt",
-    "wave-adpcm.txt", "lzma.txt",
+    "overview.txt",   "implode.txt", "huffman.txt",     "zlib.txt",
+    "pkware.txt",     "bzip2.txt",   "chain.txt",       "encrypted-compress.txt",
+    "wave-adpcm.txt", "sparse.txt",  "sparse-zlib.txt", "sparse-bzip2.txt",
+    "lzma.txt",
 };
 
 /* Verify the codec entries are stored with their intended serialized methods. */
 static const uint8_t fixture_methods[] = {
-    0, 0, 0x01, 0x02, 0x08, 0x10, 0x03, 0, 0, 0x12,
+    0, 0, 0x01, 0x02, 0x08, 0x10, 0x03, 0, 0, 0x20, 0x22, 0x30, 0x12,
 };
 
 /* Load a serialized little-endian 32-bit sector-table offset. */
@@ -78,7 +79,10 @@ static const char fixture_listfile_v1[] = "overview.txt\n"
                                           "bzip2.txt\n"
                                           "chain.txt\n"
                                           "encrypted-compress.txt\n"
-                                          "wave-adpcm.txt\n";
+                                          "wave-adpcm.txt\n"
+                                          "sparse.txt\n"
+                                          "sparse-zlib.txt\n"
+                                          "sparse-bzip2.txt\n";
 static const char fixture_listfile_v2[] = "overview.txt\n"
                                           "implode.txt\n"
                                           "huffman.txt\n"
@@ -88,15 +92,18 @@ static const char fixture_listfile_v2[] = "overview.txt\n"
                                           "chain.txt\n"
                                           "encrypted-compress.txt\n"
                                           "wave-adpcm.txt\n"
+                                          "sparse.txt\n"
+                                          "sparse-zlib.txt\n"
+                                          "sparse-bzip2.txt\n"
                                           "lzma.txt\n";
 
 /* Archive and extracted-file hashes are the single fixture source of truth. */
 static const char *const fixture_archive_hashes[] = {
-    "3ac655f1f6fc976cd3cb5a636142691a9ae31eeaa56d003b8c5dd256282106f5",
-    "722c9e4b92c3767042e61c4954d617ec3c9b022f312461715fab9eb39c532949",
+    "efaf1021c2c7bbb87f4157ed0313cfb203094b4a869ed18460184f719e511c2c",
+    "6990fde1643a25e84affb0bf772293d064214298fbb776f0b34209e88a786dad",
 };
 
-static const char *const fixture_file_hashes[2][11] = {
+static const char *const fixture_file_hashes[2][14] = {
     {
         "722f1acc2acd306abaed0466ffbbfd568e09f5e7da8d63eba86f19c1c2adde73",
         "1ad8d61488c18eb2e0e12cc4306c3d0348edd6c1777c09c87e217c26963b2141",
@@ -107,7 +114,10 @@ static const char *const fixture_file_hashes[2][11] = {
         "167de694bb690e3d03311689fcbd5ff7e7357f3e8dcd2cef867f4c7f40b42ff9",
         "def68c91e0a61582507c1199e134b230d193f6cd9625e898d70431239d1426a8",
         "3df96a6e5d56995da58118014e78c18d320c1b81886340000300af9e2fdea3aa",
-        "058f38444a689f28623607b6c813b1b6a87ec18fe00af740cb873b4bd1fc9af2",
+        "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
+        "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
+        "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
+        "e5470ff56f4c87287b9116566ce3db543d87cac68c407f73f552b785f112ad0d",
         NULL,
     },
     {
@@ -120,8 +130,11 @@ static const char *const fixture_file_hashes[2][11] = {
         "167de694bb690e3d03311689fcbd5ff7e7357f3e8dcd2cef867f4c7f40b42ff9",
         "def68c91e0a61582507c1199e134b230d193f6cd9625e898d70431239d1426a8",
         "3df96a6e5d56995da58118014e78c18d320c1b81886340000300af9e2fdea3aa",
+        "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
+        "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
+        "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
         "da99ea7c15a1e60401f49c86b7d541714437891c4fc4a12d1dcff6674775e976",
-        "950e58d99261dbe85eb69a9bc5aae2c690f92f79edc8494c00c1802faf54550c",
+        "c7fc236b125a439282fbc389f1977db9c2f3e0483f20f39daab5bdca9a126c0a",
     },
 };
 
@@ -165,6 +178,12 @@ test_fixture(const char *path, uint32_t expected_version, size_t fixture_index)
         TEST_CHECK(libmpq__file_number(archive, fixture_names[i], &number) == 0);
         TEST_CHECK(test_fixture_storage(archive, archive_data, archive_size, number, i) == 0);
         TEST_CHECK(test_archive_read(archive, number, &file_data, &file_size) == 0);
+        if (i >= 9 && i <= 11) {
+            uint8_t expected[TEST_SPARSE_FIXTURE_SIZE];
+            test_sparse_payload(expected, sizeof(expected));
+            TEST_CHECK(file_size == sizeof(expected));
+            TEST_CHECK(memcmp(file_data, expected, sizeof(expected)) == 0);
+        }
         TEST_CHECK(test_sha256(file_data, file_size, hash) == 0);
         TEST_CHECK(strcmp(hash, fixture_file_hashes[fixture_index][i]) == 0);
         free(file_data);

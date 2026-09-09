@@ -4,6 +4,30 @@
 created with libmpq. They share the feature descriptions and payloads, with
 an additional LZMA member in the v2 archive.
 
+Both formats also contain `sparse.txt`, `sparse-zlib.txt`, and
+`sparse-bzip2.txt`, using serialized methods `0x20`, `0x22`, and `0x30`.
+These are genuine UTF-32LE text files, not UTF-8 text with padding. Each
+starts with the BOM `FF FE 00 00`, followed by this line repeated 16 times
+with LF endings, encoded as UTF-32LE:
+
+```text
+This text uses SPARSE compression and decompression.
+```
+
+ASCII characters in UTF-32LE supply three zero bytes each. Both stages of
+the combined methods actually reduce the payload; regression tests inspect
+the stored method bytes to prevent unnoticed raw or single-stage fallback.
+Extraction preserves UTF-32LE bytes. Use an editor supporting that encoding
+or `iconv -f UTF-32 -t UTF-8 sparse.txt` to display the text.
+
+To recreate these additions, retain the existing entries and their options,
+then add the three SPARSE entries after `wave-adpcm.txt` and before the
+v2-only `lzma.txt`. Use COMPRESS, with identical first/next masks of `0x20`,
+`0x22`, and `0x30`, respectively. Preserve the existing 4096-byte sectors
+and file-table capacity, enable listfile creation and EXTENDED policy, and
+create the matching MPQE archives with the synthetic code below. Verify
+the complete decrypted MPQE stream against its raw MPQ counterpart.
+
 The existing v2 MPQ and MPQE fixtures illustrate EXTENDED writer compression:
 `huffman.txt` uses standalone Huffman and `chain.txt` uses Huffman + zlib.
 These methods remain readable by libmpq but may not be accepted by StormLib's
