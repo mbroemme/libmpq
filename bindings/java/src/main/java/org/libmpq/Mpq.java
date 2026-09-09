@@ -72,6 +72,8 @@ public final class Mpq {
     public static final int COMPRESSION_PKZIP = 0x08;
     /** MPQ bzip2 compression mask bit. */
     public static final int COMPRESSION_BZIP2 = 0x10;
+    /** Lossless SPARSE zero-run stage; cannot be combined with WAVE ADPCM. */
+    public static final int COMPRESSION_SPARSE = 0x20;
     /** MPQ mono WAVE ADPCM compression mask bit. */
     public static final int COMPRESSION_WAVE_MONO = 0x40;
     /** MPQ stereo WAVE ADPCM compression mask bit. */

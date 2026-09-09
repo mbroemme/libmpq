@@ -12,6 +12,15 @@ for additional, potentially less interoperable compression forms. Use
 compression selection is allowed by the writer policy, using zero-based
 `Mpq.ARCHIVE_VERSION_*` selectors. Readers remain permissive.
 
+`Mpq.COMPRESSION_SPARSE` selects lossless zero-run compression. In MPQ v2+,
+STANDARD allows the fixed SPARSE forms: alone (`0x20`), with zlib (`0x22`),
+or with bzip2 (`0x30`). MPQ v1 retains normal compression-mask semantics
+under either policy, allowing other valid combinations such as SPARSE
+with Huffman (`0x21`) or PKWARE (`0x28`). In MPQ v2+, EXTENDED permits the
+broader valid lossless SPARSE combinations. Neither policy allows SPARSE
+with WAVE ADPCM. The shared `sparse*.txt` fixtures use UTF-32LE with a BOM;
+extraction returns those bytes without transcoding.
+
 The JAR does not contain a native library. Autotools does not install the
 Java binding; Maven builds the platform-independent runtime, sources, and
 Javadoc JARs. Build and install libmpq separately, then either set

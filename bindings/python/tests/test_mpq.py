@@ -20,6 +20,9 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 if not FIXTURES.is_dir():
     FIXTURES = Path(__file__).resolve().parents[3] / "tests" / "fixtures"
 
+SPARSE_TEXT = "This text uses SPARSE compression and decompression.\n" * 16
+SPARSE_BYTES = b"\xff\xfe\x00\x00" + SPARSE_TEXT.encode("utf-32-le")
+
 
 def test_version_errors_and_hashes():
     """Version, diagnostics, and Storm hashing work without an archive handle."""
@@ -32,6 +35,14 @@ def test_version_errors_and_hashes():
     assert not mpq.archive_compression_allowed(mpq.ARCHIVE_VERSION_TWO, mpq.COMPRESSION_HUFFMAN)
     assert mpq.archive_compression_allowed(mpq.ARCHIVE_VERSION_TWO, mpq.COMPRESSION_HUFFMAN,
                                      mpq.COMPRESSION_POLICY_EXTENDED)
+    for version in (mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO):
+        for policy in (mpq.COMPRESSION_POLICY_STANDARD, mpq.COMPRESSION_POLICY_EXTENDED):
+            for method in (mpq.COMPRESSION_SPARSE,
+                           mpq.COMPRESSION_SPARSE | mpq.COMPRESSION_ZLIB,
+                           mpq.COMPRESSION_SPARSE | mpq.COMPRESSION_BZIP2):
+                assert mpq.archive_compression_allowed(version, method, policy)
+            assert not mpq.archive_compression_allowed(
+                version, mpq.COMPRESSION_SPARSE | mpq.COMPRESSION_WAVE_MONO, policy)
 
 
 def test_wheel_uses_bundled_library():
@@ -57,6 +68,9 @@ def test_fixture_metadata_and_extraction(name, version):
         assert b"libmpq" in entry.read()
         assert archive.metadata().files == archive.files
         assert entry.metadata().unpacked_size == entry.unpacked_size
+        for member in ("sparse.txt", "sparse-zlib.txt", "sparse-bzip2.txt"):
+            assert archive[member].read() == SPARSE_BYTES
+            assert archive[member].read().decode("utf-32") == SPARSE_TEXT
 
 
 @pytest.mark.parametrize("name,version,offset", [
@@ -72,6 +86,8 @@ def test_mpqe_fixture_metadata_extraction_and_clone(name, version, offset):
         clone = archive.clone()
         try:
             assert clone["overview.txt"].read() == archive["overview.txt"].read()
+            for member in ("sparse.txt", "sparse-zlib.txt", "sparse-bzip2.txt"):
+                assert clone[member].read() == archive[member].read() == SPARSE_BYTES
         finally:
             clone.close()
     with pytest.raises(mpq.LibmpqDecryptError):

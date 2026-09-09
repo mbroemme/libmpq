@@ -131,6 +131,37 @@ private void testMpqeFixture() {
     assert(failed);
 }
 
+/** Verify UTF-32LE fixture bytes without using host-native character encoding. */
+private void testSparseFixtures() {
+    enum sentence = "This text uses SPARSE compression and decompression.\n";
+    ubyte[] expected = [0xff, 0xfe, 0, 0];
+    foreach (repetition; 0 .. 16)
+        foreach (character; sentence)
+            expected ~= [cast(ubyte) character, cast(ubyte) 0, cast(ubyte) 0, cast(ubyte) 0];
+    auto root = environment.get("LIBMPQ_SOURCE_DIR", ".");
+    immutable ubyte[] code = cast(immutable(ubyte)[])"LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+    foreach (archiveVersion; ["1", "2"]) {
+        auto raw = Archive.open(buildPath(root, "tests", "fixtures",
+                                         "mpq-v" ~ archiveVersion ~ "-features.mpq"));
+        scope(exit) raw.close();
+        auto encrypted = Archive.openMpqe(buildPath(root, "tests", "fixtures",
+                                                   "mpq-v" ~ archiveVersion ~ "-features.mpqe"), code);
+        scope(exit) encrypted.close();
+        foreach (name; ["sparse.txt", "sparse-zlib.txt", "sparse-bzip2.txt"]) {
+            assert(raw.file(name).read() == expected);
+            assert(encrypted.file(name).read() == expected);
+        }
+    }
+    foreach (archiveVersion; [ARCHIVE_VERSION_ONE, ARCHIVE_VERSION_TWO])
+        foreach (policy; [COMPRESSION_POLICY_STANDARD, COMPRESSION_POLICY_EXTENDED]) {
+            foreach (method; [COMPRESSION_SPARSE, COMPRESSION_SPARSE | COMPRESSION_ZLIB,
+                              COMPRESSION_SPARSE | COMPRESSION_BZIP2])
+                assert(Mpq.archiveCompressionAllowed(archiveVersion, method, policy));
+            assert(!Mpq.archiveCompressionAllowed(archiveVersion,
+                COMPRESSION_SPARSE | COMPRESSION_WAVE_MONO, policy));
+        }
+}
+
 private void testMpqeCreate() {
     auto path = temporaryArchive("created.mpqe");
     immutable ubyte[] authCode =
@@ -152,6 +183,7 @@ void main() {
     testCreateReadAndMetadata(ARCHIVE_VERSION_TWO);
     testFixture();
     testMpqeFixture();
+    testSparseFixtures();
     testMpqeCreate();
     testFailures();
 }

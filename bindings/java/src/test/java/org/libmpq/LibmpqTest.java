@@ -55,6 +55,37 @@ class LibmpqTest {
             Mpq.COMPRESSION_HUFFMAN, Mpq.COMPRESSION_POLICY_STANDARD));
         assertTrue(Mpq.archiveCompressionAllowed(Mpq.ARCHIVE_VERSION_TWO,
             Mpq.COMPRESSION_HUFFMAN, Mpq.COMPRESSION_POLICY_EXTENDED));
+        for (int version : new int[] {Mpq.ARCHIVE_VERSION_ONE, Mpq.ARCHIVE_VERSION_TWO}) {
+            for (int policy : new int[] {Mpq.COMPRESSION_POLICY_STANDARD, Mpq.COMPRESSION_POLICY_EXTENDED}) {
+                for (int method : new int[] {0x20, 0x22, 0x30}) {
+                    assertTrue(Mpq.archiveCompressionAllowed(version, method, policy));
+                }
+                assertFalse(Mpq.archiveCompressionAllowed(version,
+                    Mpq.COMPRESSION_SPARSE | Mpq.COMPRESSION_WAVE_STEREO, policy));
+            }
+        }
+    }
+
+    /** Extracts the same UTF-32LE bytes from every shared MPQ and MPQE fixture. */
+    @Test
+    void readsSparseFixtures() throws Exception {
+        String text = "This text uses SPARSE compression and decompression.\n".repeat(16);
+        byte[] body = text.getBytes(java.nio.charset.Charset.forName("UTF-32LE"));
+        byte[] expected = new byte[body.length + 4];
+        expected[0] = (byte) 0xff;
+        expected[1] = (byte) 0xfe;
+        System.arraycopy(body, 0, expected, 4, body.length);
+        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
+        Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
+        for (int version : new int[] {1, 2}) {
+            try (Archive raw = Archive.open(root.resolve("mpq-v" + version + "-features.mpq"));
+                 Archive mpqe = Archive.openMpqe(root.resolve("mpq-v" + version + "-features.mpqe"), code)) {
+                for (String member : new String[] {"sparse.txt", "sparse-zlib.txt", "sparse-bzip2.txt"}) {
+                    assertArrayEquals(expected, raw.readFile(raw.fileNumber(member)));
+                    assertArrayEquals(expected, mpqe.readFile(mpqe.fileNumber(member)));
+                }
+            }
+        }
     }
 
     /** Resolves a Storm hash and reads a known fixture through the facade. */
