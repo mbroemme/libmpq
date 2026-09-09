@@ -15,7 +15,7 @@
 #include <stdint.h>
 
 /*
- * MPQ stores all multi-byte integers in little-endian byte order. The
+ * MPQ header and table integers use little-endian byte order. The
  * implementations operate on byte arrays rather than host objects, so
  * serialized archive data remains correct on little- and big-endian machines.
  * A NULL input buffer is rejected by the load helpers and yields zero; store

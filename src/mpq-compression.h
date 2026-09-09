@@ -27,9 +27,8 @@
  * Compression masks stored in the first byte of a Blizzard
  * multi-compression block. The values are bit flags rather than an
  * enumeration: a block may pass through several codecs, and the decoder
- * applies the selected stages in the format's canonical order. Bits 0x04,
- * 0x20, and all bits above 0x80 are reserved and must be rejected when they
- * are not implemented locally.
+ * applies the selected stages in the format's canonical order. Bit 0x04
+ * and bits above 0x80 are not implemented serialized mask bits.
  */
 
 /* Adaptive Huffman compression; bit 0, value 0x01. */
@@ -106,6 +105,11 @@ extern int32_t libmpq__compression_decompress_pkzip(
 
 /* Decode a bzip2 stream into out_buf, returning bytes written or a codec error. */
 extern int32_t libmpq__compression_decompress_bzip2(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
+);
+
+/* Decode a lossless SPARSE zero-run stream into caller-owned storage. */
+extern int32_t libmpq__compression_decompress_sparse(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
 );
 

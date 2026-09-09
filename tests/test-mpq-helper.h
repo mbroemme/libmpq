@@ -11,6 +11,10 @@
 #define FIXTURE_DIR "fixtures"
 #endif
 
+/* Shared UTF-32LE fixture recipe, including its four-byte byte-order mark. */
+#define TEST_SPARSE_TEXT "This text uses SPARSE compression and decompression.\n"
+#define TEST_SPARSE_FIXTURE_SIZE (4U + 16U * (sizeof(TEST_SPARSE_TEXT) - 1U) * 4U)
+
 #define TEST_CHECK(condition)                                                                      \
     do {                                                                                           \
         if (!(condition)) {                                                                        \
@@ -23,6 +27,7 @@ void test_failure(const char *file, unsigned line, const char *condition);
 int test_temp_path(char *path, size_t path_size, const char *tag);
 int test_read_path(const char *path, uint8_t **data, size_t *size);
 void test_payload(uint8_t *data, size_t size, uint32_t seed);
+void test_sparse_payload(uint8_t *data, size_t size);
 int test_sha256(const uint8_t *data, size_t size, char output[65]);
 int test_archive_read(mpq_archive_s *archive, uint32_t number, uint8_t **data, size_t *size);
 int test_add_archive(mpq_archive_s **archive, const char *path, uint32_t version, uint32_t flags);

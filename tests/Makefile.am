@@ -10,6 +10,7 @@ LDADD = $(top_builddir)/src/libmpq.la
 check_PROGRAMS = \
 	test-compression \
 	test-lzma \
+	test-sparse \
 	test-crypto \
 	test-huffman \
 	test-malformed \
@@ -32,6 +33,7 @@ check-local:
 COMMON_SOURCES = test-mpq-helper.c test-mpq-helper.h
 test_compression_SOURCES = test-mpq-compression.c $(COMMON_SOURCES)
 test_lzma_SOURCES = test-mpq-lzma.c $(COMMON_SOURCES)
+test_sparse_SOURCES = test-mpq-sparse.c $(COMMON_SOURCES)
 test_crypto_SOURCES = test-mpq-crypto.c ../src/mpq-crypto.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_huffman_SOURCES = test-mpq-huffman.c ../src/mpq-huffman.c $(COMMON_SOURCES)
 test_malformed_SOURCES = test-mpq-malformed.c $(COMMON_SOURCES)
@@ -54,14 +56,19 @@ test_writer_SOURCES = test-mpq-writer.c $(COMMON_SOURCES)
 PRIVATE_MPQE_LDADD = $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-endian.lo
 test_mpqe_LDADD = $(top_builddir)/src/mpq-stream.lo $(PRIVATE_MPQE_LDADD) $(LDADD)
 
-# Reuse production codec objects for direct malformed-LZMA regressions.
+# Reuse production codec objects for direct malformed-codec regressions.
 PRIVATE_COMPRESSION_LDADD = \
 	$(top_builddir)/src/mpq-compression.lo \
 	$(top_builddir)/src/mpq-pkware.lo \
 	$(top_builddir)/src/mpq-huffman.lo \
 	$(top_builddir)/src/mpq-wave.lo \
+	$(top_builddir)/src/mpq-sparse.lo \
 	$(top_builddir)/src/mpq-endian.lo
 test_lzma_LDADD = $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
+test_sparse_LDADD = $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
+
+# The legacy PKWARE dispatcher test also calls the production SPARSE codec.
+test_pkware_LDADD = $(top_builddir)/src/mpq-sparse.lo $(LDADD)
 
 test_writer_LDADD = $(PRIVATE_MPQE_LDADD) $(LDADD)
 
@@ -80,6 +87,7 @@ EXTRA_DIST = \
 	test-mpq-helper.c \
 	test-mpq-compression.c \
 	test-mpq-lzma.c \
+	test-mpq-sparse.c \
 	test-mpq-crypto.c \
 	test-mpq-huffman.c \
 	test-mpq-malformed.c \

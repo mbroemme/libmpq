@@ -36,10 +36,10 @@ MPQ v2+ LZMA method.
 * Decrypt encrypted hash tables, block tables, and file payloads.
 * Create encrypted hash and block tables, file payloads, and sector offsets.
 * Create raw, single-unit, sectorized, and multi-sector file entries.
-* Compress file sectors with PKWARE implode, Huffman, zlib, bzip2, or WAVE
-  ADPCM using separate first-sector and later-sector masks.
+* Compress file sectors with PKWARE implode, Huffman, zlib, bzip2, SPARSE,
+  or WAVE ADPCM using separate first-sector and later-sector masks.
 * Compress MPQ v2+ file sectors with the exclusive LZMA compression method.
-* Decompress zlib, bzip2, MPQ v2+ LZMA, Huffman, PKWARE implode, Blizzard
+* Decompress zlib, bzip2, SPARSE, MPQ v2+ LZMA, Huffman, PKWARE implode, Blizzard
   multi-compression, and mono or stereo WAVE ADPCM payloads.
 * Generate an optional `(listfile)` entry during archive creation.
 * Support big-endian hosts through explicit little-endian serialization; CI
@@ -54,18 +54,24 @@ that byte retains its legacy bzip2-plus-zlib meaning in MPQ v1.
 
 Writer compression defaults to `LIBMPQ_COMPRESSION_POLICY_STANDARD`,
 favoring interoperability. For MPQ v2+, this permits zlib, PKWARE, bzip2,
-LZMA, and Huffman paired with mono or stereo WAVE ADPCM. Add
+LZMA, SPARSE alone or paired with zlib/bzip2, and Huffman paired with mono
+or stereo WAVE ADPCM. The fixed SPARSE forms are `0x20`, `0x22`, and `0x30`.
+MPQ v1 retains normal compression-mask semantics under either policy,
+allowing other valid combinations such as SPARSE with Huffman (`0x21`)
+or PKWARE (`0x28`). Add
 `LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED` to the archive creation flags
-to permit other implemented combinations, including standalone Huffman in
-v2. `EXTENDED` output may be less interoperable with StormLib and other MPQ
-implementations; it is not classified as invalid MPQ. Readers stay permissive.
+to permit broader valid lossless SPARSE combinations and other implemented
+forms, including standalone Huffman, in MPQ v2+. `EXTENDED` output may be
+less interoperable with StormLib and other MPQ implementations; it is not
+classified as invalid MPQ. Readers stay permissive.
 
 Use `libmpq__archive_compression_allowed(version, mask, policy)` to query
 whether a compression selection is allowed by the writer policy.
 Version uses the zero-based `LIBMPQ_ARCHIVE_VERSION_*`
 selectors. Both policies reject unknown bits, conflicting ADPCM channels,
 and v2 chains containing both zlib and bzip2, whose surviving stages could
-collide with LZMA's `0x12`. Sparse encoding is not implemented. If skipped
+collide with LZMA's `0x12`. Both policies reject SPARSE combined with WAVE
+ADPCM: lossy ADPCM cannot preserve SPARSE control bytes. If skipped
 stages leave a method disallowed by the selected policy, the original sector
 is stored raw. The first WAVE sector stays lossless (zlib for STANDARD v2).
 
@@ -424,7 +430,7 @@ encryption, sectors, and compression, see [MPQ format guide](MPQ.md).
   random-access writing is unsupported. Creation uses an owner-only plaintext
   temporary file; the completed archive uses normal caller-umask permissions.
   Cleanup is best effort, so a crash can leave the plaintext temporary behind.
-* Sparse compression, attributes, signatures, checksums, patch
+* Attributes, signatures, checksums, patch
   metadata, and StormLib-specific key modes are not supported by the writer.
 * Windows support is not currently tested or documented by the Autotools build.
 

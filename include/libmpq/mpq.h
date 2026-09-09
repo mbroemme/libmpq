@@ -133,8 +133,10 @@ enum
  * mono and stereo WAVE ADPCM bits are mutually exclusive. For MPQ v2+, the
  * writer rejects chains containing both zlib and bzip2 because the resulting
  * successful-stage mask could be 0x12, which is reserved for LZMA.
- * STANDARD further limits v2 to zlib, PKWARE, bzip2, LZMA, and Huffman paired
- * with exactly one WAVE ADPCM bit. EXTENDED permits other implemented chains
+ * STANDARD further limits v2 to zlib, PKWARE, bzip2, LZMA, SPARSE alone or
+ * paired with zlib/bzip2, and Huffman paired with exactly one WAVE ADPCM bit.
+ * SPARSE cannot precede lossy WAVE ADPCM under either policy.
+ * EXTENDED permits other implemented chains
  * and standalone Huffman, which may be less interoperable with other readers.
  */
 #ifndef LIBMPQ_COMPRESSION_HUFFMAN
@@ -153,6 +155,11 @@ enum
  */
 #ifndef LIBMPQ_COMPRESSION_LZMA
 #define LIBMPQ_COMPRESSION_LZMA 0x00000100u
+#endif
+
+/* Lossless zero-run stage; cannot be combined with lossy WAVE ADPCM. */
+#ifndef LIBMPQ_COMPRESSION_SPARSE
+#define LIBMPQ_COMPRESSION_SPARSE 0x20u
 #endif
 
 /*
@@ -216,7 +223,8 @@ extern LIBMPQ_API const char *libmpq__strerror(int32_t return_code);
  * returned by libmpq__archive_version. Zero means raw storage. LZMA requires
  * the exclusive LIBMPQ_COMPRESSION_LZMA selector, not on-disk method 0x12.
  * WAVE input and file-storage constraints still apply when adding a file.
- * Sparse compression is not implemented. This query does not restrict reads.
+ * SPARSE is allowed alone or with lossless stages according to the policy.
+ * This query does not restrict reads.
  */
 extern LIBMPQ_API int32_t libmpq__archive_compression_allowed(
     uint32_t archive_version, uint32_t compression_mask, libmpq_compression_policy_t policy

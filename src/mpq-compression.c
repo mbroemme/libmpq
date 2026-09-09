@@ -22,6 +22,7 @@
 #include "mpq-huffman.h"
 #include "mpq-internal.h"
 #include "mpq-pkware.h"
+#include "mpq-sparse.h"
 #include "mpq-wave.h"
 #include <libmpq/mpq.h>
 
@@ -42,7 +43,8 @@ static decompress_table_s dcmp_table[] = {
     { LIBMPQ_COMPRESSION_ZLIB, libmpq__compression_decompress_zlib },
     { LIBMPQ_COMPRESSION_HUFFMAN, libmpq__compression_decompress_huffman },
     { LIBMPQ_COMPRESSION_WAVE_STEREO, libmpq__compression_decompress_wave_stereo },
-    { LIBMPQ_COMPRESSION_WAVE_MONO, libmpq__compression_decompress_wave_mono }
+    { LIBMPQ_COMPRESSION_WAVE_MONO, libmpq__compression_decompress_wave_mono },
+    { LIBMPQ_COMPRESSION_SPARSE, libmpq__compression_decompress_sparse }
 };
 
 /* Return a raw-sector copy when a requested codec cannot beat raw storage. */
@@ -421,6 +423,15 @@ libmpq__compression_decompress_wave_stereo(
     return tb;
 }
 
+/* Adapt the private SPARSE codec to the multi-compression callback signature. */
+int32_t
+libmpq__compression_decompress_sparse(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
+)
+{
+    return libmpq__sparse_decompress(in_buf, in_size, out_buf, out_size);
+}
+
 /* Decode a Blizzard multi-compression stream by applying each flagged backend in order.
  * The leading mask selects supported codecs, and intermediate buffers preserve
  * each stage's output while the next stage consumes it. */
@@ -532,6 +543,11 @@ libmpq__compression_allowed(
         return format_version >= LIBMPQ_ARCHIVE_VERSION_TWO;
     if (mask & LIBMPQ_COMPRESSION_LZMA)
         return 0;
+
+    /* Lossy ADPCM would corrupt the preceding SPARSE control/data stream. */
+    if ((mask & LIBMPQ_COMPRESSION_SPARSE) &&
+        (mask & (LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO)))
+        return 0;
     if ((mask & (LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO)) ==
         (LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO))
         return 0;
@@ -545,12 +561,15 @@ libmpq__compression_allowed(
     if (format_version >= LIBMPQ_ARCHIVE_VERSION_TWO &&
         policy == LIBMPQ_COMPRESSION_POLICY_STANDARD)
         return mask == 0 || mask == LIBMPQ_COMPRESSION_ZLIB || mask == LIBMPQ_COMPRESSION_PKZIP ||
-               mask == LIBMPQ_COMPRESSION_BZIP2 ||
+               mask == LIBMPQ_COMPRESSION_BZIP2 || mask == LIBMPQ_COMPRESSION_SPARSE ||
+               mask == (LIBMPQ_COMPRESSION_SPARSE | LIBMPQ_COMPRESSION_ZLIB) ||
+               mask == (LIBMPQ_COMPRESSION_SPARSE | LIBMPQ_COMPRESSION_BZIP2) ||
                mask == (LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_WAVE_MONO) ||
                mask == (LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_WAVE_STEREO);
-    return (mask & ~(LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_ZLIB |
-                     LIBMPQ_COMPRESSION_PKZIP | LIBMPQ_COMPRESSION_BZIP2 |
-                     LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO)) == 0;
+    return (mask &
+            ~(LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_PKZIP |
+              LIBMPQ_COMPRESSION_BZIP2 | LIBMPQ_COMPRESSION_SPARSE | LIBMPQ_COMPRESSION_WAVE_MONO |
+              LIBMPQ_COMPRESSION_WAVE_STEREO)) == 0;
 }
 
 /* Apply one selected compression backend and replace the current buffer.
@@ -565,12 +584,26 @@ compression_stage(uint8_t **data, size_t *size, uint32_t mask)
     bz_stream b;
     int result;
 
+    if (mask == LIBMPQ_COMPRESSION_SPARSE) {
+        if (*size < 7 || *size > INT32_MAX)
+            return LIBMPQ_ERROR_UNPACK;
+
+        /* Keep only a candidate that can save the required two stage bytes. */
+        out_size = *size - 2;
+    }
     if (mask == LIBMPQ_COMPRESSION_HUFFMAN)
         out_size = *size * 2 + 64;
     out = malloc(out_size ? out_size : 1);
     if (out == NULL)
         return LIBMPQ_ERROR_MALLOC;
-    if (mask == LIBMPQ_COMPRESSION_PKZIP) {
+    if (mask == LIBMPQ_COMPRESSION_SPARSE) {
+        int32_t encoded = libmpq__sparse_compress(*data, (uint32_t)*size, out, (uint32_t)out_size);
+        if (encoded < 0) {
+            free(out);
+            return encoded;
+        }
+        out_size = (size_t)encoded;
+    } else if (mask == LIBMPQ_COMPRESSION_PKZIP) {
         uint8_t *candidate = NULL;
         uint32_t candidate_size = 0;
         int32_t status;
@@ -673,9 +706,10 @@ libmpq__compression_encode_sector(
 {
     uint8_t *data;
     size_t size;
-    uint32_t masks[] = { LIBMPQ_COMPRESSION_WAVE_MONO, LIBMPQ_COMPRESSION_WAVE_STEREO,
-                         LIBMPQ_COMPRESSION_HUFFMAN,   LIBMPQ_COMPRESSION_ZLIB,
-                         LIBMPQ_COMPRESSION_PKZIP,     LIBMPQ_COMPRESSION_BZIP2 };
+    uint32_t masks[] = { LIBMPQ_COMPRESSION_SPARSE,      LIBMPQ_COMPRESSION_WAVE_MONO,
+                         LIBMPQ_COMPRESSION_WAVE_STEREO, LIBMPQ_COMPRESSION_HUFFMAN,
+                         LIBMPQ_COMPRESSION_ZLIB,        LIBMPQ_COMPRESSION_PKZIP,
+                         LIBMPQ_COMPRESSION_BZIP2 };
     size_t i;
 
     if (!libmpq__compression_allowed(format_version, requested, policy))

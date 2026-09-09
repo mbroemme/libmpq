@@ -35,16 +35,22 @@ A zero mask selects raw storage. LZMA uses LIBMPQ_COMPRESSION_LZMA (0x100),
 an exclusive selector available only for v2; it serializes as method 0x12.
 .PP
 LIBMPQ_COMPRESSION_POLICY_STANDARD (0) is the default writer policy.
-For v2 it permits zlib, PKWARE, bzip2, LZMA, and Huffman paired with
-mono or stereo ADPCM. Sparse encoding is not implemented.
+For MPQ v2+ it permits zlib, PKWARE, bzip2, LZMA, and Huffman paired with
+mono or stereo ADPCM. Its fixed SPARSE forms are SPARSE alone (0x20),
+SPARSE with zlib (0x22), and SPARSE with bzip2 (0x30).
 .PP
 LIBMPQ_COMPRESSION_POLICY_EXTENDED (1) permits additional implemented
 combinations, including standalone Huffman in v2. These may be less
 interoperable with StormLib or other MPQ implementations; they are not
 classified as invalid MPQ.
 .PP
-Both policies retain v1 mask behavior. Unknown bits, conflicting ADPCM
-channels, and v2 masks containing both zlib and bzip2 are rejected. The latter
+Both policies retain normal v1 compression-mask semantics, allowing other
+valid combinations such as SPARSE with Huffman (0x21) or PKWARE (0x28).
+In MPQ v2+, EXTENDED permits the broader valid lossless SPARSE combinations.
+Unknown bits, conflicting ADPCM channels, SPARSE combined with either
+ADPCM bit, and v2 masks containing both zlib and bzip2 are rejected.
+SPARSE precedes other stages, so lossy
+ADPCM cannot safely preserve its control bytes. The zlib/bzip2 combination
 could otherwise emit method 0x12, reserved for LZMA. Invalid policies or
 unsupported archive versions are rejected too.
 .PP

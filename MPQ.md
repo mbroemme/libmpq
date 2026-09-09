@@ -118,14 +118,31 @@ also rejects LZMA properties that require more than 64 MiB of decoder memory.
 Bound every decoder by the expected unpacked sector length.
 
 Writer compatibility is separate from permissive decoder support. STANDARD
-is the default and follows the fixed v2 method set: `0x02`, `0x08`, `0x10`,
-`0x12`, `0x20`, `0x22`, `0x30`, `0x41`, and `0x81`. libmpq cannot yet encode
-the sparse methods (`0x20`, `0x22`, `0x30`), so queries reject them in both
-policies. EXTENDED permits additional implemented chains and standalone
-Huffman in v2; these may be less interoperable with other implementations.
+is the default and, in MPQ v2+, follows the fixed method set: `0x02`, `0x08`,
+`0x10`, `0x12`, `0x20`, `0x22`, `0x30`, `0x41`, and `0x81`. Its fixed SPARSE
+forms are alone (`0x20`), with zlib (`0x22`), and with bzip2 (`0x30`). MPQ v1
+retains normal compression-mask semantics under either policy, allowing
+other valid combinations such as SPARSE with Huffman (`0x21`) or PKWARE
+(`0x28`). In MPQ v2+, EXTENDED permits the broader valid lossless SPARSE
+combinations and standalone Huffman; these may be less interoperable with
+other readers.
 Neither policy permits v2 chains containing both zlib and bzip2, since
-stage omission could emit reserved method `0x12`. V1 keeps its usual mask
-semantics. The reader has no compatibility setting and is unchanged.
+stage omission could emit reserved method `0x12`. The reader has no
+compatibility setting and is unchanged.
+
+SPARSE is a lossless zero-run stage applied before other compression stages
+and decoded last. Its payload starts with a four-byte **big-endian** unpacked
+length, unlike MPQ header/table fields. Tokens `0x00..0x7f` emit 3..130 zeros;
+tokens `0x80..0xff` copy 1..128 literal bytes. The outer method byte is `0x20`
+for SPARSE alone, `0x22` with zlib, or `0x30` with bzip2.
+
+The decoder checks the declared length against caller-owned output storage
+without allocating from that length. Oversized final tokens are clipped to
+the remaining declared output for Storm-style streams; all required literal
+bytes must exist. Missing output, truncated literals, and trailing input
+are rejected. The writer emits exact token lengths and retains SPARSE only
+when it reduces the stage size. Both writer policies reject SPARSE with
+either WAVE ADPCM bit: ADPCM would lossily transform the SPARSE control stream.
 
 ## Hashing and the table cipher
 

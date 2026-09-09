@@ -94,6 +94,22 @@ test_sha256_block(test_sha256_context *context, const uint8_t *block)
     context->state[7] += h;
 }
 
+/* Build UTF-32LE bytes explicitly so fixture expectations are host-independent. */
+void
+test_sparse_payload(uint8_t *data, size_t size)
+{
+    static const uint8_t bom[] = { 0xff, 0xfe, 0, 0 };
+    static const char text[] = TEST_SPARSE_TEXT;
+    size_t i;
+
+    for (i = 0; i < size; ++i) {
+        if (i < sizeof(bom))
+            data[i] = bom[i];
+        else
+            data[i] = i % 4U == 0 ? (uint8_t)text[((i - 4U) / 4U) % (sizeof(text) - 1U)] : 0;
+    }
+}
+
 /* Report a failed assertion and let the caller terminate the test normally. */
 void
 test_failure(const char *file, unsigned line, const char *condition)

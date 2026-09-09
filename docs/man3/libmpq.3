@@ -193,16 +193,25 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .PP
 The \fIlibmpq\fP library creates and reads MPQ archives, decrypts and
 decompresses file data, and extracts files compressed with Huffman, zlib,
-bzip2, PKWARE implosion, or the exclusive MPQ v2+ LZMA compression method.
+bzip2, SPARSE, PKWARE implosion, or the exclusive MPQ v2+ LZMA compression method.
 Creation uses seekable v1 or v2 archives and
 may be driven through a streaming writer or buffer/path convenience functions.
 The current writer supports raw sectors, encrypted tables and payloads, generated
-listfiles, zlib or bzip2 multi-compression, and exclusive MPQ v2+ LZMA
+listfiles, zlib, bzip2 or SPARSE multi-compression, and exclusive MPQ v2+ LZMA
 compression.
 .PP
 For MPQ v2+ creation, \fBLIBMPQ_COMPRESSION_LZMA\fP is an exclusive API
 selector that serializes as method 0x12. It is not a multi-compression bit;
 0x12 keeps its legacy bzip2-plus-zlib interpretation in MPQ v1 archives.
+.PP
+LIBMPQ_COMPRESSION_SPARSE (0x20) selects lossless zero-run compression in
+v1 and v2 archives. In MPQ v2+, STANDARD allows the fixed SPARSE forms:
+SPARSE alone (0x20), SPARSE with zlib (0x22), and SPARSE with bzip2 (0x30).
+MPQ v1 retains normal compression-mask semantics under either policy,
+allowing other valid combinations such as SPARSE with Huffman (0x21) or
+PKWARE (0x28). In MPQ v2+, EXTENDED permits the broader valid lossless
+SPARSE combinations. Neither policy allows SPARSE combined with WAVE ADPCM.
+Extraction returns the original bytes without changing text encodings.
 .PP
 Writer compression defaults to STANDARD for interoperability. Set
 LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED in the creation flags to allow
