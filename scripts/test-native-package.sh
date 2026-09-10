@@ -137,7 +137,7 @@ fi
 readonly shared_library="${shared_libraries[0]}"
 readonly soname="$(readelf -d "${shared_library}" |
 	sed -n 's/.*SONAME.*\[\(.*\)\].*/\1/p')"
-if [[ "${soname}" != libmpq.so.1 ]] || [[ ! -e "${library_dir}/libmpq.so" ]] ||
+if [[ "${soname}" != libmpq.so.4 ]] || [[ ! -e "${library_dir}/libmpq.so" ]] ||
 	[[ ! -e "${library_dir}/${soname}" ]] ||
 	[[ "$(buildinfo_value soname)" != "${soname}" ]]; then
 	printf 'Native package shared library SONAME set is invalid.\n' >&2
@@ -225,13 +225,13 @@ readonly config_consumer="${temporary}/consumer-config"
 compile_consumer "${pkgconfig_consumer}" "${pkgconfig_cflags}" "${pkgconfig_libs}"
 compile_consumer "${config_consumer}" "${config_cflags}" "${config_libs}"
 
-if ! readelf -d "${pkgconfig_consumer}" | grep -Fq 'Shared library: [libmpq.so.1]'; then
-	printf 'pkg-config consumer does not use libmpq.so.1.\n' >&2
+if ! readelf -d "${pkgconfig_consumer}" | grep -Fq 'Shared library: [libmpq.so.4]'; then
+	printf 'pkg-config consumer does not use libmpq.so.4.\n' >&2
 	exit 1
 fi
 if ! LD_LIBRARY_PATH="${library_dir}" ldd "${pkgconfig_consumer}" |
-	grep -F 'libmpq.so.1 =>' | grep -Fq "${library_dir}/"; then
-	printf 'pkg-config consumer does not resolve libmpq.so.1 from the SDK.\n' >&2
+	grep -F 'libmpq.so.4 =>' | grep -Fq "${library_dir}/"; then
+	printf 'pkg-config consumer does not resolve libmpq.so.4 from the SDK.\n' >&2
 	exit 1
 fi
 LD_LIBRARY_PATH="${library_dir}" "${pkgconfig_consumer}" "${fixture_archive}"

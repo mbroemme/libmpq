@@ -24,7 +24,7 @@ static int
 test_create_errors(void)
 {
     mpq_archive_s *archive = NULL;
-    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_ONE, 8, 4096, 0 };
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_ONE, 8, 4096, 0, 0 };
     char path[128];
 
     TEST_CHECK(test_temp_path(path, sizeof(path), "invalid") == 0);

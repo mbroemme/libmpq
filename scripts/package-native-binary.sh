@@ -113,9 +113,9 @@ readonly shared_library="${shared_libraries[0]}"
 readonly library_dir="$(dirname -- "${shared_library}")"
 readonly soname="$(readelf -d "${shared_library}" |
 	sed -n 's/.*SONAME.*\[\(.*\)\].*/\1/p')"
-if [[ "${soname}" != libmpq.so.1 ]] || [[ ! -e "${library_dir}/${soname}" ]] ||
+if [[ "${soname}" != libmpq.so.4 ]] || [[ ! -e "${library_dir}/${soname}" ]] ||
 	[[ ! -e "${library_dir}/libmpq.so" ]]; then
-	printf 'Native package shared library has no usable libmpq.so.1 SONAME set.\n' >&2
+	printf 'Native package shared library has no usable libmpq.so.4 SONAME set.\n' >&2
 	exit 1
 fi
 

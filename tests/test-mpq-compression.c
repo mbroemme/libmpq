@@ -51,7 +51,7 @@ test_policy_writer(uint32_t version, libmpq_compression_policy_t policy)
                                       0x13, 0x100, 0x20, 0x22, 0x30, 0x21, 0x28,
                                       0x32, 0x60,  0xa0, 0x61, 0xa1, 0x04, 0x120 };
     mpq_archive_s *archive = NULL;
-    mpq_archive_create_options_s create = { version, 32, 4096, 0 };
+    mpq_archive_create_options_s create = { version, 32, 4096, 0, 0 };
     mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS, 0, 0, 0, 0 };
     uint8_t input[8192];
     uint8_t *output = NULL;

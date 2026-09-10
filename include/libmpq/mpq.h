@@ -99,6 +99,15 @@ typedef struct mpq_writer mpq_writer_s;
 /* Opt into EXTENDED writer compression; absence selects STANDARD. */
 #define LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED 0x00000002u
 
+/* Array-presence flags in the independent version-100 attributes payload.
+ * Also accepted by mpq_archive_create_options_s.attributes in every supported
+ * MPQ version. Any nonzero combination creates one `(attributes)` file and
+ * consumes one reserved file slot, regardless of the number of selected arrays. */
+#define LIBMPQ_ATTRIBUTE_CRC32 0x01u
+#define LIBMPQ_ATTRIBUTE_FILETIME 0x02u
+#define LIBMPQ_ATTRIBUTE_MD5 0x04u
+#define LIBMPQ_ATTRIBUTE_PATCH_BIT 0x08u
+
 /* Fixed-width writer policy; readers never require a policy selection. */
 typedef int32_t libmpq_compression_policy_t;
 
@@ -184,7 +193,8 @@ enum
  * Options controlling creation of a new MPQ archive. Zero values select the
  * writer defaults, while explicit values make archive layout and capacity
  * reproducible. The structure is read when libmpq__archive_create is called
- * and is not retained by the library after that call returns.
+ * and is not retained by the library after that call returns. Its native ABI
+ * is 20 bytes, with five consecutive 32-bit fields and no padding.
  */
 typedef struct
 {
@@ -192,6 +202,7 @@ typedef struct
     uint32_t max_files;   /* Reserved file-entry capacity; zero selects the default capacity. */
     uint32_t sector_size; /* Power-of-two unpacked sector size; zero selects 4096 bytes. */
     uint32_t flags;       /* LIBMPQ_ARCHIVE_CREATE_* policy and finalization options. */
+    uint32_t attributes;  /* LIBMPQ_ATTRIBUTE_* arrays; zero disables attributes generation. */
 } mpq_archive_create_options_s;
 
 /*
@@ -211,6 +222,41 @@ typedef struct mpq_file_options
     uint16_t locale;            /* MPQ locale identifier used for lookup and duplicate checks. */
     uint16_t platform;          /* MPQ platform identifier used for lookup and duplicates. */
 } mpq_file_options_s;
+
+/* Stored per-file metadata, not automatically verified during extraction.
+ * flags identifies available fields; unavailable fields are zero. FILETIME
+ * is an unsigned Windows timestamp, MD5 is sixteen bytes, and patch_bit is
+ * zero or one. The native ABI is 40 bytes with FILETIME at offset 8 and
+ * four explicit reserved bytes at offset 36, always returned as zero.
+ * Natural alignment is retained; this is not the serialized attributes layout. */
+typedef struct
+{
+    uint32_t flags;
+    uint32_t crc32;
+    uint64_t filetime;
+    uint8_t md5[16];
+    int32_t patch_bit;
+    uint8_t reserved[4]; /* Explicit ABI padding; not serialized attribute data. */
+} mpq_file_attributes_s;
+
+/* Query the optional internal file on a reader. Returns EXIST if absent,
+ * FORMAT for invalid metadata, and stores its header flags in *flags on
+ * success. Ordinary archive opening and extraction do not depend on
+ * attributes validity. */
+extern LIBMPQ_API int32_t
+libmpq__archive_attributes_flags(mpq_archive_s *mpq_archive, uint32_t *flags);
+
+/* Return available stored attributes for a public file number on a reader.
+ * Legacy missing entries return zero flags, not invented checksum values.
+ * PATCH_BIT is metadata only and does not enable patch application. */
+extern LIBMPQ_API int32_t libmpq__file_attributes(
+    mpq_archive_s *mpq_archive, uint32_t file_number, mpq_file_attributes_s *attributes
+);
+
+/* Set FILETIME on an active file writer before finishing it. Generation of
+ * FILETIME must be enabled or FORMAT is returned. The default is zero;
+ * neither this API nor path-based addition imports filesystem metadata. */
+extern LIBMPQ_API int32_t libmpq__file_set_filetime(mpq_writer_s *writer, uint64_t filetime);
 
 /*
  * Signed public offset type used for archive positions and file sizes. A

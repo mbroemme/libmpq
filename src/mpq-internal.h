@@ -176,6 +176,9 @@ typedef struct
 
 struct mpq_writer_mpqe_ops;
 
+#include "mpq-attributes.h"
+#include "mpq-md5.h"
+
 /*
  * Runtime handle for an opened or newly created MPQ archive. It owns the
  * backing stream, decoded header and tables, file mappings, and per-file
@@ -202,8 +205,13 @@ struct mpq_archive
     mpq_block_ex_s *mpq_block_ex;  /* Optional extended block table. */
     mpq_file_s **mpq_file;         /* Per-file cached sector tables. */
 
-    mpq_map_s *mpq_map; /* Public file-number to block-table mapping. */
-    uint32_t files;     /* Number of valid extractable file entries. */
+    mpq_map_s *mpq_map;                      /* Public file-number to block-table mapping. */
+    uint32_t files;                          /* Number of valid extractable file entries. */
+    mpq_attributes_s *attributes;            /* Lazy validated reader attributes. */
+    int32_t attributes_error;                /* Cached absence or structural failure. */
+    mpq_file_attributes_s *write_attributes; /* Records indexed by physical block slot. */
+    uint32_t write_attributes_flags;         /* Selected LIBMPQ_ATTRIBUTE_* arrays. */
+    uint8_t write_internal;                  /* Finalization is adding generated internal files. */
 
     /* Writer-only state. Reader handles leave these fields zeroed. */
     uint8_t write_mode;           /* Whether this handle was opened for creation. */
@@ -237,18 +245,20 @@ struct mpq_archive
  */
 struct mpq_writer
 {
-    mpq_archive_s *archive;     /* Parent archive that owns the output stream. */
-    char *name;                 /* File name used for hashing and encryption keys. */
-    uint8_t *data;              /* Buffer for the current uncompressed input sector. */
-    uint32_t data_size;         /* Number of valid bytes currently buffered in data. */
-    uint32_t sector_index;      /* Index of the next sector to flush. */
-    uint32_t block_count;       /* Number of sectors expected for this file. */
-    uint64_t payload_offset;    /* Archive offset where this file's payload begins. */
-    uint64_t packed_total;      /* Bytes written for packed sectors, excluding the table. */
-    uint32_t *offsets;          /* Relative sector offsets for compressed files. */
-    libmpq__off_t expected;     /* File size declared when the writer was opened. */
-    libmpq__off_t written;      /* Number of source bytes accepted by the writer. */
-    mpq_file_options_s options; /* Storage, compression, encryption, and identity options. */
+    mpq_archive_s *archive;           /* Parent archive that owns the output stream. */
+    char *name;                       /* File name used for hashing and encryption keys. */
+    uint8_t *data;                    /* Buffer for the current uncompressed input sector. */
+    uint32_t data_size;               /* Number of valid bytes currently buffered in data. */
+    uint32_t sector_index;            /* Index of the next sector to flush. */
+    uint32_t block_count;             /* Number of sectors expected for this file. */
+    uint64_t payload_offset;          /* Archive offset where this file's payload begins. */
+    uint64_t packed_total;            /* Bytes written for packed sectors, excluding the table. */
+    uint32_t *offsets;                /* Relative sector offsets for compressed files. */
+    libmpq__off_t expected;           /* File size declared when the writer was opened. */
+    libmpq__off_t written;            /* Number of source bytes accepted by the writer. */
+    mpq_file_options_s options;       /* Storage, compression, encryption, and identity options. */
+    mpq_file_attributes_s attributes; /* Metadata accumulated for this source file. */
+    mpq_md5_s md5;                    /* Incremental source-byte digest when requested. */
 };
 
 #endif /* LIBMPQ_MPQ_INTERNAL_H */

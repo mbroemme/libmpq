@@ -228,6 +228,6 @@ test_archive_read(mpq_archive_s *archive, uint32_t number, uint8_t **data, size_
 int
 test_add_archive(mpq_archive_s **archive, const char *path, uint32_t version, uint32_t flags)
 {
-    mpq_archive_create_options_s options = { version, 32, 4096, flags };
+    mpq_archive_create_options_s options = { version, 32, 4096, flags, 0 };
     return libmpq__archive_create(archive, path, &options);
 }

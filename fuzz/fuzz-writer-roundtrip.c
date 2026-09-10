@@ -125,6 +125,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     archive_options.sector_size =
         sector_sizes[data[2] % (sizeof(sector_sizes) / sizeof(sector_sizes[0]))];
     archive_options.flags = LIBMPQ_ARCHIVE_CREATE_LISTFILE;
+    archive_options.attributes = data[0] >> 4;
     if ((data[0] & 0x08U) != 0U)
         archive_options.flags |= LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED;
     mpqe = (data[0] & 0x04U) != 0U;

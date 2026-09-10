@@ -225,7 +225,7 @@ test_mpqe_writer_roundtrip(uint32_t version, int replace_existing)
     FILE *existing = NULL;
     mpq_archive_s *archive = NULL;
     mpq_archive_s *reader = NULL;
-    mpq_archive_create_options_s options = { version, 8, 512, LIBMPQ_ARCHIVE_CREATE_LISTFILE };
+    mpq_archive_create_options_s options = { version, 8, 512, LIBMPQ_ARCHIVE_CREATE_LISTFILE, 0 };
     uint8_t raw[512];
     uint8_t packed[1024];
     uint8_t encrypted_output[512];
@@ -362,7 +362,7 @@ test_mpqe_writer_byte_equality(uint32_t version)
 {
     char raw_path[160] = { 0 };
     char mpqe_path[160] = { 0 };
-    mpq_archive_create_options_s options = { version, 8, 512, 0 };
+    mpq_archive_create_options_s options = { version, 8, 512, 0, 0 };
     const uint8_t payload[193] = { 0 };
     mpq_archive_s *raw_archive = NULL;
     mpq_archive_s *mpqe_archive = NULL;
@@ -438,7 +438,7 @@ count_mpqe_temps(const char *directory)
 
 /* A handled finalization failure must consume the writer and preserve an existing destination. */
 static int
-test_mpqe_writer_fault(mpqe_writer_fault_e fault)
+test_mpqe_writer_fault(mpqe_writer_fault_e fault, uint32_t attributes)
 {
     char directory[160] = { 0 };
     char path[176] = { 0 };
@@ -447,6 +447,9 @@ test_mpqe_writer_fault(mpqe_writer_fault_e fault)
     size_t actual_size;
     mpq_archive_s *archive = NULL;
     mpq_writer_mpqe_ops_s ops;
+    mpq_archive_create_options_s options = { 0, 8, 4096,
+                                             attributes ? LIBMPQ_ARCHIVE_CREATE_LISTFILE : 0,
+                                             attributes };
     int32_t result;
     int status = 1;
 
@@ -457,7 +460,7 @@ test_mpqe_writer_fault(mpqe_writer_fault_e fault)
     if (write_test_path(path, original, sizeof(original) - 1U) != 0)
         goto cleanup;
     if (libmpq__archive_create_mpqe(
-            &archive, path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1U, NULL
+            &archive, path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1U, &options
         ) != 0 ||
         libmpq__file_add(archive, "payload.bin", original, sizeof(original) - 1U, NULL) != 0)
         goto cleanup;
@@ -605,7 +608,8 @@ test_property_case(uint32_t version, uint32_t sector_size, size_t payload_size)
     uint8_t *output = NULL;
     mpq_archive_s *archive = NULL;
     mpq_archive_create_options_s archive_options = { version, 32, sector_size,
-                                                     LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED };
+                                                     LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED,
+                                                     0 };
     libmpq__off_t transferred;
     int32_t result;
     uint32_t number;
@@ -838,9 +842,13 @@ main(void)
     TEST_CHECK(test_mpqe_writer_byte_equality(LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
     TEST_CHECK(test_mpqe_writer_byte_equality(LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
     TEST_CHECK(test_mpqe_writer_chdir() == 0);
-    TEST_CHECK(test_mpqe_writer_fault(MPQE_WRITER_FAULT_FINALIZE) == 0);
-    TEST_CHECK(test_mpqe_writer_fault(MPQE_WRITER_FAULT_TRANSFORM) == 0);
-    TEST_CHECK(test_mpqe_writer_fault(MPQE_WRITER_FAULT_OUTPUT_CLOSE) == 0);
-    TEST_CHECK(test_mpqe_writer_fault(MPQE_WRITER_FAULT_PUBLISH) == 0);
+    TEST_CHECK(test_mpqe_writer_fault(MPQE_WRITER_FAULT_FINALIZE, 0) == 0);
+    TEST_CHECK(test_mpqe_writer_fault(MPQE_WRITER_FAULT_TRANSFORM, 0) == 0);
+    TEST_CHECK(test_mpqe_writer_fault(MPQE_WRITER_FAULT_OUTPUT_CLOSE, 0) == 0);
+    TEST_CHECK(test_mpqe_writer_fault(MPQE_WRITER_FAULT_PUBLISH, 0) == 0);
+    TEST_CHECK(test_mpqe_writer_fault(MPQE_WRITER_FAULT_FINALIZE, 0x0f) == 0);
+    TEST_CHECK(test_mpqe_writer_fault(MPQE_WRITER_FAULT_TRANSFORM, 0x0f) == 0);
+    TEST_CHECK(test_mpqe_writer_fault(MPQE_WRITER_FAULT_OUTPUT_CLOSE, 0x0f) == 0);
+    TEST_CHECK(test_mpqe_writer_fault(MPQE_WRITER_FAULT_PUBLISH, 0x0f) == 0);
     return 0;
 }

@@ -171,7 +171,7 @@ test_archives(void)
         mpq_archive_s *archive = NULL;
         mpq_archive_create_options_s create = {
             configuration & 1U, 256, configuration & 8U ? 512U : 4096U,
-            configuration & 8U ? 0 : LIBMPQ_ARCHIVE_CREATE_LISTFILE
+            configuration & 8U ? 0 : LIBMPQ_ARCHIVE_CREATE_LISTFILE, 0
         };
         uint32_t flags;
         size_t i;

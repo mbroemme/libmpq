@@ -23,6 +23,9 @@
 #include <libmpq/mpq.h>
 #include <stdio.h>
 
+/* Set caller-controlled FILETIME on an active writer with generation enabled. */
+int32_t libmpq__writer_file_set_filetime(mpq_writer_s *writer, uint64_t filetime);
+
 /* Private backend operations used during MPQE writer finalization. */
 typedef struct mpq_writer_mpqe_ops
 {

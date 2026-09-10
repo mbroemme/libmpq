@@ -24,6 +24,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Private named reads share block I/O, supplying the known internal file key. */
+int32_t libmpq__reader_open_named(mpq_archive_s *archive, uint32_t number, const char *name);
+int32_t libmpq__reader_validate_payload_range(
+    const mpq_archive_s *archive, uint32_t index, uint64_t offset, uint64_t size
+);
+
 /*
  * Open and parse an archive at archive_offset. A negative offset enables the
  * embedded-archive scan; otherwise the offset is interpreted as an absolute

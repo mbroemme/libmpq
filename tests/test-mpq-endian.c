@@ -13,7 +13,7 @@ create_serialized_vector(const char *path, uint32_t version)
 {
     static const uint8_t payload[] = { 0xde, 0xad, 0xbe, 0xef };
     mpq_archive_s *archive = NULL;
-    mpq_archive_create_options_s archive_options = { version, 1, 512, 0 };
+    mpq_archive_create_options_s archive_options = { version, 1, 512, 0, 0 };
     mpq_file_options_s file_options = { 0, 0, 0, 0, 0 };
 
     TEST_CHECK(libmpq__archive_create(&archive, path, &archive_options) == 0);
