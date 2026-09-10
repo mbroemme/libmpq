@@ -133,18 +133,36 @@ enum
  * mono and stereo WAVE ADPCM bits are mutually exclusive. For MPQ v2+, the
  * writer rejects chains containing both zlib and bzip2 because the resulting
  * successful-stage mask could be 0x12, which is reserved for LZMA.
+ *
  * STANDARD further limits v2 to zlib, PKWARE, bzip2, LZMA, SPARSE alone or
  * paired with zlib/bzip2, and Huffman paired with exactly one WAVE ADPCM bit.
+ *
+ * EXTENDED permits other implemented chains and standalone Huffman, which
+ * may be less interoperable with other readers.
+ *
  * SPARSE cannot precede lossy WAVE ADPCM under either policy.
- * EXTENDED permits other implemented chains
- * and standalone Huffman, which may be less interoperable with other readers.
  */
 #ifndef LIBMPQ_COMPRESSION_HUFFMAN
 #define LIBMPQ_COMPRESSION_HUFFMAN 0x01u
+#endif
+
+#ifndef LIBMPQ_COMPRESSION_ZLIB
 #define LIBMPQ_COMPRESSION_ZLIB 0x02u
+#endif
+
+#ifndef LIBMPQ_COMPRESSION_PKZIP
 #define LIBMPQ_COMPRESSION_PKZIP 0x08u
+#endif
+
+#ifndef LIBMPQ_COMPRESSION_BZIP2
 #define LIBMPQ_COMPRESSION_BZIP2 0x10u
+#endif
+
+#ifndef LIBMPQ_COMPRESSION_WAVE_MONO
 #define LIBMPQ_COMPRESSION_WAVE_MONO 0x40u
+#endif
+
+#ifndef LIBMPQ_COMPRESSION_WAVE_STEREO
 #define LIBMPQ_COMPRESSION_WAVE_STEREO 0x80u
 #endif
 

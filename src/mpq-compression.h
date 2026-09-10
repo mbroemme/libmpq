@@ -23,31 +23,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/*
- * Compression masks stored in the first byte of a Blizzard
- * multi-compression block. The values are bit flags rather than an
- * enumeration: a block may pass through several codecs, and the decoder
- * applies the selected stages in the format's canonical order. Bit 0x04
- * and bits above 0x80 are not implemented serialized mask bits.
- */
-
-/* Adaptive Huffman compression; bit 0, value 0x01. */
-#define LIBMPQ_COMPRESSION_HUFFMAN 0x01
-
-/* zlib/Deflate compression; bit 1, value 0x02. */
-#define LIBMPQ_COMPRESSION_ZLIB 0x02
-
-/* PKWARE Data Compression Library compression; bit 3, value 0x08. */
-#define LIBMPQ_COMPRESSION_PKZIP 0x08
-
-/* bzip2 compression; bit 4, value 0x10. */
-#define LIBMPQ_COMPRESSION_BZIP2 0x10
-
-/* Mono 4:1 ADPCM WAVE compression; bit 6, value 0x40. */
-#define LIBMPQ_COMPRESSION_WAVE_MONO 0x40
-
-/* Stereo 4:1 ADPCM WAVE compression; bit 7, value 0x80. */
-#define LIBMPQ_COMPRESSION_WAVE_STEREO 0x80
+/* Use the public definitions for compression-stage bits and writer policies. */
+#include <libmpq/mpq.h>
 
 /* MPQ v2+ serializes LZMA as a special method, not a stage-mask combination. */
 #define LIBMPQ_COMPRESSION_LZMA_METHOD 0x12u
@@ -58,9 +35,6 @@
 
 /* Reject raw-LZMA1 properties that require more than 64 MiB to decode. */
 #define LIBMPQ_LZMA_DECODER_MEMORY_MAX (64u * 1024u * 1024u)
-
-/* Public writer policies and selectors shared by the encoding interface. */
-#include <libmpq/mpq.h>
 
 /*
  * Codec callback signature used by the multi-compression dispatcher. The
