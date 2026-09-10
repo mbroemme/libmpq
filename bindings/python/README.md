@@ -82,3 +82,25 @@ provide their own authentication code of at least 32 bytes.
 Native failures raise `LibmpqError` subclasses with `.code` and `.message`
 attributes. I/O and missing-file subclasses remain compatible with the
 corresponding Python built-in exception categories.
+
+## Optional attributes
+
+`Archive.attributes_flags()` returns `None` when absent. `File.attributes()`
+returns an owned `FileAttributes` result. Use `WriterFile.set_filetime(value)`
+before finishing a streaming file.
+
+Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
+`ATTRIBUTE_MD5`, and `ATTRIBUTE_PATCH_BIT` in
+the `attributes=` argument of `Writer` or `Writer.create_mpqe()`.
+Zero disables generation; any nonzero combination creates one
+`(attributes)` file and consumes one reserved slot. Unknown bits are rejected.
+Creation flags remain separate. These options work for both MPQ v1 and v2,
+including MPQE creation.
+Payload version 100 is independent of the archive format version.
+
+Per-file flags distinguish unavailable fields from zero. Malformed optional
+metadata raises the existing format exception only when queried, not during
+ordinary extraction. CRC32 and MD5 cover source bytes before compression,
+so lossy ADPCM output may differ; they are not authentication and are not
+automatically verified. FILETIME defaults to zero, never filesystem mtime.
+PATCH_BIT is read as metadata; creation writes zeros and does not make patches.

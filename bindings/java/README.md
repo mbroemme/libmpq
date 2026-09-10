@@ -62,3 +62,26 @@ plaintext temporary file before atomically replacing the destination; it
 cannot modify an existing MPQE archive and crash cleanup is best effort. All
 negative libmpq return codes are reported as
 `LibmpqException` values containing the original code and diagnostic text.
+
+## Optional attributes
+
+`Archive.attributesFlags()` returns `OptionalInt`; absence is empty.
+`Archive.attributes(fileNumber)` returns an owned `FileAttributes` record.
+Call `MpqFileWriter.setFiletime(value)` before finishing a streaming file.
+Java FILETIME values retain unsigned native bits in a `long`.
+
+Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
+`ATTRIBUTE_MD5`, and `ATTRIBUTE_PATCH_BIT` in
+the `attributes` field of `ArchiveCreateOptions`.
+Constants live on `Mpq`. Zero disables generation; any nonzero combination creates one
+`(attributes)` file and consumes one reserved slot. Unknown bits are rejected.
+Creation flags remain separate. These options work for both MPQ v1 and v2,
+including MPQE creation.
+Payload version 100 is independent of the archive format version.
+
+Per-file flags distinguish unavailable fields from zero. Malformed optional
+metadata raises the existing format exception only when queried, not during
+ordinary extraction. CRC32 and MD5 cover source bytes before compression,
+so lossy ADPCM output may differ; they are not authentication and are not
+automatically verified. FILETIME defaults to zero, never filesystem mtime.
+PATCH_BIT is read as metadata; creation writes zeros and does not make patches.

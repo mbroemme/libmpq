@@ -23,6 +23,7 @@ private string temporaryArchive(string suffix) {
 }
 
 private void testVersionAndErrors() {
+    static assert(mpq_archive_create_options_s.sizeof == 20);
     assert(Mpq.version_().length > 0);
     assert(Mpq.strerror(ERROR_OPEN).length > 0);
     assert(Mpq.strerror(-999).length > 0);
@@ -37,6 +38,8 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
         ArchiveCreateOptions.v1() : ArchiveCreateOptions.v2();
     options.sectorSize = 4096;
     options.maxFiles = 16;
+    options.attributes = ATTRIBUTE_CRC32 | ATTRIBUTE_FILETIME |
+                     ATTRIBUTE_MD5 | ATTRIBUTE_PATCH_BIT;
     auto archive = Archive.create(path, options);
     scope(exit) archive.close();
 
@@ -55,6 +58,7 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
     scope(exit) remove(sourcePath);
     archive.addPath("source.txt", sourcePath);
     auto writer = archive.begin("stream.bin", 6);
+    writer.setFiletime(0xfedcba9876543210UL);
     writer.write(cast(const(ubyte)[])"abc");
     writer.write(cast(const(ubyte)[])"def");
     writer.finish();
@@ -72,6 +76,14 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
     assert(reopened.metadata().version_ == (archiveVersion + 1));
     assert(reopened.fileCount() >= 4);
     assert(reopened.file("stream.bin").read() == cast(const(ubyte)[])"abcdef");
+    assert(reopened.attributesFlags().get() == 15);
+    auto attributes = reopened.file("stream.bin").attributes();
+    assert(attributes.flags == 15);
+    assert(attributes.crc32 == 0x4b8e39ef);
+    assert(attributes.filetime == 0xfedcba9876543210UL);
+    assert(attributes.md5 == [0xe8, 0x0b, 0x50, 0x17, 0x09, 0x89, 0x50, 0xfc,
+                              0x58, 0xaa, 0xd8, 0x3c, 0x8c, 0x14, 0x97, 0x8e]);
+    assert(!attributes.patchBit);
     assert(reopened.file("compressed.txt").read() == repetitive);
     if (archiveVersion == ARCHIVE_VERSION_TWO)
         assert(reopened.file("lzma.txt").read() == repetitive);
@@ -167,12 +179,15 @@ private void testMpqeCreate() {
     immutable ubyte[] authCode =
         cast(immutable(ubyte)[])"LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
     write(path, cast(const(ubyte)[])"previous destination");
-    auto archive = Archive.createMpqe(path, authCode, ArchiveCreateOptions.v2());
+    auto options = ArchiveCreateOptions.v2();
+    options.attributes = ATTRIBUTE_CRC32;
+    auto archive = Archive.createMpqe(path, authCode, options);
     archive.add("payload.txt", cast(const(ubyte)[])"D MPQE writer regression\n");
     archive.close();
     auto reopened = Archive.openMpqe(path, authCode, 0);
     scope(exit) { reopened.close(); remove(path); }
     assert(reopened.version_() == 2);
+    assert(reopened.attributesFlags().get() == ATTRIBUTE_CRC32);
     assert(reopened.file("payload.txt").read() ==
            cast(const(ubyte)[])"D MPQE writer regression\n");
 }

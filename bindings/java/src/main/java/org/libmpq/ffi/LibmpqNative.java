@@ -36,12 +36,14 @@ public final class LibmpqNative {
     private static final ValueLayout C_SIZE_T = canonicalValueLayout("size_t");
 
     /**
-     * Native layout of {@code struct mpq_archive_create_options_s}: four
-     * native-endian int32 fields for version, capacity, sector size, and flags.
+     * Native layout of {@code struct mpq_archive_create_options_s}: five
+     * native-endian uint32 fields for version, capacity, sector size, flags,
+     * and attributes. Nonzero attributes reserve one internal file slot.
      */
     public static final MemoryLayout ARCHIVE_OPTIONS = MemoryLayout.structLayout(
         C_INT.withName("version"), C_INT.withName("max_files"),
-        C_INT.withName("sector_size"), C_INT.withName("flags"));
+        C_INT.withName("sector_size"), C_INT.withName("flags"),
+        C_INT.withName("attributes"));
     /**
      * Native layout of {@code struct mpq_file_options_s}: three int32 fields
      * followed by two native-endian uint16-compatible locale fields.
@@ -52,6 +54,23 @@ public final class LibmpqNative {
         C_SHORT.withName("platform"));
 
     private static final MethodHandle VERSION;
+    private static final MethodHandle ARCHIVE_ATTRIBUTES_FLAGS;
+    private static final MethodHandle FILE_ATTRIBUTES;
+    private static final MethodHandle FILE_SET_FILETIME;
+
+    /** 40-byte native result with explicit reserved bytes, not the disk layout. */
+    public static final MemoryLayout FILE_ATTRIBUTES_LAYOUT = attributesLayout();
+
+    private static MemoryLayout attributesLayout() {
+        long alignment = canonicalValueLayout("long long").byteAlignment();
+        return MemoryLayout.structLayout(
+            C_INT.withName("flags"), C_INT.withName("crc32"),
+            C_LONG.withByteAlignment(alignment).withName("filetime"),
+            MemoryLayout.sequenceLayout(16, ValueLayout.JAVA_BYTE).withName("md5"),
+            C_INT.withName("patch_bit"),
+            MemoryLayout.sequenceLayout(4, ValueLayout.JAVA_BYTE).withName("reserved")
+        );
+    }
     private static final MethodHandle STRERROR;
     private static final MethodHandle ARCHIVE_COMPRESSION_ALLOWED;
     private static final MethodHandle ARCHIVE_OPEN;
@@ -89,6 +108,11 @@ public final class LibmpqNative {
     static {
         SymbolLookup lookup = loadLibrary();
         Linker linker = LINKER;
+        ARCHIVE_ATTRIBUTES_FLAGS = uintMetadata(linker, lookup, "libmpq__archive_attributes_flags");
+        FILE_ATTRIBUTES = function(linker, lookup, "libmpq__file_attributes",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS));
+        FILE_SET_FILETIME = function(linker, lookup, "libmpq__file_set_filetime",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_LONG));
         VERSION = function(linker, lookup, "libmpq__version",
                            FunctionDescriptor.of(ValueLayout.ADDRESS));
         STRERROR = function(linker, lookup, "libmpq__strerror",
@@ -316,6 +340,21 @@ public final class LibmpqNative {
     }
     /** Finalizes a native streaming writer and publishes its entry. */
     public static int fileFinish(MemorySegment writer) { return callInt(FILE_FINISH, writer); }
+
+    /** Query attributes presence flags without treating missing metadata as zero flags. */
+    public static int archiveAttributesFlags(MemorySegment archive, MemorySegment flags) {
+        return callInt(ARCHIVE_ATTRIBUTES_FLAGS, archive, flags);
+    }
+
+    /** Read a native aligned attributes result for one public file number. */
+    public static int fileAttributes(MemorySegment archive, int number, MemorySegment output) {
+        return callInt(FILE_ATTRIBUTES, archive, number, output);
+    }
+
+    /** Supply the unsigned FILETIME bit pattern to an active writer. */
+    public static int fileSetFiletime(MemorySegment writer, long filetime) {
+        return callInt(FILE_SET_FILETIME, writer, filetime);
+    }
     /** Adds a complete native buffer as one archive entry. */
     public static int fileAdd(MemorySegment archive, MemorySegment name, MemorySegment buffer,
                               long size, MemorySegment options) {
@@ -403,11 +442,12 @@ public final class LibmpqNative {
      * layout expected by {@code libmpq__archive_create}.
      */
     public static void setArchiveOptions(MemorySegment memory, int version, int maxFiles,
-                                          int sectorSize, int flags) {
+                                          int sectorSize, int flags, int attributes) {
         memory.set(C_INT, 0, version);
         memory.set(C_INT, 4, maxFiles);
         memory.set(C_INT, 8, sectorSize);
         memory.set(C_INT, 12, flags);
+        memory.set(C_INT, 16, attributes);
     }
 
     /**

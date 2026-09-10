@@ -49,8 +49,18 @@ class LibmpqTest {
     /** Ensures Java's native struct layouts match the C ABI sizes. */
     @Test
     void preservesNativeStructLayouts() {
-        assertEquals(16, LibmpqNative.ARCHIVE_OPTIONS.byteSize());
+        assertEquals(20, LibmpqNative.ARCHIVE_OPTIONS.byteSize());
         assertEquals(16, LibmpqNative.FILE_OPTIONS.byteSize());
+        assertEquals(40, LibmpqNative.FILE_ATTRIBUTES_LAYOUT.byteSize());
+        assertLayoutFields(LibmpqNative.ARCHIVE_OPTIONS,
+            new String[] {"version", "max_files", "sector_size", "flags", "attributes"},
+            new long[] {0, 4, 8, 12, 16}, new long[] {4, 4, 4, 4, 4});
+        assertLayoutFields(LibmpqNative.FILE_OPTIONS,
+            new String[] {"flags", "compression_first", "compression_next", "locale", "platform"},
+            new long[] {0, 4, 8, 12, 14}, new long[] {4, 4, 4, 2, 2});
+        assertLayoutFields(LibmpqNative.FILE_ATTRIBUTES_LAYOUT,
+            new String[] {"flags", "crc32", "filetime", "md5", "patch_bit", "reserved"},
+            new long[] {0, 4, 8, 16, 32, 36}, new long[] {4, 4, 8, 16, 4, 4});
         assertFalse(Mpq.archiveCompressionAllowed(Mpq.ARCHIVE_VERSION_TWO,
             Mpq.COMPRESSION_HUFFMAN, Mpq.COMPRESSION_POLICY_STANDARD));
         assertTrue(Mpq.archiveCompressionAllowed(Mpq.ARCHIVE_VERSION_TWO,
@@ -63,6 +73,17 @@ class LibmpqTest {
                 assertFalse(Mpq.archiveCompressionAllowed(version,
                     Mpq.COMPRESSION_SPARSE | Mpq.COMPRESSION_WAVE_STEREO, policy));
             }
+        }
+    }
+
+    /** Checks each field against the fixed native offsets and widths. */
+    private static void assertLayoutFields(java.lang.foreign.MemoryLayout layout,
+                                           String[] names, long[] offsets, long[] sizes) {
+        for (int i = 0; i < names.length; ++i) {
+            var field = java.lang.foreign.MemoryLayout.PathElement.groupElement(names[i]);
+            assertEquals(offsets[i], layout.byteOffset(field), names[i]);
+            assertEquals(sizes[i], layout.select(field).byteSize(), names[i]);
+            assertEquals(0, offsets[i] % layout.select(field).byteAlignment(), names[i]);
         }
     }
 
@@ -97,6 +118,14 @@ class LibmpqTest {
         try (Archive archive = Archive.open(fixture)) {
             int number = archive.fileNumber(hash);
             byte[] data = archive.readFile(number);
+            assertEquals(7, archive.attributesFlags().orElseThrow());
+            FileAttributes attributes = archive.attributes(number);
+            java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+            crc.update(data);
+            assertEquals(crc.getValue(), attributes.crc32());
+            assertArrayEquals(java.security.MessageDigest.getInstance("MD5").digest(data), attributes.md5());
+            assertEquals(132537600000000000L, attributes.filetime());
+            assertFalse(attributes.patchBit());
             assertTrue(new String(data, StandardCharsets.UTF_8).contains("libmpq"));
             assertTrue(archive.fileCount() > 0);
         }
@@ -129,11 +158,14 @@ class LibmpqTest {
         byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
         byte[] payload = "Java MPQE writer regression\n".getBytes(StandardCharsets.UTF_8);
         Files.write(path, "previous destination".getBytes(StandardCharsets.UTF_8));
-        try (Archive archive = Archive.createMpqe(path, code, ArchiveCreateOptions.v2())) {
+        ArchiveCreateOptions options = new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_TWO,
+            8, 4096, 0, Mpq.ATTRIBUTE_CRC32);
+        try (Archive archive = Archive.createMpqe(path, code, options)) {
             archive.add("payload.txt", payload, FileOptions.raw());
         }
         try (Archive archive = Archive.openMpqe(path, code, 0)) {
             assertEquals(2, archive.version());
+            assertEquals(Mpq.ATTRIBUTE_CRC32, archive.attributesFlags().orElseThrow());
             assertArrayEquals(payload, archive.readFile(archive.fileNumber("payload.txt")));
         }
         LibmpqException error = assertThrows(LibmpqException.class,
@@ -180,12 +212,20 @@ class LibmpqTest {
     void streamsAndRejectsMissingFile(@TempDir Path directory) throws Exception {
         Path path = directory.resolve("stream.mpq");
         byte[] payload = "streamed".getBytes(StandardCharsets.UTF_8);
-        try (Archive archive = Archive.create(path, ArchiveCreateOptions.v1())) {
+        ArchiveCreateOptions options = new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_ONE,
+            8, 4096, 0, Mpq.ATTRIBUTE_CRC32 |
+            Mpq.ATTRIBUTE_FILETIME | Mpq.ATTRIBUTE_MD5);
+        try (Archive archive = Archive.create(path, options)) {
             try (MpqFileWriter writer = archive.begin("stream.txt", payload.length, FileOptions.raw())) {
+                writer.setFiletime(0xfedcba9876543210L);
                 writer.write(payload);
             }
         }
         try (Archive archive = Archive.open(path)) {
+            FileAttributes attributes = archive.attributes(archive.fileNumber("stream.txt"));
+            assertEquals(7, attributes.flags());
+            assertEquals(0xfedcba9876543210L, attributes.filetime());
+            assertArrayEquals(java.security.MessageDigest.getInstance("MD5").digest(payload), attributes.md5());
             assertEquals(Mpq.ERROR_EXIST,
                          org.junit.jupiter.api.Assertions.assertThrows(
                              LibmpqException.class, () -> archive.fileNumber("missing"))

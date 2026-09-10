@@ -31,6 +31,10 @@ ARCHIVE_VERSION_ONE = 0
 ARCHIVE_VERSION_TWO = 1
 ARCHIVE_CREATE_LISTFILE = 0x00000001
 ARCHIVE_CREATE_COMPRESSION_EXTENDED = 0x00000002
+ATTRIBUTE_CRC32 = 0x01
+ATTRIBUTE_FILETIME = 0x02
+ATTRIBUTE_MD5 = 0x04
+ATTRIBUTE_PATCH_BIT = 0x08
 COMPRESSION_POLICY_STANDARD = 0
 COMPRESSION_POLICY_EXTENDED = 1
 FILE_FLAG_IMPLODE = 0x00000100
@@ -53,6 +57,14 @@ _BYTE_PTR = ctypes.POINTER(ctypes.c_uint8)
 _VOID_PTR = ctypes.c_void_p
 
 
+class _FileAttributes(ctypes.Structure):
+    """40-byte native result with explicit reserved bytes, not the disk layout."""
+
+    _fields_ = [("flags", ctypes.c_uint32), ("crc32", ctypes.c_uint32),
+                ("filetime", ctypes.c_uint64), ("md5", ctypes.c_uint8 * 16),
+                ("patch_bit", ctypes.c_int32), ("reserved", ctypes.c_uint8 * 4)]
+
+
 def _native_buffer(size):
     """Allocate a writable uint8 array accepted by ctypes pointer arguments."""
     return (_BYTE_PTR._type_ * max(1, int(size)))()
@@ -64,7 +76,7 @@ def _candidate_library_names():
         return ("libmpq.dll", "mpq.dll")
     if os.uname().sysname == "Darwin":
         return ("libmpq.dylib", "libmpq.so")
-    return ("libmpq.so", "libmpq.so.1")
+    return ("libmpq.so", "libmpq.so.4")
 
 
 def _load_library():
@@ -213,6 +225,9 @@ _configure("libmpq__file_add", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE
 _configure("libmpq__file_add_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__archive_clone", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), _VOID_PTR)
 _configure("libmpq__archive_close", ctypes.c_int32, _VOID_PTR)
+_configure("libmpq__archive_attributes_flags", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
+_configure("libmpq__file_attributes", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_FileAttributes))
+_configure("libmpq__file_set_filetime", ctypes.c_int32, _VOID_PTR, ctypes.c_uint64)
 for _name in ("packed", "unpacked"):
     _configure("libmpq__archive_size_" + _name, ctypes.c_int32, _VOID_PTR, ctypes.POINTER(_OFF_T))
 _configure("libmpq__archive_offset", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(_OFF_T))
@@ -254,9 +269,9 @@ def file_hash(filename):
 
 
 class ArchiveCreateOptions(ctypes.Structure):
-    """Native options controlling MPQ version, capacity, sectors, and flags."""
+    """Native creation options; nonzero attributes reserve one internal file slot."""
 
-    _fields_ = [("version", ctypes.c_uint32), ("max_files", ctypes.c_uint32), ("sector_size", ctypes.c_uint32), ("flags", ctypes.c_uint32)]
+    _fields_ = [("version", ctypes.c_uint32), ("max_files", ctypes.c_uint32), ("sector_size", ctypes.c_uint32), ("flags", ctypes.c_uint32), ("attributes", ctypes.c_uint32)]
 
     @classmethod
     def defaults(cls):
@@ -325,6 +340,17 @@ def _read_value(function, pointer_type, *arguments):
     return value.value
 
 
+@dataclass(frozen=True)
+class FileAttributes:
+    """Stored compatibility metadata; flags distinguish missing fields from zero."""
+
+    flags: int
+    crc32: int
+    filetime: int
+    md5: bytes
+    patch_bit: bool
+
+
 class WriterFile:
     """Explicitly closeable stream for one file being added to an archive."""
 
@@ -335,6 +361,13 @@ class WriterFile:
         self._archive, self._writer = archive, _VOID_PTR()
         self.expected_size, self.written_size = int(size), 0
         libmpq.libmpq__file_begin(archive._mpq, _as_bytes(name), size, ctypes.byref(options), ctypes.byref(self._writer))
+
+    def set_filetime(self, filetime):
+        """Set explicit unsigned FILETIME; generation must have been enabled."""
+        self._ensure_open()
+        if not isinstance(filetime, int) or not 0 <= filetime <= 0xffffffffffffffff:
+            raise ValueError("filetime must be an unsigned 64-bit integer")
+        libmpq.libmpq__file_set_filetime(self._writer, filetime)
 
     def write(self, data):
         """Append bytes and reject writes beyond the declared logical size."""
@@ -378,19 +411,19 @@ class WriterFile:
 class Writer:
     """Closeable seekable archive creator preserving the legacy Writer API."""
 
-    def __init__(self, filename, version=ARCHIVE_VERSION_ONE, max_files=0, sector_size=0, flags=0):
-        """Create an archive with explicit layout, capacity, sector, and flags."""
-        options = ArchiveCreateOptions(version, max_files, sector_size, flags)
+    def __init__(self, filename, version=ARCHIVE_VERSION_ONE, max_files=0, sector_size=0, flags=0, attributes=0):
+        """Create an archive; nonzero ATTRIBUTE_* bits reserve one attributes file slot."""
+        options = ArchiveCreateOptions(version, max_files, sector_size, flags, attributes)
         self._mpq = _VOID_PTR()
         libmpq.libmpq__archive_create(ctypes.byref(self._mpq), _as_bytes(filename), ctypes.byref(options))
         self.filename, self._opened = filename, True
 
     @classmethod
     def create_mpqe(cls, filename, auth_code, version=ARCHIVE_VERSION_ONE,
-                    max_files=0, sector_size=0, flags=0):
+                    max_files=0, sector_size=0, flags=0, attributes=0):
         """Create an MPQE-wrapped archive using caller-supplied authentication bytes."""
         code = _auth_code_bytes(auth_code)
-        options = ArchiveCreateOptions(version, max_files, sector_size, flags)
+        options = ArchiveCreateOptions(version, max_files, sector_size, flags, attributes)
         writer = cls.__new__(cls)
         writer._mpq = _VOID_PTR()
         pointer = (ctypes.c_uint8 * len(code)).from_buffer_copy(code) if code else None
@@ -564,6 +597,14 @@ class Reader:
 class File:
     """Metadata and complete/block access wrapper for one MPQ entry."""
 
+    def attributes(self):
+        """Return stored attributes, raising if absent or malformed, without verification."""
+        self._archive._ensure_open()
+        value = _FileAttributes()
+        libmpq.libmpq__file_attributes(self._archive._mpq, self.number, ctypes.byref(value))
+        return FileAttributes(value.flags, value.crc32, value.filetime,
+                              bytes(value.md5), bool(value.patch_bit))
+
     def __init__(self, archive, number):
         """Load metadata for one public numeric file number."""
         self._archive, self.number = archive, int(number)
@@ -665,6 +706,14 @@ class Archive:
         archive._opened = True
         archive._load_metadata()
         return archive
+
+    def attributes_flags(self):
+        """Return stored flags, or None if absent; malformed metadata raises."""
+        self._ensure_open()
+        try:
+            return _read_value(libmpq.libmpq__archive_attributes_flags, ctypes.c_uint32, self._mpq)
+        except LibmpqNotFoundError:
+            return None
 
     def _load_metadata(self):
         """Populate compatibility attributes from native metadata queries."""

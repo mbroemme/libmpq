@@ -21,6 +21,32 @@ import org.libmpq.ffi.LibmpqNative;
  * querying or modifying the archive and should use try-with-resources.
  */
 public final class Archive implements AutoCloseable {
+
+    /** Return flags, or empty when absent; malformed attributes are still errors. */
+    public java.util.OptionalInt attributesFlags() throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment flags = arena.allocate(ValueLayout.JAVA_INT);
+            int status = LibmpqNative.archiveAttributesFlags(handle, flags);
+            if (status == Mpq.ERROR_EXIST) return java.util.OptionalInt.empty();
+            Support.check(status);
+            return java.util.OptionalInt.of(flags.get(ValueLayout.JAVA_INT, 0));
+        }
+    }
+
+    /** Return owned stored attributes; availability is represented by result flags. */
+    public FileAttributes attributes(int number) throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment value = arena.allocate(LibmpqNative.FILE_ATTRIBUTES_LAYOUT);
+            Support.check(LibmpqNative.fileAttributes(handle, number, value));
+            return new FileAttributes(value.get(ValueLayout.JAVA_INT, 0),
+                Integer.toUnsignedLong(value.get(ValueLayout.JAVA_INT, 4)),
+                value.get(ValueLayout.JAVA_LONG_UNALIGNED, 8),
+                value.asSlice(16, 16).toArray(ValueLayout.JAVA_BYTE),
+                value.get(ValueLayout.JAVA_INT, 32) != 0);
+        }
+    }
     private MemorySegment handle;
 
     /** Wraps a newly returned native archive handle. */
@@ -116,7 +142,7 @@ public final class Archive implements AutoCloseable {
             LibmpqNative.setArchiveOptions(nativeOptions, options.version(),
                                             Support.uint32(options.maxFiles(), "maxFiles"),
                                             Support.uint32(options.sectorSize(), "sectorSize"),
-                                            options.flags());
+                                            options.flags(), options.attributes());
             Support.check(LibmpqNative.archiveCreate(output, Support.text(arena, path.toString()),
                                                       nativeOptions));
             return new Archive(LibmpqNative.getAddress(output));
@@ -137,7 +163,7 @@ public final class Archive implements AutoCloseable {
             LibmpqNative.setArchiveOptions(nativeOptions, options.version(),
                                             Support.uint32(options.maxFiles(), "maxFiles"),
                                             Support.uint32(options.sectorSize(), "sectorSize"),
-                                            options.flags());
+                                            options.flags(), options.attributes());
             Support.check(LibmpqNative.archiveCreateMpqe(
                 output, Support.text(arena, path.toString()), Support.bytes(arena, authCode),
                 authCode.length, nativeOptions

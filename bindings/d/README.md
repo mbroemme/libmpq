@@ -110,3 +110,25 @@ contains precompiled package downloads. They contain `.di` interfaces,
 compiler-specific static archives, and the native shared-library files needed
 at runtime. The outer D release ZIP also contains the source package so
 consumers can rebuild when a precompiled package is not suitable.
+
+## Optional attributes
+
+`Archive.attributesFlags()` returns `Nullable!uint`; absence is null.
+`MpqFile.attributes()` returns an owned `FileAttributes` value. Call
+`MpqFileWriter.setFiletime(value)` before finishing a streaming file.
+
+Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
+`ATTRIBUTE_MD5`, and `ATTRIBUTE_PATCH_BIT` in
+the `attributes` field of `ArchiveCreateOptions`.
+Zero disables generation; any nonzero combination creates one
+`(attributes)` file and consumes one reserved slot. Unknown bits are rejected.
+Creation flags remain separate. These options work for both MPQ v1 and v2,
+including MPQE creation.
+Payload version 100 is independent of the archive format version.
+
+Per-file flags distinguish unavailable fields from zero. Malformed optional
+metadata raises the existing format exception only when queried, not during
+ordinary extraction. CRC32 and MD5 cover source bytes before compression,
+so lossy ADPCM output may differ; they are not authentication and are not
+automatically verified. FILETIME defaults to zero, never filesystem mtime.
+PATCH_BIT is read as metadata; creation writes zeros and does not make patches.

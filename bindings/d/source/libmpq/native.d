@@ -103,6 +103,7 @@ extern(C) struct mpq_archive_create_options_s {
     uint max_files;
     uint sector_size;
     uint flags;
+    uint attributes;
 }
 
 /** Native layout passed to file-add and file-begin operations. */
@@ -114,7 +115,71 @@ extern(C) struct mpq_file_options_s {
     ushort platform;
 }
 
+/** Per-block array flags, also accepted by the creation attributes option. */
+enum ATTRIBUTE_CRC32 = 0x1u;
+alias LIBMPQ_ATTRIBUTE_CRC32 = ATTRIBUTE_CRC32;
+enum ATTRIBUTE_FILETIME = 0x2u;
+alias LIBMPQ_ATTRIBUTE_FILETIME = ATTRIBUTE_FILETIME;
+enum ATTRIBUTE_MD5 = 0x4u;
+alias LIBMPQ_ATTRIBUTE_MD5 = ATTRIBUTE_MD5;
+enum ATTRIBUTE_PATCH_BIT = 0x8u;
+alias LIBMPQ_ATTRIBUTE_PATCH_BIT = ATTRIBUTE_PATCH_BIT;
+
+/** 40-byte naturally aligned native result; unavailable/reserved fields are zero. */
+extern(C) struct mpq_file_attributes_s {
+    uint flags;
+    uint crc32;
+    ulong filetime;
+    ubyte[16] md5;
+    int patch_bit;
+    ubyte[4] reserved;
+}
+
+/** Compile-time native ABI sizes and offsets, independent of pointer width. */
+static assert(mpq_archive_create_options_s.sizeof == 20);
+static assert(mpq_archive_create_options_s.version_.offsetof == 0 &&
+              mpq_archive_create_options_s.version_.sizeof == 4);
+static assert(mpq_archive_create_options_s.max_files.offsetof == 4 &&
+              mpq_archive_create_options_s.max_files.sizeof == 4);
+static assert(mpq_archive_create_options_s.sector_size.offsetof == 8 &&
+              mpq_archive_create_options_s.sector_size.sizeof == 4);
+static assert(mpq_archive_create_options_s.flags.offsetof == 12 &&
+              mpq_archive_create_options_s.flags.sizeof == 4);
+static assert(mpq_archive_create_options_s.attributes.offsetof == 16 &&
+              mpq_archive_create_options_s.attributes.sizeof == 4);
+
+static assert(mpq_file_options_s.sizeof == 16);
+static assert(mpq_file_options_s.flags.offsetof == 0 &&
+              mpq_file_options_s.flags.sizeof == 4);
+static assert(mpq_file_options_s.compression_first.offsetof == 4 &&
+              mpq_file_options_s.compression_first.sizeof == 4);
+static assert(mpq_file_options_s.compression_next.offsetof == 8 &&
+              mpq_file_options_s.compression_next.sizeof == 4);
+static assert(mpq_file_options_s.locale.offsetof == 12 &&
+              mpq_file_options_s.locale.sizeof == 2);
+static assert(mpq_file_options_s.platform.offsetof == 14 &&
+              mpq_file_options_s.platform.sizeof == 2);
+
+static assert(mpq_file_attributes_s.sizeof == 40);
+static assert(mpq_file_attributes_s.flags.offsetof == 0 &&
+              mpq_file_attributes_s.flags.sizeof == 4);
+static assert(mpq_file_attributes_s.crc32.offsetof == 4 &&
+              mpq_file_attributes_s.crc32.sizeof == 4);
+static assert(mpq_file_attributes_s.filetime.offsetof == 8 &&
+              mpq_file_attributes_s.filetime.sizeof == 8);
+static assert(mpq_file_attributes_s.md5.offsetof == 16 &&
+              mpq_file_attributes_s.md5.sizeof == 16);
+static assert(mpq_file_attributes_s.patch_bit.offsetof == 32 &&
+              mpq_file_attributes_s.patch_bit.sizeof == 4);
+static assert(mpq_file_attributes_s.reserved.offsetof == 36 &&
+              mpq_file_attributes_s.reserved.sizeof == 4);
+
 extern(C) {
+
+    /** Optional metadata queries and explicit writer FILETIME. */
+    int libmpq__archive_attributes_flags(mpq_archive_s* archive, uint* flags);
+    int libmpq__file_attributes(mpq_archive_s* archive, uint number, mpq_file_attributes_s* attributes);
+    int libmpq__file_set_filetime(mpq_writer_s* writer, ulong filetime);
 
     /** Return the static package version string. */
     const(char)* libmpq__version();

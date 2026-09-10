@@ -19,6 +19,13 @@ import org.libmpq.ffi.LibmpqNative;
  * the entry and invalidates this object.
  */
 public final class MpqFileWriter implements AutoCloseable {
+
+    /** Set explicit FILETIME bits without importing filesystem metadata. */
+    public void setFiletime(long filetime) throws LibmpqException {
+        if (handle == null || handle.equals(MemorySegment.NULL))
+            throw new IllegalStateException("Writer is finished");
+        Support.check(LibmpqNative.fileSetFiletime(handle, filetime));
+    }
     private MemorySegment handle;
     private final long expected;
     private long written;

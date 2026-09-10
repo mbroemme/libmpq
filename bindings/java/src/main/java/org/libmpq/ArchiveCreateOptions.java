@@ -13,8 +13,16 @@ package org.libmpq;
  * libmpq's creation selectors: zero requests the v1 layout and one requests
  * the v2 layout.  The resulting archive reports its public format version as
  * one or two, respectively.
+ * The attributes field accepts Mpq.ATTRIBUTE_* bits; any nonzero combination
+ * creates one attributes file and consumes one reserved slot. Zero disables it.
  */
-public record ArchiveCreateOptions(int version, long maxFiles, long sectorSize, int flags) {
+public record ArchiveCreateOptions(int version, long maxFiles, long sectorSize, int flags,
+                                   int attributes) {
+    /** Preserve creation without attributes for callers using the four-field constructor. */
+    public ArchiveCreateOptions(int version, long maxFiles, long sectorSize, int flags) {
+        this(version, maxFiles, sectorSize, flags, 0);
+    }
+
     /**
      * Returns options that let libmpq choose its default archive version,
      * hash-table capacity, sector size, and creation flags.

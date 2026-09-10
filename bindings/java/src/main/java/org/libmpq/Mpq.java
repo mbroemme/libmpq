@@ -19,6 +19,14 @@ import org.libmpq.ffi.LibmpqNative;
  * private codec or archive-layout implementation details.
  */
 public final class Mpq {
+    /** Attributes CRC32 array presence. */
+    public static final int ATTRIBUTE_CRC32 = 0x1;
+    /** Attributes FILETIME array presence. */
+    public static final int ATTRIBUTE_FILETIME = 0x2;
+    /** Attributes MD5 array presence. */
+    public static final int ATTRIBUTE_MD5 = 0x4;
+    /** Attributes PATCH_BIT array presence. */
+    public static final int ATTRIBUTE_PATCH_BIT = 0x8;
     /** Native failure while opening or creating a file. */
     public static final int ERROR_OPEN = -1;
     /** Native failure while closing a file or archive. */

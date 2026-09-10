@@ -14,6 +14,16 @@ import std.string : splitLines, toStringz;
 import libmpq.errors : MPQException, checkStatus;
 import libmpq.native;
 import libmpq.options : ArchiveCreateOptions, FileOptions;
+import std.typecons : Nullable, nullable;
+
+/** Owned stored metadata; hashes are not automatically verified on extraction. */
+struct FileAttributes {
+    uint flags;
+    uint crc32;
+    ulong filetime;
+    ubyte[16] md5;
+    bool patchBit;
+}
 
 /** The three Storm hash values used by MPQ name lookup. */
 struct StormHash { uint hash1; uint hash2; uint hash3; }
@@ -46,6 +56,14 @@ struct FileMetadata {
  * errors. A closed archive must not be used again.
  */
 class Archive {
+    /** Return flags, or a null value when absent; malformed metadata still throws. */
+    Nullable!uint attributesFlags() {
+        uint flags;
+        auto status = libmpq__archive_attributes_flags(nativeHandle(), &flags);
+        if (status == ERROR_EXIST) return Nullable!uint.init;
+        checkStatus(status, "libmpq__archive_attributes_flags");
+        return nullable(flags);
+    }
     private mpq_archive_s* handle;
     private bool closed;
 
@@ -251,6 +269,14 @@ class File {
     this(Archive archive, char[] name) { this(archive, name.idup); }
 
     /** Return the public numeric entry index. */ uint no() const { return number; }
+    /** Return stored attributes for this entry; missing/invalid metadata throws. */
+    FileAttributes attributes() {
+        mpq_file_attributes_s value;
+        checkStatus(libmpq__file_attributes(archiveRef.nativeHandle(), number, &value),
+                    "libmpq__file_attributes");
+        return FileAttributes(value.flags, value.crc32, value.filetime, value.md5,
+                              value.patch_bit != 0);
+    }
     /** Return the requested name, when created by name. */ string name() const { return entryName; }
 
     /** Query all native metadata for this entry. */
@@ -310,6 +336,11 @@ class File {
 
 /** A streaming writer returned by `Archive.begin`. */
 class MpqFileWriter {
+    /** Set unsigned FILETIME explicitly; the archive must enable its generation. */
+    void setFiletime(ulong filetime) {
+        ensureActive();
+        checkStatus(libmpq__file_set_filetime(handle, filetime), "libmpq__file_set_filetime");
+    }
     private mpq_writer_s* handle; private off_t declaredSize; private off_t writtenSize; private bool finishedState;
     private this(mpq_writer_s* handle, off_t declaredSize) { this.handle = handle; this.declaredSize = declaredSize; }
 
