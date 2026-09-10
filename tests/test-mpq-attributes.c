@@ -150,8 +150,24 @@ test_roundtrip(uint32_t version, uint32_t flags, int mpqe)
     if (flags & 4)
         REQUIRE(memcmp(attributes.md5, digest_digits, 16) == 0);
     REQUIRE(attributes.patch_bit == 0);
+    found = UINT32_MAX;
+    REQUIRE(
+        libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &found) ==
+        (flags ? 0 : LIBMPQ_ERROR_EXIST)
+    );
+    REQUIRE(found == 0);
+    REQUIRE(libmpq__file_verify(archive, number, 0, &found) == 0 && found == 0);
+    REQUIRE(libmpq__file_verify(archive, number, 8, &found) == LIBMPQ_ERROR_FORMAT && found == 0);
     REQUIRE(libmpq__file_read(archive, number, output, sizeof(output), &transferred) == 0);
     REQUIRE(transferred == 9 && memcmp(output, "123456789", 9) == 0);
+    REQUIRE(libmpq__file_number(archive, "empty.txt", &number) == 0);
+    found = UINT32_MAX;
+    REQUIRE(
+        libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &found) ==
+        (flags ? 0 : LIBMPQ_ERROR_EXIST)
+    );
+    REQUIRE(found == 0);
+    REQUIRE(libmpq__file_number(archive, "digits.txt", &number) == 0);
     REQUIRE(libmpq__archive_clone(&clone, archive) == 0);
     REQUIRE(libmpq__archive_close(archive) == 0);
     archive = NULL;
@@ -207,7 +223,12 @@ test_manual(int malformed, uint32_t storage)
     REQUIRE(libmpq__archive_create(&archive, path, &options) == 0);
     REQUIRE(libmpq__file_add(archive, "hole", NULL, 0, NULL) == 0);
     REQUIRE(libmpq__file_add(archive, "live", (const uint8_t *)"abc", 3, NULL) == 0);
-    REQUIRE(libmpq__file_add(archive, "(attributes)", raw, sizeof(raw), &file) == 0);
+    REQUIRE(
+        libmpq__file_add(
+            archive, "(attributes)", raw, !malformed && storage == 0 ? 20 : sizeof(raw), &file
+        ) == 0
+    );
+    REQUIRE(libmpq__file_add(archive, "tail", (const uint8_t *)"abc", 3, NULL) == 0);
     archive->mpq_block[0].flags = 0;
     status = libmpq__archive_close(archive);
     archive = NULL;
@@ -228,8 +249,117 @@ test_manual(int malformed, uint32_t storage)
     );
     if (!malformed)
         REQUIRE(attributes.crc32 == 0x12345678);
+    flags = UINT32_MAX;
+    REQUIRE(
+        libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &flags) ==
+        (malformed ? LIBMPQ_ERROR_FORMAT : 0)
+    );
+    REQUIRE(flags == (malformed ? 0 : LIBMPQ_VERIFY_FILE_CRC32));
     REQUIRE(libmpq__file_read(archive, number, output, 3, &transferred) == 0);
     REQUIRE(transferred == 3 && memcmp(output, "abc", 3) == 0);
+    if (!malformed && storage == 0) {
+        REQUIRE(libmpq__file_number(archive, "tail", &number) == 0);
+        REQUIRE(libmpq__file_attributes(archive, number, &attributes) == 0);
+        REQUIRE(attributes.flags == 0);
+        flags = UINT32_MAX;
+        REQUIRE(libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &flags) == 0);
+        REQUIRE(flags == 0);
+    }
+cleanup:
+    if (archive != NULL)
+        (void)libmpq__archive_close(archive);
+    if (path[0] != 0)
+        unlink(path);
+    return result;
+}
+
+/* Store deliberately wrong metadata without corrupting readable file contents. */
+static int
+test_verify(uint32_t version, uint32_t storage, uint32_t corrupt)
+{
+    mpq_archive_create_options_s options = { version, 4, 512, 0,
+                                             LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 };
+    mpq_file_options_s file = { storage, LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    uint8_t payload[4097];
+    uint8_t output[4097];
+    uint32_t number;
+    uint32_t request;
+    uint32_t bits;
+    libmpq__off_t transferred;
+    int32_t status;
+    int result = 0;
+    char path[256] = { 0 };
+
+    memset(payload, 'a', sizeof(payload));
+    if ((storage & LIBMPQ_FILE_FLAG_SINGLE) != 0)
+        options.sector_size = 8192;
+    REQUIRE(test_temp_path(path, sizeof(path), "verify") == 0);
+    REQUIRE(libmpq__archive_create(&archive, path, &options) == 0);
+    bits = UINT32_MAX;
+    REQUIRE(
+        libmpq__file_verify(archive, 0, LIBMPQ_VERIFY_ALL, &bits) == LIBMPQ_ERROR_NOT_INITIALIZED &&
+        bits == 0
+    );
+    REQUIRE(libmpq__file_add(archive, "payload", payload, sizeof(payload), &file) == 0);
+    if (corrupt & LIBMPQ_VERIFY_FILE_CRC32)
+        archive->write_attributes[0].crc32 ^= 1;
+    if (corrupt & LIBMPQ_VERIFY_FILE_MD5)
+        archive->write_attributes[0].md5[0] ^= 1;
+    status = libmpq__archive_close(archive);
+    archive = NULL;
+    REQUIRE(status == 0);
+    REQUIRE(libmpq__archive_open(&archive, path, 0) == 0);
+    REQUIRE(libmpq__file_number(archive, "payload", &number) == 0);
+    REQUIRE(libmpq__block_open_offset(archive, number) == 0);
+    for (request = 0; request <= LIBMPQ_VERIFY_ALL; ++request) {
+        bits = UINT32_MAX;
+        REQUIRE(libmpq__file_verify(archive, number, request, &bits) == 0);
+        REQUIRE(bits == (request & corrupt));
+        REQUIRE((bits & ~request) == 0);
+        REQUIRE(archive->mpq_file[number]->open_count == 1);
+    }
+    REQUIRE(libmpq__block_close_offset(archive, number) == 0);
+    REQUIRE(archive->mpq_file[number] == NULL);
+    REQUIRE(libmpq__file_read(archive, number, output, sizeof(output), &transferred) == 0);
+    REQUIRE(transferred == sizeof(payload) && memcmp(payload, output, sizeof(payload)) == 0);
+    if (storage == 0 || (storage & LIBMPQ_FILE_FLAG_SINGLE) != 0) {
+
+        /* A CRC flag alone does not create a table for raw or single-unit files. */
+        archive->mpq_block[archive->mpq_map[number].block_table_indices].flags |= LIBMPQ_FLAG_CRC;
+        bits = UINT32_MAX;
+        REQUIRE(libmpq__file_verify(archive, number, LIBMPQ_VERIFY_SECTOR_CRC, &bits) == 0);
+        REQUIRE(bits == 0);
+    }
+    bits = UINT32_MAX;
+    REQUIRE(
+        libmpq__file_verify(
+            archive, UINT32_MAX, LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5, &bits
+        ) == LIBMPQ_ERROR_EXIST &&
+        bits == 0
+    );
+    bits = UINT32_MAX;
+    REQUIRE(
+        libmpq__file_verify(NULL, 0, LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5, &bits) ==
+            LIBMPQ_ERROR_EXIST &&
+        bits == 0
+    );
+    REQUIRE(
+        libmpq__file_verify(
+            archive, number, LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5, NULL
+        ) == LIBMPQ_ERROR_EXIST
+    );
+
+    /* An I/O failure must leave the result zero. */
+    archive->mpq_block[archive->mpq_map[number].block_table_indices].offset = UINT32_MAX;
+    bits = UINT32_MAX;
+    REQUIRE(
+        libmpq__file_verify(
+            archive, number, LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5, &bits
+        ) < 0 &&
+        bits == 0
+    );
+    REQUIRE(archive->mpq_file[number] == NULL);
 cleanup:
     if (archive != NULL)
         (void)libmpq__archive_close(archive);
@@ -363,6 +493,25 @@ main(void)
             TEST_CHECK(test_roundtrip(version, flags, flags % 2) == 0);
     }
     TEST_CHECK(test_manual(1, 0) == 0);
+    for (version = 0; version < 2; ++version) {
+        const uint32_t corruptions[] = { 0, LIBMPQ_VERIFY_FILE_CRC32, LIBMPQ_VERIFY_FILE_MD5,
+                                         LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5 };
+        for (size_t i = 0; i < sizeof(corruptions) / sizeof(corruptions[0]); ++i) {
+            uint32_t corrupt = corruptions[i];
+            TEST_CHECK(test_verify(version, 0, corrupt) == 0);
+            TEST_CHECK(
+                test_verify(
+                    version, LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED, corrupt
+                ) == 0
+            );
+            TEST_CHECK(
+                test_verify(
+                    version, LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SINGLE, corrupt
+                ) == 0
+            );
+        }
+    }
+    TEST_CHECK(test_manual(0, 0) == 0);
     TEST_CHECK(test_manual(0, LIBMPQ_FILE_FLAG_ENCRYPTED) == 0);
     TEST_CHECK(test_manual(0, LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SINGLE) == 0);
     TEST_CHECK(test_manual(0, LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_COMPRESS) == 0);

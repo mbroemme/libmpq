@@ -26,6 +26,7 @@ FILETIME is an unsigned 64-bit Windows timestamp. MD5 is sixteen bytes,
 not hexadecimal text. CRC32 and MD5 describe source bytes before compression;
 lossy ADPCM output may not match. They are not cryptographic authentication.
 The query reports stored values without verifying them.
+Use libmpq__file_verify() for an explicit checksum comparison.
 .SH RETURN VALUE
 Returns LIBMPQ_SUCCESS on success or a negative libmpq error.
 EXIST means missing metadata or an invalid file number; FORMAT means
@@ -33,6 +34,7 @@ malformed attributes. I/O and allocation errors are propagated.
 NULL arguments return EXIST. Use on the wrong handle type returns NOT_INITIALIZED.
 .SH SEE ALSO
 .BR libmpq (3),
+.BR libmpq__file_verify (3),
 .BR libmpq__archive_create (3),
 .BR libmpq__archive_create_mpqe (3),
 .BR libmpq__archive_attributes_flags (3),

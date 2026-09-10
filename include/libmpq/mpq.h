@@ -108,6 +108,13 @@ typedef struct mpq_writer mpq_writer_s;
 #define LIBMPQ_ATTRIBUTE_MD5 0x04u
 #define LIBMPQ_ATTRIBUTE_PATCH_BIT 0x08u
 
+/* Shared bits for requested checks and reported mismatches, not attributes. */
+#define LIBMPQ_VERIFY_SECTOR_CRC 0x00000001u
+#define LIBMPQ_VERIFY_FILE_CRC32 0x00000002u
+#define LIBMPQ_VERIFY_FILE_MD5 0x00000004u
+#define LIBMPQ_VERIFY_ALL                                                                          \
+    (LIBMPQ_VERIFY_SECTOR_CRC | LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5)
+
 /* Fixed-width writer policy; readers never require a policy selection. */
 typedef int32_t libmpq_compression_policy_t;
 
@@ -131,6 +138,10 @@ enum
 #define LIBMPQ_FILE_FLAG_COMPRESS 0x00000200u
 #define LIBMPQ_FILE_FLAG_ENCRYPTED 0x00010000u
 #define LIBMPQ_FILE_FLAG_SINGLE 0x01000000u
+
+/* Generate sector Adler-32 checksums for sectorized compressed/imploded files.
+ * Ignored for empty, raw, or single-unit files. */
+#define LIBMPQ_FILE_FLAG_SECTOR_CRC 0x04000000u
 #define LIBMPQ_FILE_FLAG_LOCALE 0x00000000u
 
 /*
@@ -251,6 +262,20 @@ libmpq__archive_attributes_flags(mpq_archive_s *mpq_archive, uint32_t *flags);
  * PATCH_BIT is metadata only and does not enable patch application. */
 extern LIBMPQ_API int32_t libmpq__file_attributes(
     mpq_archive_s *mpq_archive, uint32_t file_number, mpq_file_attributes_s *attributes
+);
+
+/* Verify requested available sector Adler-32 and file CRC32/MD5 checksums.
+ * Sector checks use decrypted packed bytes; file checks use extracted bytes.
+ * Returns success with mismatch bits in *mismatches, or a negative operation error.
+ * The output is a subset of verify_flags: set bits denote available mismatches;
+ * clear bits denote matching or unavailable/skipped checksums.
+ * File checks require attributes (EXIST if absent); sector checks do not.
+ * Missing individual values or sector tables are skipped.
+ * A zero request is a no-op on a valid reader/file. Unknown bits return FORMAT.
+ * *mismatches is zero on errors. Zero bits do not imply values were present.
+ * Lossy ADPCM output can differ from the writer's source-byte checksums. */
+extern LIBMPQ_API int32_t libmpq__file_verify(
+    mpq_archive_s *archive, uint32_t file_number, uint32_t verify_flags, uint32_t *mismatches
 );
 
 /* Set FILETIME on an active file writer before finishing it. Generation of

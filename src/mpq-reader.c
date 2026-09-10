@@ -21,6 +21,7 @@
 #include "config.h"
 #endif
 
+#include "mpq-compression.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
 #include "mpq-internal.h"
@@ -32,6 +33,263 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <zlib.h>
+
+/* Sector checksums follow packed sectors and are not encrypted, even when
+ * file data is encrypted. Reuse the offset table loaded by open_named(). */
+int32_t
+libmpq__reader_sector_checksums(mpq_archive_s *archive, uint32_t number, uint32_t **checksums)
+{
+    uint32_t index = archive->mpq_map[number].block_table_indices;
+    uint32_t flags = archive->mpq_block[index].flags;
+    uint32_t blocks = libmpq__reader_count_file_blocks(archive, number);
+    uint32_t start;
+    uint32_t end;
+    uint32_t packed_size;
+    size_t size;
+    uint64_t offset;
+    uint8_t *packed = NULL;
+    uint32_t *table = NULL;
+    int32_t status;
+
+    *checksums = NULL;
+    if (blocks == 0 || (flags & LIBMPQ_FLAG_CRC) == 0 || (flags & LIBMPQ_FLAG_SINGLE) != 0 ||
+        (flags & (LIBMPQ_FLAG_COMPRESSED | LIBMPQ_FLAG_COMPRESS_PKZIP)) == 0)
+        return LIBMPQ_SUCCESS;
+    if (archive->mpq_file[number] == NULL ||
+        archive->mpq_file[number]->packed_offset_count != blocks + 1)
+        return LIBMPQ_ERROR_OPEN;
+
+    /* The existing parser allocates and decodes one extra offset for CRC files. */
+    start = archive->mpq_file[number]->packed_offset[blocks];
+    end = archive->mpq_file[number]->packed_offset[blocks + 1];
+    if (end == 0 || end == start)
+        return LIBMPQ_SUCCESS;
+    if (end < start || end > archive->mpq_block[index].packed_size)
+        return LIBMPQ_ERROR_FORMAT;
+    if ((uint64_t)blocks * sizeof(uint32_t) > INT32_MAX ||
+        (uint64_t)blocks * sizeof(uint32_t) > SIZE_MAX)
+        return LIBMPQ_ERROR_SIZE;
+    size = (size_t)blocks * sizeof(uint32_t);
+    packed_size = end - start;
+    if (packed_size > size)
+        return LIBMPQ_ERROR_FORMAT;
+    status = libmpq__reader_validate_payload_range(archive, index, start, packed_size);
+    if (status < 0)
+        return status;
+    offset = (uint64_t)archive->archive_offset + archive->mpq_block[index].offset +
+             ((uint64_t)archive->mpq_block_ex[index].offset_high << 32) + start;
+    packed = malloc(packed_size);
+    table = malloc(size);
+    if (packed == NULL || table == NULL) {
+        status = LIBMPQ_ERROR_MALLOC;
+        goto cleanup;
+    }
+    status = libmpq__stream_read_at(archive->stream, offset, packed, packed_size);
+    if (status < 0)
+        goto cleanup;
+    status = libmpq__compression_decompress_block(
+        packed, packed_size, (uint8_t *)table, size, LIBMPQ_FLAG_COMPRESS_MULTI,
+        archive->mpq_header.version
+    );
+    if (status < 0 || (uint64_t)status != size) {
+        status = LIBMPQ_ERROR_FORMAT;
+        goto cleanup;
+    }
+    libmpq__reader_decode_uint32_table(table, (const uint8_t *)table, blocks);
+    *checksums = table;
+    table = NULL;
+    status = LIBMPQ_SUCCESS;
+cleanup:
+    free(table);
+    free(packed);
+    return status;
+}
+
+/* Read, decrypt and decompress one block from an opened file entry.
+ * The routine computes packed bounds, applies per-block encryption, selects
+ * raw or codec output, and reports the exact unpacked byte count. */
+int32_t
+libmpq__reader_block_read(
+    mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number, uint8_t *out_buf,
+    libmpq__off_t out_size, libmpq__off_t *transferred, const uint32_t *checksum,
+    uint32_t *mismatches
+)
+{
+
+    /* Packed input buffer, size bookkeeping and block decryption state. */
+    uint8_t *in_buf;
+    uint32_t seed = 0;
+    uint32_t encrypted = 0;
+    uint32_t compressed = 0;
+    uint32_t imploded = 0;
+    int32_t tb = 0;
+    uint8_t use_out_buf = FALSE;
+    libmpq__off_t block_offset = 0;
+    libmpq__off_t in_size = 0;
+    libmpq__off_t unpacked_size = 0;
+
+    if (libmpq__reader_validate_file_number(mpq_archive, file_number) < 0) {
+        return LIBMPQ_ERROR_EXIST;
+    }
+
+    if (libmpq__reader_validate_block_number(mpq_archive, file_number, block_number) < 0) {
+        return LIBMPQ_ERROR_EXIST;
+    }
+
+    if (mpq_archive->mpq_file[file_number] == NULL ||
+        mpq_archive->mpq_file[file_number]->packed_offset == NULL) {
+        return LIBMPQ_ERROR_OPEN;
+    }
+
+    if (mpq_archive->mpq_file[file_number]->packed_offset_count <= block_number + 1) {
+        return LIBMPQ_ERROR_EXIST;
+    }
+
+    libmpq__block_size_unpacked(mpq_archive, file_number, block_number, &unpacked_size);
+
+    if (unpacked_size > out_size) {
+        return LIBMPQ_ERROR_SIZE;
+    }
+
+    /* Compute the absolute payload position from archive, file, and block offsets.
+     * The stored block offset is relative to the file payload start, not the
+     * beginning of the archive file. */
+    if (mpq_archive->mpq_file[file_number]->packed_offset[block_number + 1] <
+            mpq_archive->mpq_file[file_number]->packed_offset[block_number] ||
+        mpq_archive->mpq_file[file_number]->packed_offset[block_number + 1] >
+            mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices]
+                .packed_size) {
+        return LIBMPQ_ERROR_FORMAT;
+    }
+    in_size = mpq_archive->mpq_file[file_number]->packed_offset[block_number + 1] -
+              mpq_archive->mpq_file[file_number]->packed_offset[block_number];
+    if (libmpq__reader_validate_payload_range(
+            mpq_archive, mpq_archive->mpq_map[file_number].block_table_indices,
+            mpq_archive->mpq_file[file_number]->packed_offset[block_number], (uint64_t)in_size
+        ) < 0) {
+        return LIBMPQ_ERROR_READ;
+    }
+    block_offset =
+        mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].offset +
+        (((long long)mpq_archive
+              ->mpq_block_ex[mpq_archive->mpq_map[file_number].block_table_indices]
+              .offset_high)
+         << 32) +
+        mpq_archive->mpq_file[file_number]->packed_offset[block_number];
+
+    libmpq__file_encrypted(mpq_archive, file_number, &encrypted);
+    libmpq__file_compressed(mpq_archive, file_number, &compressed);
+    libmpq__file_imploded(mpq_archive, file_number, &imploded);
+
+    /* Raw unencrypted blocks can be read directly into the caller's buffer. */
+    use_out_buf = !encrypted && !compressed && !imploded && in_size <= out_size;
+
+    if (use_out_buf) {
+
+        /* Raw data can bypass a temporary allocation when no transform is needed. */
+        in_buf = out_buf;
+    } else {
+        if ((in_buf = calloc(1, in_size)) == NULL) {
+            return LIBMPQ_ERROR_MALLOC;
+        }
+    }
+
+    if ((tb = libmpq__stream_read_at(
+             mpq_archive->stream, (uint64_t)block_offset + (uint64_t)mpq_archive->archive_offset,
+             in_buf, (size_t)in_size
+         )) < 0) {
+        if (!use_out_buf) {
+            free(in_buf);
+        }
+        return tb;
+    }
+
+    if (encrypted) {
+
+        /* Encrypted blocks use a seed derived from the file and block number. */
+        if (libmpq__reader_get_block_seed(mpq_archive, file_number, block_number, &seed) < 0) {
+            if (!use_out_buf) {
+                free(in_buf);
+            }
+            return LIBMPQ_ERROR_DECRYPT;
+        }
+
+        if (libmpq__crypto_decrypt_block(in_buf, (uint32_t)in_size, seed) < 0) {
+            if (!use_out_buf) {
+                free(in_buf);
+            }
+            return LIBMPQ_ERROR_DECRYPT;
+        }
+    }
+
+    /* MPQ sector CRCs are Adler-32 over decrypted packed bytes, not CRC32.
+     * Zero and all-ones entries are unavailable legacy checksum values. */
+    if (checksum != NULL && *checksum != 0 && *checksum != UINT32_MAX &&
+        (uint32_t)adler32(0, in_buf, (uInt)in_size) != *checksum)
+        *mismatches |= LIBMPQ_VERIFY_SECTOR_CRC;
+
+    /* Blizzard multi-compression blocks declare their exact backend chain in the payload. */
+    if (compressed) {
+
+        /* The payload's leading mask selects and orders its decompression stages. */
+        if ((tb = libmpq__compression_decompress_block(
+                 in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_MULTI,
+                 mpq_archive->mpq_header.version
+             )) < 0) {
+            if (!use_out_buf) {
+                free(in_buf);
+            }
+            return LIBMPQ_ERROR_UNPACK;
+        }
+    }
+
+    /* PKWARE-imploded blocks use the legacy explode decoder. */
+    if (imploded) {
+
+        /* Standalone PKWARE payloads use the legacy decoder without a mask byte. */
+        if ((tb = libmpq__compression_decompress_block(
+                 in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_PKZIP,
+                 mpq_archive->mpq_header.version
+             )) < 0) {
+            if (!use_out_buf) {
+                free(in_buf);
+            }
+            return LIBMPQ_ERROR_UNPACK;
+        }
+    }
+
+    if (compressed && imploded) {
+        if (!use_out_buf) {
+            free(in_buf);
+        }
+        return LIBMPQ_ERROR_UNPACK;
+    }
+
+    if (!compressed && !imploded) {
+
+        /* A raw block is copied only after encrypted and compressed paths are excluded. */
+        if ((tb = libmpq__compression_decompress_block(
+                 in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_NONE,
+                 mpq_archive->mpq_header.version
+             )) < 0) {
+            if (!use_out_buf) {
+                free(in_buf);
+            }
+            return LIBMPQ_ERROR_UNPACK;
+        }
+    }
+
+    if (!use_out_buf) {
+        free(in_buf);
+    }
+
+    if (transferred != NULL) {
+        *transferred = tb;
+    }
+
+    return LIBMPQ_SUCCESS;
+}
 
 /* Verify that a file payload subrange is both internally consistent and
  * contained in the physical backing file captured when the archive opened.

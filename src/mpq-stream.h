@@ -16,8 +16,31 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+
+#include "mpq-mpqe.h"
 
 typedef struct mpq_stream mpq_stream_s;
+
+typedef enum
+{
+    LIBMPQ_STREAM_FILE,
+    LIBMPQ_STREAM_MPQE
+} libmpq_stream_provider_e;
+
+typedef int32_t (*mpq_stream_read_at_fn)(mpq_stream_s *, uint64_t, uint8_t *, size_t);
+
+/* Private per-stream dispatch. The context is borrowed, not copied to clones.
+ * Normal streams use the built-in reader and no context. */
+struct mpq_stream
+{
+    FILE *file;
+    uint64_t size;
+    uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE];
+    libmpq_stream_provider_e provider;
+    mpq_stream_read_at_fn read_at;
+    void *read_context;
+};
 
 int32_t libmpq__stream_open_file(mpq_stream_s **stream, const char *path);
 int32_t libmpq__stream_open_mpqe(

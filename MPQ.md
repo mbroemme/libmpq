@@ -207,6 +207,30 @@ attributes entry itself are zero. Patch-bit creation emits zeros only and
 does not create or apply patches. Checksums are metadata, not cryptographic
 authentication, and extraction does not automatically verify them.
 
+`libmpq__file_verify()` explicitly compares sector checksums and file CRC32/MD5.
+MPQ sector CRCs are Adler-32 checksums over decrypted packed sectors, before
+decompression. Their optional table follows the sectors, may be compressed,
+and is not encrypted. Zero and all-ones entries are unavailable and skipped;
+single-unit files have no sector checksum table. `LIBMPQ_VERIFY_SECTOR_CRC`
+requests only this check and does not require `(attributes)`.
+
+The writer generates these tables when `LIBMPQ_FILE_FLAG_SECTOR_CRC` is requested
+for sectorized COMPRESS or IMPLODE files. It checksums packed bytes before
+encryption and appends one LE32 value per sector. The extra offset points
+past the checksum table. The table is never encrypted and uses zlib only
+when this reduces its size. Empty, raw, and single-unit files ignore the
+flag. Ordinary writing without this flag and normal extraction are unchanged.
+
+File CRC32/MD5 cover complete extracted contents. These requests require
+`(attributes)`; unavailable requested row values are skipped. `LIBMPQ_VERIFY_ALL`
+requests sector checks and both file checks. The mismatch mask uses the same
+bits and is a subset of the request: set means available and mismatched, while
+clear means matched or unavailable/skipped. Negative operation errors leave
+the result zero; mismatch bits are published only after complete success.
+Zero bits do not establish checksum availability. Lossy ADPCM can legitimately
+differ from the writer's source-byte checksums. FILETIME and PATCH_BIT are not
+verified, and normal extraction is unchanged.
+
 For v1 creation with attributes enabled, a 16-byte gap separates the header
 and hash table. This avoids StormLib's malformed-map heuristic, which skips
 attributes when a table begins exactly at the end of the v1 header. Writers

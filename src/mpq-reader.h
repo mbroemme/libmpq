@@ -26,6 +26,18 @@
 
 /* Private named reads share block I/O, supplying the known internal file key. */
 int32_t libmpq__reader_open_named(mpq_archive_s *archive, uint32_t number, const char *name);
+
+/* Share block I/O; only explicit verification supplies a checksum and result. */
+int32_t libmpq__reader_block_read(
+    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint8_t *out_buf,
+    libmpq__off_t out_size, libmpq__off_t *transferred, const uint32_t *checksum,
+    uint32_t *mismatches
+);
+
+/* Load optional checksums using the already-decoded sector offsets.
+ * A successful NULL result means this file has no checksum table. */
+int32_t
+libmpq__reader_sector_checksums(mpq_archive_s *archive, uint32_t file_number, uint32_t **checksums);
 int32_t libmpq__reader_validate_payload_range(
     const mpq_archive_s *archive, uint32_t index, uint64_t offset, uint64_t size
 );

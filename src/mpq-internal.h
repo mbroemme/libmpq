@@ -254,6 +254,7 @@ struct mpq_writer
     uint64_t payload_offset;          /* Archive offset where this file's payload begins. */
     uint64_t packed_total;            /* Bytes written for packed sectors, excluding the table. */
     uint32_t *offsets;                /* Relative sector offsets for compressed files. */
+    uint32_t *checksums;              /* Optional slice owned by the offsets allocation. */
     libmpq__off_t expected;           /* File size declared when the writer was opened. */
     libmpq__off_t written;            /* Number of source bytes accepted by the writer. */
     mpq_file_options_s options;       /* Storage, compression, encryption, and identity options. */

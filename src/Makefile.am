@@ -8,7 +8,7 @@ AM_CPPFLAGS			= -I$(top_builddir) -I$(top_srcdir)/include
 
 # Link the public library from the complete native implementation.
 libmpq_la_SOURCES		= $(GENERAL_SRCS)
-noinst_HEADERS += mpq-attributes.h mpq-md5.h
+noinst_HEADERS += mpq-attributes.h mpq-md5.h mpq-verify.h
 libmpq_la_LDFLAGS		= -version-info @LIBMPQ_ABI@
 
 # Fuzzers need private codec entry points without widening the installed ABI.
@@ -20,6 +20,7 @@ endif
 
 # Library source files.
 GENERAL_SRCS = \
+	mpq-verify.c \
 	mpq-attributes.c \
 	mpq-md5.c \
 	mpq-compression.c \

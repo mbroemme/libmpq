@@ -29,6 +29,7 @@
 #include "mpq-platform.h"
 #include "mpq-reader.h"
 #include "mpq-stream.h"
+#include "mpq-verify.h"
 #include "mpq-writer.h"
 #include <libmpq/mpq.h>
 
@@ -144,6 +145,15 @@ libmpq__file_attributes(mpq_archive_s *archive, uint32_t number, mpq_file_attrib
             archive->attributes, archive->mpq_map[number].block_table_indices, attributes
         );
     return result;
+}
+
+/* Explicit verification is implemented separately from the public API facade. */
+int32_t
+libmpq__file_verify(
+    mpq_archive_s *archive, uint32_t file_number, uint32_t verify_flags, uint32_t *mismatches
+)
+{
+    return libmpq__verify_file(archive, file_number, verify_flags, mismatches);
 }
 
 /* Supply an explicit timestamp for an unfinished source file.
@@ -773,180 +783,14 @@ libmpq__block_size_unpacked(
     return LIBMPQ_SUCCESS;
 }
 
-/* Read, decrypt and decompress one block from an opened file entry.
- * The routine computes packed bounds, applies per-block encryption, selects
- * raw or codec output, and reports the exact unpacked byte count. */
+/* Normal block reads never enable explicit checksum verification. */
 int32_t
 libmpq__block_read(
-    mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number, uint8_t *out_buf,
+    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint8_t *out_buf,
     libmpq__off_t out_size, libmpq__off_t *transferred
 )
 {
-
-    /* Packed input buffer, size bookkeeping and block decryption state. */
-    uint8_t *in_buf;
-    uint32_t seed = 0;
-    uint32_t encrypted = 0;
-    uint32_t compressed = 0;
-    uint32_t imploded = 0;
-    int32_t tb = 0;
-    uint8_t use_out_buf = FALSE;
-    libmpq__off_t block_offset = 0;
-    libmpq__off_t in_size = 0;
-    libmpq__off_t unpacked_size = 0;
-
-    if (libmpq__reader_validate_file_number(mpq_archive, file_number) < 0) {
-        return LIBMPQ_ERROR_EXIST;
-    }
-
-    if (libmpq__reader_validate_block_number(mpq_archive, file_number, block_number) < 0) {
-        return LIBMPQ_ERROR_EXIST;
-    }
-
-    if (mpq_archive->mpq_file[file_number] == NULL ||
-        mpq_archive->mpq_file[file_number]->packed_offset == NULL) {
-        return LIBMPQ_ERROR_OPEN;
-    }
-
-    if (mpq_archive->mpq_file[file_number]->packed_offset_count <= block_number + 1) {
-        return LIBMPQ_ERROR_EXIST;
-    }
-
-    libmpq__block_size_unpacked(mpq_archive, file_number, block_number, &unpacked_size);
-
-    if (unpacked_size > out_size) {
-        return LIBMPQ_ERROR_SIZE;
-    }
-
-    /* Compute the absolute payload position from archive, file, and block offsets.
-     * The stored block offset is relative to the file payload start, not the
-     * beginning of the archive file. */
-    if (mpq_archive->mpq_file[file_number]->packed_offset[block_number + 1] <
-            mpq_archive->mpq_file[file_number]->packed_offset[block_number] ||
-        mpq_archive->mpq_file[file_number]->packed_offset[block_number + 1] >
-            mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices]
-                .packed_size) {
-        return LIBMPQ_ERROR_FORMAT;
-    }
-    in_size = mpq_archive->mpq_file[file_number]->packed_offset[block_number + 1] -
-              mpq_archive->mpq_file[file_number]->packed_offset[block_number];
-    if (libmpq__reader_validate_payload_range(
-            mpq_archive, mpq_archive->mpq_map[file_number].block_table_indices,
-            mpq_archive->mpq_file[file_number]->packed_offset[block_number], (uint64_t)in_size
-        ) < 0) {
-        return LIBMPQ_ERROR_READ;
-    }
-    block_offset =
-        mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].offset +
-        (((long long)mpq_archive
-              ->mpq_block_ex[mpq_archive->mpq_map[file_number].block_table_indices]
-              .offset_high)
-         << 32) +
-        mpq_archive->mpq_file[file_number]->packed_offset[block_number];
-
-    libmpq__file_encrypted(mpq_archive, file_number, &encrypted);
-    libmpq__file_compressed(mpq_archive, file_number, &compressed);
-    libmpq__file_imploded(mpq_archive, file_number, &imploded);
-
-    /* Raw unencrypted blocks can be read directly into the caller's buffer. */
-    use_out_buf = !encrypted && !compressed && !imploded && in_size <= out_size;
-
-    if (use_out_buf) {
-
-        /* Raw data can bypass a temporary allocation when no transform is needed. */
-        in_buf = out_buf;
-    } else {
-        if ((in_buf = calloc(1, in_size)) == NULL) {
-            return LIBMPQ_ERROR_MALLOC;
-        }
-    }
-
-    if ((tb = libmpq__stream_read_at(
-             mpq_archive->stream, (uint64_t)block_offset + (uint64_t)mpq_archive->archive_offset,
-             in_buf, (size_t)in_size
-         )) < 0) {
-        if (!use_out_buf) {
-            free(in_buf);
-        }
-        return tb;
-    }
-
-    if (encrypted) {
-
-        /* Encrypted blocks use a seed derived from the file and block number. */
-        if (libmpq__reader_get_block_seed(mpq_archive, file_number, block_number, &seed) < 0) {
-            if (!use_out_buf) {
-                free(in_buf);
-            }
-            return LIBMPQ_ERROR_DECRYPT;
-        }
-
-        if (libmpq__crypto_decrypt_block(in_buf, (uint32_t)in_size, seed) < 0) {
-            if (!use_out_buf) {
-                free(in_buf);
-            }
-            return LIBMPQ_ERROR_DECRYPT;
-        }
-    }
-
-    /* Blizzard multi-compression blocks declare their exact backend chain in the payload. */
-    if (compressed) {
-
-        /* The payload's leading mask selects and orders its decompression stages. */
-        if ((tb = libmpq__compression_decompress_block(
-                 in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_MULTI,
-                 mpq_archive->mpq_header.version
-             )) < 0) {
-            if (!use_out_buf) {
-                free(in_buf);
-            }
-            return LIBMPQ_ERROR_UNPACK;
-        }
-    }
-
-    /* PKWARE-imploded blocks use the legacy explode decoder. */
-    if (imploded) {
-
-        /* Standalone PKWARE payloads use the legacy decoder without a mask byte. */
-        if ((tb = libmpq__compression_decompress_block(
-                 in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_PKZIP,
-                 mpq_archive->mpq_header.version
-             )) < 0) {
-            if (!use_out_buf) {
-                free(in_buf);
-            }
-            return LIBMPQ_ERROR_UNPACK;
-        }
-    }
-
-    if (compressed && imploded) {
-        if (!use_out_buf) {
-            free(in_buf);
-        }
-        return LIBMPQ_ERROR_UNPACK;
-    }
-
-    if (!compressed && !imploded) {
-
-        /* A raw block is copied only after encrypted and compressed paths are excluded. */
-        if ((tb = libmpq__compression_decompress_block(
-                 in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_NONE,
-                 mpq_archive->mpq_header.version
-             )) < 0) {
-            if (!use_out_buf) {
-                free(in_buf);
-            }
-            return LIBMPQ_ERROR_UNPACK;
-        }
-    }
-
-    if (!use_out_buf) {
-        free(in_buf);
-    }
-
-    if (transferred != NULL) {
-        *transferred = tb;
-    }
-
-    return LIBMPQ_SUCCESS;
+    return libmpq__reader_block_read(
+        archive, file_number, block_number, out_buf, out_size, transferred, NULL, NULL
+    );
 }

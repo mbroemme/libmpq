@@ -70,6 +70,34 @@ Use `libmpq__archive_attributes_flags()` to query available arrays and
 `libmpq__file_attributes()` to read a file's stored values. FILETIME is
 explicit/default-zero; set it through `libmpq__file_set_filetime()`.
 
+Explicitly compare available stored checksums after opening an archive:
+
+```c
+uint32_t mismatches = 0;
+int32_t status = libmpq__file_verify(archive, file_number,
+                                    LIBMPQ_VERIFY_ALL, &mismatches);
+/* status < 0: operation failed; otherwise inspect the requested VERIFY_* bits. */
+```
+
+`LIBMPQ_VERIFY_ALL` requests sector Adler-32 and file CRC32/MD5 checks.
+The returned mismatch mask uses those same bits and is a subset of the request.
+A set bit means an available checksum mismatched; a clear bit means it matched
+or was unavailable/skipped. Operational errors leave the mask zero.
+Sector checks cover decrypted packed bytes before decompression; absent tables
+and unavailable entries are skipped. Use `LIBMPQ_VERIFY_SECTOR_CRC` alone to
+verify sectors without requiring `(attributes)`.
+
+To generate sector checksums, add `LIBMPQ_FILE_FLAG_SECTOR_CRC` to the file options
+alongside `LIBMPQ_FILE_FLAG_COMPRESS` or `LIBMPQ_FILE_FLAG_IMPLODE`.
+This is opt-in for sectorized files, including encrypted files. Empty, raw,
+and single-unit files do not generate checksum tables. Tables are stored
+unencrypted and compressed with zlib only when smaller.
+
+File checksum requests without `(attributes)` return `LIBMPQ_ERROR_EXIST`.
+Missing individual CRC32/MD5 values are skipped, so zero mismatch bits do not
+prove that hashes were present. Normal extraction never verifies implicitly.
+Lossy ADPCM output can differ from the writer's source-byte checksums.
+
 Writer compression defaults to `LIBMPQ_COMPRESSION_POLICY_STANDARD`,
 favoring interoperability. For MPQ v2+, this permits zlib, PKWARE, bzip2,
 LZMA, SPARSE alone or paired with zlib/bzip2, and Huffman paired with mono

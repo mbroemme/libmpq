@@ -141,6 +141,10 @@ stream_flush_sector(mpq_writer_s *writer)
         return result;
     }
 
+    /* Sector checksums cover packed bytes before payload encryption. */
+    if (writer->checksums != NULL)
+        writer->checksums[writer->sector_index] = (uint32_t)adler32(0, packed, (uInt)packed_size);
+
     /* Payload encryption uses the file seed advanced by the sector number. */
     if (writer->options.flags & LIBMPQ_FILE_FLAG_ENCRYPTED)
         libmpq__crypto_encrypt_block(
@@ -178,6 +182,43 @@ stream_flush_sector(mpq_writer_s *writer)
     return LIBMPQ_SUCCESS;
 }
 
+/* Append the optional checksum table without file encryption. Like sector data,
+ * zlib framing is retained only when it reduces the serialized table size. */
+static int32_t
+stream_write_checksums(mpq_writer_s *writer)
+{
+    size_t size = (size_t)writer->block_count * sizeof(uint32_t);
+    uint8_t *raw = malloc(size);
+    uint8_t *packed = NULL;
+    size_t packed_size = 0;
+    uint8_t emitted = 0;
+    uint32_t i;
+    int32_t result;
+
+    if (raw == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    for (i = 0; i < writer->block_count; ++i)
+        libmpq__store_le32(raw + i * 4, writer->checksums[i]);
+    result = libmpq__compression_encode_sector(
+        raw, size, LIBMPQ_COMPRESSION_ZLIB, writer->archive->mpq_header.version,
+        LIBMPQ_COMPRESSION_POLICY_STANDARD, &packed, &packed_size, &emitted
+    );
+    free(raw);
+    if (result == LIBMPQ_SUCCESS) {
+        if (packed_size > UINT32_MAX - writer->offsets[writer->block_count])
+            result = LIBMPQ_ERROR_SIZE;
+        else if (fwrite(packed, 1, packed_size, writer->archive->fp) != packed_size)
+            result = LIBMPQ_ERROR_WRITE;
+        else {
+            writer->packed_total += packed_size;
+            writer->offsets[writer->block_count + 1] =
+                writer->offsets[writer->block_count] + (uint32_t)packed_size;
+        }
+    }
+    free(packed);
+    return result;
+}
+
 /* Finish the streamed file by writing its offset table and archive metadata.
  * The serialized table is placed before packed sectors, encrypted separately,
  * and then the completed file is inserted into the block and hash tables. */
@@ -200,13 +241,21 @@ stream_finish(mpq_writer_s *writer)
     if (writer->written != writer->expected || writer->sector_index != writer->block_count)
         return LIBMPQ_ERROR_SIZE;
     if (writer->offsets) {
-        table_size = (size_t)(writer->block_count + 1) * 4;
+        uint32_t entries = writer->block_count + 1 + (writer->checksums != NULL);
+        table_size = (size_t)entries * 4;
+        if (writer->packed_total > UINT32_MAX - table_size)
+            return LIBMPQ_ERROR_SIZE;
         writer->offsets[writer->block_count] =
             (uint32_t)writer->packed_total + (uint32_t)table_size;
+        if (writer->checksums != NULL) {
+            result = stream_write_checksums(writer);
+            if (result < 0)
+                return result;
+        }
         table = malloc(table_size);
         if (table == NULL)
             return LIBMPQ_ERROR_MALLOC;
-        for (i = 0; i <= writer->block_count; i++)
+        for (i = 0; i < entries; i++)
             libmpq__store_le32(table + i * 4, writer->offsets[i]);
         if (writer->options.flags & LIBMPQ_FILE_FLAG_ENCRYPTED)
             libmpq__crypto_encrypt_block(table, (uint32_t)table_size, file_key(writer->name) - 1);
@@ -1057,6 +1106,9 @@ libmpq__writer_file_begin(
     w->archive = a;
     w->expected = size;
     w->options = *options;
+    if (size == 0 || (w->options.flags & LIBMPQ_FILE_FLAG_SINGLE) != 0 ||
+        (w->options.flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE)) == 0)
+        w->options.flags &= ~LIBMPQ_FILE_FLAG_SECTOR_CRC;
     w->options.compression_first &=
         ~(LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO);
 
@@ -1083,9 +1135,19 @@ libmpq__writer_file_begin(
     /* Reserve offset-table space before the first packed sector is written. */
     if (!(w->options.flags & LIBMPQ_FILE_FLAG_SINGLE) &&
         (w->options.flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE))) {
-        size_t table_size = (size_t)(w->block_count + 1) * 4;
-        w->offsets = calloc(w->block_count + 1, sizeof(*w->offsets));
-        if (w->offsets == NULL || table_size > UINT32_MAX) {
+        uint32_t crc = (w->options.flags & LIBMPQ_FILE_FLAG_SECTOR_CRC) != 0;
+        uint64_t entries = (uint64_t)w->block_count + 1 + crc;
+        uint64_t allocated = entries + (crc ? w->block_count : 0);
+        size_t table_size;
+        if (entries > UINT32_MAX / 4 || allocated > SIZE_MAX / sizeof(*w->offsets)) {
+            free(w->data);
+            free(w->name);
+            free(w);
+            return LIBMPQ_ERROR_SIZE;
+        }
+        table_size = (size_t)entries * 4;
+        w->offsets = calloc((size_t)allocated, sizeof(*w->offsets));
+        if (w->offsets == NULL) {
             free(w->offsets);
             free(w->data);
             free(w->name);
@@ -1093,6 +1155,8 @@ libmpq__writer_file_begin(
             return LIBMPQ_ERROR_MALLOC;
         }
         w->offsets[0] = (uint32_t)table_size;
+        if (crc)
+            w->checksums = w->offsets + (size_t)entries;
         if (fseeko(a->fp, (off_t)(w->payload_offset + table_size), SEEK_SET) < 0) {
             free(w->offsets);
             free(w->data);

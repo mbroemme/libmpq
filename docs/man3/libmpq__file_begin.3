@@ -17,6 +17,13 @@ libmpq__file_begin \- begin a streamed MPQ file
 .SH DESCRIPTION
 Begins a file whose final unpacked size is known. Supply bytes with
 libmpq__file_write(3), then call libmpq__file_finish(3).
+.PP
+Add LIBMPQ_FILE_FLAG_SECTOR_CRC to options.flags to generate sector Adler-32
+checksums for sectorized COMPRESS or IMPLODE files. Checksums cover packed
+bytes before encryption. The checksum table follows the data and is not
+encrypted; it uses zlib compression only when smaller than raw storage.
+The flag is ignored for empty, raw, and single-unit files. Generation is
+opt-in and does not enable implicit verification during extraction.
 .SH SEE ALSO
 .BR libmpq__archive_create (3),
 .BR libmpq__file_write (3),

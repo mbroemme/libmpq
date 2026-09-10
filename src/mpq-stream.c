@@ -26,19 +26,7 @@
 
 #define LIBMPQ_MPQE_READ_BUFFER_SIZE (LIBMPQ_MPQE_CHUNK_SIZE * 64U)
 
-typedef enum
-{
-    LIBMPQ_STREAM_FILE,
-    LIBMPQ_STREAM_MPQE
-} libmpq_stream_provider_e;
-
-struct mpq_stream
-{
-    FILE *file;
-    uint64_t size;
-    uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE];
-    libmpq_stream_provider_e provider;
-};
+static int32_t read_at(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size);
 
 /* Seek through the project offset type without narrowing large file positions. */
 static int32_t
@@ -99,6 +87,7 @@ libmpq__stream_open_common(mpq_stream_s **stream, const char *path)
         return LIBMPQ_ERROR_SEEK;
     }
     (*stream)->size = (uint64_t)end;
+    (*stream)->read_at = read_at;
     return LIBMPQ_SUCCESS;
 }
 
@@ -157,8 +146,8 @@ libmpq__stream_clone(mpq_stream_s **stream, const mpq_stream_s *source, const ch
     return LIBMPQ_SUCCESS;
 }
 
-int32_t
-libmpq__stream_read_at(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size)
+static int32_t
+read_at(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size)
 {
     size_t copied = 0;
 
@@ -223,6 +212,15 @@ libmpq__stream_read_at(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, s
         libmpq__mpqe_clear(chunks, sizeof(chunks));
     }
     return LIBMPQ_SUCCESS;
+}
+
+/* Dispatch through the private stream operation; no global fault state. */
+int32_t
+libmpq__stream_read_at(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size)
+{
+    if (stream == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    return stream->read_at(stream, offset, buffer, size);
 }
 
 uint64_t

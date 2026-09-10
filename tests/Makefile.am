@@ -8,6 +8,7 @@ LDADD = $(top_builddir)/src/libmpq.la
 
 # Each executable mirrors one implementation module in src/.
 check_PROGRAMS = \
+	test-verify \
 	test-attributes \
 	test-md5 \
 	test-compression \
@@ -33,8 +34,10 @@ check-local:
 
 # Compile shared assertions and deterministic-data helpers into every test.
 COMMON_SOURCES = test-mpq-helper.c test-mpq-helper.h
+test_verify_SOURCES = test-mpq-verify.c $(COMMON_SOURCES)
+test_verify_LDADD = $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-stream.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
 test_attributes_SOURCES = test-mpq-attributes.c $(COMMON_SOURCES)
-test_attributes_LDADD = $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-stream.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(top_builddir)/src/mpq-endian.lo $(LDADD)
+test_attributes_LDADD = $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-stream.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
 test_md5_SOURCES = test-mpq-md5.c $(COMMON_SOURCES)
 test_md5_LDADD = $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-endian.lo $(LDADD)
 test_compression_SOURCES = test-mpq-compression.c $(COMMON_SOURCES)
