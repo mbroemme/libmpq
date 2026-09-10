@@ -16,6 +16,7 @@ Run bounded campaigns for the archive, API, and codec targets:
 
 ```bash
 fuzz/fuzz-archive-open -max_total_time=60 /tmp/libmpq-fuzz-corpus/archive-open
+fuzz/fuzz-attributes -max_total_time=60 /tmp/libmpq-fuzz-corpus/attributes
 fuzz/fuzz-mpqe-open -max_total_time=60 /tmp/libmpq-fuzz-corpus/mpqe-open
 fuzz/fuzz-file-read -max_total_time=60 /tmp/libmpq-fuzz-corpus/file-read
 fuzz/fuzz-writer-roundtrip -max_total_time=60 /tmp/libmpq-fuzz-corpus/writer-roundtrip

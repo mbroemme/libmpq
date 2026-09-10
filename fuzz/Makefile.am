@@ -1,5 +1,6 @@
 # Build opt-in libFuzzer targets. They are not installed or part of make check.
 noinst_PROGRAMS = \
+	fuzz-attributes \
 	fuzz-archive-open \
 	fuzz-mpqe-open \
 	fuzz-file-read \
@@ -19,6 +20,10 @@ AM_CPPFLAGS = -I$(top_builddir) -I$(top_srcdir)/include -I$(top_srcdir)/src
 
 # Keep fuzz targets as ordinary local executables rather than installed programs.
 AM_LDFLAGS = -no-install
+
+fuzz_attributes_SOURCES = fuzz-attributes.c
+fuzz_attributes_LDADD = $(top_builddir)/src/libmpq-fuzz-internal.la $(LIBS)
+fuzz_attributes_LDFLAGS = $(AM_LDFLAGS) -fsanitize=fuzzer,address,undefined
 
 # Link the public archive-opening API target with the normal shared library.
 fuzz_archive_open_SOURCES = fuzz-archive-open.c
@@ -77,6 +82,7 @@ fuzz_wave_decode_LDFLAGS = $(AM_LDFLAGS) -fsanitize=fuzzer,address,undefined
 
 # Include the harness sources and usage notes in source distributions.
 EXTRA_DIST = \
+	fuzz-attributes.c \
 	README.md \
 	corpus/README.md \
 	corpus/writer-roundtrip/pkware-short-runs.txt \

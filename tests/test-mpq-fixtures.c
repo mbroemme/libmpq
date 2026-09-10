@@ -5,6 +5,86 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Fixed source checksums independently calculated with Python zlib/hashlib. */
+static const struct
+{
+    const char *name;
+    uint32_t crc32;
+    uint64_t filetime;
+    uint8_t md5[16];
+} fixture_attributes[] = {
+    { "overview.txt",
+      0xf71965bau,
+      UINT64_C(132537600000000000),
+      { 0xf5, 0xe5, 0x06, 0xc1, 0x64, 0x65, 0x86, 0xcd, 0x58, 0x76, 0x06, 0xb0, 0x62, 0x04, 0xf1,
+        0xed } },
+    { "implode.txt",
+      0x2ce532adu,
+      UINT64_C(132537600010000000),
+      { 0xa0, 0x79, 0xd5, 0xed, 0x48, 0x9d, 0x59, 0xa9, 0xf4, 0x5c, 0x9f, 0x55, 0x8f, 0x1f, 0xd7,
+        0xda } },
+    { "huffman.txt",
+      0x47235a97u,
+      UINT64_C(132537600020000000),
+      { 0xf6, 0x50, 0xc7, 0x98, 0x96, 0x89, 0xf9, 0x22, 0x71, 0xa3, 0x94, 0x3a, 0x3c, 0x25, 0xee,
+        0xf7 } },
+    { "zlib.txt",
+      0xea5fc117u,
+      UINT64_C(132537600030000000),
+      { 0x3f, 0x05, 0x9e, 0xf6, 0x75, 0xa6, 0xfc, 0xe3, 0x9e, 0x54, 0x80, 0x6f, 0x26, 0xfe, 0x4c,
+        0x72 } },
+    { "pkware.txt",
+      0x82285a55u,
+      UINT64_C(132537600040000000),
+      { 0x0a, 0x10, 0xc8, 0xf8, 0x6d, 0xf0, 0xd5, 0x2e, 0x36, 0x47, 0xe9, 0x09, 0x01, 0xfa, 0x90,
+        0xd4 } },
+    { "bzip2.txt",
+      0x2be7a7e3u,
+      UINT64_C(132537600050000000),
+      { 0x78, 0x69, 0xaf, 0xe0, 0x13, 0x02, 0x71, 0xcd, 0x5b, 0x98, 0x11, 0x0d, 0x16, 0x84, 0x34,
+        0x7e } },
+    { "chain.txt",
+      0x8372ab88u,
+      UINT64_C(132537600060000000),
+      { 0x79, 0xa4, 0x34, 0x56, 0x2e, 0xc2, 0xed, 0x83, 0xb8, 0x1e, 0xc2, 0x41, 0x0f, 0x67, 0x16,
+        0xb0 } },
+    { "encrypted-compress.txt",
+      0xfbef4a69u,
+      UINT64_C(132537600070000000),
+      { 0x4b, 0xae, 0x0b, 0xc2, 0x36, 0xc5, 0x41, 0x7f, 0xff, 0xa3, 0x08, 0x7a, 0x95, 0xf2, 0xfb,
+        0xc0 } },
+    { "wave-mono.wav",
+      0x59ffecd9u,
+      UINT64_C(132537600080000000),
+      { 0xe1, 0x8b, 0x97, 0xb6, 0xf3, 0x30, 0x2d, 0x25, 0xa3, 0x31, 0x87, 0x39, 0x89, 0xc0, 0x69,
+        0x55 } },
+    { "wave-stereo.wav",
+      0x4d4cd05fu,
+      UINT64_C(132537600090000000),
+      { 0xfb, 0x82, 0x14, 0xa2, 0x6c, 0x59, 0x01, 0xda, 0xd6, 0xdd, 0x25, 0xf3, 0x69, 0xd2, 0xad,
+        0xbc } },
+    { "sparse.txt",
+      0x44d36045u,
+      UINT64_C(132537600100000000),
+      { 0xe4, 0xb2, 0xc1, 0x4a, 0x6f, 0x59, 0xd0, 0x75, 0x2e, 0x0e, 0x59, 0xd2, 0xfe, 0x02, 0xb2,
+        0xae } },
+    { "sparse-zlib.txt",
+      0x44d36045u,
+      UINT64_C(132537600110000000),
+      { 0xe4, 0xb2, 0xc1, 0x4a, 0x6f, 0x59, 0xd0, 0x75, 0x2e, 0x0e, 0x59, 0xd2, 0xfe, 0x02, 0xb2,
+        0xae } },
+    { "sparse-bzip2.txt",
+      0x44d36045u,
+      UINT64_C(132537600120000000),
+      { 0xe4, 0xb2, 0xc1, 0x4a, 0x6f, 0x59, 0xd0, 0x75, 0x2e, 0x0e, 0x59, 0xd2, 0xfe, 0x02, 0xb2,
+        0xae } },
+    { "lzma.txt",
+      0x458cb824u,
+      UINT64_C(132537600130000000),
+      { 0xd8, 0x47, 0x20, 0x00, 0x6b, 0x48, 0xd5, 0x23, 0x62, 0x09, 0x8d, 0x43, 0x60, 0x3f, 0x65,
+        0x82 } },
+};
+
 /* The listfile names are the complete user-file corpus in insertion order. */
 static const char *const fixture_names[] = {
     "overview.txt",     "implode.txt",     "huffman.txt", "zlib.txt",
@@ -89,7 +169,8 @@ static const char fixture_listfile_v1[] = "overview.txt\n"
                                           "wave-stereo.wav\n"
                                           "sparse.txt\n"
                                           "sparse-zlib.txt\n"
-                                          "sparse-bzip2.txt\n";
+                                          "sparse-bzip2.txt\n"
+                                          "(attributes)\n";
 static const char fixture_listfile_v2[] = "overview.txt\n"
                                           "implode.txt\n"
                                           "huffman.txt\n"
@@ -103,12 +184,13 @@ static const char fixture_listfile_v2[] = "overview.txt\n"
                                           "sparse.txt\n"
                                           "sparse-zlib.txt\n"
                                           "sparse-bzip2.txt\n"
-                                          "lzma.txt\n";
+                                          "lzma.txt\n"
+                                          "(attributes)\n";
 
 /* Archive and extracted-file hashes are the single fixture source of truth. */
 static const char *const fixture_archive_hashes[] = {
-    "656bfca5a875249bafb7ba2259cac1f393f7b3944b63408771f9c6097fe4da5b",
-    "ad5c0d3eafa8decebf2463a06b0db894a3d58e6bc3d23ab27cd83ef75e055abf",
+    "22998a47e57cc3e43357e6c96fc1a772e468f524b0bc8ee66bf6e88afc66efc0",
+    "dc1d4c5b8cc39613f5f7940d97474a7a7a6b16c58aa4d642093380be64e62d0c",
 };
 
 static const char *const fixture_file_hashes[2][15] = {
@@ -126,7 +208,7 @@ static const char *const fixture_file_hashes[2][15] = {
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
-        "410a3751c2c1eb65899b5c565844ed87c9d94d0257afc3417d7366936e5f189c",
+        "d84a86a55ecb32cb95bfb4725ef156e3be8d14bdcb19e84a95c0a4463da0c61f",
         NULL,
     },
     {
@@ -144,7 +226,7 @@ static const char *const fixture_file_hashes[2][15] = {
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
         "da99ea7c15a1e60401f49c86b7d541714437891c4fc4a12d1dcff6674775e976",
-        "6bf28b56228394d1be042cafd1fa9180174bf082869880a0b89e20ce9538c417",
+        "23fad524da76451f14ceacbe6acaeb7ff7aaff39e3f8e0aa3963cf1bac3bc396",
     },
 };
 
@@ -172,7 +254,7 @@ test_fixture(const char *path, uint32_t expected_version, size_t fixture_index)
     TEST_CHECK(libmpq__archive_version(archive, &archive_version) == 0);
     TEST_CHECK(archive_version == expected_version);
     TEST_CHECK(libmpq__archive_files(archive, &file_count) == 0);
-    TEST_CHECK(file_count == names_count + 1);
+    TEST_CHECK(file_count == names_count + 2);
 
     /* Verify the generated listfile and resolve every name it advertises. */
     TEST_CHECK(libmpq__file_number(archive, "(listfile)", &number) == 0);
@@ -185,7 +267,14 @@ test_fixture(const char *path, uint32_t expected_version, size_t fixture_index)
     file_data = NULL;
 
     for (i = 0; i < names_count; ++i) {
+        mpq_file_attributes_s attributes;
         TEST_CHECK(libmpq__file_number(archive, fixture_names[i], &number) == 0);
+        TEST_CHECK(libmpq__file_attributes(archive, number, &attributes) == 0);
+        TEST_CHECK(attributes.flags == (fixture_index == 0 ? 7u : 15u));
+        TEST_CHECK(attributes.crc32 == fixture_attributes[i].crc32);
+        TEST_CHECK(attributes.filetime == fixture_attributes[i].filetime);
+        TEST_CHECK(memcmp(attributes.md5, fixture_attributes[i].md5, 16) == 0);
+        TEST_CHECK(attributes.patch_bit == 0);
         TEST_CHECK(test_fixture_storage(archive, archive_data, archive_size, number, i) == 0);
         TEST_CHECK(test_archive_read(archive, number, &file_data, &file_size) == 0);
         if (i >= 10 && i <= 12) {

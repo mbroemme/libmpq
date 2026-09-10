@@ -72,6 +72,8 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         if (libmpq__archive_open_mpqe(
                 &archive, archive_path, archive_offsets[i], auth_code, sizeof(auth_code) - 1
             ) == 0) {
+            uint32_t flags;
+            libmpq__archive_attributes_flags(archive, &flags);
             libmpq__archive_close(archive);
         }
     }

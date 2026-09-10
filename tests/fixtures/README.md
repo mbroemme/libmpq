@@ -4,6 +4,30 @@
 created with libmpq. They share the feature descriptions and payloads, with
 an additional LZMA member in the v2 archive.
 
+Both archives also contain `(attributes)` with payload version 100. The v1
+fixture selects CRC32, FILETIME, and MD5 (flags `0x07`); v2 additionally
+selects PATCH_BIT (`0x0f`), with every patch bit zero. This flag difference
+tests optional arrays, not an archive-version restriction. Both use 32
+physical block-table entries, including zero-filled unused rows. The
+attributes payloads are 904 and 908 bytes, respectively.
+Creation selects these arrays through the dedicated options.attributes mask,
+not archive creation flags. Any nonzero combination creates one (attributes)
+file and consumes one reserved slot.
+The v1 writer reserves 16 bytes after its header before the hash table when
+attributes are enabled. This avoids StormLib's malformed-map heuristic,
+which otherwise skips attributes when a table starts exactly at header end.
+
+User entries have FILETIME `132537600000000000 + index * 10000000` in insertion
+order. The generated listfile has its computed checksums and FILETIME zero;
+the attributes entry has all values zero to avoid self-reference. Checksums
+cover the original source bytes. Consequently the lossy WAVE members' stored
+CRC32/MD5 need not match their decoded samples. `tests/test-mpq-fixtures.c`
+contains fixed source checksums independently calculated using Python
+`zlib`/`hashlib`.
+
+Tests use these exact checked-in MPQ and MPQE archives without regenerating
+them. Archive and extracted-payload hashes in the tests pin their contents.
+
 Both formats also contain `sparse.txt`, `sparse-zlib.txt`, and
 `sparse-bzip2.txt`, using serialized methods `0x20`, `0x22`, and `0x30`.
 These are genuine UTF-32LE text files, not UTF-8 text with padding. Each
@@ -20,18 +44,15 @@ the stored method bytes to prevent unnoticed raw or single-stage fallback.
 Extraction preserves UTF-32LE bytes. Use an editor supporting that encoding
 or `iconv -f UTF-32 -t UTF-8 sparse.txt` to display the text.
 
-To recreate these additions, retain the existing entries and their options,
-then add the three SPARSE entries after `wave-stereo.wav` and before the
-v2-only `lzma.txt`. Use COMPRESS, with identical first/next masks of `0x20`,
-`0x22`, and `0x30`, respectively. Preserve the existing 4096-byte sectors
-and file-table capacity, enable listfile creation and EXTENDED policy, and
-create the matching MPQE archives with the synthetic code below. Verify
-the complete decrypted MPQE stream against its raw MPQ counterpart.
+The three SPARSE entries follow `wave-stereo.wav` and precede the v2-only
+`lzma.txt`. They use COMPRESS with identical first/next masks of `0x20`,
+`0x22`, and `0x30`, respectively, and 4096-byte sectors. Tests compare the
+complete decrypted MPQE stream against its raw MPQ counterpart.
 
 The existing v2 MPQ and MPQE fixtures illustrate EXTENDED writer compression:
 `huffman.txt` uses standalone Huffman and `chain.txt` uses Huffman + zlib.
 These methods remain readable by libmpq but may not be accepted by StormLib's
-v2 reader. Recreating them requires `LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED`;
+v2 reader. They were created with `LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED`;
 STANDARD v2 creation rejects these selections.
 
 The archives contain `.txt` fixtures for raw storage, PKWARE implode, masked
@@ -56,9 +77,9 @@ The source waveform matches `make_wave(7000, channels)` in
 `tests/test-mpq-wave.c`: for frame `i`, let `phase = (i * 17) % 4096` and
 `base = phase < 2048 ? phase - 1024 : 3072 - phase`. The left/mono sample
 is `base * 24`; the right sample adds 1800. A standard 44-byte PCM header
-precedes the samples. To recreate the members, use COMPRESS with first
-mask `0x02` and next mask `0x41` or `0x81`, adding mono then stereo after
-`encrypted-compress.txt` and before the SPARSE entries.
+precedes the samples. The members use COMPRESS with first mask `0x02` and
+next mask `0x41` or `0x81`. Mono then stereo follow `encrypted-compress.txt`
+and precede the SPARSE entries.
 
 ADPCM is lossy, so extracted samples after the first sector differ from
 the source waveform. Tests verify the stored method of every sector,

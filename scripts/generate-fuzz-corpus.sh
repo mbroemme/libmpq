@@ -17,6 +17,7 @@ fi
 readonly project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly output_root="$1"
 readonly archive_output="${output_root}/archive-open"
+readonly attributes_output="${output_root}/attributes"
 readonly mpqe_output="${output_root}/mpqe-open"
 readonly encrypted_output="${output_root}/encrypted-archive"
 readonly file_read_output="${output_root}/file-read"
@@ -35,6 +36,7 @@ if [[ -d "${project_root}/fuzz/corpus" ]]; then
 fi
 
 mkdir -p \
+	"${attributes_output}" \
 	"${archive_output}" \
 	"${mpqe_output}" \
 	"${encrypted_output}" \
@@ -51,6 +53,11 @@ mkdir -p \
 
 cp "${project_root}/tests/fixtures/mpq-v1-features.mpq" "${archive_output}/fixture-v1.mpq"
 cp "${project_root}/tests/fixtures/mpq-v2-features.mpq" "${archive_output}/fixture-v2.mpq"
+
+# Prefix each raw attributes payload with the bounded count/self selector bytes.
+printf '\x00\x00\x64\x00\x00\x00\x00\x00\x00\x00' > "${attributes_output}/empty"
+printf '\x00\x00\x64\x00\x00\x00\x08\x00\x00\x00' > "${attributes_output}/omitted-self-bit"
+printf '\x01\x01\x64\x00\x00\x00\x01\x00\x00\x00\x78\x56\x34\x12\x00\x00\x00\x00' > "${attributes_output}/crc32"
 
 write_v1_header()
 {

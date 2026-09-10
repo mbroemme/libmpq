@@ -94,6 +94,8 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     archive = NULL;
     if (libmpq__archive_open(&archive, archive_path, -1) == 0) {
+        uint32_t flags;
+        libmpq__archive_attributes_flags(archive, &flags);
         libmpq__archive_close(archive);
     }
 
