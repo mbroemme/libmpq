@@ -21,7 +21,7 @@ Extraction preserves UTF-32LE bytes. Use an editor supporting that encoding
 or `iconv -f UTF-32 -t UTF-8 sparse.txt` to display the text.
 
 To recreate these additions, retain the existing entries and their options,
-then add the three SPARSE entries after `wave-adpcm.txt` and before the
+then add the three SPARSE entries after `wave-stereo.wav` and before the
 v2-only `lzma.txt`. Use COMPRESS, with identical first/next masks of `0x20`,
 `0x22`, and `0x30`, respectively. Preserve the existing 4096-byte sectors
 and file-table capacity, enable listfile creation and EXTENDED policy, and
@@ -38,10 +38,33 @@ The archives contain `.txt` fixtures for raw storage, PKWARE implode, masked
 Huffman, zlib, PKWARE, bzip2, LZMA in the v2 fixture, chained compression,
 and encrypted compression. Codec fixture text is deliberately repeated and
 compressible so it is stored using its advertised codec rather than raw
-fallback. The `wave-adpcm.txt` entry is only a description of valid 16-bit PCM
-WAVE input, mono/stereo IMA ADPCM, and the first-sector lossless requirement.
-The dedicated WAVE regression test generates binary input and verifies the
-lossy ADPCM path; no binary WAVE payload is stored in these archives.
+fallback.
+
+`wave-mono.wav` and `wave-stereo.wav` contain deterministic mono and stereo
+PCM16 audio. They are playable RIFF/WAVE files after extraction, with
+7000 sample frames at 22050 Hz, one or two channels, and
+little-endian interleaved samples. Their original sizes are 14044 and
+28044 bytes, spanning four and seven 4096-byte sectors respectively.
+
+The first sector uses zlib (`0x02`) and remains byte-exact, including the
+44-byte WAVE header. Every later sector, including the final partial one,
+uses Huffman + mono ADPCM (`0x41`) or Huffman + stereo ADPCM (`0x81`).
+These methods are allowed by STANDARD in both versions. The archives
+still use EXTENDED for their existing Huffman/chain text examples.
+
+The source waveform matches `make_wave(7000, channels)` in
+`tests/test-mpq-wave.c`: for frame `i`, let `phase = (i * 17) % 4096` and
+`base = phase < 2048 ? phase - 1024 : 3072 - phase`. The left/mono sample
+is `base * 24`; the right sample adds 1800. A standard 44-byte PCM header
+precedes the samples. To recreate the members, use COMPRESS with first
+mask `0x02` and next mask `0x41` or `0x81`, adding mono then stereo after
+`encrypted-compress.txt` and before the SPARSE entries.
+
+ADPCM is lossy, so extracted samples after the first sector differ from
+the source waveform. Tests verify the stored method of every sector,
+the exact first sector, and mean absolute sample error below 6000 with
+maximum error below 16000. The MPQE fixtures contain the corresponding
+fully encrypted archives and extract the same decoded WAVE bytes.
 
 `pkware.txt` and `implode.txt` each contain their descriptive sentence and
 newline repeated 32 times, without single-byte padding runs. They exercise

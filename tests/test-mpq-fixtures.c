@@ -7,15 +7,15 @@
 
 /* The listfile names are the complete user-file corpus in insertion order. */
 static const char *const fixture_names[] = {
-    "overview.txt",   "implode.txt", "huffman.txt",     "zlib.txt",
-    "pkware.txt",     "bzip2.txt",   "chain.txt",       "encrypted-compress.txt",
-    "wave-adpcm.txt", "sparse.txt",  "sparse-zlib.txt", "sparse-bzip2.txt",
-    "lzma.txt",
+    "overview.txt",     "implode.txt",     "huffman.txt", "zlib.txt",
+    "pkware.txt",       "bzip2.txt",       "chain.txt",   "encrypted-compress.txt",
+    "wave-mono.wav",    "wave-stereo.wav", "sparse.txt",  "sparse-zlib.txt",
+    "sparse-bzip2.txt", "lzma.txt",
 };
 
 /* Verify the codec entries are stored with their intended serialized methods. */
 static const uint8_t fixture_methods[] = {
-    0, 0, 0x01, 0x02, 0x08, 0x10, 0x03, 0, 0, 0x20, 0x22, 0x30, 0x12,
+    0, 0, 0x01, 0x02, 0x08, 0x10, 0x03, 0, 0x41, 0x81, 0x20, 0x22, 0x30, 0x12,
 };
 
 /* Load a serialized little-endian 32-bit sector-table offset. */
@@ -62,6 +62,12 @@ test_fixture_storage(
     }
 
     TEST_CHECK(compressed != 0 && encrypted == 0 && packed < unpacked);
+    if (name_index == 8 || name_index == 9) {
+
+        /* test-wave checks every lossless/ADPCM sector and decoded PCM sample. */
+        TEST_CHECK(libmpq__file_blocks(archive, number, &blocks) == 0 && blocks > 1);
+        return 0;
+    }
     TEST_CHECK(libmpq__file_blocks(archive, number, &blocks) == 0 && blocks == 1);
     TEST_CHECK(libmpq__file_offset(archive, number, &offset) == 0 && offset >= 0);
     TEST_CHECK((uint64_t)offset <= archive_size && archive_size - (size_t)offset >= 5U);
@@ -79,7 +85,8 @@ static const char fixture_listfile_v1[] = "overview.txt\n"
                                           "bzip2.txt\n"
                                           "chain.txt\n"
                                           "encrypted-compress.txt\n"
-                                          "wave-adpcm.txt\n"
+                                          "wave-mono.wav\n"
+                                          "wave-stereo.wav\n"
                                           "sparse.txt\n"
                                           "sparse-zlib.txt\n"
                                           "sparse-bzip2.txt\n";
@@ -91,7 +98,8 @@ static const char fixture_listfile_v2[] = "overview.txt\n"
                                           "bzip2.txt\n"
                                           "chain.txt\n"
                                           "encrypted-compress.txt\n"
-                                          "wave-adpcm.txt\n"
+                                          "wave-mono.wav\n"
+                                          "wave-stereo.wav\n"
                                           "sparse.txt\n"
                                           "sparse-zlib.txt\n"
                                           "sparse-bzip2.txt\n"
@@ -99,11 +107,11 @@ static const char fixture_listfile_v2[] = "overview.txt\n"
 
 /* Archive and extracted-file hashes are the single fixture source of truth. */
 static const char *const fixture_archive_hashes[] = {
-    "efaf1021c2c7bbb87f4157ed0313cfb203094b4a869ed18460184f719e511c2c",
-    "6990fde1643a25e84affb0bf772293d064214298fbb776f0b34209e88a786dad",
+    "656bfca5a875249bafb7ba2259cac1f393f7b3944b63408771f9c6097fe4da5b",
+    "ad5c0d3eafa8decebf2463a06b0db894a3d58e6bc3d23ab27cd83ef75e055abf",
 };
 
-static const char *const fixture_file_hashes[2][14] = {
+static const char *const fixture_file_hashes[2][15] = {
     {
         "722f1acc2acd306abaed0466ffbbfd568e09f5e7da8d63eba86f19c1c2adde73",
         "1ad8d61488c18eb2e0e12cc4306c3d0348edd6c1777c09c87e217c26963b2141",
@@ -113,11 +121,12 @@ static const char *const fixture_file_hashes[2][14] = {
         "c4e6c57d3e5ab628c085aca85a943434381032b7da8f39045c97797ffb399fe7",
         "167de694bb690e3d03311689fcbd5ff7e7357f3e8dcd2cef867f4c7f40b42ff9",
         "def68c91e0a61582507c1199e134b230d193f6cd9625e898d70431239d1426a8",
-        "3df96a6e5d56995da58118014e78c18d320c1b81886340000300af9e2fdea3aa",
+        "32475acd7b286a3c19b3ac65bc919478900c25d688b6e925d1278384e0ae5450",
+        "9256f5652671f4a608804432074d59afa94b74475a8bb34b5df8cf37e3488d40",
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
-        "e5470ff56f4c87287b9116566ce3db543d87cac68c407f73f552b785f112ad0d",
+        "410a3751c2c1eb65899b5c565844ed87c9d94d0257afc3417d7366936e5f189c",
         NULL,
     },
     {
@@ -129,12 +138,13 @@ static const char *const fixture_file_hashes[2][14] = {
         "c4e6c57d3e5ab628c085aca85a943434381032b7da8f39045c97797ffb399fe7",
         "167de694bb690e3d03311689fcbd5ff7e7357f3e8dcd2cef867f4c7f40b42ff9",
         "def68c91e0a61582507c1199e134b230d193f6cd9625e898d70431239d1426a8",
-        "3df96a6e5d56995da58118014e78c18d320c1b81886340000300af9e2fdea3aa",
+        "32475acd7b286a3c19b3ac65bc919478900c25d688b6e925d1278384e0ae5450",
+        "9256f5652671f4a608804432074d59afa94b74475a8bb34b5df8cf37e3488d40",
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
         "da99ea7c15a1e60401f49c86b7d541714437891c4fc4a12d1dcff6674775e976",
-        "c7fc236b125a439282fbc389f1977db9c2f3e0483f20f39daab5bdca9a126c0a",
+        "6bf28b56228394d1be042cafd1fa9180174bf082869880a0b89e20ce9538c417",
     },
 };
 
@@ -178,7 +188,7 @@ test_fixture(const char *path, uint32_t expected_version, size_t fixture_index)
         TEST_CHECK(libmpq__file_number(archive, fixture_names[i], &number) == 0);
         TEST_CHECK(test_fixture_storage(archive, archive_data, archive_size, number, i) == 0);
         TEST_CHECK(test_archive_read(archive, number, &file_data, &file_size) == 0);
-        if (i >= 9 && i <= 11) {
+        if (i >= 10 && i <= 12) {
             uint8_t expected[TEST_SPARSE_FIXTURE_SIZE];
             test_sparse_payload(expected, sizeof(expected));
             TEST_CHECK(file_size == sizeof(expected));

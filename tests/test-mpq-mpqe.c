@@ -108,10 +108,10 @@ static int
 test_fixture_members(mpq_archive_s *archive, const char *raw_path, uint32_t version)
 {
     static const char *const names[] = {
-        "overview.txt",   "implode.txt", "huffman.txt",     "zlib.txt",
-        "pkware.txt",     "bzip2.txt",   "chain.txt",       "encrypted-compress.txt",
-        "wave-adpcm.txt", "sparse.txt",  "sparse-zlib.txt", "sparse-bzip2.txt",
-        "lzma.txt",       "(listfile)",
+        "overview.txt",     "implode.txt",     "huffman.txt", "zlib.txt",
+        "pkware.txt",       "bzip2.txt",       "chain.txt",   "encrypted-compress.txt",
+        "wave-mono.wav",    "wave-stereo.wav", "sparse.txt",  "sparse-zlib.txt",
+        "sparse-bzip2.txt", "lzma.txt",        "(listfile)",
     };
     mpq_archive_s *raw_archive = NULL;
     uint8_t *raw_data = NULL;
@@ -259,7 +259,7 @@ test_fixture(const mpqe_fixture_s *fixture, size_t index)
     );
     TEST_CHECK(libmpq__archive_version(archive, &version) == 0 && version == fixture->version);
     TEST_CHECK(
-        libmpq__archive_files(archive, &files) == 0 && files == (fixture->version == 2 ? 14 : 13)
+        libmpq__archive_files(archive, &files) == 0 && files == (fixture->version == 2 ? 15 : 14)
     );
     TEST_CHECK(libmpq__file_number(archive, "overview.txt", &number) == 0);
     TEST_CHECK(test_archive_read(archive, number, &data, &size) == 0);
