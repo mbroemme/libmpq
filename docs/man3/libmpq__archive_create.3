@@ -13,6 +13,20 @@ libmpq__archive_create \- create a seekable MPQ archive
 .BI ");"
 .fi
 .SH DESCRIPTION
+Optional version-100 attributes work in both MPQ v1 and v2. Combine
+LIBMPQ_ATTRIBUTE_CRC32,
+LIBMPQ_ATTRIBUTE_FILETIME,
+LIBMPQ_ATTRIBUTE_MD5, and
+LIBMPQ_ATTRIBUTE_PATCH_BIT in options.attributes to select arrays.
+Zero disables generation. Any nonzero combination creates one (attributes)
+file and consumes one reserved slot. Unknown attribute bits are rejected.
+Capacity includes the attributes entry
+and listfile if enabled; the internal attributes name is reserved.
+Finalization writes the listfile, attributes, then the completed tables.
+Checksums cover source bytes before compression; FILETIME defaults to zero
+and patch bits are zero. Use libmpq__file_set_filetime() on an active writer
+for an explicit timestamp. Path addition never imports filesystem timestamps.
+.PP
 Creates a v1 or v2 archive at \fIpath\fP. The archive is finalized by
 libmpq__archive_close(3). The options select a fixed entry capacity, sector
 size, archive version, and optional generated (listfile).
@@ -21,6 +35,9 @@ Compression defaults to STANDARD. Add
 LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED to options.flags to select
 EXTENDED. The policy affects writer validation only, not decoding.
 .SH SEE ALSO
+.BR libmpq__archive_attributes_flags (3),
+.BR libmpq__file_attributes (3),
+.BR libmpq__file_set_filetime (3),
 .BR libmpq__archive_compression_allowed (3),
 .BR libmpq__archive_create_mpqe (3),
 .BR libmpq__archive_close (3),

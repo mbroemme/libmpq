@@ -172,7 +172,47 @@ classic tables too, so retain both paths. StormLib's `TMPQHetHeader` and
 
 `(listfile)` is optional text metadata containing names separated by CR/LF or
 semicolons; it is not a complete inventory. `(attributes)` can hold parallel
-per-block CRC32, Windows FILETIME, and MD5 arrays. Older archives can contain
+per-block CRC32, Windows FILETIME, MD5, and patch-bit arrays. Its payload
+version is 100, independent of the MPQ archive version; it is valid in v1 too.
+The little-endian header contains a 32-bit version and flags. Flags 1, 2,
+4, and 8 select CRC32 (LE32), FILETIME (LE64), MD5 (16 bytes), and patch bits,
+in that order. Rows use physical block-table indices, including unused slots,
+not the public compact file numbering. Patch bits are most-significant-bit
+first within each byte.
+
+libmpq loads this optional file lazily through normal file decoding. Absence
+returns EXIST; malformed metadata returns FORMAT without preventing ordinary
+extraction. The reader accepts full arrays and recognized legacy layouts:
+one-entry-short arrays, omitted self patch bits, missing patch arrays, and
+all-zero legacy DWORD patch regions. Unavailable rows/patch values have their
+availability flags cleared rather than inventing checksum values. Unknown
+versions/flags and other payload sizes are rejected when queried.
+
+Creation is opt-in with `LIBMPQ_ATTRIBUTE_*` bits in `options.attributes`.
+The native creation-options structure is 20 bytes: `version`, `max_files`,
+`sector_size`, `flags`, and `attributes` occupy offsets 0, 4, 8, 12, and 16.
+The native per-file result is 40 bytes: `flags`, `crc32`, `filetime`, `md5`,
+and `patch_bit` begin at offsets 0, 4, 8, 16, and 32. Explicit `reserved[4]`
+bytes at offset 36 are always returned as zero. These naturally aligned,
+host-endian API structures are separate from the little-endian disk payload.
+
+Zero disables generation; any nonzero combination creates one `(attributes)`
+file and consumes one reserved slot. Unknown attribute bits are rejected.
+The separate `options.flags` field still selects listfile and compression policy.
+CRC32 and MD5 cover source bytes before compression, including lossy ADPCM,
+not stored ciphertext. FILETIME defaults to zero and is set explicitly on a file writer;
+filesystem timestamps are never imported. Finalization adds the listfile,
+then attributes, then serializes the final tables. Unused rows and the
+attributes entry itself are zero. Patch-bit creation emits zeros only and
+does not create or apply patches. Checksums are metadata, not cryptographic
+authentication, and extraction does not automatically verify them.
+
+For v1 creation with attributes enabled, a 16-byte gap separates the header
+and hash table. This avoids StormLib's malformed-map heuristic, which skips
+attributes when a table begins exactly at the end of the v1 header. Writers
+without attributes retain their existing layout.
+
+Older archives can contain
 an internal weak `(signature)` file; a strong signature can follow the archive
 as `NGIS` plus a 2048-bit RSA signature. Use a maintained cryptographic
 library for signature verification and never treat a valid signature as a

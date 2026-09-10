@@ -3,6 +3,9 @@ EXTRA_DIST			= $(man_MANS)
 
 # Manual pages for the installed libmpq library API.
 man_MANS = \
+	libmpq__archive_attributes_flags.3 \
+	libmpq__file_attributes.3 \
+	libmpq__file_set_filetime.3 \
 	libmpq.3 \
 	libmpq__archive_compression_allowed.3 \
 	libmpq__archive_close.3 \

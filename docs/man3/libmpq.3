@@ -191,6 +191,28 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .fi
 .SH DESCRIPTION
 .PP
+Optional (attributes) metadata is supported for reading and creation in
+MPQ v1 and v2, including MPQE. Its payload version 100 is independent of
+the archive version. Enable selected arrays through options.attributes using
+LIBMPQ_ATTRIBUTE_CRC32, _FILETIME, _MD5, and _PATCH_BIT
+(each suffix has the same LIBMPQ_ATTRIBUTE prefix).
+Zero disables generation. Any nonzero combination creates one (attributes)
+file and consumes one reserved slot. Unknown attribute bits are rejected.
+.PP
+libmpq__archive_attributes_flags() queries header flags;
+libmpq__file_attributes() returns available per-file CRC32, FILETIME,
+MD5, and patch-bit values. Loading is lazy: missing or malformed metadata
+does not prevent ordinary extraction. Availability flags distinguish zero
+from missing values. No automatic checksum verification is performed.
+.PP
+CRC32 and MD5 cover source bytes before compression; lossy ADPCM output
+may differ. FILETIME defaults to zero and can be explicitly set through
+libmpq__file_set_filetime() before file completion. Path addition does not
+import filesystem timestamps. Generated patch bits are zero; patch creation
+and application remain unsupported. Unused rows and the attributes entry
+itself have zero values. Finalization writes the listfile, attributes,
+then the completed hash and block tables.
+.PP
 The \fIlibmpq\fP library creates and reads MPQ archives, decrypts and
 decompresses file data, and extracts files compressed with Huffman, zlib,
 bzip2, SPARSE, PKWARE implosion, or the exclusive MPQ v2+ LZMA compression method.
@@ -227,6 +249,9 @@ Cloning reopens the original backing path and reparses its metadata; it is
 not snapshot semantics. The path must remain readable and unchanged while
 clones are created or used.
 .SH SEE ALSO
+.BR libmpq__archive_attributes_flags (3),
+.BR libmpq__file_attributes (3),
+.BR libmpq__file_set_filetime (3),
 .BR libmpq__archive_compression_allowed (3),
 .BR libmpq__version (3),
 .BR libmpq__strerror (3),

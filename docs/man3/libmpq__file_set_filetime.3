@@ -1,0 +1,30 @@
+.\" Copyright (c) 2026 Maik Broemme. LGPL-2.1-or-later.
+.TH LIBMPQ__FILE_SET_FILETIME 3 2026-09-10 "The MoPaQ archive library"
+.SH NAME
+libmpq__file_set_filetime \- set an explicit writer FILETIME
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__file_set_filetime("
+.BI "        mpq_writer_s " "*writer",
+.BI "        uint64_t      " "filetime"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Set the timestamp of an active file writer before libmpq__file_finish().
+The archive must enable LIBMPQ_ATTRIBUTE_FILETIME in options.attributes.
+FILETIME is an unsigned count of 100-nanosecond ticks since 1601-01-01 UTC;
+zero is the default. No filesystem timestamp is imported by file_add_path.
+This call neither changes the source file nor creates a patch.
+.SH RETURN VALUE
+Returns LIBMPQ_SUCCESS on success or a negative libmpq error.
+FORMAT means FILETIME generation was not enabled.
+NULL arguments return EXIST. Use on the wrong handle type returns NOT_INITIALIZED.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__archive_create (3),
+.BR libmpq__archive_create_mpqe (3),
+.BR libmpq__archive_attributes_flags (3),
+.BR libmpq__file_attributes (3),
+.BR libmpq__file_finish (3)

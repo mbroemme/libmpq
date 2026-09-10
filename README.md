@@ -42,6 +42,8 @@ MPQ v2+ LZMA method.
 * Decompress zlib, bzip2, SPARSE, MPQ v2+ LZMA, Huffman, PKWARE implode, Blizzard
   multi-compression, and mono or stereo WAVE ADPCM payloads.
 * Generate an optional `(listfile)` entry during archive creation.
+* Read and create optional version-100 `(attributes)` metadata in MPQ v1+:
+  CRC32, explicit FILETIME, MD5, and read-only patch-bit information.
 * Support big-endian hosts through explicit little-endian serialization; CI
   runs the full test suite on emulated s390x.
 * Provide optional Python 3.11+, D, and Java bindings.
@@ -51,6 +53,22 @@ MPQ v2+ LZMA method.
 For MPQ v2+ creation, `LIBMPQ_COMPRESSION_LZMA` is an exclusive API selector,
 not a chainable multi-compression bit. It maps to serialized method `0x12`;
 that byte retains its legacy bzip2-plus-zlib meaning in MPQ v1.
+
+Select optional metadata separately from archive creation flags:
+
+```c
+mpq_archive_create_options_s options = {0};
+options.flags = LIBMPQ_ARCHIVE_CREATE_LISTFILE |
+                LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED;
+options.attributes = LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_FILETIME |
+                     LIBMPQ_ATTRIBUTE_MD5;
+```
+
+Zero `options.attributes` disables generation. Any nonzero combination
+creates one `(attributes)` file and consumes one reserved file slot.
+Use `libmpq__archive_attributes_flags()` to query available arrays and
+`libmpq__file_attributes()` to read a file's stored values. FILETIME is
+explicit/default-zero; set it through `libmpq__file_set_filetime()`.
 
 Writer compression defaults to `LIBMPQ_COMPRESSION_POLICY_STANDARD`,
 favoring interoperability. For MPQ v2+, this permits zlib, PKWARE, bzip2,
@@ -430,8 +448,8 @@ encryption, sectors, and compression, see [MPQ format guide](MPQ.md).
   random-access writing is unsupported. Creation uses an owner-only plaintext
   temporary file; the completed archive uses normal caller-umask permissions.
   Cleanup is best effort, so a crash can leave the plaintext temporary behind.
-* Attributes, signatures, checksums, patch
-  metadata, and StormLib-specific key modes are not supported by the writer.
+* Signature generation, patch creation/application, and StormLib-specific key
+  modes are not supported. Stored attributes are not automatically verified.
 * Windows support is not currently tested or documented by the Autotools build.
 
 ## Contributing
