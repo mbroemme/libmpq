@@ -1,4 +1,5 @@
 /* Verify every checked-in v1 and v2 fixture archive and extracted payload. */
+#include "mpq-internal.h"
 #include "test-mpq-helper.h"
 
 #include <stdio.h>
@@ -150,9 +151,54 @@ test_fixture_storage(
     }
     TEST_CHECK(libmpq__file_blocks(archive, number, &blocks) == 0 && blocks == 1);
     TEST_CHECK(libmpq__file_offset(archive, number, &offset) == 0 && offset >= 0);
-    TEST_CHECK((uint64_t)offset <= archive_size && archive_size - (size_t)offset >= 5U);
-    TEST_CHECK(load_le32(archive_data + offset) == 8U);
-    TEST_CHECK(archive_data[(size_t)offset + 8U] == expected_method);
+    TEST_CHECK((uint64_t)offset <= archive_size && archive_size - (size_t)offset >= 13U);
+    TEST_CHECK(load_le32(archive_data + offset) == 12U);
+    TEST_CHECK(archive_data[(size_t)offset + 12U] == expected_method);
+    return 0;
+}
+
+/* Pin checksum presence and table contents so skipped verification cannot pass. */
+static int
+test_fixture_checksums(mpq_archive_s *archive, const uint8_t *raw, size_t size, uint32_t version)
+{
+    uint32_t files;
+    uint32_t number;
+    uint32_t checked = 0;
+
+    TEST_CHECK(libmpq__archive_files(archive, &files) == 0);
+    for (number = 0; number < files; ++number) {
+        mpq_block_s *entry = &archive->mpq_block[archive->mpq_map[number].block_table_indices];
+        uint32_t verification = UINT32_MAX;
+        int eligible = entry->unpacked_size != 0 && (entry->flags & LIBMPQ_FLAG_SINGLE) == 0 &&
+                       (entry->flags & (LIBMPQ_FLAG_COMPRESSED | LIBMPQ_FLAG_COMPRESS_PKZIP));
+
+        TEST_CHECK(((entry->flags & LIBMPQ_FLAG_CRC) != 0) == !!eligible);
+        if (eligible) {
+            uint32_t blocks;
+            uint32_t i;
+            const uint32_t *offsets;
+            TEST_CHECK(libmpq__file_blocks(archive, number, &blocks) == 0);
+            TEST_CHECK(libmpq__block_open_offset(archive, number) == 0);
+            offsets = archive->mpq_file[number]->packed_offset;
+            TEST_CHECK(offsets[0] == (blocks + 2U) * 4U);
+            TEST_CHECK(offsets[blocks + 1U] == entry->packed_size);
+
+            /* These fixed tables are too small to benefit from compression. */
+            TEST_CHECK(offsets[blocks + 1U] - offsets[blocks] == blocks * 4U);
+            TEST_CHECK(entry->offset <= size && entry->packed_size <= size - entry->offset);
+            for (i = 0; i < blocks; ++i) {
+                uint32_t checksum = load_le32(raw + entry->offset + offsets[blocks] + i * 4U);
+                TEST_CHECK(checksum != 0 && checksum != UINT32_MAX);
+            }
+            TEST_CHECK(libmpq__block_close_offset(archive, number) == 0);
+            ++checked;
+        }
+        TEST_CHECK(
+            libmpq__file_verify(archive, number, LIBMPQ_VERIFY_SECTOR_CRC, &verification) == 0
+        );
+        TEST_CHECK(verification == 0);
+    }
+    TEST_CHECK(checked == (version == 1 ? 13U : 14U));
     return 0;
 }
 
@@ -189,8 +235,8 @@ static const char fixture_listfile_v2[] = "overview.txt\n"
 
 /* Archive and extracted-file hashes are the single fixture source of truth. */
 static const char *const fixture_archive_hashes[] = {
-    "22998a47e57cc3e43357e6c96fc1a772e468f524b0bc8ee66bf6e88afc66efc0",
-    "dc1d4c5b8cc39613f5f7940d97474a7a7a6b16c58aa4d642093380be64e62d0c",
+    "c0f1bc7eb454a67d98441e320d1f02b98fb9a5652f54bd4391c318c64b929ccb",
+    "421bb22f73a02afd56892daabcec2db6482b79c7a5c3940a48ab7be5e2071d04",
 };
 
 static const char *const fixture_file_hashes[2][15] = {
@@ -255,6 +301,7 @@ test_fixture(const char *path, uint32_t expected_version, size_t fixture_index)
     TEST_CHECK(archive_version == expected_version);
     TEST_CHECK(libmpq__archive_files(archive, &file_count) == 0);
     TEST_CHECK(file_count == names_count + 2);
+    TEST_CHECK(test_fixture_checksums(archive, archive_data, archive_size, expected_version) == 0);
 
     /* Verify the generated listfile and resolve every name it advertises. */
     TEST_CHECK(libmpq__file_number(archive, "(listfile)", &number) == 0);
@@ -275,6 +322,11 @@ test_fixture(const char *path, uint32_t expected_version, size_t fixture_index)
         TEST_CHECK(attributes.filetime == fixture_attributes[i].filetime);
         TEST_CHECK(memcmp(attributes.md5, fixture_attributes[i].md5, 16) == 0);
         TEST_CHECK(attributes.patch_bit == 0);
+        if (strstr(fixture_names[i], ".wav") == NULL) {
+            uint32_t verification = UINT32_MAX;
+            TEST_CHECK(libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &verification) == 0);
+            TEST_CHECK(verification == 0);
+        }
         TEST_CHECK(test_fixture_storage(archive, archive_data, archive_size, number, i) == 0);
         TEST_CHECK(test_archive_read(archive, number, &file_data, &file_size) == 0);
         if (i >= 10 && i <= 12) {

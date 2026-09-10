@@ -188,6 +188,7 @@ test_fixture_wave(mpq_archive_s *archive, const uint8_t *raw, size_t raw_size, u
     uint32_t number;
     uint32_t blocks;
     uint32_t block;
+    uint32_t verification = UINT32_MAX;
     libmpq__off_t offset;
     libmpq__off_t packed;
     libmpq__off_t unpacked;
@@ -204,10 +205,14 @@ test_fixture_wave(mpq_archive_s *archive, const uint8_t *raw, size_t raw_size, u
     if (unpacked != (libmpq__off_t)wave_size || wave_size % 4096 == 0 ||
         blocks != (wave_size + 4095) / 4096 || offset < 0 || packed <= 0 || packed >= unpacked ||
         (uint64_t)offset > raw_size || (uint64_t)packed > raw_size - (size_t)offset ||
-        (uint64_t)packed < (blocks + 1U) * 4U)
+        (uint64_t)packed < (blocks + 2U) * 4U)
         goto cleanup;
     table = raw + (size_t)offset;
-    if (get_le32(table) != (blocks + 1U) * 4U || get_le32(table + blocks * 4U) != packed)
+    if (get_le32(table) != (blocks + 2U) * 4U || get_le32(table + (blocks + 1U) * 4U) != packed ||
+        get_le32(table + blocks * 4U) + blocks * 4U != packed)
+        goto cleanup;
+    if (libmpq__file_verify(archive, number, LIBMPQ_VERIFY_SECTOR_CRC, &verification) != 0 ||
+        verification != 0)
         goto cleanup;
     for (block = 0; block < blocks; ++block) {
         uint32_t start = get_le32(table + block * 4U);

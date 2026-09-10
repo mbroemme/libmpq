@@ -1,6 +1,7 @@
 /* Verify read-only MPQE stream-provider opening with public fixtures. */
 #include "test-mpq-helper.h"
 
+#include "mpq-internal.h"
 #include "mpq-mpqe.h"
 #include "mpq-stream.h"
 
@@ -124,11 +125,27 @@ test_fixture_members(mpq_archive_s *archive, const char *raw_path, uint32_t vers
     for (i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
         uint32_t raw_number;
         uint32_t mpqe_number;
+        uint32_t verification = UINT32_MAX;
 
         if (version == 1 && strcmp(names[i], "lzma.txt") == 0)
             continue;
         TEST_CHECK(libmpq__file_number(raw_archive, names[i], &raw_number) == 0);
         TEST_CHECK(libmpq__file_number(archive, names[i], &mpqe_number) == 0);
+        TEST_CHECK(
+            raw_archive->mpq_block[raw_archive->mpq_map[raw_number].block_table_indices].flags ==
+            archive->mpq_block[archive->mpq_map[mpqe_number].block_table_indices].flags
+        );
+        TEST_CHECK(
+            libmpq__file_verify(archive, mpqe_number, LIBMPQ_VERIFY_SECTOR_CRC, &verification) == 0
+        );
+        TEST_CHECK(verification == 0);
+        if (strstr(names[i], ".wav") == NULL && strcmp(names[i], "(attributes)") != 0) {
+            verification = UINT32_MAX;
+            TEST_CHECK(
+                libmpq__file_verify(archive, mpqe_number, LIBMPQ_VERIFY_ALL, &verification) == 0
+            );
+            TEST_CHECK(verification == 0);
+        }
         TEST_CHECK(test_archive_read(raw_archive, raw_number, &raw_data, &raw_size) == 0);
         TEST_CHECK(test_archive_read(archive, mpqe_number, &mpqe_data, &mpqe_size) == 0);
         TEST_CHECK(raw_size == mpqe_size && memcmp(raw_data, mpqe_data, raw_size) == 0);

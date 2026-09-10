@@ -25,6 +25,21 @@ CRC32/MD5 need not match their decoded samples. `tests/test-mpq-fixtures.c`
 contains fixed source checksums independently calculated using Python
 `zlib`/`hashlib`.
 
+Every nonempty sectorized compressed or imploded entry also carries sector
+Adler-32 checksums: 13 entries in v1 and 14 in v2, including the compressed
+`(attributes)` file. This includes PKWARE, encrypted compressed text, and both
+WAVE members. Raw `overview.txt` and the single-unit `(listfile)` do not have
+sector checksum tables. Sectorized entries can have just one sector; they
+are distinct from single-unit storage.
+
+Each checksum covers packed sector bytes before file encryption. The offset
+table has one extra terminal entry, and the checksum table follows the sector
+data without encryption. These fixtures use raw little-endian checksum words;
+their small tables do not benefit from compression. Tests assert the CRC flag,
+the extra offset, nonzero checksum values, and successful explicit sector
+verification, including WAVE sectors whose file CRC32/MD5 may differ after
+lossy decoding. The MPQE fixtures wrap the same updated archive bytes.
+
 Tests use these exact checked-in MPQ and MPQE archives without regenerating
 them. Archive and extracted-payload hashes in the tests pin their contents.
 
