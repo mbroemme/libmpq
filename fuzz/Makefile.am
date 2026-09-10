@@ -11,6 +11,7 @@ noinst_PROGRAMS = \
 	fuzz-zlib-decode \
 	fuzz-bzip2-decode \
 	fuzz-lzma-decode \
+	fuzz-sparse-decode \
 	fuzz-wave-decode
 
 # Compile fuzz targets against generated configuration, public, and private headers.
@@ -66,6 +67,10 @@ fuzz_lzma_decode_SOURCES = fuzz-codec-decode.c
 fuzz_lzma_decode_CPPFLAGS = $(AM_CPPFLAGS) -DLIBMPQ_FUZZ_CODEC=LIBMPQ_COMPRESSION_LZMA
 fuzz_lzma_decode_LDADD = $(top_builddir)/src/libmpq-fuzz-internal.la $(LIBS)
 fuzz_lzma_decode_LDFLAGS = $(AM_LDFLAGS) -fsanitize=fuzzer,address,undefined
+fuzz_sparse_decode_SOURCES = fuzz-codec-decode.c
+fuzz_sparse_decode_CPPFLAGS = $(AM_CPPFLAGS) -DLIBMPQ_FUZZ_CODEC=LIBMPQ_COMPRESSION_SPARSE
+fuzz_sparse_decode_LDADD = $(top_builddir)/src/libmpq-fuzz-internal.la $(LIBS)
+fuzz_sparse_decode_LDFLAGS = $(AM_LDFLAGS) -fsanitize=fuzzer,address,undefined
 fuzz_wave_decode_SOURCES = fuzz-wave-decode.c
 fuzz_wave_decode_LDADD = $(top_builddir)/src/libmpq-fuzz-internal.la $(LIBS)
 fuzz_wave_decode_LDFLAGS = $(AM_LDFLAGS) -fsanitize=fuzzer,address,undefined

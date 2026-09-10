@@ -25,6 +25,7 @@ fuzz/fuzz-pkware-decode -max_total_time=60 /tmp/libmpq-fuzz-corpus/pkware-decode
 fuzz/fuzz-huffman-decode -max_total_time=60 /tmp/libmpq-fuzz-corpus/huffman-decode
 fuzz/fuzz-zlib-decode -max_total_time=60 /tmp/libmpq-fuzz-corpus/zlib-decode
 fuzz/fuzz-bzip2-decode -max_total_time=60 /tmp/libmpq-fuzz-corpus/bzip2-decode
+fuzz/fuzz-sparse-decode -max_total_time=60 /tmp/libmpq-fuzz-corpus/sparse-decode
 fuzz/fuzz-wave-decode -max_total_time=60 /tmp/libmpq-fuzz-corpus/wave-decode
 ```
 
@@ -38,7 +39,7 @@ then reopens and verifies it. `fuzz-encrypted-archive` mutates a valid archive
 with encrypted files, hash/block tables, and known-key reads.
 
 `fuzz-sector-decode` remains the multi-codec integration target. The focused
-PKWARE, Huffman, zlib, bzip2, and ADPCM WAVE targets use a little-endian
+PKWARE, Huffman, zlib, bzip2, SPARSE, and ADPCM WAVE targets use a little-endian
 16-bit output-size-minus-one frame and reject output allocations above 64 KiB.
 The WAVE frame begins with a mono/stereo selector byte. This keeps malformed
 codec state easy to isolate without removing integration coverage.

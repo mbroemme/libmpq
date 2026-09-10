@@ -40,6 +40,9 @@ file_options(uint8_t selector, uint32_t version)
                                        LIBMPQ_COMPRESSION_BZIP2,
                                        LIBMPQ_COMPRESSION_PKZIP,
                                        LIBMPQ_COMPRESSION_HUFFMAN,
+                                       LIBMPQ_COMPRESSION_SPARSE,
+                                       LIBMPQ_COMPRESSION_SPARSE | LIBMPQ_COMPRESSION_ZLIB,
+                                       LIBMPQ_COMPRESSION_SPARSE | LIBMPQ_COMPRESSION_BZIP2,
                                        LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_ZLIB |
                                            LIBMPQ_COMPRESSION_PKZIP | LIBMPQ_COMPRESSION_BZIP2 };
     uint32_t codec;

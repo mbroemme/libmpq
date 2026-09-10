@@ -27,6 +27,7 @@ readonly huffman_output="${output_root}/huffman-decode"
 readonly zlib_output="${output_root}/zlib-decode"
 readonly bzip2_output="${output_root}/bzip2-decode"
 readonly lzma_output="${output_root}/lzma-decode"
+readonly sparse_output="${output_root}/sparse-decode"
 readonly wave_output="${output_root}/wave-decode"
 
 if [[ -d "${project_root}/fuzz/corpus" ]]; then
@@ -45,6 +46,7 @@ mkdir -p \
 	"${zlib_output}" \
 	"${bzip2_output}" \
 	"${lzma_output}" \
+	"${sparse_output}" \
 	"${wave_output}"
 
 cp "${project_root}/tests/fixtures/mpq-v1-features.mpq" "${archive_output}/fixture-v1.mpq"
@@ -111,11 +113,25 @@ printf '\x04\xff\xff\xff\xff\xff\x40\x00\x00\x00\x7f\x80\x00\x00\x00\x55' > \
 printf '\x00\x00\x00' > "${sector_output}/multi-empty"
 printf '\x01\x00\x00' > "${sector_output}/pkware-empty"
 printf '\x00\xfd\xff\x03' > "${sector_output}/multi-zlib-empty-large"
-for mask in 01 02 08 10 40 80 03 04; do
+for mask in 01 02 08 10 20 22 30 40 80 03 04; do
 	printf '%b' "\\x00\\x00\\x00\\x${mask}" > "${sector_output}/multi-mask-${mask}"
 done
 
 # Frame focused decoder inputs as output-size-minus-one followed by codec data.
+printf '\x3f\x00\x00\x00\x00\x40\x3d' > "${sparse_output}/64-zeros"
+printf '\x01\x00\x00\x00\x00\x02\xffAB' > "${sparse_output}/terminal-literal"
+printf '\x00\x00\xff\xff\xff\xff\x7f' > "${sparse_output}/oversized-length"
+printf '\x00\x3f\x00\x20\x00\x00\x00\x40\x3d' > "${sector_output}/sparse-64-zeros"
+
+# Preserve zero runs in writer seeds so SPARSE is exercised before mutation.
+for selector in 05 06 07; do
+	{
+		printf '%b' "\\x01\\x${selector}\\x00"
+		printf 'A\x00\x00\x00%.0s' {1..256}
+	} > "${writer_output}/sparse-${selector}"
+done
+
+# Seed the remaining focused codecs with bounded valid or truncated streams.
 printf '\x00\x00\x00' > "${pkware_output}/empty"
 printf '\x00\x00\x00\x00\x00' > "${huffman_output}/empty"
 printf '\x00\x00\x78\x9c\x73\x04\x00\x00\x42\x00\x42' > "${zlib_output}/single-byte"

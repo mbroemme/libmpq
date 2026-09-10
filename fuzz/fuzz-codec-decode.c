@@ -64,6 +64,11 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         (uint8_t *)(data + LIBMPQ_FUZZ_CODEC_FRAME_SIZE),
         (uint32_t)(size - LIBMPQ_FUZZ_CODEC_FRAME_SIZE), output, output_size
     );
+#elif LIBMPQ_FUZZ_CODEC == LIBMPQ_COMPRESSION_SPARSE
+    (void)libmpq__compression_decompress_sparse(
+        (uint8_t *)(data + LIBMPQ_FUZZ_CODEC_FRAME_SIZE),
+        (uint32_t)(size - LIBMPQ_FUZZ_CODEC_FRAME_SIZE), output, output_size
+    );
 #elif LIBMPQ_FUZZ_CODEC == LIBMPQ_COMPRESSION_LZMA
     (void)libmpq__compression_decompress_multi(
         (uint8_t *)(data + LIBMPQ_FUZZ_CODEC_FRAME_SIZE),

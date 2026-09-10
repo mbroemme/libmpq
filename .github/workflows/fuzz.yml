@@ -115,6 +115,7 @@ jobs:
             'fuzz-zlib-decode:zlib-decode:131072'
             'fuzz-bzip2-decode:bzip2-decode:131072'
             'fuzz-lzma-decode:lzma-decode:131072'
+            'fuzz-sparse-decode:sparse-decode:131072'
             'fuzz-wave-decode:wave-decode:131072'
           )
           target_seconds=$((FUZZ_SECONDS / ${#targets[@]}))
