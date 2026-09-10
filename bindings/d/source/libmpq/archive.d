@@ -269,6 +269,16 @@ class File {
     this(Archive archive, char[] name) { this(archive, name.idup); }
 
     /** Return the public numeric entry index. */ uint no() const { return number; }
+
+    /** Return mismatches as a subset of flags; missing values are skipped.
+     * File checks require attributes; sector-only checks do not. Errors throw. */
+    uint verify(uint flags = VERIFY_ALL) {
+        uint mismatches;
+        checkStatus(libmpq__file_verify(archiveRef.nativeHandle(), number, flags, &mismatches),
+                    "libmpq__file_verify");
+        return mismatches;
+    }
+
     /** Return stored attributes for this entry; missing/invalid metadata throws. */
     FileAttributes attributes() {
         mpq_file_attributes_s value;

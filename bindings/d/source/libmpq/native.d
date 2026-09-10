@@ -65,11 +65,13 @@ enum FILE_FLAG_IMPLODE = 0x00000100u;
 enum FILE_FLAG_COMPRESS = 0x00000200u;
 enum FILE_FLAG_ENCRYPTED = 0x00010000u;
 enum FILE_FLAG_SINGLE = 0x01000000u;
+enum FILE_FLAG_SECTOR_CRC = 0x04000000u;
 enum FILE_FLAG_LOCALE = 0u;
 alias LIBMPQ_FILE_FLAG_IMPLODE = FILE_FLAG_IMPLODE;
 alias LIBMPQ_FILE_FLAG_COMPRESS = FILE_FLAG_COMPRESS;
 alias LIBMPQ_FILE_FLAG_ENCRYPTED = FILE_FLAG_ENCRYPTED;
 alias LIBMPQ_FILE_FLAG_SINGLE = FILE_FLAG_SINGLE;
+alias LIBMPQ_FILE_FLAG_SECTOR_CRC = FILE_FLAG_SECTOR_CRC;
 alias LIBMPQ_FILE_FLAG_LOCALE = FILE_FLAG_LOCALE;
 
 enum COMPRESSION_HUFFMAN = 0x01u;
@@ -125,6 +127,16 @@ alias LIBMPQ_ATTRIBUTE_MD5 = ATTRIBUTE_MD5;
 enum ATTRIBUTE_PATCH_BIT = 0x8u;
 alias LIBMPQ_ATTRIBUTE_PATCH_BIT = ATTRIBUTE_PATCH_BIT;
 
+/** Shared request/mismatch bits; clear bits mean matched or unavailable. */
+enum VERIFY_SECTOR_CRC = 0x1u;
+enum VERIFY_FILE_CRC32 = 0x2u;
+enum VERIFY_FILE_MD5 = 0x4u;
+enum VERIFY_ALL = VERIFY_SECTOR_CRC | VERIFY_FILE_CRC32 | VERIFY_FILE_MD5;
+alias LIBMPQ_VERIFY_SECTOR_CRC = VERIFY_SECTOR_CRC;
+alias LIBMPQ_VERIFY_FILE_CRC32 = VERIFY_FILE_CRC32;
+alias LIBMPQ_VERIFY_FILE_MD5 = VERIFY_FILE_MD5;
+alias LIBMPQ_VERIFY_ALL = VERIFY_ALL;
+
 /** 40-byte naturally aligned native result; unavailable/reserved fields are zero. */
 extern(C) struct mpq_file_attributes_s {
     uint flags;
@@ -179,6 +191,7 @@ extern(C) {
     /** Optional metadata queries and explicit writer FILETIME. */
     int libmpq__archive_attributes_flags(mpq_archive_s* archive, uint* flags);
     int libmpq__file_attributes(mpq_archive_s* archive, uint number, mpq_file_attributes_s* attributes);
+    int libmpq__file_verify(mpq_archive_s* archive, uint number, uint flags, uint* mismatches);
     int libmpq__file_set_filetime(mpq_writer_s* writer, ulong filetime);
 
     /** Return the static package version string. */

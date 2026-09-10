@@ -120,6 +120,16 @@ class LibmpqTest {
             byte[] data = archive.readFile(number);
             assertEquals(7, archive.attributesFlags().orElseThrow());
             FileAttributes attributes = archive.attributes(number);
+            assertEquals(0, archive.verify(number));
+            assertEquals(0, archive.verify(number, Mpq.VERIFY_FILE_MD5));
+            assertEquals(0, archive.verify(number, Mpq.VERIFY_SECTOR_CRC));
+            assertEquals(1, Mpq.VERIFY_SECTOR_CRC);
+            assertEquals(2, Mpq.VERIFY_FILE_CRC32);
+            assertEquals(4, Mpq.VERIFY_FILE_MD5);
+            assertEquals(7, Mpq.VERIFY_ALL);
+            assertEquals(0x04000000, Mpq.FILE_FLAG_SECTOR_CRC);
+            assertEquals(Mpq.VERIFY_FILE_MD5,
+                archive.verify(archive.fileNumber("(attributes)"), Mpq.VERIFY_FILE_MD5));
             java.util.zip.CRC32 crc = new java.util.zip.CRC32();
             crc.update(data);
             assertEquals(crc.getValue(), attributes.crc32());
@@ -166,6 +176,7 @@ class LibmpqTest {
         try (Archive archive = Archive.openMpqe(path, code, 0)) {
             assertEquals(2, archive.version());
             assertEquals(Mpq.ATTRIBUTE_CRC32, archive.attributesFlags().orElseThrow());
+            assertEquals(0, archive.verify(archive.fileNumber("payload.txt")));
             assertArrayEquals(payload, archive.readFile(archive.fileNumber("payload.txt")));
         }
         LibmpqException error = assertThrows(LibmpqException.class,
@@ -186,7 +197,8 @@ class LibmpqTest {
         try (Archive archive = Archive.create(path, ArchiveCreateOptions.v2())) {
             archive.add("payload.txt", payload, FileOptions.raw());
             archive.add("compressed.txt", repetitive,
-                        FileOptions.compressed(Mpq.COMPRESSION_ZLIB, Mpq.COMPRESSION_ZLIB));
+                        new FileOptions(Mpq.FILE_FLAG_COMPRESS | Mpq.FILE_FLAG_SECTOR_CRC,
+                            Mpq.COMPRESSION_ZLIB, Mpq.COMPRESSION_ZLIB, 0, 0));
             archive.add("lzma.txt", repetitive,
                         FileOptions.compressed(Mpq.COMPRESSION_LZMA, Mpq.COMPRESSION_LZMA));
             archive.addPath("source.txt", source, FileOptions.raw());
@@ -201,6 +213,7 @@ class LibmpqTest {
             assertEquals(payload.length, fileMetadata.unpackedSize());
             assertArrayEquals(payload, archive.readBlock(number, 0));
             assertArrayEquals(repetitive, archive.readFile(archive.fileNumber("compressed.txt")));
+            assertEquals(0, archive.verify(archive.fileNumber("compressed.txt"), Mpq.VERIFY_SECTOR_CRC));
             assertArrayEquals(repetitive, archive.readFile(archive.fileNumber("lzma.txt")));
             assertArrayEquals("path payload".getBytes(StandardCharsets.UTF_8),
                               archive.readFile(archive.fileNumber("source.txt")));

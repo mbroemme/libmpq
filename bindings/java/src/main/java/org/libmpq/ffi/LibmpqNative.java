@@ -100,6 +100,7 @@ public final class LibmpqNative {
     private static final MethodHandle FILE_HASH;
     private static final MethodHandle FILE_NUMBER_FROM_HASH;
     private static final MethodHandle FILE_READ;
+    private static final MethodHandle FILE_VERIFY;
     private static final MethodHandle BLOCK_OPEN_OFFSET;
     private static final MethodHandle BLOCK_CLOSE_OFFSET;
     private static final MethodHandle BLOCK_SIZE_UNPACKED;
@@ -111,6 +112,8 @@ public final class LibmpqNative {
         ARCHIVE_ATTRIBUTES_FLAGS = uintMetadata(linker, lookup, "libmpq__archive_attributes_flags");
         FILE_ATTRIBUTES = function(linker, lookup, "libmpq__file_attributes",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS));
+        FILE_VERIFY = function(linker, lookup, "libmpq__file_verify",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, C_INT, ValueLayout.ADDRESS));
         FILE_SET_FILETIME = function(linker, lookup, "libmpq__file_set_filetime",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_LONG));
         VERSION = function(linker, lookup, "libmpq__version",
@@ -349,6 +352,11 @@ public final class LibmpqNative {
     /** Read a native aligned attributes result for one public file number. */
     public static int fileAttributes(MemorySegment archive, int number, MemorySegment output) {
         return callInt(FILE_ATTRIBUTES, archive, number, output);
+    }
+
+    /** Verify available checksums; mismatches receives a subset of flags, or zero on error. */
+    public static int fileVerify(MemorySegment archive, int number, int flags, MemorySegment mismatches) {
+        return callInt(FILE_VERIFY, archive, number, flags, mismatches);
     }
 
     /** Supply the unsigned FILETIME bit pattern to an active writer. */

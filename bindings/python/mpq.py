@@ -35,12 +35,19 @@ ATTRIBUTE_CRC32 = 0x01
 ATTRIBUTE_FILETIME = 0x02
 ATTRIBUTE_MD5 = 0x04
 ATTRIBUTE_PATCH_BIT = 0x08
+
+# Shared checksum request/mismatch bits, separate from attribute-presence flags.
+VERIFY_SECTOR_CRC = 0x01
+VERIFY_FILE_CRC32 = 0x02
+VERIFY_FILE_MD5 = 0x04
+VERIFY_ALL = VERIFY_SECTOR_CRC | VERIFY_FILE_CRC32 | VERIFY_FILE_MD5
 COMPRESSION_POLICY_STANDARD = 0
 COMPRESSION_POLICY_EXTENDED = 1
 FILE_FLAG_IMPLODE = 0x00000100
 FILE_FLAG_COMPRESS = 0x00000200
 FILE_FLAG_ENCRYPTED = 0x00010000
 FILE_FLAG_SINGLE = 0x01000000
+FILE_FLAG_SECTOR_CRC = 0x04000000
 COMPRESSION_HUFFMAN = 0x01
 COMPRESSION_ZLIB = 0x02
 COMPRESSION_PKZIP = 0x08
@@ -227,6 +234,7 @@ _configure("libmpq__archive_clone", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), _
 _configure("libmpq__archive_close", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__archive_attributes_flags", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_attributes", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_FileAttributes))
+_configure("libmpq__file_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_set_filetime", ctypes.c_int32, _VOID_PTR, ctypes.c_uint64)
 for _name in ("packed", "unpacked"):
     _configure("libmpq__archive_size_" + _name, ctypes.c_int32, _VOID_PTR, ctypes.POINTER(_OFF_T))
@@ -596,6 +604,19 @@ class Reader:
 
 class File:
     """Metadata and complete/block access wrapper for one MPQ entry."""
+
+    def verify(self, flags=VERIFY_ALL):
+        """Return mismatches as a subset of the requested VERIFY_* flags.
+
+        File checks require attributes; sector-only checks do not.
+        Unavailable checksums are skipped, so zero does not prove availability.
+        Operation errors raise instead of returning a mismatch mask.
+        """
+        self._archive._ensure_open()
+        if not isinstance(flags, int) or not 0 <= flags <= 0xffffffff:
+            raise ValueError("verify flags must be an unsigned 32-bit integer")
+        return _read_value(libmpq.libmpq__file_verify, ctypes.c_uint32,
+                           self._archive._mpq, self.number, flags)
 
     def attributes(self):
         """Return stored attributes, raising if absent or malformed, without verification."""

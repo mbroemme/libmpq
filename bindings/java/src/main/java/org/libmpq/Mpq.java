@@ -27,6 +27,15 @@ public final class Mpq {
     public static final int ATTRIBUTE_MD5 = 0x4;
     /** Attributes PATCH_BIT array presence. */
     public static final int ATTRIBUTE_PATCH_BIT = 0x8;
+
+    /** Request packed-sector Adler-32 comparison, or report its mismatch. */
+    public static final int VERIFY_SECTOR_CRC = 0x1;
+    /** Request comparison of the stored CRC32, or report its mismatch. */
+    public static final int VERIFY_FILE_CRC32 = 0x2;
+    /** Request comparison of the stored MD5, or report its mismatch. */
+    public static final int VERIFY_FILE_MD5 = 0x4;
+    /** Request all implemented file checksum comparisons. */
+    public static final int VERIFY_ALL = VERIFY_SECTOR_CRC | VERIFY_FILE_CRC32 | VERIFY_FILE_MD5;
     /** Native failure while opening or creating a file. */
     public static final int ERROR_OPEN = -1;
     /** Native failure while closing a file or archive. */
@@ -72,6 +81,8 @@ public final class Mpq {
     public static final int FILE_FLAG_ENCRYPTED = 0x00010000;
     /** MPQ flag for single-unit, non-sectorized storage. */
     public static final int FILE_FLAG_SINGLE = 0x01000000;
+    /** Generate checksums for sectorized compressed/imploded files. */
+    public static final int FILE_FLAG_SECTOR_CRC = 0x04000000;
     /** MPQ Huffman compression mask bit. */
     public static final int COMPRESSION_HUFFMAN = 0x01;
     /** MPQ zlib compression mask bit. */

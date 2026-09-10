@@ -10,6 +10,7 @@
 import ctypes
 import hashlib
 import os
+import struct
 import zlib
 from pathlib import Path
 
@@ -58,6 +59,13 @@ def test_version_errors_and_hashes():
     query = mpq.libmpq.libmpq__archive_compression_allowed
     assert query.restype == ctypes.c_int32
     assert query.argtypes == [ctypes.c_uint32, ctypes.c_uint32, ctypes.c_int32]
+    verify = mpq.libmpq.libmpq__file_verify
+    assert verify.restype == ctypes.c_int32
+    assert (mpq.VERIFY_SECTOR_CRC, mpq.VERIFY_FILE_CRC32, mpq.VERIFY_FILE_MD5) == (1, 2, 4)
+    assert mpq.VERIFY_ALL == 7
+    assert mpq.FILE_FLAG_SECTOR_CRC == 0x04000000
+    assert verify.argtypes == [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                               ctypes.POINTER(ctypes.c_uint32)]
     assert not mpq.archive_compression_allowed(mpq.ARCHIVE_VERSION_TWO, mpq.COMPRESSION_HUFFMAN)
     assert mpq.archive_compression_allowed(mpq.ARCHIVE_VERSION_TWO, mpq.COMPRESSION_HUFFMAN,
                                      mpq.COMPRESSION_POLICY_EXTENDED)
@@ -90,6 +98,7 @@ def test_fixture_metadata_and_extraction(name, version):
     with mpq.Archive(FIXTURES / name, offset=0) as archive:
         assert archive.version == version
         assert "overview.txt" in archive
+        assert archive["overview.txt"].verify() == 0
         entry = archive["overview.txt"]
         attributes = entry.attributes()
         assert archive.attributes_flags() == (7 if version == 1 else 15)
@@ -116,9 +125,11 @@ def test_mpqe_fixture_metadata_extraction_and_clone(name, version, offset):
         assert archive.attributes_flags() == (7 if version == 1 else 15)
         assert archive.version == version
         assert b"libmpq" in archive["overview.txt"].read()
+        assert archive["overview.txt"].verify() == 0
         clone = archive.clone()
         try:
             assert clone["overview.txt"].attributes() == archive["overview.txt"].attributes()
+            assert clone["overview.txt"].verify() == 0
             assert clone["overview.txt"].read() == archive["overview.txt"].read()
             for member in ("sparse.txt", "sparse-zlib.txt", "sparse-bzip2.txt"):
                 assert clone[member].read() == archive[member].read() == SPARSE_BYTES
@@ -162,9 +173,10 @@ def test_creation_streaming_compression_clone_and_blocks(tmp_path):
                           mpq.ATTRIBUTE_FILETIME | mpq.ATTRIBUTE_MD5 |
                           mpq.ATTRIBUTE_PATCH_BIT) as writer:
         writer.add("raw.bin", b"raw payload")
-        writer.add("compressed.bin", repetitive,
-                   mpq.FileCreateOptions.compressed(mpq.COMPRESSION_ZLIB,
-                                                    mpq.COMPRESSION_ZLIB))
+        checksummed = mpq.FileCreateOptions.compressed(mpq.COMPRESSION_ZLIB,
+                                                       mpq.COMPRESSION_ZLIB)
+        checksummed.flags |= mpq.FILE_FLAG_SECTOR_CRC
+        writer.add("compressed.bin", repetitive, checksummed)
         writer.add("lzma.bin", repetitive,
                    mpq.FileCreateOptions.compressed(mpq.COMPRESSION_LZMA,
                                                     mpq.COMPRESSION_LZMA))
@@ -179,6 +191,8 @@ def test_creation_streaming_compression_clone_and_blocks(tmp_path):
         try:
             assert clone["raw.bin"].read() == b"raw payload"
             assert archive["compressed.bin"].read() == repetitive
+            assert archive["compressed.bin"].verify(mpq.VERIFY_SECTOR_CRC) == 0
+            assert archive["compressed.bin"].verify() == 0
             assert archive["lzma.bin"].read() == repetitive
             assert archive["path.txt"].read() == b"path payload"
             assert archive["stream.bin"].read() == streamed
@@ -195,14 +209,47 @@ def test_creation_streaming_compression_clone_and_blocks(tmp_path):
         assert archive["raw.bin"].read() == b"raw payload"
 
 
+@pytest.mark.parametrize("corrupt", [
+    0, mpq.VERIFY_FILE_CRC32, mpq.VERIFY_FILE_MD5,
+    mpq.VERIFY_FILE_CRC32 | mpq.VERIFY_FILE_MD5,
+])
+def test_explicit_verification_mismatches(tmp_path, corrupt):
+    """Mismatches use requested-check bits, not exceptions or implicit read failures."""
+    path = tmp_path / "verify.mpq"
+    payload = b"verification payload\n" * 100
+    crc = zlib.crc32(payload) ^ bool(corrupt & mpq.VERIFY_FILE_CRC32)
+    digest = bytearray(hashlib.md5(payload).digest())
+    digest[0] ^= bool(corrupt & mpq.VERIFY_FILE_MD5)
+    metadata = struct.pack("<IIII", 100, mpq.ATTRIBUTE_CRC32 | mpq.ATTRIBUTE_MD5,
+                           crc, 0) + digest + bytes(16)
+    with mpq.Writer(path, max_files=2) as writer:
+        writer.add("payload", payload)
+        writer.add("(attributes)", metadata)
+    with mpq.Archive(path, offset=0) as archive:
+        entry = archive["payload"]
+        for request in range(mpq.VERIFY_ALL + 1):
+            mismatches = entry.verify(request)
+            assert mismatches == (request & corrupt)
+            assert mismatches & ~request == 0
+        assert entry.read() == payload
+
+
 def test_errors_and_lifecycle(tmp_path):
     """Missing entries, oversized writes, and post-close use expose typed errors."""
     path = tmp_path / "errors.mpq"
     with mpq.Writer(path) as writer:
+        writer.add("raw", b"abc")
         with pytest.raises(ValueError):
             with writer.begin("too-large", 3) as stream:
                 stream.write(b"1234")
     with mpq.Archive(path, offset=0) as archive:
+        assert archive["raw"].verify(0) == 0
+        assert archive["raw"].verify(mpq.VERIFY_SECTOR_CRC) == 0
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            archive["raw"].verify()
+        with pytest.raises(mpq.LibmpqError) as invalid:
+            archive["raw"].verify(8)
+        assert invalid.value.code == mpq.ERROR_FORMAT
         with pytest.raises(mpq.LibmpqNotFoundError) as error:
             archive["missing"]
         assert error.value.code == mpq.ERROR_EXIST

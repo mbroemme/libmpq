@@ -85,6 +85,22 @@ corresponding Python built-in exception categories.
 
 ## Optional attributes
 
+Set `FILE_FLAG_SECTOR_CRC` in file options alongside COMPRESS or IMPLODE
+to generate sector Adler-32 tables, including for encrypted files. Empty,
+raw, and single-unit files ignore this flag. Generation is opt-in and
+verification remains explicit.
+
+`archive["file.txt"].verify()` explicitly compares sector Adler-32 and file CRC32/MD5.
+Use `VERIFY_SECTOR_CRC`, `VERIFY_FILE_CRC32`, or
+`VERIFY_FILE_MD5` to select checks. Sector checks cover decrypted packed
+bytes; file hashes cover extracted bytes. Missing values/tables are skipped.
+File checksum requests require attributes; sector-only requests do not.
+`VERIFY_ALL` selects all checks. The returned mismatch mask uses the same
+`VERIFY_*` bits and is a subset of the request. Set bits mean available
+checksums mismatched; clear bits mean matched or unavailable/skipped.
+Operation errors raise existing exceptions. Zero does not prove availability.
+Normal extraction is unchanged; lossy ADPCM may differ from source hashes.
+
 `Archive.attributes_flags()` returns `None` when absent. `File.attributes()`
 returns an owned `FileAttributes` result. Use `WriterFile.set_filetime(value)`
 before finishing a streaming file.

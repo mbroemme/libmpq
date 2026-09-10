@@ -22,6 +22,22 @@ import org.libmpq.ffi.LibmpqNative;
  */
 public final class Archive implements AutoCloseable {
 
+    /** Verify all available file checksums and return mismatch bits. */
+    public int verify(int number) throws LibmpqException {
+        return verify(number, Mpq.VERIFY_ALL);
+    }
+
+    /** Return mismatches as a subset of flags; clear bits mean matched or unavailable.
+     * File checks require attributes; sector-only checks do not. Errors throw. */
+    public int verify(int number, int flags) throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment mismatches = arena.allocate(ValueLayout.JAVA_INT);
+            Support.check(LibmpqNative.fileVerify(handle, number, flags, mismatches));
+            return mismatches.get(ValueLayout.JAVA_INT, 0);
+        }
+    }
+
     /** Return flags, or empty when absent; malformed attributes are still errors. */
     public java.util.OptionalInt attributesFlags() throws LibmpqException {
         checkOpen();

@@ -47,8 +47,9 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
     archive.add("hello.txt", payload);
     ubyte[] repetitive = new ubyte[](12000);
     repetitive[] = cast(ubyte) 'D';
-    archive.add("compressed.txt", repetitive,
-                FileOptions.compressed(COMPRESSION_ZLIB, COMPRESSION_ZLIB));
+    auto checksummed = FileOptions.compressed(COMPRESSION_ZLIB, COMPRESSION_ZLIB);
+    checksummed.flags |= FILE_FLAG_SECTOR_CRC;
+    archive.add("compressed.txt", repetitive, checksummed);
     if (archiveVersion == ARCHIVE_VERSION_TWO) {
         archive.add("lzma.txt", repetitive,
                     FileOptions.compressed(COMPRESSION_LZMA, COMPRESSION_LZMA));
@@ -77,6 +78,14 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
     assert(reopened.fileCount() >= 4);
     assert(reopened.file("stream.bin").read() == cast(const(ubyte)[])"abcdef");
     assert(reopened.attributesFlags().get() == 15);
+    assert(reopened.file("stream.bin").verify() == 0);
+    assert(reopened.file("stream.bin").verify(VERIFY_FILE_CRC32) == 0);
+    assert(reopened.file("stream.bin").verify(VERIFY_SECTOR_CRC) == 0);
+    assert(reopened.file("compressed.txt").verify(VERIFY_SECTOR_CRC) == 0);
+    assert(reopened.file("compressed.txt").verify() == 0);
+    static assert(VERIFY_SECTOR_CRC == 1 && VERIFY_FILE_CRC32 == 2 && VERIFY_FILE_MD5 == 4);
+    static assert(VERIFY_ALL == 7);
+    static assert(FILE_FLAG_SECTOR_CRC == 0x04000000u);
     auto attributes = reopened.file("stream.bin").attributes();
     assert(attributes.flags == 15);
     assert(attributes.crc32 == 0x4b8e39ef);
@@ -121,6 +130,9 @@ private void testFixture() {
     scope(exit) archive.close();
     auto listfile = archive.file("(listfile)");
     assert(listfile.read().length > 0);
+    assert(archive.file("overview.txt").verify() == 0);
+    assert(archive.file("(attributes)").verify(VERIFY_FILE_MD5) ==
+           VERIFY_FILE_MD5);
     assert(archive.fileNumber(Mpq.fileHash("(listfile)")) == listfile.no());
 }
 
@@ -133,6 +145,7 @@ private void testMpqeFixture() {
     scope(exit) archive.close();
     assert(archive.version_() == 1);
     assert(archive.file("overview.txt").read().length > 0);
+    assert(archive.file("overview.txt").verify() == 0);
 
     bool failed;
     try {
