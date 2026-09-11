@@ -200,16 +200,16 @@ class Archive {
     /** Add a complete in-memory file to a writer archive. */
     void add(string name, const(ubyte)[] data, FileOptions options = FileOptions.raw()) {
         ensureOpen(); auto nativeOptions = options.nativeOptions();
-        checkStatus(libmpq__file_add(handle, toStringz(name), data.ptr,
+        checkStatus(libmpq__archive_add_data(handle, toStringz(name), data.ptr,
                                      cast(off_t) data.length, &nativeOptions),
-                    "libmpq__file_add");
+                    "libmpq__archive_add_data");
     }
 
     /** Add a filesystem file under a chosen archive name. */
     void addPath(string name, string sourcePath, FileOptions options = FileOptions.raw()) {
         ensureOpen(); auto nativeOptions = options.nativeOptions();
-        checkStatus(libmpq__file_add_path(handle, toStringz(name), toStringz(sourcePath),
-                                          &nativeOptions), "libmpq__file_add_path");
+        checkStatus(libmpq__archive_add_path(handle, toStringz(name), toStringz(sourcePath),
+                                          &nativeOptions), "libmpq__archive_add_path");
     }
 
     /** Begin a streaming file writer with a declared unpacked size. */

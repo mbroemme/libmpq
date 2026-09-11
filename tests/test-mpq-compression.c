@@ -74,18 +74,20 @@ test_policy_writer(uint32_t version, libmpq_compression_policy_t policy)
         options.compression_next = LIBMPQ_COMPRESSION_ZLIB;
         if (!libmpq__archive_compression_allowed(version, masks[i], policy)) {
             TEST_CHECK(
-                libmpq__file_add(archive, name, input, sizeof(input), &options) ==
+                libmpq__archive_add_data(archive, name, input, sizeof(input), &options) ==
                 LIBMPQ_ERROR_FORMAT
             );
             options.compression_first = LIBMPQ_COMPRESSION_ZLIB;
             options.compression_next = masks[i];
             TEST_CHECK(
-                libmpq__file_add(archive, name, input, sizeof(input), &options) ==
+                libmpq__archive_add_data(archive, name, input, sizeof(input), &options) ==
                 LIBMPQ_ERROR_FORMAT
             );
         } else {
             options.compression_next = masks[i];
-            TEST_CHECK(libmpq__file_add(archive, name, input, sizeof(input), &options) == 0);
+            TEST_CHECK(
+                libmpq__archive_add_data(archive, name, input, sizeof(input), &options) == 0
+            );
         }
     }
     result = libmpq__archive_close(archive);
@@ -122,7 +124,7 @@ test_round_trip(
     uint32_t number;
 
     TEST_CHECK(test_add_archive(&archive, path, 0, 0) == 0);
-    TEST_CHECK(libmpq__file_add(archive, name, payload, size, &options) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, name, payload, size, &options) == 0);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
     TEST_CHECK(libmpq__file_number(archive, name, &number) == 0);
@@ -164,7 +166,8 @@ main(void)
     remove(path);
     TEST_CHECK(test_add_archive(&archive, path, 0, 0) == 0);
     TEST_CHECK(
-        libmpq__file_add(archive, "invalid", data, sizeof(data), &invalid) == LIBMPQ_ERROR_FORMAT
+        libmpq__archive_add_data(archive, "invalid", data, sizeof(data), &invalid) ==
+        LIBMPQ_ERROR_FORMAT
     );
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     remove(path);

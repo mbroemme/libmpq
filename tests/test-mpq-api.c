@@ -130,7 +130,7 @@ main(void)
     char source_path[128];
     const uint8_t payload[] = "public API";
     const uint8_t streamed[] = "streamed";
-    const uint8_t source[] = "file_add_path";
+    const uint8_t source[] = "archive_add_path";
     uint8_t *repetitive;
     uint8_t output[sizeof(payload)];
     mpq_archive_s *archive = NULL;
@@ -167,28 +167,32 @@ main(void)
 
     TEST_CHECK(test_add_archive(&archive, archive_path, LIBMPQ_ARCHIVE_VERSION_ONE, 0) == 0);
     TEST_CHECK(test_writer_errors(archive) == 0);
-    TEST_CHECK(libmpq__file_add(archive, "payload", payload, sizeof(payload) - 1, NULL) == 0);
     TEST_CHECK(
-        libmpq__file_add(archive, "payload", payload, sizeof(payload) - 1, NULL) ==
+        libmpq__archive_add_data(archive, "payload", payload, sizeof(payload) - 1, NULL) == 0
+    );
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, "payload", payload, sizeof(payload) - 1, NULL) ==
         LIBMPQ_ERROR_EXIST
     );
     repetitive = malloc(5000);
     TEST_CHECK(repetitive != NULL);
     for (i = 0; i < 5000; ++i)
         repetitive[i] = (uint8_t)('A' + (i % 3));
-    TEST_CHECK(libmpq__file_add(archive, "compressed", repetitive, 5000, &compressed) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "compressed", repetitive, 5000, &compressed) == 0);
     free(repetitive);
-    TEST_CHECK(libmpq__file_add(archive, "empty", NULL, 0, NULL) == 0);
-    TEST_CHECK(libmpq__file_add_path(archive, "path", source_path, NULL) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "empty", NULL, 0, NULL) == 0);
+    TEST_CHECK(libmpq__archive_add_path(archive, "path", source_path, NULL) == 0);
     TEST_CHECK(
-        libmpq__file_add_path(archive, "missing", "libmpq-no-such-source", NULL) ==
+        libmpq__archive_add_path(archive, "missing", "libmpq-no-such-source", NULL) ==
         LIBMPQ_ERROR_OPEN
     );
     TEST_CHECK(libmpq__writer_begin(archive, "streamed", sizeof(streamed) - 1, NULL, &writer) == 0);
     TEST_CHECK(libmpq__writer_write(writer, streamed, 3) == 0);
     TEST_CHECK(libmpq__writer_write(writer, streamed + 3, sizeof(streamed) - 4) == 0);
     TEST_CHECK(libmpq__writer_finish(writer) == 0);
-    TEST_CHECK(libmpq__file_add(archive, "negative", NULL, -1, NULL) == LIBMPQ_ERROR_FORMAT);
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, "negative", NULL, -1, NULL) == LIBMPQ_ERROR_FORMAT
+    );
     TEST_CHECK(libmpq__archive_clone(&clone, archive) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     archive = NULL;

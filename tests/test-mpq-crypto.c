@@ -26,7 +26,9 @@ test_encrypted_file(const char *path)
     payload[6] = (uint8_t)((sizeof(payload) - 8) >> 16);
     payload[7] = (uint8_t)((sizeof(payload) - 8) >> 24);
     TEST_CHECK(test_add_archive(&archive, path, 0, 0) == 0);
-    TEST_CHECK(libmpq__file_add(archive, "encrypted.raw", payload, sizeof(payload), &options) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, "encrypted.raw", payload, sizeof(payload), &options) == 0
+    );
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
     TEST_CHECK(libmpq__file_number(archive, "encrypted.raw", &number) == 0);
@@ -58,8 +60,9 @@ test_encrypted_compressed_file(const char *path)
     memcpy(payload, "compressed-encryption\n", 22);
     TEST_CHECK(test_add_archive(&archive, path, 0, 0) == 0);
     TEST_CHECK(
-        libmpq__file_add(archive, "encrypted-compressed.bin", payload, sizeof(payload), &options) ==
-        0
+        libmpq__archive_add_data(
+            archive, "encrypted-compressed.bin", payload, sizeof(payload), &options
+        ) == 0
     );
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);

@@ -156,6 +156,16 @@ libmpq__file_verify(
     return libmpq__verify_file(archive, file_number, verify_flags, mismatches);
 }
 
+/* Explicitly verify one sector and return its stored checksum. */
+int32_t
+libmpq__block_verify(
+    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint32_t *checksum,
+    uint32_t *mismatches
+)
+{
+    return libmpq__verify_block(archive, file_number, block_number, checksum, mismatches);
+}
+
 /* Supply an explicit timestamp for an unfinished source file.
  * The writer owns the value; no filesystem timestamp is consulted. */
 int32_t
@@ -235,7 +245,7 @@ libmpq__writer_finish(mpq_writer_s *writer)
  * The convenience call performs begin, write, and finish operations while
  * retaining the same validation and compression behavior as streaming. */
 int32_t
-libmpq__file_add(
+libmpq__archive_add_data(
     mpq_archive_s *archive, const char *name, const uint8_t *data, libmpq__off_t size,
     const mpq_file_options_s *options
 )
@@ -247,7 +257,7 @@ libmpq__file_add(
  * The source is read in bounded chunks, so callers need not load the complete
  * file into memory before archive creation begins. */
 int32_t
-libmpq__file_add_path(
+libmpq__archive_add_path(
     mpq_archive_s *archive, const char *name, const char *source, const mpq_file_options_s *options
 )
 {

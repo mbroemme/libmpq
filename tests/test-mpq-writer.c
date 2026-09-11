@@ -179,13 +179,15 @@ add_mpqe_feature_files(mpq_archive_s *archive)
 
     mpqe_payload(raw, sizeof(raw), 7);
     mpqe_payload(packed, sizeof(packed), 23);
-    result = libmpq__file_add(archive, "raw.bin", raw, sizeof(raw), NULL);
+    result = libmpq__archive_add_data(archive, "raw.bin", raw, sizeof(raw), NULL);
     if (result == 0)
-        result = libmpq__file_add(archive, "compressed.bin", packed, sizeof(packed), &compressed);
+        result = libmpq__archive_add_data(
+            archive, "compressed.bin", packed, sizeof(packed), &compressed
+        );
     if (result == 0)
-        result = libmpq__file_add(archive, "encrypted.bin", raw, sizeof(raw), &encrypted);
+        result = libmpq__archive_add_data(archive, "encrypted.bin", raw, sizeof(raw), &encrypted);
     if (result == 0) {
-        result = libmpq__file_add(
+        result = libmpq__archive_add_data(
             archive, "compressed-encrypted.bin", packed, sizeof(packed), &packed_encrypted
         );
     }
@@ -379,7 +381,7 @@ test_mpqe_writer_byte_equality(uint32_t version)
         test_temp_path(mpqe_path, sizeof(mpqe_path), "writer-mpqe-encrypted") != 0)
         goto cleanup;
     if (libmpq__archive_create(&raw_archive, raw_path, &options) != 0 ||
-        libmpq__file_add(raw_archive, "partial.bin", payload, sizeof(payload), NULL) != 0)
+        libmpq__archive_add_data(raw_archive, "partial.bin", payload, sizeof(payload), NULL) != 0)
         goto cleanup;
     result = libmpq__archive_close(raw_archive);
     raw_archive = NULL;
@@ -388,7 +390,7 @@ test_mpqe_writer_byte_equality(uint32_t version)
     if (libmpq__archive_create_mpqe(
             &mpqe_archive, mpqe_path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1U, &options
         ) != 0 ||
-        libmpq__file_add(mpqe_archive, "partial.bin", payload, sizeof(payload), NULL) != 0)
+        libmpq__archive_add_data(mpqe_archive, "partial.bin", payload, sizeof(payload), NULL) != 0)
         goto cleanup;
     result = libmpq__archive_close(mpqe_archive);
     mpqe_archive = NULL;
@@ -462,7 +464,8 @@ test_mpqe_writer_fault(mpqe_writer_fault_e fault, uint32_t attributes)
     if (libmpq__archive_create_mpqe(
             &archive, path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1U, &options
         ) != 0 ||
-        libmpq__file_add(archive, "payload.bin", original, sizeof(original) - 1U, NULL) != 0)
+        libmpq__archive_add_data(archive, "payload.bin", original, sizeof(original) - 1U, NULL) !=
+            0)
         goto cleanup;
     if (archive->write_mpqe_ops == NULL)
         goto cleanup;
@@ -520,7 +523,7 @@ test_mpqe_writer_chdir(void)
     if (libmpq__archive_create_mpqe(
             &archive, "archive.mpqe", mpqe_auth_code, sizeof(mpqe_auth_code) - 1U, NULL
         ) != 0 ||
-        libmpq__file_add(archive, "cwd.txt", payload, sizeof(payload) - 1U, NULL) != 0 ||
+        libmpq__archive_add_data(archive, "cwd.txt", payload, sizeof(payload) - 1U, NULL) != 0 ||
         chdir("../other") != 0)
         goto cleanup;
     result = libmpq__archive_close(archive);
@@ -645,7 +648,7 @@ test_property_case(uint32_t version, uint32_t sector_size, size_t payload_size)
         if (!property_mode_supported(&writer_modes[i], version, sector_size, payload_size)) {
             continue;
         }
-        add_result = libmpq__file_add(
+        add_result = libmpq__archive_add_data(
             archive, writer_modes[i].name, payload, (libmpq__off_t)payload_size,
             &writer_modes[i].options
         );
@@ -784,9 +787,11 @@ test_create_one(const char *path, uint32_t version)
     TEST_CHECK(source != NULL && fwrite("path-data", 1, 9, source) == 9);
     TEST_CHECK(fclose(source) == 0);
     TEST_CHECK(
-        libmpq__file_add(archive, "repeat.bin", repetitive, sizeof(repetitive), &compressed) == 0
+        libmpq__archive_add_data(
+            archive, "repeat.bin", repetitive, sizeof(repetitive), &compressed
+        ) == 0
     );
-    TEST_CHECK(libmpq__file_add_path(archive, "path.bin", source_path, &raw) == 0);
+    TEST_CHECK(libmpq__archive_add_path(archive, "path.bin", source_path, &raw) == 0);
     TEST_CHECK(
         libmpq__writer_begin(archive, "stream.bin", sizeof(stream_data), &raw, &writer) == 0
     );

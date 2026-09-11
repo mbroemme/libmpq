@@ -228,8 +228,8 @@ _configure("libmpq__archive_create_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_P
 _configure("libmpq__writer_begin", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _OFF_T, _VOID_PTR, ctypes.POINTER(_VOID_PTR))
 _configure("libmpq__writer_write", ctypes.c_int32, _VOID_PTR, _BYTE_PTR, _OFF_T)
 _configure("libmpq__writer_finish", ctypes.c_int32, _VOID_PTR)
-_configure("libmpq__file_add", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE_PTR, _OFF_T, _VOID_PTR)
-_configure("libmpq__file_add_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
+_configure("libmpq__archive_add_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE_PTR, _OFF_T, _VOID_PTR)
+_configure("libmpq__archive_add_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__archive_clone", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), _VOID_PTR)
 _configure("libmpq__archive_close", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__archive_attributes_flags", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
@@ -444,7 +444,7 @@ class Writer:
         self._ensure_open()
         options, data = options or FileCreateOptions.raw(), bytes(data)
         pointer = None if not data else (ctypes.c_uint8 * len(data)).from_buffer_copy(data)
-        return libmpq.libmpq__file_add(self._mpq, _as_bytes(name), pointer, len(data), ctypes.byref(options))
+        return libmpq.libmpq__archive_add_data(self._mpq, _as_bytes(name), pointer, len(data), ctypes.byref(options))
 
     def begin(self, name, size, options=None):
         """Begin a fixed-size streaming entry."""
@@ -455,7 +455,7 @@ class Writer:
         """Add a filesystem file under an archive name."""
         self._ensure_open()
         options = options or FileCreateOptions.raw()
-        return libmpq.libmpq__file_add_path(self._mpq, _as_bytes(name), _as_bytes(source), ctypes.byref(options))
+        return libmpq.libmpq__archive_add_path(self._mpq, _as_bytes(name), _as_bytes(source), ctypes.byref(options))
 
     def close(self):
         """Finalize and close the archive; repeated calls are harmless."""

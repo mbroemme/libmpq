@@ -74,7 +74,8 @@ FILETIME, not Unix time.
 `libmpq__writer_begin()` starts an archive member and returns `mpq_writer_s`.
 Use `libmpq__writer_write()`, `libmpq__writer_timestamp()`, and
 `libmpq__writer_finish()` on that handle. Finishing consumes it, even on error.
-Member operations such as `libmpq__file_add()` retain the `file_*` namespace.
+Use `libmpq__archive_add_data()` to add an in-memory source in one call, or
+`libmpq__archive_add_path()` to add a filesystem-path source.
 
 Explicitly compare available stored checksums after opening an archive:
 

@@ -18,7 +18,8 @@ create_serialized_vector(const char *path, uint32_t version)
 
     TEST_CHECK(libmpq__archive_create(&archive, path, &archive_options) == 0);
     TEST_CHECK(
-        libmpq__file_add(archive, "vector.bin", payload, sizeof(payload), &file_options) == 0
+        libmpq__archive_add_data(archive, "vector.bin", payload, sizeof(payload), &file_options) ==
+        0
     );
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     return 0;

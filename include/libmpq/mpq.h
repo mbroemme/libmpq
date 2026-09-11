@@ -279,6 +279,16 @@ extern LIBMPQ_API int32_t libmpq__file_verify(
     mpq_archive_s *archive, uint32_t file_number, uint32_t verify_flags, uint32_t *mismatches
 );
 
+/* Verify one sector's stored Adler-32 over packed bytes after decryption.
+ * Success returns the stored checksum and either zero or VERIFY_SECTOR_CRC
+ * in mismatches. Unavailable checksums (including zero/all-ones entries) return
+ * ERROR_EXIST. Both non-NULL outputs are zeroed before validation and remain
+ * zero on any error. Normal reads do not implicitly verify checksums. */
+extern LIBMPQ_API int32_t libmpq__block_verify(
+    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint32_t *checksum,
+    uint32_t *mismatches
+);
+
 /* Set Windows FILETIME, not Unix time, on an active file writer. Generation of
  * FILETIME must be enabled or FORMAT is returned. The default is zero;
  * neither this API nor path-based addition imports filesystem metadata. */
@@ -415,7 +425,7 @@ extern LIBMPQ_API int32_t libmpq__writer_finish(mpq_writer_s *writer);
  * validation and per-sector pipeline as the streaming API. The input buffer
  * remains owned by the caller and may be released after the call returns.
  */
-extern LIBMPQ_API int32_t libmpq__file_add(
+extern LIBMPQ_API int32_t libmpq__archive_add_data(
     mpq_archive_s *mpq_archive, const char *filename, const uint8_t *buffer, libmpq__off_t size,
     const mpq_file_options_s *options
 );
@@ -426,7 +436,7 @@ extern LIBMPQ_API int32_t libmpq__file_add(
  * entry uses the supplied name and storage options. The source file is read
  * only; it is never modified by this operation.
  */
-extern LIBMPQ_API int32_t libmpq__file_add_path(
+extern LIBMPQ_API int32_t libmpq__archive_add_path(
     mpq_archive_s *mpq_archive, const char *filename, const char *source_path,
     const mpq_file_options_s *options
 );

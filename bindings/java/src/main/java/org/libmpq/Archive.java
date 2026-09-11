@@ -392,7 +392,7 @@ public final class Archive implements AutoCloseable {
         }
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment nativeOptions = fileOptions(arena, options);
-            Support.check(LibmpqNative.fileAdd(handle, Support.text(arena, name),
+            Support.check(LibmpqNative.archiveAddData(handle, Support.text(arena, name),
                                                 Support.bytes(arena, data), data.length, nativeOptions));
         }
     }
@@ -411,7 +411,7 @@ public final class Archive implements AutoCloseable {
             options = FileOptions.raw();
         }
         try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.fileAddPath(handle, Support.text(arena, name),
+            Support.check(LibmpqNative.archiveAddPath(handle, Support.text(arena, name),
                                                    Support.text(arena, source.toString()),
                                                    fileOptions(arena, options)));
         }

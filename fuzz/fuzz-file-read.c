@@ -43,8 +43,9 @@ create_seed_archive(void)
     memset(payload, 'R', sizeof(payload));
     memcpy(payload, "libmpq file-read fuzz seed\n", 27);
     if (libmpq__archive_create(&archive, archive_path, &archive_options) != 0 ||
-        libmpq__file_add(archive, "fuzz-read.bin", payload, sizeof(payload), &compressed) != 0 ||
-        libmpq__file_add(archive, "dir/entry.txt", payload, 64, &raw) != 0 ||
+        libmpq__archive_add_data(archive, "fuzz-read.bin", payload, sizeof(payload), &compressed) !=
+            0 ||
+        libmpq__archive_add_data(archive, "dir/entry.txt", payload, 64, &raw) != 0 ||
         libmpq__archive_close(archive) != 0) {
         return -1;
     }

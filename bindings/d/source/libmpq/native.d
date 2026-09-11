@@ -235,12 +235,12 @@ extern(C) {
     int libmpq__writer_finish(mpq_writer_s* writer);
 
     /** Add one complete in-memory file to an archive. */
-    int libmpq__file_add(mpq_archive_s* archive, const(char)* filename,
+    int libmpq__archive_add_data(mpq_archive_s* archive, const(char)* filename,
                          const(ubyte)* buffer, off_t size,
                          const(mpq_file_options_s)* options);
 
     /** Add a filesystem file to an archive. */
-    int libmpq__file_add_path(mpq_archive_s* archive, const(char)* filename,
+    int libmpq__archive_add_path(mpq_archive_s* archive, const(char)* filename,
                               const(char)* source_path,
                               const(mpq_file_options_s)* options);
 

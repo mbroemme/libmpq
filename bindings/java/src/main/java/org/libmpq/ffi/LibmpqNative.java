@@ -80,8 +80,8 @@ public final class LibmpqNative {
     private static final MethodHandle WRITER_BEGIN;
     private static final MethodHandle WRITER_WRITE;
     private static final MethodHandle WRITER_FINISH;
-    private static final MethodHandle FILE_ADD;
-    private static final MethodHandle FILE_ADD_PATH;
+    private static final MethodHandle ARCHIVE_ADD_DATA;
+    private static final MethodHandle ARCHIVE_ADD_PATH;
     private static final MethodHandle ARCHIVE_CLONE;
     private static final MethodHandle ARCHIVE_CLOSE;
     private static final MethodHandle ARCHIVE_SIZE_PACKED;
@@ -139,11 +139,11 @@ public final class LibmpqNative {
                                                     ValueLayout.ADDRESS, C_LONG));
         WRITER_FINISH = function(linker, lookup, "libmpq__writer_finish",
                                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
-        FILE_ADD = function(linker, lookup, "libmpq__file_add",
+        ARCHIVE_ADD_DATA = function(linker, lookup, "libmpq__archive_add_data",
                             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                   ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                                   C_LONG, ValueLayout.ADDRESS));
-        FILE_ADD_PATH = function(linker, lookup, "libmpq__file_add_path",
+        ARCHIVE_ADD_PATH = function(linker, lookup, "libmpq__archive_add_path",
                                  FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                        ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                                         ValueLayout.ADDRESS));
@@ -358,14 +358,14 @@ public final class LibmpqNative {
         return callInt(WRITER_TIMESTAMP, writer, filetime);
     }
     /** Adds a complete native buffer as one archive entry. */
-    public static int fileAdd(MemorySegment archive, MemorySegment name, MemorySegment buffer,
+    public static int archiveAddData(MemorySegment archive, MemorySegment name, MemorySegment buffer,
                               long size, MemorySegment options) {
-        return callInt(FILE_ADD, archive, name, buffer, size, options);
+        return callInt(ARCHIVE_ADD_DATA, archive, name, buffer, size, options);
     }
     /** Adds a filesystem path as one archive entry. */
-    public static int fileAddPath(MemorySegment archive, MemorySegment name, MemorySegment path,
+    public static int archiveAddPath(MemorySegment archive, MemorySegment name, MemorySegment path,
                                   MemorySegment options) {
-        return callInt(FILE_ADD_PATH, archive, name, path, options);
+        return callInt(ARCHIVE_ADD_PATH, archive, name, path, options);
     }
     /** Reopens an archive into an independent native handle. */
     public static int archiveClone(MemorySegment out, MemorySegment archive) {

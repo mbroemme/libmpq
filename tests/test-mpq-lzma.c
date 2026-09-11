@@ -85,7 +85,9 @@ test_v2_lzma_round_trip(const char *path)
 
     memset(payload, 'L', sizeof(payload));
     TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_TWO, 0) == 0);
-    TEST_CHECK(libmpq__file_add(archive, "lzma.txt", payload, sizeof(payload), &options) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, "lzma.txt", payload, sizeof(payload), &options) == 0
+    );
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     archive = NULL;
     TEST_CHECK(test_read_path(path, &stored, &stored_size) == 0);
@@ -113,7 +115,9 @@ test_lzma_raw_fallback(const char *path)
     size_t stored_size;
 
     TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_TWO, 0) == 0);
-    TEST_CHECK(libmpq__file_add(archive, "tiny.txt", payload, sizeof(payload), &options) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, "tiny.txt", payload, sizeof(payload), &options) == 0
+    );
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     archive = NULL;
     TEST_CHECK(test_read_path(path, &stored, &stored_size) == 0);
@@ -141,7 +145,9 @@ test_lzma_framing_validation(const char *path)
 
     memset(payload, 'F', sizeof(payload));
     TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_TWO, 0) == 0);
-    TEST_CHECK(libmpq__file_add(archive, "framing.txt", payload, sizeof(payload), &options) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, "framing.txt", payload, sizeof(payload), &options) == 0
+    );
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     archive = NULL;
     TEST_CHECK(test_read_path(path, &stored, &stored_size) == 0);
@@ -269,13 +275,14 @@ test_selector_validation(const char *path)
 
     TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_ONE, 0) == 0);
     TEST_CHECK(
-        libmpq__file_add(archive, "v1-lzma", payload, sizeof(payload), &lzma) == LIBMPQ_ERROR_FORMAT
+        libmpq__archive_add_data(archive, "v1-lzma", payload, sizeof(payload), &lzma) ==
+        LIBMPQ_ERROR_FORMAT
     );
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     archive = NULL;
     TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_TWO, 0) == 0);
     TEST_CHECK(
-        libmpq__file_add(archive, "ambiguous", payload, sizeof(payload), &ambiguous) ==
+        libmpq__archive_add_data(archive, "ambiguous", payload, sizeof(payload), &ambiguous) ==
         LIBMPQ_ERROR_FORMAT
     );
     TEST_CHECK(libmpq__archive_close(archive) == 0);

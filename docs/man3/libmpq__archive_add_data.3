@@ -1,12 +1,12 @@
-.TH LIBMPQ__FILE_ADD 3 2026-08-18 "The MoPaQ archive library"
+.TH LIBMPQ__ARCHIVE_ADD_DATA 3 2026-08-18 "The MoPaQ archive library"
 .SH NAME
-libmpq__file_add \- add an in-memory file to an MPQ archive
+libmpq__archive_add_data \- add an in-memory file to an MPQ archive
 .SH SYNOPSIS
 .nf
 .B
 #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__file_add("
+.BI "int32_t libmpq__archive_add_data("
 .BI "        mpq_archive_s  *" "archive,"
 .BI "        const char     *" "name,"
 .BI "        const uint8_t  *" "buffer,"
@@ -18,5 +18,5 @@ libmpq__file_add \- add an in-memory file to an MPQ archive
 Adds a complete memory buffer using the same options as the streaming writer.
 .SH SEE ALSO
 .BR libmpq__archive_create (3),
-.BR libmpq__file_add_path (3),
+.BR libmpq__archive_add_path (3),
 .BR libmpq__writer_begin (3)

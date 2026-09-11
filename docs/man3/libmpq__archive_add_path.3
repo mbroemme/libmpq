@@ -1,12 +1,12 @@
-.TH LIBMPQ__FILE_ADD_PATH 3 2026-08-18 "The MoPaQ archive library"
+.TH LIBMPQ__ARCHIVE_ADD_PATH 3 2026-08-18 "The MoPaQ archive library"
 .SH NAME
-libmpq__file_add_path \- add a filesystem file to an MPQ archive
+libmpq__archive_add_path \- add a filesystem file to an MPQ archive
 .SH SYNOPSIS
 .nf
 .B
 #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__file_add_path("
+.BI "int32_t libmpq__archive_add_path("
 .BI "        mpq_archive_s  *" "archive,"
 .BI "        const char     *" "name,"
 .BI "        const char     *" "source_path,"
@@ -17,5 +17,5 @@ libmpq__file_add_path \- add a filesystem file to an MPQ archive
 Reads \fIsource_path\fP and adds it under the archive name \fIname\fP.
 .SH SEE ALSO
 .BR libmpq__archive_create (3),
-.BR libmpq__file_add (3),
+.BR libmpq__archive_add_data (3),
 .BR libmpq__writer_begin (3)

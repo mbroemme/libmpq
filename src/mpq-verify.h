@@ -26,4 +26,9 @@ int32_t libmpq__verify_file(
     mpq_archive_s *archive, uint32_t file_number, uint32_t verify_flags, uint32_t *mismatches
 );
 
+int32_t libmpq__verify_block(
+    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint32_t *checksum,
+    uint32_t *mismatches
+);
+
 #endif /* LIBMPQ_VERIFY_H */

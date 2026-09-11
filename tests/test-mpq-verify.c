@@ -161,7 +161,7 @@ test_sectors(
 
     REQUIRE(test_temp_path(path, sizeof(path), "sector-verify") == 0);
     REQUIRE(libmpq__archive_create(&archive, path, &options) == 0);
-    REQUIRE(libmpq__file_add(archive, "payload", packed, position, NULL) == 0);
+    REQUIRE(libmpq__archive_add_data(archive, "payload", packed, position, NULL) == 0);
     archive->mpq_block[0].unpacked_size = sizeof(plain);
     archive->mpq_block[0].flags = LIBMPQ_FLAG_EXISTS | LIBMPQ_FLAG_COMPRESS_MULTI |
                                   LIBMPQ_FLAG_CRC | (encrypted ? LIBMPQ_FLAG_ENCRYPTED : 0);
@@ -286,7 +286,7 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
     status = mpqe ? libmpq__archive_create_mpqe(&archive, path, code, sizeof(code) - 1, &options)
                   : libmpq__archive_create(&archive, path, &options);
     REQUIRE(status == 0);
-    REQUIRE(libmpq__file_add(archive, "payload", plain, size, &file) == 0);
+    REQUIRE(libmpq__archive_add_data(archive, "payload", plain, size, &file) == 0);
     status = libmpq__archive_close(archive);
     archive = NULL;
     REQUIRE(status == 0);

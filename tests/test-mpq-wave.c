@@ -302,7 +302,7 @@ test_adpcm_archive(uint32_t version, uint16_t channels)
         options.compression_next = LIBMPQ_COMPRESSION_WAVE_STEREO | LIBMPQ_COMPRESSION_HUFFMAN;
     options.compression_first = options.compression_next;
     TEST_CHECK(test_add_archive(&archive, path, version, 0) == 0);
-    TEST_CHECK(libmpq__file_add(archive, "tone.wav", wave, wave_size, &options) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "tone.wav", wave, wave_size, &options) == 0);
     result = libmpq__archive_close(archive);
     archive = NULL;
     TEST_CHECK(result == 0);
@@ -343,7 +343,8 @@ test_adpcm_rejects_invalid_wave(void)
     put_le32(wave + 40, 20000);
     TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_ONE, 0) == 0);
     TEST_CHECK(
-        libmpq__file_add(archive, "invalid.wav", wave, wave_size, &options) == LIBMPQ_ERROR_FORMAT
+        libmpq__archive_add_data(archive, "invalid.wav", wave, wave_size, &options) ==
+        LIBMPQ_ERROR_FORMAT
     );
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     free(wave);
@@ -401,22 +402,23 @@ main(void)
     wave[40] = 16;
     TEST_CHECK(test_add_archive(&inner_archive, inner_path, 0, 0) == 0);
     TEST_CHECK(
-        libmpq__file_add(inner_archive, "inner.txt", (const uint8_t *)"nested", 6, &raw) == 0
+        libmpq__archive_add_data(inner_archive, "inner.txt", (const uint8_t *)"nested", 6, &raw) ==
+        0
     );
     TEST_CHECK(libmpq__archive_close(inner_archive) == 0);
     TEST_CHECK(test_read_path(inner_path, &inner, &inner_size) == 0);
     TEST_CHECK(test_add_archive(&archive, path, 0, 0) == 0);
-    TEST_CHECK(libmpq__file_add(archive, "empty", NULL, 0, &raw) == 0);
-    TEST_CHECK(libmpq__file_add(archive, "exact", exact, sizeof(exact), &raw) == 0);
-    TEST_CHECK(libmpq__file_add(archive, "partial", partial, sizeof(partial), &raw) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "empty", NULL, 0, &raw) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "exact", exact, sizeof(exact), &raw) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "partial", partial, sizeof(partial), &raw) == 0);
     TEST_CHECK(
-        libmpq__file_add(
+        libmpq__archive_add_data(
             archive, "xml", (const uint8_t *)"<?xml version=\"1.0\"?><x/>",
             strlen("<?xml version=\"1.0\"?><x/>"), &raw
         ) == 0
     );
-    TEST_CHECK(libmpq__file_add(archive, "wave", wave, sizeof(wave), &raw) == 0);
-    TEST_CHECK(libmpq__file_add(archive, "nested.mpq", inner, inner_size, &raw) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "wave", wave, sizeof(wave), &raw) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "nested.mpq", inner, inner_size, &raw) == 0);
     free(inner);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);

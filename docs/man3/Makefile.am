@@ -34,8 +34,8 @@ man_MANS = \
 	libmpq__writer_begin.3 \
 	libmpq__writer_write.3 \
 	libmpq__writer_finish.3 \
-	libmpq__file_add.3 \
-	libmpq__file_add_path.3 \
+	libmpq__archive_add_data.3 \
+	libmpq__archive_add_path.3 \
 	libmpq__file_size_packed.3 \
 	libmpq__file_size_unpacked.3 \
 	libmpq__strerror.3 \

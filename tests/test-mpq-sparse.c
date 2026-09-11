@@ -202,7 +202,7 @@ test_archives(void)
                     if (flags & 2U)
                         options.flags |= LIBMPQ_FILE_FLAG_SINGLE;
                     snprintf(name, sizeof(name), "file-%u-%zu-%zu", flags, i, j);
-                    result = libmpq__file_add(archive, name, plain, lengths[i], &options);
+                    result = libmpq__archive_add_data(archive, name, plain, lengths[i], &options);
                     if (result != 0) {
                         fprintf(
                             stderr, "sparse configuration %u, %s: %d\n", configuration, name, result

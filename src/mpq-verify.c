@@ -27,6 +27,81 @@
 #include <string.h>
 #include <zlib.h>
 
+/* Reuse the same table loader and packed/decrypted checksum check as file
+ * verification. Do not publish outputs until reading and decoding succeed. */
+int32_t
+libmpq__verify_block(
+    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint32_t *checksum,
+    uint32_t *mismatches
+)
+{
+    uint32_t *checksums = NULL;
+    uint8_t *buffer = NULL;
+    uint32_t mismatch_mask = 0;
+    uint32_t stored = 0;
+    uint32_t storage;
+    libmpq__off_t size = 0;
+    libmpq__off_t transferred = 0;
+    int32_t status;
+
+    if (checksum != NULL)
+        *checksum = 0;
+    if (mismatches != NULL)
+        *mismatches = 0;
+    if (archive == NULL || checksum == NULL || mismatches == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (archive->write_mode)
+        return LIBMPQ_ERROR_NOT_INITIALIZED;
+    if (libmpq__reader_validate_block_number(archive, file_number, block_number) < 0)
+        return LIBMPQ_ERROR_EXIST;
+    storage = archive->mpq_block[archive->mpq_map[file_number].block_table_indices].flags;
+    if ((storage & LIBMPQ_FLAG_CRC) == 0 || (storage & LIBMPQ_FLAG_SINGLE) != 0 ||
+        (storage & (LIBMPQ_FLAG_COMPRESSED | LIBMPQ_FLAG_COMPRESS_PKZIP)) == 0)
+        return LIBMPQ_ERROR_EXIST;
+    status = libmpq__reader_offsets_acquire(archive, file_number, NULL);
+    if (status < 0)
+        return status;
+    status = libmpq__reader_sector_checksums(archive, file_number, &checksums);
+    if (status < 0)
+        goto cleanup;
+    if (checksums == NULL || checksums[block_number] == 0 ||
+        checksums[block_number] == UINT32_MAX) {
+        status = LIBMPQ_ERROR_EXIST;
+        goto cleanup;
+    }
+    stored = checksums[block_number];
+    status = libmpq__block_size_unpacked(archive, file_number, block_number, &size);
+    if (status < 0)
+        goto cleanup;
+    if (size < 0 || (uint64_t)size > SIZE_MAX || (uint64_t)size > UINT_MAX) {
+        status = LIBMPQ_ERROR_SIZE;
+        goto cleanup;
+    }
+    buffer = malloc(size == 0 ? 1 : (size_t)size);
+    if (buffer == NULL) {
+        status = LIBMPQ_ERROR_MALLOC;
+        goto cleanup;
+    }
+    status = libmpq__reader_block_read(
+        archive, file_number, block_number, buffer, size, &transferred, &stored, &mismatch_mask
+    );
+    if (status == LIBMPQ_SUCCESS && transferred != size)
+        status = LIBMPQ_ERROR_READ;
+cleanup:
+    free(buffer);
+    free(checksums);
+    {
+        int32_t close_status = libmpq__reader_offsets_release(archive, file_number);
+        if (status == LIBMPQ_SUCCESS)
+            status = close_status;
+    }
+    if (status == LIBMPQ_SUCCESS) {
+        *checksum = stored;
+        *mismatches = mismatch_mask;
+    }
+    return status;
+}
+
 /* Hash logical blocks through the existing reader without changing extraction.
  * Publish mismatch bits only after the entire verification operation succeeds. */
 int32_t

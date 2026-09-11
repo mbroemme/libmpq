@@ -122,9 +122,11 @@ test_roundtrip(uint32_t version, uint32_t flags, int mpqe)
     status = libmpq__writer_finish(writer);
     writer = NULL;
     REQUIRE(status == 0);
-    REQUIRE(libmpq__file_add(archive, "empty.txt", NULL, 0, NULL) == 0);
+    REQUIRE(libmpq__archive_add_data(archive, "empty.txt", NULL, 0, NULL) == 0);
     if (flags != 0)
-        REQUIRE(libmpq__file_add(archive, "(ATTRIBUTES)", NULL, 0, NULL) == LIBMPQ_ERROR_FORMAT);
+        REQUIRE(
+            libmpq__archive_add_data(archive, "(ATTRIBUTES)", NULL, 0, NULL) == LIBMPQ_ERROR_FORMAT
+        );
     status = libmpq__archive_close(archive);
     archive = NULL;
     REQUIRE(status == 0);
@@ -221,14 +223,14 @@ test_manual(int malformed, uint32_t storage)
     libmpq__store_le32(raw + 12, 0x12345678);
     REQUIRE(test_temp_path(path, sizeof(path), "attributes-manual") == 0);
     REQUIRE(libmpq__archive_create(&archive, path, &options) == 0);
-    REQUIRE(libmpq__file_add(archive, "hole", NULL, 0, NULL) == 0);
-    REQUIRE(libmpq__file_add(archive, "live", (const uint8_t *)"abc", 3, NULL) == 0);
+    REQUIRE(libmpq__archive_add_data(archive, "hole", NULL, 0, NULL) == 0);
+    REQUIRE(libmpq__archive_add_data(archive, "live", (const uint8_t *)"abc", 3, NULL) == 0);
     REQUIRE(
-        libmpq__file_add(
+        libmpq__archive_add_data(
             archive, "(attributes)", raw, !malformed && storage == 0 ? 20 : sizeof(raw), &file
         ) == 0
     );
-    REQUIRE(libmpq__file_add(archive, "tail", (const uint8_t *)"abc", 3, NULL) == 0);
+    REQUIRE(libmpq__archive_add_data(archive, "tail", (const uint8_t *)"abc", 3, NULL) == 0);
     archive->mpq_block[0].flags = 0;
     status = libmpq__archive_close(archive);
     archive = NULL;
@@ -296,7 +298,7 @@ test_verify(uint32_t version, uint32_t storage, uint32_t corrupt)
         libmpq__file_verify(archive, 0, LIBMPQ_VERIFY_ALL, &bits) == LIBMPQ_ERROR_NOT_INITIALIZED &&
         bits == 0
     );
-    REQUIRE(libmpq__file_add(archive, "payload", payload, sizeof(payload), &file) == 0);
+    REQUIRE(libmpq__archive_add_data(archive, "payload", payload, sizeof(payload), &file) == 0);
     if (corrupt & LIBMPQ_VERIFY_FILE_CRC32)
         archive->write_attributes[0].crc32 ^= 1;
     if (corrupt & LIBMPQ_VERIFY_FILE_MD5)
@@ -427,9 +429,9 @@ test_creation_options(uint32_t version, int mpqe)
         else
             status = libmpq__archive_create(&archive, path, &options);
         REQUIRE(status == 0);
-        REQUIRE(libmpq__file_add(archive, "first.txt", (const uint8_t *)"a", 1, NULL) == 0);
+        REQUIRE(libmpq__archive_add_data(archive, "first.txt", (const uint8_t *)"a", 1, NULL) == 0);
         REQUIRE(
-            libmpq__file_add(archive, "second.txt", (const uint8_t *)"b", 1, NULL) ==
+            libmpq__archive_add_data(archive, "second.txt", (const uint8_t *)"b", 1, NULL) ==
             (flags ? LIBMPQ_ERROR_SIZE : 0)
         );
         status = libmpq__archive_close(archive);

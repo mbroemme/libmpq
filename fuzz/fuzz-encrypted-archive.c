@@ -46,8 +46,8 @@ create_seed_archive(void)
     memset(payload, 'E', sizeof(payload));
     memcpy(payload, "RIFF", 4);
     if (libmpq__archive_create(&archive, seed_path, &archive_options) != 0 ||
-        libmpq__file_add(archive, "encrypted.raw", payload, sizeof(payload), &raw) != 0 ||
-        libmpq__file_add(
+        libmpq__archive_add_data(archive, "encrypted.raw", payload, sizeof(payload), &raw) != 0 ||
+        libmpq__archive_add_data(
             archive, "encrypted-compressed.bin", payload, sizeof(payload), &compressed
         ) != 0 ||
         libmpq__archive_close(archive) != 0) {

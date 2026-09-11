@@ -184,9 +184,9 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 libmpq__writer_begin() starts an archive member and returns an mpq_writer_s
 handle. Operate on that handle through libmpq__writer_write(),
 libmpq__writer_timestamp(), and libmpq__writer_finish(). The finish call
-consumes the handle regardless of its result. Archive member operations
-and one-shot helpers, including libmpq__file_add() and
-libmpq__file_add_path(), retain the libmpq__file_ prefix.
+consumes the handle regardless of its result. Use libmpq__archive_add_data()
+to add an in-memory source in one call, or libmpq__archive_add_path() to add
+a filesystem-path source.
 .PP
 Optional (attributes) metadata is supported for reading and creation in
 MPQ v1 and v2, including MPQE. Its payload version 100 is independent of
@@ -297,8 +297,8 @@ clones are created or used.
 .BR libmpq__writer_begin (3),
 .BR libmpq__writer_write (3),
 .BR libmpq__writer_finish (3),
-.BR libmpq__file_add (3),
-.BR libmpq__file_add_path (3),
+.BR libmpq__archive_add_data (3),
+.BR libmpq__archive_add_path (3),
 .BR libmpq__block_size_unpacked (3),
 .BR libmpq__block_read (3)
 .SH AUTHOR
