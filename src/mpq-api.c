@@ -159,9 +159,9 @@ libmpq__file_verify(
 /* Supply an explicit timestamp for an unfinished source file.
  * The writer owns the value; no filesystem timestamp is consulted. */
 int32_t
-libmpq__file_set_filetime(mpq_writer_s *writer, uint64_t filetime)
+libmpq__file_timestamp(mpq_writer_s *writer, uint64_t filetime)
 {
-    return libmpq__writer_file_set_filetime(writer, filetime);
+    return libmpq__writer_file_timestamp(writer, filetime);
 }
 
 /* Translate a libmpq return code into a static diagnostic string.

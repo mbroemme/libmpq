@@ -235,7 +235,7 @@ _configure("libmpq__archive_close", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__archive_attributes_flags", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_attributes", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_FileAttributes))
 _configure("libmpq__file_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
-_configure("libmpq__file_set_filetime", ctypes.c_int32, _VOID_PTR, ctypes.c_uint64)
+_configure("libmpq__file_timestamp", ctypes.c_int32, _VOID_PTR, ctypes.c_uint64)
 for _name in ("packed", "unpacked"):
     _configure("libmpq__archive_size_" + _name, ctypes.c_int32, _VOID_PTR, ctypes.POINTER(_OFF_T))
 _configure("libmpq__archive_offset", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(_OFF_T))
@@ -370,12 +370,12 @@ class WriterFile:
         self.expected_size, self.written_size = int(size), 0
         libmpq.libmpq__file_begin(archive._mpq, _as_bytes(name), size, ctypes.byref(options), ctypes.byref(self._writer))
 
-    def set_filetime(self, filetime):
-        """Set explicit unsigned FILETIME; generation must have been enabled."""
+    def timestamp(self, filetime):
+        """Set unsigned Windows FILETIME, not Unix time; generation must be enabled."""
         self._ensure_open()
         if not isinstance(filetime, int) or not 0 <= filetime <= 0xffffffffffffffff:
             raise ValueError("filetime must be an unsigned 64-bit integer")
-        libmpq.libmpq__file_set_filetime(self._writer, filetime)
+        libmpq.libmpq__file_timestamp(self._writer, filetime)
 
     def write(self, data):
         """Append bytes and reject writes beyond the declared logical size."""

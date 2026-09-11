@@ -1207,7 +1207,7 @@ libmpq__writer_file_write(mpq_writer_s *w, const uint8_t *buffer, libmpq__off_t 
 /* Assign FILETIME without importing filesystem state or altering file bytes.
  * Only the currently active writer can accept this metadata. */
 int32_t
-libmpq__writer_file_set_filetime(mpq_writer_s *writer, uint64_t filetime)
+libmpq__writer_file_timestamp(mpq_writer_s *writer, uint64_t filetime)
 {
     if (writer == NULL)
         return LIBMPQ_ERROR_EXIST;

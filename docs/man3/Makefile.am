@@ -6,7 +6,7 @@ man_MANS = \
 	libmpq__file_verify.3 \
 	libmpq__archive_attributes_flags.3 \
 	libmpq__file_attributes.3 \
-	libmpq__file_set_filetime.3 \
+	libmpq__file_timestamp.3 \
 	libmpq.3 \
 	libmpq__archive_compression_allowed.3 \
 	libmpq__archive_close.3 \

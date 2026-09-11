@@ -226,7 +226,7 @@ opt-in and never enables implicit verification during extraction.
 .PP
 CRC32 and MD5 cover source bytes before compression; lossy ADPCM output
 may differ. FILETIME defaults to zero and can be explicitly set through
-libmpq__file_set_filetime() before file completion. Path addition does not
+libmpq__file_timestamp() before file completion. Path addition does not
 import filesystem timestamps. Generated patch bits are zero; patch creation
 and application remain unsupported. Unused rows and the attributes entry
 itself have zero values. Finalization writes the listfile, attributes,
@@ -271,7 +271,7 @@ clones are created or used.
 .BR libmpq__archive_attributes_flags (3),
 .BR libmpq__file_attributes (3),
 .BR libmpq__file_verify (3),
-.BR libmpq__file_set_filetime (3),
+.BR libmpq__file_timestamp (3),
 .BR libmpq__archive_compression_allowed (3),
 .BR libmpq__version (3),
 .BR libmpq__strerror (3),

@@ -131,7 +131,8 @@ Normal extraction is unchanged; lossy ADPCM may differ from source hashes.
 
 `Archive.attributesFlags()` returns `Nullable!uint`; absence is null.
 `MpqFile.attributes()` returns an owned `FileAttributes` value. Call
-`MpqFileWriter.setFiletime(value)` before finishing a streaming file.
+`MpqFileWriter.timestamp(filetime)` before finishing a streaming file.
+Supply Windows FILETIME, not Unix time.
 
 Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
 `ATTRIBUTE_MD5`, and `ATTRIBUTE_PATCH_BIT` in

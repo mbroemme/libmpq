@@ -83,8 +83,9 @@ Normal extraction is unchanged; lossy ADPCM may differ from source hashes.
 
 `Archive.attributesFlags()` returns `OptionalInt`; absence is empty.
 `Archive.attributes(fileNumber)` returns an owned `FileAttributes` record.
-Call `MpqFileWriter.setFiletime(value)` before finishing a streaming file.
-Java FILETIME values retain unsigned native bits in a `long`.
+Call `MpqFileWriter.timestamp(filetime)` before finishing a streaming file.
+Supply Windows FILETIME, not Unix time. Java retains its unsigned native
+bits in a `long`.
 
 Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
 `ATTRIBUTE_MD5`, and `ATTRIBUTE_PATCH_BIT` in

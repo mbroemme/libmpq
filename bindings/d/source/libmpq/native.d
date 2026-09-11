@@ -192,7 +192,7 @@ extern(C) {
     int libmpq__archive_attributes_flags(mpq_archive_s* archive, uint* flags);
     int libmpq__file_attributes(mpq_archive_s* archive, uint number, mpq_file_attributes_s* attributes);
     int libmpq__file_verify(mpq_archive_s* archive, uint number, uint flags, uint* mismatches);
-    int libmpq__file_set_filetime(mpq_writer_s* writer, ulong filetime);
+    int libmpq__file_timestamp(mpq_writer_s* writer, ulong filetime);
 
     /** Return the static package version string. */
     const(char)* libmpq__version();

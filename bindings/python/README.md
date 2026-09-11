@@ -102,8 +102,8 @@ Operation errors raise existing exceptions. Zero does not prove availability.
 Normal extraction is unchanged; lossy ADPCM may differ from source hashes.
 
 `Archive.attributes_flags()` returns `None` when absent. `File.attributes()`
-returns an owned `FileAttributes` result. Use `WriterFile.set_filetime(value)`
-before finishing a streaming file.
+returns an owned `FileAttributes` result. Use `WriterFile.timestamp(filetime)`
+before finishing a streaming file. Supply Windows FILETIME, not Unix time.
 
 Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
 `ATTRIBUTE_MD5`, and `ATTRIBUTE_PATCH_BIT` in

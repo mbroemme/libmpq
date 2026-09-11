@@ -182,7 +182,7 @@ def test_creation_streaming_compression_clone_and_blocks(tmp_path):
                                                     mpq.COMPRESSION_LZMA))
         writer.add_path("path.txt", source_path)
         with writer.begin("stream.bin", len(streamed)) as stream:
-            stream.set_filetime(0xfedcba9876543210)
+            stream.timestamp(0xfedcba9876543210)
             stream.write(streamed[:1000])
             stream.write(streamed[1000:])
 

@@ -59,7 +59,7 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
     scope(exit) remove(sourcePath);
     archive.addPath("source.txt", sourcePath);
     auto writer = archive.begin("stream.bin", 6);
-    writer.setFiletime(0xfedcba9876543210UL);
+    writer.timestamp(0xfedcba9876543210UL);
     writer.write(cast(const(ubyte)[])"abc");
     writer.write(cast(const(ubyte)[])"def");
     writer.finish();

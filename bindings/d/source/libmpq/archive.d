@@ -346,10 +346,10 @@ class File {
 
 /** A streaming writer returned by `Archive.begin`. */
 class MpqFileWriter {
-    /** Set unsigned FILETIME explicitly; the archive must enable its generation. */
-    void setFiletime(ulong filetime) {
+    /** Set Windows FILETIME, not Unix time; the archive must enable its generation. */
+    void timestamp(ulong filetime) {
         ensureActive();
-        checkStatus(libmpq__file_set_filetime(handle, filetime), "libmpq__file_set_filetime");
+        checkStatus(libmpq__file_timestamp(handle, filetime), "libmpq__file_timestamp");
     }
     private mpq_writer_s* handle; private off_t declaredSize; private off_t writtenSize; private bool finishedState;
     private this(mpq_writer_s* handle, off_t declaredSize) { this.handle = handle; this.declaredSize = declaredSize; }

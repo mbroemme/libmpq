@@ -230,7 +230,7 @@ class LibmpqTest {
             Mpq.ATTRIBUTE_FILETIME | Mpq.ATTRIBUTE_MD5);
         try (Archive archive = Archive.create(path, options)) {
             try (MpqFileWriter writer = archive.begin("stream.txt", payload.length, FileOptions.raw())) {
-                writer.setFiletime(0xfedcba9876543210L);
+                writer.timestamp(0xfedcba9876543210L);
                 writer.write(payload);
             }
         }

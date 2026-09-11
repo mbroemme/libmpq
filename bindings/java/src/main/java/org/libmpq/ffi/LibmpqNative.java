@@ -56,7 +56,7 @@ public final class LibmpqNative {
     private static final MethodHandle VERSION;
     private static final MethodHandle ARCHIVE_ATTRIBUTES_FLAGS;
     private static final MethodHandle FILE_ATTRIBUTES;
-    private static final MethodHandle FILE_SET_FILETIME;
+    private static final MethodHandle FILE_TIMESTAMP;
 
     /** 40-byte native result with explicit reserved bytes, not the disk layout. */
     public static final MemoryLayout FILE_ATTRIBUTES_LAYOUT = attributesLayout();
@@ -114,7 +114,7 @@ public final class LibmpqNative {
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS));
         FILE_VERIFY = function(linker, lookup, "libmpq__file_verify",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, C_INT, ValueLayout.ADDRESS));
-        FILE_SET_FILETIME = function(linker, lookup, "libmpq__file_set_filetime",
+        FILE_TIMESTAMP = function(linker, lookup, "libmpq__file_timestamp",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_LONG));
         VERSION = function(linker, lookup, "libmpq__version",
                            FunctionDescriptor.of(ValueLayout.ADDRESS));
@@ -359,9 +359,9 @@ public final class LibmpqNative {
         return callInt(FILE_VERIFY, archive, number, flags, mismatches);
     }
 
-    /** Supply the unsigned FILETIME bit pattern to an active writer. */
-    public static int fileSetFiletime(MemorySegment writer, long filetime) {
-        return callInt(FILE_SET_FILETIME, writer, filetime);
+    /** Supply unsigned Windows FILETIME bits, not Unix time, to an active writer. */
+    public static int fileTimestamp(MemorySegment writer, long filetime) {
+        return callInt(FILE_TIMESTAMP, writer, filetime);
     }
     /** Adds a complete native buffer as one archive entry. */
     public static int fileAdd(MemorySegment archive, MemorySegment name, MemorySegment buffer,

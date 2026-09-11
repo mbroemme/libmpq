@@ -278,10 +278,10 @@ extern LIBMPQ_API int32_t libmpq__file_verify(
     mpq_archive_s *archive, uint32_t file_number, uint32_t verify_flags, uint32_t *mismatches
 );
 
-/* Set FILETIME on an active file writer before finishing it. Generation of
+/* Set Windows FILETIME, not Unix time, on an active file writer. Generation of
  * FILETIME must be enabled or FORMAT is returned. The default is zero;
  * neither this API nor path-based addition imports filesystem metadata. */
-extern LIBMPQ_API int32_t libmpq__file_set_filetime(mpq_writer_s *writer, uint64_t filetime);
+extern LIBMPQ_API int32_t libmpq__file_timestamp(mpq_writer_s *writer, uint64_t filetime);
 
 /*
  * Signed public offset type used for archive positions and file sizes. A
