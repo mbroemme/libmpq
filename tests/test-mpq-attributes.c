@@ -111,7 +111,7 @@ test_roundtrip(uint32_t version, uint32_t flags, int mpqe)
     else
         status = libmpq__archive_create(&archive, path, &options);
     REQUIRE(status == 0);
-    REQUIRE(libmpq__archive_attributes_flags(archive, &found) == LIBMPQ_ERROR_NOT_INITIALIZED);
+    REQUIRE(libmpq__archive_attributes(archive, &found) == LIBMPQ_ERROR_NOT_INITIALIZED);
     REQUIRE(libmpq__writer_begin(archive, "digits.txt", 9, &file, &writer) == 0);
     REQUIRE(
         libmpq__writer_timestamp(writer, UINT64_C(0xfedcba9876543210)) ==
@@ -135,7 +135,7 @@ test_roundtrip(uint32_t version, uint32_t flags, int mpqe)
     else
         status = libmpq__archive_open(&archive, path, -1);
     REQUIRE(status == 0);
-    REQUIRE(libmpq__archive_attributes_flags(archive, &found) == (flags ? 0 : LIBMPQ_ERROR_EXIST));
+    REQUIRE(libmpq__archive_attributes(archive, &found) == (flags ? 0 : LIBMPQ_ERROR_EXIST));
     if (version == LIBMPQ_ARCHIVE_VERSION_ONE && flags != 0)
         REQUIRE(archive->mpq_header.hash_table_offset > archive->mpq_header.header_size);
     REQUIRE(found == flags);
@@ -237,9 +237,7 @@ test_manual(int malformed, uint32_t storage)
     REQUIRE(status == 0);
     REQUIRE(libmpq__archive_open(&archive, path, 0) == 0);
     REQUIRE(libmpq__file_number(archive, "live", &number) == 0 && number == 0);
-    REQUIRE(
-        libmpq__archive_attributes_flags(archive, &flags) == (malformed ? LIBMPQ_ERROR_FORMAT : 0)
-    );
+    REQUIRE(libmpq__archive_attributes(archive, &flags) == (malformed ? LIBMPQ_ERROR_FORMAT : 0));
     REQUIRE(
         libmpq__file_attributes(archive, number, &attributes) ==
         (malformed ? LIBMPQ_ERROR_FORMAT : 0)
@@ -443,9 +441,7 @@ test_creation_options(uint32_t version, int mpqe)
             status = libmpq__archive_open(&archive, path, 0);
         REQUIRE(status == 0);
         REQUIRE(libmpq__archive_files(archive, &count) == 0 && count == 2);
-        REQUIRE(
-            libmpq__archive_attributes_flags(archive, &count) == (flags ? 0 : LIBMPQ_ERROR_EXIST)
-        );
+        REQUIRE(libmpq__archive_attributes(archive, &count) == (flags ? 0 : LIBMPQ_ERROR_EXIST));
         REQUIRE(count == flags);
         REQUIRE(libmpq__archive_close(archive) == 0);
         archive = NULL;
@@ -474,7 +470,7 @@ main(void)
 
     memset(&unavailable, 0xff, sizeof(unavailable));
     flags = UINT32_MAX;
-    TEST_CHECK(libmpq__archive_attributes_flags(NULL, &flags) == LIBMPQ_ERROR_EXIST && flags == 0);
+    TEST_CHECK(libmpq__archive_attributes(NULL, &flags) == LIBMPQ_ERROR_EXIST && flags == 0);
     TEST_CHECK(libmpq__file_attributes(NULL, 0, &unavailable) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(unavailable.flags == 0 && unavailable.crc32 == 0 && unavailable.filetime == 0);
     TEST_CHECK(memcmp(unavailable.reserved, "\0\0\0\0", sizeof(unavailable.reserved)) == 0);

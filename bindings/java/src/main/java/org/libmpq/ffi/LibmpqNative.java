@@ -54,7 +54,7 @@ public final class LibmpqNative {
         C_SHORT.withName("platform"));
 
     private static final MethodHandle VERSION;
-    private static final MethodHandle ARCHIVE_ATTRIBUTES_FLAGS;
+    private static final MethodHandle ARCHIVE_ATTRIBUTES;
     private static final MethodHandle FILE_ATTRIBUTES;
     private static final MethodHandle WRITER_TIMESTAMP;
 
@@ -110,7 +110,7 @@ public final class LibmpqNative {
     static {
         SymbolLookup lookup = loadLibrary();
         Linker linker = LINKER;
-        ARCHIVE_ATTRIBUTES_FLAGS = uintMetadata(linker, lookup, "libmpq__archive_attributes_flags");
+        ARCHIVE_ATTRIBUTES = uintMetadata(linker, lookup, "libmpq__archive_attributes");
         FILE_ATTRIBUTES = function(linker, lookup, "libmpq__file_attributes",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS));
         FILE_VERIFY = function(linker, lookup, "libmpq__file_verify",
@@ -349,8 +349,8 @@ public final class LibmpqNative {
     public static int writerFinish(MemorySegment writer) { return callInt(WRITER_FINISH, writer); }
 
     /** Query attributes presence flags without treating missing metadata as zero flags. */
-    public static int archiveAttributesFlags(MemorySegment archive, MemorySegment flags) {
-        return callInt(ARCHIVE_ATTRIBUTES_FLAGS, archive, flags);
+    public static int archiveAttributes(MemorySegment archive, MemorySegment flags) {
+        return callInt(ARCHIVE_ATTRIBUTES, archive, flags);
     }
 
     /** Read a native aligned attributes result for one public file number. */

@@ -142,7 +142,7 @@ class LibmpqTest {
         try (Archive archive = Archive.open(fixture)) {
             int number = archive.fileNumber(hash);
             byte[] data = archive.readFile(number);
-            assertEquals(7, archive.attributesFlags().orElseThrow());
+            assertEquals(7, archive.attributes().orElseThrow());
             FileAttributes attributes = archive.attributes(number);
             assertEquals(0, archive.verify(number));
             assertEquals(0, archive.verify(number, Mpq.VERIFY_FILE_MD5));
@@ -199,7 +199,7 @@ class LibmpqTest {
         }
         try (Archive archive = Archive.openMpqe(path, code, 0)) {
             assertEquals(2, archive.version());
-            assertEquals(Mpq.ATTRIBUTE_CRC32, archive.attributesFlags().orElseThrow());
+            assertEquals(Mpq.ATTRIBUTE_CRC32, archive.attributes().orElseThrow());
             assertEquals(0, archive.verify(archive.fileNumber("payload.txt")));
             assertArrayEquals(payload, archive.readFile(archive.fileNumber("payload.txt")));
         }

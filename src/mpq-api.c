@@ -109,7 +109,7 @@ libmpq__archive_compression_allowed(
 /* Return the optional attributes header flags without affecting normal reads.
  * Absence and malformed metadata are distinct negative results. */
 int32_t
-libmpq__archive_attributes_flags(mpq_archive_s *archive, uint32_t *flags)
+libmpq__archive_attributes(mpq_archive_s *archive, uint32_t *flags)
 {
     int32_t result;
     if (flags != NULL)
@@ -139,7 +139,7 @@ libmpq__file_attributes(mpq_archive_s *archive, uint32_t number, mpq_file_attrib
         return LIBMPQ_ERROR_NOT_INITIALIZED;
     if (libmpq__reader_validate_file_number(archive, number) != LIBMPQ_SUCCESS)
         return LIBMPQ_ERROR_EXIST;
-    result = libmpq__archive_attributes_flags(archive, &flags);
+    result = libmpq__archive_attributes(archive, &flags);
     if (result == LIBMPQ_SUCCESS)
         libmpq__attributes_get(
             archive->attributes, archive->mpq_map[number].block_table_indices, attributes
@@ -697,10 +697,10 @@ libmpq__block_size_unpacked(
 /* Query stored sector bytes through the reader's offset-table lifecycle. */
 int32_t
 libmpq__block_size_packed(
-    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, libmpq__off_t *size
+    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, libmpq__off_t *packed_size
 )
 {
-    return libmpq__reader_block_size_packed(archive, file_number, block_number, size);
+    return libmpq__reader_block_size_packed(archive, file_number, block_number, packed_size);
 }
 
 /* Report the serialized method through the reader's packed-sector inspection. */

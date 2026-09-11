@@ -111,7 +111,7 @@ raw storage/fallback, without decoding. LZMA is `0x12`, not the writer selector.
 `file.block_size_packed(block)` returns stored data bytes, excluding offset
 and checksum tables. Use `file.block_size(block)` for the decoded size.
 
-`Archive.attributes_flags()` returns `None` when absent. `File.attributes()`
+`Archive.attributes()` returns `None` when absent. `File.attributes()`
 returns an owned `FileAttributes` result. Use `WriterFile.timestamp(filetime)`
 before finishing a streaming file. Supply Windows FILETIME, not Unix time.
 

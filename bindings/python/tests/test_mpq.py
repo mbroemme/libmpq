@@ -126,7 +126,7 @@ def test_fixture_metadata_and_extraction(name, version):
         with pytest.raises(ValueError):
             entry.block_compression(-1)
         attributes = entry.attributes()
-        assert archive.attributes_flags() == (7 if version == 1 else 15)
+        assert archive.attributes() == (7 if version == 1 else 15)
         assert attributes.crc32 == zlib.crc32(entry.read())
         assert attributes.md5 == hashlib.md5(entry.read()).digest()
         assert attributes.filetime == 132537600000000000
@@ -161,7 +161,7 @@ def test_mpqe_fixture_metadata_extraction_and_clone(name, version, offset):
     """MPQE opening uses borrowed credentials and supports independent clones."""
     code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
     with mpq.Archive.open_mpqe(FIXTURES / name, memoryview(code), offset) as archive:
-        assert archive.attributes_flags() == (7 if version == 1 else 15)
+        assert archive.attributes() == (7 if version == 1 else 15)
         assert archive.version == version
         assert b"libmpq" in archive["overview.txt"].read()
         assert archive["overview.txt"].verify() == 0
@@ -191,7 +191,7 @@ def test_mpqe_creation_replaces_destination(tmp_path):
         writer.add("payload.txt", b"Python MPQE writer regression\n")
     with mpq.Archive.open_mpqe(path, code, offset=0) as archive:
         assert archive.version == 2
-        assert archive.attributes_flags() == mpq.ATTRIBUTE_CRC32
+        assert archive.attributes() == mpq.ATTRIBUTE_CRC32
         assert archive["payload.txt"].read() == b"Python MPQE writer regression\n"
     with pytest.raises(mpq.LibmpqDecryptError):
         mpq.Writer.create_mpqe(path, code[:-1])

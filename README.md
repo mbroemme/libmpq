@@ -66,7 +66,7 @@ options.attributes = LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_FILETIME |
 
 Zero `options.attributes` disables generation. Any nonzero combination
 creates one `(attributes)` file and consumes one reserved file slot.
-Use `libmpq__archive_attributes_flags()` to query available arrays and
+Use `libmpq__archive_attributes()` to query available arrays and
 `libmpq__file_attributes()` to read a file's stored values. FILETIME is
 explicit/default-zero; set it through `libmpq__writer_timestamp()` using Windows
 FILETIME, not Unix time.

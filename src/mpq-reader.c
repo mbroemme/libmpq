@@ -131,7 +131,7 @@ libmpq__reader_file_read(
  * reuse the reader's parsed offsets and exclude the checksum-table extent. */
 int32_t
 libmpq__reader_block_size_packed(
-    mpq_archive_s *archive, uint32_t number, uint32_t block, libmpq__off_t *size
+    mpq_archive_s *archive, uint32_t number, uint32_t block, libmpq__off_t *packed_size
 )
 {
     uint32_t index;
@@ -140,9 +140,9 @@ libmpq__reader_block_size_packed(
     uint64_t length;
     int32_t status;
 
-    if (size != NULL)
-        *size = 0;
-    if (archive == NULL || size == NULL)
+    if (packed_size != NULL)
+        *packed_size = 0;
+    if (archive == NULL || packed_size == NULL)
         return LIBMPQ_ERROR_EXIST;
     if (archive->write_mode)
         return LIBMPQ_ERROR_NOT_INITIALIZED;
@@ -180,7 +180,7 @@ libmpq__reader_block_size_packed(
     status = libmpq__reader_validate_payload_range(archive, index, start, length);
     if (status < 0)
         return status;
-    *size = (libmpq__off_t)length;
+    *packed_size = (libmpq__off_t)length;
     return LIBMPQ_SUCCESS;
 }
 

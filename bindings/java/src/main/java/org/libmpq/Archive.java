@@ -54,11 +54,11 @@ public final class Archive implements AutoCloseable {
     }
 
     /** Return flags, or empty when absent; malformed attributes are still errors. */
-    public java.util.OptionalInt attributesFlags() throws LibmpqException {
+    public java.util.OptionalInt attributes() throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment flags = arena.allocate(ValueLayout.JAVA_INT);
-            int status = LibmpqNative.archiveAttributesFlags(handle, flags);
+            int status = LibmpqNative.archiveAttributes(handle, flags);
             if (status == Mpq.ERROR_EXIST) return java.util.OptionalInt.empty();
             Support.check(status);
             return java.util.OptionalInt.of(flags.get(ValueLayout.JAVA_INT, 0));

@@ -139,7 +139,7 @@ raw storage/fallback, without decoding. LZMA is `0x12`, not the writer selector.
 `file.blockSizePacked(blockNumber)` returns stored data bytes, excluding
 offset and checksum tables, without decoding the sector.
 
-`Archive.attributesFlags()` returns `Nullable!uint`; absence is null.
+`Archive.attributes()` returns `Nullable!uint`; absence is null.
 `MpqFile.attributes()` returns an owned `FileAttributes` value. Call
 `MpqFileWriter.timestamp(filetime)` before finishing a streaming file.
 Supply Windows FILETIME, not Unix time.

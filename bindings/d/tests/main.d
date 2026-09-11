@@ -82,7 +82,7 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
     assert(reopened.metadata().version_ == (archiveVersion + 1));
     assert(reopened.fileCount() >= 4);
     assert(reopened.file("stream.bin").read() == cast(const(ubyte)[])"abcdef");
-    assert(reopened.attributesFlags().get() == 15);
+    assert(reopened.attributes().get() == 15);
     assert(reopened.file("stream.bin").verify() == 0);
     assert(reopened.file("stream.bin").verify(VERIFY_FILE_CRC32) == 0);
     assert(reopened.file("stream.bin").verify(VERIFY_SECTOR_CRC) == 0);
@@ -230,7 +230,7 @@ private void testMpqeCreate() {
     auto reopened = Archive.openMpqe(path, authCode, 0);
     scope(exit) { reopened.close(); remove(path); }
     assert(reopened.version_() == 2);
-    assert(reopened.attributesFlags().get() == ATTRIBUTE_CRC32);
+    assert(reopened.attributes().get() == ATTRIBUTE_CRC32);
     assert(reopened.file("payload.txt").read() ==
            cast(const(ubyte)[])"D MPQE writer regression\n");
 }

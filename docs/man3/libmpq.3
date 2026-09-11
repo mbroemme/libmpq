@@ -196,7 +196,7 @@ LIBMPQ_ATTRIBUTE_CRC32, _FILETIME, _MD5, and _PATCH_BIT
 Zero disables generation. Any nonzero combination creates one (attributes)
 file and consumes one reserved slot. Unknown attribute bits are rejected.
 .PP
-libmpq__archive_attributes_flags() queries header flags;
+libmpq__archive_attributes() queries header flags;
 libmpq__file_attributes() returns available per-file CRC32, FILETIME,
 MD5, and patch-bit values. Loading is lazy: missing or malformed metadata
 does not prevent ordinary extraction. Availability flags distinguish zero
@@ -270,7 +270,7 @@ Cloning reopens the original backing path and reparses its metadata; it is
 not snapshot semantics. The path must remain readable and unchanged while
 clones are created or used.
 .SH SEE ALSO
-.BR libmpq__archive_attributes_flags (3),
+.BR libmpq__archive_attributes (3),
 .BR libmpq__file_attributes (3),
 .BR libmpq__file_verify (3),
 .BR libmpq__block_verify (3),

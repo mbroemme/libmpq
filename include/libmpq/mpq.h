@@ -255,8 +255,7 @@ typedef struct
  * FORMAT for invalid metadata, and stores its header flags in *flags on
  * success. Ordinary archive opening and extraction do not depend on
  * attributes validity. */
-extern LIBMPQ_API int32_t
-libmpq__archive_attributes_flags(mpq_archive_s *mpq_archive, uint32_t *flags);
+extern LIBMPQ_API int32_t libmpq__archive_attributes(mpq_archive_s *mpq_archive, uint32_t *flags);
 
 /* Return available stored attributes for a public file number on a reader.
  * Legacy missing entries return zero flags, not invented checksum values.
@@ -608,9 +607,9 @@ extern LIBMPQ_API int32_t libmpq__block_size_unpacked(
 /* Return one block's stored byte size, excluding offset/checksum tables.
  * Compressed sector offsets are loaded internally; raw and single-unit sizes
  * come from archive metadata. Encryption does not change the size. A non-NULL
- * size output is initialized to zero and remains zero on any failure. */
+ * packed_size output is initialized to zero and remains zero on any failure. */
 extern LIBMPQ_API int32_t libmpq__block_size_packed(
-    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, libmpq__off_t *size
+    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, libmpq__off_t *packed_size
 );
 
 /* Return the stored method byte, zero for raw storage (including fallback),

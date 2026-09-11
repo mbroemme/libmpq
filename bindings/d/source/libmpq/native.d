@@ -189,7 +189,7 @@ static assert(mpq_file_attributes_s.reserved.offsetof == 36 &&
 extern(C) {
 
     /** Optional metadata queries and explicit writer FILETIME. */
-    int libmpq__archive_attributes_flags(mpq_archive_s* archive, uint* flags);
+    int libmpq__archive_attributes(mpq_archive_s* archive, uint* flags);
     int libmpq__file_attributes(mpq_archive_s* archive, uint number, mpq_file_attributes_s* attributes);
     int libmpq__file_verify(mpq_archive_s* archive, uint number, uint flags, uint* mismatches);
     int libmpq__block_verify(mpq_archive_s* archive, uint number, uint block,

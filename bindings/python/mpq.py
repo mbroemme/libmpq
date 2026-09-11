@@ -232,7 +232,7 @@ _configure("libmpq__archive_add_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_
 _configure("libmpq__archive_add_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__archive_clone", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), _VOID_PTR)
 _configure("libmpq__archive_close", ctypes.c_int32, _VOID_PTR)
-_configure("libmpq__archive_attributes_flags", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
+_configure("libmpq__archive_attributes", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_attributes", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_FileAttributes))
 _configure("libmpq__file_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__block_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32))
@@ -757,11 +757,11 @@ class Archive:
         archive._load_metadata()
         return archive
 
-    def attributes_flags(self):
+    def attributes(self):
         """Return stored flags, or None if absent; malformed metadata raises."""
         self._ensure_open()
         try:
-            return _read_value(libmpq.libmpq__archive_attributes_flags, ctypes.c_uint32, self._mpq)
+            return _read_value(libmpq.libmpq__archive_attributes, ctypes.c_uint32, self._mpq)
         except LibmpqNotFoundError:
             return None
 

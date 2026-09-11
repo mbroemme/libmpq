@@ -60,11 +60,11 @@ struct FileMetadata {
  */
 class Archive {
     /** Return flags, or a null value when absent; malformed metadata still throws. */
-    Nullable!uint attributesFlags() {
+    Nullable!uint attributes() {
         uint flags;
-        auto status = libmpq__archive_attributes_flags(nativeHandle(), &flags);
+        auto status = libmpq__archive_attributes(nativeHandle(), &flags);
         if (status == ERROR_EXIST) return Nullable!uint.init;
-        checkStatus(status, "libmpq__archive_attributes_flags");
+        checkStatus(status, "libmpq__archive_attributes");
         return nullable(flags);
     }
     private mpq_archive_s* handle;

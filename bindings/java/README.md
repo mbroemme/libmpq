@@ -94,7 +94,7 @@ the writer selector.
 excluding offset and checksum tables. `archive.blockSize(...)` remains the
 decoded size used for read buffers.
 
-`Archive.attributesFlags()` returns `OptionalInt`; absence is empty.
+`Archive.attributes()` returns `OptionalInt`; absence is empty.
 `Archive.attributes(fileNumber)` returns an owned `FileAttributes` record.
 Call `MpqFileWriter.timestamp(filetime)` before finishing a streaming file.
 Supply Windows FILETIME, not Unix time. Java retains its unsigned native

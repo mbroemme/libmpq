@@ -7,7 +7,7 @@ man_MANS = \
 	libmpq__block_compression.3 \
 	libmpq__block_verify.3 \
 	libmpq__file_verify.3 \
-	libmpq__archive_attributes_flags.3 \
+	libmpq__archive_attributes.3 \
 	libmpq__file_attributes.3 \
 	libmpq__writer_timestamp.3 \
 	libmpq.3 \

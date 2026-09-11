@@ -25,7 +25,7 @@
 #include <stdint.h>
 
 int32_t libmpq__reader_block_size_packed(
-    mpq_archive_s *archive, uint32_t number, uint32_t block, libmpq__off_t *size
+    mpq_archive_s *archive, uint32_t number, uint32_t block, libmpq__off_t *packed_size
 );
 
 int32_t libmpq__reader_block_compression(
