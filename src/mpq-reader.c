@@ -184,6 +184,74 @@ libmpq__reader_block_size_packed(
     return LIBMPQ_SUCCESS;
 }
 
+/* Read all or a prefix of an already bounded packed sector. Encryption uses
+ * complete words; a short final word remains literal as in the full reader. */
+static int32_t
+read_packed(mpq_archive_s *archive, uint32_t number, uint32_t block, uint8_t *buffer, size_t size)
+{
+    uint32_t index = archive->mpq_map[number].block_table_indices;
+    uint32_t seed;
+    uint64_t offset = (uint64_t)archive->archive_offset + archive->mpq_block[index].offset +
+                      ((uint64_t)archive->mpq_block_ex[index].offset_high << 32) +
+                      archive->mpq_file[number]->packed_offset[block];
+    int32_t status = libmpq__stream_read_at(archive->stream, offset, buffer, size);
+    if (status < 0)
+        return status;
+    if ((archive->mpq_block[index].flags & LIBMPQ_FLAG_ENCRYPTED) != 0) {
+        if (libmpq__reader_get_block_seed(archive, number, block, &seed) < 0 ||
+            libmpq__crypto_decrypt_block(buffer, (uint32_t)size, seed) < 0)
+            return LIBMPQ_ERROR_DECRYPT;
+    }
+    return LIBMPQ_SUCCESS;
+}
+
+/* Inspect the stored method without a sector-sized buffer or decompression. */
+int32_t
+libmpq__reader_block_compression(
+    mpq_archive_s *archive, uint32_t number, uint32_t block, uint32_t *compression
+)
+{
+    libmpq__off_t packed;
+    libmpq__off_t unpacked;
+    uint32_t flags;
+    uint8_t prefix[4];
+    size_t prefix_size;
+    int32_t status;
+
+    if (compression != NULL)
+        *compression = 0;
+    if (compression == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    status = libmpq__reader_block_size_packed(archive, number, block, &packed);
+    if (status < 0)
+        return status;
+    status = libmpq__block_size_unpacked(archive, number, block, &unpacked);
+    if (status < 0)
+        return status;
+    flags = archive->mpq_block[archive->mpq_map[number].block_table_indices].flags;
+    if (packed >= unpacked ||
+        (flags & (LIBMPQ_FLAG_COMPRESS_MULTI | LIBMPQ_FLAG_COMPRESS_PKZIP)) == 0)
+        return LIBMPQ_SUCCESS;
+    if (packed == 0)
+        return LIBMPQ_ERROR_FORMAT;
+    if ((flags & LIBMPQ_FLAG_COMPRESS_MULTI) == 0) {
+        *compression = LIBMPQ_COMPRESSION_PKZIP;
+        return LIBMPQ_SUCCESS;
+    }
+    status = libmpq__reader_offsets_acquire(archive, number, NULL);
+    if (status < 0)
+        return status;
+    prefix_size = (flags & LIBMPQ_FLAG_ENCRYPTED) ? sizeof(prefix) : 1U;
+    if (packed < (libmpq__off_t)prefix_size)
+        prefix_size = (size_t)packed;
+    status = read_packed(archive, number, block, prefix, prefix_size);
+    (void)libmpq__reader_offsets_release(archive, number);
+    if (status < 0)
+        return status;
+    *compression = prefix[0];
+    return LIBMPQ_SUCCESS;
+}
+
 /* Sector checksums follow packed sectors and are not encrypted, even when
  * file data is encrypted. Reuse the offset table loaded by open_named(). */
 static int32_t sector_checksums(mpq_archive_s *archive, uint32_t number, uint32_t **checksums);
@@ -304,13 +372,11 @@ read_block(
 
     /* Packed input buffer, size bookkeeping and block decryption state. */
     uint8_t *in_buf;
-    uint32_t seed = 0;
     uint32_t encrypted = 0;
     uint32_t compressed = 0;
     uint32_t imploded = 0;
     int32_t tb = 0;
     uint8_t use_out_buf = FALSE;
-    libmpq__off_t block_offset = 0;
     libmpq__off_t in_size = 0;
     libmpq__off_t unpacked_size = 0;
 
@@ -355,13 +421,6 @@ read_block(
         ) < 0) {
         return LIBMPQ_ERROR_READ;
     }
-    block_offset =
-        mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].offset +
-        (((long long)mpq_archive
-              ->mpq_block_ex[mpq_archive->mpq_map[file_number].block_table_indices]
-              .offset_high)
-         << 32) +
-        mpq_archive->mpq_file[file_number]->packed_offset[block_number];
 
     libmpq__file_encrypted(mpq_archive, file_number, &encrypted);
     libmpq__file_compressed(mpq_archive, file_number, &compressed);
@@ -380,32 +439,11 @@ read_block(
         }
     }
 
-    if ((tb = libmpq__stream_read_at(
-             mpq_archive->stream, (uint64_t)block_offset + (uint64_t)mpq_archive->archive_offset,
-             in_buf, (size_t)in_size
-         )) < 0) {
+    if ((tb = read_packed(mpq_archive, file_number, block_number, in_buf, (size_t)in_size)) < 0) {
         if (!use_out_buf) {
             free(in_buf);
         }
         return tb;
-    }
-
-    if (encrypted) {
-
-        /* Encrypted blocks use a seed derived from the file and block number. */
-        if (libmpq__reader_get_block_seed(mpq_archive, file_number, block_number, &seed) < 0) {
-            if (!use_out_buf) {
-                free(in_buf);
-            }
-            return LIBMPQ_ERROR_DECRYPT;
-        }
-
-        if (libmpq__crypto_decrypt_block(in_buf, (uint32_t)in_size, seed) < 0) {
-            if (!use_out_buf) {
-                free(in_buf);
-            }
-            return LIBMPQ_ERROR_DECRYPT;
-        }
     }
 
     /* MPQ sector CRCs are Adler-32 over decrypted packed bytes, not CRC32.

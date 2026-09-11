@@ -313,6 +313,10 @@ extern(C) {
     int libmpq__block_size_packed(mpq_archive_s* archive, uint number,
                                 uint block, off_t* value);
 
+    /** Query the stored method byte, or zero for raw fallback. */
+    int libmpq__block_compression(mpq_archive_s* archive, uint number,
+                                 uint block, uint* compression);
+
     /** Query one block's unpacked size. */
     int libmpq__block_size_unpacked(mpq_archive_s* archive, uint number,
                                     uint block, off_t* value);

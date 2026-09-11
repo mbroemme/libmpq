@@ -375,6 +375,16 @@ public final class Archive implements AutoCloseable {
         }
     }
 
+    /** Returns the stored method byte, not a writer selector; zero means raw. */
+    public int blockCompression(int number, int block) throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment result = arena.allocate(ValueLayout.JAVA_INT);
+            Support.check(LibmpqNative.blockCompression(handle, number, block, result));
+            return result.get(ValueLayout.JAVA_INT, 0);
+        }
+    }
+
     /** Return one block's unpacked size. */
     public long blockSize(int number, int block) throws LibmpqException {
         checkOpen();

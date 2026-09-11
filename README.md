@@ -100,6 +100,10 @@ It returns `LIBMPQ_ERROR_EXIST` for unavailable checksums; success returns
 zero or `LIBMPQ_VERIFY_SECTOR_CRC` in `mismatches`. Both outputs stay zero
 on errors. No calculated checksum is exposed.
 
+Use `libmpq__block_compression()` to inspect the stored method without decoding.
+Zero means raw storage/fallback; LZMA is returned as on-disk `0x12`, not the
+writer selector. In MPQ v1, `0x12` retains its legacy bzip2/zlib meaning.
+
 `libmpq__block_size_packed()` reports a block's stored data bytes, excluding
 offset and checksum tables. `libmpq__block_size_unpacked()` reports the
 decoded size needed for a `libmpq__block_read()` output buffer.

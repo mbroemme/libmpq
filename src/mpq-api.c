@@ -703,6 +703,15 @@ libmpq__block_size_packed(
     return libmpq__reader_block_size_packed(archive, file_number, block_number, size);
 }
 
+/* Report the serialized method through the reader's packed-sector inspection. */
+int32_t
+libmpq__block_compression(
+    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint32_t *compression
+)
+{
+    return libmpq__reader_block_compression(archive, file_number, block_number, compression);
+}
+
 /* Normal block reads never enable explicit checksum verification. */
 int32_t
 libmpq__block_read(

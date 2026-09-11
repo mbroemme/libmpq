@@ -111,6 +111,10 @@ class LibmpqTest {
                     long packed = raw.blockSizePacked(raw.fileNumber(member), 0);
                     assertTrue(packed > 0 && packed < raw.blockSize(raw.fileNumber(member), 0));
                     assertEquals(packed, mpqe.blockSizePacked(mpqe.fileNumber(member), 0));
+                    int method = member.equals("sparse.txt") ? 0x20 :
+                                 member.equals("sparse-zlib.txt") ? 0x22 : 0x30;
+                    assertEquals(method, raw.blockCompression(raw.fileNumber(member), 0));
+                    assertEquals(method, mpqe.blockCompression(mpqe.fileNumber(member), 0));
                 }
                 assertEquals(Mpq.ERROR_EXIST, assertThrows(LibmpqException.class,
                     () -> raw.verifyBlock(raw.fileNumber("overview.txt"), 0)).code());
@@ -120,6 +124,11 @@ class LibmpqTest {
                     () -> raw.blockSizePacked(raw.fileNumber("sparse.txt"), -1)).code());
                 assertEquals(raw.blockSize(raw.fileNumber("overview.txt"), 0),
                              raw.blockSizePacked(raw.fileNumber("overview.txt"), 0));
+                assertEquals(0, raw.blockCompression(raw.fileNumber("overview.txt"), 0));
+                assertEquals(Mpq.ERROR_EXIST, assertThrows(LibmpqException.class,
+                    () -> raw.blockCompression(raw.fileNumber("sparse.txt"), -1)).code());
+                if (version == 2)
+                    assertEquals(0x12, mpqe.blockCompression(mpqe.fileNumber("lzma.txt"), 0));
             }
         }
     }

@@ -69,6 +69,10 @@ def test_version_errors_and_hashes():
     block_verify = mpq.libmpq.libmpq__block_verify
     assert block_verify.restype == ctypes.c_int32
     packed_size = mpq.libmpq.libmpq__block_size_packed
+    compression = mpq.libmpq.libmpq__block_compression
+    assert compression.restype == ctypes.c_int32
+    assert compression.argtypes == [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                                    ctypes.POINTER(ctypes.c_uint32)]
     assert packed_size.restype == ctypes.c_int32
     assert packed_size.argtypes == [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
                                    ctypes.POINTER(ctypes.c_int64)]
@@ -108,6 +112,19 @@ def test_fixture_metadata_and_extraction(name, version):
         assert "overview.txt" in archive
         assert archive["overview.txt"].verify() == 0
         entry = archive["overview.txt"]
+        assert entry.block_compression(0) == 0
+        methods = {"implode.txt": 0x08, "huffman.txt": 0x01, "zlib.txt": 0x02,
+                   "pkware.txt": 0x08, "bzip2.txt": 0x10, "chain.txt": 0x03,
+                   "encrypted-compress.txt": 0x02, "sparse.txt": 0x20,
+                   "sparse-zlib.txt": 0x22, "sparse-bzip2.txt": 0x30}
+        if version == 2:
+            methods["lzma.txt"] = 0x12
+        for member, method in methods.items():
+            assert archive[member].block_compression(0) == method
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            entry.block_compression(0xffffffff)
+        with pytest.raises(ValueError):
+            entry.block_compression(-1)
         attributes = entry.attributes()
         assert archive.attributes_flags() == (7 if version == 1 else 15)
         assert attributes.crc32 == zlib.crc32(entry.read())

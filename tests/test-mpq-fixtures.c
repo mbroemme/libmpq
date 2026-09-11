@@ -122,6 +122,11 @@ test_fixture_storage(
     uint32_t imploded;
     uint32_t blocks;
     uint8_t expected_method = fixture_methods[name_index];
+    uint32_t method = UINT32_MAX;
+
+    TEST_CHECK(libmpq__block_compression(archive, number, 0, &method) == 0);
+    if (name_index != 8 && name_index != 9)
+        TEST_CHECK(method == (name_index == 1 ? 0x08U : name_index == 7 ? 0x02U : expected_method));
 
     TEST_CHECK(libmpq__file_compressed(archive, number, &compressed) == 0);
     TEST_CHECK(libmpq__file_encrypted(archive, number, &encrypted) == 0);

@@ -341,6 +341,14 @@ class File {
         return value;
     }
 
+    /** Return the stored method byte (not a writer selector), or zero for raw storage. */
+    uint blockCompression(uint blockNumber) {
+        uint value;
+        checkStatus(libmpq__block_compression(archiveRef.nativeHandle(), number, blockNumber,
+                                            &value), "libmpq__block_compression");
+        return value;
+    }
+
     /** Read one unpacked block; native code manages its offset cache. */
     ubyte[] readBlock(uint blockNumber) {
         auto archive = archiveRef.nativeHandle();

@@ -255,6 +255,11 @@ test_sectors(
         failure.reads = 0;
         archive->stream->read_context = &failure;
         archive->stream->read_at = fail_read;
+        bits = UINT32_MAX;
+        status = libmpq__block_compression(archive, number, 1, &bits);
+        REQUIRE(status == LIBMPQ_ERROR_READ && bits == 0 && failure.reads == 1);
+        REQUIRE(archive->mpq_file[number] == NULL);
+        failure.reads = 0;
         status = check_block_error(archive, number, 1, LIBMPQ_ERROR_READ);
         REQUIRE(status == 0 && failure.reads == 1);
         failure.reads = 0;
@@ -288,6 +293,11 @@ test_sectors(
         failure.reads = 0;
         archive->stream->read_context = &failure;
         archive->stream->read_at = corrupt_method;
+        bits = UINT32_MAX;
+        status = libmpq__block_compression(archive, number, 0, &bits);
+        REQUIRE(status == 0 && bits == 0x04 && failure.reads == 1);
+        REQUIRE(archive->mpq_file[number] == NULL);
+        failure.reads = 0;
         status = check_block_error(archive, number, 0, LIBMPQ_ERROR_UNPACK);
         archive->stream->read_at = failure.read_at;
         archive->stream->read_context = NULL;
@@ -345,6 +355,9 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
     REQUIRE(libmpq__archive_add_data(archive, "payload", plain, size, &file) == 0);
     {
         libmpq__off_t packed_size = -1;
+        uint32_t method = UINT32_MAX;
+        REQUIRE(libmpq__block_compression(archive, 0, 0, &method) == LIBMPQ_ERROR_NOT_INITIALIZED);
+        REQUIRE(method == 0);
         REQUIRE(
             libmpq__block_size_packed(archive, 0, 0, &packed_size) == LIBMPQ_ERROR_NOT_INITIALIZED
         );
@@ -363,7 +376,16 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
     REQUIRE(libmpq__file_blocks(archive, number, &blocks) == 0);
     for (i = 0; i < blocks; ++i) {
         libmpq__off_t packed_size = -1;
+        libmpq__off_t unpacked_size;
+        uint32_t method = UINT32_MAX;
         REQUIRE(libmpq__block_size_packed(archive, number, i, &packed_size) == 0);
+        REQUIRE(libmpq__block_size_unpacked(archive, number, i, &unpacked_size) == 0);
+        REQUIRE(libmpq__block_compression(archive, number, i, &method) == 0);
+        REQUIRE(
+            method == (packed_size >= unpacked_size           ? 0U
+                       : (storage & LIBMPQ_FILE_FLAG_IMPLODE) ? LIBMPQ_COMPRESSION_PKZIP
+                                                              : LIBMPQ_COMPRESSION_ZLIB)
+        );
         if (storage & LIBMPQ_FILE_FLAG_SINGLE) {
             REQUIRE(packed_size == archive->mpq_block[index].packed_size);
         } else if (!eligible) {
@@ -374,6 +396,13 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
     }
     {
         libmpq__off_t packed_size = -1;
+        uint32_t method = UINT32_MAX;
+        REQUIRE(libmpq__block_compression(archive, number, blocks, &method) == LIBMPQ_ERROR_EXIST);
+        REQUIRE(method == 0);
+        method = UINT32_MAX;
+        REQUIRE(libmpq__block_compression(archive, UINT32_MAX, 0, &method) == LIBMPQ_ERROR_EXIST);
+        REQUIRE(method == 0);
+        REQUIRE(libmpq__block_compression(archive, number, 0, NULL) == LIBMPQ_ERROR_EXIST);
         REQUIRE(
             libmpq__block_size_packed(archive, number, blocks, &packed_size) == LIBMPQ_ERROR_EXIST
         );
@@ -486,6 +515,51 @@ cleanup:
     return result;
 }
 
+/* Single-unit encryption has no offset table from which to recover a key.
+ * Preserve the reader's DECRYPT error, and reuse a named internal cache when
+ * its key is available. The inspection must leave that outer reference alive. */
+static int
+test_single_compression(void)
+{
+    mpq_archive_create_options_s options = { 1, 1, 512, 0, 0 };
+    mpq_file_options_s file = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SINGLE |
+                                    LIBMPQ_FILE_FLAG_ENCRYPTED,
+                                LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    uint8_t plain[512];
+    uint8_t output[sizeof(plain)];
+    uint32_t method = UINT32_MAX;
+    libmpq__off_t transferred;
+    int32_t status;
+    int result = 0;
+    char path[256] = { 0 };
+
+    memset(plain, 'a', sizeof(plain));
+    REQUIRE(test_temp_path(path, sizeof(path), "single-compression") == 0);
+    REQUIRE(libmpq__archive_create(&archive, path, &options) == 0);
+    REQUIRE(libmpq__archive_add_data(archive, "payload", plain, sizeof(plain), &file) == 0);
+    status = libmpq__archive_close(archive);
+    archive = NULL;
+    REQUIRE(status == 0);
+    REQUIRE(libmpq__archive_open(&archive, path, 0) == 0);
+    REQUIRE(libmpq__block_compression(archive, 0, 0, &method) == LIBMPQ_ERROR_DECRYPT);
+    REQUIRE(method == 0 && archive->mpq_file[0] == NULL);
+    REQUIRE(libmpq__reader_offsets_acquire(archive, 0, "payload") == 0);
+    REQUIRE(libmpq__block_compression(archive, 0, 0, &method) == 0);
+    REQUIRE(method == LIBMPQ_COMPRESSION_ZLIB);
+    REQUIRE(archive->mpq_file[0]->open_count == 1);
+    REQUIRE(libmpq__block_read(archive, 0, 0, output, sizeof(output), &transferred) == 0);
+    REQUIRE(transferred == sizeof(plain) && memcmp(output, plain, sizeof(plain)) == 0);
+    REQUIRE(libmpq__reader_offsets_release(archive, 0) == 0);
+    REQUIRE(archive->mpq_file[0] == NULL);
+cleanup:
+    if (archive != NULL)
+        libmpq__archive_close(archive);
+    if (path[0] != 0)
+        unlink(path);
+    return result;
+}
+
 int
 main(void)
 {
@@ -508,6 +582,9 @@ main(void)
                                         LIBMPQ_FILE_FLAG_IMPLODE | LIBMPQ_FILE_FLAG_ENCRYPTED };
 
     TEST_CHECK(check_block_error(NULL, 0, 0, LIBMPQ_ERROR_EXIST) == 0);
+    TEST_CHECK(test_single_compression() == 0);
+    TEST_CHECK(libmpq__block_compression(NULL, 0, 0, &value) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(value == 0);
     {
         libmpq__off_t packed_size = -1;
         TEST_CHECK(libmpq__block_size_packed(NULL, 0, 0, &packed_size) == LIBMPQ_ERROR_EXIST);

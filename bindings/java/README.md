@@ -86,6 +86,10 @@ checksums mismatched; clear bits mean matched or unavailable/skipped.
 Operation errors throw existing exceptions. Zero does not prove availability.
 Normal extraction is unchanged; lossy ADPCM may differ from source hashes.
 
+`archive.blockCompression(fileNumber, blockNumber)` returns the stored method
+byte, or zero for raw storage/fallback, without decoding. LZMA is `0x12`, not
+the writer selector.
+
 `archive.blockSizePacked(fileNumber, blockNumber)` returns stored data bytes,
 excluding offset and checksum tables. `archive.blockSize(...)` remains the
 decoded size used for read buffers.

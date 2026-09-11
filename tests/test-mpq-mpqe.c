@@ -126,11 +126,21 @@ test_fixture_members(mpq_archive_s *archive, const char *raw_path, uint32_t vers
         uint32_t raw_number;
         uint32_t mpqe_number;
         uint32_t verification = UINT32_MAX;
+        uint32_t blocks;
+        uint32_t block;
 
         if (version == 1 && strcmp(names[i], "lzma.txt") == 0)
             continue;
         TEST_CHECK(libmpq__file_number(raw_archive, names[i], &raw_number) == 0);
         TEST_CHECK(libmpq__file_number(archive, names[i], &mpqe_number) == 0);
+        TEST_CHECK(libmpq__file_blocks(archive, mpqe_number, &blocks) == 0);
+        for (block = 0; block < blocks; ++block) {
+            uint32_t raw_method = UINT32_MAX;
+            uint32_t mpqe_method = UINT32_MAX;
+            TEST_CHECK(libmpq__block_compression(raw_archive, raw_number, block, &raw_method) == 0);
+            TEST_CHECK(libmpq__block_compression(archive, mpqe_number, block, &mpqe_method) == 0);
+            TEST_CHECK(raw_method == mpqe_method);
+        }
         TEST_CHECK(
             raw_archive->mpq_block[raw_archive->mpq_map[raw_number].block_table_indices].flags ==
             archive->mpq_block[archive->mpq_map[mpqe_number].block_table_indices].flags

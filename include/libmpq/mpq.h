@@ -613,6 +613,15 @@ extern LIBMPQ_API int32_t libmpq__block_size_packed(
     mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, libmpq__off_t *size
 );
 
+/* Return the stored method byte, zero for raw storage (including fallback),
+ * or LIBMPQ_COMPRESSION_PKZIP for a legacy imploded block. Method 0x12 is the
+ * legacy bzip2/zlib chain in v1 and LZMA in v2; this is not the writer's LZMA
+ * selector. No decompression or checksum verification is performed. A non-NULL
+ * compression output is initialized to zero and remains zero on failure. */
+extern LIBMPQ_API int32_t libmpq__block_compression(
+    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint32_t *compression
+);
+
 /*
  * Read one logical sector from an archive member, managing its offset cache
  * internally for the duration of the read.

@@ -95,6 +95,12 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
     assert(reopened.file("compressed.txt").blockSizePacked(0) <
            reopened.file("compressed.txt").readBlock(0).length);
     assert(reopened.file("hello.txt").blockSizePacked(0) == payload.length);
+    assert(reopened.file("hello.txt").blockCompression(0) == 0);
+    assert(reopened.file("compressed.txt").blockCompression(0) == 0x02);
+    bool invalidCompression = false;
+    try { reopened.file("compressed.txt").blockCompression(uint.max); }
+    catch (MPQException error) { invalidCompression = error.code == ERROR_EXIST; }
+    assert(invalidCompression);
     bool noChecksum;
     try { reopened.file("hello.txt").verifyBlock(0); }
     catch (MPQException error) { noChecksum = error.code == ERROR_EXIST; }
