@@ -252,6 +252,7 @@ _configure("libmpq__file_hash", None, ctypes.c_char_p, ctypes.POINTER(ctypes.c_u
 _configure("libmpq__file_number_from_hash", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_read", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR, _OFF_T, ctypes.POINTER(_OFF_T))
 _configure("libmpq__block_size_unpacked", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(_OFF_T))
+_configure("libmpq__block_size_packed", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(_OFF_T))
 _configure("libmpq__block_read", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, _BYTE_PTR, _OFF_T, ctypes.POINTER(_OFF_T))
 
 
@@ -677,6 +678,14 @@ class File:
             size = _OFF_T()
             libmpq.libmpq__block_size_unpacked(self._archive._mpq, self.number, block, ctypes.byref(size))
             return size.value
+
+    def block_size_packed(self, block):
+        """Return stored block bytes, excluding offset/checksum tables."""
+        self._archive._ensure_open()
+        if not isinstance(block, int) or not 0 <= block <= 0xffffffff:
+            raise ValueError("block must be an unsigned 32-bit integer")
+        return _read_value(libmpq.libmpq__block_size_packed, _OFF_T,
+                           self._archive._mpq, self.number, block)
 
     def open_reader(self):
         """Return a context-managed buffered reader over this entry."""

@@ -1,0 +1,41 @@
+.\" Copyright (c) 2026 Maik Broemme. LGPL-2.1-or-later.
+.TH LIBMPQ__BLOCK_SIZE_PACKED 3 2026-09-11 "The MoPaQ archive library"
+.SH NAME
+libmpq__block_size_packed \- query the stored size of one data block
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__block_size_packed("
+.BI "        mpq_archive_s *" "archive",
+.BI "        uint32_t       " "file_number",
+.BI "        uint32_t       " "block_number",
+.BI "        libmpq__off_t *" "size"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Return the stored byte size of the selected logical block. For sectorized
+COMPRESS or IMPLODE files, this is the difference between consecutive
+sector offsets. The reader loads and, when necessary, decrypts the offset
+table internally. No payload decoding or checksum verification is performed.
+.PP
+Raw blocks use their logical byte count, including the final partial sector.
+Single-unit files have one block whose size is the file's stored packed size.
+Encryption does not change the reported size. Offset-table bytes and sector
+checksum-table bytes are excluded, including from the final data block.
+.PP
+This complements libmpq__block_size_unpacked(), which reports decoded bytes.
+Use the unpacked size when allocating a buffer for libmpq__block_read().
+.SH RETURN VALUE
+Returns LIBMPQ_SUCCESS and stores the size in *size on success.
+A non-NULL size output is initialized to zero before validation and remains
+zero on failure. LIBMPQ_ERROR_EXIST indicates NULL required arguments or an
+invalid file/block index. LIBMPQ_ERROR_NOT_INITIALIZED indicates a writer
+archive. Malformed offsets, out-of-range payloads, table I/O, decryption and
+allocation failures retain the existing reader's negative error codes.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__block_size_unpacked (3),
+.BR libmpq__file_size_packed (3),
+.BR libmpq__block_read (3),
+.BR libmpq__block_verify (3)

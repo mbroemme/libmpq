@@ -82,6 +82,7 @@ alias libmpq__file_hash file_hash;
 alias libmpq__file_number_from_hash file_number_from_hash;
 alias libmpq__file_read file_read;
 alias libmpq__block_size_unpacked block_size_unpacked;
+alias libmpq__block_size_packed block_size_packed;
 alias libmpq__block_read block_read;
 alias libmpq__block_verify block_verify;
 

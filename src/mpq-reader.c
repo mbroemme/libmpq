@@ -127,6 +127,63 @@ libmpq__reader_file_read(
     return LIBMPQ_SUCCESS;
 }
 
+/* Metadata-only sizes need no decryption key. For sectorized codec files,
+ * reuse the reader's parsed offsets and exclude the checksum-table extent. */
+int32_t
+libmpq__reader_block_size_packed(
+    mpq_archive_s *archive, uint32_t number, uint32_t block, libmpq__off_t *size
+)
+{
+    uint32_t index;
+    uint32_t flags;
+    uint64_t start = 0;
+    uint64_t length;
+    int32_t status;
+
+    if (size != NULL)
+        *size = 0;
+    if (archive == NULL || size == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (archive->write_mode)
+        return LIBMPQ_ERROR_NOT_INITIALIZED;
+    if (libmpq__reader_validate_file_number(archive, number) < 0 ||
+        libmpq__reader_validate_block_number(archive, number, block) < 0)
+        return LIBMPQ_ERROR_EXIST;
+    index = archive->mpq_map[number].block_table_indices;
+    flags = archive->mpq_block[index].flags;
+    if ((flags & LIBMPQ_FLAG_SINGLE) != 0) {
+        length = archive->mpq_block[index].packed_size;
+    } else if ((flags & (LIBMPQ_FLAG_COMPRESSED | LIBMPQ_FLAG_COMPRESS_PKZIP)) == 0) {
+        libmpq__off_t unpacked;
+        status = libmpq__block_size_unpacked(archive, number, block, &unpacked);
+        if (status < 0)
+            return status;
+        start = (uint64_t)block * archive->block_size;
+        length = (uint64_t)unpacked;
+    } else {
+        uint32_t end;
+        status = libmpq__reader_offsets_acquire(archive, number, NULL);
+        if (status < 0)
+            return status;
+        start = archive->mpq_file[number]->packed_offset[block];
+        end = archive->mpq_file[number]->packed_offset[block + 1U];
+        status = libmpq__reader_offsets_release(archive, number);
+        if (status < 0)
+            return status;
+        if (end < start)
+            return LIBMPQ_ERROR_FORMAT;
+        length = end - start;
+    }
+    if (start > archive->mpq_block[index].packed_size ||
+        length > archive->mpq_block[index].packed_size - start)
+        return LIBMPQ_ERROR_FORMAT;
+    status = libmpq__reader_validate_payload_range(archive, index, start, length);
+    if (status < 0)
+        return status;
+    *size = (libmpq__off_t)length;
+    return LIBMPQ_SUCCESS;
+}
+
 /* Sector checksums follow packed sectors and are not encrypted, even when
  * file data is encrypted. Reuse the offset table loaded by open_named(). */
 static int32_t sector_checksums(mpq_archive_s *archive, uint32_t number, uint32_t **checksums);

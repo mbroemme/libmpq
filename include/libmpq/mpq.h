@@ -605,6 +605,14 @@ extern LIBMPQ_API int32_t libmpq__block_size_unpacked(
     libmpq__off_t *unpacked_size
 );
 
+/* Return one block's stored byte size, excluding offset/checksum tables.
+ * Compressed sector offsets are loaded internally; raw and single-unit sizes
+ * come from archive metadata. Encryption does not change the size. A non-NULL
+ * size output is initialized to zero and remains zero on any failure. */
+extern LIBMPQ_API int32_t libmpq__block_size_packed(
+    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, libmpq__off_t *size
+);
+
 /*
  * Read one logical sector from an archive member, managing its offset cache
  * internally for the duration of the read.

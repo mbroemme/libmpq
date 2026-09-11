@@ -333,6 +333,14 @@ class File {
         result.length = cast(size_t) transferred; return result;
     }
 
+    /** Return stored data bytes for one block, excluding offset/checksum tables. */
+    off_t blockSizePacked(uint blockNumber) {
+        off_t value;
+        checkStatus(libmpq__block_size_packed(archiveRef.nativeHandle(), number, blockNumber,
+                                            &value), "libmpq__block_size_packed");
+        return value;
+    }
+
     /** Read one unpacked block; native code manages its offset cache. */
     ubyte[] readBlock(uint blockNumber) {
         auto archive = archiveRef.nativeHandle();

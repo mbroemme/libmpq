@@ -343,6 +343,13 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
                   : libmpq__archive_create(&archive, path, &options);
     REQUIRE(status == 0);
     REQUIRE(libmpq__archive_add_data(archive, "payload", plain, size, &file) == 0);
+    {
+        libmpq__off_t packed_size = -1;
+        REQUIRE(
+            libmpq__block_size_packed(archive, 0, 0, &packed_size) == LIBMPQ_ERROR_NOT_INITIALIZED
+        );
+        REQUIRE(packed_size == 0);
+    }
     REQUIRE(check_block_error(archive, 0, 0, LIBMPQ_ERROR_NOT_INITIALIZED) == 0);
     status = libmpq__archive_close(archive);
     archive = NULL;
@@ -353,6 +360,31 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
     REQUIRE(libmpq__file_number(archive, "payload", &number) == 0);
     index = archive->mpq_map[number].block_table_indices;
     REQUIRE(((archive->mpq_block[index].flags & LIBMPQ_FLAG_CRC) != 0) == !!eligible);
+    REQUIRE(libmpq__file_blocks(archive, number, &blocks) == 0);
+    for (i = 0; i < blocks; ++i) {
+        libmpq__off_t packed_size = -1;
+        REQUIRE(libmpq__block_size_packed(archive, number, i, &packed_size) == 0);
+        if (storage & LIBMPQ_FILE_FLAG_SINGLE) {
+            REQUIRE(packed_size == archive->mpq_block[index].packed_size);
+        } else if (!eligible) {
+            size_t remaining = size - (size_t)i * 512;
+            REQUIRE(packed_size == (libmpq__off_t)(remaining < 512 ? remaining : 512));
+        }
+        REQUIRE(archive->mpq_file[number] == NULL);
+    }
+    {
+        libmpq__off_t packed_size = -1;
+        REQUIRE(
+            libmpq__block_size_packed(archive, number, blocks, &packed_size) == LIBMPQ_ERROR_EXIST
+        );
+        REQUIRE(packed_size == 0);
+        packed_size = -1;
+        REQUIRE(
+            libmpq__block_size_packed(archive, UINT32_MAX, 0, &packed_size) == LIBMPQ_ERROR_EXIST
+        );
+        REQUIRE(packed_size == 0);
+        REQUIRE(libmpq__block_size_packed(archive, number, 0, NULL) == LIBMPQ_ERROR_EXIST);
+    }
     if (!eligible)
         REQUIRE(check_block_error(archive, number, 0, LIBMPQ_ERROR_EXIST) == 0);
     REQUIRE(
@@ -383,6 +415,9 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
         for (i = 0; i < blocks; ++i) {
             uint32_t stored = 0;
             uint32_t length = offsets[i + 1] - offsets[i];
+            libmpq__off_t packed_size = -1;
+            REQUIRE(libmpq__block_size_packed(archive, number, i, &packed_size) == 0);
+            REQUIRE(packed_size == length);
             REQUIRE(libmpq__block_verify(archive, number, i, &stored, &bits) == 0);
             REQUIRE(stored == checksums[i] && bits == 0);
             REQUIRE(length <= sizeof(packed));
@@ -412,6 +447,7 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
         if (size == sizeof(plain)) {
             read_failure_s failure;
             REQUIRE(offsets[blocks] - offsets[blocks - 1] == 37);
+            REQUIRE(offsets[1] - offsets[0] != 37);
             failure.read_at = archive->stream->read_at;
             failure.offset = base + offsets[blocks - 1];
             failure.reads = 0;
@@ -472,6 +508,11 @@ main(void)
                                         LIBMPQ_FILE_FLAG_IMPLODE | LIBMPQ_FILE_FLAG_ENCRYPTED };
 
     TEST_CHECK(check_block_error(NULL, 0, 0, LIBMPQ_ERROR_EXIST) == 0);
+    {
+        libmpq__off_t packed_size = -1;
+        TEST_CHECK(libmpq__block_size_packed(NULL, 0, 0, &packed_size) == LIBMPQ_ERROR_EXIST);
+        TEST_CHECK(packed_size == 0);
+    }
     TEST_CHECK(libmpq__block_verify(NULL, 0, 0, NULL, &value) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(value == 0);
     value = UINT32_MAX;
@@ -492,5 +533,6 @@ main(void)
         test_writer_checksums(1, LIBMPQ_FILE_FLAG_IMPLODE | LIBMPQ_FILE_FLAG_ENCRYPTED, 8229, 1) ==
         0
     );
+    TEST_CHECK(test_writer_checksums(1, LIBMPQ_FILE_FLAG_ENCRYPTED, 8229, 0) == 0);
     return 0;
 }

@@ -309,6 +309,10 @@ extern(C) {
     int libmpq__file_read(mpq_archive_s* archive, uint number, ubyte* buffer,
                           off_t size, off_t* transferred);
 
+    /** Query one block's stored size, excluding offset/checksum tables. */
+    int libmpq__block_size_packed(mpq_archive_s* archive, uint number,
+                                uint block, off_t* value);
+
     /** Query one block's unpacked size. */
     int libmpq__block_size_unpacked(mpq_archive_s* archive, uint number,
                                     uint block, off_t* value);

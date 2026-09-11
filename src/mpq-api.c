@@ -694,6 +694,15 @@ libmpq__block_size_unpacked(
     return LIBMPQ_SUCCESS;
 }
 
+/* Query stored sector bytes through the reader's offset-table lifecycle. */
+int32_t
+libmpq__block_size_packed(
+    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, libmpq__off_t *size
+)
+{
+    return libmpq__reader_block_size_packed(archive, file_number, block_number, size);
+}
+
 /* Normal block reads never enable explicit checksum verification. */
 int32_t
 libmpq__block_read(

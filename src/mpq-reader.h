@@ -24,6 +24,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+int32_t libmpq__reader_block_size_packed(
+    mpq_archive_s *archive, uint32_t number, uint32_t block, libmpq__off_t *size
+);
+
 int32_t libmpq__reader_file_read(
     mpq_archive_s *archive, uint32_t number, uint8_t *buffer, libmpq__off_t size,
     libmpq__off_t *transferred

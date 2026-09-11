@@ -75,6 +75,7 @@ For one sector, `archive.verifyBlock(fileNumber, blockNumber)` returns
 `Archive.BlockVerification` with `checksum()` (unsigned stored Adler-32 as
 `long`) and `mismatches()` (zero or `Mpq.VERIFY_SECTOR_CRC`). Unavailable
 checksums throw `LibmpqException` with `Mpq.ERROR_EXIST`.
+
 Use `Mpq.VERIFY_SECTOR_CRC`, `Mpq.VERIFY_FILE_CRC32`, or
 `Mpq.VERIFY_FILE_MD5` to select checks. Sector checks cover decrypted packed
 bytes; file hashes cover extracted bytes. Missing values/tables are skipped.
@@ -84,6 +85,10 @@ File checksum requests require attributes; sector-only requests do not.
 checksums mismatched; clear bits mean matched or unavailable/skipped.
 Operation errors throw existing exceptions. Zero does not prove availability.
 Normal extraction is unchanged; lossy ADPCM may differ from source hashes.
+
+`archive.blockSizePacked(fileNumber, blockNumber)` returns stored data bytes,
+excluding offset and checksum tables. `archive.blockSize(...)` remains the
+decoded size used for read buffers.
 
 `Archive.attributesFlags()` returns `OptionalInt`; absence is empty.
 `Archive.attributes(fileNumber)` returns an owned `FileAttributes` record.

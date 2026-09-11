@@ -100,6 +100,10 @@ It returns `LIBMPQ_ERROR_EXIST` for unavailable checksums; success returns
 zero or `LIBMPQ_VERIFY_SECTOR_CRC` in `mismatches`. Both outputs stay zero
 on errors. No calculated checksum is exposed.
 
+`libmpq__block_size_packed()` reports a block's stored data bytes, excluding
+offset and checksum tables. `libmpq__block_size_unpacked()` reports the
+decoded size needed for a `libmpq__block_read()` output buffer.
+
 To generate sector checksums, add `LIBMPQ_FILE_FLAG_SECTOR_CRC` to the file options
 alongside `LIBMPQ_FILE_FLAG_COMPRESS` or `LIBMPQ_FILE_FLAG_IMPLODE`.
 This is opt-in for sectorized files, including encrypted files. Empty, raw,

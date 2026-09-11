@@ -365,7 +365,17 @@ public final class Archive implements AutoCloseable {
         }
     }
 
-    /** Returns one sector's logical unpacked size without opening a cache. */
+    /** Returns stored sector bytes, excluding offset/checksum tables. */
+    public long blockSizePacked(int number, int block) throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment result = arena.allocate(ValueLayout.JAVA_LONG);
+            Support.check(LibmpqNative.blockSizePacked(handle, number, block, result));
+            return result.get(ValueLayout.JAVA_LONG, 0);
+        }
+    }
+
+    /** Return one block's unpacked size. */
     public long blockSize(int number, int block) throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {

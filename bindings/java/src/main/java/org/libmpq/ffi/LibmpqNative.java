@@ -103,6 +103,7 @@ public final class LibmpqNative {
     private static final MethodHandle FILE_VERIFY;
     private static final MethodHandle BLOCK_VERIFY;
     private static final MethodHandle BLOCK_SIZE_UNPACKED;
+    private static final MethodHandle BLOCK_SIZE_PACKED;
     private static final MethodHandle BLOCK_READ;
 
     static {
@@ -186,6 +187,8 @@ public final class LibmpqNative {
                              FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT,
                                                    ValueLayout.ADDRESS, C_LONG,
                                                    ValueLayout.ADDRESS));
+        BLOCK_SIZE_PACKED = function(linker, lookup, "libmpq__block_size_packed",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, C_INT, ValueLayout.ADDRESS));
         BLOCK_SIZE_UNPACKED = function(linker, lookup, "libmpq__block_size_unpacked",
                                        FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT,
                                                              C_INT, ValueLayout.ADDRESS));
@@ -431,7 +434,12 @@ public final class LibmpqNative {
                                MemorySegment transferred) {
         return callInt(FILE_READ, archive, number, output, size, transferred);
     }
-    /** Queries one decoded sector's unpacked size. */
+    /** Queries one sector's stored size, excluding offset/checksum tables. */
+    public static int blockSizePacked(MemorySegment archive, int number, int block, MemorySegment output) {
+        return callInt(BLOCK_SIZE_PACKED, archive, number, block, output);
+    }
+
+    /** Return one block's unpacked size. */
     public static int blockSize(MemorySegment archive, int number, int block, MemorySegment output) {
         return callInt(BLOCK_SIZE_UNPACKED, archive, number, block, output);
     }

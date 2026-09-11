@@ -94,6 +94,7 @@ verification remains explicit.
 For one sector, `archive["file.txt"].verify_block(block_number)` returns
 `(stored_adler32, mismatches)`. Mismatches is zero or `VERIFY_SECTOR_CRC`;
 an unavailable checksum raises `LibmpqNotFoundError` rather than reporting a match.
+
 Use `VERIFY_SECTOR_CRC`, `VERIFY_FILE_CRC32`, or
 `VERIFY_FILE_MD5` to select checks. Sector checks cover decrypted packed
 bytes; file hashes cover extracted bytes. Missing values/tables are skipped.
@@ -103,6 +104,9 @@ File checksum requests require attributes; sector-only requests do not.
 checksums mismatched; clear bits mean matched or unavailable/skipped.
 Operation errors raise existing exceptions. Zero does not prove availability.
 Normal extraction is unchanged; lossy ADPCM may differ from source hashes.
+
+`file.block_size_packed(block)` returns stored data bytes, excluding offset
+and checksum tables. Use `file.block_size(block)` for the decoded size.
 
 `Archive.attributes_flags()` returns `None` when absent. `File.attributes()`
 returns an owned `FileAttributes` result. Use `WriterFile.timestamp(filetime)`
