@@ -24,8 +24,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Private named reads share block I/O, supplying the known internal file key. */
-int32_t libmpq__reader_open_named(mpq_archive_s *archive, uint32_t number, const char *name);
+int32_t libmpq__reader_file_read(
+    mpq_archive_s *archive, uint32_t number, uint8_t *buffer, libmpq__off_t size,
+    libmpq__off_t *transferred
+);
+
+/* Internal scoped cache references shared by file reads, attributes and verify.
+ * A name supplies the known internal file key. Every success needs a release. */
+int32_t libmpq__reader_offsets_acquire(mpq_archive_s *archive, uint32_t number, const char *name);
+int32_t libmpq__reader_offsets_release(mpq_archive_s *archive, uint32_t number);
 
 /* Share block I/O; only explicit verification supplies a checksum and result. */
 int32_t libmpq__reader_block_read(
@@ -34,7 +41,7 @@ int32_t libmpq__reader_block_read(
     uint32_t *mismatches
 );
 
-/* Load optional checksums using the already-decoded sector offsets.
+/* Load optional checksums with an internally scoped sector-offset reference.
  * A successful NULL result means this file has no checksum table. */
 int32_t
 libmpq__reader_sector_checksums(mpq_archive_s *archive, uint32_t file_number, uint32_t **checksums);

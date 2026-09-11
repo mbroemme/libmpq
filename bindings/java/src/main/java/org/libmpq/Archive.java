@@ -350,30 +350,7 @@ public final class Archive implements AutoCloseable {
         }
     }
 
-    /**
-     * Opens one entry's sector-offset table for explicit block operations.
-     * Each successful call increments the native table reference count and
-     * must be paired with {@link #closeBlockOffsets}.
-     */
-    public void openBlockOffsets(int number) throws LibmpqException {
-        checkOpen();
-        Support.check(LibmpqNative.blockOpenOffset(handle, number));
-    }
-
-    /**
-     * Releases one reference acquired by {@link #openBlockOffsets}.  The
-     * native table may remain cached while other references exist.
-     */
-    public void closeBlockOffsets(int number) throws LibmpqException {
-        checkOpen();
-        Support.check(LibmpqNative.blockCloseOffset(handle, number));
-    }
-
-    /**
-     * Returns the logical unpacked size of one sector.  The corresponding
-     * offset table must already be open; use {@link #readBlock} when a scoped
-     * read is preferred.
-     */
+    /** Returns one sector's logical unpacked size without opening a cache. */
     public long blockSize(int number, int block) throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
@@ -383,14 +360,9 @@ public final class Archive implements AutoCloseable {
         }
     }
 
-    /**
-     * Opens the entry's offset table, reads one decoded sector, and closes
-     * the table reference before returning.  This method is safe for callers
-     * that do not need to manage native offset-table lifetime themselves.
-     */
+    /** Reads one decoded sector; native code manages the offset cache. */
     public byte[] readBlock(int number, int block) throws LibmpqException {
-        openBlockOffsets(number);
-        Throwable primary = null;
+        checkOpen();
         try (Arena arena = Arena.ofConfined()) {
             long size = blockSize(number, block);
             byte[] result = new byte[Support.checkedArraySize(size)];
@@ -401,19 +373,6 @@ public final class Archive implements AutoCloseable {
                                                  size, transferred));
             Support.copyTo(output, result);
             return result;
-        } catch (LibmpqException | RuntimeException | Error exception) {
-            primary = exception;
-            throw exception;
-        } finally {
-            try {
-                closeBlockOffsets(number);
-            } catch (LibmpqException | RuntimeException | Error cleanup) {
-                if (primary != null) {
-                    primary.addSuppressed(cleanup);
-                } else {
-                    throw cleanup;
-                }
-            }
         }
     }
 

@@ -176,10 +176,9 @@ test_fixture_checksums(mpq_archive_s *archive, const uint8_t *raw, size_t size, 
         if (eligible) {
             uint32_t blocks;
             uint32_t i;
-            const uint32_t *offsets;
+            uint32_t *offsets = NULL;
             TEST_CHECK(libmpq__file_blocks(archive, number, &blocks) == 0);
-            TEST_CHECK(libmpq__block_open_offset(archive, number) == 0);
-            offsets = archive->mpq_file[number]->packed_offset;
+            TEST_CHECK(test_archive_offsets(archive, number, &offsets) == 0);
             TEST_CHECK(offsets[0] == (blocks + 2U) * 4U);
             TEST_CHECK(offsets[blocks + 1U] == entry->packed_size);
 
@@ -190,7 +189,7 @@ test_fixture_checksums(mpq_archive_s *archive, const uint8_t *raw, size_t size, 
                 uint32_t checksum = load_le32(raw + entry->offset + offsets[blocks] + i * 4U);
                 TEST_CHECK(checksum != 0 && checksum != UINT32_MAX);
             }
-            TEST_CHECK(libmpq__block_close_offset(archive, number) == 0);
+            free(offsets);
             ++checked;
         }
         TEST_CHECK(

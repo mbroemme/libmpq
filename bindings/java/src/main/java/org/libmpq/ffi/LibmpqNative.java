@@ -101,8 +101,6 @@ public final class LibmpqNative {
     private static final MethodHandle FILE_NUMBER_FROM_HASH;
     private static final MethodHandle FILE_READ;
     private static final MethodHandle FILE_VERIFY;
-    private static final MethodHandle BLOCK_OPEN_OFFSET;
-    private static final MethodHandle BLOCK_CLOSE_OFFSET;
     private static final MethodHandle BLOCK_SIZE_UNPACKED;
     private static final MethodHandle BLOCK_READ;
 
@@ -184,10 +182,6 @@ public final class LibmpqNative {
                              FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT,
                                                    ValueLayout.ADDRESS, C_LONG,
                                                    ValueLayout.ADDRESS));
-        BLOCK_OPEN_OFFSET = function(linker, lookup, "libmpq__block_open_offset",
-                                     FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT));
-        BLOCK_CLOSE_OFFSET = function(linker, lookup, "libmpq__block_close_offset",
-                                      FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT));
         BLOCK_SIZE_UNPACKED = function(linker, lookup, "libmpq__block_size_unpacked",
                                        FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT,
                                                              C_INT, ValueLayout.ADDRESS));
@@ -426,14 +420,6 @@ public final class LibmpqNative {
     public static int fileRead(MemorySegment archive, int number, MemorySegment output, long size,
                                MemorySegment transferred) {
         return callInt(FILE_READ, archive, number, output, size, transferred);
-    }
-    /** Opens one file's native sector-offset table reference. */
-    public static int blockOpenOffset(MemorySegment archive, int number) {
-        return callInt(BLOCK_OPEN_OFFSET, archive, number);
-    }
-    /** Releases one native sector-offset table reference. */
-    public static int blockCloseOffset(MemorySegment archive, int number) {
-        return callInt(BLOCK_CLOSE_OFFSET, archive, number);
     }
     /** Queries one decoded sector's unpacked size. */
     public static int blockSize(MemorySegment archive, int number, int block, MemorySegment output) {

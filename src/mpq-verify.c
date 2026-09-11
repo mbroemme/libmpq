@@ -82,7 +82,7 @@ libmpq__verify_file(
     status = libmpq__file_blocks(archive, file_number, &blocks);
     if (status < 0)
         return status;
-    status = libmpq__block_open_offset(archive, file_number);
+    status = libmpq__reader_offsets_acquire(archive, file_number, NULL);
     if (status < 0)
         return status;
     if ((verify_flags & LIBMPQ_VERIFY_SECTOR_CRC) != 0) {
@@ -144,7 +144,7 @@ cleanup:
     free(checksums);
     free(buffer);
     {
-        int32_t close_status = libmpq__block_close_offset(archive, file_number);
+        int32_t close_status = libmpq__reader_offsets_release(archive, file_number);
         if (status == LIBMPQ_SUCCESS)
             status = close_status;
     }

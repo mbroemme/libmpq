@@ -250,8 +250,6 @@ _configure("libmpq__file_number", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ct
 _configure("libmpq__file_hash", None, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_number_from_hash", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_read", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR, _OFF_T, ctypes.POINTER(_OFF_T))
-_configure("libmpq__block_open_offset", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32)
-_configure("libmpq__block_close_offset", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32)
 _configure("libmpq__block_size_unpacked", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(_OFF_T))
 _configure("libmpq__block_read", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, _BYTE_PTR, _OFF_T, ctypes.POINTER(_OFF_T))
 
@@ -491,23 +489,21 @@ class Reader:
     """Buffered decoded reader over one file's MPQ sectors."""
 
     def __init__(self, file):
-        """Open and retain the native offset-table reference."""
+        """Initialize buffered access; native reads manage their own offset cache."""
         self._file, self._pos, self._buf, self._cur_block = file, 0, [], 0
         self._closed = False
-        libmpq.libmpq__block_open_offset(file._archive._mpq, file.number)
 
     def close(self):
-        """Release the native offset-table reference exactly once."""
+        """Close buffered access without retaining native cache references."""
         if not self._closed:
             self._closed = True
-            libmpq.libmpq__block_close_offset(self._file._archive._mpq, self._file.number)
 
     def __enter__(self):
         """Return this reader for context-managed block access."""
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        """Release the offset table on context exit."""
+        """Close this reader on context exit."""
         self.close()
 
     def __iter__(self):
@@ -595,7 +591,7 @@ class Reader:
     xreadlines = __iter__
 
     def __del__(self):
-        """Best-effort offset-table cleanup that never raises during GC."""
+        """Best-effort reader cleanup that never raises during GC."""
         try:
             self.close()
         except Exception:
@@ -652,7 +648,7 @@ class File:
     read_bytes = read
 
     def read_block(self, block):
-        """Open the offset table, decode one block, and close the table."""
+        """Decode one block with native offset-cache management."""
         if block < 0 or block >= self.blocks:
             raise IndexError("block not in file")
         with self.open_reader() as reader:

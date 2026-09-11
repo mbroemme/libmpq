@@ -232,9 +232,6 @@ main(void)
     TEST_CHECK(libmpq__file_number(archive, "compressed", &number) == 0);
     TEST_CHECK(libmpq__file_compressed(archive, number, &flag) == 0 && flag != 0);
     TEST_CHECK(libmpq__file_blocks(archive, number, &blocks) == 0 && blocks == 2);
-    TEST_CHECK(libmpq__block_close_offset(archive, number) == LIBMPQ_ERROR_OPEN);
-    TEST_CHECK(libmpq__block_open_offset(archive, number) == 0);
-    TEST_CHECK(libmpq__block_open_offset(archive, number) == 0);
     TEST_CHECK(libmpq__block_size_unpacked(archive, number, 0, &unpacked) == 0 && unpacked == 4096);
     TEST_CHECK(
         libmpq__block_size_unpacked(archive, number, blocks, &unpacked) == LIBMPQ_ERROR_EXIST
@@ -244,9 +241,6 @@ main(void)
         libmpq__block_read(archive, number, blocks, output, sizeof(output), NULL) ==
         LIBMPQ_ERROR_EXIST
     );
-    TEST_CHECK(libmpq__block_close_offset(archive, number) == 0);
-    TEST_CHECK(libmpq__block_close_offset(archive, number) == 0);
-    TEST_CHECK(libmpq__block_open_offset(archive, files) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__block_size_unpacked(archive, files, 0, &unpacked) == LIBMPQ_ERROR_EXIST);
 
     TEST_CHECK(libmpq__archive_clone(&clone, archive) == 0);

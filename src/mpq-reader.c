@@ -35,10 +35,116 @@
 #include <sys/stat.h>
 #include <zlib.h>
 
+/* Release a cached block offset table when the last user closes it.
+ * Reference counting permits nested block operations while ensuring the cache
+ * is freed only after the final matching close. */
+int32_t
+libmpq__reader_offsets_release(mpq_archive_s *mpq_archive, uint32_t file_number)
+{
+    if (libmpq__reader_validate_file_number(mpq_archive, file_number) < 0) {
+        return LIBMPQ_ERROR_EXIST;
+    }
+
+    if (mpq_archive->mpq_file[file_number] == NULL) {
+        return LIBMPQ_ERROR_OPEN;
+    }
+
+    mpq_archive->mpq_file[file_number]->open_count--;
+
+    if (mpq_archive->mpq_file[file_number]->open_count != 0) {
+
+        /* Keep the cache alive until every matching open operation closes. */
+        return LIBMPQ_SUCCESS;
+    }
+
+    free(mpq_archive->mpq_file[file_number]->packed_offset);
+    free(mpq_archive->mpq_file[file_number]);
+
+    mpq_archive->mpq_file[file_number] = NULL;
+
+    return LIBMPQ_SUCCESS;
+}
+
+/* Read a complete file by opening its block offset table and copying each block.
+ * The output buffer must hold the complete unpacked file, and cached offset
+ * state is closed on both successful and failed block reads. */
+int32_t
+libmpq__reader_file_read(
+    mpq_archive_s *mpq_archive, uint32_t file_number, uint8_t *out_buf, libmpq__off_t out_size,
+    libmpq__off_t *transferred
+)
+{
+
+    /* Block loop state and total bytes transferred to the caller. */
+    uint32_t i;
+    uint32_t blocks = 0;
+    int32_t result = 0;
+    libmpq__off_t file_offset = 0;
+    libmpq__off_t unpacked_size = 0;
+    libmpq__off_t transferred_block = 0;
+    libmpq__off_t transferred_total = 0;
+
+    if (libmpq__reader_validate_file_number(mpq_archive, file_number) < 0) {
+        return LIBMPQ_ERROR_EXIST;
+    }
+
+    libmpq__file_size_unpacked(mpq_archive, file_number, &unpacked_size);
+
+    if (unpacked_size > out_size) {
+        return LIBMPQ_ERROR_SIZE;
+    }
+
+    libmpq__file_offset(mpq_archive, file_number, &file_offset);
+    libmpq__file_blocks(mpq_archive, file_number, &blocks);
+
+    if ((result = libmpq__reader_offsets_acquire(mpq_archive, file_number, NULL)) < 0) {
+        return result;
+    }
+
+    /* Read each block into its exact destination slice and maintain one total. */
+    for (i = 0; i < blocks; i++) {
+        unpacked_size = 0;
+
+        libmpq__block_size_unpacked(mpq_archive, file_number, i, &unpacked_size);
+
+        if ((result = libmpq__block_read(
+                 mpq_archive, file_number, i, out_buf + transferred_total, unpacked_size,
+                 &transferred_block
+             )) < 0) {
+            libmpq__reader_offsets_release(mpq_archive, file_number);
+            return result;
+        }
+
+        transferred_total += transferred_block;
+    }
+
+    libmpq__reader_offsets_release(mpq_archive, file_number);
+
+    if (transferred != NULL) {
+        *transferred = transferred_total;
+    }
+
+    return LIBMPQ_SUCCESS;
+}
+
 /* Sector checksums follow packed sectors and are not encrypted, even when
  * file data is encrypted. Reuse the offset table loaded by open_named(). */
+static int32_t sector_checksums(mpq_archive_s *archive, uint32_t number, uint32_t **checksums);
+
 int32_t
 libmpq__reader_sector_checksums(mpq_archive_s *archive, uint32_t number, uint32_t **checksums)
+{
+    int32_t result = libmpq__reader_offsets_acquire(archive, number, NULL);
+    *checksums = NULL;
+    if (result < 0)
+        return result;
+    result = sector_checksums(archive, number, checksums);
+    (void)libmpq__reader_offsets_release(archive, number);
+    return result;
+}
+
+static int32_t
+sector_checksums(mpq_archive_s *archive, uint32_t number, uint32_t **checksums)
 {
     uint32_t index = archive->mpq_map[number].block_table_indices;
     uint32_t flags = archive->mpq_block[index].flags;
@@ -109,8 +215,30 @@ cleanup:
 /* Read, decrypt and decompress one block from an opened file entry.
  * The routine computes packed bounds, applies per-block encryption, selects
  * raw or codec output, and reports the exact unpacked byte count. */
+static int32_t read_block(
+    mpq_archive_s *archive, uint32_t number, uint32_t block, uint8_t *buffer, libmpq__off_t size,
+    libmpq__off_t *transferred, const uint32_t *checksum, uint32_t *mismatches
+);
+
 int32_t
 libmpq__reader_block_read(
+    mpq_archive_s *archive, uint32_t number, uint32_t block, uint8_t *buffer, libmpq__off_t size,
+    libmpq__off_t *transferred, const uint32_t *checksum, uint32_t *mismatches
+)
+{
+    int32_t result;
+    if (libmpq__reader_validate_block_number(archive, number, block) < 0)
+        return LIBMPQ_ERROR_EXIST;
+    result = libmpq__reader_offsets_acquire(archive, number, NULL);
+    if (result < 0)
+        return result;
+    result = read_block(archive, number, block, buffer, size, transferred, checksum, mismatches);
+    (void)libmpq__reader_offsets_release(archive, number);
+    return result;
+}
+
+static int32_t
+read_block(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number, uint8_t *out_buf,
     libmpq__off_t out_size, libmpq__off_t *transferred, const uint32_t *checksum,
     uint32_t *mismatches
@@ -331,7 +459,7 @@ libmpq__reader_validate_payload_range(
  * Compressed entries load and decrypt their serialized offsets, while raw or
  * single-unit entries receive synthesized offsets from block metadata. */
 int32_t
-libmpq__reader_open_named(mpq_archive_s *mpq_archive, uint32_t file_number, const char *name)
+libmpq__reader_offsets_acquire(mpq_archive_s *mpq_archive, uint32_t file_number, const char *name)
 {
 
     /* Packed block table state, file seed and read status. */

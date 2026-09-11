@@ -234,11 +234,6 @@ test_manual(int malformed, uint32_t storage)
     archive = NULL;
     REQUIRE(status == 0);
     REQUIRE(libmpq__archive_open(&archive, path, 0) == 0);
-    if ((storage & (LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_COMPRESS)) ==
-        (LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_COMPRESS)) {
-        REQUIRE(libmpq__file_number(archive, "(attributes)", &number) == 0);
-        REQUIRE(libmpq__block_open_offset(archive, number) == 0);
-    }
     REQUIRE(libmpq__file_number(archive, "live", &number) == 0 && number == 0);
     REQUIRE(
         libmpq__archive_attributes_flags(archive, &flags) == (malformed ? LIBMPQ_ERROR_FORMAT : 0)
@@ -311,15 +306,13 @@ test_verify(uint32_t version, uint32_t storage, uint32_t corrupt)
     REQUIRE(status == 0);
     REQUIRE(libmpq__archive_open(&archive, path, 0) == 0);
     REQUIRE(libmpq__file_number(archive, "payload", &number) == 0);
-    REQUIRE(libmpq__block_open_offset(archive, number) == 0);
     for (request = 0; request <= LIBMPQ_VERIFY_ALL; ++request) {
         bits = UINT32_MAX;
         REQUIRE(libmpq__file_verify(archive, number, request, &bits) == 0);
         REQUIRE(bits == (request & corrupt));
         REQUIRE((bits & ~request) == 0);
-        REQUIRE(archive->mpq_file[number]->open_count == 1);
+        REQUIRE(archive->mpq_file[number] == NULL);
     }
-    REQUIRE(libmpq__block_close_offset(archive, number) == 0);
     REQUIRE(archive->mpq_file[number] == NULL);
     REQUIRE(libmpq__file_read(archive, number, output, sizeof(output), &transferred) == 0);
     REQUIRE(transferred == sizeof(payload) && memcmp(payload, output, sizeof(payload)) == 0);

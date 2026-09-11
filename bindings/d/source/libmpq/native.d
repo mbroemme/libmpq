@@ -307,12 +307,6 @@ extern(C) {
     int libmpq__file_read(mpq_archive_s* archive, uint number, ubyte* buffer,
                           off_t size, off_t* transferred);
 
-    /** Open and cache one file's packed block-offset table. */
-    int libmpq__block_open_offset(mpq_archive_s* archive, uint number);
-
-    /** Close one file's cached block-offset table. */
-    int libmpq__block_close_offset(mpq_archive_s* archive, uint number);
-
     /** Query one block's unpacked size. */
     int libmpq__block_size_unpacked(mpq_archive_s* archive, uint number,
                                     uint block, off_t* value);

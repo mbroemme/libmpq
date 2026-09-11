@@ -173,8 +173,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         }
         if (size >= 4) {
             number = libmpq_fuzz_le32(data);
-            (void)libmpq__block_open_offset(archive, number);
-            (void)libmpq__block_close_offset(archive, number);
+            (void)libmpq__block_size_unpacked(archive, number, 0, &unpacked_size);
         }
         libmpq__archive_close(archive);
     }

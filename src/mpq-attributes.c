@@ -174,10 +174,10 @@ libmpq__attributes_load(mpq_archive_s *archive)
         free(view);
         return LIBMPQ_ERROR_MALLOC;
     }
-    result = libmpq__reader_open_named(archive, number, LIBMPQ_ATTRIBUTES_NAME);
+    result = libmpq__reader_offsets_acquire(archive, number, LIBMPQ_ATTRIBUTES_NAME);
     if (result == LIBMPQ_SUCCESS) {
         result = libmpq__file_read(archive, number, data, size, &transferred);
-        (void)libmpq__block_close_offset(archive, number);
+        (void)libmpq__reader_offsets_release(archive, number);
         if (result == LIBMPQ_SUCCESS && transferred != size)
             result = LIBMPQ_ERROR_READ;
     }

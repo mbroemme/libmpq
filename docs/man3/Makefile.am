@@ -20,8 +20,6 @@ man_MANS = \
 	libmpq__archive_version.3 \
 	libmpq__archive_create.3 \
 	libmpq__archive_create_mpqe.3 \
-	libmpq__block_close_offset.3 \
-	libmpq__block_open_offset.3 \
 	libmpq__block_read.3 \
 	libmpq__block_size_unpacked.3 \
 	libmpq__file_blocks.3 \

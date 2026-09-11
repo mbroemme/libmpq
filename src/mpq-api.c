@@ -631,107 +631,17 @@ libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *
     return libmpq__file_number_from_hash(mpq_archive, hash1, hash2, hash3, number);
 }
 
-/* Read a complete file by opening its block offset table and copying each block.
- * The output buffer must hold the complete unpacked file, and cached offset
- * state is closed on both successful and failed block reads. */
+/* Complete reads scope their offset cache inside the reader. */
 int32_t
 libmpq__file_read(
-    mpq_archive_s *mpq_archive, uint32_t file_number, uint8_t *out_buf, libmpq__off_t out_size,
+    mpq_archive_s *archive, uint32_t number, uint8_t *buffer, libmpq__off_t size,
     libmpq__off_t *transferred
 )
 {
-
-    /* Block loop state and total bytes transferred to the caller. */
-    uint32_t i;
-    uint32_t blocks = 0;
-    int32_t result = 0;
-    libmpq__off_t file_offset = 0;
-    libmpq__off_t unpacked_size = 0;
-    libmpq__off_t transferred_block = 0;
-    libmpq__off_t transferred_total = 0;
-
-    if (libmpq__reader_validate_file_number(mpq_archive, file_number) < 0) {
-        return LIBMPQ_ERROR_EXIST;
-    }
-
-    libmpq__file_size_unpacked(mpq_archive, file_number, &unpacked_size);
-
-    if (unpacked_size > out_size) {
-        return LIBMPQ_ERROR_SIZE;
-    }
-
-    libmpq__file_offset(mpq_archive, file_number, &file_offset);
-    libmpq__file_blocks(mpq_archive, file_number, &blocks);
-
-    if ((result = libmpq__block_open_offset(mpq_archive, file_number)) < 0) {
-        return result;
-    }
-
-    /* Read each block into its exact destination slice and maintain one total. */
-    for (i = 0; i < blocks; i++) {
-        unpacked_size = 0;
-
-        libmpq__block_size_unpacked(mpq_archive, file_number, i, &unpacked_size);
-
-        if ((result = libmpq__block_read(
-                 mpq_archive, file_number, i, out_buf + transferred_total, unpacked_size,
-                 &transferred_block
-             )) < 0) {
-            libmpq__block_close_offset(mpq_archive, file_number);
-            return result;
-        }
-
-        transferred_total += transferred_block;
-    }
-
-    libmpq__block_close_offset(mpq_archive, file_number);
-
-    if (transferred != NULL) {
-        *transferred = transferred_total;
-    }
-
-    return LIBMPQ_SUCCESS;
+    return libmpq__reader_file_read(archive, number, buffer, size, transferred);
 }
 
-/* Open a file's offset cache using the normal anonymous reader path.
- * Internal named reads share the same implementation and reference counting. */
-int32_t
-libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
-{
-    return libmpq__reader_open_named(mpq_archive, file_number, NULL);
-}
-
-/* Release a cached block offset table when the last user closes it.
- * Reference counting permits nested block operations while ensuring the cache
- * is freed only after the final matching close. */
-int32_t
-libmpq__block_close_offset(mpq_archive_s *mpq_archive, uint32_t file_number)
-{
-    if (libmpq__reader_validate_file_number(mpq_archive, file_number) < 0) {
-        return LIBMPQ_ERROR_EXIST;
-    }
-
-    if (mpq_archive->mpq_file[file_number] == NULL) {
-        return LIBMPQ_ERROR_OPEN;
-    }
-
-    mpq_archive->mpq_file[file_number]->open_count--;
-
-    if (mpq_archive->mpq_file[file_number]->open_count != 0) {
-
-        /* Keep the cache alive until every matching open operation closes. */
-        return LIBMPQ_SUCCESS;
-    }
-
-    free(mpq_archive->mpq_file[file_number]->packed_offset);
-    free(mpq_archive->mpq_file[file_number]);
-
-    mpq_archive->mpq_file[file_number] = NULL;
-
-    return LIBMPQ_SUCCESS;
-}
-
-/* Return the unpacked size for one block of an opened file entry.
+/* Return one block's unpacked size directly from archive metadata.
  * Full sectors use the archive sector size, while the final sector is reduced
  * to the remaining file bytes and single-unit files use their full size. */
 int32_t
@@ -745,15 +655,6 @@ libmpq__block_size_unpacked(
     }
 
     if (libmpq__reader_validate_block_number(mpq_archive, file_number, block_number) < 0) {
-        return LIBMPQ_ERROR_EXIST;
-    }
-
-    if (mpq_archive->mpq_file[file_number] == NULL ||
-        mpq_archive->mpq_file[file_number]->packed_offset == NULL) {
-        return LIBMPQ_ERROR_OPEN;
-    }
-
-    if (mpq_archive->mpq_file[file_number]->packed_offset_count <= block_number + 1) {
         return LIBMPQ_ERROR_EXIST;
     }
 

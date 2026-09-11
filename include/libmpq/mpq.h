@@ -586,25 +586,8 @@ extern LIBMPQ_API int32_t libmpq__file_read(
 );
 
 /*
- * Open and cache the packed sector-offset table for one file entry.
- * This is required before block-level queries or reads of compressed files and
- * increments an internal cache reference count. Repeated opens are allowed
- * and must be balanced with libmpq__block_close_offset calls.
- */
-extern LIBMPQ_API int32_t
-libmpq__block_open_offset(mpq_archive_s *mpq_archive, uint32_t file_number);
-
-/*
- * Release one reference to a cached sector-offset table.
- * When the final reference is closed, the associated allocation is discarded;
- * callers must not use block offsets obtained from that cache afterward.
- */
-extern LIBMPQ_API int32_t
-libmpq__block_close_offset(mpq_archive_s *mpq_archive, uint32_t file_number);
-
-/*
- * Return the logical unpacked size of one sector in an opened file entry.
- * The file's offset table must be open for compressed multi-sector data, and
+ * Return the logical unpacked size of one sector in an archive member.
+ * No explicit offset-table management is required;
  * block_number must be within the count returned by libmpq__file_blocks.
  */
 extern LIBMPQ_API int32_t libmpq__block_size_unpacked(
@@ -613,7 +596,8 @@ extern LIBMPQ_API int32_t libmpq__block_size_unpacked(
 );
 
 /*
- * Read one logical sector from an opened file entry.
+ * Read one logical sector from an archive member, managing its offset cache
+ * internally for the duration of the read.
  * The operation locates the packed bytes, decrypts them when required, and
  * reverses the MPQ compression pipeline before copying to out_buf. The
  * caller must provide sufficient space for the selected block and receives the

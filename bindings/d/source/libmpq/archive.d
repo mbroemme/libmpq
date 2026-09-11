@@ -321,12 +321,9 @@ class File {
         result.length = cast(size_t) transferred; return result;
     }
 
-    /** Read one unpacked block after opening its offset table. */
+    /** Read one unpacked block; native code manages its offset cache. */
     ubyte[] readBlock(uint blockNumber) {
         auto archive = archiveRef.nativeHandle();
-        checkStatus(libmpq__block_open_offset(archive, number), "libmpq__block_open_offset");
-        /* Do not let cleanup hide the primary read/decompression exception. */
-        scope(failure) libmpq__block_close_offset(archive, number);
         off_t expected;
         checkStatus(libmpq__block_size_unpacked(archive, number, blockNumber, &expected), "libmpq__block_size_unpacked");
         if (expected < 0 || cast(ulong) expected > size_t.max) throw new MPQException("File.readBlock", ERROR_SIZE);
@@ -334,7 +331,6 @@ class File {
         auto pointer = result.length == 0 ? null : result.ptr;
         checkStatus(libmpq__block_read(archive, number, blockNumber, pointer, expected, &transferred), "libmpq__block_read");
         if (transferred < 0 || cast(ulong) transferred > result.length) throw new MPQException("File.readBlock", ERROR_SIZE);
-        checkStatus(libmpq__block_close_offset(archive, number), "libmpq__block_close_offset");
         result.length = cast(size_t) transferred; return result;
     }
 

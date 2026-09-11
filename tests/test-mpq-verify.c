@@ -205,7 +205,6 @@ test_sectors(
 
         /* Prove the first sector mismatches, then fail the next physical read.
          * The public verifier uses the per-stream mock without linker wrapping. */
-        REQUIRE(libmpq__block_open_offset(archive, number) == 0);
         REQUIRE(libmpq__reader_sector_checksums(archive, number, &table) == 0);
         status = libmpq__reader_block_read(
             archive, number, 0, output, sector_size, &transferred, table, &observed
@@ -223,14 +222,12 @@ test_sectors(
         archive->stream->read_at = failure.read_at;
         archive->stream->read_context = NULL;
         REQUIRE(status == LIBMPQ_ERROR_READ && bits == 0 && failure.reads == 1);
-        REQUIRE(archive->mpq_file[number]->open_count == 1);
-        REQUIRE(libmpq__block_close_offset(archive, number) == 0);
+        REQUIRE(archive->mpq_file[number] == NULL);
     }
     if (!absent) {
         uint32_t saved;
-        REQUIRE(libmpq__block_open_offset(archive, number) == 0);
-        saved = archive->mpq_file[number]->packed_offset[sectors + 1];
-        archive->mpq_file[number]->packed_offset[sectors + 1] = position + 1;
+        saved = archive->mpq_block[index].packed_size;
+        archive->mpq_block[index].packed_size = position - 1;
         bits = UINT32_MAX;
         REQUIRE(
             libmpq__file_verify(archive, number, LIBMPQ_VERIFY_SECTOR_CRC, &bits) ==
@@ -238,8 +235,8 @@ test_sectors(
             bits == 0
         );
         REQUIRE(libmpq__file_read(archive, number, output, sizeof(output), &transferred) == 0);
-        archive->mpq_file[number]->packed_offset[sectors + 1] = saved;
-        REQUIRE(libmpq__block_close_offset(archive, number) == 0);
+        archive->mpq_block[index].packed_size = saved;
+        REQUIRE(archive->mpq_file[number] == NULL);
     }
 cleanup:
     if (archive != NULL)
@@ -264,6 +261,7 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
     uint8_t output[sizeof(plain)];
     uint8_t packed[16384];
     uint32_t *checksums = NULL;
+    uint32_t *offsets = NULL;
     uint32_t number;
     uint32_t index;
     uint32_t blocks;
@@ -312,11 +310,9 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
     REQUIRE(libmpq__file_read(archive, number, output, sizeof(output), &transferred) == 0);
     REQUIRE(transferred == (libmpq__off_t)size && memcmp(plain, output, size) == 0);
     if (eligible) {
-        uint32_t *offsets;
         uint64_t base = archive->archive_offset + (uint64_t)archive->mpq_block[index].offset;
-        REQUIRE(libmpq__block_open_offset(archive, number) == 0);
         REQUIRE(libmpq__file_blocks(archive, number, &blocks) == 0);
-        offsets = archive->mpq_file[number]->packed_offset;
+        REQUIRE(test_archive_offsets(archive, number, &offsets) == 0);
         REQUIRE(offsets[0] == (blocks + 2) * 4);
         REQUIRE(offsets[blocks + 1] == archive->mpq_block[index].packed_size);
         REQUIRE(libmpq__reader_sector_checksums(archive, number, &checksums) == 0);
@@ -368,10 +364,11 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
                 (LIBMPQ_VERIFY_SECTOR_CRC | LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5)
             );
         }
-        REQUIRE(libmpq__block_close_offset(archive, number) == 0);
+        REQUIRE(archive->mpq_file[number] == NULL);
     }
 cleanup:
     free(checksums);
+    free(offsets);
     if (result != 0)
         fprintf(
             stderr, "writer checksum case: version=%u storage=%u size=%zu mpqe=%d\n", version,

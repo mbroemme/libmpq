@@ -30,6 +30,7 @@ void test_payload(uint8_t *data, size_t size, uint32_t seed);
 void test_sparse_payload(uint8_t *data, size_t size);
 int test_sha256(const uint8_t *data, size_t size, char output[65]);
 int test_archive_read(mpq_archive_s *archive, uint32_t number, uint8_t **data, size_t *size);
+int test_archive_offsets(mpq_archive_s *archive, uint32_t number, uint32_t **offsets);
 int test_add_archive(mpq_archive_s **archive, const char *path, uint32_t version, uint32_t flags);
 
 #endif

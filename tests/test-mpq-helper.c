@@ -2,6 +2,8 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "test-mpq-helper.h"
+#include "../src/mpq-internal.h"
+#include "../src/mpq-stream.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -230,4 +232,69 @@ test_add_archive(mpq_archive_s **archive, const char *path, uint32_t version, ui
 {
     mpq_archive_create_options_s options = { version, 32, 4096, flags, 0 };
     return libmpq__archive_create(archive, path, &options);
+}
+
+/* Observe offsets during a public read without owning a cache reference. */
+typedef struct
+{
+    mpq_archive_s *archive;
+    uint32_t number;
+    uint32_t count;
+    uint32_t *offsets;
+    mpq_stream_read_at_fn read_at;
+    int nested;
+} offset_snapshot_s;
+
+static int32_t
+snapshot_read(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size)
+{
+    offset_snapshot_s *snapshot = stream->read_context;
+    mpq_file_s *file = snapshot->archive->mpq_file[snapshot->number];
+    if (file != NULL && file->packed_offset != NULL && file->packed_offset[0] != 0) {
+        memcpy(snapshot->offsets, file->packed_offset, snapshot->count * sizeof(uint32_t));
+        snapshot->nested = file->open_count == 2;
+    }
+    return snapshot->read_at(stream, offset, buffer, size);
+}
+
+int
+test_archive_offsets(mpq_archive_s *archive, uint32_t number, uint32_t **offsets)
+{
+    uint32_t blocks;
+    libmpq__off_t size;
+    uint8_t *buffer;
+    int32_t result;
+    offset_snapshot_s snapshot;
+    void *context = archive->stream->read_context;
+    *offsets = NULL;
+    if (libmpq__file_blocks(archive, number, &blocks) != 0 || blocks == 0 ||
+        libmpq__file_size_unpacked(archive, number, &size) != 0 || size < 0 ||
+        (uint64_t)size > SIZE_MAX)
+        return -1;
+    snapshot.count = blocks + 1U;
+    if (archive->mpq_block[archive->mpq_map[number].block_table_indices].flags & LIBMPQ_FLAG_CRC)
+        ++snapshot.count;
+    snapshot.offsets = calloc(snapshot.count, sizeof(uint32_t));
+    buffer = malloc(size == 0 ? 1 : (size_t)size);
+    if (snapshot.offsets == NULL || buffer == NULL) {
+        free(snapshot.offsets);
+        free(buffer);
+        return -1;
+    }
+    snapshot.archive = archive;
+    snapshot.number = number;
+    snapshot.read_at = archive->stream->read_at;
+    snapshot.nested = 0;
+    archive->stream->read_context = &snapshot;
+    archive->stream->read_at = snapshot_read;
+    result = libmpq__file_read(archive, number, buffer, size, NULL);
+    archive->stream->read_at = snapshot.read_at;
+    archive->stream->read_context = context;
+    free(buffer);
+    if (result < 0 || !snapshot.nested || archive->mpq_file[number] != NULL) {
+        free(snapshot.offsets);
+        return -1;
+    }
+    *offsets = snapshot.offsets;
+    return 0;
 }
