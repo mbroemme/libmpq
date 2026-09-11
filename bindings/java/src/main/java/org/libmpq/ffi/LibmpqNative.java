@@ -56,7 +56,7 @@ public final class LibmpqNative {
     private static final MethodHandle VERSION;
     private static final MethodHandle ARCHIVE_ATTRIBUTES_FLAGS;
     private static final MethodHandle FILE_ATTRIBUTES;
-    private static final MethodHandle FILE_TIMESTAMP;
+    private static final MethodHandle WRITER_TIMESTAMP;
 
     /** 40-byte native result with explicit reserved bytes, not the disk layout. */
     public static final MemoryLayout FILE_ATTRIBUTES_LAYOUT = attributesLayout();
@@ -77,9 +77,9 @@ public final class LibmpqNative {
     private static final MethodHandle ARCHIVE_OPEN_MPQE;
     private static final MethodHandle ARCHIVE_CREATE;
     private static final MethodHandle ARCHIVE_CREATE_MPQE;
-    private static final MethodHandle FILE_BEGIN;
-    private static final MethodHandle FILE_WRITE;
-    private static final MethodHandle FILE_FINISH;
+    private static final MethodHandle WRITER_BEGIN;
+    private static final MethodHandle WRITER_WRITE;
+    private static final MethodHandle WRITER_FINISH;
     private static final MethodHandle FILE_ADD;
     private static final MethodHandle FILE_ADD_PATH;
     private static final MethodHandle ARCHIVE_CLONE;
@@ -114,7 +114,7 @@ public final class LibmpqNative {
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS));
         FILE_VERIFY = function(linker, lookup, "libmpq__file_verify",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, C_INT, ValueLayout.ADDRESS));
-        FILE_TIMESTAMP = function(linker, lookup, "libmpq__file_timestamp",
+        WRITER_TIMESTAMP = function(linker, lookup, "libmpq__writer_timestamp",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_LONG));
         VERSION = function(linker, lookup, "libmpq__version",
                            FunctionDescriptor.of(ValueLayout.ADDRESS));
@@ -132,14 +132,14 @@ public final class LibmpqNative {
         ARCHIVE_CREATE = function(linker, lookup, "libmpq__archive_create",
                                   FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                         ValueLayout.ADDRESS, ValueLayout.ADDRESS));
-        FILE_BEGIN = function(linker, lookup, "libmpq__file_begin",
+        WRITER_BEGIN = function(linker, lookup, "libmpq__writer_begin",
                               FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                     ValueLayout.ADDRESS, C_LONG,
                                                     ValueLayout.ADDRESS, ValueLayout.ADDRESS));
-        FILE_WRITE = function(linker, lookup, "libmpq__file_write",
+        WRITER_WRITE = function(linker, lookup, "libmpq__writer_write",
                               FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                     ValueLayout.ADDRESS, C_LONG));
-        FILE_FINISH = function(linker, lookup, "libmpq__file_finish",
+        WRITER_FINISH = function(linker, lookup, "libmpq__writer_finish",
                                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
         FILE_ADD = function(linker, lookup, "libmpq__file_add",
                             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
@@ -333,16 +333,16 @@ public final class LibmpqNative {
         return callInt(ARCHIVE_CREATE_MPQE, out, path, authCode, nativeSizeT(authCodeSize), options);
     }
     /** Starts a native streaming entry and writes its writer handle to out. */
-    public static int fileBegin(MemorySegment archive, MemorySegment name, long size,
+    public static int writerBegin(MemorySegment archive, MemorySegment name, long size,
                                 MemorySegment options, MemorySegment out) {
-        return callInt(FILE_BEGIN, archive, name, size, options, out);
+        return callInt(WRITER_BEGIN, archive, name, size, options, out);
     }
     /** Appends one native buffer to an active streaming writer. */
-    public static int fileWrite(MemorySegment writer, MemorySegment buffer, long size) {
-        return callInt(FILE_WRITE, writer, buffer, size);
+    public static int writerWrite(MemorySegment writer, MemorySegment buffer, long size) {
+        return callInt(WRITER_WRITE, writer, buffer, size);
     }
     /** Finalizes a native streaming writer and publishes its entry. */
-    public static int fileFinish(MemorySegment writer) { return callInt(FILE_FINISH, writer); }
+    public static int writerFinish(MemorySegment writer) { return callInt(WRITER_FINISH, writer); }
 
     /** Query attributes presence flags without treating missing metadata as zero flags. */
     public static int archiveAttributesFlags(MemorySegment archive, MemorySegment flags) {
@@ -360,8 +360,8 @@ public final class LibmpqNative {
     }
 
     /** Supply unsigned Windows FILETIME bits, not Unix time, to an active writer. */
-    public static int fileTimestamp(MemorySegment writer, long filetime) {
-        return callInt(FILE_TIMESTAMP, writer, filetime);
+    public static int writerTimestamp(MemorySegment writer, long filetime) {
+        return callInt(WRITER_TIMESTAMP, writer, filetime);
     }
     /** Adds a complete native buffer as one archive entry. */
     public static int fileAdd(MemorySegment archive, MemorySegment name, MemorySegment buffer,

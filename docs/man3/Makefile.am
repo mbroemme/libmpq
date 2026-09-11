@@ -6,7 +6,7 @@ man_MANS = \
 	libmpq__file_verify.3 \
 	libmpq__archive_attributes_flags.3 \
 	libmpq__file_attributes.3 \
-	libmpq__file_timestamp.3 \
+	libmpq__writer_timestamp.3 \
 	libmpq.3 \
 	libmpq__archive_compression_allowed.3 \
 	libmpq__archive_close.3 \
@@ -33,9 +33,9 @@ man_MANS = \
 	libmpq__file_number_from_hash.3 \
 	libmpq__file_offset.3 \
 	libmpq__file_read.3 \
-	libmpq__file_begin.3 \
-	libmpq__file_write.3 \
-	libmpq__file_finish.3 \
+	libmpq__writer_begin.3 \
+	libmpq__writer_write.3 \
+	libmpq__writer_finish.3 \
 	libmpq__file_add.3 \
 	libmpq__file_add_path.3 \
 	libmpq__file_size_packed.3 \

@@ -165,17 +165,17 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
                 )
               : libmpq__archive_create(&archive, archive_path, &archive_options)) != 0)
         goto cleanup;
-    if (libmpq__file_begin(
+    if (libmpq__writer_begin(
             archive, "roundtrip.bin", (libmpq__off_t)payload_size, &options, &writer
         ) != 0)
         goto cleanup;
 
     first_chunk = payload_size / 2U;
-    if (libmpq__file_write(writer, payload, (libmpq__off_t)first_chunk) != 0 ||
-        libmpq__file_write(
+    if (libmpq__writer_write(writer, payload, (libmpq__off_t)first_chunk) != 0 ||
+        libmpq__writer_write(
             writer, payload + first_chunk, (libmpq__off_t)(payload_size - first_chunk)
         ) != 0 ||
-        libmpq__file_finish(writer) != 0)
+        libmpq__writer_finish(writer) != 0)
         goto cleanup;
 
     result = libmpq__archive_close(archive);

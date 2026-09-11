@@ -15,6 +15,11 @@ import std.path : buildPath;
 import std.process : environment;
 import libmpq.mpq;
 
+static assert(__traits(isSame, writer_begin, libmpq__writer_begin));
+static assert(__traits(isSame, writer_write, libmpq__writer_write));
+static assert(__traits(isSame, writer_finish, libmpq__writer_finish));
+static assert(__traits(isSame, writer_timestamp, libmpq__writer_timestamp));
+
 private string temporaryArchive(string suffix) {
     auto root = environment.get("TMPDIR", "/tmp");
     auto path = buildPath(root, "libmpq-d-binding-" ~ suffix ~ ".mpq");

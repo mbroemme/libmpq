@@ -68,8 +68,13 @@ Zero `options.attributes` disables generation. Any nonzero combination
 creates one `(attributes)` file and consumes one reserved file slot.
 Use `libmpq__archive_attributes_flags()` to query available arrays and
 `libmpq__file_attributes()` to read a file's stored values. FILETIME is
-explicit/default-zero; set it through `libmpq__file_timestamp()` using Windows
+explicit/default-zero; set it through `libmpq__writer_timestamp()` using Windows
 FILETIME, not Unix time.
+
+`libmpq__writer_begin()` starts an archive member and returns `mpq_writer_s`.
+Use `libmpq__writer_write()`, `libmpq__writer_timestamp()`, and
+`libmpq__writer_finish()` on that handle. Finishing consumes it, even on error.
+Member operations such as `libmpq__file_add()` retain the `file_*` namespace.
 
 Explicitly compare available stored checksums after opening an archive:
 

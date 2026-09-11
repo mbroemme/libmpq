@@ -24,7 +24,7 @@ Capacity includes the attributes entry
 and listfile if enabled; the internal attributes name is reserved.
 Finalization writes the listfile, attributes, then the completed tables.
 Checksums cover source bytes before compression; FILETIME defaults to zero
-and patch bits are zero. Use libmpq__file_timestamp() on an active writer
+and patch bits are zero. Use libmpq__writer_timestamp() on an active writer
 for an explicit timestamp. Path addition never imports filesystem timestamps.
 .PP
 Creates a v1 or v2 archive at \fIpath\fP. The archive is finalized by
@@ -37,10 +37,10 @@ EXTENDED. The policy affects writer validation only, not decoding.
 .SH SEE ALSO
 .BR libmpq__archive_attributes_flags (3),
 .BR libmpq__file_attributes (3),
-.BR libmpq__file_timestamp (3),
+.BR libmpq__writer_timestamp (3),
 .BR libmpq__archive_compression_allowed (3),
 .BR libmpq__archive_create_mpqe (3),
 .BR libmpq__archive_close (3),
 .BR libmpq__file_add (3),
 .BR libmpq__file_add_path (3),
-.BR libmpq__file_begin (3)
+.BR libmpq__writer_begin (3)

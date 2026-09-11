@@ -225,9 +225,9 @@ _configure("libmpq__archive_open", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ct
 _configure("libmpq__archive_open_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _OFF_T, _BYTE_PTR, ctypes.c_size_t)
 _configure("libmpq__archive_create", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__archive_create_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _BYTE_PTR, ctypes.c_size_t, _VOID_PTR)
-_configure("libmpq__file_begin", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _OFF_T, _VOID_PTR, ctypes.POINTER(_VOID_PTR))
-_configure("libmpq__file_write", ctypes.c_int32, _VOID_PTR, _BYTE_PTR, _OFF_T)
-_configure("libmpq__file_finish", ctypes.c_int32, _VOID_PTR)
+_configure("libmpq__writer_begin", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _OFF_T, _VOID_PTR, ctypes.POINTER(_VOID_PTR))
+_configure("libmpq__writer_write", ctypes.c_int32, _VOID_PTR, _BYTE_PTR, _OFF_T)
+_configure("libmpq__writer_finish", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__file_add", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE_PTR, _OFF_T, _VOID_PTR)
 _configure("libmpq__file_add_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__archive_clone", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), _VOID_PTR)
@@ -235,7 +235,7 @@ _configure("libmpq__archive_close", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__archive_attributes_flags", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_attributes", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_FileAttributes))
 _configure("libmpq__file_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
-_configure("libmpq__file_timestamp", ctypes.c_int32, _VOID_PTR, ctypes.c_uint64)
+_configure("libmpq__writer_timestamp", ctypes.c_int32, _VOID_PTR, ctypes.c_uint64)
 for _name in ("packed", "unpacked"):
     _configure("libmpq__archive_size_" + _name, ctypes.c_int32, _VOID_PTR, ctypes.POINTER(_OFF_T))
 _configure("libmpq__archive_offset", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(_OFF_T))
@@ -368,14 +368,14 @@ class WriterFile:
             raise ValueError("size must not be negative")
         self._archive, self._writer = archive, _VOID_PTR()
         self.expected_size, self.written_size = int(size), 0
-        libmpq.libmpq__file_begin(archive._mpq, _as_bytes(name), size, ctypes.byref(options), ctypes.byref(self._writer))
+        libmpq.libmpq__writer_begin(archive._mpq, _as_bytes(name), size, ctypes.byref(options), ctypes.byref(self._writer))
 
     def timestamp(self, filetime):
         """Set unsigned Windows FILETIME, not Unix time; generation must be enabled."""
         self._ensure_open()
         if not isinstance(filetime, int) or not 0 <= filetime <= 0xffffffffffffffff:
             raise ValueError("filetime must be an unsigned 64-bit integer")
-        libmpq.libmpq__file_timestamp(self._writer, filetime)
+        libmpq.libmpq__writer_timestamp(self._writer, filetime)
 
     def write(self, data):
         """Append bytes and reject writes beyond the declared logical size."""
@@ -384,14 +384,14 @@ class WriterFile:
         if len(data) > self.expected_size - self.written_size:
             raise ValueError("write exceeds declared file size")
         pointer = None if not data else (ctypes.c_uint8 * len(data)).from_buffer_copy(data)
-        libmpq.libmpq__file_write(self._writer, pointer, len(data))
+        libmpq.libmpq__writer_write(self._writer, pointer, len(data))
         self.written_size += len(data)
 
     def finish(self):
         """Finalize the stream; native state becomes invalid even on failure."""
         if self._writer:
             writer, self._writer = self._writer, None
-            libmpq.libmpq__file_finish(writer)
+            libmpq.libmpq__writer_finish(writer)
 
     def close(self):
         """Finish the stream and report native errors for incomplete streams."""

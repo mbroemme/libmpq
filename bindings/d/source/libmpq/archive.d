@@ -215,8 +215,8 @@ class Archive {
     /** Begin a streaming file writer with a declared unpacked size. */
     MpqFileWriter begin(string name, off_t size, FileOptions options = FileOptions.raw()) {
         ensureOpen(); auto nativeOptions = options.nativeOptions(); mpq_writer_s* writer;
-        checkStatus(libmpq__file_begin(handle, toStringz(name), size, &nativeOptions, &writer),
-                    "libmpq__file_begin");
+        checkStatus(libmpq__writer_begin(handle, toStringz(name), size, &nativeOptions, &writer),
+                    "libmpq__writer_begin");
         return new MpqFileWriter(writer, size);
     }
 
@@ -349,7 +349,7 @@ class MpqFileWriter {
     /** Set Windows FILETIME, not Unix time; the archive must enable its generation. */
     void timestamp(ulong filetime) {
         ensureActive();
-        checkStatus(libmpq__file_timestamp(handle, filetime), "libmpq__file_timestamp");
+        checkStatus(libmpq__writer_timestamp(handle, filetime), "libmpq__writer_timestamp");
     }
     private mpq_writer_s* handle; private off_t declaredSize; private off_t writtenSize; private bool finishedState;
     private this(mpq_writer_s* handle, off_t declaredSize) { this.handle = handle; this.declaredSize = declaredSize; }
@@ -359,7 +359,7 @@ class MpqFileWriter {
         ensureActive();
         if (writtenSize > declaredSize || data.length > cast(size_t) (declaredSize - writtenSize))
             throw new MPQException("MpqFileWriter.write", ERROR_SIZE);
-        checkStatus(libmpq__file_write(handle, data.ptr, cast(off_t) data.length), "libmpq__file_write");
+        checkStatus(libmpq__writer_write(handle, data.ptr, cast(off_t) data.length), "libmpq__writer_write");
         writtenSize += cast(off_t) data.length;
     }
     /** Finish and publish the entry, invalidating state before native cleanup. */
@@ -368,7 +368,7 @@ class MpqFileWriter {
         auto current = handle;
         handle = null;
         finishedState = true;
-        checkStatus(libmpq__file_finish(current), "libmpq__file_finish");
+        checkStatus(libmpq__writer_finish(current), "libmpq__writer_finish");
     }
     /** Return whether the writer was finalized. */ bool finished() const { return finishedState; }
     /** Return bytes submitted so far. */ off_t written() const { return writtenSize; }
@@ -379,10 +379,10 @@ class MpqFileWriter {
         auto current = handle;
         handle = null;
         finishedState = true;
-        checkStatus(libmpq__file_finish(current), "libmpq__file_finish");
+        checkStatus(libmpq__writer_finish(current), "libmpq__writer_finish");
     }
     /** Best-effort destructor cleanup; destructors cannot report errors. */
-    ~this() { if (!finishedState && handle !is null) libmpq__file_finish(handle); }
+    ~this() { if (!finishedState && handle !is null) libmpq__writer_finish(handle); }
     private void ensureActive() { if (finishedState || handle is null) throw new MPQException("MpqFileWriter", ERROR_NOT_INITIALIZED); }
 }
 

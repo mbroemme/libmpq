@@ -192,7 +192,7 @@ extern(C) {
     int libmpq__archive_attributes_flags(mpq_archive_s* archive, uint* flags);
     int libmpq__file_attributes(mpq_archive_s* archive, uint number, mpq_file_attributes_s* attributes);
     int libmpq__file_verify(mpq_archive_s* archive, uint number, uint flags, uint* mismatches);
-    int libmpq__file_timestamp(mpq_writer_s* writer, ulong filetime);
+    int libmpq__writer_timestamp(mpq_writer_s* writer, ulong filetime);
 
     /** Return the static package version string. */
     const(char)* libmpq__version();
@@ -223,16 +223,16 @@ extern(C) {
                                     const(mpq_archive_create_options_s)* options);
 
     /** Begin one streamed archive entry. */
-    int libmpq__file_begin(mpq_archive_s* archive, const(char)* filename,
+    int libmpq__writer_begin(mpq_archive_s* archive, const(char)* filename,
                            off_t size, const(mpq_file_options_s)* options,
                            mpq_writer_s** writer);
 
     /** Append bytes to an active native writer. */
-    int libmpq__file_write(mpq_writer_s* writer, const(ubyte)* buffer,
+    int libmpq__writer_write(mpq_writer_s* writer, const(ubyte)* buffer,
                            off_t size);
 
     /** Finish and publish an active native writer. */
-    int libmpq__file_finish(mpq_writer_s* writer);
+    int libmpq__writer_finish(mpq_writer_s* writer);
 
     /** Add one complete in-memory file to an archive. */
     int libmpq__file_add(mpq_archive_s* archive, const(char)* filename,

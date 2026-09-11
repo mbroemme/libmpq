@@ -191,6 +191,13 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .fi
 .SH DESCRIPTION
 .PP
+libmpq__writer_begin() starts an archive member and returns an mpq_writer_s
+handle. Operate on that handle through libmpq__writer_write(),
+libmpq__writer_timestamp(), and libmpq__writer_finish(). The finish call
+consumes the handle regardless of its result. Archive member operations
+and one-shot helpers, including libmpq__file_add() and
+libmpq__file_add_path(), retain the libmpq__file_ prefix.
+.PP
 Optional (attributes) metadata is supported for reading and creation in
 MPQ v1 and v2, including MPQE. Its payload version 100 is independent of
 the archive version. Enable selected arrays through options.attributes using
@@ -226,7 +233,7 @@ opt-in and never enables implicit verification during extraction.
 .PP
 CRC32 and MD5 cover source bytes before compression; lossy ADPCM output
 may differ. FILETIME defaults to zero and can be explicitly set through
-libmpq__file_timestamp() before file completion. Path addition does not
+libmpq__writer_timestamp() before file completion. Path addition does not
 import filesystem timestamps. Generated patch bits are zero; patch creation
 and application remain unsupported. Unused rows and the attributes entry
 itself have zero values. Finalization writes the listfile, attributes,
@@ -271,7 +278,7 @@ clones are created or used.
 .BR libmpq__archive_attributes_flags (3),
 .BR libmpq__file_attributes (3),
 .BR libmpq__file_verify (3),
-.BR libmpq__file_timestamp (3),
+.BR libmpq__writer_timestamp (3),
 .BR libmpq__archive_compression_allowed (3),
 .BR libmpq__version (3),
 .BR libmpq__strerror (3),
@@ -297,9 +304,9 @@ clones are created or used.
 .BR libmpq__file_hash (3),
 .BR libmpq__file_number_from_hash (3),
 .BR libmpq__file_read (3),
-.BR libmpq__file_begin (3),
-.BR libmpq__file_write (3),
-.BR libmpq__file_finish (3),
+.BR libmpq__writer_begin (3),
+.BR libmpq__writer_write (3),
+.BR libmpq__writer_finish (3),
 .BR libmpq__file_add (3),
 .BR libmpq__file_add_path (3),
 .BR libmpq__block_open_offset (3),

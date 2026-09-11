@@ -1,12 +1,12 @@
-.TH LIBMPQ__FILE_BEGIN 3 2026-08-18 "The MoPaQ archive library"
+.TH LIBMPQ__WRITER_BEGIN 3 2026-08-18 "The MoPaQ archive library"
 .SH NAME
-libmpq__file_begin \- begin a streamed MPQ file
+libmpq__writer_begin \- begin an MPQ streaming file writer
 .SH SYNOPSIS
 .nf
 .B
 #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__file_begin("
+.BI "int32_t libmpq__writer_begin("
 .BI "        mpq_archive_s  *" "archive,"
 .BI "        const char     *" "name,"
 .BI "        libmpq__off_t   " "size,"
@@ -16,7 +16,7 @@ libmpq__file_begin \- begin a streamed MPQ file
 .fi
 .SH DESCRIPTION
 Begins a file whose final unpacked size is known. Supply bytes with
-libmpq__file_write(3), then call libmpq__file_finish(3).
+libmpq__writer_write(3), then call libmpq__writer_finish(3).
 .PP
 Add LIBMPQ_FILE_FLAG_SECTOR_CRC to options.flags to generate sector Adler-32
 checksums for sectorized COMPRESS or IMPLODE files. Checksums cover packed
@@ -26,7 +26,7 @@ The flag is ignored for empty, raw, and single-unit files. Generation is
 opt-in and does not enable implicit verification during extraction.
 .SH SEE ALSO
 .BR libmpq__archive_create (3),
-.BR libmpq__file_write (3),
-.BR libmpq__file_finish (3),
+.BR libmpq__writer_write (3),
+.BR libmpq__writer_finish (3),
 .BR libmpq__file_add (3),
 .BR libmpq__file_add_path (3)

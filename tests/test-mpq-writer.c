@@ -787,10 +787,12 @@ test_create_one(const char *path, uint32_t version)
         libmpq__file_add(archive, "repeat.bin", repetitive, sizeof(repetitive), &compressed) == 0
     );
     TEST_CHECK(libmpq__file_add_path(archive, "path.bin", source_path, &raw) == 0);
-    TEST_CHECK(libmpq__file_begin(archive, "stream.bin", sizeof(stream_data), &raw, &writer) == 0);
-    TEST_CHECK(libmpq__file_write(writer, stream_data, 1234) == 0);
-    TEST_CHECK(libmpq__file_write(writer, stream_data + 1234, sizeof(stream_data) - 1234) == 0);
-    TEST_CHECK(libmpq__file_finish(writer) == 0);
+    TEST_CHECK(
+        libmpq__writer_begin(archive, "stream.bin", sizeof(stream_data), &raw, &writer) == 0
+    );
+    TEST_CHECK(libmpq__writer_write(writer, stream_data, 1234) == 0);
+    TEST_CHECK(libmpq__writer_write(writer, stream_data + 1234, sizeof(stream_data) - 1234) == 0);
+    TEST_CHECK(libmpq__writer_finish(writer) == 0);
     {
         int32_t result = libmpq__archive_close(archive);
 

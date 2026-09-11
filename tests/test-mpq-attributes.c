@@ -112,14 +112,14 @@ test_roundtrip(uint32_t version, uint32_t flags, int mpqe)
         status = libmpq__archive_create(&archive, path, &options);
     REQUIRE(status == 0);
     REQUIRE(libmpq__archive_attributes_flags(archive, &found) == LIBMPQ_ERROR_NOT_INITIALIZED);
-    REQUIRE(libmpq__file_begin(archive, "digits.txt", 9, &file, &writer) == 0);
+    REQUIRE(libmpq__writer_begin(archive, "digits.txt", 9, &file, &writer) == 0);
     REQUIRE(
-        libmpq__file_timestamp(writer, UINT64_C(0xfedcba9876543210)) ==
+        libmpq__writer_timestamp(writer, UINT64_C(0xfedcba9876543210)) ==
         ((flags & 2) ? 0 : LIBMPQ_ERROR_FORMAT)
     );
-    REQUIRE(libmpq__file_write(writer, (const uint8_t *)"1234", 4) == 0);
-    REQUIRE(libmpq__file_write(writer, (const uint8_t *)"56789", 5) == 0);
-    status = libmpq__file_finish(writer);
+    REQUIRE(libmpq__writer_write(writer, (const uint8_t *)"1234", 4) == 0);
+    REQUIRE(libmpq__writer_write(writer, (const uint8_t *)"56789", 5) == 0);
+    status = libmpq__writer_finish(writer);
     writer = NULL;
     REQUIRE(status == 0);
     REQUIRE(libmpq__file_add(archive, "empty.txt", NULL, 0, NULL) == 0);
@@ -189,7 +189,7 @@ test_roundtrip(uint32_t version, uint32_t flags, int mpqe)
 cleanup:
     free(raw);
     if (writer != NULL)
-        (void)libmpq__file_finish(writer);
+        (void)libmpq__writer_finish(writer);
     if (archive != NULL)
         (void)libmpq__archive_close(archive);
     if (clone != NULL)
@@ -483,7 +483,7 @@ main(void)
     TEST_CHECK(libmpq__file_attributes(NULL, 0, &unavailable) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(unavailable.flags == 0 && unavailable.crc32 == 0 && unavailable.filetime == 0);
     TEST_CHECK(memcmp(unavailable.reserved, "\0\0\0\0", sizeof(unavailable.reserved)) == 0);
-    TEST_CHECK(libmpq__file_timestamp(NULL, 0) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__writer_timestamp(NULL, 0) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(test_layouts() == 0);
     TEST_CHECK(test_serialization() == 0);
     for (version = 0; version < 2; ++version) {

@@ -478,7 +478,7 @@ public final class Archive implements AutoCloseable {
         }
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
-            Support.check(LibmpqNative.fileBegin(handle, Support.text(arena, name), size,
+            Support.check(LibmpqNative.writerBegin(handle, Support.text(arena, name), size,
                                                   fileOptions(arena, options), output));
             return new MpqFileWriter(LibmpqNative.getAddress(output), size);
         }

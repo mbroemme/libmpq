@@ -24,7 +24,7 @@ public final class MpqFileWriter implements AutoCloseable {
     public void timestamp(long filetime) throws LibmpqException {
         if (handle == null || handle.equals(MemorySegment.NULL))
             throw new IllegalStateException("Writer is finished");
-        Support.check(LibmpqNative.fileTimestamp(handle, filetime));
+        Support.check(LibmpqNative.writerTimestamp(handle, filetime));
     }
     private MemorySegment handle;
     private final long expected;
@@ -53,7 +53,7 @@ public final class MpqFileWriter implements AutoCloseable {
             throw new IllegalArgumentException("write exceeds declared file size");
         }
         try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.fileWrite(handle, Support.bytes(arena, data), data.length));
+            Support.check(LibmpqNative.writerWrite(handle, Support.bytes(arena, data), data.length));
         }
         written += data.length;
     }
@@ -72,7 +72,7 @@ public final class MpqFileWriter implements AutoCloseable {
             return;
         }
         handle = MemorySegment.NULL;
-        Support.check(LibmpqNative.fileFinish(current));
+        Support.check(LibmpqNative.writerFinish(current));
     }
 
     /**

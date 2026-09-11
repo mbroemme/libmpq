@@ -159,7 +159,7 @@ libmpq__file_verify(
 /* Supply an explicit timestamp for an unfinished source file.
  * The writer owns the value; no filesystem timestamp is consulted. */
 int32_t
-libmpq__file_timestamp(mpq_writer_s *writer, uint64_t filetime)
+libmpq__writer_timestamp(mpq_writer_s *writer, uint64_t filetime)
 {
     return libmpq__writer_file_timestamp(writer, filetime);
 }
@@ -205,7 +205,7 @@ libmpq__archive_create_mpqe(
  * The returned opaque writer owns the in-progress file state until finish or
  * an error closes the stream. */
 int32_t
-libmpq__file_begin(
+libmpq__writer_begin(
     mpq_archive_s *archive, const char *name, libmpq__off_t size, const mpq_file_options_s *options,
     mpq_writer_s **out
 )
@@ -217,7 +217,7 @@ libmpq__file_begin(
  * The writer validates the declared file size and buffers or flushes sectors
  * according to the selected storage and compression options. */
 int32_t
-libmpq__file_write(mpq_writer_s *writer, const uint8_t *buffer, libmpq__off_t size)
+libmpq__writer_write(mpq_writer_s *writer, const uint8_t *buffer, libmpq__off_t size)
 {
     return libmpq__writer_file_write(writer, buffer, size);
 }
@@ -226,7 +226,7 @@ libmpq__file_write(mpq_writer_s *writer, const uint8_t *buffer, libmpq__off_t si
  * Finalization verifies that all declared bytes were supplied and publishes
  * the completed file entry in the archive tables. */
 int32_t
-libmpq__file_finish(mpq_writer_s *writer)
+libmpq__writer_finish(mpq_writer_s *writer)
 {
     return libmpq__writer_file_finish(writer);
 }

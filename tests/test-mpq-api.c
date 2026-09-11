@@ -95,30 +95,30 @@ test_writer_errors(mpq_archive_s *archive)
     mpq_file_options_s invalid = { LIBMPQ_FILE_FLAG_IMPLODE | LIBMPQ_FILE_FLAG_COMPRESS, 0, 0, 0,
                                    0 };
 
-    TEST_CHECK(libmpq__file_begin(NULL, "null", 0, NULL, &writer) == LIBMPQ_ERROR_FORMAT);
-    TEST_CHECK(libmpq__file_begin(archive, NULL, 0, NULL, &writer) == LIBMPQ_ERROR_FORMAT);
-    TEST_CHECK(libmpq__file_begin(archive, "negative", -1, NULL, &writer) == LIBMPQ_ERROR_FORMAT);
+    TEST_CHECK(libmpq__writer_begin(NULL, "null", 0, NULL, &writer) == LIBMPQ_ERROR_FORMAT);
+    TEST_CHECK(libmpq__writer_begin(archive, NULL, 0, NULL, &writer) == LIBMPQ_ERROR_FORMAT);
+    TEST_CHECK(libmpq__writer_begin(archive, "negative", -1, NULL, &writer) == LIBMPQ_ERROR_FORMAT);
     TEST_CHECK(
-        libmpq__file_begin(archive, "invalid-flags", 0, &invalid, &writer) == LIBMPQ_ERROR_FORMAT
+        libmpq__writer_begin(archive, "invalid-flags", 0, &invalid, &writer) == LIBMPQ_ERROR_FORMAT
     );
-    TEST_CHECK(libmpq__file_begin(archive, "null-output", 0, NULL, NULL) == LIBMPQ_ERROR_FORMAT);
-    TEST_CHECK(libmpq__file_write(NULL, bytes, sizeof(bytes) - 1) == LIBMPQ_ERROR_SIZE);
-    TEST_CHECK(libmpq__file_write(NULL, NULL, 0) == LIBMPQ_ERROR_SIZE);
-    TEST_CHECK(libmpq__file_finish(NULL) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__writer_begin(archive, "null-output", 0, NULL, NULL) == LIBMPQ_ERROR_FORMAT);
+    TEST_CHECK(libmpq__writer_write(NULL, bytes, sizeof(bytes) - 1) == LIBMPQ_ERROR_SIZE);
+    TEST_CHECK(libmpq__writer_write(NULL, NULL, 0) == LIBMPQ_ERROR_SIZE);
+    TEST_CHECK(libmpq__writer_finish(NULL) == LIBMPQ_ERROR_EXIST);
 
-    TEST_CHECK(libmpq__file_begin(archive, "active", 2, NULL, &writer) == 0);
-    TEST_CHECK(libmpq__file_begin(archive, "second", 0, NULL, &writer) == LIBMPQ_ERROR_FORMAT);
-    TEST_CHECK(libmpq__file_write(writer, bytes, 3) == LIBMPQ_ERROR_SIZE);
-    TEST_CHECK(libmpq__file_write(writer, NULL, 1) == LIBMPQ_ERROR_SIZE);
-    TEST_CHECK(libmpq__file_write(writer, bytes, 2) == 0);
-    TEST_CHECK(libmpq__file_finish(writer) == 0);
+    TEST_CHECK(libmpq__writer_begin(archive, "active", 2, NULL, &writer) == 0);
+    TEST_CHECK(libmpq__writer_begin(archive, "second", 0, NULL, &writer) == LIBMPQ_ERROR_FORMAT);
+    TEST_CHECK(libmpq__writer_write(writer, bytes, 3) == LIBMPQ_ERROR_SIZE);
+    TEST_CHECK(libmpq__writer_write(writer, NULL, 1) == LIBMPQ_ERROR_SIZE);
+    TEST_CHECK(libmpq__writer_write(writer, bytes, 2) == 0);
+    TEST_CHECK(libmpq__writer_finish(writer) == 0);
 
-    TEST_CHECK(libmpq__file_begin(archive, "incomplete", 4, NULL, &writer) == 0);
-    TEST_CHECK(libmpq__file_write(writer, bytes, 2) == 0);
-    TEST_CHECK(libmpq__file_finish(writer) == LIBMPQ_ERROR_SIZE);
-    TEST_CHECK(libmpq__file_begin(archive, "oversized", 2, NULL, &writer) == 0);
-    TEST_CHECK(libmpq__file_write(writer, bytes, 3) == LIBMPQ_ERROR_SIZE);
-    TEST_CHECK(libmpq__file_finish(writer) == LIBMPQ_ERROR_SIZE);
+    TEST_CHECK(libmpq__writer_begin(archive, "incomplete", 4, NULL, &writer) == 0);
+    TEST_CHECK(libmpq__writer_write(writer, bytes, 2) == 0);
+    TEST_CHECK(libmpq__writer_finish(writer) == LIBMPQ_ERROR_SIZE);
+    TEST_CHECK(libmpq__writer_begin(archive, "oversized", 2, NULL, &writer) == 0);
+    TEST_CHECK(libmpq__writer_write(writer, bytes, 3) == LIBMPQ_ERROR_SIZE);
+    TEST_CHECK(libmpq__writer_finish(writer) == LIBMPQ_ERROR_SIZE);
     return 0;
 }
 
@@ -184,10 +184,10 @@ main(void)
         libmpq__file_add_path(archive, "missing", "libmpq-no-such-source", NULL) ==
         LIBMPQ_ERROR_OPEN
     );
-    TEST_CHECK(libmpq__file_begin(archive, "streamed", sizeof(streamed) - 1, NULL, &writer) == 0);
-    TEST_CHECK(libmpq__file_write(writer, streamed, 3) == 0);
-    TEST_CHECK(libmpq__file_write(writer, streamed + 3, sizeof(streamed) - 4) == 0);
-    TEST_CHECK(libmpq__file_finish(writer) == 0);
+    TEST_CHECK(libmpq__writer_begin(archive, "streamed", sizeof(streamed) - 1, NULL, &writer) == 0);
+    TEST_CHECK(libmpq__writer_write(writer, streamed, 3) == 0);
+    TEST_CHECK(libmpq__writer_write(writer, streamed + 3, sizeof(streamed) - 4) == 0);
+    TEST_CHECK(libmpq__writer_finish(writer) == 0);
     TEST_CHECK(libmpq__file_add(archive, "negative", NULL, -1, NULL) == LIBMPQ_ERROR_FORMAT);
     TEST_CHECK(libmpq__archive_clone(&clone, archive) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__archive_close(archive) == 0);

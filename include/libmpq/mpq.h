@@ -71,9 +71,10 @@ typedef struct mpq_archive mpq_archive_s;
 
 /*
  * Opaque state for one file currently being written to an archive. A writer
- * is created by libmpq__file_begin and owns the streaming state until finish
- * or failure. Applications must use the writer API instead of accessing its
- * private allocation directly.
+ * is created by libmpq__writer_begin and owns the streaming state until finish
+ * or failure. Applications operate on this handle through libmpq__writer_*
+ * instead of accessing its private allocation directly. The handle is consumed
+ * by libmpq__writer_finish(), regardless of its result.
  */
 typedef struct mpq_writer mpq_writer_s;
 
@@ -281,7 +282,7 @@ extern LIBMPQ_API int32_t libmpq__file_verify(
 /* Set Windows FILETIME, not Unix time, on an active file writer. Generation of
  * FILETIME must be enabled or FORMAT is returned. The default is zero;
  * neither this API nor path-based addition imports filesystem metadata. */
-extern LIBMPQ_API int32_t libmpq__file_timestamp(mpq_writer_s *writer, uint64_t filetime);
+extern LIBMPQ_API int32_t libmpq__writer_timestamp(mpq_writer_s *writer, uint64_t filetime);
 
 /*
  * Signed public offset type used for archive positions and file sizes. A
@@ -387,7 +388,7 @@ extern LIBMPQ_API int32_t libmpq__archive_create_mpqe(
  * Only one writer may be active per archive; finish it or abandon it before
  * beginning another file.
  */
-extern LIBMPQ_API int32_t libmpq__file_begin(
+extern LIBMPQ_API int32_t libmpq__writer_begin(
     mpq_archive_s *mpq_archive, const char *filename, libmpq__off_t unpacked_size,
     const mpq_file_options_s *options, mpq_writer_s **writer
 );
@@ -396,17 +397,17 @@ extern LIBMPQ_API int32_t libmpq__file_begin(
  * Append source bytes to an active file writer.
  * The writer buffers at most one sector and flushes complete sectors through
  * the selected compression and encryption pipeline. The call fails if the
- * input would exceed the size declared by libmpq__file_begin.
+ * input would exceed the size declared by libmpq__writer_begin.
  */
 extern LIBMPQ_API int32_t
-libmpq__file_write(mpq_writer_s *writer, const uint8_t *buffer, libmpq__off_t size);
+libmpq__writer_write(mpq_writer_s *writer, const uint8_t *buffer, libmpq__off_t size);
 
 /*
  * Finish an active file writer and publish its block and hash-table entries.
  * Any final partial sector is flushed before metadata is committed, and the
  * writer handle becomes invalid after this call regardless of its result.
  */
-extern LIBMPQ_API int32_t libmpq__file_finish(mpq_writer_s *writer);
+extern LIBMPQ_API int32_t libmpq__writer_finish(mpq_writer_s *writer);
 
 /*
  * Add a complete in-memory file to a writer archive.
