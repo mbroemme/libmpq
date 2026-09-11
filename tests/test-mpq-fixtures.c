@@ -117,6 +117,7 @@ test_fixture_storage(
     libmpq__off_t offset;
     libmpq__off_t packed;
     libmpq__off_t unpacked;
+    uint32_t flags;
     uint32_t compressed;
     uint32_t encrypted;
     uint32_t imploded;
@@ -128,9 +129,11 @@ test_fixture_storage(
     if (name_index != 8 && name_index != 9)
         TEST_CHECK(method == (name_index == 1 ? 0x08U : name_index == 7 ? 0x02U : expected_method));
 
-    TEST_CHECK(libmpq__file_compressed(archive, number, &compressed) == 0);
-    TEST_CHECK(libmpq__file_encrypted(archive, number, &encrypted) == 0);
-    TEST_CHECK(libmpq__file_imploded(archive, number, &imploded) == 0);
+    TEST_CHECK(libmpq__file_flags(archive, number, &flags) == 0);
+    TEST_CHECK(flags == archive->mpq_block[archive->mpq_map[number].block_table_indices].flags);
+    compressed = flags & LIBMPQ_FILE_FLAG_COMPRESS;
+    encrypted = flags & LIBMPQ_FILE_FLAG_ENCRYPTED;
+    imploded = flags & LIBMPQ_FILE_FLAG_IMPLODE;
     TEST_CHECK(libmpq__file_size_packed(archive, number, &packed) == 0);
     TEST_CHECK(libmpq__file_size_unpacked(archive, number, &unpacked) == 0);
 

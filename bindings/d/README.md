@@ -133,6 +133,9 @@ checksums mismatched; clear bits mean matched or unavailable/skipped.
 Operation errors throw existing exceptions. Zero does not prove availability.
 Normal extraction is unchanged; lossy ADPCM may differ from source hashes.
 
+`file.flags()` returns the stored block-table flags. Inspect `FILE_FLAG_*`
+bits; metadata convenience booleans are derived from these flags.
+
 `file.blockCompression(block)` returns the stored method byte, or zero for
 raw storage/fallback, without decoding. LZMA is `0x12`, not the writer selector.
 

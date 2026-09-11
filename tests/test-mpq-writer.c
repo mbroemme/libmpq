@@ -274,7 +274,8 @@ test_mpqe_writer_roundtrip(uint32_t version, int replace_existing)
     if (verify_mpqe_file(reader, "compressed.bin", packed, sizeof(packed)) != 0)
         goto cleanup;
     if (libmpq__file_number(reader, "encrypted.bin", &number) != 0 ||
-        libmpq__file_encrypted(reader, number, &encrypted) != 0 || encrypted == 0 ||
+        libmpq__file_flags(reader, number, &encrypted) != 0 ||
+        (encrypted & LIBMPQ_FILE_FLAG_ENCRYPTED) == 0 ||
         libmpq__file_read(
             reader, number, encrypted_output, sizeof(encrypted_output), &transferred
         ) != LIBMPQ_ERROR_DECRYPT)
@@ -683,6 +684,15 @@ test_property_case(uint32_t version, uint32_t sector_size, size_t payload_size)
                 "libmpq__file_number(archive, writer_modes[i].name, &number) == 0"
             );
             goto cleanup;
+        }
+        {
+            uint32_t flags = 0;
+
+            if (libmpq__file_flags(archive, number, &flags) != 0 ||
+                flags != archive->mpq_block[archive->mpq_map[number].block_table_indices].flags) {
+                test_failure(__FILE__, __LINE__, "stored file flags match the block table");
+                goto cleanup;
+            }
         }
         result =
             libmpq__file_read(archive, number, output, (libmpq__off_t)payload_size, &transferred);

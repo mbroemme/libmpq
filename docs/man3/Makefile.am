@@ -26,9 +26,7 @@ man_MANS = \
 	libmpq__block_read.3 \
 	libmpq__block_size_unpacked.3 \
 	libmpq__file_blocks.3 \
-	libmpq__file_compressed.3 \
-	libmpq__file_encrypted.3 \
-	libmpq__file_imploded.3 \
+	libmpq__file_flags.3 \
 	libmpq__file_hash.3 \
 	libmpq__file_number.3 \
 	libmpq__file_number_from_hash.3 \

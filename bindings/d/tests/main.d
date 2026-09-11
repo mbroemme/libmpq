@@ -88,6 +88,9 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
     assert(reopened.file("stream.bin").verify(VERIFY_SECTOR_CRC) == 0);
     assert(reopened.file("compressed.txt").verify(VERIFY_SECTOR_CRC) == 0);
     assert(reopened.file("compressed.txt").verify() == 0);
+    assert((reopened.file("compressed.txt").flags() &
+            (FILE_FLAG_COMPRESS | FILE_FLAG_SECTOR_CRC)) ==
+           (FILE_FLAG_COMPRESS | FILE_FLAG_SECTOR_CRC));
     auto blockResult = reopened.file("compressed.txt").verifyBlock(0);
     assert(blockResult.checksum != 0 && blockResult.checksum != uint.max);
     assert(blockResult.mismatches == 0);

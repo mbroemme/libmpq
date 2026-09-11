@@ -532,28 +532,12 @@ extern LIBMPQ_API int32_t
 libmpq__file_blocks(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *blocks);
 
 /*
- * Report whether one file entry has MPQ sector encryption enabled.
- * The output is set to a nonzero value when the block flags contain the
- * encrypted bit and to zero otherwise; no payload is read or modified.
+ * Return the actual stored MPQ block-table flags for one archive member.
+ * Inspect LIBMPQ_FILE_FLAG_* bits for storage properties; compressed files
+ * may contain raw fallback sectors. The output is zeroed before validation.
  */
 extern LIBMPQ_API int32_t
-libmpq__file_encrypted(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *encrypted);
-
-/*
- * Report whether one file entry uses Blizzard multi-compression.
- * This identifies the MPQ COMPRESS container flag and does not claim that each
- * requested stage reduced every sector; individual sectors may use raw data.
- */
-extern LIBMPQ_API int32_t
-libmpq__file_compressed(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *compressed);
-
-/*
- * Report whether one file entry uses the standalone PKWARE implode format.
- * Standalone implode is distinct from PKWARE being selected as one bit in a
- * Blizzard multi-compression mask.
- */
-extern LIBMPQ_API int32_t
-libmpq__file_imploded(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *imploded);
+libmpq__file_flags(mpq_archive_s *archive, uint32_t file_number, uint32_t *flags);
 
 /*
  * Resolve a plaintext MPQ filename to its public file number.

@@ -93,9 +93,7 @@ public final class LibmpqNative {
     private static final MethodHandle FILE_SIZE_UNPACKED;
     private static final MethodHandle FILE_OFFSET;
     private static final MethodHandle FILE_BLOCKS;
-    private static final MethodHandle FILE_ENCRYPTED;
-    private static final MethodHandle FILE_COMPRESSED;
-    private static final MethodHandle FILE_IMPLODED;
+    private static final MethodHandle FILE_FLAGS;
     private static final MethodHandle FILE_NUMBER;
     private static final MethodHandle FILE_HASH;
     private static final MethodHandle FILE_NUMBER_FROM_HASH;
@@ -171,9 +169,7 @@ public final class LibmpqNative {
         FILE_SIZE_UNPACKED = fileMetadata(linker, lookup, "libmpq__file_size_unpacked");
         FILE_OFFSET = fileMetadata(linker, lookup, "libmpq__file_offset");
         FILE_BLOCKS = fileUintMetadata(linker, lookup, "libmpq__file_blocks");
-        FILE_ENCRYPTED = fileUintMetadata(linker, lookup, "libmpq__file_encrypted");
-        FILE_COMPRESSED = fileUintMetadata(linker, lookup, "libmpq__file_compressed");
-        FILE_IMPLODED = fileUintMetadata(linker, lookup, "libmpq__file_imploded");
+        FILE_FLAGS = fileUintMetadata(linker, lookup, "libmpq__file_flags");
         FILE_NUMBER = function(linker, lookup, "libmpq__file_number",
                                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                      ValueLayout.ADDRESS, ValueLayout.ADDRESS));
@@ -411,9 +407,7 @@ public final class LibmpqNative {
     public static int fileUint(MemorySegment archive, int number, MemorySegment output, int kind) {
         MethodHandle handle = switch (kind) {
             case 0 -> FILE_BLOCKS;
-            case 1 -> FILE_ENCRYPTED;
-            case 2 -> FILE_COMPRESSED;
-            case 3 -> FILE_IMPLODED;
+            case 1 -> FILE_FLAGS;
             default -> throw new IllegalArgumentException("Unknown file query: " + kind);
         };
         return callInt(handle, archive, number, output);

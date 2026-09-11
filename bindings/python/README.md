@@ -105,6 +105,9 @@ checksums mismatched; clear bits mean matched or unavailable/skipped.
 Operation errors raise existing exceptions. Zero does not prove availability.
 Normal extraction is unchanged; lossy ADPCM may differ from source hashes.
 
+`file.flags` contains the stored block-table flags. Inspect `FILE_FLAG_*`
+bits; `encrypted`, `compressed`, and `imploded` are derived convenience booleans.
+
 `file.block_compression(block)` returns the stored method byte, or zero for
 raw storage/fallback, without decoding. LZMA is `0x12`, not the writer selector.
 

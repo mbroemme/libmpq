@@ -245,7 +245,7 @@ _configure("libmpq__archive_files", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ct
 _configure("libmpq__file_size_packed", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_OFF_T))
 _configure("libmpq__file_size_unpacked", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_OFF_T))
 _configure("libmpq__file_offset", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_OFF_T))
-for _name in ("blocks", "encrypted", "compressed", "imploded"):
+for _name in ("blocks", "flags"):
     _configure("libmpq__file_" + _name, ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_number", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_hash", None, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32))
@@ -646,9 +646,10 @@ class File:
         self.unpacked_size = _read_value(libmpq.libmpq__file_size_unpacked, _OFF_T, archive._mpq, self.number)
         self.offset = _read_value(libmpq.libmpq__file_offset, _OFF_T, archive._mpq, self.number)
         self.blocks = _read_value(libmpq.libmpq__file_blocks, ctypes.c_uint32, archive._mpq, self.number)
-        self.encrypted = bool(_read_value(libmpq.libmpq__file_encrypted, ctypes.c_uint32, archive._mpq, self.number))
-        self.compressed = bool(_read_value(libmpq.libmpq__file_compressed, ctypes.c_uint32, archive._mpq, self.number))
-        self.imploded = bool(_read_value(libmpq.libmpq__file_imploded, ctypes.c_uint32, archive._mpq, self.number))
+        self.flags = _read_value(libmpq.libmpq__file_flags, ctypes.c_uint32, archive._mpq, self.number)
+        self.encrypted = bool(self.flags & FILE_FLAG_ENCRYPTED)
+        self.compressed = bool(self.flags & FILE_FLAG_COMPRESS)
+        self.imploded = bool(self.flags & FILE_FLAG_IMPLODE)
         self.size_packed, self.size_unpacked = self.packed_size, self.unpacked_size
 
     def metadata(self):

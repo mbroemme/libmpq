@@ -514,59 +514,17 @@ libmpq__file_blocks(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *
     return LIBMPQ_SUCCESS;
 }
 
-/* Report whether the selected file entry has the MPQ encrypted flag set.
- * The result is normalized to the library's boolean convention after lookup. */
+/* Return stored block-table flags without reading or modifying payload data. */
 int32_t
-libmpq__file_encrypted(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *encrypted)
+libmpq__file_flags(mpq_archive_s *archive, uint32_t file_number, uint32_t *flags)
 {
-    if (libmpq__reader_validate_file_number(mpq_archive, file_number) < 0) {
+    if (flags == NULL)
         return LIBMPQ_ERROR_EXIST;
-    }
-
-    *encrypted =
-        (mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags &
-         LIBMPQ_FLAG_ENCRYPTED) != 0
-            ? TRUE
-            : FALSE;
-
-    return LIBMPQ_SUCCESS;
-}
-
-/* Report whether the selected file entry has any MPQ compression flags set.
- * This reports Blizzard multi-compression metadata, including its per-sector
- * codec mask, rather than treating standalone PKWARE as multi-compressed. */
-int32_t
-libmpq__file_compressed(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *compressed)
-{
-    if (libmpq__reader_validate_file_number(mpq_archive, file_number) < 0) {
+    *flags = 0;
+    if (archive == NULL || libmpq__reader_validate_file_number(archive, file_number) < 0)
         return LIBMPQ_ERROR_EXIST;
-    }
 
-    *compressed =
-        (mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags &
-         LIBMPQ_FLAG_COMPRESS_MULTI) != 0
-            ? TRUE
-            : FALSE;
-
-    return LIBMPQ_SUCCESS;
-}
-
-/* Report whether the selected file entry uses PKWARE implosion.
- * The flag query covers standalone implode storage as represented in the MPQ
- * block entry and returns a normalized boolean result. */
-int32_t
-libmpq__file_imploded(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *imploded)
-{
-    if (libmpq__reader_validate_file_number(mpq_archive, file_number) < 0) {
-        return LIBMPQ_ERROR_EXIST;
-    }
-
-    *imploded =
-        (mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags &
-         LIBMPQ_FLAG_COMPRESS_PKZIP) != 0
-            ? TRUE
-            : FALSE;
-
+    *flags = archive->mpq_block[archive->mpq_map[file_number].block_table_indices].flags;
     return LIBMPQ_SUCCESS;
 }
 

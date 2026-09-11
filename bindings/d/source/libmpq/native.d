@@ -281,17 +281,8 @@ extern(C) {
     /** Query one file's block count. */
     int libmpq__file_blocks(mpq_archive_s* archive, uint number, uint* value);
 
-    /** Query one file's encryption flag. */
-    int libmpq__file_encrypted(mpq_archive_s* archive, uint number,
-                               uint* value);
-
-    /** Query one file's compression flag. */
-    int libmpq__file_compressed(mpq_archive_s* archive, uint number,
-                                uint* value);
-
-    /** Query one file's PKWARE implode flag. */
-    int libmpq__file_imploded(mpq_archive_s* archive, uint number,
-                              uint* value);
+    /** Query one file's stored block-table flags. */
+    int libmpq__file_flags(mpq_archive_s* archive, uint number, uint* flags);
 
     /** Resolve a filename using Storm's archive hash tables. */
     int libmpq__file_number(mpq_archive_s* archive, const(char)* filename,

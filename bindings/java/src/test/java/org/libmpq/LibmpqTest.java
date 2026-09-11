@@ -103,6 +103,9 @@ class LibmpqTest {
                  Archive mpqe = Archive.openMpqe(root.resolve("mpq-v" + version + "-features.mpqe"), code)) {
                 for (String member : new String[] {"sparse.txt", "sparse-zlib.txt", "sparse-bzip2.txt"}) {
                     assertArrayEquals(expected, raw.readFile(raw.fileNumber(member)));
+                    assertEquals(raw.fileFlags(raw.fileNumber(member)),
+                                 mpqe.fileFlags(mpqe.fileNumber(member)));
+                    assertTrue((raw.fileFlags(raw.fileNumber(member)) & Mpq.FILE_FLAG_SECTOR_CRC) != 0);
                     assertArrayEquals(expected, mpqe.readFile(mpqe.fileNumber(member)));
                     Archive.BlockVerification sector = raw.verifyBlock(raw.fileNumber(member), 0);
                     assertTrue(sector.checksum() > 0 && sector.checksum() < 0xffffffffL);

@@ -308,7 +308,10 @@ test_adpcm_archive(uint32_t version, uint16_t channels)
     TEST_CHECK(result == 0);
     TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
     TEST_CHECK(libmpq__file_number(archive, "tone.wav", &number) == 0);
-    TEST_CHECK(libmpq__file_compressed(archive, number, &compressed) == 0 && compressed != 0);
+    TEST_CHECK(
+        libmpq__file_flags(archive, number, &compressed) == 0 &&
+        (compressed & LIBMPQ_FILE_FLAG_COMPRESS) != 0
+    );
     TEST_CHECK(
         libmpq__file_blocks(archive, number, &blocks) == 0 && blocks == (wave_size + 4095) / 4096
     );

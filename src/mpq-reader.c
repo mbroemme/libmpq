@@ -372,6 +372,7 @@ read_block(
 
     /* Packed input buffer, size bookkeeping and block decryption state. */
     uint8_t *in_buf;
+    uint32_t flags = 0;
     uint32_t encrypted = 0;
     uint32_t compressed = 0;
     uint32_t imploded = 0;
@@ -422,9 +423,10 @@ read_block(
         return LIBMPQ_ERROR_READ;
     }
 
-    libmpq__file_encrypted(mpq_archive, file_number, &encrypted);
-    libmpq__file_compressed(mpq_archive, file_number, &compressed);
-    libmpq__file_imploded(mpq_archive, file_number, &imploded);
+    libmpq__file_flags(mpq_archive, file_number, &flags);
+    encrypted = flags & LIBMPQ_FILE_FLAG_ENCRYPTED;
+    compressed = flags & LIBMPQ_FILE_FLAG_COMPRESS;
+    imploded = flags & LIBMPQ_FILE_FLAG_IMPLODE;
 
     /* Raw unencrypted blocks can be read directly into the caller's buffer. */
     use_out_buf = !encrypted && !compressed && !imploded && in_size <= out_size;

@@ -316,19 +316,24 @@ public final class Archive implements AutoCloseable {
         return fileUint(number, 0);
     }
 
+    /** Returns the unsigned stored MPQ block-table flags. */
+    public long fileFlags(int number) throws LibmpqException {
+        return fileUint(number, 1);
+    }
+
     /** Reports whether one entry's stored sectors are encrypted. */
     public boolean fileEncrypted(int number) throws LibmpqException {
-        return fileUint(number, 1) != 0;
+        return (fileFlags(number) & Mpq.FILE_FLAG_ENCRYPTED) != 0;
     }
 
     /** Reports whether one entry uses MPQ multi-compression. */
     public boolean fileCompressed(int number) throws LibmpqException {
-        return fileUint(number, 2) != 0;
+        return (fileFlags(number) & Mpq.FILE_FLAG_COMPRESS) != 0;
     }
 
     /** Reports whether one entry uses standalone PKWARE implode. */
     public boolean fileImploded(int number) throws LibmpqException {
-        return fileUint(number, 3) != 0;
+        return (fileFlags(number) & Mpq.FILE_FLAG_IMPLODE) != 0;
     }
 
     /**

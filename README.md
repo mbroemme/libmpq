@@ -101,6 +101,8 @@ zero or `LIBMPQ_VERIFY_SECTOR_CRC` in `mismatches`. Both outputs stay zero
 on errors. No calculated checksum is exposed.
 
 Use `libmpq__block_compression()` to inspect the stored method without decoding.
+Use `libmpq__file_flags()` to retrieve a member's complete stored block-table
+flags and inspect the `LIBMPQ_FILE_FLAG_*` bits for file-level storage properties.
 Zero means raw storage/fallback; LZMA is returned as on-disk `0x12`, not the
 writer selector. In MPQ v1, `0x12` retains its legacy bzip2/zlib meaning.
 

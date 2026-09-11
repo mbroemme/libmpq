@@ -301,6 +301,14 @@ class File {
     }
     /** Return the requested name, when created by name. */ string name() const { return entryName; }
 
+    /** Return the stored MPQ block-table flags. */
+    uint flags() {
+        uint value;
+        checkStatus(libmpq__file_flags(archiveRef.nativeHandle(), number, &value),
+                    "libmpq__file_flags");
+        return value;
+    }
+
     /** Query all native metadata for this entry. */
     FileMetadata metadata() {
         auto archive = archiveRef.nativeHandle(); FileMetadata result;
@@ -308,9 +316,10 @@ class File {
         checkStatus(libmpq__file_size_unpacked(archive, number, &result.unpackedSize), "libmpq__file_size_unpacked");
         checkStatus(libmpq__file_offset(archive, number, &result.offset), "libmpq__file_offset");
         checkStatus(libmpq__file_blocks(archive, number, &result.blockCount), "libmpq__file_blocks");
-        checkStatus(libmpq__file_encrypted(archive, number, &result.encrypted), "libmpq__file_encrypted");
-        checkStatus(libmpq__file_compressed(archive, number, &result.compressed), "libmpq__file_compressed");
-        checkStatus(libmpq__file_imploded(archive, number, &result.imploded), "libmpq__file_imploded");
+        auto storage = flags();
+        result.encrypted = (storage & FILE_FLAG_ENCRYPTED) != 0;
+        result.compressed = (storage & FILE_FLAG_COMPRESS) != 0;
+        result.imploded = (storage & FILE_FLAG_IMPLODE) != 0;
         return result;
     }
 

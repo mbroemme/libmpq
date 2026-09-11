@@ -121,6 +121,9 @@ def test_fixture_metadata_and_extraction(name, version):
             methods["lzma.txt"] = 0x12
         for member, method in methods.items():
             assert archive[member].block_compression(0) == method
+            flags = archive[member].flags
+            assert flags & (mpq.FILE_FLAG_IMPLODE if member == "implode.txt" else mpq.FILE_FLAG_COMPRESS)
+            assert bool(flags & mpq.FILE_FLAG_ENCRYPTED) == (member == "encrypted-compress.txt")
         with pytest.raises(mpq.LibmpqNotFoundError):
             entry.block_compression(0xffffffff)
         with pytest.raises(ValueError):
@@ -134,6 +137,9 @@ def test_fixture_metadata_and_extraction(name, version):
         assert b"libmpq" in entry.read()
         assert archive.metadata().files == archive.files
         assert entry.metadata().unpacked_size == entry.unpacked_size
+        assert entry.compressed == bool(entry.flags & mpq.FILE_FLAG_COMPRESS)
+        assert entry.encrypted == bool(entry.flags & mpq.FILE_FLAG_ENCRYPTED)
+        assert entry.imploded == bool(entry.flags & mpq.FILE_FLAG_IMPLODE)
         for member in ("sparse.txt", "sparse-zlib.txt", "sparse-bzip2.txt"):
             assert archive[member].read() == SPARSE_BYTES
             assert archive[member].read().decode("utf-32") == SPARSE_TEXT

@@ -210,9 +210,8 @@ main(void)
     TEST_CHECK(libmpq__file_size_unpacked(archive, number, &unpacked) == 0 && unpacked == 10);
     TEST_CHECK(libmpq__file_size_packed(archive, number, &packed) == 0 && packed == unpacked);
     TEST_CHECK(libmpq__file_blocks(archive, number, &blocks) == 0 && blocks == 1);
-    TEST_CHECK(libmpq__file_encrypted(archive, number, &flag) == 0 && flag == 0);
-    TEST_CHECK(libmpq__file_compressed(archive, number, &flag) == 0 && flag == 0);
-    TEST_CHECK(libmpq__file_imploded(archive, number, &flag) == 0 && flag == 0);
+    TEST_CHECK(libmpq__file_flags(archive, number, &flag) == 0);
+    TEST_CHECK(flag == UINT32_C(0x80000000));
     TEST_CHECK(libmpq__file_offset(archive, number, &offset) == 0 && offset > 0);
     TEST_CHECK(libmpq__file_read(archive, number, output, sizeof(output), &transferred) == 0);
     TEST_CHECK(transferred == sizeof(payload) - 1 && memcmp(output, payload, transferred) == 0);
@@ -230,11 +229,15 @@ main(void)
     TEST_CHECK(libmpq__file_size_unpacked(archive, files, &unpacked) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__file_offset(archive, files, &offset) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__file_blocks(archive, files, &blocks) == LIBMPQ_ERROR_EXIST);
-    TEST_CHECK(libmpq__file_encrypted(archive, files, &flag) == LIBMPQ_ERROR_EXIST);
-    TEST_CHECK(libmpq__file_compressed(archive, files, &flag) == LIBMPQ_ERROR_EXIST);
-    TEST_CHECK(libmpq__file_imploded(archive, files, &flag) == LIBMPQ_ERROR_EXIST);
+    flag = UINT32_MAX;
+    TEST_CHECK(libmpq__file_flags(archive, files, &flag) == LIBMPQ_ERROR_EXIST && flag == 0);
+    flag = UINT32_MAX;
+    TEST_CHECK(libmpq__file_flags(NULL, number, &flag) == LIBMPQ_ERROR_EXIST && flag == 0);
+    TEST_CHECK(libmpq__file_flags(archive, number, NULL) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__file_number(archive, "compressed", &number) == 0);
-    TEST_CHECK(libmpq__file_compressed(archive, number, &flag) == 0 && flag != 0);
+    TEST_CHECK(
+        libmpq__file_flags(archive, number, &flag) == 0 && (flag & LIBMPQ_FILE_FLAG_COMPRESS) != 0
+    );
     TEST_CHECK(libmpq__file_blocks(archive, number, &blocks) == 0 && blocks == 2);
     TEST_CHECK(libmpq__block_size_unpacked(archive, number, 0, &unpacked) == 0 && unpacked == 4096);
     TEST_CHECK(
