@@ -66,6 +66,10 @@ def test_version_errors_and_hashes():
     assert mpq.FILE_FLAG_SECTOR_CRC == 0x04000000
     assert verify.argtypes == [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
                                ctypes.POINTER(ctypes.c_uint32)]
+    block_verify = mpq.libmpq.libmpq__block_verify
+    assert block_verify.restype == ctypes.c_int32
+    assert block_verify.argtypes == [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                                    ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32)]
     assert not mpq.archive_compression_allowed(mpq.ARCHIVE_VERSION_TWO, mpq.COMPRESSION_HUFFMAN)
     assert mpq.archive_compression_allowed(mpq.ARCHIVE_VERSION_TWO, mpq.COMPRESSION_HUFFMAN,
                                      mpq.COMPRESSION_POLICY_EXTENDED)
@@ -112,6 +116,14 @@ def test_fixture_metadata_and_extraction(name, version):
         for member in ("sparse.txt", "sparse-zlib.txt", "sparse-bzip2.txt"):
             assert archive[member].read() == SPARSE_BYTES
             assert archive[member].read().decode("utf-32") == SPARSE_TEXT
+            stored, mismatches = archive[member].verify_block(0)
+            assert 0 < stored < 0xffffffff and mismatches == 0
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            entry.verify_block(0)
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            archive["sparse.txt"].verify_block(0xffffffff)
+        with pytest.raises(ValueError):
+            archive["sparse.txt"].verify_block(-1)
 
 
 @pytest.mark.parametrize("name,version,offset", [
@@ -126,6 +138,8 @@ def test_mpqe_fixture_metadata_extraction_and_clone(name, version, offset):
         assert archive.version == version
         assert b"libmpq" in archive["overview.txt"].read()
         assert archive["overview.txt"].verify() == 0
+        stored, mismatches = archive["sparse.txt"].verify_block(0)
+        assert 0 < stored < 0xffffffff and mismatches == 0
         clone = archive.clone()
         try:
             assert clone["overview.txt"].attributes() == archive["overview.txt"].attributes()

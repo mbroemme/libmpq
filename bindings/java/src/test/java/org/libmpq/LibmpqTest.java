@@ -104,7 +104,15 @@ class LibmpqTest {
                 for (String member : new String[] {"sparse.txt", "sparse-zlib.txt", "sparse-bzip2.txt"}) {
                     assertArrayEquals(expected, raw.readFile(raw.fileNumber(member)));
                     assertArrayEquals(expected, mpqe.readFile(mpqe.fileNumber(member)));
+                    Archive.BlockVerification sector = raw.verifyBlock(raw.fileNumber(member), 0);
+                    assertTrue(sector.checksum() > 0 && sector.checksum() < 0xffffffffL);
+                    assertEquals(0, sector.mismatches());
+                    assertEquals(sector, mpqe.verifyBlock(mpqe.fileNumber(member), 0));
                 }
+                assertEquals(Mpq.ERROR_EXIST, assertThrows(LibmpqException.class,
+                    () -> raw.verifyBlock(raw.fileNumber("overview.txt"), 0)).code());
+                assertEquals(Mpq.ERROR_EXIST, assertThrows(LibmpqException.class,
+                    () -> raw.verifyBlock(raw.fileNumber("sparse.txt"), -1)).code());
             }
         }
     }

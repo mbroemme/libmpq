@@ -235,6 +235,7 @@ _configure("libmpq__archive_close", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__archive_attributes_flags", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_attributes", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_FileAttributes))
 _configure("libmpq__file_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
+_configure("libmpq__block_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__writer_timestamp", ctypes.c_int32, _VOID_PTR, ctypes.c_uint64)
 for _name in ("packed", "unpacked"):
     _configure("libmpq__archive_size_" + _name, ctypes.c_int32, _VOID_PTR, ctypes.POINTER(_OFF_T))
@@ -600,6 +601,20 @@ class Reader:
 
 class File:
     """Metadata and complete/block access wrapper for one MPQ entry."""
+
+    def verify_block(self, block):
+        """Return (stored Adler-32, mismatches), with zero or VERIFY_SECTOR_CRC bits.
+
+        Unavailable/unused checksums raise LibmpqNotFoundError. Other native
+        errors also raise; normal reads never verify implicitly.
+        """
+        self._archive._ensure_open()
+        if not isinstance(block, int) or not 0 <= block <= 0xffffffff:
+            raise ValueError("block must be an unsigned 32-bit integer")
+        checksum, mismatches = ctypes.c_uint32(), ctypes.c_uint32()
+        libmpq.libmpq__block_verify(self._archive._mpq, self.number, block,
+                                  ctypes.byref(checksum), ctypes.byref(mismatches))
+        return checksum.value, mismatches.value
 
     def verify(self, flags=VERIFY_ALL):
         """Return mismatches as a subset of the requested VERIFY_* flags.

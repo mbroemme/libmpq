@@ -1,0 +1,48 @@
+.\" Copyright (c) 2026 Maik Broemme. LGPL-2.1-or-later.
+.TH LIBMPQ__BLOCK_VERIFY 3 2026-09-11 "The MoPaQ archive library"
+.SH NAME
+libmpq__block_verify \- verify one sector and return its stored Adler-32
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__block_verify("
+.BI "        mpq_archive_s *" "archive",
+.BI "        uint32_t       " "file_number",
+.BI "        uint32_t       " "block_number",
+.BI "        uint32_t      *" "checksum",
+.BI "        uint32_t      *" "mismatches"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Explicitly verify one sector against its stored MPQ sector checksum.
+MPQ sector CRCs use Adler-32 over packed sector bytes after decryption and
+before decompression. The optional checksum table may itself be compressed,
+but is not encrypted. COMPRESS and PKWARE IMPLODE sectors are supported,
+including encrypted sectors and MPQE archives.
+.PP
+The existing reader loads the table, reads and decrypts the selected sector,
+compares its checksum, and decodes the sector. No other sector payload is
+verified. This does not require (attributes) and does not check file CRC32
+or MD5. Normal opening, reading and extraction remain unchanged.
+.SH RETURN VALUE
+LIBMPQ_SUCCESS means the operation completed. *checksum receives the stored
+Adler-32, not the calculated value. *mismatches is zero for a match or
+LIBMPQ_VERIFY_SECTOR_CRC for a mismatch. Checksums are not authentication.
+.PP
+LIBMPQ_ERROR_EXIST means a NULL required argument, invalid file/block number,
+or no usable sector checksum: absent table, missing sector-CRC flag,
+single-unit or non-codec storage, or a zero/all-ones checksum entry.
+LIBMPQ_ERROR_NOT_INITIALIZED means a writer archive was supplied.
+Malformed metadata, read, seek, decryption, decoding, size and allocation
+failures retain the normal negative libmpq errors.
+.PP
+Both non-NULL output pointers are initialized to zero before validation.
+Outputs are published only after the complete operation succeeds and remain
+zero on any failure, even if a mismatch was detected before a decoding error.
+Use separate storage for checksum and mismatches.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__block_read (3),
+.BR libmpq__file_blocks (3),
+.BR libmpq__file_verify (3)

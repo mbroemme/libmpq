@@ -22,6 +22,21 @@ import org.libmpq.ffi.LibmpqNative;
  */
 public final class Archive implements AutoCloseable {
 
+    /** Stored unsigned Adler-32 and zero or Mpq.VERIFY_SECTOR_CRC mismatch bits. */
+    public record BlockVerification(long checksum, int mismatches) {}
+
+    /** Verify one sector; unavailable checksums throw ERROR_EXIST. */
+    public BlockVerification verifyBlock(int number, int block) throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment checksum = arena.allocate(ValueLayout.JAVA_INT);
+            MemorySegment mismatches = arena.allocate(ValueLayout.JAVA_INT);
+            Support.check(LibmpqNative.blockVerify(handle, number, block, checksum, mismatches));
+            return new BlockVerification(Integer.toUnsignedLong(checksum.get(ValueLayout.JAVA_INT, 0)),
+                                         mismatches.get(ValueLayout.JAVA_INT, 0));
+        }
+    }
+
     /** Verify all available file checksums and return mismatch bits. */
     public int verify(int number) throws LibmpqException {
         return verify(number, Mpq.VERIFY_ALL);

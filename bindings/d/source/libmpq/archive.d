@@ -25,6 +25,9 @@ struct FileAttributes {
     bool patchBit;
 }
 
+/** Stored sector Adler-32 and zero or VERIFY_SECTOR_CRC mismatch bits. */
+struct BlockVerification { uint checksum; uint mismatches; }
+
 /** The three Storm hash values used by MPQ name lookup. */
 struct StormHash { uint hash1; uint hash2; uint hash3; }
 
@@ -277,6 +280,15 @@ class File {
         checkStatus(libmpq__file_verify(archiveRef.nativeHandle(), number, flags, &mismatches),
                     "libmpq__file_verify");
         return mismatches;
+    }
+
+    /** Verify one sector. Missing/unused checksums throw ERROR_EXIST. */
+    BlockVerification verifyBlock(uint block) {
+        BlockVerification value;
+        checkStatus(libmpq__block_verify(archiveRef.nativeHandle(), number, block,
+                                        &value.checksum, &value.mismatches),
+                    "libmpq__block_verify");
+        return value;
     }
 
     /** Return stored attributes for this entry; missing/invalid metadata throws. */

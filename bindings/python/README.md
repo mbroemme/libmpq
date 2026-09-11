@@ -91,6 +91,9 @@ raw, and single-unit files ignore this flag. Generation is opt-in and
 verification remains explicit.
 
 `archive["file.txt"].verify()` explicitly compares sector Adler-32 and file CRC32/MD5.
+For one sector, `archive["file.txt"].verify_block(block_number)` returns
+`(stored_adler32, mismatches)`. Mismatches is zero or `VERIFY_SECTOR_CRC`;
+an unavailable checksum raises `LibmpqNotFoundError` rather than reporting a match.
 Use `VERIFY_SECTOR_CRC`, `VERIFY_FILE_CRC32`, or
 `VERIFY_FILE_MD5` to select checks. Sector checks cover decrypted packed
 bytes; file hashes cover extracted bytes. Missing values/tables are skipped.

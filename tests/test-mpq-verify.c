@@ -71,6 +71,30 @@ corrupt_read(mpq_stream_s *stream, uint64_t offset, uint8_t *data, size_t size)
     return status;
 }
 
+/* An invalid compression mask fails decoding after the Adler-32 comparison. */
+static int32_t
+corrupt_method(mpq_stream_s *stream, uint64_t offset, uint8_t *data, size_t size)
+{
+    read_failure_s *failure = stream->read_context;
+    int32_t status = failure->read_at(stream, offset, data, size);
+    if (status == 0 && offset == failure->offset && size != 0) {
+        data[0] = 0x04;
+        ++failure->reads;
+    }
+    return status;
+}
+
+/* Both outputs must be cleared, including on invalid indices and absent data. */
+static int
+check_block_error(mpq_archive_s *archive, uint32_t number, uint32_t block, int32_t error)
+{
+    uint32_t checksum = UINT32_MAX;
+    uint32_t mismatches = UINT32_MAX;
+    TEST_CHECK(libmpq__block_verify(archive, number, block, &checksum, &mismatches) == error);
+    TEST_CHECK(checksum == 0 && mismatches == 0);
+    return 0;
+}
+
 /* Construct only the checksum-bearing file payload here. The normal writer
  * supplies archive tables and attributes. Checksums cover pre-encryption bytes,
  * including a deliberately raw final sector. The checksum table is never encrypted. */
@@ -181,6 +205,20 @@ test_sectors(
     REQUIRE(libmpq__archive_open(&archive, path, 0) == 0);
     REQUIRE(libmpq__file_number(archive, "payload", &number) == 0);
     index = archive->mpq_map[number].block_table_indices;
+    for (i = 0; i < sectors; ++i) {
+        uint32_t stored = UINT32_MAX;
+        bits = UINT32_MAX;
+        status = libmpq__block_verify(archive, number, i, &stored, &bits);
+        if (absent) {
+            REQUIRE(status == LIBMPQ_ERROR_EXIST && stored == 0 && bits == 0);
+        } else {
+            REQUIRE(status == 0 && stored == libmpq__load_le32(checksums + i * 4));
+            REQUIRE(bits == (i == 0 ? corrupt & LIBMPQ_VERIFY_SECTOR_CRC : 0));
+        }
+        REQUIRE(archive->mpq_file[number] == NULL);
+    }
+    REQUIRE(check_block_error(archive, number, sectors, LIBMPQ_ERROR_EXIST) == 0);
+    REQUIRE(check_block_error(archive, UINT32_MAX, 0, LIBMPQ_ERROR_EXIST) == 0);
     for (request = 0; request <= LIBMPQ_VERIFY_ALL; ++request) {
         bits = UINT32_MAX;
         status = libmpq__file_verify(archive, number, request, &bits);
@@ -217,6 +255,9 @@ test_sectors(
         failure.reads = 0;
         archive->stream->read_context = &failure;
         archive->stream->read_at = fail_read;
+        status = check_block_error(archive, number, 1, LIBMPQ_ERROR_READ);
+        REQUIRE(status == 0 && failure.reads == 1);
+        failure.reads = 0;
         bits = UINT32_MAX;
         status = libmpq__file_verify(archive, number, LIBMPQ_VERIFY_SECTOR_CRC, &bits);
         archive->stream->read_at = failure.read_at;
@@ -228,6 +269,7 @@ test_sectors(
         uint32_t saved;
         saved = archive->mpq_block[index].packed_size;
         archive->mpq_block[index].packed_size = position - 1;
+        REQUIRE(check_block_error(archive, number, 0, LIBMPQ_ERROR_FORMAT) == 0);
         bits = UINT32_MAX;
         REQUIRE(
             libmpq__file_verify(archive, number, LIBMPQ_VERIFY_SECTOR_CRC, &bits) ==
@@ -236,6 +278,20 @@ test_sectors(
         );
         REQUIRE(libmpq__file_read(archive, number, output, sizeof(output), &transferred) == 0);
         archive->mpq_block[index].packed_size = saved;
+        REQUIRE(archive->mpq_file[number] == NULL);
+    }
+    if (!absent && !encrypted) {
+        read_failure_s failure;
+        failure.read_at = archive->stream->read_at;
+        failure.offset =
+            (uint64_t)archive->archive_offset + archive->mpq_block[index].offset + offsets[0];
+        failure.reads = 0;
+        archive->stream->read_context = &failure;
+        archive->stream->read_at = corrupt_method;
+        status = check_block_error(archive, number, 0, LIBMPQ_ERROR_UNPACK);
+        archive->stream->read_at = failure.read_at;
+        archive->stream->read_context = NULL;
+        REQUIRE(status == 0 && failure.reads == 1);
         REQUIRE(archive->mpq_file[number] == NULL);
     }
 cleanup:
@@ -287,6 +343,7 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
                   : libmpq__archive_create(&archive, path, &options);
     REQUIRE(status == 0);
     REQUIRE(libmpq__archive_add_data(archive, "payload", plain, size, &file) == 0);
+    REQUIRE(check_block_error(archive, 0, 0, LIBMPQ_ERROR_NOT_INITIALIZED) == 0);
     status = libmpq__archive_close(archive);
     archive = NULL;
     REQUIRE(status == 0);
@@ -296,6 +353,8 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
     REQUIRE(libmpq__file_number(archive, "payload", &number) == 0);
     index = archive->mpq_map[number].block_table_indices;
     REQUIRE(((archive->mpq_block[index].flags & LIBMPQ_FLAG_CRC) != 0) == !!eligible);
+    if (!eligible)
+        REQUIRE(check_block_error(archive, number, 0, LIBMPQ_ERROR_EXIST) == 0);
     REQUIRE(
         libmpq__file_verify(archive, number, LIBMPQ_VERIFY_SECTOR_CRC, &bits) == 0 && bits == 0
     );
@@ -322,7 +381,10 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
         else if (blocks <= 2)
             REQUIRE(offsets[blocks + 1] - offsets[blocks] == blocks * 4);
         for (i = 0; i < blocks; ++i) {
+            uint32_t stored = 0;
             uint32_t length = offsets[i + 1] - offsets[i];
+            REQUIRE(libmpq__block_verify(archive, number, i, &stored, &bits) == 0);
+            REQUIRE(stored == checksums[i] && bits == 0);
             REQUIRE(length <= sizeof(packed));
             REQUIRE(
                 libmpq__stream_read_at(archive->stream, base + offsets[i], packed, length) == 0
@@ -355,6 +417,13 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
             failure.reads = 0;
             archive->stream->read_context = &failure;
             archive->stream->read_at = corrupt_read;
+            {
+                uint32_t stored = 0;
+                status = libmpq__block_verify(archive, number, blocks - 1, &stored, &bits);
+                REQUIRE(status == 0 && stored == checksums[blocks - 1]);
+                REQUIRE(bits == LIBMPQ_VERIFY_SECTOR_CRC && failure.reads == 1);
+                failure.reads = 0;
+            }
             status = libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &bits);
             archive->stream->read_at = failure.read_at;
             archive->stream->read_context = NULL;
@@ -391,6 +460,7 @@ main(void)
     int absent;
     size_t i;
     size_t j;
+    uint32_t value = UINT32_MAX;
     static const size_t sizes[] = { 0, 1, 37, 512, 513, 8229 };
     static const uint32_t storage[] = { 0,
                                         LIBMPQ_FILE_FLAG_SINGLE,
@@ -401,6 +471,12 @@ main(void)
                                         LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED,
                                         LIBMPQ_FILE_FLAG_IMPLODE | LIBMPQ_FILE_FLAG_ENCRYPTED };
 
+    TEST_CHECK(check_block_error(NULL, 0, 0, LIBMPQ_ERROR_EXIST) == 0);
+    TEST_CHECK(libmpq__block_verify(NULL, 0, 0, NULL, &value) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(value == 0);
+    value = UINT32_MAX;
+    TEST_CHECK(libmpq__block_verify(NULL, 0, 0, &value, NULL) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(value == 0);
     for (version = 0; version <= 1; ++version)
         for (encrypted = 0; encrypted <= 1; ++encrypted)
             for (compressed = 0; compressed <= 1; ++compressed)

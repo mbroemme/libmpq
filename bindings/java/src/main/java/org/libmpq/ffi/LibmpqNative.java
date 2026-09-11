@@ -101,6 +101,7 @@ public final class LibmpqNative {
     private static final MethodHandle FILE_NUMBER_FROM_HASH;
     private static final MethodHandle FILE_READ;
     private static final MethodHandle FILE_VERIFY;
+    private static final MethodHandle BLOCK_VERIFY;
     private static final MethodHandle BLOCK_SIZE_UNPACKED;
     private static final MethodHandle BLOCK_READ;
 
@@ -112,6 +113,9 @@ public final class LibmpqNative {
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS));
         FILE_VERIFY = function(linker, lookup, "libmpq__file_verify",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, C_INT, ValueLayout.ADDRESS));
+        BLOCK_VERIFY = function(linker, lookup, "libmpq__block_verify",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, C_INT,
+                                  ValueLayout.ADDRESS, ValueLayout.ADDRESS));
         WRITER_TIMESTAMP = function(linker, lookup, "libmpq__writer_timestamp",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_LONG));
         VERSION = function(linker, lookup, "libmpq__version",
@@ -351,6 +355,12 @@ public final class LibmpqNative {
     /** Verify available checksums; mismatches receives a subset of flags, or zero on error. */
     public static int fileVerify(MemorySegment archive, int number, int flags, MemorySegment mismatches) {
         return callInt(FILE_VERIFY, archive, number, flags, mismatches);
+    }
+
+    /** Return the stored sector Adler-32 and mismatch bit; both outputs are zero on error. */
+    public static int blockVerify(MemorySegment archive, int number, int block,
+                                  MemorySegment checksum, MemorySegment mismatches) {
+        return callInt(BLOCK_VERIFY, archive, number, block, checksum, mismatches);
     }
 
     /** Supply unsigned Windows FILETIME bits, not Unix time, to an active writer. */

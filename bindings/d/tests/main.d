@@ -88,6 +88,17 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
     assert(reopened.file("stream.bin").verify(VERIFY_SECTOR_CRC) == 0);
     assert(reopened.file("compressed.txt").verify(VERIFY_SECTOR_CRC) == 0);
     assert(reopened.file("compressed.txt").verify() == 0);
+    auto blockResult = reopened.file("compressed.txt").verifyBlock(0);
+    assert(blockResult.checksum != 0 && blockResult.checksum != uint.max);
+    assert(blockResult.mismatches == 0);
+    bool noChecksum;
+    try { reopened.file("hello.txt").verifyBlock(0); }
+    catch (MPQException error) { noChecksum = error.code == ERROR_EXIST; }
+    assert(noChecksum);
+    noChecksum = false;
+    try { reopened.file("compressed.txt").verifyBlock(uint.max); }
+    catch (MPQException error) { noChecksum = error.code == ERROR_EXIST; }
+    assert(noChecksum);
     static assert(VERIFY_SECTOR_CRC == 1 && VERIFY_FILE_CRC32 == 2 && VERIFY_FILE_MD5 == 4);
     static assert(VERIFY_ALL == 7);
     static assert(FILE_FLAG_SECTOR_CRC == 0x04000000u);

@@ -215,6 +215,11 @@ Sector-only requests do not require attributes. Missing values or sector
 tables are skipped; single-unit files have no sector checksum table.
 Zero mismatch bits do not imply that checksums were available.
 .PP
+libmpq__block_verify() verifies a single sector and returns its stored
+Adler-32 and either zero or LIBMPQ_VERIFY_SECTOR_CRC mismatch bits.
+Unlike file verification, an absent table or unused zero/all-ones entry
+returns LIBMPQ_ERROR_EXIST. Both outputs remain zero on operational errors.
+.PP
 LIBMPQ_FILE_FLAG_SECTOR_CRC enables writer-side sector Adler-32 generation for
 sectorized COMPRESS and IMPLODE files, including encrypted files. It is
 ignored for empty, raw, or single-unit files. The checksum table is not
@@ -268,6 +273,7 @@ clones are created or used.
 .BR libmpq__archive_attributes_flags (3),
 .BR libmpq__file_attributes (3),
 .BR libmpq__file_verify (3),
+.BR libmpq__block_verify (3),
 .BR libmpq__writer_timestamp (3),
 .BR libmpq__archive_compression_allowed (3),
 .BR libmpq__version (3),

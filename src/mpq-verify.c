@@ -52,7 +52,8 @@ libmpq__verify_block(
         return LIBMPQ_ERROR_EXIST;
     if (archive->write_mode)
         return LIBMPQ_ERROR_NOT_INITIALIZED;
-    if (libmpq__reader_validate_block_number(archive, file_number, block_number) < 0)
+    if (libmpq__reader_validate_file_number(archive, file_number) < 0 ||
+        libmpq__reader_validate_block_number(archive, file_number, block_number) < 0)
         return LIBMPQ_ERROR_EXIST;
     storage = archive->mpq_block[archive->mpq_map[file_number].block_table_indices].flags;
     if ((storage & LIBMPQ_FLAG_CRC) == 0 || (storage & LIBMPQ_FLAG_SINGLE) != 0 ||

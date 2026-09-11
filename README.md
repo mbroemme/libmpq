@@ -94,6 +94,12 @@ Sector checks cover decrypted packed bytes before decompression; absent tables
 and unavailable entries are skipped. Use `LIBMPQ_VERIFY_SECTOR_CRC` alone to
 verify sectors without requiring `(attributes)`.
 
+Use `libmpq__block_verify(archive, file_number, block_number, &checksum,
+&mismatches)` to verify one sector and retrieve its stored Adler-32.
+It returns `LIBMPQ_ERROR_EXIST` for unavailable checksums; success returns
+zero or `LIBMPQ_VERIFY_SECTOR_CRC` in `mismatches`. Both outputs stay zero
+on errors. No calculated checksum is exposed.
+
 To generate sector checksums, add `LIBMPQ_FILE_FLAG_SECTOR_CRC` to the file options
 alongside `LIBMPQ_FILE_FLAG_COMPRESS` or `LIBMPQ_FILE_FLAG_IMPLODE`.
 This is opt-in for sectorized files, including encrypted files. Empty, raw,

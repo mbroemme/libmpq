@@ -71,6 +71,10 @@ raw, and single-unit files ignore this flag. Generation is opt-in and
 verification remains explicit.
 
 `archive.verify(fileNumber)` explicitly compares sector Adler-32 and file CRC32/MD5.
+For one sector, `archive.verifyBlock(fileNumber, blockNumber)` returns
+`Archive.BlockVerification` with `checksum()` (unsigned stored Adler-32 as
+`long`) and `mismatches()` (zero or `Mpq.VERIFY_SECTOR_CRC`). Unavailable
+checksums throw `LibmpqException` with `Mpq.ERROR_EXIST`.
 Use `Mpq.VERIFY_SECTOR_CRC`, `Mpq.VERIFY_FILE_CRC32`, or
 `Mpq.VERIFY_FILE_MD5` to select checks. Sector checks cover decrypted packed
 bytes; file hashes cover extracted bytes. Missing values/tables are skipped.
