@@ -27,27 +27,30 @@ libmpq__archive_create \- create a seekable MPQ archive
 .BI ");"
 .fi
 .SH DESCRIPTION
-Optional version-100 attributes work in both MPQ v1 and v2. Combine
-LIBMPQ_ATTRIBUTE_CRC32,
-LIBMPQ_ATTRIBUTE_FILETIME,
-LIBMPQ_ATTRIBUTE_MD5, and
-LIBMPQ_ATTRIBUTE_PATCH_BIT in options.attributes to select arrays.
-Zero disables generation. Any nonzero combination creates one (attributes)
-file and consumes one reserved slot. Unknown attribute bits are rejected.
-Capacity includes the attributes entry
-and listfile if enabled; the internal attributes name is reserved.
-Finalization writes the listfile, attributes, then the completed tables.
-Checksums cover source bytes before compression; FILETIME defaults to zero
-and patch bits are zero. Use libmpq__writer_timestamp() on an active writer
-for an explicit timestamp. Path addition never imports filesystem timestamps.
-.PP
-Creates a v1 or v2 archive at \fIpath\fP. The archive is finalized by
-libmpq__archive_close(3). The options select a fixed entry capacity, sector
-size, archive version, and optional generated (listfile).
+Creates an MPQ v1 or v2 archive at \fIpath\fP. Add members using the
+streaming writer or archive-add convenience functions, then finalize the
+archive with \fBlibmpq__archive_close\fP().
+.SS "Creation Options"
+The options select a fixed entry capacity, sector size, archive version,
+and optional generated (listfile).
 .PP
 Compression defaults to STANDARD. Add
 LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED to options.flags to select
 EXTENDED. The policy affects writer validation only, not decoding.
+.SS "Optional Attributes"
+Set options.attributes to a combination of LIBMPQ_ATTRIBUTE_CRC32,
+LIBMPQ_ATTRIBUTE_FILETIME, LIBMPQ_ATTRIBUTE_MD5, and
+LIBMPQ_ATTRIBUTE_PATCH_BIT. Zero disables generation; any nonzero
+combination creates one (attributes) file and consumes one reserved slot.
+Unknown attribute bits are rejected. Version-100 attributes work in both
+MPQ v1 and v2, independently of the archive format version.
+.PP
+Capacity includes the attributes entry and listfile if enabled; the internal
+attributes name is reserved. Finalization writes the listfile, attributes,
+then the completed tables. Checksums cover source bytes before compression.
+FILETIME defaults to zero and patch bits are zero. Use
+\fBlibmpq__writer_timestamp\fP() on an active writer for an explicit
+timestamp. Path addition never imports filesystem timestamps.
 .SH SEE ALSO
 .BR libmpq__archive_attributes (3),
 .BR libmpq__file_attributes (3),

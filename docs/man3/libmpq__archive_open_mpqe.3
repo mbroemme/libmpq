@@ -29,22 +29,21 @@ libmpq__archive_open_mpqe \- open an MPQE-wrapped MPQ archive for reading.
 .BI ");"
 .fi
 .SH DESCRIPTION
+Open an MPQ archive whose outer byte stream uses MPQE chunk encryption.
+The function decrypts the stream while reading and then performs the ordinary
+MPQ parser and file-reading operations. On success, close the allocated
+archive handle with \fBlibmpq__archive_close\fP().
 .PP
-Call \fBlibmpq__archive_open_mpqe\fP() to open an MPQ archive whose outer
-byte stream uses MPQE chunk encryption. The function decrypts the stream while
-reading and then performs the ordinary MPQ parser and file-reading operations.
-On success, close the allocated archive handle with
-\fBlibmpq__archive_close\fP().
-.LP
-\fIauth_code\fP is supplied by the caller. At least the first 32
-bytes are required; additional bytes are ignored. libmpq does not provide,
-discover, log, persist, or otherwise manage authentication codes. MPQE cannot
-identify a well-formed but incorrect code. libmpq parses the resulting bytes
-normally, which can produce \fBLIBMPQ_ERROR_FORMAT\fP or another ordinary
-parser error.
-.LP
 Set \fIarchive_offset\fP to -1 to search the decrypted stream for an embedded
 archive header, or provide a known decrypted-stream offset.
+.SS "Authentication Code"
+\fIauth_code\fP is supplied by the caller. At least the first 32 bytes are
+required; additional bytes are ignored. libmpq does not provide, discover,
+log, persist, or otherwise manage authentication codes.
+.PP
+MPQE cannot identify a well-formed but incorrect code. libmpq parses the
+resulting bytes normally, which can produce \fBLIBMPQ_ERROR_FORMAT\fP or
+another ordinary parser error.
 .SH RETURN VALUE
 On success, *\fImpq_archive\fP is set to a new \fBmpq_archive_s\fP and zero
 is returned. On failure, the output handle is set to NULL. In addition to the

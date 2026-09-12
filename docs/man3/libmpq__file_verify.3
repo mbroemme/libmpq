@@ -27,35 +27,37 @@ libmpq__file_verify \- explicitly compare stored file checksums
 .BI ");"
 .fi
 .SH DESCRIPTION
-Compare requested, available CRC32 and MD5 values from (attributes) against
-the complete logical uncompressed file contents. Normal opening, reading,
-and extraction remain unchanged. Verification is independent of writer policy.
-.PP
+Explicitly verify requested file CRC32, file MD5, and sector Adler-32
+checksums for an archive member. Normal opening, reading, and extraction
+remain unchanged. Verification is independent of writer policy.
+.SS "Requested Checks"
 LIBMPQ_VERIFY_FILE_CRC32 requests CRC32 and LIBMPQ_VERIFY_FILE_MD5 requests
 MD5. LIBMPQ_VERIFY_SECTOR_CRC requests sector checksums, and
 LIBMPQ_VERIFY_ALL requests all three. These bits also identify mismatches;
-they are not LIBMPQ_ATTRIBUTE_* presence flags. Unknown request bits are rejected.
-A zero request is a no-op after validating the reader and file number.
-.PP
-Missing (attributes) is an error when either file checksum is requested.
-Sector-only requests do not require (attributes). Requested checksums
-absent from the selected row are skipped, including omitted legacy rows.
-Zero mismatch bits mean no mismatch was detected, not that checksums existed.
-Use libmpq__file_attributes() to inspect per-file availability when required.
-.PP
-File CRC32 and MD5 cover extracted bytes, not compressed or encrypted storage.
+they are not LIBMPQ_ATTRIBUTE_* presence flags. Unknown request bits are
+rejected. A zero request is a no-op after validating the reader and file number.
+.SS "File CRC32 and MD5"
+Available values from (attributes) are compared against the complete logical
+uncompressed file contents, not compressed or encrypted storage.
 Lossless files match the writer's source-byte checksums. Lossy ADPCM can
 produce different bytes and therefore legitimately report mismatches.
-Empty files use the standard empty CRC32 and MD5 values. The implementation
-reads one logical block at a time; a single-unit file requires its full
-unpacked block buffer. FILETIME and PATCH_BIT are not verified.
+Empty files use the standard empty CRC32 and MD5 values.
 .PP
+The implementation reads one logical block at a time; a single-unit file
+requires its full unpacked block buffer. FILETIME and PATCH_BIT are not verified.
+.SS "Sector Adler-32"
 MPQ sector CRCs are Adler-32 checksums over stored sectors after decryption
 and before decompression. Their table may be compressed but is not encrypted.
 Absent tables and zero or all-ones checksum entries are skipped. Single-unit
 files have no sector checksum table. Normal reads never check sector checksums.
 Sector metadata errors are reported only when sector verification is requested.
-Checksums are not cryptographic authentication.
+.SS "Missing Metadata"
+Missing (attributes) is an error when either file checksum is requested.
+Sector-only requests do not require (attributes). Requested file checksums
+absent from the selected row are skipped, including omitted legacy rows.
+Zero mismatch bits mean no mismatch was detected, not that checksums existed.
+Use \fBlibmpq__file_attributes\fP() to inspect per-file availability when
+required. Checksums are not cryptographic authentication.
 .SH RETURN VALUE
 Returns LIBMPQ_SUCCESS when the operation completes, even on mismatch.
 The output in *mismatches is a subset of verify_flags, using the same

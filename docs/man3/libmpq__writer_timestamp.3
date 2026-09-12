@@ -25,11 +25,13 @@ libmpq__writer_timestamp \- set an explicit FILETIME on an MPQ file writer
 .BI ");"
 .fi
 .SH DESCRIPTION
-Set the timestamp of an active file writer before libmpq__writer_finish().
-The archive must enable LIBMPQ_ATTRIBUTE_FILETIME in options.attributes.
-Windows FILETIME is an unsigned count of 100-nanosecond ticks since
-1601-01-01 UTC, not Unix time;
-zero is the default. No filesystem timestamp is imported by archive_add_path.
+Set the timestamp of an active file writer before
+\fBlibmpq__writer_finish\fP(). The archive must enable
+LIBMPQ_ATTRIBUTE_FILETIME in options.attributes.
+.PP
+\fIfiletime\fP is a Windows FILETIME: an unsigned count of 100-nanosecond
+ticks since 1601-01-01 UTC, not Unix time. Zero is the default.
+No filesystem timestamp is imported by \fBlibmpq__archive_add_path\fP().
 This call neither changes the source file nor creates a patch.
 .SH RETURN VALUE
 Returns LIBMPQ_SUCCESS on success or a negative libmpq error.

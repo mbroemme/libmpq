@@ -17,18 +17,11 @@
 libmpq \- cross-platform C library for creating and reading MPQ archives.
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "const char *libmpq__version(void);"
 .sp
 .BI "const char *libmpq__strerror(int32_t return_code);"
-.sp
-.BI "int32_t libmpq__archive_compression_allowed("
-.BI "        uint32_t                    " "archive_version",
-.BI "        uint32_t                    " "compression_mask",
-.BI "        libmpq_compression_policy_t " "policy"
-.BI ");"
 .sp
 .BI "int32_t libmpq__archive_open("
 .BI "        mpq_archive_s **" "mpq_archive",
@@ -45,14 +38,14 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI ");"
 .sp
 .BI "int32_t libmpq__archive_create("
-.BI "        mpq_archive_s **" "mpq_archive",
-.BI "        const char     *" "mpq_filename",
+.BI "        mpq_archive_s **" "archive",
+.BI "        const char     *" "path",
 .BI "        const mpq_archive_create_options_s *" "options"
 .BI ");"
 .sp
 .BI "int32_t libmpq__archive_create_mpqe("
-.BI "        mpq_archive_s **" "mpq_archive",
-.BI "        const char     *" "mpq_filename",
+.BI "        mpq_archive_s **" "archive",
+.BI "        const char     *" "path",
 .BI "        const uint8_t  *" "auth_code",
 .BI "        size_t          " "auth_code_size",
 .BI "        const mpq_archive_create_options_s *" "options"
@@ -67,6 +60,36 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        mpq_archive_s  *" "mpq_archive"
 .BI ");"
 .sp
+.BI "int32_t libmpq__archive_add_data("
+.BI "        mpq_archive_s  *" "archive",
+.BI "        const char     *" "name",
+.BI "        const uint8_t  *" "buffer",
+.BI "        libmpq__off_t   " "size",
+.BI "        const mpq_file_options_s *" "options"
+.BI ");"
+.sp
+.BI "int32_t libmpq__archive_add_path("
+.BI "        mpq_archive_s  *" "archive",
+.BI "        const char     *" "name",
+.BI "        const char     *" "source_path",
+.BI "        const mpq_file_options_s *" "options"
+.BI ");"
+.sp
+.BI "int32_t libmpq__archive_version("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t       *" "version"
+.BI ");"
+.sp
+.BI "int32_t libmpq__archive_offset("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        libmpq__off_t  *" "offset"
+.BI ");"
+.sp
+.BI "int32_t libmpq__archive_files("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t       *" "files"
+.BI ");"
+.sp
 .BI "int32_t libmpq__archive_size_packed("
 .BI "        mpq_archive_s  *" "mpq_archive",
 .BI "        libmpq__off_t  *" "packed_size"
@@ -77,49 +100,15 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        libmpq__off_t  *" "unpacked_size"
 .BI ");"
 .sp
-.BI "int32_t libmpq__archive_offset("
+.BI "int32_t libmpq__archive_attributes("
 .BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        libmpq__off_t  *" "offset"
-.BI ");"
-.sp
-.BI "int32_t libmpq__archive_version("
-.BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        uint32_t       *" "version"
-.BI ");"
-.sp
-.BI "int32_t libmpq__archive_files("
-.BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        uint32_t       *" "files"
-.BI ");"
-.sp
-.BI "int32_t libmpq__file_size_packed("
-.BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        uint32_t        " "file_number",
-.BI "        libmpq__off_t  *" "packed_size"
-.BI ");"
-.sp
-.BI "int32_t libmpq__file_size_unpacked("
-.BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        uint32_t        " "file_number",
-.BI "        libmpq__off_t  *" "unpacked_size"
-.BI ");"
-.sp
-.BI "int32_t libmpq__file_offset("
-.BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        uint32_t        " "file_number",
-.BI "        libmpq__off_t  *" "offset"
-.BI ");"
-.sp
-.BI "int32_t libmpq__file_blocks("
-.BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        uint32_t        " "file_number",
-.BI "        uint32_t       *" "blocks"
-.BI ");"
-.sp
-.BI "int32_t libmpq__file_flags("
-.BI "        mpq_archive_s  *" "archive",
-.BI "        uint32_t        " "file_number",
 .BI "        uint32_t       *" "flags"
+.BI ");"
+.sp
+.BI "int32_t libmpq__archive_compression_allowed("
+.BI "        uint32_t        " "archive_version",
+.BI "        uint32_t        " "compression_mask",
+.BI "        libmpq_compression_policy_t " "policy"
 .BI ");"
 .sp
 .BI "int32_t libmpq__file_number("
@@ -151,11 +140,70 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        libmpq__off_t  *" "transferred"
 .BI ");"
 .sp
-.BI "int32_t libmpq__block_size_unpacked("
+.BI "int32_t libmpq__file_flags("
+.BI "        mpq_archive_s  *" "archive",
+.BI "        uint32_t        " "file_number",
+.BI "        uint32_t       *" "flags"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_size_packed("
 .BI "        mpq_archive_s  *" "mpq_archive",
 .BI "        uint32_t        " "file_number",
-.BI "        uint32_t        " "block_number",
+.BI "        libmpq__off_t  *" "packed_size"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_size_unpacked("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "file_number",
 .BI "        libmpq__off_t  *" "unpacked_size"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_offset("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "file_number",
+.BI "        libmpq__off_t  *" "offset"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_blocks("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "file_number",
+.BI "        uint32_t       *" "blocks"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_attributes("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "file_number",
+.BI "        mpq_file_attributes_s *" "attributes"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_verify("
+.BI "        mpq_archive_s  *" "archive",
+.BI "        uint32_t        " "file_number",
+.BI "        uint32_t        " "verify_flags",
+.BI "        uint32_t       *" "mismatches"
+.BI ");"
+.sp
+.BI "int32_t libmpq__writer_begin("
+.BI "        mpq_archive_s  *" "archive",
+.BI "        const char     *" "name",
+.BI "        libmpq__off_t   " "size",
+.BI "        const mpq_file_options_s *" "options",
+.BI "        mpq_writer_s  **" "writer"
+.BI ");"
+.sp
+.BI "int32_t libmpq__writer_write("
+.BI "        mpq_writer_s   *" "writer",
+.BI "        const uint8_t  *" "buffer",
+.BI "        libmpq__off_t   " "size"
+.BI ");"
+.sp
+.BI "int32_t libmpq__writer_timestamp("
+.BI "        mpq_writer_s   *" "writer",
+.BI "        uint64_t        " "filetime"
+.BI ");"
+.sp
+.BI "int32_t libmpq__writer_finish("
+.BI "        mpq_writer_s   *" "writer"
 .BI ");"
 .sp
 .BI "int32_t libmpq__block_read("
@@ -166,135 +214,197 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        libmpq__off_t   " "out_size",
 .BI "        libmpq__off_t  *" "transferred"
 .BI ");"
+.sp
+.BI "int32_t libmpq__block_size_packed("
+.BI "        mpq_archive_s  *" "archive",
+.BI "        uint32_t        " "file_number",
+.BI "        uint32_t        " "block_number",
+.BI "        libmpq__off_t  *" "packed_size"
+.BI ");"
+.sp
+.BI "int32_t libmpq__block_size_unpacked("
+.BI "        mpq_archive_s  *" "mpq_archive",
+.BI "        uint32_t        " "file_number",
+.BI "        uint32_t        " "block_number",
+.BI "        libmpq__off_t  *" "unpacked_size"
+.BI ");"
+.sp
+.BI "int32_t libmpq__block_compression("
+.BI "        mpq_archive_s  *" "archive",
+.BI "        uint32_t        " "file_number",
+.BI "        uint32_t        " "block_number",
+.BI "        uint32_t       *" "compression"
+.BI ");"
+.sp
+.BI "int32_t libmpq__block_verify("
+.BI "        mpq_archive_s  *" "archive",
+.BI "        uint32_t        " "file_number",
+.BI "        uint32_t        " "block_number",
+.BI "        uint32_t       *" "checksum",
+.BI "        uint32_t       *" "mismatches"
+.BI ");"
 .fi
 .SH DESCRIPTION
+The \fIlibmpq\fP library creates and reads MPQ v1 and v2 archives. It provides
+archive and file metadata queries, filename lookup, decryption, decompression,
+and file extraction. Supported codecs include Huffman, zlib, bzip2, SPARSE,
+PKWARE implosion, WAVE ADPCM, and the exclusive MPQ v2+ LZMA method.
+MPQE wraps an MPQ archive in an encrypted byte stream; it is not a separate
+MPQ format version.
+.SS "Reading Archives and Files"
+Open ordinary archives with \fBlibmpq__archive_open\fP(), or MPQE streams
+with \fBlibmpq__archive_open_mpqe\fP() and a caller-supplied authentication
+code. Resolve a member with \fBlibmpq__file_number\fP(), then read its
+logical uncompressed contents with \fBlibmpq__file_read\fP().
+Close archive handles with \fBlibmpq__archive_close\fP().
 .PP
-libmpq__writer_begin() starts an archive member and returns an mpq_writer_s
-handle. Operate on that handle through libmpq__writer_write(),
-libmpq__writer_timestamp(), and libmpq__writer_finish(). The finish call
-consumes the handle regardless of its result. Use libmpq__archive_add_data()
-to add an in-memory source in one call, or libmpq__archive_add_path() to add
-a filesystem-path source.
+\fBlibmpq__file_flags\fP() reports stored block-table flags, while the file
+size and block-count queries describe the member's storage. Block APIs
+provide individual sector reads, packed and unpacked sizes, and the actual
+stored compression method. A compressed file may contain raw fallback
+sectors; \fBlibmpq__block_compression\fP() distinguishes them.
+.SS "Creating Archives and Writing Files"
+\fBlibmpq__archive_create\fP() creates a seekable MPQ v1 or v2 archive.
+Creation options select the archive version, sector size, fixed file-table
+capacity, and optional generated (listfile) and (attributes) entries.
 .PP
-Optional (attributes) metadata is supported for reading and creation in
-MPQ v1 and v2, including MPQE. Its payload version 100 is independent of
-the archive version. Enable selected arrays through options.attributes using
-LIBMPQ_ATTRIBUTE_CRC32, _FILETIME, _MD5, and _PATCH_BIT
-(each suffix has the same LIBMPQ_ATTRIBUTE prefix).
-Zero disables generation. Any nonzero combination creates one (attributes)
-file and consumes one reserved slot. Unknown attribute bits are rejected.
+Use \fBlibmpq__archive_add_data\fP() for an in-memory source or
+\fBlibmpq__archive_add_path\fP() for a filesystem-path source.
+For streaming input, \fBlibmpq__writer_begin\fP() returns an mpq_writer_s
+handle. Supply bytes with \fBlibmpq__writer_write\fP(), optionally set a
+FILETIME with \fBlibmpq__writer_timestamp\fP(), and complete the member
+with \fBlibmpq__writer_finish\fP(). Finish consumes the writer handle
+regardless of its result.
 .PP
-libmpq__archive_attributes() queries header flags;
-libmpq__file_attributes() returns available per-file CRC32, FILETIME,
-MD5, and patch-bit values. Loading is lazy: missing or malformed metadata
-does not prevent ordinary extraction. Availability flags distinguish zero
-from missing values. No automatic checksum verification is performed.
+Closing a writer archive finalizes the listfile, attributes, then the hash
+and block tables. Archive close consumes the writer archive even on failure.
+A reader archive remains valid if its stream close fails, allowing a retry.
 .PP
-libmpq__file_verify() explicitly compares requested available CRC32 and MD5
-values against complete extracted contents. LIBMPQ_VERIFY_FILE_CRC32 and
-LIBMPQ_VERIFY_FILE_MD5 select file checks. LIBMPQ_VERIFY_SECTOR_CRC checks
-Adler-32 over decrypted packed sectors before decompression, using the
-optional sector checksum table. LIBMPQ_VERIFY_ALL selects all three.
-Checksum mismatches return success with the corresponding LIBMPQ_VERIFY_*
-bits, a subset of the requested flags. A clear bit means matched or skipped.
-Operation errors return negative codes and leave the mismatch mask zero.
-File checksum requests require attributes; absence returns EXIST.
-Sector-only requests do not require attributes. Missing values or sector
-tables are skipped; single-unit files have no sector checksum table.
-Zero mismatch bits do not imply that checksums were available.
-.PP
-libmpq__block_verify() verifies a single sector and returns its stored
-Adler-32 and either zero or LIBMPQ_VERIFY_SECTOR_CRC mismatch bits.
-Unlike file verification, an absent table or unused zero/all-ones entry
-returns LIBMPQ_ERROR_EXIST. Both outputs remain zero on operational errors.
-.PP
-LIBMPQ_FILE_FLAG_SECTOR_CRC enables writer-side sector Adler-32 generation for
-sectorized COMPRESS and IMPLODE files, including encrypted files. It is
-ignored for empty, raw, or single-unit files. The checksum table is not
-encrypted and is compressed with zlib only when smaller. Generation is
-opt-in and never enables implicit verification during extraction.
-.PP
-CRC32 and MD5 cover source bytes before compression; lossy ADPCM output
-may differ. FILETIME defaults to zero and can be explicitly set through
-libmpq__writer_timestamp() before file completion. Path addition does not
-import filesystem timestamps. Generated patch bits are zero; patch creation
-and application remain unsupported. Unused rows and the attributes entry
-itself have zero values. Finalization writes the listfile, attributes,
-then the completed hash and block tables.
-.PP
-The \fIlibmpq\fP library creates and reads MPQ archives, decrypts and
-decompresses file data, and extracts files compressed with Huffman, zlib,
-bzip2, SPARSE, PKWARE implosion, or the exclusive MPQ v2+ LZMA compression method.
-Creation uses seekable v1 or v2 archives and
-may be driven through a streaming writer or buffer/path convenience functions.
-The current writer supports raw sectors, encrypted tables and payloads, generated
-listfiles, zlib, bzip2 or SPARSE multi-compression, and exclusive MPQ v2+ LZMA
-compression.
-.PP
-For MPQ v2+ creation, \fBLIBMPQ_COMPRESSION_LZMA\fP is an exclusive API
-selector that serializes as method 0x12. It is not a multi-compression bit;
-0x12 keeps its legacy bzip2-plus-zlib interpretation in MPQ v1 archives.
-.PP
-LIBMPQ_COMPRESSION_SPARSE (0x20) selects lossless zero-run compression in
-v1 and v2 archives. In MPQ v2+, STANDARD allows the fixed SPARSE forms:
-SPARSE alone (0x20), SPARSE with zlib (0x22), and SPARSE with bzip2 (0x30).
-MPQ v1 retains normal compression-mask semantics under either policy,
-allowing other valid combinations such as SPARSE with Huffman (0x21) or
-PKWARE (0x28). In MPQ v2+, EXTENDED permits the broader valid lossless
-SPARSE combinations. Neither policy allows SPARSE combined with WAVE ADPCM.
-Extraction returns the original bytes without changing text encodings.
+\fBlibmpq__archive_create_mpqe\fP() creates an MPQE-wrapped archive through
+a private temporary plaintext MPQ in the destination directory. The
+plaintext temporary file is owner-only; final MPQE permissions follow the
+caller's umask. Cleanup is best effort, and abrupt termination can leave
+plaintext temporary files behind. Existing MPQE archives cannot be modified
+in place; encrypted random-access writing is not implemented.
+.SS "Compression Selection and Compatibility"
+File options select raw, compressed, imploded, encrypted, or single-unit
+storage. Compression selections may differ for the first and later sectors.
+Only size-reducing compression is stored; other sectors fall back to raw data.
 .PP
 Writer compression defaults to STANDARD for interoperability. Set
 LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED in the creation flags to allow
 additional implemented combinations such as standalone Huffman in MPQ v2.
 EXTENDED output may be less interoperable with other MPQ implementations.
 Readers remain permissive and do not use this setting. Query whether a
-compression selection is allowed by the writer policy with
-.BR libmpq__archive_compression_allowed (3).
+selection is allowed with \fBlibmpq__archive_compression_allowed\fP().
 .PP
+For MPQ v2+ creation, LIBMPQ_COMPRESSION_LZMA is an exclusive API selector
+that serializes as method 0x12. It is not a multi-compression bit; 0x12
+retains its legacy bzip2-plus-zlib interpretation in MPQ v1 archives.
+.PP
+LIBMPQ_COMPRESSION_SPARSE (0x20) selects lossless zero-run compression.
+MPQ v1 retains normal compression-mask semantics under either policy,
+including valid combinations such as SPARSE with Huffman (0x21) or
+PKWARE (0x28). In MPQ v2+, STANDARD allows SPARSE alone (0x20), SPARSE
+with zlib (0x22), and SPARSE with bzip2 (0x30); EXTENDED permits the
+broader valid lossless combinations. Neither policy allows SPARSE with
+WAVE ADPCM. SPARSE extraction preserves the original bytes and text encoding.
+.SS "Optional File Attributes"
+The optional (attributes) file is supported for reading and creation in
+MPQ v1 and v2, including MPQE. Its payload version 100 is independent of
+the archive format version.
+.PP
+\fBlibmpq__archive_attributes\fP() queries the array-presence flags.
+\fBlibmpq__file_attributes\fP() returns available per-file CRC32, FILETIME,
+MD5, and patch-bit values. Loading is lazy: missing or malformed metadata
+does not prevent ordinary extraction. Availability flags distinguish zero
+from missing values. These queries do not verify checksums.
+.PP
+Enable arrays through options.attributes using LIBMPQ_ATTRIBUTE_CRC32,
+LIBMPQ_ATTRIBUTE_FILETIME, LIBMPQ_ATTRIBUTE_MD5, and LIBMPQ_ATTRIBUTE_PATCH_BIT.
+Zero disables generation. Any nonzero combination creates one (attributes)
+file and consumes one reserved file slot. Unknown attribute bits are rejected.
+.PP
+Generated CRC32 and MD5 values cover source bytes before compression;
+lossy ADPCM output may differ. FILETIME defaults to zero and can be set
+explicitly through \fBlibmpq__writer_timestamp\fP() before file completion.
+Path addition does not import filesystem timestamps. Generated patch bits
+are zero; patch creation and application remain unsupported. Unused rows
+and the attributes entry itself have zero values.
+.SS "Explicit Checksum Verification"
+Normal opening, reading, and extraction never verify checksums implicitly.
+\fBlibmpq__file_verify\fP() compares requested, available file CRC32 and MD5
+values against complete extracted contents. LIBMPQ_VERIFY_FILE_CRC32 and
+LIBMPQ_VERIFY_FILE_MD5 select these checks. LIBMPQ_VERIFY_SECTOR_CRC checks
+Adler-32 over decrypted packed sectors before decompression, using the
+optional sector checksum table. LIBMPQ_VERIFY_ALL selects all three.
+.PP
+Checksum mismatches return success with the corresponding LIBMPQ_VERIFY_*
+bits, a subset of the requested flags. Operational errors return negative
+codes and leave the mismatch mask zero. File checksum requests require
+attributes; an absent (attributes) file returns LIBMPQ_ERROR_EXIST.
+Sector-only requests do not require attributes. Unavailable row values or
+sector tables are skipped; single-unit files have no sector checksum table.
+A clear mismatch bit means matched or skipped, not necessarily verified.
+.PP
+\fBlibmpq__block_verify\fP() verifies one sector and returns its stored
+Adler-32 and either zero or LIBMPQ_VERIFY_SECTOR_CRC mismatch bits.
+Unlike file verification, an absent table or unused zero/all-ones entry
+returns LIBMPQ_ERROR_EXIST. Both outputs remain zero on operational errors.
+.PP
+For creation, LIBMPQ_FILE_FLAG_SECTOR_CRC enables sector Adler-32 tables for
+sectorized COMPRESS and IMPLODE files, including encrypted files. It is
+ignored for empty, raw, or single-unit files. The checksum table is not
+encrypted and uses zlib compression only when smaller. Generation is opt-in
+and does not enable implicit verification.
+.SS "Concurrency and Archive Lifetime"
 An archive handle is not safe for concurrent operations. Use
 \fBlibmpq__archive_clone\fP() to create one independent reader per worker.
 Cloning reopens the original backing path and reparses its metadata; it is
 not snapshot semantics. The path must remain readable and unchanged while
 clones are created or used.
 .SH SEE ALSO
-.BR libmpq__archive_attributes (3),
-.BR libmpq__file_attributes (3),
-.BR libmpq__file_verify (3),
-.BR libmpq__block_verify (3),
-.BR libmpq__writer_timestamp (3),
-.BR libmpq__archive_compression_allowed (3),
 .BR libmpq__version (3),
-.BR libmpq__strerror (3),
+.BR libmpq__strerror (3)
+.PP
 .BR libmpq__archive_open (3),
 .BR libmpq__archive_open_mpqe (3),
-.BR libmpq__archive_clone (3),
-.BR libmpq__archive_close (3),
 .BR libmpq__archive_create (3),
 .BR libmpq__archive_create_mpqe (3),
+.BR libmpq__archive_clone (3),
+.BR libmpq__archive_close (3),
+.BR libmpq__archive_add_data (3),
+.BR libmpq__archive_add_path (3),
+.BR libmpq__archive_version (3),
+.BR libmpq__archive_offset (3),
+.BR libmpq__archive_files (3),
 .BR libmpq__archive_size_packed (3),
 .BR libmpq__archive_size_unpacked (3),
-.BR libmpq__archive_offset (3),
-.BR libmpq__archive_version (3),
-.BR libmpq__archive_files (3),
-.BR libmpq__file_size_packed (3),
-.BR libmpq__file_size_unpacked (3),
-.BR libmpq__file_offset (3),
-.BR libmpq__file_blocks (3),
-.BR libmpq__file_flags (3),
+.BR libmpq__archive_attributes (3),
+.BR libmpq__archive_compression_allowed (3)
+.PP
 .BR libmpq__file_number (3),
 .BR libmpq__file_hash (3),
 .BR libmpq__file_number_from_hash (3),
 .BR libmpq__file_read (3),
+.BR libmpq__file_flags (3),
+.BR libmpq__file_size_packed (3),
+.BR libmpq__file_size_unpacked (3),
+.BR libmpq__file_offset (3),
+.BR libmpq__file_blocks (3),
+.BR libmpq__file_attributes (3),
+.BR libmpq__file_verify (3)
+.PP
 .BR libmpq__writer_begin (3),
 .BR libmpq__writer_write (3),
-.BR libmpq__writer_finish (3),
-.BR libmpq__archive_add_data (3),
-.BR libmpq__archive_add_path (3),
-.BR libmpq__block_size_unpacked (3),
+.BR libmpq__writer_timestamp (3),
+.BR libmpq__writer_finish (3)
+.PP
+.BR libmpq__block_read (3),
 .BR libmpq__block_size_packed (3),
+.BR libmpq__block_size_unpacked (3),
 .BR libmpq__block_compression (3),
-.BR libmpq__block_read (3)
+.BR libmpq__block_verify (3)
 .SH AUTHOR
 The libmpq project is maintained by
 .B Maik Broemme <mbroemme@libmpq.org>.

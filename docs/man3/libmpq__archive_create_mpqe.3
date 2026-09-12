@@ -29,36 +29,36 @@ libmpq__archive_create_mpqe \- create an MPQE-wrapped MPQ archive
 .BI ");"
 .fi
 .SH DESCRIPTION
-Optional version-100 attributes work in both MPQ v1 and v2. Combine
-LIBMPQ_ATTRIBUTE_CRC32,
-LIBMPQ_ATTRIBUTE_FILETIME,
-LIBMPQ_ATTRIBUTE_MD5, and
-LIBMPQ_ATTRIBUTE_PATCH_BIT in options.attributes to select arrays.
-Zero disables generation. Any nonzero combination creates one (attributes)
-file and consumes one reserved slot. Unknown attribute bits are rejected.
-Capacity includes the attributes entry
-and listfile if enabled; the internal attributes name is reserved.
-Finalization writes the listfile, attributes, then the completed tables.
-Checksums cover source bytes before compression; FILETIME defaults to zero
-and patch bits are zero. Use libmpq__writer_timestamp() on an active writer
-for an explicit timestamp. Path addition never imports filesystem timestamps.
-.PP
 Creates a new MPQE stream containing an MPQ v1 or v2 archive. The caller
-supplies at least 32 authentication-code bytes. The normal writer first
-finalizes a private temporary MPQ, then encrypts it and atomically publishes
-the result when
-.BR libmpq__archive_close (3)
-succeeds.
-.PP
+supplies at least 32 authentication-code bytes. Add members using the
+ordinary writer APIs; \fBlibmpq__archive_close\fP() finalizes the archive,
+encrypts it, and atomically publishes the result on success.
+.SS "Creation Options"
 Compression defaults to STANDARD. Add
 LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED to options.flags to select
 EXTENDED. The policy affects writer validation only, not decoding.
+.SS "Optional Attributes"
+Set options.attributes to a combination of LIBMPQ_ATTRIBUTE_CRC32,
+LIBMPQ_ATTRIBUTE_FILETIME, LIBMPQ_ATTRIBUTE_MD5, and
+LIBMPQ_ATTRIBUTE_PATCH_BIT. Zero disables generation; any nonzero
+combination creates one (attributes) file and consumes one reserved slot.
+Unknown attribute bits are rejected. Version-100 attributes work in both
+MPQ v1 and v2, independently of the archive format version.
 .PP
-Existing MPQE archives cannot be modified. Creation uses temporary plaintext
-storage in the destination directory. That temporary file is owner-only; the
-completed MPQE archive uses normal output permissions determined by the
-caller's umask. Cleanup is best effort, so a crash can leave an owner-only
-plaintext temporary file behind.
+Capacity includes the attributes entry and listfile if enabled; the internal
+attributes name is reserved. Finalization writes the listfile, attributes,
+then the completed tables. Checksums cover source bytes before compression.
+FILETIME defaults to zero and patch bits are zero. Use
+\fBlibmpq__writer_timestamp\fP() on an active writer for an explicit
+timestamp. Path addition never imports filesystem timestamps.
+.SS "Temporary Storage and Publication"
+The normal writer first finalizes a private temporary plaintext MPQ in the
+destination directory, then encrypts it for publication. The plaintext
+temporary file is owner-only; the completed MPQE archive uses normal output
+permissions determined by the caller's umask.
+.PP
+Existing MPQE archives cannot be modified. Cleanup is best effort, so a
+crash can leave an owner-only plaintext temporary file behind.
 .SH RETURN VALUE
 Returns zero on success or a negative LIBMPQ_ERROR_* code. Missing or short
 authentication data returns LIBMPQ_ERROR_DECRYPT.

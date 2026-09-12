@@ -25,12 +25,12 @@ libmpq__archive_attributes \- query the archive attributes presence mask
 .BI ");"
 .fi
 .SH DESCRIPTION
+Return the archive's (attributes) array-presence mask in \fIflags\fP:
+CRC32 (1), FILETIME (2), MD5 (4), and PATCH_BIT (8). A successful zero
+mask is distinct from an absent file. The output is zeroed on failure.
+.PP
 The query lazily loads (attributes) through ordinary MPQ file reading.
 Its payload version is 100, independent of archive format v1 or v2.
-The output receives the array-presence flags: CRC32 (1), FILETIME (2),
-MD5 (4), and PATCH_BIT (8). A successful zero flag value is distinct from
-an absent file. The output is zeroed on failure.
-.PP
 Malformed optional metadata does not prevent opening an archive or reading
 other files. No checksum verification or patch application is performed.
 .SH RETURN VALUE

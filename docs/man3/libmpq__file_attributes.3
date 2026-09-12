@@ -26,11 +26,10 @@ libmpq__file_attributes \- read stored per-file attributes
 .BI ");"
 .fi
 .SH DESCRIPTION
-The public file number is mapped to its physical block-table row.
+Return the available stored attributes for the selected public file number.
 The result has flags, crc32, filetime, md5[16], and patch_bit fields.
-Its native ABI is 40 bytes: fields begin at offsets 0, 4, 8, 16, and 32,
-followed by reserved[4] at offset 36. Reserved bytes are returned as zero.
-Natural alignment is retained; this is not the serialized little-endian payload.
+The file number is mapped to its physical block-table row.
+.SS "Availability and Value Interpretation"
 Flags identify available values; unavailable values are zero. Recognized
 legacy layouts can omit rows or patch bits, so per-file availability may
 differ from the archive header flags. The result is zeroed on failure.
@@ -39,7 +38,11 @@ FILETIME is an unsigned 64-bit Windows timestamp. MD5 is sixteen bytes,
 not hexadecimal text. CRC32 and MD5 describe source bytes before compression;
 lossy ADPCM output may not match. They are not cryptographic authentication.
 The query reports stored values without verifying them.
-Use libmpq__file_verify() for an explicit checksum comparison.
+Use \fBlibmpq__file_verify\fP() for an explicit checksum comparison.
+.SS "Native Result Layout"
+The native ABI is 40 bytes: fields begin at offsets 0, 4, 8, 16, and 32,
+followed by reserved[4] at offset 36. Reserved bytes are returned as zero.
+Natural alignment is retained; this is not the serialized little-endian payload.
 .SH RETURN VALUE
 Returns LIBMPQ_SUCCESS on success or a negative libmpq error.
 EXIST means missing metadata or an invalid file number; FORMAT means
