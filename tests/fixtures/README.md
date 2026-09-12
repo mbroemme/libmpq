@@ -9,13 +9,13 @@ fixture selects CRC32, FILETIME, and MD5 (flags `0x07`); v2 additionally
 selects PATCH_BIT (`0x0f`), with every patch bit zero. This flag difference
 tests optional arrays, not an archive-version restriction. Both use 32
 physical block-table entries, including zero-filled unused rows. The
-attributes payloads are 904 and 908 bytes, respectively.
-Creation selects these arrays through the dedicated options.attributes mask,
-not archive creation flags. Any nonzero combination creates one (attributes)
-file and consumes one reserved slot.
-The v1 writer reserves 16 bytes after its header before the hash table when
-attributes are enabled. This avoids StormLib's malformed-map heuristic,
-which otherwise skips attributes when a table starts exactly at header end.
+attributes payloads are 904 and 908 bytes, respectively. Creation selects
+these arrays through the dedicated options.attributes mask, not archive
+creation flags. Any nonzero combination creates one (attributes) file and
+consumes one reserved slot. The v1 writer reserves 16 bytes after its header
+before the hash table when attributes are enabled. This avoids StormLib's
+malformed-map heuristic, which otherwise skips attributes when a table starts
+exactly at header end.
 
 User entries have FILETIME `132537600000000000 + index * 10000000` in insertion
 order. The generated listfile has its computed checksums and FILETIME zero;

@@ -2,12 +2,18 @@
 
 [![CI](https://github.com/mbroemme/libmpq/actions/workflows/ci.yml/badge.svg)](https://github.com/mbroemme/libmpq/actions/workflows/ci.yml)
 [![Coverage](https://mbroemme.github.io/libmpq/coverage.svg)](https://mbroemme.github.io/libmpq/)
-[![GitHub release](https://img.shields.io/github/release/mbroemme/libmpq?style=flat&label=release&cacheSeconds=21600)](https://github.com/mbroemme/libmpq/releases)
-[![GitHub issues](https://img.shields.io/github/issues/mbroemme/libmpq?style=flat&label=issues&cacheSeconds=21600)](https://github.com/mbroemme/libmpq/issues)
-[![GitHub forks](https://img.shields.io/github/forks/mbroemme/libmpq?style=flat&label=forks&cacheSeconds=21600)](https://github.com/mbroemme/libmpq/network/members)
-[![GitHub stars](https://img.shields.io/github/stars/mbroemme/libmpq?style=flat&label=stars&cacheSeconds=21600)](https://github.com/mbroemme/libmpq/stargazers)
-[![License: LGPL-2.1-or-later](https://img.shields.io/badge/license-LGPL--2.1--or--later-blue.svg)](COPYING.LESSER)
-[![GitHub downloads](https://img.shields.io/github/downloads/mbroemme/libmpq/total?style=flat&label=downloads&cacheSeconds=21600)](https://github.com/mbroemme/libmpq/releases)
+[![GitHub
+release](https://img.shields.io/github/release/mbroemme/libmpq?style=flat&label=release&cacheSeconds=21600)](https://github.com/mbroemme/libmpq/releases)
+[![GitHub
+issues](https://img.shields.io/github/issues/mbroemme/libmpq?style=flat&label=issues&cacheSeconds=21600)](https://github.com/mbroemme/libmpq/issues)
+[![GitHub
+forks](https://img.shields.io/github/forks/mbroemme/libmpq?style=flat&label=forks&cacheSeconds=21600)](https://github.com/mbroemme/libmpq/network/members)
+[![GitHub
+stars](https://img.shields.io/github/stars/mbroemme/libmpq?style=flat&label=stars&cacheSeconds=21600)](https://github.com/mbroemme/libmpq/stargazers)
+[![License:
+LGPL-2.1-or-later](https://img.shields.io/badge/license-LGPL--2.1--or--later-blue.svg)](COPYING.LESSER)
+[![GitHub
+downloads](https://img.shields.io/github/downloads/mbroemme/libmpq/total?style=flat&label=downloads&cacheSeconds=21600)](https://github.com/mbroemme/libmpq/releases)
 
 A portable C library for creating, reading, decrypting, decompressing, and
 extracting files from MoPaQ (MPQ) archives.
@@ -100,18 +106,19 @@ It returns `LIBMPQ_ERROR_EXIST` for unavailable checksums; success returns
 zero or `LIBMPQ_VERIFY_SECTOR_CRC` in `mismatches`. Both outputs stay zero
 on errors. No calculated checksum is exposed.
 
-Use `libmpq__block_compression()` to inspect the stored method without decoding.
-Use `libmpq__file_flags()` to retrieve a member's complete stored block-table
-flags and inspect the `LIBMPQ_FILE_FLAG_*` bits for file-level storage properties.
-Zero means raw storage/fallback; LZMA is returned as on-disk `0x12`, not the
-writer selector. In MPQ v1, `0x12` retains its legacy bzip2/zlib meaning.
+Use `libmpq__block_compression()` to inspect the stored method without
+decoding. Use `libmpq__file_flags()` to retrieve a member's complete stored
+block-table flags and inspect the `LIBMPQ_FILE_FLAG_*` bits for file-level
+storage properties. Zero means raw storage/fallback; LZMA is returned as
+on-disk `0x12`, not the writer selector. In MPQ v1, `0x12` retains its legacy
+bzip2/zlib meaning.
 
 `libmpq__block_size_packed()` reports a block's stored data bytes, excluding
 offset and checksum tables. `libmpq__block_size_unpacked()` reports the
 decoded size needed for a `libmpq__block_read()` output buffer.
 
-To generate sector checksums, add `LIBMPQ_FILE_FLAG_SECTOR_CRC` to the file options
-alongside `LIBMPQ_FILE_FLAG_COMPRESS` or `LIBMPQ_FILE_FLAG_IMPLODE`.
+To generate sector checksums, add `LIBMPQ_FILE_FLAG_SECTOR_CRC` to the file
+options alongside `LIBMPQ_FILE_FLAG_COMPRESS` or `LIBMPQ_FILE_FLAG_IMPLODE`.
 This is opt-in for sectorized files, including encrypted files. Empty, raw,
 and single-unit files do not generate checksum tables. Tables are stored
 unencrypted and compressed with zlib only when smaller.
@@ -121,28 +128,27 @@ Missing individual CRC32/MD5 values are skipped, so zero mismatch bits do not
 prove that hashes were present. Normal extraction never verifies implicitly.
 Lossy ADPCM output can differ from the writer's source-byte checksums.
 
-Writer compression defaults to `LIBMPQ_COMPRESSION_POLICY_STANDARD`,
-favoring interoperability. For MPQ v2+, this permits zlib, PKWARE, bzip2,
-LZMA, SPARSE alone or paired with zlib/bzip2, and Huffman paired with mono
-or stereo WAVE ADPCM. The fixed SPARSE forms are `0x20`, `0x22`, and `0x30`.
-MPQ v1 retains normal compression-mask semantics under either policy,
-allowing other valid combinations such as SPARSE with Huffman (`0x21`)
-or PKWARE (`0x28`). Add
-`LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED` to the archive creation flags
-to permit broader valid lossless SPARSE combinations and other implemented
-forms, including standalone Huffman, in MPQ v2+. `EXTENDED` output may be
-less interoperable with StormLib and other MPQ implementations; it is not
+Writer compression defaults to `LIBMPQ_COMPRESSION_POLICY_STANDARD`, favoring
+interoperability. For MPQ v2+, this permits zlib, PKWARE, bzip2, LZMA, SPARSE
+alone or paired with zlib/bzip2, and Huffman paired with mono or stereo WAVE
+ADPCM. The fixed SPARSE forms are `0x20`, `0x22`, and `0x30`. MPQ v1 retains
+normal compression-mask semantics under either policy, allowing other valid
+combinations such as SPARSE with Huffman (`0x21`) or PKWARE (`0x28`). Add
+`LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED` to the archive creation flags to
+permit broader valid lossless SPARSE combinations and other implemented forms,
+including standalone Huffman, in MPQ v2+. `EXTENDED` output may be less
+interoperable with StormLib and other MPQ implementations; it is not
 classified as invalid MPQ. Readers stay permissive.
 
 Use `libmpq__archive_compression_allowed(version, mask, policy)` to query
-whether a compression selection is allowed by the writer policy.
-Version uses the zero-based `LIBMPQ_ARCHIVE_VERSION_*`
-selectors. Both policies reject unknown bits, conflicting ADPCM channels,
-and v2 chains containing both zlib and bzip2, whose surviving stages could
-collide with LZMA's `0x12`. Both policies reject SPARSE combined with WAVE
-ADPCM: lossy ADPCM cannot preserve SPARSE control bytes. If skipped
-stages leave a method disallowed by the selected policy, the original sector
-is stored raw. The first WAVE sector stays lossless (zlib for STANDARD v2).
+whether a compression selection is allowed by the writer policy. Version uses
+the zero-based `LIBMPQ_ARCHIVE_VERSION_*` selectors. Both policies reject
+unknown bits, conflicting ADPCM channels, and v2 chains containing both zlib
+and bzip2, whose surviving stages could collide with LZMA's `0x12`. Both
+policies reject SPARSE combined with WAVE ADPCM: lossy ADPCM cannot preserve
+SPARSE control bytes. If skipped stages leave a method disallowed by the
+selected policy, the original sector is stored raw. The first WAVE sector
+stays lossless (zlib for STANDARD v2).
 
 ## Requirements
 
@@ -359,8 +365,8 @@ package installation, native-library behavior, and test instructions.
 ### D
 
 The D binding is a DUB package named `libmpq`. The manifest is
-[`dub.sdl`](dub.sdl), and the modules are under
-`bindings/d/source/libmpq`. Import the high-level API with:
+[`dub.sdl`](dub.sdl), and the modules are under `bindings/d/source/libmpq`.
+Import the high-level API with:
 
 ```d
 import libmpq.mpq;

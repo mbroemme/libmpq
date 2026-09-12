@@ -60,8 +60,8 @@ The high-level API uses `Archive.open`, `Archive.openMpqe`, `Archive.create`,
 `Archive.createMpqe`, and `MpqFileWriter`. MPQE creation uses a private
 plaintext temporary file before atomically replacing the destination; it
 cannot modify an existing MPQE archive and crash cleanup is best effort. All
-negative libmpq return codes are reported as
-`LibmpqException` values containing the original code and diagnostic text.
+negative libmpq return codes are reported as `LibmpqException` values
+containing the original code and diagnostic text.
 
 ## Optional attributes
 
@@ -70,11 +70,11 @@ to generate sector Adler-32 tables, including for encrypted files. Empty,
 raw, and single-unit files ignore this flag. Generation is opt-in and
 verification remains explicit.
 
-`archive.verify(fileNumber)` explicitly compares sector Adler-32 and file CRC32/MD5.
-For one sector, `archive.verifyBlock(fileNumber, blockNumber)` returns
-`Archive.BlockVerification` with `checksum()` (unsigned stored Adler-32 as
-`long`) and `mismatches()` (zero or `Mpq.VERIFY_SECTOR_CRC`). Unavailable
-checksums throw `LibmpqException` with `Mpq.ERROR_EXIST`.
+`archive.verify(fileNumber)` explicitly compares sector Adler-32 and file
+CRC32/MD5. For one sector, `archive.verifyBlock(fileNumber, blockNumber)`
+returns `Archive.BlockVerification` with `checksum()` (unsigned stored
+Adler-32 as `long`) and `mismatches()` (zero or `Mpq.VERIFY_SECTOR_CRC`).
+Unavailable checksums throw `LibmpqException` with `Mpq.ERROR_EXIST`.
 
 Use `Mpq.VERIFY_SECTOR_CRC`, `Mpq.VERIFY_FILE_CRC32`, or
 `Mpq.VERIFY_FILE_MD5` to select checks. Sector checks cover decrypted packed
@@ -87,7 +87,8 @@ Operation errors throw existing exceptions. Zero does not prove availability.
 Normal extraction is unchanged; lossy ADPCM may differ from source hashes.
 
 `archive.fileFlags(fileNumber)` returns the unsigned stored block-table flags
-as a `long`. Inspect `Mpq.FILE_FLAG_*` bits; convenience booleans use this query.
+as a `long`. Inspect `Mpq.FILE_FLAG_*` bits; convenience booleans use this
+query.
 
 `archive.blockCompression(fileNumber, blockNumber)` returns the stored method
 byte, or zero for raw storage/fallback, without decoding. LZMA is `0x12`, not
@@ -104,13 +105,12 @@ Supply Windows FILETIME, not Unix time. Java retains its unsigned native
 bits in a `long`.
 
 Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
-`ATTRIBUTE_MD5`, and `ATTRIBUTE_PATCH_BIT` in
-the `attributes` field of `ArchiveCreateOptions`.
-Constants live on `Mpq`. Zero disables generation; any nonzero combination creates one
-`(attributes)` file and consumes one reserved slot. Unknown bits are rejected.
-Creation flags remain separate. These options work for both MPQ v1 and v2,
-including MPQE creation.
-Payload version 100 is independent of the archive format version.
+`ATTRIBUTE_MD5`, and `ATTRIBUTE_PATCH_BIT` in the `attributes` field of
+`ArchiveCreateOptions`. Constants live on `Mpq`. Zero disables generation; any
+nonzero combination creates one `(attributes)` file and consumes one reserved
+slot. Unknown bits are rejected. Creation flags remain separate. These options
+work for both MPQ v1 and v2, including MPQE creation. Payload version 100 is
+independent of the archive format version.
 
 Per-file flags distinguish unavailable fields from zero. Malformed optional
 metadata raises the existing format exception only when queried, not during

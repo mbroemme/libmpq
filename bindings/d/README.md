@@ -124,20 +124,21 @@ to generate sector Adler-32 tables, including for encrypted files. Empty,
 raw, and single-unit files ignore this flag. Generation is opt-in and
 verification remains explicit.
 
-`archive.file("file.txt").verify()` explicitly compares sector Adler-32 and file CRC32/MD5.
-For one sector, `archive.file("file.txt").verifyBlock(blockNumber)` returns
-`BlockVerification` with `checksum` (stored Adler-32) and `mismatches`
-(zero or `VERIFY_SECTOR_CRC`). Unavailable checksums throw `ERROR_EXIST`.
+`archive.file("file.txt").verify()` explicitly compares sector Adler-32 and
+file CRC32/MD5. For one sector,
+`archive.file("file.txt").verifyBlock(blockNumber)` returns
+`BlockVerification` with `checksum` (stored Adler-32) and `mismatches` (zero
+or `VERIFY_SECTOR_CRC`). Unavailable checksums throw `ERROR_EXIST`.
 
-Use `VERIFY_SECTOR_CRC`, `VERIFY_FILE_CRC32`, or
-`VERIFY_FILE_MD5` to select checks. Sector checks cover decrypted packed
-bytes; file hashes cover extracted bytes. Missing values/tables are skipped.
-File checksum requests require attributes; sector-only requests do not.
-`VERIFY_ALL` selects all checks. The returned mismatch mask uses the same
-`VERIFY_*` bits and is a subset of the request. Set bits mean available
-checksums mismatched; clear bits mean matched or unavailable/skipped.
-Operation errors throw existing exceptions. Zero does not prove availability.
-Normal extraction is unchanged; lossy ADPCM may differ from source hashes.
+Use `VERIFY_SECTOR_CRC`, `VERIFY_FILE_CRC32`, or `VERIFY_FILE_MD5` to select
+checks. Sector checks cover decrypted packed bytes; file hashes cover
+extracted bytes. Missing values/tables are skipped. File checksum requests
+require attributes; sector-only requests do not. `VERIFY_ALL` selects all
+checks. The returned mismatch mask uses the same `VERIFY_*` bits and is a
+subset of the request. Set bits mean available checksums mismatched; clear
+bits mean matched or unavailable/skipped. Operation errors throw existing
+exceptions. Zero does not prove availability. Normal extraction is unchanged;
+lossy ADPCM may differ from source hashes.
 
 `file.flags()` returns the stored block-table flags. Inspect `FILE_FLAG_*`
 bits; metadata convenience booleans are derived from these flags.
@@ -154,13 +155,12 @@ offset and checksum tables, without decoding the sector.
 Supply Windows FILETIME, not Unix time.
 
 Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
-`ATTRIBUTE_MD5`, and `ATTRIBUTE_PATCH_BIT` in
-the `attributes` field of `ArchiveCreateOptions`.
-Zero disables generation; any nonzero combination creates one
-`(attributes)` file and consumes one reserved slot. Unknown bits are rejected.
-Creation flags remain separate. These options work for both MPQ v1 and v2,
-including MPQE creation.
-Payload version 100 is independent of the archive format version.
+`ATTRIBUTE_MD5`, and `ATTRIBUTE_PATCH_BIT` in the `attributes` field of
+`ArchiveCreateOptions`. Zero disables generation; any nonzero combination
+creates one `(attributes)` file and consumes one reserved slot. Unknown bits
+are rejected. Creation flags remain separate. These options work for both MPQ
+v1 and v2, including MPQE creation. Payload version 100 is independent of the
+archive format version.
 
 Per-file flags distinguish unavailable fields from zero. Malformed optional
 metadata raises the existing format exception only when queried, not during
