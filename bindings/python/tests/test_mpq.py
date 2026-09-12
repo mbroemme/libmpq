@@ -51,6 +51,26 @@ def test_native_struct_layouts(layout, size, fields):
     assert mpq._FileAttributes.filetime.offset % ctypes.alignment(ctypes.c_uint64) == 0
 
 
+def test_fixture_canonical_names_and_explicit_text_decoding(monkeypatch):
+    """Use canonical metadata names; string conversion must not extract data."""
+    with mpq.Archive(FIXTURES / "mpq-v1-features.mpq") as archive:
+        entry = archive["overview.txt"]
+        for value in (archive, entry):
+            assert not hasattr(value, "size_packed")
+            assert not hasattr(value, "size_unpacked")
+            assert value.metadata().packed_size == value.packed_size
+            assert value.metadata().unpacked_size == value.unpacked_size
+        assert not hasattr(entry, "read_bytes")
+        assert bytes(entry) == entry.read()
+        assert entry.read().decode("utf-8")
+
+        def unexpected_read():
+            pytest.fail("string conversion must not read the payload")
+
+        monkeypatch.setattr(entry, "read", unexpected_read)
+        assert str(entry) == repr(entry)
+
+
 def test_version_errors_and_hashes():
     """Version, diagnostics, and Storm hashing work without an archive handle."""
     assert mpq.version()

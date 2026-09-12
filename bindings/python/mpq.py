@@ -418,7 +418,7 @@ class WriterFile:
 
 
 class Writer:
-    """Closeable seekable archive creator preserving the legacy Writer API."""
+    """Closeable seekable archive creator."""
 
     def __init__(self, filename, version=ARCHIVE_VERSION_ONE, max_files=0, sector_size=0, flags=0, attributes=0):
         """Create an archive; nonzero ATTRIBUTE_* bits reserve one attributes file slot."""
@@ -650,7 +650,6 @@ class File:
         self.encrypted = bool(self.flags & FILE_FLAG_ENCRYPTED)
         self.compressed = bool(self.flags & FILE_FLAG_COMPRESS)
         self.imploded = bool(self.flags & FILE_FLAG_IMPLODE)
-        self.size_packed, self.size_unpacked = self.packed_size, self.unpacked_size
 
     def metadata(self):
         """Return an immutable metadata snapshot for this entry."""
@@ -662,8 +661,6 @@ class File:
         transferred = _OFF_T()
         libmpq.libmpq__file_read(self._archive._mpq, self.number, None if not self.unpacked_size else buffer, self.unpacked_size, ctypes.byref(transferred))
         return bytes(buffer[:transferred.value])
-
-    read_bytes = read
 
     def read_block(self, block):
         """Decode one block with native offset-cache management."""
@@ -704,10 +701,6 @@ class File:
     def __bytes__(self):
         """Return the complete unpacked payload as bytes."""
         return self.read()
-
-    def __str__(self):
-        """Decode the payload as Latin-1 for legacy compatibility."""
-        return self.read().decode("latin-1")
 
     def __repr__(self):
         """Return a debugging representation containing archive and number."""
@@ -767,7 +760,7 @@ class Archive:
             return None
 
     def _load_metadata(self):
-        """Populate compatibility attributes from native metadata queries."""
+        """Populate archive metadata from native queries."""
         packed, unpacked, offset = _OFF_T(), _OFF_T(), _OFF_T()
         version, files = ctypes.c_uint32(), ctypes.c_uint32()
         libmpq.libmpq__archive_size_packed(self._mpq, ctypes.byref(packed))
@@ -775,8 +768,7 @@ class Archive:
         libmpq.libmpq__archive_offset(self._mpq, ctypes.byref(offset))
         libmpq.libmpq__archive_version(self._mpq, ctypes.byref(version))
         libmpq.libmpq__archive_files(self._mpq, ctypes.byref(files))
-        self.size_packed, self.size_unpacked = packed.value, unpacked.value
-        self.packed_size, self.unpacked_size = self.size_packed, self.size_unpacked
+        self.packed_size, self.unpacked_size = packed.value, unpacked.value
         self.offset, self.version, self.files = offset.value, version.value, files.value
 
     def metadata(self):

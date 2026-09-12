@@ -126,9 +126,6 @@ class Archive {
         return new Archive(result);
     }
 
-    /** Compatibility spelling for callers preferring an explicit noun. */
-    Archive cloneArchive() { return clone(); }
-
     /** Close the native handle; repeated calls are harmless. */
     void close() {
         if (closed) return;
@@ -168,9 +165,6 @@ class Archive {
     /** Return archive start offset. */ off_t offset() { return metadata().offset; }
     /** Return archive format selector. */ uint version_() { return metadata().version_; }
     /** Return number of valid file entries. */ uint fileCount() { return metadata().fileCount; }
-    /** Historical property spelling for the entry count. */ uint files() { return fileCount(); }
-    /** Historical snake_case spelling for packed aggregate size. */ off_t packed_size() { return packedSize(); }
-    /** Historical snake_case spelling for unpacked aggregate size. */ off_t unpacked_size() { return unpackedSize(); }
 
     /** Resolve a file name through the Storm hash tables. */
     uint fileNumber(string name) {
@@ -191,10 +185,10 @@ class Archive {
 
     /** Return a file wrapper resolved by name. */ File file(string name) { return new File(this, name); }
     /** Return a file wrapper resolved by numeric entry. */ File file(uint number) { return new File(this, number); }
-    /** Index an archive by name, preserving the historical API. */ File opIndex(string name) { return file(name); }
-    /** Index an archive by mutable name for old D callers. */ File opIndex(char[] name) { return file(name.idup); }
-    /** Index an archive by entry number, preserving the historical API. */ File opIndex(uint number) { return file(number); }
-    /** Index an archive by signed integer for old source compatibility. */
+    /** Index an archive by name. */ File opIndex(string name) { return file(name); }
+    /** Index an archive by mutable name. */ File opIndex(char[] name) { return file(name.idup); }
+    /** Index an archive by entry number. */ File opIndex(uint number) { return file(number); }
+    /** Index an archive by signed integer, rejecting negative indices. */
     File opIndex(int number) {
         if (number < 0) throw new MPQException("Archive.opIndex", ERROR_EXIST);
         return file(cast(uint) number);
@@ -225,7 +219,6 @@ class Archive {
 
     /** Return the raw native handle for advanced ABI integrations. */
     mpq_archive_s* nativeHandle() { ensureOpen(); return handle; }
-    /** Historical raw-handle spelling. */ mpq_archive_s* archive() { return nativeHandle(); }
 
     /** Return `(listfile)` names split into lines, or an empty array. */
     string[] fileList() {
@@ -237,7 +230,6 @@ class Archive {
             throw error;
         }
     }
-    /** Historical lowercase spelling. */ string[] filelist() { return fileList(); }
 
     private void ensureOpen() {
         if (closed || handle is null)
@@ -268,7 +260,7 @@ class File {
         this.number = archive.fileNumber(name);
     }
 
-    /** Resolve a mutable D string for old source compatibility. */
+    /** Resolve an entry by mutable name. */
     this(Archive archive, char[] name) { this(archive, name.idup); }
 
     /** Return the public numeric entry index. */ uint no() const { return number; }
@@ -371,10 +363,6 @@ class File {
         result.length = cast(size_t) transferred; return result;
     }
 
-    /** Historical snake_case aliases. */ off_t packed_size() { return packedSize(); }
-    /** Historical snake_case alias. */ off_t unpacked_size() { return unpackedSize(); }
-    /** Historical snake_case alias. */ uint blocks() { return blockCount(); }
-    /** Historical property spelling for the entry number. */ uint fileno() { return no(); }
 }
 
 /** A streaming writer returned by `Archive.begin`. */
@@ -418,6 +406,3 @@ class MpqFileWriter {
     ~this() { if (!finishedState && handle !is null) libmpq__writer_finish(handle); }
     private void ensureActive() { if (finishedState || handle is null) throw new MPQException("MpqFileWriter", ERROR_NOT_INITIALIZED); }
 }
-
-/** Compatibility alias for the shorter historical writer name. */
-alias MpqFileWriter FileWriter;

@@ -14,11 +14,25 @@ import std.file : remove, write;
 import std.path : buildPath;
 import std.process : environment;
 import libmpq.mpq;
+import facade = libmpq.mpq;
 
-static assert(__traits(isSame, writer_begin, libmpq__writer_begin));
-static assert(__traits(isSame, writer_write, libmpq__writer_write));
-static assert(__traits(isSame, writer_finish, libmpq__writer_finish));
-static assert(__traits(isSame, writer_timestamp, libmpq__writer_timestamp));
+static assert(__traits(compiles, &libmpq__writer_begin));
+static assert(__traits(compiles, &libmpq__writer_write));
+static assert(__traits(compiles, &libmpq__writer_finish));
+static assert(__traits(compiles, &libmpq__writer_timestamp));
+
+static foreach (name; ["libversion", "archive_open", "writer_begin", "writer_write",
+                      "writer_finish", "writer_timestamp", "file_unpacked_size",
+                      "MPQ_FUNC", "MPQ_CHECKERR", "FileWriter"]) {
+    static assert(!__traits(hasMember, facade, name));
+}
+static foreach (name; ["cloneArchive", "files", "packed_size", "unpacked_size",
+                      "archive", "filelist"]) {
+    static assert(!__traits(hasMember, Archive, name));
+}
+static foreach (name; ["packed_size", "unpacked_size", "blocks", "fileno"]) {
+    static assert(!__traits(hasMember, File, name));
+}
 
 private string temporaryArchive(string suffix) {
     auto root = environment.get("TMPDIR", "/tmp");

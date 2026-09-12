@@ -5,6 +5,12 @@ module. The high-level `Archive`, `File`, and `MpqFileWriter` classes translate
 negative C status values into `MPQException` while retaining the low-level
 `extern(C)` declarations for applications that need direct ABI access.
 
+Low-level calls use `libmpq__*` names. Use `Mpq.version_()` for the version
+string and the high-level wrappers for checked calls. Metadata is available
+through `packedSize()`, `unpackedSize()`, `fileCount()`, `blockCount()`, and
+`no()`. Archives provide `clone()`, `nativeHandle()`, and `fileList()` for
+independent readers, native access, and filename discovery.
+
 Creation defaults to `COMPRESSION_POLICY_STANDARD`. Set
 `ARCHIVE_CREATE_COMPRESSION_EXTENDED` in `ArchiveCreateOptions.flags` for
 additional, potentially less interoperable compression forms. Use

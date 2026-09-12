@@ -1,9 +1,13 @@
 # libmpq Python bindings
 
-The `mpq` module provides Python 3.11+ ctypes bindings for libmpq. It keeps
-the historical `import mpq` API while adding explicit archive and reader
-lifecycle management, typed native errors, archive creation, cloning,
-metadata, block access, compression, encryption, and streaming writes.
+The `mpq` module provides Python 3.11+ ctypes bindings for libmpq, with
+explicit archive and reader lifecycle management, typed native errors,
+archive creation, cloning, metadata, block access, compression, encryption,
+and streaming writes.
+
+Use `packed_size` and `unpacked_size` for archive/file sizes and `file.read()`
+for payload bytes. Decode text explicitly, for example
+`file.read().decode("utf-8")`.
 
 Creation defaults to `COMPRESSION_POLICY_STANDARD`. Pass
 `flags=mpq.ARCHIVE_CREATE_COMPRESSION_EXTENDED` to `Writer` or

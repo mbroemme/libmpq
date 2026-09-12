@@ -12,7 +12,6 @@ module libmpq.mpq;
 
 import core.stdc.string : strlen;
 import std.string : toStringz;
-import std.traits : ParameterTypeTuple;
 
 public import libmpq.archive;
 public import libmpq.errors;
@@ -46,54 +45,4 @@ final class Mpq {
         libmpq__file_hash(toStringz(name), &result.hash1, &result.hash2, &result.hash3);
         return result;
     }
-}
-
-/** Historical direct version-function spelling. */
-alias libmpq__version libversion;
-
-/* Retain the original low-level names for source compatibility. */
-alias libmpq__archive_open archive_open;
-alias libmpq__archive_open_mpqe archive_open_mpqe;
-alias libmpq__archive_create archive_create;
-alias libmpq__archive_create_mpqe archive_create_mpqe;
-alias libmpq__archive_clone archive_clone;
-alias libmpq__archive_close archive_close;
-alias libmpq__archive_size_packed archive_size_packed;
-alias libmpq__archive_size_unpacked archive_size_unpacked;
-alias libmpq__archive_offset archive_offset;
-alias libmpq__archive_version archive_version;
-alias libmpq__archive_files archive_files;
-alias libmpq__writer_begin writer_begin;
-alias libmpq__writer_write writer_write;
-alias libmpq__writer_finish writer_finish;
-alias libmpq__writer_timestamp writer_timestamp;
-alias libmpq__archive_add_data archive_add_data;
-alias libmpq__archive_add_path archive_add_path;
-alias libmpq__file_size_packed file_size_packed;
-alias libmpq__file_size_unpacked file_unpacked_size;
-alias libmpq__file_size_unpacked file_size_unpacked;
-alias libmpq__file_offset file_offset;
-alias libmpq__file_blocks file_blocks;
-alias libmpq__file_flags file_flags;
-alias libmpq__file_number file_number;
-alias libmpq__file_hash file_hash;
-alias libmpq__file_number_from_hash file_number_from_hash;
-alias libmpq__file_read file_read;
-alias libmpq__block_size_unpacked block_size_unpacked;
-alias libmpq__block_size_packed block_size_packed;
-alias libmpq__block_compression block_compression;
-alias libmpq__block_read block_read;
-alias libmpq__block_verify block_verify;
-
-/** Generate a compatibility alias for a checked native function. */
-template MPQ_FUNC(string name) {
-    enum MPQ_FUNC = "alias MPQ_CHECKERR!(libmpq__" ~ name ~ ") " ~ name ~ ";";
-}
-
-/** Compatibility helper for code using the original throwing template. */
-int MPQ_CHECKERR(alias Function)(ParameterTypeTuple!(Function) args) {
-    auto result = Function(args);
-    if (result < 0)
-        throw new MPQException(Function.stringof, result);
-    return result;
 }

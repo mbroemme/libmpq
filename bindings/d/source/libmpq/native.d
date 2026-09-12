@@ -32,7 +32,7 @@ enum ERROR_EXIST = -10;
 enum ERROR_DECRYPT = -11;
 enum ERROR_UNPACK = -12;
 
-/** Keep the names used by the original D binding as public aliases. */
+/** C-style constant spellings matching the public native header. */
 alias LIBMPQ_ERROR_OPEN = ERROR_OPEN;
 alias LIBMPQ_ERROR_CLOSE = ERROR_CLOSE;
 alias LIBMPQ_ERROR_SEEK = ERROR_SEEK;
