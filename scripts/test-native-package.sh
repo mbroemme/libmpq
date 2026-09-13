@@ -99,6 +99,8 @@ for path in \
 	"${sdk_root}/share/man/man1/libmpq-config.1" \
 	"${sdk_root}/share/man/man3/libmpq.3" \
 	"${sdk_root}/README.md" \
+	"${sdk_root}/DEVELOPER.md" \
+	"${sdk_root}/MPQ.md" \
 	"${sdk_root}/COPYING" \
 	"${sdk_root}/COPYING.LESSER" \
 	"${sdk_root}/BUILDINFO"; do

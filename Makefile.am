@@ -21,6 +21,8 @@ EXTRA_DIST = \
 	COPYING \
 	COPYING.LESSER \
 	README.md \
+	DEVELOPER.md \
+	MPQ.md \
 	RELICENSING.md \
 	dub.sdl \
 	scripts/coverage-report.sh \
