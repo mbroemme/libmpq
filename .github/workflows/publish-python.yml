@@ -36,7 +36,9 @@ jobs:
     if: inputs.target == 'testpypi'
     needs: validate-packages
     runs-on: ubuntu-latest
-    environment: testpypi
+    environment:
+      name: testpypi
+      deployment: false
     permissions:
       contents: read
       id-token: write
@@ -59,7 +61,9 @@ jobs:
     if: inputs.target == 'pypi'
     needs: validate-packages
     runs-on: ubuntu-latest
-    environment: pypi
+    environment:
+      name: pypi
+      deployment: false
     permissions:
       contents: read
       id-token: write
