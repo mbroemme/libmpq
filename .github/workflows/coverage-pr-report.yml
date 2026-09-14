@@ -122,6 +122,7 @@ jobs:
           printf 'comment_path=%s\n' "${RUNNER_TEMP}/libmpq-coverage-comment.md" >> "${GITHUB_OUTPUT}"
 
       - name: Create or update pull request coverage report
+        if: steps.report.outputs.pull_request_number != '' && steps.report.outputs.comment_path != ''
         env:
           GH_TOKEN: ${{ github.token }}
           PULL_REQUEST_NUMBER: ${{ steps.report.outputs.pull_request_number }}
@@ -130,12 +131,9 @@ jobs:
           set -euo pipefail
 
           readonly repository="${GITHUB_REPOSITORY}"
-          bot_login="$(gh api /user --jq '.login')"
-          readonly bot_login
-          export BOT_LOGIN="${bot_login}"
           comment_id="$(gh api --paginate \
             "/repos/${repository}/issues/${PULL_REQUEST_NUMBER}/comments?per_page=100" \
-            --jq '.[] | select(.user.login == env.BOT_LOGIN and (.body | contains("<!-- libmpq-coverage-report -->"))) | .id' \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and .user.type == "Bot" and (.body | contains("<!-- libmpq-coverage-report -->"))) | .id' \
             | head -n 1)"
           readonly comment_id
 
