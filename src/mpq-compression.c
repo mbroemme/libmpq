@@ -796,7 +796,8 @@ libmpq__compression_decompress_block(
     if (compression_type == LIBMPQ_FLAG_COMPRESS_NONE) {
         if (in_size < out_size)
             return LIBMPQ_ERROR_SIZE;
-        memcpy(out_buf, in_buf, out_size);
+        if (out_buf != in_buf)
+            memcpy(out_buf, in_buf, out_size);
         tb = out_size;
     } else if (compression_type == LIBMPQ_FLAG_COMPRESS_PKZIP ||
                compression_type == LIBMPQ_FLAG_COMPRESS_MULTI) {

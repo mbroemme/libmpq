@@ -36,10 +36,15 @@ main(void)
     TEST_CHECK(block_data != NULL);
     TEST_CHECK(libmpq__block_read(archive, number, 0, block_data, block_size, &transferred) == 0);
     TEST_CHECK(transferred == block_size);
+    TEST_CHECK(memcmp(block_data, data, (size_t)block_size) == 0);
 
-    /* Raw blocks use their logical size, not the larger caller buffer capacity. */
+    /* Raw unencrypted reads share input/output storage and must skip self-copy.
+     * Their logical size remains independent of the caller buffer capacity. */
     TEST_CHECK(libmpq__file_flags(archive, number, &flags) == 0);
-    TEST_CHECK((flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE)) == 0);
+    TEST_CHECK(
+        (flags &
+         (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE | LIBMPQ_FILE_FLAG_ENCRYPTED)) == 0
+    );
     memset(block_data, 0xa5, (size_t)block_size + 17);
     TEST_CHECK(
         libmpq__block_read(archive, number, 0, block_data, block_size + 17, &transferred) == 0
