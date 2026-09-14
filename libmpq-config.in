@@ -39,12 +39,12 @@ while test "$#" -gt "0"; do
       echo "@VERSION@"
       ;;
     --cflags)
-      includes=-I@includedir@
+      includes="-I@includedir@"
       echo "$includes"
       ;;
     --libs)
       libdirs="-L@libdir@"
-      echo "$libdirs -lmpq -lbz2 -lz -llzma"
+      echo "$libdirs -lmpq @LIBS@"
       ;;
     *)
       echo "${usage}" 1>&2

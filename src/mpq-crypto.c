@@ -108,14 +108,15 @@ libmpq__crypto_detect_file_key(
     const uint8_t *in_buf, uint32_t in_size, uint32_t file_size, uint32_t *key
 )
 {
-    static const uint32_t wave_magic = 0x46464952; /* "RIFF" */
-    static const uint32_t exe_magic = 0x00905A4D;  /* "MZ" and DOS stub signature */
-    static const uint32_t xml_magic = 0x6D783F3C;  /* "<?xm" */
-    static const uint32_t mpq_magic = 0x1A51504D;  /* "MPQ\x1A" */
+    static const uint32_t known_first[] = {
+        0x46464952, /* "RIFF" */
+        0x00905A4D, /* "MZ" and DOS stub signature */
+        0x6D783F3C, /* "<?xm" */
+        0x1A51504D  /* "MPQ\x1A" */
+    };
     uint32_t encrypted_first;
     uint32_t encrypted_second;
     uint32_t first;
-    static const uint32_t known_first[] = { wave_magic, exe_magic, xml_magic, mpq_magic };
     const uint32_t known_second[] = { file_size - 8, 3, 0x6576206C, 32 }; /* "l ve" */
     uint32_t i;
 

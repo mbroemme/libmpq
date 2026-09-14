@@ -4,12 +4,15 @@
 #include "mpq-writer.h"
 #include "test-mpq-helper.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <dirent.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
 typedef struct
 {
@@ -99,7 +102,7 @@ fail_close_output(FILE *output)
 }
 
 static int32_t
-fail_publish(int directory, const char *temporary, const char *destination)
+fail_publish(mpq_directory_s *directory, const char *temporary, const char *destination)
 {
     (void)directory;
     (void)temporary;
@@ -312,7 +315,11 @@ test_mpqe_writer_credential_validation(void)
         ) == LIBMPQ_ERROR_DECRYPT
     );
     TEST_CHECK(archive == NULL);
-    TEST_CHECK(access(path, F_OK) != 0);
+    {
+        struct stat status;
+
+        TEST_CHECK(stat(path, &status) != 0);
+    }
     return 0;
 }
 
@@ -399,7 +406,9 @@ test_mpqe_writer_byte_equality(uint32_t version)
         goto cleanup;
     if (stat(raw_path, &raw_status) != 0 || stat(mpqe_path, &mpqe_status) != 0 ||
         raw_status.st_size != mpqe_status.st_size || raw_status.st_size % 64 == 0 ||
+#ifndef _WIN32
         (raw_status.st_mode & 0777) != (mpqe_status.st_mode & 0777) ||
+#endif
         test_read_path(raw_path, &raw, &raw_size) != 0 ||
         decrypt_mpqe_path(mpqe_path, &decrypted, &decrypted_size) != 0 ||
         raw_size != decrypted_size || memcmp(raw, decrypted, raw_size) != 0 || raw_size < 93 ||
@@ -423,6 +432,25 @@ cleanup:
 static int
 count_mpqe_temps(const char *directory)
 {
+#ifdef _WIN32
+    WIN32_FIND_DATAA entry;
+    HANDLE search;
+    char pattern[1024];
+    int count = 0;
+
+    if (snprintf(pattern, sizeof(pattern), "%s/*", directory) >= (int)sizeof(pattern))
+        return -1;
+    search = FindFirstFileA(pattern, &entry);
+    if (search == INVALID_HANDLE_VALUE)
+        return -1;
+    do {
+        if (strncmp(entry.cFileName, ".libmpq-raw-", 12) == 0 ||
+            strncmp(entry.cFileName, ".libmpq-mpqe-", 13) == 0)
+            count++;
+    } while (FindNextFileA(search, &entry));
+    FindClose(search);
+    return count;
+#else
     DIR *entries;
     struct dirent *entry;
     int count = 0;
@@ -437,6 +465,7 @@ count_mpqe_temps(const char *directory)
     }
     closedir(entries);
     return count;
+#endif
 }
 
 /* A handled finalization failure must consume the writer and preserve an existing destination. */
@@ -457,7 +486,7 @@ test_mpqe_writer_fault(mpqe_writer_fault_e fault, uint32_t attributes)
     int status = 1;
 
     if (test_temp_path(directory, sizeof(directory), "writer-mpqe-fault") != 0 ||
-        mkdir(directory, 0700) != 0 ||
+        test_mkdir(directory) != 0 ||
         snprintf(path, sizeof(path), "%s/archive.mpqe", directory) < 0)
         goto cleanup;
     if (write_test_path(path, original, sizeof(original) - 1U) != 0)
@@ -489,7 +518,7 @@ cleanup:
         (void)libmpq__archive_close(archive);
     free(actual);
     remove(path);
-    rmdir(directory);
+    test_rmdir(directory);
     return status;
 }
 
@@ -514,22 +543,22 @@ test_mpqe_writer_chdir(void)
         snprintf(source_directory, sizeof(source_directory), "%s/source", directory) < 0 ||
         snprintf(other_directory, sizeof(other_directory), "%s/other", directory) < 0 ||
         snprintf(archive_path, sizeof(archive_path), "%s/archive.mpqe", source_directory) < 0 ||
-        mkdir(directory, 0700) != 0 || mkdir(source_directory, 0700) != 0 ||
-        mkdir(other_directory, 0700) != 0)
+        test_mkdir(directory) != 0 || test_mkdir(source_directory) != 0 ||
+        test_mkdir(other_directory) != 0)
         goto cleanup;
-    initial_directory = getcwd(NULL, 0);
-    if (initial_directory == NULL || chdir(source_directory) != 0)
+    initial_directory = test_getcwd();
+    if (initial_directory == NULL || test_chdir(source_directory) != 0)
         goto cleanup;
     changed_directory = 1;
     if (libmpq__archive_create_mpqe(
             &archive, "archive.mpqe", mpqe_auth_code, sizeof(mpqe_auth_code) - 1U, NULL
         ) != 0 ||
         libmpq__archive_add_data(archive, "cwd.txt", payload, sizeof(payload) - 1U, NULL) != 0 ||
-        chdir("../other") != 0)
+        test_chdir("../other") != 0)
         goto cleanup;
     result = libmpq__archive_close(archive);
     archive = NULL;
-    if (result != 0 || chdir(initial_directory) != 0)
+    if (result != 0 || test_chdir(initial_directory) != 0)
         goto cleanup;
     changed_directory = 0;
     if (libmpq__archive_open_mpqe(
@@ -543,16 +572,16 @@ test_mpqe_writer_chdir(void)
 
 cleanup:
     if (changed_directory && initial_directory != NULL)
-        (void)chdir(initial_directory);
+        (void)test_chdir(initial_directory);
     free(initial_directory);
     if (archive != NULL)
         (void)libmpq__archive_close(archive);
     if (reader != NULL)
         (void)libmpq__archive_close(reader);
     remove(archive_path);
-    rmdir(other_directory);
-    rmdir(source_directory);
-    rmdir(directory);
+    test_rmdir(other_directory);
+    test_rmdir(source_directory);
+    test_rmdir(directory);
     return status;
 }
 

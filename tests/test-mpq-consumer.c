@@ -1,7 +1,7 @@
 /*
- *  mpq-platform.h -- header file for platform specific parts.
+ *  test-mpq-consumer.c -- installed public library smoke test.
  *
- *  Copyright (c) 2010-2026 Georg Lukas <georg@op-co.de>
+ *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
  *  This file is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
@@ -17,12 +17,17 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef LIBMPQ_PLATFORM_H
-#define LIBMPQ_PLATFORM_H
+#include <libmpq/mpq.h>
+#include <stdio.h>
+#include <string.h>
 
-#ifdef _MSC_VER
-#define fseeko _fseeki64
-#define ftello _ftelli64
-#endif
+int
+main(int argc, char **argv)
+{
+    const char *version = libmpq__version();
 
-#endif /* LIBMPQ_PLATFORM_H */
+    if (version == NULL || argc != 2 || strcmp(version, argv[1]) != 0)
+        return 1;
+    puts(version);
+    return 0;
+}

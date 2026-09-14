@@ -18,6 +18,7 @@ pkgconfig_DATA			= libmpq.pc
 
 # Additional files included in source distributions.
 EXTRA_DIST = \
+	CMakeLists.txt \
 	COPYING \
 	COPYING.LESSER \
 	README.md \

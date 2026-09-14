@@ -27,6 +27,7 @@ AM_CONDITIONAL([ENABLE_FUZZING], [test "x$enable_fuzzing" = xyes])
 # Check for the required build tools.
 AC_USE_SYSTEM_EXTENSIONS
 AC_PROG_CC
+AC_SYS_LARGEFILE
 
 # Use C99 by default while allowing callers to select a newer C dialect.
 case "$CFLAGS" in
@@ -35,7 +36,13 @@ case "$CFLAGS" in
 esac
 
 # Initialize Libtool and disable static-library builds.
-LT_INIT([disable-static])
+LT_INIT([win32-dll disable-static])
+
+# Check the Windows RNG and security APIs used by the filesystem helpers.
+AS_CASE([$host_os], [mingw*], [
+	AC_CHECK_LIB([bcrypt], [BCryptGenRandom], [], [AC_MSG_ERROR([*** bcrypt is required on Windows])])
+	AC_CHECK_LIB([advapi32], [OpenProcessToken], [], [AC_MSG_ERROR([*** advapi32 is required on Windows])])
+])
 
 # Require a C99-capable compiler for project checks and builds.
 AC_MSG_CHECKING([whether $CC supports C99])

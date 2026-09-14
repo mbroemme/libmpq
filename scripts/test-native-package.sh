@@ -183,7 +183,7 @@ readonly config_cflags="$("${sdk_root}/bin/libmpq-config" \
 readonly config_libs="$("${sdk_root}/bin/libmpq-config" \
 	--prefix="${sdk_root}" --libs)"
 if [[ "${config_cflags}" != "-I${sdk_root}/include" ]] ||
-	[[ "${config_libs}" != "-L${sdk_root}/lib -lmpq -lbz2 -lz -llzma" ]]; then
+	[[ "${config_libs}" != "-L${sdk_root}/lib -lmpq "* ]]; then
 	printf 'Packaged libmpq-config does not describe the extracted SDK layout.\n' >&2
 	exit 1
 fi
@@ -192,6 +192,17 @@ export PKG_CONFIG_PATH="${pkgconfig_dir}"
 export PKG_CONFIG_LIBDIR="${pkgconfig_dir}"
 readonly pkgconfig_cflags="$(pkg-config --cflags libmpq)"
 readonly pkgconfig_libs="$(pkg-config --libs libmpq)"
+
+# Compare both helpers with the same explicit prefix. The default relocatable
+# pkg-config prefix may contain /../.. even when it names the same directory.
+# The consumer checks below still use the unmodified relocatable metadata.
+read -r -a config_link_flags <<< "${config_libs}"
+read -r -a pkgconfig_link_flags <<< "$(pkg-config --define-variable=prefix="${sdk_root}" --static --libs libmpq)"
+if [[ "${config_link_flags[*]}" != "${pkgconfig_link_flags[*]}" ]]; then
+	printf 'Packaged link dependency metadata is inconsistent.\n' >&2
+	exit 1
+fi
+
 if [[ "${pkgconfig_cflags}" != *"-I${sdk_root}/"* ]] ||
 	[[ "${pkgconfig_libs}" != *"-L${sdk_root}/"* ]]; then
 	printf 'Packaged libmpq.pc does not describe the extracted SDK layout.\n' >&2

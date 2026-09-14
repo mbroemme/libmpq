@@ -61,13 +61,11 @@ checksum verification, and writer compression policies.
 
 ## Requirements
 
-The build system requires:
+The native library requires a C compiler and development headers and libraries
+for zlib, bzip2, and lzma. Build tools depend on the platform:
 
-* A C99-capable C compiler.
-* GNU Autoconf, Automake, and Libtool.
-* zlib development headers and libraries.
-* bzip2 development headers and libraries.
-* xz development headers and libraries.
+* Unix and MinGW-w64: a C99-capable compiler, GNU Autoconf, Automake, and Libtool.
+* Native MSVC: Visual Studio's C++ build tools, CMake 3.21 or newer, and vcpkg.
 
 The Python, D, and Java bindings are maintained and distributed through their
 native package ecosystems. They are included in source distributions but are
@@ -80,6 +78,8 @@ documentation below for build, test, and library-loading instructions.
 
 ## Building
 
+### Unix (Autotools)
+
 For build and install use the commands below. If `--prefix=/usr` is used, the
 `make install` command must be run as root. It installs the native shared
 library, public headers, tools, and manual pages. Language bindings are built
@@ -91,7 +91,12 @@ make &&
 make install
 ```
 
-### Debian or Ubuntu
+Use `./configure --prefix=DIR` to select a different installation prefix. Use
+`./configure --help` to list the available configuration options. C99 is the
+default language standard; callers may select another supported dialect through
+`CFLAGS`, for example `CFLAGS="-std=c17"`.
+
+#### Debian or Ubuntu
 
 Install the build tools and compression-library development packages with:
 
@@ -100,7 +105,7 @@ sudo apt install build-essential autoconf automake libtool \
   zlib1g-dev libbz2-dev liblzma-dev
 ```
 
-### Fedora
+#### Fedora
 
 Install the compiler, Autotools, and compression-library development packages
 with:
@@ -110,7 +115,7 @@ sudo dnf install gcc make autoconf automake libtool \
   zlib-devel bzip2-devel xz-devel
 ```
 
-### openSUSE
+#### openSUSE
 
 Install the compiler, Autotools, and compression-library development packages
 with:
@@ -120,7 +125,7 @@ sudo zypper install gcc make autoconf automake libtool \
   zlib-devel libbz2-devel liblzma-devel
 ```
 
-### Arch Linux
+#### Arch Linux
 
 Install the base build tools and required libraries with:
 
@@ -129,10 +134,61 @@ sudo pacman -S --needed base-devel autoconf automake libtool \
   zlib bzip2 xz
 ```
 
-Use `./configure --prefix=DIR` to select a different installation prefix. Use
-`./configure --help` to list the available configuration options. C99 is the
-default language standard; callers may select another supported dialect through
-`CFLAGS`, for example `CFLAGS="-std=c17"`.
+### Windows
+
+The native C library has an MSVC x64 CMake build. The `windows-latest` CI
+job builds the DLL and runs the C regression suite through CTest. Autotools
+remains the POSIX build; Windows bindings and release packaging are not
+included in this support.
+
+#### MSVC (CMake)
+
+Install CMake, Visual Studio's C++ build tools, and vcpkg. From a Developer
+PowerShell, install the native dependencies and build:
+
+```powershell
+vcpkg install zlib:x64-windows bzip2:x64-windows liblzma:x64-windows
+cmake -S . -B build -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+cmake --build build --config Release --parallel
+ctest --test-dir build -C Release --output-on-failure
+```
+
+Consumers include `libmpq/mpq.h` and link the DLL import library or static
+library, without special preprocessor definitions. Use `-DBUILD_SHARED_LIBS=OFF`
+for a static CMake build. Static consumers also link the codec and Windows
+system libraries.
+
+#### MinGW-w64 (Autotools)
+
+MinGW-w64 uses Autotools, including in the separate Windows CI job:
+
+```sh
+sh autogen.sh
+./configure --host=x86_64-w64-mingw32 --enable-shared --disable-static
+make
+make check
+make install
+```
+
+Provide MinGW-built zlib, bzip2, and lzma libraries, not Unix libraries. For
+cross-builds, set dependency include/library search paths as needed and run
+`make check LOG_COMPILER=wine` with the DLL directories in `WINEPATH`.
+For a static-only build use `--disable-shared --enable-static`; the generated
+`libmpq-config --cflags --libs` supplies the include path and required libraries.
+
+#### Filesystem behavior
+
+Public filesystem paths are UTF-8 on Windows, converted to UTF-16 for native
+filesystem calls. Both slash styles and absolute or relative paths are
+accepted. Archive streams always use binary mode. Clone identity checks use
+the opened file's volume and file ID.
+
+MPQE creation retains the destination directory independently of cwd changes.
+Windows temporary files use exclusive creation, system-generated randomness,
+and non-inheritable handles. Plaintext has a protected owner-only ACL; encrypted
+output inherits the destination directory's normal ACL. Publication replaces
+the destination in one same-directory operation, only after finalization and
+plaintext cleanup. Handled failures attempt cleanup; crashes can leave temps.
 
 ## Usage
 
@@ -185,11 +241,10 @@ headers, tables, encryption, sectors, and compression, see the
 * MPQE supports reading and creation of new archives with a caller-supplied
   authentication code. Existing MPQE archives cannot be modified and encrypted
   random-access writing is unsupported. Creation uses an owner-only plaintext
-  temporary file; the completed archive uses normal caller-umask permissions.
+  temporary file; completed POSIX archives use normal caller-umask permissions.
   Cleanup is best effort, so a crash can leave the plaintext temporary behind.
 * Signature generation, patch creation/application, and StormLib-specific key
   modes are not supported. Stored attributes are not automatically verified.
-* Windows support is not currently tested or documented by the Autotools build.
 
 ## Contributing
 

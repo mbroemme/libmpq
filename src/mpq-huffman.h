@@ -49,9 +49,9 @@
  * pointer representation, and PTR_INT exposes the encoded value for the
  * sign and sentinel tests used by the compatibility implementation.
  */
-#define PTR_NOT(ptr) (struct huffman_tree_item_s *)(~(unsigned long)(ptr))
+#define PTR_NOT(ptr) (struct huffman_tree_item_s *)(~(uintptr_t)(ptr))
 #define PTR_PTR(ptr) ((struct huffman_tree_item_s *)(ptr))
-#define PTR_INT(ptr) (long)(ptr)
+#define PTR_INT(ptr) (intptr_t)(ptr)
 
 /*
  * Operations accepted by libmpq__huffman_insert_item(). The first operation
@@ -142,7 +142,7 @@ void libmpq__huffman_remove_item(struct huffman_tree_s *ht, struct huffman_tree_
 
 /* Resolve a previous item from an encoded link and caller-supplied relative offset. */
 struct huffman_tree_item_s *
-libmpq__huffman_previous_item(struct huffman_tree_item_s *hi, long value);
+libmpq__huffman_previous_item(struct huffman_tree_item_s *hi, intptr_t value);
 
 /* Consume and return one low-order bit from the bounded input range. */
 uint32_t libmpq__huffman_read_bit(struct huffman_input_stream_s *is);

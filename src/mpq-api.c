@@ -21,24 +21,26 @@
 #include "config.h"
 #endif
 
+/* Export only public wrappers when building a Windows DLL. */
+#if defined(_WIN32) && defined(DLL_EXPORT)
+#define LIBMPQ_API __declspec(dllexport)
+#endif
+
+#include <libmpq/mpq.h>
+
 #include "mpq-attributes.h"
 #include "mpq-compression.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
 #include "mpq-internal.h"
-#include "mpq-platform.h"
 #include "mpq-reader.h"
 #include "mpq-stream.h"
 #include "mpq-verify.h"
 #include "mpq-writer.h"
-#include <libmpq/mpq.h>
 
-#include <errno.h>
-#include <fcntl.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 
 /* C99-compatible compile-time checks of native public value layouts.
  * These describe host-side structs, not the little-endian disk format. */
@@ -293,26 +295,12 @@ libmpq__archive_open_mpqe(
 int32_t
 libmpq__archive_clone(mpq_archive_s **clone, mpq_archive_s *source)
 {
-    struct stat file_status;
-
     if (clone == NULL)
         return LIBMPQ_ERROR_EXIST;
     *clone = NULL;
 
     if (source == NULL || source->filename == NULL || source->write_mode)
         return LIBMPQ_ERROR_EXIST;
-
-#if !defined(_WIN32) && !defined(_WIN64)
-
-    /* Reject cloning after the backing path has been replaced or removed. */
-    if (source->file_identity_valid) {
-        if (stat(source->filename, &file_status) < 0)
-            return errno == ENOENT ? LIBMPQ_ERROR_EXIST : LIBMPQ_ERROR_OPEN;
-        if ((uint64_t)file_status.st_dev != source->file_device ||
-            (uint64_t)file_status.st_ino != source->file_inode)
-            return LIBMPQ_ERROR_EXIST;
-    }
-#endif
 
     return libmpq__reader_archive_clone(clone, source);
 }

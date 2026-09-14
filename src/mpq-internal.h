@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 
+#include "mpq-file.h"
 #include "mpq-mpqe.h"
 
 /* Common success return code used by libmpq functions. */
@@ -195,8 +196,8 @@ struct mpq_archive
     FILE *fp;                     /* Backing file handle used only by writers. */
     struct mpq_stream *stream;    /* Read-only random-access stream provider for readers. */
     char *filename;               /* Original path used to reopen this archive. */
-    uint64_t file_device;         /* Device identity captured when supported. */
-    uint64_t file_inode;          /* Inode identity captured when supported. */
+    uint64_t file_device;         /* Device or Windows volume identity. */
+    uint64_t file_inode;          /* Inode or Windows file identity. */
     uint8_t file_identity_valid;  /* Whether the path identity is reliable. */
     uint64_t file_size;           /* Physical backing-file size captured at open time. */
     uint32_t block_size;          /* Unpacked sector size in bytes. */
@@ -233,7 +234,8 @@ struct mpq_archive
     uint8_t
         write_mpqe_key[LIBMPQ_MPQE_CHUNK_SIZE]; /* Derived MPQE key retained only while writing. */
     FILE *write_mpqe_output;                    /* Secure temporary encrypted output handle. */
-    int write_mpqe_directory;     /* Destination directory descriptor for anchored operations. */
+    mpq_directory_s
+        *write_mpqe_directory;    /* Destination directory context for anchored operations. */
     char *write_mpqe_destination; /* Final MPQE destination basename in that directory. */
     char *write_mpqe_output_path; /* Secure encrypted temporary basename in that directory. */
     const struct mpq_writer_mpqe_ops *write_mpqe_ops; /* Private MPQE finalization operations. */

@@ -24,15 +24,13 @@
 #include "mpq-compression.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
+#include "mpq-file.h"
 #include "mpq-internal.h"
-#include "mpq-platform.h"
 #include "mpq-reader.h"
 #include "mpq-stream.h"
 
-#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <zlib.h>
 
 /* Release a cached block offset table when the last user closes it.
@@ -960,17 +958,10 @@ libmpq__reader_archive_open_stream(
     }
     memcpy((*mpq_archive)->filename, mpq_filename, strlen(mpq_filename) + 1);
 
-#if !defined(_WIN32) && !defined(_WIN64)
-    {
-        struct stat file_status;
-
-        if (stat(mpq_filename, &file_status) == 0) {
-            (*mpq_archive)->file_device = (uint64_t)file_status.st_dev;
-            (*mpq_archive)->file_inode = (uint64_t)file_status.st_ino;
-            (*mpq_archive)->file_identity_valid = TRUE;
-        }
-    }
-#endif
+    (*mpq_archive)->file_identity_valid =
+        libmpq__file_identity(
+            stream->file, &(*mpq_archive)->file_device, &(*mpq_archive)->file_inode
+        ) == 0;
 
     (*mpq_archive)->file_size = libmpq__stream_size(stream);
 
@@ -1264,6 +1255,16 @@ libmpq__reader_archive_clone(mpq_archive_s **clone, const mpq_archive_s *source)
     if (source == NULL || source->stream == NULL || source->filename == NULL)
         return LIBMPQ_ERROR_EXIST;
     result = libmpq__stream_clone(&stream, source->stream, source->filename);
+    if (result == 0 && source->file_identity_valid) {
+        uint64_t device;
+        uint64_t inode;
+
+        result = libmpq__file_identity(stream->file, &device, &inode);
+        if (result == 0 && (device != source->file_device || inode != source->file_inode))
+            result = LIBMPQ_ERROR_EXIST;
+        if (result != 0)
+            libmpq__stream_discard(stream);
+    }
 
     return result == LIBMPQ_SUCCESS ? libmpq__reader_archive_open_stream(
                                           clone, source->filename, source->archive_offset, stream

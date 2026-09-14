@@ -35,10 +35,12 @@ extern "C" {
 #endif
 
 /* Export public symbols when the compiler supports symbol visibility. */
-#if defined(__GNUC__) && (__GNUC__ >= 4)
+#ifndef LIBMPQ_API
+#if !defined(_WIN32) && defined(__GNUC__) && (__GNUC__ >= 4)
 #define LIBMPQ_API __attribute__((visibility("default")))
 #else
 #define LIBMPQ_API
+#endif
 #endif
 
 /*
