@@ -22,6 +22,8 @@ struct ArchiveCreateOptions {
     uint sectorSize;
     /** Archive creation flags such as `ARCHIVE_CREATE_LISTFILE`. */
     uint flags;
+    /** ATTRIBUTE_* arrays; nonzero combinations reserve one attributes file slot. */
+    uint attributes;
 
     /** Return defaults for a v1 archive. */
     static ArchiveCreateOptions v1() {
@@ -45,7 +47,7 @@ struct ArchiveCreateOptions {
 
     /** Convert the safe D representation to the exact native layout. */
     mpq_archive_create_options_s nativeOptions() const {
-        return mpq_archive_create_options_s(version_, maxFiles, sectorSize, flags);
+        return mpq_archive_create_options_s(version_, maxFiles, sectorSize, flags, attributes);
     }
 }
 
@@ -67,12 +69,12 @@ struct FileOptions {
         return FileOptions();
     }
 
-    /** Store a file through MPQ multi-compression masks. */
+    /** Store a file through MPQ multi-compression masks or the exclusive v2+ LZMA selector. */
     static FileOptions compressed(uint first) {
         return compressed(first, first);
     }
 
-    /** Store a file with distinct first-sector and later-sector masks. */
+    /** Store a file with distinct first-sector and later-sector masks or LZMA selectors. */
     static FileOptions compressed(uint first, uint next) {
         auto result = FileOptions();
         result.flags = FILE_FLAG_COMPRESS;

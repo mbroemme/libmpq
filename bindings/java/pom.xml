@@ -7,7 +7,7 @@
 
   <groupId>org.libmpq</groupId>
   <artifactId>libmpq-java</artifactId>
-  <version>0.6.1</version>
+  <version>0.7.0</version>
   <name>libmpq Java bindings</name>
   <description>Java Foreign Function API bindings for libmpq</description>
   <url>https://github.com/mbroemme/libmpq</url>

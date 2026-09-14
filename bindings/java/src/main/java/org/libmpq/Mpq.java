@@ -19,6 +19,23 @@ import org.libmpq.ffi.LibmpqNative;
  * private codec or archive-layout implementation details.
  */
 public final class Mpq {
+    /** Attributes CRC32 array presence. */
+    public static final int ATTRIBUTE_CRC32 = 0x1;
+    /** Attributes FILETIME array presence. */
+    public static final int ATTRIBUTE_FILETIME = 0x2;
+    /** Attributes MD5 array presence. */
+    public static final int ATTRIBUTE_MD5 = 0x4;
+    /** Attributes PATCH_BIT array presence. */
+    public static final int ATTRIBUTE_PATCH_BIT = 0x8;
+
+    /** Request packed-sector Adler-32 comparison, or report its mismatch. */
+    public static final int VERIFY_SECTOR_CRC = 0x1;
+    /** Request comparison of the stored CRC32, or report its mismatch. */
+    public static final int VERIFY_FILE_CRC32 = 0x2;
+    /** Request comparison of the stored MD5, or report its mismatch. */
+    public static final int VERIFY_FILE_MD5 = 0x4;
+    /** Request all implemented file checksum comparisons. */
+    public static final int VERIFY_ALL = VERIFY_SECTOR_CRC | VERIFY_FILE_CRC32 | VERIFY_FILE_MD5;
     /** Native failure while opening or creating a file. */
     public static final int ERROR_OPEN = -1;
     /** Native failure while closing a file or archive. */
@@ -50,6 +67,12 @@ public final class Mpq {
     public static final int ARCHIVE_VERSION_TWO = 1;
     /** Creation flag requesting a generated {@code (listfile)} entry. */
     public static final int ARCHIVE_CREATE_LISTFILE = 0x00000001;
+    /** Select EXTENDED compression in archive creation flags; zero defaults to STANDARD. */
+    public static final int ARCHIVE_CREATE_COMPRESSION_EXTENDED = 0x00000002;
+    /** Interoperability-oriented writer compression policy. */
+    public static final int COMPRESSION_POLICY_STANDARD = 0;
+    /** Permit implemented compression forms that may be less interoperable. */
+    public static final int COMPRESSION_POLICY_EXTENDED = 1;
     /** MPQ flag for standalone PKWARE implode storage. */
     public static final int FILE_FLAG_IMPLODE = 0x00000100;
     /** MPQ flag for multi-compression storage. */
@@ -58,6 +81,8 @@ public final class Mpq {
     public static final int FILE_FLAG_ENCRYPTED = 0x00010000;
     /** MPQ flag for single-unit, non-sectorized storage. */
     public static final int FILE_FLAG_SINGLE = 0x01000000;
+    /** Generate checksums for sectorized compressed/imploded files. */
+    public static final int FILE_FLAG_SECTOR_CRC = 0x04000000;
     /** MPQ Huffman compression mask bit. */
     public static final int COMPRESSION_HUFFMAN = 0x01;
     /** MPQ zlib compression mask bit. */
@@ -66,10 +91,14 @@ public final class Mpq {
     public static final int COMPRESSION_PKZIP = 0x08;
     /** MPQ bzip2 compression mask bit. */
     public static final int COMPRESSION_BZIP2 = 0x10;
+    /** Lossless SPARSE zero-run stage; cannot be combined with WAVE ADPCM. */
+    public static final int COMPRESSION_SPARSE = 0x20;
     /** MPQ mono WAVE ADPCM compression mask bit. */
     public static final int COMPRESSION_WAVE_MONO = 0x40;
     /** MPQ stereo WAVE ADPCM compression mask bit. */
     public static final int COMPRESSION_WAVE_STEREO = 0x80;
+    /** Exclusive MPQ v2+ LZMA selector; it is not a chainable mask bit. */
+    public static final int COMPRESSION_LZMA = 0x00000100;
 
     private Mpq() { }
 
@@ -91,6 +120,11 @@ public final class Mpq {
      */
     public static String strerror(int code) {
         return Support.cString(LibmpqNative.strerror(code));
+    }
+
+    /** Query whether writer compression is allowed using zero-based version and policy selectors. */
+    public static boolean archiveCompressionAllowed(int version, int mask, int policy) {
+        return LibmpqNative.archiveCompressionAllowed(version, mask, policy) != 0;
     }
 
     /**

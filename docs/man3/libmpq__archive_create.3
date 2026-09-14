@@ -1,11 +1,63 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
 .TH LIBMPQ__ARCHIVE_CREATE 3 2026-08-18 "The MoPaQ archive library"
 .SH NAME
 libmpq__archive_create \- create a seekable MPQ archive
 .SH SYNOPSIS
-.B #include <libmpq/mpq.h>
-.PP
-.B int32_t libmpq__archive_create(mpq_archive_s **archive, const char *path, const mpq_archive_create_options_s *options);
+.nf
+.B
+#include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__archive_create("
+.BI "        mpq_archive_s **" "archive,"
+.BI "        const char     *" "path,"
+.BI "        const mpq_archive_create_options_s *" "options"
+.BI ");"
+.fi
 .SH DESCRIPTION
-Creates a v1 or v2 archive at \fIpath\fP. The archive is finalized by
-libmpq__archive_close(3). The options select a fixed entry capacity, sector
-size, archive version, and optional generated (listfile).
+Creates an MPQ v1 or v2 archive at \fIpath\fP. Add members using the
+streaming writer or archive-add convenience functions, then finalize the
+archive with \fBlibmpq__archive_close\fP().
+.SS "Creation Options"
+The options select a fixed entry capacity, sector size, archive version,
+and optional generated (listfile).
+.PP
+Compression defaults to STANDARD. Add
+LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED to options.flags to select
+EXTENDED. The policy affects writer validation only, not decoding.
+.SS "Optional Attributes"
+Set options.attributes to a combination of LIBMPQ_ATTRIBUTE_CRC32,
+LIBMPQ_ATTRIBUTE_FILETIME, LIBMPQ_ATTRIBUTE_MD5, and
+LIBMPQ_ATTRIBUTE_PATCH_BIT. Zero disables generation; any nonzero
+combination creates one (attributes) file and consumes one reserved slot.
+Unknown attribute bits are rejected. Version-100 attributes work in both
+MPQ v1 and v2, independently of the archive format version.
+.PP
+Capacity includes the attributes entry and listfile if enabled; the internal
+attributes name is reserved. Finalization writes the listfile, attributes,
+then the completed tables. Checksums cover source bytes before compression.
+FILETIME defaults to zero and patch bits are zero. Use
+\fBlibmpq__writer_timestamp\fP() on an active writer for an explicit
+timestamp. Path addition never imports filesystem timestamps.
+.SH SEE ALSO
+.BR libmpq__archive_attributes (3),
+.BR libmpq__file_attributes (3),
+.BR libmpq__writer_timestamp (3),
+.BR libmpq__archive_compression_allowed (3),
+.BR libmpq__archive_create_mpqe (3),
+.BR libmpq__archive_close (3),
+.BR libmpq__archive_add_data (3),
+.BR libmpq__archive_add_path (3),
+.BR libmpq__writer_begin (3)

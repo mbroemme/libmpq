@@ -1,0 +1,35 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__ARCHIVE_ADD_PATH 3 2026-08-18 "The MoPaQ archive library"
+.SH NAME
+libmpq__archive_add_path \- add a filesystem file to an MPQ archive
+.SH SYNOPSIS
+.nf
+.B
+#include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__archive_add_path("
+.BI "        mpq_archive_s  *" "archive,"
+.BI "        const char     *" "name,"
+.BI "        const char     *" "source_path,"
+.BI "        const mpq_file_options_s *" "options"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Reads \fIsource_path\fP and adds it under the archive name \fIname\fP.
+.SH SEE ALSO
+.BR libmpq__archive_create (3),
+.BR libmpq__archive_add_data (3),
+.BR libmpq__writer_begin (3)

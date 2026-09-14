@@ -34,7 +34,7 @@ create_seed_archive(void)
 {
     mpq_archive_s *archive = NULL;
     mpq_archive_create_options_s archive_options = { LIBMPQ_ARCHIVE_VERSION_ONE, 16, 4096,
-                                                     LIBMPQ_ARCHIVE_CREATE_LISTFILE };
+                                                     LIBMPQ_ARCHIVE_CREATE_LISTFILE, 0 };
     mpq_file_options_s raw = { 0, 0, 0, 0, 0 };
     mpq_file_options_s compressed = { LIBMPQ_FILE_FLAG_COMPRESS, LIBMPQ_COMPRESSION_ZLIB,
                                       LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
@@ -43,8 +43,9 @@ create_seed_archive(void)
     memset(payload, 'R', sizeof(payload));
     memcpy(payload, "libmpq file-read fuzz seed\n", 27);
     if (libmpq__archive_create(&archive, archive_path, &archive_options) != 0 ||
-        libmpq__file_add(archive, "fuzz-read.bin", payload, sizeof(payload), &compressed) != 0 ||
-        libmpq__file_add(archive, "dir/entry.txt", payload, 64, &raw) != 0 ||
+        libmpq__archive_add_data(archive, "fuzz-read.bin", payload, sizeof(payload), &compressed) !=
+            0 ||
+        libmpq__archive_add_data(archive, "dir/entry.txt", payload, 64, &raw) != 0 ||
         libmpq__archive_close(archive) != 0) {
         return -1;
     }

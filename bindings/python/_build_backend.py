@@ -70,6 +70,16 @@ def _native_sources(destination):
                 shutil.copy2(source_path, target)
 
 
+def _stage_test_fixtures():
+    """Stage shared native fixtures for the Python sdist test suite."""
+    source = _ROOT.parents[1] / "tests" / "fixtures"
+    destination = _ROOT / "tests" / "fixtures"
+    if destination.exists():
+        return None
+    shutil.copytree(source, destination)
+    return destination
+
+
 def _build_native():
     """Compile the native library into a temporary platform-specific file."""
     override = os.environ.get("LIBMPQ_LIBRARY")
@@ -100,7 +110,7 @@ def _build_native():
         command += ["-dynamiclib", "-o", str(output)]
     else:
         command += ["-shared", "-o", str(output)]
-    command += ["-lbz2", "-lz"]
+    command += ["-lbz2", "-lz", "-llzma"]
     subprocess.run(command, check=True, cwd=source_root)
     return output, output_dir
 
@@ -182,12 +192,15 @@ def build_sdist(sdist_directory, config_settings=None):
     created = not native.exists()
     if created:
         _native_sources(native)
+    fixtures = _stage_test_fixtures()
     created_licenses = _stage_license_files()
     try:
         return _backend.build_sdist(sdist_directory, config_settings)
     finally:
         if created:
             shutil.rmtree(native)
+        if fixtures is not None:
+            shutil.rmtree(fixtures)
         for license_path in created_licenses:
             license_path.unlink()
 

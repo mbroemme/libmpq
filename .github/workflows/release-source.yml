@@ -47,6 +47,7 @@ jobs:
             git \
             gzip \
             libbz2-dev \
+            liblzma-dev \
             libtool \
             make \
             tar \

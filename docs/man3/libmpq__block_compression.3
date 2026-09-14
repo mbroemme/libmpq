@@ -1,0 +1,62 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__BLOCK_COMPRESSION 3 2026-09-11 "The MoPaQ archive library"
+.SH NAME
+libmpq__block_compression \- query the effective compression of one block
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__block_compression("
+.BI "        mpq_archive_s *" "archive",
+.BI "        uint32_t       " "file_number",
+.BI "        uint32_t       " "block_number",
+.BI "        uint32_t      *" "compression"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Report the actual stored compression method of a logical block. Zero means
+raw storage, including a compressed file's per-sector raw fallback. Legacy
+IMPLODE blocks return LIBMPQ_COMPRESSION_PKZIP (0x08) when stored imploded.
+COMPRESS blocks return their serialized method byte, including combinations
+such as SPARSE with zlib (0x22).
+.PP
+Method 0x12 denotes the legacy bzip2/zlib chain in MPQ v1 and LZMA in MPQ v2.
+It is not the writer-only LIBMPQ_COMPRESSION_LZMA selector. The query does not
+apply writer compatibility policies or validate the compressed stream.
+.PP
+The reader manages sector offsets internally and decrypts only the packed
+prefix needed to inspect the method. No block decompression or checksum
+verification occurs. Single-unit files, encrypted blocks, final partial
+sectors and sector checksum tables use the normal reader interpretation;
+checksum-table bytes are never considered data blocks.
+.PP
+Encrypted method prefixes require a known or recoverable reader key. In
+particular, encrypted single-unit COMPRESS files have no sector offset table
+for key recovery and can return LIBMPQ_ERROR_DECRYPT, as ordinary reads do.
+.SH RETURN VALUE
+Returns LIBMPQ_SUCCESS and stores the method in *compression on success.
+A non-NULL output is initialized to zero before validation and remains zero
+on failure. LIBMPQ_ERROR_EXIST indicates NULL required arguments or an invalid
+file/block index. LIBMPQ_ERROR_NOT_INITIALIZED indicates a writer archive.
+Malformed offsets, out-of-range payloads, I/O, decryption and allocation
+failures retain the existing reader's negative error codes.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__file_flags (3),
+.BR libmpq__block_size_packed (3),
+.BR libmpq__block_size_unpacked (3),
+.BR libmpq__block_read (3),
+.BR libmpq__block_verify (3)

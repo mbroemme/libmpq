@@ -21,16 +21,55 @@
 #define LIBMPQ_READER_H
 
 #include <libmpq/mpq.h>
+#include <stddef.h>
 #include <stdint.h>
+
+int32_t libmpq__reader_block_size_packed(
+    mpq_archive_s *archive, uint32_t number, uint32_t block, libmpq__off_t *packed_size
+);
+
+int32_t libmpq__reader_block_compression(
+    mpq_archive_s *archive, uint32_t number, uint32_t block, uint32_t *compression
+);
+
+int32_t libmpq__reader_file_read(
+    mpq_archive_s *archive, uint32_t number, uint8_t *buffer, libmpq__off_t size,
+    libmpq__off_t *transferred
+);
+
+/* Internal scoped cache references shared by file reads, attributes and verify.
+ * A name supplies the known internal file key. Every success needs a release. */
+int32_t libmpq__reader_offsets_acquire(mpq_archive_s *archive, uint32_t number, const char *name);
+int32_t libmpq__reader_offsets_release(mpq_archive_s *archive, uint32_t number);
+
+/* Share block I/O; only explicit verification supplies a checksum and result. */
+int32_t libmpq__reader_block_read(
+    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint8_t *out_buf,
+    libmpq__off_t out_size, libmpq__off_t *transferred, const uint32_t *checksum,
+    uint32_t *mismatches
+);
+
+/* Load optional checksums with an internally scoped sector-offset reference.
+ * A successful NULL result means this file has no checksum table. */
+int32_t
+libmpq__reader_sector_checksums(mpq_archive_s *archive, uint32_t file_number, uint32_t **checksums);
+int32_t libmpq__reader_validate_payload_range(
+    const mpq_archive_s *archive, uint32_t index, uint64_t offset, uint64_t size
+);
 
 /*
  * Open and parse an archive at archive_offset. A negative offset enables the
  * embedded-archive scan; otherwise the offset is interpreted as an absolute
- * file position. On success the returned archive owns its FILE and metadata.
+ * file position. On success the returned archive owns its input stream and metadata.
  */
 int32_t libmpq__reader_archive_open_path(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset
 );
+int32_t libmpq__reader_archive_open_mpqe(
+    mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset,
+    const uint8_t *auth_code, size_t auth_code_size
+);
+int32_t libmpq__reader_archive_clone(mpq_archive_s **clone, const mpq_archive_s *source);
 
 /* Decode count serialized little-endian uint32 values into native storage. */
 void libmpq__reader_decode_uint32_table(uint32_t *table, const uint8_t *raw, uint32_t count);

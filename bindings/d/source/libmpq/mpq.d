@@ -12,7 +12,6 @@ module libmpq.mpq;
 
 import core.stdc.string : strlen;
 import std.string : toStringz;
-import std.traits : ParameterTypeTuple;
 
 public import libmpq.archive;
 public import libmpq.errors;
@@ -21,6 +20,13 @@ public import libmpq.options;
 
 /** Convenience entry point for constants and stateless MPQ operations. */
 final class Mpq {
+    /** Query whether writer compression is allowed using zero-based version and policy selectors. */
+    static bool archiveCompressionAllowed(uint version_, uint mask,
+                                         libmpq_compression_policy_t policy =
+                                             COMPRESSION_POLICY_STANDARD) {
+        return libmpq__archive_compression_allowed(version_, mask, policy) != 0;
+    }
+
     /** Return the libmpq package version. */
     static string version_() {
         auto message = libmpq__version();
@@ -39,52 +45,4 @@ final class Mpq {
         libmpq__file_hash(toStringz(name), &result.hash1, &result.hash2, &result.hash3);
         return result;
     }
-}
-
-/** Historical direct version-function spelling. */
-alias libmpq__version libversion;
-
-/* Retain the original low-level names for source compatibility. */
-alias libmpq__archive_open archive_open;
-alias libmpq__archive_create archive_create;
-alias libmpq__archive_clone archive_clone;
-alias libmpq__archive_close archive_close;
-alias libmpq__archive_size_packed archive_size_packed;
-alias libmpq__archive_size_unpacked archive_size_unpacked;
-alias libmpq__archive_offset archive_offset;
-alias libmpq__archive_version archive_version;
-alias libmpq__archive_files archive_files;
-alias libmpq__file_begin file_begin;
-alias libmpq__file_write file_write;
-alias libmpq__file_finish file_finish;
-alias libmpq__file_add file_add;
-alias libmpq__file_add_path file_add_path;
-alias libmpq__file_size_packed file_size_packed;
-alias libmpq__file_size_unpacked file_unpacked_size;
-alias libmpq__file_size_unpacked file_size_unpacked;
-alias libmpq__file_offset file_offset;
-alias libmpq__file_blocks file_blocks;
-alias libmpq__file_encrypted file_encrypted;
-alias libmpq__file_compressed file_compressed;
-alias libmpq__file_imploded file_imploded;
-alias libmpq__file_number file_number;
-alias libmpq__file_hash file_hash;
-alias libmpq__file_number_from_hash file_number_from_hash;
-alias libmpq__file_read file_read;
-alias libmpq__block_open_offset block_open_offset;
-alias libmpq__block_close_offset block_close_offset;
-alias libmpq__block_size_unpacked block_size_unpacked;
-alias libmpq__block_read block_read;
-
-/** Generate a compatibility alias for a checked native function. */
-template MPQ_FUNC(string name) {
-    enum MPQ_FUNC = "alias MPQ_CHECKERR!(libmpq__" ~ name ~ ") " ~ name ~ ";";
-}
-
-/** Compatibility helper for code using the original throwing template. */
-int MPQ_CHECKERR(alias Function)(ParameterTypeTuple!(Function) args) {
-    auto result = Function(args);
-    if (result < 0)
-        throw new MPQException(Function.stringof, result);
-    return result;
 }

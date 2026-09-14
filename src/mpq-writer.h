@@ -21,10 +21,27 @@
 #define LIBMPQ_WRITER_H
 
 #include <libmpq/mpq.h>
+#include <stdio.h>
+
+/* Set caller-controlled FILETIME on an active writer with generation enabled. */
+int32_t libmpq__writer_file_timestamp(mpq_writer_s *writer, uint64_t filetime);
+
+/* Private backend operations used during MPQE writer finalization. */
+typedef struct mpq_writer_mpqe_ops
+{
+    int32_t (*finalize)(mpq_archive_s *archive);
+    int32_t (*transform)(mpq_archive_s *archive);
+    int (*close_output)(FILE *output);
+    int32_t (*publish)(int directory, const char *temporary, const char *destination);
+} mpq_writer_mpqe_ops_s;
 
 /* Create a seekable archive and initialize its writer metadata from options. */
 int32_t libmpq__writer_archive_create(
     mpq_archive_s **out, const char *path, const mpq_archive_create_options_s *options
+);
+int32_t libmpq__writer_archive_create_mpqe(
+    mpq_archive_s **out, const char *path, const uint8_t *auth_code, size_t auth_code_size,
+    const mpq_archive_create_options_s *options
 );
 
 /* Begin one named file and return a stateful streaming writer for its payload. */
@@ -52,5 +69,7 @@ int32_t libmpq__writer_file_add_path(
 
 /* Write final tables, optional listfile, and the completed archive header. */
 int32_t libmpq__writer_finalize(mpq_archive_s *archive);
+int32_t libmpq__writer_finalize_mpqe(mpq_archive_s *archive);
+void libmpq__writer_mpqe_cleanup(mpq_archive_s *archive);
 
 #endif /* LIBMPQ_WRITER_H */

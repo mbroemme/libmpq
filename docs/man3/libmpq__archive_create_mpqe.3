@@ -1,0 +1,72 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__ARCHIVE_CREATE_MPQE 3 2026-09-04 "The MoPaQ archive library"
+.SH NAME
+libmpq__archive_create_mpqe \- create an MPQE-wrapped MPQ archive
+.SH SYNOPSIS
+.nf
+.B
+#include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__archive_create_mpqe("
+.BI "        mpq_archive_s **" "archive,"
+.BI "        const char     *" "path,"
+.BI "        const uint8_t  *" "auth_code,"
+.BI "        size_t          " "auth_code_size,"
+.BI "        const mpq_archive_create_options_s *" "options"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Creates a new MPQE stream containing an MPQ v1 or v2 archive. The caller
+supplies at least 32 authentication-code bytes. Add members using the
+ordinary writer APIs; \fBlibmpq__archive_close\fP() finalizes the archive,
+encrypts it, and atomically publishes the result on success.
+.SS "Creation Options"
+Compression defaults to STANDARD. Add
+LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED to options.flags to select
+EXTENDED. The policy affects writer validation only, not decoding.
+.SS "Optional Attributes"
+Set options.attributes to a combination of LIBMPQ_ATTRIBUTE_CRC32,
+LIBMPQ_ATTRIBUTE_FILETIME, LIBMPQ_ATTRIBUTE_MD5, and
+LIBMPQ_ATTRIBUTE_PATCH_BIT. Zero disables generation; any nonzero
+combination creates one (attributes) file and consumes one reserved slot.
+Unknown attribute bits are rejected. Version-100 attributes work in both
+MPQ v1 and v2, independently of the archive format version.
+.PP
+Capacity includes the attributes entry and listfile if enabled; the internal
+attributes name is reserved. Finalization writes the listfile, attributes,
+then the completed tables. Checksums cover source bytes before compression.
+FILETIME defaults to zero and patch bits are zero. Use
+\fBlibmpq__writer_timestamp\fP() on an active writer for an explicit
+timestamp. Path addition never imports filesystem timestamps.
+.SS "Temporary Storage and Publication"
+The normal writer first finalizes a private temporary plaintext MPQ in the
+destination directory, then encrypts it for publication. The plaintext
+temporary file is owner-only; the completed MPQE archive uses normal output
+permissions determined by the caller's umask.
+.PP
+Existing MPQE archives cannot be modified. Cleanup is best effort, so a
+crash can leave an owner-only plaintext temporary file behind.
+.SH RETURN VALUE
+Returns zero on success or a negative LIBMPQ_ERROR_* code. Missing or short
+authentication data returns LIBMPQ_ERROR_DECRYPT.
+.SH SEE ALSO
+.BR libmpq__archive_attributes (3),
+.BR libmpq__file_attributes (3),
+.BR libmpq__writer_timestamp (3),
+.BR libmpq__archive_compression_allowed (3),
+.BR libmpq__archive_create (3),
+.BR libmpq__archive_open_mpqe (3),
+.BR libmpq__archive_close (3)

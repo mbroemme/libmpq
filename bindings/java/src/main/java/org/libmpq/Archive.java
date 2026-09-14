@@ -12,6 +12,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.file.Path;
+import java.util.Objects;
 import org.libmpq.ffi.LibmpqNative;
 
 /**
@@ -20,6 +21,63 @@ import org.libmpq.ffi.LibmpqNative;
  * querying or modifying the archive and should use try-with-resources.
  */
 public final class Archive implements AutoCloseable {
+
+    /** Stored unsigned Adler-32 and zero or Mpq.VERIFY_SECTOR_CRC mismatch bits. */
+    public record BlockVerification(long checksum, int mismatches) {}
+
+    /** Verify one sector; unavailable checksums throw ERROR_EXIST. */
+    public BlockVerification verifyBlock(int number, int block) throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment checksum = arena.allocate(ValueLayout.JAVA_INT);
+            MemorySegment mismatches = arena.allocate(ValueLayout.JAVA_INT);
+            Support.check(LibmpqNative.blockVerify(handle, number, block, checksum, mismatches));
+            return new BlockVerification(Integer.toUnsignedLong(checksum.get(ValueLayout.JAVA_INT, 0)),
+                                         mismatches.get(ValueLayout.JAVA_INT, 0));
+        }
+    }
+
+    /** Verify all available file checksums and return mismatch bits. */
+    public int verify(int number) throws LibmpqException {
+        return verify(number, Mpq.VERIFY_ALL);
+    }
+
+    /** Return mismatches as a subset of flags; clear bits mean matched or unavailable.
+     * File checks require attributes; sector-only checks do not. Errors throw. */
+    public int verify(int number, int flags) throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment mismatches = arena.allocate(ValueLayout.JAVA_INT);
+            Support.check(LibmpqNative.fileVerify(handle, number, flags, mismatches));
+            return mismatches.get(ValueLayout.JAVA_INT, 0);
+        }
+    }
+
+    /** Return flags, or empty when absent; malformed attributes are still errors. */
+    public java.util.OptionalInt attributes() throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment flags = arena.allocate(ValueLayout.JAVA_INT);
+            int status = LibmpqNative.archiveAttributes(handle, flags);
+            if (status == Mpq.ERROR_EXIST) return java.util.OptionalInt.empty();
+            Support.check(status);
+            return java.util.OptionalInt.of(flags.get(ValueLayout.JAVA_INT, 0));
+        }
+    }
+
+    /** Return owned stored attributes; availability is represented by result flags. */
+    public FileAttributes attributes(int number) throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment value = arena.allocate(LibmpqNative.FILE_ATTRIBUTES_LAYOUT);
+            Support.check(LibmpqNative.fileAttributes(handle, number, value));
+            return new FileAttributes(value.get(ValueLayout.JAVA_INT, 0),
+                Integer.toUnsignedLong(value.get(ValueLayout.JAVA_INT, 4)),
+                value.get(ValueLayout.JAVA_LONG_UNALIGNED, 8),
+                value.asSlice(16, 16).toArray(ValueLayout.JAVA_BYTE),
+                value.get(ValueLayout.JAVA_INT, 32) != 0);
+        }
+    }
     private MemorySegment handle;
 
     /** Wraps a newly returned native archive handle. */
@@ -58,6 +116,44 @@ public final class Archive implements AutoCloseable {
     }
 
     /**
+     * Opens an MPQE transport stream containing an archive at its initial offset.
+     * The authentication code is copied for the duration of the native call and
+     * is not retained by this Java binding.
+     *
+     * @param path MPQE stream to open
+     * @param authCode caller-supplied MPQE authentication code
+     * @return an owned archive handle
+     * @throws LibmpqException if credentials are invalid or the decrypted data cannot be parsed
+     */
+    public static Archive openMpqe(Path path, byte[] authCode) throws LibmpqException {
+        return openMpqe(path, authCode, 0);
+    }
+
+    /**
+     * Opens an MPQE transport stream. A negative offset asks libmpq to scan
+     * the decrypted stream for an embedded MPQ header.
+     *
+     * @param path MPQE stream to open
+     * @param authCode caller-supplied MPQE authentication code
+     * @param offset standalone or embedded archive offset
+     * @return an owned archive handle
+     * @throws LibmpqException if credentials are invalid or the decrypted data cannot be parsed
+     */
+    public static Archive openMpqe(Path path, byte[] authCode, long offset)
+        throws LibmpqException {
+        Objects.requireNonNull(path, "path");
+        Objects.requireNonNull(authCode, "authCode");
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
+            MemorySegment authCodeSegment = Support.bytes(arena, authCode);
+            Support.check(LibmpqNative.archiveOpenMpqe(
+                output, Support.text(arena, path.toString()), offset, authCodeSegment, authCode.length
+            ));
+            return new Archive(LibmpqNative.getAddress(output));
+        }
+    }
+
+    /**
      * Creates a new archive and returns its writable native handle.  The
      * archive remains open for additions until this object is closed; closing
      * finalizes headers, tables, and all completed entries.
@@ -77,9 +173,32 @@ public final class Archive implements AutoCloseable {
             LibmpqNative.setArchiveOptions(nativeOptions, options.version(),
                                             Support.uint32(options.maxFiles(), "maxFiles"),
                                             Support.uint32(options.sectorSize(), "sectorSize"),
-                                            options.flags());
+                                            options.flags(), options.attributes());
             Support.check(LibmpqNative.archiveCreate(output, Support.text(arena, path.toString()),
                                                       nativeOptions));
+            return new Archive(LibmpqNative.getAddress(output));
+        }
+    }
+
+    /** Creates a new MPQE-wrapped archive using caller-supplied authentication bytes. */
+    public static Archive createMpqe(Path path, byte[] authCode,
+                                     ArchiveCreateOptions options) throws LibmpqException {
+        Objects.requireNonNull(path, "path");
+        Objects.requireNonNull(authCode, "authCode");
+        if (options == null) {
+            options = ArchiveCreateOptions.defaults();
+        }
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
+            MemorySegment nativeOptions = arena.allocate(LibmpqNative.ARCHIVE_OPTIONS);
+            LibmpqNative.setArchiveOptions(nativeOptions, options.version(),
+                                            Support.uint32(options.maxFiles(), "maxFiles"),
+                                            Support.uint32(options.sectorSize(), "sectorSize"),
+                                            options.flags(), options.attributes());
+            Support.check(LibmpqNative.archiveCreateMpqe(
+                output, Support.text(arena, path.toString()), Support.bytes(arena, authCode),
+                authCode.length, nativeOptions
+            ));
             return new Archive(LibmpqNative.getAddress(output));
         }
     }
@@ -197,19 +316,24 @@ public final class Archive implements AutoCloseable {
         return fileUint(number, 0);
     }
 
+    /** Returns the unsigned stored MPQ block-table flags. */
+    public long fileFlags(int number) throws LibmpqException {
+        return fileUint(number, 1);
+    }
+
     /** Reports whether one entry's stored sectors are encrypted. */
     public boolean fileEncrypted(int number) throws LibmpqException {
-        return fileUint(number, 1) != 0;
+        return (fileFlags(number) & Mpq.FILE_FLAG_ENCRYPTED) != 0;
     }
 
     /** Reports whether one entry uses MPQ multi-compression. */
     public boolean fileCompressed(int number) throws LibmpqException {
-        return fileUint(number, 2) != 0;
+        return (fileFlags(number) & Mpq.FILE_FLAG_COMPRESS) != 0;
     }
 
     /** Reports whether one entry uses standalone PKWARE implode. */
     public boolean fileImploded(int number) throws LibmpqException {
-        return fileUint(number, 3) != 0;
+        return (fileFlags(number) & Mpq.FILE_FLAG_IMPLODE) != 0;
     }
 
     /**
@@ -246,30 +370,27 @@ public final class Archive implements AutoCloseable {
         }
     }
 
-    /**
-     * Opens one entry's sector-offset table for explicit block operations.
-     * Each successful call increments the native table reference count and
-     * must be paired with {@link #closeBlockOffsets}.
-     */
-    public void openBlockOffsets(int number) throws LibmpqException {
+    /** Returns stored sector bytes, excluding offset/checksum tables. */
+    public long blockSizePacked(int number, int block) throws LibmpqException {
         checkOpen();
-        Support.check(LibmpqNative.blockOpenOffset(handle, number));
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment result = arena.allocate(ValueLayout.JAVA_LONG);
+            Support.check(LibmpqNative.blockSizePacked(handle, number, block, result));
+            return result.get(ValueLayout.JAVA_LONG, 0);
+        }
     }
 
-    /**
-     * Releases one reference acquired by {@link #openBlockOffsets}.  The
-     * native table may remain cached while other references exist.
-     */
-    public void closeBlockOffsets(int number) throws LibmpqException {
+    /** Returns the stored method byte, not a writer selector; zero means raw. */
+    public int blockCompression(int number, int block) throws LibmpqException {
         checkOpen();
-        Support.check(LibmpqNative.blockCloseOffset(handle, number));
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment result = arena.allocate(ValueLayout.JAVA_INT);
+            Support.check(LibmpqNative.blockCompression(handle, number, block, result));
+            return result.get(ValueLayout.JAVA_INT, 0);
+        }
     }
 
-    /**
-     * Returns the logical unpacked size of one sector.  The corresponding
-     * offset table must already be open; use {@link #readBlock} when a scoped
-     * read is preferred.
-     */
+    /** Return one block's unpacked size. */
     public long blockSize(int number, int block) throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
@@ -279,14 +400,9 @@ public final class Archive implements AutoCloseable {
         }
     }
 
-    /**
-     * Opens the entry's offset table, reads one decoded sector, and closes
-     * the table reference before returning.  This method is safe for callers
-     * that do not need to manage native offset-table lifetime themselves.
-     */
+    /** Reads one decoded sector; native code manages the offset cache. */
     public byte[] readBlock(int number, int block) throws LibmpqException {
-        openBlockOffsets(number);
-        Throwable primary = null;
+        checkOpen();
         try (Arena arena = Arena.ofConfined()) {
             long size = blockSize(number, block);
             byte[] result = new byte[Support.checkedArraySize(size)];
@@ -297,19 +413,6 @@ public final class Archive implements AutoCloseable {
                                                  size, transferred));
             Support.copyTo(output, result);
             return result;
-        } catch (LibmpqException | RuntimeException | Error exception) {
-            primary = exception;
-            throw exception;
-        } finally {
-            try {
-                closeBlockOffsets(number);
-            } catch (LibmpqException | RuntimeException | Error cleanup) {
-                if (primary != null) {
-                    primary.addSuppressed(cleanup);
-                } else {
-                    throw cleanup;
-                }
-            }
         }
     }
 
@@ -329,7 +432,7 @@ public final class Archive implements AutoCloseable {
         }
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment nativeOptions = fileOptions(arena, options);
-            Support.check(LibmpqNative.fileAdd(handle, Support.text(arena, name),
+            Support.check(LibmpqNative.archiveAddData(handle, Support.text(arena, name),
                                                 Support.bytes(arena, data), data.length, nativeOptions));
         }
     }
@@ -348,7 +451,7 @@ public final class Archive implements AutoCloseable {
             options = FileOptions.raw();
         }
         try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.fileAddPath(handle, Support.text(arena, name),
+            Support.check(LibmpqNative.archiveAddPath(handle, Support.text(arena, name),
                                                    Support.text(arena, source.toString()),
                                                    fileOptions(arena, options)));
         }
@@ -374,7 +477,7 @@ public final class Archive implements AutoCloseable {
         }
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
-            Support.check(LibmpqNative.fileBegin(handle, Support.text(arena, name), size,
+            Support.check(LibmpqNative.writerBegin(handle, Support.text(arena, name), size,
                                                   fileOptions(arena, options), output));
             return new MpqFileWriter(LibmpqNative.getAddress(output), size);
         }

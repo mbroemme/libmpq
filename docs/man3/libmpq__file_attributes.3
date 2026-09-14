@@ -1,0 +1,58 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__FILE_ATTRIBUTES 3 2026-09-10 "The MoPaQ archive library"
+.SH NAME
+libmpq__file_attributes \- read stored per-file attributes
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__file_attributes("
+.BI "        mpq_archive_s         " "*mpq_archive",
+.BI "        uint32_t               " "file_number",
+.BI "        mpq_file_attributes_s " "*attributes"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Return the available stored attributes for the selected public file number.
+The result has flags, crc32, filetime, md5[16], and patch_bit fields.
+The file number is mapped to its physical block-table row.
+.SS "Availability and Value Interpretation"
+Flags identify available values; unavailable values are zero. Recognized
+legacy layouts can omit rows or patch bits, so per-file availability may
+differ from the archive header flags. The result is zeroed on failure.
+.PP
+FILETIME is an unsigned 64-bit Windows timestamp. MD5 is sixteen bytes,
+not hexadecimal text. CRC32 and MD5 describe source bytes before compression;
+lossy ADPCM output may not match. They are not cryptographic authentication.
+The query reports stored values without verifying them.
+Use \fBlibmpq__file_verify\fP() for an explicit checksum comparison.
+.SS "Native Result Layout"
+The native ABI is 40 bytes: fields begin at offsets 0, 4, 8, 16, and 32,
+followed by reserved[4] at offset 36. Reserved bytes are returned as zero.
+Natural alignment is retained; this is not the serialized little-endian payload.
+.SH RETURN VALUE
+Returns LIBMPQ_SUCCESS on success or a negative libmpq error.
+EXIST means missing metadata or an invalid file number; FORMAT means
+malformed attributes. I/O and allocation errors are propagated.
+NULL arguments return EXIST. Use on the wrong handle type returns NOT_INITIALIZED.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__file_verify (3),
+.BR libmpq__archive_create (3),
+.BR libmpq__archive_create_mpqe (3),
+.BR libmpq__archive_attributes (3),
+.BR libmpq__writer_timestamp (3),
+.BR libmpq__writer_finish (3)

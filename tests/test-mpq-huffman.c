@@ -74,7 +74,7 @@ main(void)
     TEST_CHECK(test_archive_read(archive, number, &data, &size) == 0);
     TEST_CHECK(test_sha256(data, size, hash) == 0);
     TEST_CHECK(
-        strcmp(hash, "93c7bdaceb3a5aa3969520c20a63e64d577227f51d2bbb6ee075c43ff8fa5b8e") == 0
+        strcmp(hash, "8168cb4d878fe1a16587e9a118c026b5f6be7fa660030811a442a9e7c2072ef7") == 0
     );
     free(data);
     TEST_CHECK(libmpq__archive_close(archive) == 0);

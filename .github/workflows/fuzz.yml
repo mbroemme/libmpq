@@ -58,6 +58,7 @@ jobs:
             git \
             libclang-rt-dev \
             libbz2-dev \
+            liblzma-dev \
             libtool \
             zlib1g-dev
 
@@ -103,7 +104,9 @@ jobs:
           artifact_root="$RUNNER_TEMP/libmpq-fuzz-artifacts"
           # Keep each target within its useful input domain and ASan memory budget.
           targets=(
+            'fuzz-attributes:attributes:4096'
             'fuzz-archive-open:archive-open:1048576'
+            'fuzz-mpqe-open:mpqe-open:1048576'
             'fuzz-file-read:file-read:65536'
             'fuzz-writer-roundtrip:writer-roundtrip:65536'
             'fuzz-encrypted-archive:encrypted-archive:1048576'
@@ -112,6 +115,8 @@ jobs:
             'fuzz-huffman-decode:huffman-decode:131072'
             'fuzz-zlib-decode:zlib-decode:131072'
             'fuzz-bzip2-decode:bzip2-decode:131072'
+            'fuzz-lzma-decode:lzma-decode:131072'
+            'fuzz-sparse-decode:sparse-decode:131072'
             'fuzz-wave-decode:wave-decode:131072'
           )
           target_seconds=$((FUZZ_SECONDS / ${#targets[@]}))

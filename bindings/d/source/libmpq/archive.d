@@ -14,6 +14,19 @@ import std.string : splitLines, toStringz;
 import libmpq.errors : MPQException, checkStatus;
 import libmpq.native;
 import libmpq.options : ArchiveCreateOptions, FileOptions;
+import std.typecons : Nullable, nullable;
+
+/** Owned stored metadata; hashes are not automatically verified on extraction. */
+struct FileAttributes {
+    uint flags;
+    uint crc32;
+    ulong filetime;
+    ubyte[16] md5;
+    bool patchBit;
+}
+
+/** Stored sector Adler-32 and zero or VERIFY_SECTOR_CRC mismatch bits. */
+struct BlockVerification { uint checksum; uint mismatches; }
 
 /** The three Storm hash values used by MPQ name lookup. */
 struct StormHash { uint hash1; uint hash2; uint hash3; }
@@ -46,6 +59,14 @@ struct FileMetadata {
  * errors. A closed archive must not be used again.
  */
 class Archive {
+    /** Return flags, or a null value when absent; malformed metadata still throws. */
+    Nullable!uint attributes() {
+        uint flags;
+        auto status = libmpq__archive_attributes(nativeHandle(), &flags);
+        if (status == ERROR_EXIST) return Nullable!uint.init;
+        checkStatus(status, "libmpq__archive_attributes");
+        return nullable(flags);
+    }
     private mpq_archive_s* handle;
     private bool closed;
 
@@ -62,6 +83,17 @@ class Archive {
         return new Archive(path, offset);
     }
 
+    /** Open a caller-authenticated MPQE stream containing an MPQ archive. */
+    static Archive openMpqe(string path, const(ubyte)[] authCode,
+                            off_t offset = -1) {
+        mpq_archive_s* result;
+        auto authPointer = authCode.length == 0 ? null : authCode.ptr;
+        checkStatus(libmpq__archive_open_mpqe(&result, toStringz(path), offset, authPointer,
+                                               authCode.length),
+                    "libmpq__archive_open_mpqe");
+        return new Archive(result);
+    }
+
     /** Create an archive using explicit v1/v2 and storage options. */
     static Archive create(string path,
                           ArchiveCreateOptions options = ArchiveCreateOptions.v1()) {
@@ -73,6 +105,18 @@ class Archive {
         return new Archive(result);
     }
 
+    /** Create a new MPQE-wrapped archive with borrowed authentication bytes. */
+    static Archive createMpqe(string path, const(ubyte)[] authCode,
+                              ArchiveCreateOptions options = ArchiveCreateOptions.v1()) {
+        auto nativeOptions = options.nativeOptions();
+        mpq_archive_s* result;
+        auto authPointer = authCode.length == 0 ? null : authCode.ptr;
+        checkStatus(libmpq__archive_create_mpqe(&result, toStringz(path), authPointer,
+                                                 authCode.length, &nativeOptions),
+                    "libmpq__archive_create_mpqe");
+        return new Archive(result);
+    }
+
     /** Return an independently parsed clone of this archive. */
     Archive clone() {
         ensureOpen();
@@ -81,9 +125,6 @@ class Archive {
                     "libmpq__archive_clone");
         return new Archive(result);
     }
-
-    /** Compatibility spelling for callers preferring an explicit noun. */
-    Archive cloneArchive() { return clone(); }
 
     /** Close the native handle; repeated calls are harmless. */
     void close() {
@@ -124,9 +165,6 @@ class Archive {
     /** Return archive start offset. */ off_t offset() { return metadata().offset; }
     /** Return archive format selector. */ uint version_() { return metadata().version_; }
     /** Return number of valid file entries. */ uint fileCount() { return metadata().fileCount; }
-    /** Historical property spelling for the entry count. */ uint files() { return fileCount(); }
-    /** Historical snake_case spelling for packed aggregate size. */ off_t packed_size() { return packedSize(); }
-    /** Historical snake_case spelling for unpacked aggregate size. */ off_t unpacked_size() { return unpackedSize(); }
 
     /** Resolve a file name through the Storm hash tables. */
     uint fileNumber(string name) {
@@ -147,10 +185,10 @@ class Archive {
 
     /** Return a file wrapper resolved by name. */ File file(string name) { return new File(this, name); }
     /** Return a file wrapper resolved by numeric entry. */ File file(uint number) { return new File(this, number); }
-    /** Index an archive by name, preserving the historical API. */ File opIndex(string name) { return file(name); }
-    /** Index an archive by mutable name for old D callers. */ File opIndex(char[] name) { return file(name.idup); }
-    /** Index an archive by entry number, preserving the historical API. */ File opIndex(uint number) { return file(number); }
-    /** Index an archive by signed integer for old source compatibility. */
+    /** Index an archive by name. */ File opIndex(string name) { return file(name); }
+    /** Index an archive by mutable name. */ File opIndex(char[] name) { return file(name.idup); }
+    /** Index an archive by entry number. */ File opIndex(uint number) { return file(number); }
+    /** Index an archive by signed integer, rejecting negative indices. */
     File opIndex(int number) {
         if (number < 0) throw new MPQException("Archive.opIndex", ERROR_EXIST);
         return file(cast(uint) number);
@@ -159,29 +197,28 @@ class Archive {
     /** Add a complete in-memory file to a writer archive. */
     void add(string name, const(ubyte)[] data, FileOptions options = FileOptions.raw()) {
         ensureOpen(); auto nativeOptions = options.nativeOptions();
-        checkStatus(libmpq__file_add(handle, toStringz(name), data.ptr,
+        checkStatus(libmpq__archive_add_data(handle, toStringz(name), data.ptr,
                                      cast(off_t) data.length, &nativeOptions),
-                    "libmpq__file_add");
+                    "libmpq__archive_add_data");
     }
 
     /** Add a filesystem file under a chosen archive name. */
     void addPath(string name, string sourcePath, FileOptions options = FileOptions.raw()) {
         ensureOpen(); auto nativeOptions = options.nativeOptions();
-        checkStatus(libmpq__file_add_path(handle, toStringz(name), toStringz(sourcePath),
-                                          &nativeOptions), "libmpq__file_add_path");
+        checkStatus(libmpq__archive_add_path(handle, toStringz(name), toStringz(sourcePath),
+                                          &nativeOptions), "libmpq__archive_add_path");
     }
 
     /** Begin a streaming file writer with a declared unpacked size. */
     MpqFileWriter begin(string name, off_t size, FileOptions options = FileOptions.raw()) {
         ensureOpen(); auto nativeOptions = options.nativeOptions(); mpq_writer_s* writer;
-        checkStatus(libmpq__file_begin(handle, toStringz(name), size, &nativeOptions, &writer),
-                    "libmpq__file_begin");
+        checkStatus(libmpq__writer_begin(handle, toStringz(name), size, &nativeOptions, &writer),
+                    "libmpq__writer_begin");
         return new MpqFileWriter(writer, size);
     }
 
     /** Return the raw native handle for advanced ABI integrations. */
     mpq_archive_s* nativeHandle() { ensureOpen(); return handle; }
-    /** Historical raw-handle spelling. */ mpq_archive_s* archive() { return nativeHandle(); }
 
     /** Return `(listfile)` names split into lines, or an empty array. */
     string[] fileList() {
@@ -193,7 +230,6 @@ class Archive {
             throw error;
         }
     }
-    /** Historical lowercase spelling. */ string[] filelist() { return fileList(); }
 
     private void ensureOpen() {
         if (closed || handle is null)
@@ -224,11 +260,46 @@ class File {
         this.number = archive.fileNumber(name);
     }
 
-    /** Resolve a mutable D string for old source compatibility. */
+    /** Resolve an entry by mutable name. */
     this(Archive archive, char[] name) { this(archive, name.idup); }
 
     /** Return the public numeric entry index. */ uint no() const { return number; }
+
+    /** Return mismatches as a subset of flags; missing values are skipped.
+     * File checks require attributes; sector-only checks do not. Errors throw. */
+    uint verify(uint flags = VERIFY_ALL) {
+        uint mismatches;
+        checkStatus(libmpq__file_verify(archiveRef.nativeHandle(), number, flags, &mismatches),
+                    "libmpq__file_verify");
+        return mismatches;
+    }
+
+    /** Verify one sector. Missing/unused checksums throw ERROR_EXIST. */
+    BlockVerification verifyBlock(uint block) {
+        BlockVerification value;
+        checkStatus(libmpq__block_verify(archiveRef.nativeHandle(), number, block,
+                                        &value.checksum, &value.mismatches),
+                    "libmpq__block_verify");
+        return value;
+    }
+
+    /** Return stored attributes for this entry; missing/invalid metadata throws. */
+    FileAttributes attributes() {
+        mpq_file_attributes_s value;
+        checkStatus(libmpq__file_attributes(archiveRef.nativeHandle(), number, &value),
+                    "libmpq__file_attributes");
+        return FileAttributes(value.flags, value.crc32, value.filetime, value.md5,
+                              value.patch_bit != 0);
+    }
     /** Return the requested name, when created by name. */ string name() const { return entryName; }
+
+    /** Return the stored MPQ block-table flags. */
+    uint flags() {
+        uint value;
+        checkStatus(libmpq__file_flags(archiveRef.nativeHandle(), number, &value),
+                    "libmpq__file_flags");
+        return value;
+    }
 
     /** Query all native metadata for this entry. */
     FileMetadata metadata() {
@@ -237,9 +308,10 @@ class File {
         checkStatus(libmpq__file_size_unpacked(archive, number, &result.unpackedSize), "libmpq__file_size_unpacked");
         checkStatus(libmpq__file_offset(archive, number, &result.offset), "libmpq__file_offset");
         checkStatus(libmpq__file_blocks(archive, number, &result.blockCount), "libmpq__file_blocks");
-        checkStatus(libmpq__file_encrypted(archive, number, &result.encrypted), "libmpq__file_encrypted");
-        checkStatus(libmpq__file_compressed(archive, number, &result.compressed), "libmpq__file_compressed");
-        checkStatus(libmpq__file_imploded(archive, number, &result.imploded), "libmpq__file_imploded");
+        auto storage = flags();
+        result.encrypted = (storage & FILE_FLAG_ENCRYPTED) != 0;
+        result.compressed = (storage & FILE_FLAG_COMPRESS) != 0;
+        result.imploded = (storage & FILE_FLAG_IMPLODE) != 0;
         return result;
     }
 
@@ -262,12 +334,25 @@ class File {
         result.length = cast(size_t) transferred; return result;
     }
 
-    /** Read one unpacked block after opening its offset table. */
+    /** Return stored data bytes for one block, excluding offset/checksum tables. */
+    off_t blockSizePacked(uint blockNumber) {
+        off_t value;
+        checkStatus(libmpq__block_size_packed(archiveRef.nativeHandle(), number, blockNumber,
+                                            &value), "libmpq__block_size_packed");
+        return value;
+    }
+
+    /** Return the stored method byte (not a writer selector), or zero for raw storage. */
+    uint blockCompression(uint blockNumber) {
+        uint value;
+        checkStatus(libmpq__block_compression(archiveRef.nativeHandle(), number, blockNumber,
+                                            &value), "libmpq__block_compression");
+        return value;
+    }
+
+    /** Read one unpacked block; native code manages its offset cache. */
     ubyte[] readBlock(uint blockNumber) {
         auto archive = archiveRef.nativeHandle();
-        checkStatus(libmpq__block_open_offset(archive, number), "libmpq__block_open_offset");
-        /* Do not let cleanup hide the primary read/decompression exception. */
-        scope(failure) libmpq__block_close_offset(archive, number);
         off_t expected;
         checkStatus(libmpq__block_size_unpacked(archive, number, blockNumber, &expected), "libmpq__block_size_unpacked");
         if (expected < 0 || cast(ulong) expected > size_t.max) throw new MPQException("File.readBlock", ERROR_SIZE);
@@ -275,18 +360,18 @@ class File {
         auto pointer = result.length == 0 ? null : result.ptr;
         checkStatus(libmpq__block_read(archive, number, blockNumber, pointer, expected, &transferred), "libmpq__block_read");
         if (transferred < 0 || cast(ulong) transferred > result.length) throw new MPQException("File.readBlock", ERROR_SIZE);
-        checkStatus(libmpq__block_close_offset(archive, number), "libmpq__block_close_offset");
         result.length = cast(size_t) transferred; return result;
     }
 
-    /** Historical snake_case aliases. */ off_t packed_size() { return packedSize(); }
-    /** Historical snake_case alias. */ off_t unpacked_size() { return unpackedSize(); }
-    /** Historical snake_case alias. */ uint blocks() { return blockCount(); }
-    /** Historical property spelling for the entry number. */ uint fileno() { return no(); }
 }
 
 /** A streaming writer returned by `Archive.begin`. */
 class MpqFileWriter {
+    /** Set Windows FILETIME, not Unix time; the archive must enable its generation. */
+    void timestamp(ulong filetime) {
+        ensureActive();
+        checkStatus(libmpq__writer_timestamp(handle, filetime), "libmpq__writer_timestamp");
+    }
     private mpq_writer_s* handle; private off_t declaredSize; private off_t writtenSize; private bool finishedState;
     private this(mpq_writer_s* handle, off_t declaredSize) { this.handle = handle; this.declaredSize = declaredSize; }
 
@@ -295,7 +380,7 @@ class MpqFileWriter {
         ensureActive();
         if (writtenSize > declaredSize || data.length > cast(size_t) (declaredSize - writtenSize))
             throw new MPQException("MpqFileWriter.write", ERROR_SIZE);
-        checkStatus(libmpq__file_write(handle, data.ptr, cast(off_t) data.length), "libmpq__file_write");
+        checkStatus(libmpq__writer_write(handle, data.ptr, cast(off_t) data.length), "libmpq__writer_write");
         writtenSize += cast(off_t) data.length;
     }
     /** Finish and publish the entry, invalidating state before native cleanup. */
@@ -304,7 +389,7 @@ class MpqFileWriter {
         auto current = handle;
         handle = null;
         finishedState = true;
-        checkStatus(libmpq__file_finish(current), "libmpq__file_finish");
+        checkStatus(libmpq__writer_finish(current), "libmpq__writer_finish");
     }
     /** Return whether the writer was finalized. */ bool finished() const { return finishedState; }
     /** Return bytes submitted so far. */ off_t written() const { return writtenSize; }
@@ -315,12 +400,9 @@ class MpqFileWriter {
         auto current = handle;
         handle = null;
         finishedState = true;
-        checkStatus(libmpq__file_finish(current), "libmpq__file_finish");
+        checkStatus(libmpq__writer_finish(current), "libmpq__writer_finish");
     }
     /** Best-effort destructor cleanup; destructors cannot report errors. */
-    ~this() { if (!finishedState && handle !is null) libmpq__file_finish(handle); }
+    ~this() { if (!finishedState && handle !is null) libmpq__writer_finish(handle); }
     private void ensureActive() { if (finishedState || handle is null) throw new MPQException("MpqFileWriter", ERROR_NOT_INITIALIZED); }
 }
-
-/** Compatibility alias for the shorter historical writer name. */
-alias MpqFileWriter FileWriter;

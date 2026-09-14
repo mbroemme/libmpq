@@ -22,6 +22,7 @@
 #define LIBMPQ_FUZZ_WRITER_MAX_INPUT 65536U
 
 static char archive_path[] = "/tmp/libmpq-fuzz-writer.XXXXXX";
+static const uint8_t mpqe_auth_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
 
 /* Release the output path created for this fuzzer process. */
 static void
@@ -32,17 +33,32 @@ archive_cleanup(void)
 
 /* Choose a writer-supported storage, encryption, and single-unit combination. */
 static mpq_file_options_s
-file_options(uint8_t selector)
+file_options(uint8_t selector, uint32_t version)
 {
     static const uint32_t codecs[] = { 0,
                                        LIBMPQ_COMPRESSION_ZLIB,
                                        LIBMPQ_COMPRESSION_BZIP2,
                                        LIBMPQ_COMPRESSION_PKZIP,
                                        LIBMPQ_COMPRESSION_HUFFMAN,
+                                       LIBMPQ_COMPRESSION_SPARSE,
+                                       LIBMPQ_COMPRESSION_SPARSE | LIBMPQ_COMPRESSION_ZLIB,
+                                       LIBMPQ_COMPRESSION_SPARSE | LIBMPQ_COMPRESSION_BZIP2,
                                        LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_ZLIB |
                                            LIBMPQ_COMPRESSION_PKZIP | LIBMPQ_COMPRESSION_BZIP2 };
-    uint32_t codec = codecs[selector % (sizeof(codecs) / sizeof(codecs[0]))];
+    uint32_t codec;
     mpq_file_options_s options = { 0, 0, 0, 0, 0 };
+
+    if (version == LIBMPQ_ARCHIVE_VERSION_TWO && (selector & 0x20U) != 0U)
+        codec = LIBMPQ_COMPRESSION_LZMA;
+    else
+        codec = codecs[selector % (sizeof(codecs) / sizeof(codecs[0]))];
+
+    /* MPQ v2 reserves serialized 0x12 for LZMA, not zlib plus bzip2. */
+    if (version == LIBMPQ_ARCHIVE_VERSION_TWO &&
+        (codec & (LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) ==
+            (LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) {
+        codec = LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_PKZIP;
+    }
 
     if (codec != 0) {
         options.flags = LIBMPQ_FILE_FLAG_COMPRESS;
@@ -93,6 +109,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     libmpq__off_t transferred;
     size_t payload_size;
     size_t first_chunk;
+    int mpqe;
     int32_t result;
 
     static const uint32_t sector_sizes[] = { 512, 1024, 4096, 16384 };
@@ -108,7 +125,20 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     archive_options.sector_size =
         sector_sizes[data[2] % (sizeof(sector_sizes) / sizeof(sector_sizes[0]))];
     archive_options.flags = LIBMPQ_ARCHIVE_CREATE_LISTFILE;
-    options = file_options(data[1]);
+    archive_options.attributes = data[0] >> 4;
+    if ((data[0] & 0x08U) != 0U)
+        archive_options.flags |= LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED;
+    mpqe = (data[0] & 0x04U) != 0U;
+    options = file_options(data[1], archive_options.version);
+    if (!libmpq__archive_compression_allowed(
+            archive_options.version, options.compression_first,
+            (archive_options.flags & LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED) != 0
+                ? LIBMPQ_COMPRESSION_POLICY_EXTENDED
+                : LIBMPQ_COMPRESSION_POLICY_STANDARD
+        )) {
+        options.compression_first = LIBMPQ_COMPRESSION_ZLIB;
+        options.compression_next = LIBMPQ_COMPRESSION_ZLIB;
+    }
     payload = data + 3;
     if ((options.flags & LIBMPQ_FILE_FLAG_ENCRYPTED) != 0) {
         if (payload_size < 8U) {
@@ -129,26 +159,33 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
     unlink(archive_path);
 
-    if (libmpq__archive_create(&archive, archive_path, &archive_options) != 0)
+    if ((mpqe ? libmpq__archive_create_mpqe(
+                    &archive, archive_path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1U,
+                    &archive_options
+                )
+              : libmpq__archive_create(&archive, archive_path, &archive_options)) != 0)
         goto cleanup;
-    if (libmpq__file_begin(
+    if (libmpq__writer_begin(
             archive, "roundtrip.bin", (libmpq__off_t)payload_size, &options, &writer
         ) != 0)
         goto cleanup;
 
     first_chunk = payload_size / 2U;
-    if (libmpq__file_write(writer, payload, (libmpq__off_t)first_chunk) != 0 ||
-        libmpq__file_write(
+    if (libmpq__writer_write(writer, payload, (libmpq__off_t)first_chunk) != 0 ||
+        libmpq__writer_write(
             writer, payload + first_chunk, (libmpq__off_t)(payload_size - first_chunk)
         ) != 0 ||
-        libmpq__file_finish(writer) != 0)
+        libmpq__writer_finish(writer) != 0)
         goto cleanup;
 
     result = libmpq__archive_close(archive);
     archive = NULL;
     if (result != 0)
         goto cleanup;
-    if (libmpq__archive_open(&archive, archive_path, 0) == 0) {
+    if ((mpqe ? libmpq__archive_open_mpqe(
+                    &archive, archive_path, 0, mpqe_auth_code, sizeof(mpqe_auth_code) - 1U
+                )
+              : libmpq__archive_open(&archive, archive_path, 0)) == 0) {
         if (libmpq__file_number(archive, "roundtrip.bin", &number) != 0)
             goto cleanup;
         output = malloc(payload_size == 0 ? 1U : payload_size);

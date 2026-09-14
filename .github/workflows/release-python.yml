@@ -118,7 +118,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Install native build dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential libbz2-dev zlib1g-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential libbz2-dev liblzma-dev zlib1g-dev
       - uses: actions/checkout@v7
         with:
           persist-credentials: false

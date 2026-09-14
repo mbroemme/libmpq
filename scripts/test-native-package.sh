@@ -99,6 +99,8 @@ for path in \
 	"${sdk_root}/share/man/man1/libmpq-config.1" \
 	"${sdk_root}/share/man/man3/libmpq.3" \
 	"${sdk_root}/README.md" \
+	"${sdk_root}/DEVELOPER.md" \
+	"${sdk_root}/MPQ.md" \
 	"${sdk_root}/COPYING" \
 	"${sdk_root}/COPYING.LESSER" \
 	"${sdk_root}/BUILDINFO"; do
@@ -137,7 +139,7 @@ fi
 readonly shared_library="${shared_libraries[0]}"
 readonly soname="$(readelf -d "${shared_library}" |
 	sed -n 's/.*SONAME.*\[\(.*\)\].*/\1/p')"
-if [[ "${soname}" != libmpq.so.1 ]] || [[ ! -e "${library_dir}/libmpq.so" ]] ||
+if [[ "${soname}" != libmpq.so.4 ]] || [[ ! -e "${library_dir}/libmpq.so" ]] ||
 	[[ ! -e "${library_dir}/${soname}" ]] ||
 	[[ "$(buildinfo_value soname)" != "${soname}" ]]; then
 	printf 'Native package shared library SONAME set is invalid.\n' >&2
@@ -181,7 +183,7 @@ readonly config_cflags="$("${sdk_root}/bin/libmpq-config" \
 readonly config_libs="$("${sdk_root}/bin/libmpq-config" \
 	--prefix="${sdk_root}" --libs)"
 if [[ "${config_cflags}" != "-I${sdk_root}/include" ]] ||
-	[[ "${config_libs}" != "-L${sdk_root}/lib -lmpq -lbz2 -lz" ]]; then
+	[[ "${config_libs}" != "-L${sdk_root}/lib -lmpq -lbz2 -lz -llzma" ]]; then
 	printf 'Packaged libmpq-config does not describe the extracted SDK layout.\n' >&2
 	exit 1
 fi
@@ -225,13 +227,13 @@ readonly config_consumer="${temporary}/consumer-config"
 compile_consumer "${pkgconfig_consumer}" "${pkgconfig_cflags}" "${pkgconfig_libs}"
 compile_consumer "${config_consumer}" "${config_cflags}" "${config_libs}"
 
-if ! readelf -d "${pkgconfig_consumer}" | grep -Fq 'Shared library: [libmpq.so.1]'; then
-	printf 'pkg-config consumer does not use libmpq.so.1.\n' >&2
+if ! readelf -d "${pkgconfig_consumer}" | grep -Fq 'Shared library: [libmpq.so.4]'; then
+	printf 'pkg-config consumer does not use libmpq.so.4.\n' >&2
 	exit 1
 fi
 if ! LD_LIBRARY_PATH="${library_dir}" ldd "${pkgconfig_consumer}" |
-	grep -F 'libmpq.so.1 =>' | grep -Fq "${library_dir}/"; then
-	printf 'pkg-config consumer does not resolve libmpq.so.1 from the SDK.\n' >&2
+	grep -F 'libmpq.so.4 =>' | grep -Fq "${library_dir}/"; then
+	printf 'pkg-config consumer does not resolve libmpq.so.4 from the SDK.\n' >&2
 	exit 1
 fi
 LD_LIBRARY_PATH="${library_dir}" "${pkgconfig_consumer}" "${fixture_archive}"

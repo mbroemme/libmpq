@@ -63,6 +63,7 @@ jobs:
             ca-certificates \
             git \
             libbz2-dev \
+            liblzma-dev \
             libtool \
             pkg-config \
             ripgrep \
@@ -143,7 +144,7 @@ jobs:
             -Isrc \
             -std=c99 \
             -fvisibility=hidden
-          for codec in PKZIP HUFFMAN ZLIB BZIP2; do
+          for codec in PKZIP HUFFMAN ZLIB BZIP2 LZMA SPARSE; do
             clang-tidy-22 --quiet --config-file=.clang-tidy fuzz/fuzz-codec-decode.c -- \
               -DHAVE_CONFIG_H \
               -I. \
@@ -179,6 +180,7 @@ jobs:
             git \
             libclang-rt-dev \
             libbz2-dev \
+            liblzma-dev \
             libtool \
             zlib1g-dev
 
@@ -260,6 +262,7 @@ jobs:
             jq \
             git \
             libbz2-dev \
+            liblzma-dev \
             libtool \
             pkg-config \
             zlib1g-dev \
@@ -331,6 +334,7 @@ jobs:
                 build-essential \
                 ca-certificates \
                 libbz2-dev \
+                liblzma-dev \
                 libtool \
                 zlib1g-dev
               sh autogen.sh
@@ -364,6 +368,7 @@ jobs:
             git \
             jq \
             libbz2-dev \
+            liblzma-dev \
             libtool \
             zlib1g-dev
 
@@ -492,7 +497,7 @@ jobs:
             -w /workspace quay.io/pypa/manylinux2014_x86_64 \
             bash -euxo pipefail -c '
               yum install -y autoconf automake binutils bzip2-devel findutils \
-                gcc libtool make pkgconfig tar zlib-devel
+                gcc libtool make pkgconfig tar xz-devel zlib-devel
               sh autogen.sh
               ./configure --prefix=/usr
               make -j"$(getconf _NPROCESSORS_ONLN)" V=1
@@ -529,7 +534,7 @@ jobs:
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -w /workspace quay.io/pypa/musllinux_1_2_x86_64 bash -euxo pipefail -c '
               apk add --no-cache autoconf automake bash binutils bzip2-dev \
-                build-base libtool linux-headers pkgconf tar zlib-dev
+                build-base libtool linux-headers pkgconf tar xz-dev zlib-dev
               sh autogen.sh
               ./configure --prefix=/usr
               make -j"$(getconf _NPROCESSORS_ONLN)" V=1
@@ -574,6 +579,7 @@ jobs:
             build-essential \
             ca-certificates \
             libbz2-dev \
+            liblzma-dev \
             libtool \
             maven \
             zlib1g-dev
@@ -630,6 +636,7 @@ jobs:
             build-essential \
             ca-certificates \
             libbz2-dev \
+            liblzma-dev \
             libtool \
             zlib1g-dev
 

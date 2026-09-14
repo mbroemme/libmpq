@@ -24,7 +24,7 @@ libmpq__block_size_unpacked \- return the unpacked size of one block.
 .BI "        mpq_archive_s  *" "mpq_archive",
 .BI "        uint32_t        " "file_number",
 .BI "        uint32_t        " "block_number",
-.BI "        libmpq__off_t *" "unpacked_size"
+.BI "        libmpq__off_t  *" "unpacked_size"
 .BI ");"
 .fi
 .SH DESCRIPTION
@@ -34,17 +34,14 @@ Call \fBlibmpq__block_size_unpacked\fP() to get the unpacked size of one block.
 The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The \fIfile_number\fP and \fIblock_number\fP
 arguments select the block. The function stores its unpacked size in
-\fIunpacked_size\fP. The block offset table must be open with
-\fBlibmpq__block_open_offset\fP().
+\fIunpacked_size\fP. No explicit offset-table management is needed.
 .SH RETURN VALUE
 On success, a zero is returned and on error one of the following constants.
 .TP
 .B LIBMPQ_ERROR_EXIST
 The file or block does not exist in the archive.
-.TP
-.B LIBMPQ_ERROR_OPEN
-The block offset table is not open.
 .SH SEE ALSO
+.BR libmpq__block_size_packed (3),
 .BR libmpq__archive_size_unpacked (3),
 .BR libmpq__file_size_unpacked (3)
 .SH AUTHOR

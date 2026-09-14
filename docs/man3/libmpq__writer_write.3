@@ -1,0 +1,34 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__WRITER_WRITE 3 2026-08-18 "The MoPaQ archive library"
+.SH NAME
+libmpq__writer_write \- write bytes through an MPQ file writer
+.SH SYNOPSIS
+.nf
+.B
+#include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__writer_write("
+.BI "        mpq_writer_s   *" "writer,"
+.BI "        const uint8_t  *" "buffer,"
+.BI "        libmpq__off_t   " "size"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Appends bytes to the writer returned by libmpq__writer_begin(3). Writes beyond
+the declared unpacked size are rejected.
+.SH SEE ALSO
+.BR libmpq__writer_begin (3),
+.BR libmpq__writer_finish (3)

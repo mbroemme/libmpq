@@ -19,6 +19,13 @@ import org.libmpq.ffi.LibmpqNative;
  * the entry and invalidates this object.
  */
 public final class MpqFileWriter implements AutoCloseable {
+
+    /** Set Windows FILETIME bits, not Unix time, without importing filesystem metadata. */
+    public void timestamp(long filetime) throws LibmpqException {
+        if (handle == null || handle.equals(MemorySegment.NULL))
+            throw new IllegalStateException("Writer is finished");
+        Support.check(LibmpqNative.writerTimestamp(handle, filetime));
+    }
     private MemorySegment handle;
     private final long expected;
     private long written;
@@ -46,7 +53,7 @@ public final class MpqFileWriter implements AutoCloseable {
             throw new IllegalArgumentException("write exceeds declared file size");
         }
         try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.fileWrite(handle, Support.bytes(arena, data), data.length));
+            Support.check(LibmpqNative.writerWrite(handle, Support.bytes(arena, data), data.length));
         }
         written += data.length;
     }
@@ -65,7 +72,7 @@ public final class MpqFileWriter implements AutoCloseable {
             return;
         }
         handle = MemorySegment.NULL;
-        Support.check(LibmpqNative.fileFinish(current));
+        Support.check(LibmpqNative.writerFinish(current));
     }
 
     /**

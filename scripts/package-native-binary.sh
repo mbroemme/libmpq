@@ -79,7 +79,7 @@ for directory in bin include lib share; do
 		cp -a "${installed_usr}/${directory}" "${package_dir}/"
 	fi
 done
-cp README.md COPYING COPYING.LESSER "${package_dir}/"
+cp README.md DEVELOPER.md MPQ.md COPYING COPYING.LESSER "${package_dir}/"
 
 readonly package_config="${package_dir}/bin/libmpq-config"
 if [[ ! -f "${package_config}" ]]; then
@@ -113,9 +113,9 @@ readonly shared_library="${shared_libraries[0]}"
 readonly library_dir="$(dirname -- "${shared_library}")"
 readonly soname="$(readelf -d "${shared_library}" |
 	sed -n 's/.*SONAME.*\[\(.*\)\].*/\1/p')"
-if [[ "${soname}" != libmpq.so.1 ]] || [[ ! -e "${library_dir}/${soname}" ]] ||
+if [[ "${soname}" != libmpq.so.4 ]] || [[ ! -e "${library_dir}/${soname}" ]] ||
 	[[ ! -e "${library_dir}/libmpq.so" ]]; then
-	printf 'Native package shared library has no usable libmpq.so.1 SONAME set.\n' >&2
+	printf 'Native package shared library has no usable libmpq.so.4 SONAME set.\n' >&2
 	exit 1
 fi
 

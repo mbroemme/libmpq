@@ -20,6 +20,19 @@ the real header and contains a user-data size and header offset. Locate and
 validate the actual `MPQ\x1A` header before resolving archive-relative values.
 Table placement is not fixed; do not infer it from file order.
 
+## MPQE-wrapped streams
+
+Some installer archives encrypt the complete outer byte stream in 64-byte MPQE
+chunks before the usual `MPQ\x1A` header. MPQE is a stream provider, not a
+new MPQ header version: decrypt it first, then parse the contained MPQ using
+the normal header and table rules. The chunk transform depends on a
+caller-supplied authentication code and the absolute chunk position. Keep
+authentication-code provisioning outside archive parsing; libmpq's C API does
+not embed, discover, log, or persist such codes. A missing or too-short code
+buffer is rejected as a decryption error. MPQE has no authentication check, so
+a well-formed but incorrect code is parsed as ordinary invalid MPQ data and
+can produce a format or another parser error.
+
 ## Header versions
 
 The common 32-byte prefix is:
@@ -82,23 +95,80 @@ Decrypt the offset table with `key - 1` and sector *i* with `key + i`.
 Encryption processes little-endian 32-bit words; use explicit `uint32_t`
 wraparound. A filename is normally required to decrypt file data.
 
-A compressed sector starts with a mask byte. Reverse the selected transforms
-when decoding; a sector may instead be stored raw when compression loses.
+A multi-compressed sector starts with a method/mask byte. Reverse the selected
+transforms when decoding; a sector may instead be stored raw when compression
+loses. The table lists every codec, all MPQ v2+ STANDARD combinations, and
+additional SPARSE combinations covered by libmpq tests. Combined masks are
+codec chains, not separate codecs; `+` below does not specify decoding order.
 
-| Mask | Codec |
-| ---: | --- |
-| `0x01` | Blizzard Huffman |
-| `0x02` | zlib deflate |
-| `0x08` | PKWARE DCL implode |
-| `0x10` | bzip2 |
-| `0x20` | sparse/run-length transform |
-| `0x40` | IMA ADPCM mono |
-| `0x80` | IMA ADPCM stereo |
-| `0x12` | LZMA; a special value, not `0x02 \| 0x10` |
+The policy columns apply to MPQ v2+ writing. STANDARD is the default,
+interoperability-oriented policy. EXTENDED permits additional valid
+libmpq-supported compression forms that other MPQ implementations may not
+accept. Neither policy restricts decoding.
 
-The sparse, ADPCM, and LZMA variants are game-specific later extensions. Do
-not decode a mask until every required transform is implemented. Bound every
-decoder by the expected unpacked sector length.
+| Method/mask | Codec or combination | STANDARD | EXTENDED |
+| ---: | --- | :---: | :---: |
+| `0x01` | Blizzard Huffman | - | X |
+| `0x02` | zlib deflate | X | X |
+| `0x08` | PKWARE DCL implode | X | X |
+| `0x10` | bzip2 | X | X |
+| `0x12` | LZMA (exclusive method) | X | X |
+| `0x20` | SPARSE lossless zero-run transform | X | X |
+| `0x21` | SPARSE + Huffman | - | X |
+| `0x22` | SPARSE + zlib | X | X |
+| `0x28` | SPARSE + PKWARE | - | X |
+| `0x30` | SPARSE + bzip2 | X | X |
+| `0x40` | IMA ADPCM mono | - | X |
+| `0x41` | Huffman + IMA ADPCM mono | X | X |
+| `0x80` | IMA ADPCM stereo | - | X |
+| `0x81` | Huffman + IMA ADPCM stereo | X | X |
+
+MPQ v1 permits ordinary masks under either policy, including the combinations
+above except LZMA: `0x12` means bzip2 + zlib in v1. Other combinations are
+formed by OR-ing stage bits, subject to the rules below; the table is not an
+exhaustive list of every possible mask. Neither policy allows unknown bits,
+both ADPCM channel bits together, or SPARSE with ADPCM. MPQ v2+ additionally
+rejects writer masks containing both zlib and bzip2. Input-specific WAVE and
+file-storage constraints still apply.
+
+Raw storage has no method byte; `libmpq__block_compression()` reports zero for
+it. Standalone IMPLODE storage also has no method byte; that API reports
+`0x08` for an actually imploded block and zero for its raw fallback.
+
+For MPQ v1, `0x12` retains its legacy BZIP2 + zlib chain meaning. For MPQ v2+,
+it is LZMA and its payload is `useFilter` zero, five LZMA1 property bytes, an
+advisory little-endian 64-bit original size, and raw LZMA1 data normally
+without an end marker. StormLib normally writes those no-EOPM streams; libmpq
+writes LZMA1 streams with an EOPM and accepts both forms when reading. libmpq
+also rejects LZMA properties that require more than 64 MiB of decoder memory.
+Bound every decoder by the expected unpacked sector length.
+
+Writer compatibility is separate from permissive decoder support. STANDARD is
+the default and, in MPQ v2+, follows the fixed method set: `0x02`, `0x08`,
+`0x10`, `0x12`, `0x20`, `0x22`, `0x30`, `0x41`, and `0x81`. Its fixed SPARSE
+forms are alone (`0x20`), with zlib (`0x22`), and with bzip2 (`0x30`). MPQ v1
+retains normal compression-mask semantics under either policy, allowing other
+valid combinations such as SPARSE with Huffman (`0x21`) or PKWARE (`0x28`). In
+MPQ v2+, EXTENDED permits the broader valid lossless SPARSE combinations and
+standalone Huffman; these may be less interoperable with other readers.
+Neither policy permits v2 chains containing both zlib and bzip2, since stage
+omission could emit reserved method `0x12`. The reader has no compatibility
+setting and is unchanged.
+
+SPARSE is a lossless zero-run stage applied before other compression stages
+and decoded last. Its payload starts with a four-byte **big-endian** unpacked
+length, unlike MPQ header/table fields. Tokens `0x00..0x7f` emit 3..130 zeros;
+tokens `0x80..0xff` copy 1..128 literal bytes. The outer method byte includes
+`0x20`, for example `0x22` with zlib or `0x30` with bzip2. Other combinations
+follow the version and policy rules above.
+
+The decoder checks the declared length against caller-owned output storage
+without allocating from that length. Oversized final tokens are clipped to
+the remaining declared output for Storm-style streams; all required literal
+bytes must exist. Missing output, truncated literals, and trailing input
+are rejected. The writer emits exact token lengths and retains SPARSE only
+when it reduces the stage size. Both writer policies reject SPARSE with
+either WAVE ADPCM bit: ADPCM would lossily transform the SPARSE control stream.
 
 ## Hashing and the table cipher
 
@@ -128,11 +198,74 @@ classic tables too, so retain both paths. StormLib's `TMPQHetHeader` and
 
 `(listfile)` is optional text metadata containing names separated by CR/LF or
 semicolons; it is not a complete inventory. `(attributes)` can hold parallel
-per-block CRC32, Windows FILETIME, and MD5 arrays. Older archives can contain
-an internal weak `(signature)` file; a strong signature can follow the archive
-as `NGIS` plus a 2048-bit RSA signature. Use a maintained cryptographic
-library for signature verification and never treat a valid signature as a
-substitute for range validation.
+per-block CRC32, Windows FILETIME, MD5, and patch-bit arrays. Its payload
+version is 100, independent of the MPQ archive version; it is valid in v1 too.
+The little-endian header contains a 32-bit version and flags. Flags 1, 2,
+4, and 8 select CRC32 (LE32), FILETIME (LE64), MD5 (16 bytes), and patch bits,
+in that order. Rows use physical block-table indices, including unused slots,
+not the public compact file numbering. Patch bits are most-significant-bit
+first within each byte.
+
+libmpq loads this optional file lazily through normal file decoding. Absence
+returns EXIST; malformed metadata returns FORMAT without preventing ordinary
+extraction. The reader accepts full arrays and recognized legacy layouts:
+one-entry-short arrays, omitted self patch bits, missing patch arrays, and
+all-zero legacy DWORD patch regions. Unavailable rows/patch values have their
+availability flags cleared rather than inventing checksum values. Unknown
+versions/flags and other payload sizes are rejected when queried.
+
+Creation is opt-in with `LIBMPQ_ATTRIBUTE_*` bits in `options.attributes`.
+The native creation-options structure is 20 bytes: `version`, `max_files`,
+`sector_size`, `flags`, and `attributes` occupy offsets 0, 4, 8, 12, and 16.
+The native per-file result is 40 bytes: `flags`, `crc32`, `filetime`, `md5`,
+and `patch_bit` begin at offsets 0, 4, 8, 16, and 32. Explicit `reserved[4]`
+bytes at offset 36 are always returned as zero. These naturally aligned,
+host-endian API structures are separate from the little-endian disk payload.
+
+Zero disables generation; any nonzero combination creates one `(attributes)`
+file and consumes one reserved slot. Unknown attribute bits are rejected. The
+separate `options.flags` field still selects listfile and compression policy.
+CRC32 and MD5 cover source bytes before compression, including lossy ADPCM,
+not stored ciphertext. FILETIME defaults to zero and is set explicitly on a
+file writer; filesystem timestamps are never imported. Finalization adds the
+listfile, then attributes, then serializes the final tables. Unused rows and
+the attributes entry itself are zero. Patch-bit creation emits zeros only and
+does not create or apply patches. Checksums are metadata, not cryptographic
+authentication, and extraction does not automatically verify them.
+
+`libmpq__file_verify()` explicitly compares sector checksums and file CRC32/MD5.
+MPQ sector CRCs are Adler-32 checksums over decrypted packed sectors, before
+decompression. Their optional table follows the sectors, may be compressed,
+and is not encrypted. Zero and all-ones entries are unavailable and skipped;
+single-unit files have no sector checksum table. `LIBMPQ_VERIFY_SECTOR_CRC`
+requests only this check and does not require `(attributes)`.
+
+The writer generates these tables when `LIBMPQ_FILE_FLAG_SECTOR_CRC` is
+requested for sectorized COMPRESS or IMPLODE files. It checksums packed bytes
+before encryption and appends one LE32 value per sector. The extra offset
+points past the checksum table. The table is never encrypted and uses zlib
+only when this reduces its size. Empty, raw, and single-unit files ignore the
+flag. Ordinary writing without this flag and normal extraction are unchanged.
+
+File CRC32/MD5 cover complete extracted contents. These requests require
+`(attributes)`; unavailable requested row values are skipped.
+`LIBMPQ_VERIFY_ALL` requests sector checks and both file checks. The mismatch
+mask uses the same bits and is a subset of the request: set means available
+and mismatched, while clear means matched or unavailable/skipped. Negative
+operation errors leave the result zero; mismatch bits are published only after
+complete success. Zero bits do not establish checksum availability. Lossy
+ADPCM can legitimately differ from the writer's source-byte checksums.
+FILETIME and PATCH_BIT are not verified, and normal extraction is unchanged.
+
+For v1 creation with attributes enabled, a 16-byte gap separates the header
+and hash table. This avoids StormLib's malformed-map heuristic, which skips
+attributes when a table begins exactly at the end of the v1 header. Writers
+without attributes retain their existing layout.
+
+Older archives can contain an internal weak `(signature)` file; a strong
+signature can follow the archive as `NGIS` plus a 2048-bit RSA signature. Use
+a maintained cryptographic library for signature verification and never treat
+a valid signature as a substitute for range validation.
 
 ## Implementation order
 

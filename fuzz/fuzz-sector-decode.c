@@ -18,12 +18,13 @@
 #define LIBMPQ_FUZZ_SECTOR_HEADER_SIZE 3U
 #define LIBMPQ_FUZZ_MAX_OUTPUT 65536U
 
-/* Decode a framed sector: mode byte, little-endian output length, then payload. */
+/* Decode a framed sector: mode/version byte, little-endian length, then payload. */
 int
 LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
     uint32_t output_size;
     uint32_t compression_type;
+    uint32_t format_version;
     uint8_t *output;
 
     if (size < LIBMPQ_FUZZ_SECTOR_HEADER_SIZE) {
@@ -36,6 +37,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
     compression_type =
         (data[0] & 1U) != 0U ? LIBMPQ_FLAG_COMPRESS_PKZIP : LIBMPQ_FLAG_COMPRESS_MULTI;
+    format_version = (data[0] & 2U) != 0U ? LIBMPQ_ARCHIVE_VERSION_TWO : LIBMPQ_ARCHIVE_VERSION_ONE;
     output = malloc(output_size);
     if (output == NULL) {
         return 0;
@@ -43,7 +45,8 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     (void)libmpq__compression_decompress_block(
         (uint8_t *)(data + LIBMPQ_FUZZ_SECTOR_HEADER_SIZE),
-        (uint32_t)(size - LIBMPQ_FUZZ_SECTOR_HEADER_SIZE), output, output_size, compression_type
+        (uint32_t)(size - LIBMPQ_FUZZ_SECTOR_HEADER_SIZE), output, output_size, compression_type,
+        format_version
     );
     free(output);
 

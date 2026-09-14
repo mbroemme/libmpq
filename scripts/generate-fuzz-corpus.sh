@@ -17,6 +17,8 @@ fi
 readonly project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly output_root="$1"
 readonly archive_output="${output_root}/archive-open"
+readonly attributes_output="${output_root}/attributes"
+readonly mpqe_output="${output_root}/mpqe-open"
 readonly encrypted_output="${output_root}/encrypted-archive"
 readonly file_read_output="${output_root}/file-read"
 readonly sector_output="${output_root}/sector-decode"
@@ -25,6 +27,8 @@ readonly pkware_output="${output_root}/pkware-decode"
 readonly huffman_output="${output_root}/huffman-decode"
 readonly zlib_output="${output_root}/zlib-decode"
 readonly bzip2_output="${output_root}/bzip2-decode"
+readonly lzma_output="${output_root}/lzma-decode"
+readonly sparse_output="${output_root}/sparse-decode"
 readonly wave_output="${output_root}/wave-decode"
 
 if [[ -d "${project_root}/fuzz/corpus" ]]; then
@@ -32,7 +36,9 @@ if [[ -d "${project_root}/fuzz/corpus" ]]; then
 fi
 
 mkdir -p \
+	"${attributes_output}" \
 	"${archive_output}" \
+	"${mpqe_output}" \
 	"${encrypted_output}" \
 	"${file_read_output}" \
 	"${sector_output}" \
@@ -41,10 +47,17 @@ mkdir -p \
 	"${huffman_output}" \
 	"${zlib_output}" \
 	"${bzip2_output}" \
+	"${lzma_output}" \
+	"${sparse_output}" \
 	"${wave_output}"
 
 cp "${project_root}/tests/fixtures/mpq-v1-features.mpq" "${archive_output}/fixture-v1.mpq"
 cp "${project_root}/tests/fixtures/mpq-v2-features.mpq" "${archive_output}/fixture-v2.mpq"
+
+# Prefix each raw attributes payload with the bounded count/self selector bytes.
+printf '\x00\x00\x64\x00\x00\x00\x00\x00\x00\x00' > "${attributes_output}/empty"
+printf '\x00\x00\x64\x00\x00\x00\x08\x00\x00\x00' > "${attributes_output}/omitted-self-bit"
+printf '\x01\x01\x64\x00\x00\x00\x01\x00\x00\x00\x78\x56\x34\x12\x00\x00\x00\x00' > "${attributes_output}/crc32"
 
 write_v1_header()
 {
@@ -72,6 +85,11 @@ write_v1_header > "${archive_output}/minimal-v1-empty.mpq"
 write_v2_header > "${archive_output}/minimal-v2-empty.mpq"
 write_v1_empty_tables_header > "${archive_output}/v1-empty-tables.mpq"
 write_v1_oversized_tables_header > "${archive_output}/v1-oversized-tables.mpq"
+
+# Seed authenticated MPQE parsing with public v1 and v2 regression streams.
+cp "${project_root}/tests/fixtures/mpq-v1-features.mpqe" "${mpqe_output}/fixture-v1.mpqe"
+cp "${project_root}/tests/fixtures/mpq-v2-features.mpqe" "${mpqe_output}/fixture-v2.mpqe"
+printf '\x00' > "${mpqe_output}/truncated.mpqe"
 dd if=/dev/zero bs=512 count=1 status=none > "${archive_output}/embedded-v1-header.bin"
 write_v1_header >> "${archive_output}/embedded-v1-header.bin"
 dd if="${project_root}/tests/fixtures/mpq-v1-features.mpq" \
@@ -88,6 +106,8 @@ printf '%.0sA' {1..255} > "${file_read_output}/maximum-name"
 # Seed version, option, and sector-size selection for bounded archive creation.
 printf '\x00\x00\x00hello writer' > "${writer_output}/v1-raw-512"
 printf '\x01\x0d\x02compressed encrypted writer payload' > "${writer_output}/v2-zlib-encrypted"
+printf '\x01\x20\x02lzma writer payload with repeated bytes LLLLLLLLLLLLLLLLL' > \
+	"${writer_output}/v2-lzma"
 printf '\x00\x14\x03bzip2 single writer payload' > "${writer_output}/v1-bzip2-single"
 
 # Select encrypted seed header, hash/block table, and known-key mutation offsets.
@@ -100,14 +120,31 @@ printf '\x04\xff\xff\xff\xff\xff\x40\x00\x00\x00\x7f\x80\x00\x00\x00\x55' > \
 printf '\x00\x00\x00' > "${sector_output}/multi-empty"
 printf '\x01\x00\x00' > "${sector_output}/pkware-empty"
 printf '\x00\xfd\xff\x03' > "${sector_output}/multi-zlib-empty-large"
-for mask in 01 02 08 10 40 80 03 04; do
+for mask in 01 02 08 10 20 22 30 40 80 03 04; do
 	printf '%b' "\\x00\\x00\\x00\\x${mask}" > "${sector_output}/multi-mask-${mask}"
 done
 
 # Frame focused decoder inputs as output-size-minus-one followed by codec data.
+printf '\x3f\x00\x00\x00\x00\x40\x3d' > "${sparse_output}/64-zeros"
+printf '\x01\x00\x00\x00\x00\x02\xffAB' > "${sparse_output}/terminal-literal"
+printf '\x00\x00\xff\xff\xff\xff\x7f' > "${sparse_output}/oversized-length"
+printf '\x00\x3f\x00\x20\x00\x00\x00\x40\x3d' > "${sector_output}/sparse-64-zeros"
+
+# Preserve zero runs in writer seeds so SPARSE is exercised before mutation.
+for selector in 05 06 07; do
+	{
+		printf '%b' "\\x01\\x${selector}\\x00"
+		printf 'A\x00\x00\x00%.0s' {1..256}
+	} > "${writer_output}/sparse-${selector}"
+done
+
+# Seed the remaining focused codecs with bounded valid or truncated streams.
 printf '\x00\x00\x00' > "${pkware_output}/empty"
 printf '\x00\x00\x00\x00\x00' > "${huffman_output}/empty"
 printf '\x00\x00\x78\x9c\x73\x04\x00\x00\x42\x00\x42' > "${zlib_output}/single-byte"
 printf '\x00\x00BZh' > "${bzip2_output}/truncated-header"
+printf '\x00\x00\x12\x00' > "${lzma_output}/truncated-header"
+printf '\x00\x00\x12\x01\x5d\x00\x00\x10\x00\x00\x00\x00\x00\x00' > \
+	"${lzma_output}/unsupported-filter"
 printf '\x00\x00\x00\x00' > "${wave_output}/mono-empty"
 printf '\x01\x00\x00\x00' > "${wave_output}/stereo-empty"

@@ -1,0 +1,46 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__WRITER_TIMESTAMP 3 2026-09-10 "The MoPaQ archive library"
+.SH NAME
+libmpq__writer_timestamp \- set an explicit FILETIME on an MPQ file writer
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__writer_timestamp("
+.BI "        mpq_writer_s " "*writer",
+.BI "        uint64_t      " "filetime"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Set the timestamp of an active file writer before
+\fBlibmpq__writer_finish\fP(). The archive must enable
+LIBMPQ_ATTRIBUTE_FILETIME in options.attributes.
+.PP
+\fIfiletime\fP is a Windows FILETIME: an unsigned count of 100-nanosecond
+ticks since 1601-01-01 UTC, not Unix time. Zero is the default.
+No filesystem timestamp is imported by \fBlibmpq__archive_add_path\fP().
+This call neither changes the source file nor creates a patch.
+.SH RETURN VALUE
+Returns LIBMPQ_SUCCESS on success or a negative libmpq error.
+FORMAT means FILETIME generation was not enabled.
+NULL arguments return EXIST. Use on the wrong handle type returns NOT_INITIALIZED.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__archive_create (3),
+.BR libmpq__archive_create_mpqe (3),
+.BR libmpq__archive_attributes (3),
+.BR libmpq__file_attributes (3),
+.BR libmpq__writer_finish (3)

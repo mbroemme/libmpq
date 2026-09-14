@@ -23,32 +23,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/*
- * Compression masks stored in the first byte of a Blizzard
- * multi-compression block. The values are bit flags rather than an
- * enumeration: a block may pass through several codecs, and the decoder
- * applies the selected stages in the format's canonical order. Bits 0x04,
- * 0x20, and all bits above 0x80 are reserved and must be rejected when they
- * are not implemented locally.
- */
+/* Use the public definitions for compression-stage bits and writer policies. */
+#include <libmpq/mpq.h>
 
-/* Adaptive Huffman compression; bit 0, value 0x01. */
-#define LIBMPQ_COMPRESSION_HUFFMAN 0x01
+/* MPQ v2+ serializes LZMA as a special method, not a stage-mask combination. */
+#define LIBMPQ_COMPRESSION_LZMA_METHOD 0x12u
+#define LIBMPQ_LZMA_USE_FILTER 0u
+#define LIBMPQ_LZMA_PROPERTIES_SIZE 5u
+#define LIBMPQ_LZMA_HEADER_SIZE 14u
+#define LIBMPQ_LZMA_TOTAL_OVERHEAD 15u
 
-/* zlib/Deflate compression; bit 1, value 0x02. */
-#define LIBMPQ_COMPRESSION_ZLIB 0x02
-
-/* PKWARE Data Compression Library compression; bit 3, value 0x08. */
-#define LIBMPQ_COMPRESSION_PKZIP 0x08
-
-/* bzip2 compression; bit 4, value 0x10. */
-#define LIBMPQ_COMPRESSION_BZIP2 0x10
-
-/* Mono 4:1 ADPCM WAVE compression; bit 6, value 0x40. */
-#define LIBMPQ_COMPRESSION_WAVE_MONO 0x40
-
-/* Stereo 4:1 ADPCM WAVE compression; bit 7, value 0x80. */
-#define LIBMPQ_COMPRESSION_WAVE_STEREO 0x80
+/* Reject raw-LZMA1 properties that require more than 64 MiB to decode. */
+#define LIBMPQ_LZMA_DECODER_MEMORY_MAX (64u * 1024u * 1024u)
 
 /*
  * Codec callback signature used by the multi-compression dispatcher. The
@@ -96,6 +82,11 @@ extern int32_t libmpq__compression_decompress_bzip2(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
 );
 
+/* Decode a lossless SPARSE zero-run stream into caller-owned storage. */
+extern int32_t libmpq__compression_decompress_sparse(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
+);
+
 /* Decode a mono MPQ ADPCM stream into PCM bytes in out_buf. */
 extern int32_t libmpq__compression_decompress_wave_mono(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
@@ -110,18 +101,17 @@ extern int32_t libmpq__compression_decompress_wave_stereo(
  * Decode a Blizzard multi-compression block. The leading mask selects the
  * stages; each stage receives the previous stage's complete output, and the
  * final result is copied to out_buf. Unknown combinations and undersized
- * output buffers are rejected with a negative libmpq error.
+ * output buffers are rejected with a negative libmpq error. format_version
+ * is the serialized MPQ header version: 0=v1, 1=v2.
  */
 extern int32_t libmpq__compression_decompress_multi(
-    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size, uint32_t format_version
 );
 
-/*
- * Report whether mask contains only codec bits implemented by this build.
- * Zero is accepted because it describes an uncompressed sector; reserved or
- * unsupported bits return false.
- */
-int libmpq__compression_supported_mask(uint32_t mask);
+/* Validate a writer policy and mask for the serialized MPQ version (0=v1, 1=v2). */
+int32_t libmpq__compression_allowed(
+    uint32_t format_version, uint32_t mask, libmpq_compression_policy_t policy
+);
 
 /*
  * Encode one sector through the requested codec chain.
@@ -132,8 +122,8 @@ int libmpq__compression_supported_mask(uint32_t mask);
  * expands the sector. The input remains untouched on every return path.
  */
 int32_t libmpq__compression_encode_sector(
-    const uint8_t *input, size_t input_size, uint32_t requested, uint8_t **output,
-    size_t *output_size, uint8_t *emitted_mask
+    const uint8_t *input, size_t input_size, uint32_t requested, uint32_t format_version,
+    libmpq_compression_policy_t policy, uint8_t **output, size_t *output_size, uint8_t *emitted_mask
 );
 
 /*
@@ -144,7 +134,7 @@ int32_t libmpq__compression_encode_sector(
  */
 int32_t libmpq__compression_decompress_block(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size,
-    uint32_t compression_type
+    uint32_t compression_type, uint32_t format_version
 );
 
 #endif /* LIBMPQ_COMPRESSION_H */

@@ -1,6 +1,8 @@
 # Build opt-in libFuzzer targets. They are not installed or part of make check.
 noinst_PROGRAMS = \
+	fuzz-attributes \
 	fuzz-archive-open \
+	fuzz-mpqe-open \
 	fuzz-file-read \
 	fuzz-writer-roundtrip \
 	fuzz-encrypted-archive \
@@ -9,6 +11,8 @@ noinst_PROGRAMS = \
 	fuzz-huffman-decode \
 	fuzz-zlib-decode \
 	fuzz-bzip2-decode \
+	fuzz-lzma-decode \
+	fuzz-sparse-decode \
 	fuzz-wave-decode
 
 # Compile fuzz targets against generated configuration, public, and private headers.
@@ -17,10 +21,19 @@ AM_CPPFLAGS = -I$(top_builddir) -I$(top_srcdir)/include -I$(top_srcdir)/src
 # Keep fuzz targets as ordinary local executables rather than installed programs.
 AM_LDFLAGS = -no-install
 
+fuzz_attributes_SOURCES = fuzz-attributes.c
+fuzz_attributes_LDADD = $(top_builddir)/src/libmpq-fuzz-internal.la $(LIBS)
+fuzz_attributes_LDFLAGS = $(AM_LDFLAGS) -fsanitize=fuzzer,address,undefined
+
 # Link the public archive-opening API target with the normal shared library.
 fuzz_archive_open_SOURCES = fuzz-archive-open.c
 fuzz_archive_open_LDADD = $(top_builddir)/src/libmpq.la
 fuzz_archive_open_LDFLAGS = $(AM_LDFLAGS) -fsanitize=fuzzer,address,undefined
+
+# Link the caller-authenticated MPQE stream target with the normal shared library.
+fuzz_mpqe_open_SOURCES = fuzz-mpqe-open.c fuzz-common.h
+fuzz_mpqe_open_LDADD = $(top_builddir)/src/libmpq.la
+fuzz_mpqe_open_LDFLAGS = $(AM_LDFLAGS) -fsanitize=fuzzer,address,undefined
 
 # Link reader and writer API targets with the normal shared library.
 fuzz_file_read_SOURCES = fuzz-file-read.c fuzz-common.h
@@ -55,12 +68,21 @@ fuzz_bzip2_decode_SOURCES = fuzz-codec-decode.c
 fuzz_bzip2_decode_CPPFLAGS = $(AM_CPPFLAGS) -DLIBMPQ_FUZZ_CODEC=LIBMPQ_COMPRESSION_BZIP2
 fuzz_bzip2_decode_LDADD = $(top_builddir)/src/libmpq-fuzz-internal.la $(LIBS)
 fuzz_bzip2_decode_LDFLAGS = $(AM_LDFLAGS) -fsanitize=fuzzer,address,undefined
+fuzz_lzma_decode_SOURCES = fuzz-codec-decode.c
+fuzz_lzma_decode_CPPFLAGS = $(AM_CPPFLAGS) -DLIBMPQ_FUZZ_CODEC=LIBMPQ_COMPRESSION_LZMA
+fuzz_lzma_decode_LDADD = $(top_builddir)/src/libmpq-fuzz-internal.la $(LIBS)
+fuzz_lzma_decode_LDFLAGS = $(AM_LDFLAGS) -fsanitize=fuzzer,address,undefined
+fuzz_sparse_decode_SOURCES = fuzz-codec-decode.c
+fuzz_sparse_decode_CPPFLAGS = $(AM_CPPFLAGS) -DLIBMPQ_FUZZ_CODEC=LIBMPQ_COMPRESSION_SPARSE
+fuzz_sparse_decode_LDADD = $(top_builddir)/src/libmpq-fuzz-internal.la $(LIBS)
+fuzz_sparse_decode_LDFLAGS = $(AM_LDFLAGS) -fsanitize=fuzzer,address,undefined
 fuzz_wave_decode_SOURCES = fuzz-wave-decode.c
 fuzz_wave_decode_LDADD = $(top_builddir)/src/libmpq-fuzz-internal.la $(LIBS)
 fuzz_wave_decode_LDFLAGS = $(AM_LDFLAGS) -fsanitize=fuzzer,address,undefined
 
 # Include the harness sources and usage notes in source distributions.
 EXTRA_DIST = \
+	fuzz-attributes.c \
 	README.md \
 	corpus/README.md \
 	corpus/writer-roundtrip/pkware-short-runs.txt \
@@ -69,6 +91,7 @@ EXTRA_DIST = \
 	fuzz-common.h \
 	fuzz-encrypted-archive.c \
 	fuzz-file-read.c \
+	fuzz-mpqe-open.c \
 	fuzz-sector-decode.c \
 	fuzz-wave-decode.c \
 	fuzz-writer-roundtrip.c

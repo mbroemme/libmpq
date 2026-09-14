@@ -47,7 +47,7 @@ jobs:
       package_version: ${{ steps.metadata.outputs.package_version }}
     steps:
       - name: Install metadata dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends autoconf automake build-essential libbz2-dev libtool zlib1g-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends autoconf automake build-essential libbz2-dev liblzma-dev libtool zlib1g-dev
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -113,7 +113,7 @@ jobs:
             dub: ldc2
     steps:
       - name: Install glibc package dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends autoconf automake binutils build-essential jq libbz2-dev libtool zlib1g-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends autoconf automake binutils build-essential jq libbz2-dev liblzma-dev libtool zlib1g-dev
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -174,7 +174,7 @@ jobs:
             -w /workspace alpine:3.22 sh -euxc '
               apk add --no-cache autoconf automake bash binutils bzip2-dev \
                 build-base ca-certificates dub jq libtool linux-headers \
-                "${LIBMPQ_D_COMPILER_PACKAGE}" tar zlib-dev
+                "${LIBMPQ_D_COMPILER_PACKAGE}" tar xz-dev zlib-dev
               export DC="${LIBMPQ_D_DC}"
               bash scripts/build-d-binary-package.sh
             '
@@ -191,7 +191,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Install source package dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends autoconf automake binutils build-essential jq libbz2-dev libtool zlib1g-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends autoconf automake binutils build-essential jq libbz2-dev liblzma-dev libtool zlib1g-dev
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0

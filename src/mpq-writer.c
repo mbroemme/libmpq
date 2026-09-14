@@ -20,18 +20,34 @@
 #include "config.h"
 #endif
 
+#include "mpq-attributes.h"
 #include "mpq-compression.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
 #include "mpq-internal.h"
+#include "mpq-mpqe.h"
 #include "mpq-pkware.h"
 #include "mpq-wave.h"
 #include "mpq-writer.h"
 #include <libmpq/mpq.h>
 
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <zlib.h>
+
+/* Resolve the private writer policy from the existing archive-creation flags. */
+static libmpq_compression_policy_t
+compression_policy(const mpq_archive_s *archive)
+{
+    return (archive->write_flags & LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED) != 0
+               ? LIBMPQ_COMPRESSION_POLICY_EXTENDED
+               : LIBMPQ_COMPRESSION_POLICY_STANDARD;
+}
 
 /* Return the smallest supported power-of-two table capacity at or above value.
  * MPQ hash tables use power-of-two probing, so this helper provides the next
@@ -97,7 +113,8 @@ stream_flush_sector(mpq_writer_s *writer)
         return LIBMPQ_ERROR_SIZE;
     if ((writer->options.flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0)
         result = libmpq__compression_encode_sector(
-            writer->data, writer->data_size, requested, &packed, &packed_size, &emitted
+            writer->data, writer->data_size, requested, archive->mpq_header.version,
+            compression_policy(archive), &packed, &packed_size, &emitted
         );
     else if ((writer->options.flags & LIBMPQ_FILE_FLAG_IMPLODE) != 0) {
         uint32_t packed32 = 0;
@@ -123,6 +140,10 @@ stream_flush_sector(mpq_writer_s *writer)
         free(packed);
         return result;
     }
+
+    /* Sector checksums cover packed bytes before payload encryption. */
+    if (writer->checksums != NULL)
+        writer->checksums[writer->sector_index] = (uint32_t)adler32(0, packed, (uInt)packed_size);
 
     /* Payload encryption uses the file seed advanced by the sector number. */
     if (writer->options.flags & LIBMPQ_FILE_FLAG_ENCRYPTED)
@@ -161,6 +182,43 @@ stream_flush_sector(mpq_writer_s *writer)
     return LIBMPQ_SUCCESS;
 }
 
+/* Append the optional checksum table without file encryption. Like sector data,
+ * zlib framing is retained only when it reduces the serialized table size. */
+static int32_t
+stream_write_checksums(mpq_writer_s *writer)
+{
+    size_t size = (size_t)writer->block_count * sizeof(uint32_t);
+    uint8_t *raw = malloc(size);
+    uint8_t *packed = NULL;
+    size_t packed_size = 0;
+    uint8_t emitted = 0;
+    uint32_t i;
+    int32_t result;
+
+    if (raw == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    for (i = 0; i < writer->block_count; ++i)
+        libmpq__store_le32(raw + i * 4, writer->checksums[i]);
+    result = libmpq__compression_encode_sector(
+        raw, size, LIBMPQ_COMPRESSION_ZLIB, writer->archive->mpq_header.version,
+        LIBMPQ_COMPRESSION_POLICY_STANDARD, &packed, &packed_size, &emitted
+    );
+    free(raw);
+    if (result == LIBMPQ_SUCCESS) {
+        if (packed_size > UINT32_MAX - writer->offsets[writer->block_count])
+            result = LIBMPQ_ERROR_SIZE;
+        else if (fwrite(packed, 1, packed_size, writer->archive->fp) != packed_size)
+            result = LIBMPQ_ERROR_WRITE;
+        else {
+            writer->packed_total += packed_size;
+            writer->offsets[writer->block_count + 1] =
+                writer->offsets[writer->block_count] + (uint32_t)packed_size;
+        }
+    }
+    free(packed);
+    return result;
+}
+
 /* Finish the streamed file by writing its offset table and archive metadata.
  * The serialized table is placed before packed sectors, encrypted separately,
  * and then the completed file is inserted into the block and hash tables. */
@@ -183,13 +241,21 @@ stream_finish(mpq_writer_s *writer)
     if (writer->written != writer->expected || writer->sector_index != writer->block_count)
         return LIBMPQ_ERROR_SIZE;
     if (writer->offsets) {
-        table_size = (size_t)(writer->block_count + 1) * 4;
+        uint32_t entries = writer->block_count + 1 + (writer->checksums != NULL);
+        table_size = (size_t)entries * 4;
+        if (writer->packed_total > UINT32_MAX - table_size)
+            return LIBMPQ_ERROR_SIZE;
         writer->offsets[writer->block_count] =
             (uint32_t)writer->packed_total + (uint32_t)table_size;
+        if (writer->checksums != NULL) {
+            result = stream_write_checksums(writer);
+            if (result < 0)
+                return result;
+        }
         table = malloc(table_size);
         if (table == NULL)
             return LIBMPQ_ERROR_MALLOC;
-        for (i = 0; i <= writer->block_count; i++)
+        for (i = 0; i < entries; i++)
             libmpq__store_le32(table + i * 4, writer->offsets[i]);
         if (writer->options.flags & LIBMPQ_FILE_FLAG_ENCRYPTED)
             libmpq__crypto_encrypt_block(table, (uint32_t)table_size, file_key(writer->name) - 1);
@@ -234,6 +300,11 @@ stream_finish(mpq_writer_s *writer)
             archive->mpq_hash[pos].locale = writer->options.locale;
             archive->mpq_hash[pos].platform = writer->options.platform;
             archive->mpq_hash[pos].block_table_index = index;
+            if (archive->write_attributes != NULL) {
+                if (writer->attributes.flags & LIBMPQ_ATTRIBUTE_MD5)
+                    libmpq__md5_final(&writer->md5, writer->attributes.md5);
+                archive->write_attributes[index] = writer->attributes;
+            }
             return LIBMPQ_SUCCESS;
         }
     }
@@ -255,8 +326,14 @@ finalize_archive(mpq_archive_s *a)
     /* An unfinished streamed file would leave archive tables inconsistent. */
     if (a->write_current)
         return LIBMPQ_ERROR_SIZE;
+    a->write_internal = TRUE;
+    if (libmpq__attributes_write_flags(a) != 0 && a->write_attributes == NULL) {
+        a->write_attributes = calloc(a->write_capacity, sizeof(*a->write_attributes));
+        if (a->write_attributes == NULL)
+            return LIBMPQ_ERROR_MALLOC;
+    }
     if ((a->write_flags & LIBMPQ_ARCHIVE_CREATE_LISTFILE) != 0) {
-        size_t total = 1;
+        size_t total = 1 + (libmpq__attributes_write_flags(a) ? sizeof(LIBMPQ_ATTRIBUTES_NAME) : 0);
         uint8_t *list;
         for (i = 0; i < a->write_next_block; i++)
             total += strlen(a->write_names[i]) + 1;
@@ -270,6 +347,10 @@ finalize_archive(mpq_archive_s *a)
             total += n;
             list[total++] = '\n';
         }
+        if (libmpq__attributes_write_flags(a)) {
+            memcpy(list + total, LIBMPQ_ATTRIBUTES_NAME "\n", sizeof(LIBMPQ_ATTRIBUTES_NAME));
+            total += sizeof(LIBMPQ_ATTRIBUTES_NAME);
+        }
         {
             mpq_file_options_s o = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
             int32_t r =
@@ -278,6 +359,22 @@ finalize_archive(mpq_archive_s *a)
             if (r < 0)
                 return r;
         }
+    }
+
+    if (libmpq__attributes_write_flags(a) != 0) {
+        mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS, LIBMPQ_COMPRESSION_ZLIB,
+                                       LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
+        int32_t result = libmpq__attributes_serialize(
+            a->write_attributes, a->write_capacity, a->write_next_block,
+            libmpq__attributes_write_flags(a), &raw, &bytes
+        );
+        if (result != LIBMPQ_SUCCESS)
+            return result;
+        result =
+            libmpq__writer_file_add(a, LIBMPQ_ATTRIBUTES_NAME, raw, (libmpq__off_t)bytes, &options);
+        free(raw);
+        if (result != LIBMPQ_SUCCESS)
+            return result;
     }
 
     /* Serialize and encrypt the hash table before writing the block metadata. */
@@ -359,19 +456,342 @@ finalize_archive(mpq_archive_s *a)
     }
     if (write_at(a->fp, 0, header, a->mpq_header.header_size) < 0 || fflush(a->fp) != 0)
         return LIBMPQ_ERROR_WRITE;
-    a->write_finalized = TRUE;
+    if (!a->write_mpqe)
+        a->write_finalized = TRUE;
     return LIBMPQ_SUCCESS;
+}
+
+/* Mark a descriptor close-on-exec when atomic creation did not provide it. */
+#ifndef O_CLOEXEC
+static int
+set_cloexec(int fd)
+{
+    int flags = fcntl(fd, F_GETFD);
+
+    return flags >= 0 && fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0;
+}
+#endif
+
+/* Fill a short temporary suffix from the operating system random source. */
+static int32_t
+random_bytes(uint8_t *buffer, size_t size)
+{
+    int fd;
+    size_t offset = 0;
+
+#ifdef O_CLOEXEC
+    fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+#else
+    fd = open("/dev/urandom", O_RDONLY);
+#endif
+    if (fd < 0)
+        return LIBMPQ_ERROR_OPEN;
+#ifndef O_CLOEXEC
+    if (!set_cloexec(fd)) {
+        (void)close(fd);
+        return LIBMPQ_ERROR_OPEN;
+    }
+#endif
+    while (offset < size) {
+        ssize_t read_size = read(fd, buffer + offset, size - offset);
+
+        if (read_size < 0 && errno == EINTR)
+            continue;
+        if (read_size <= 0) {
+            (void)close(fd);
+            return LIBMPQ_ERROR_OPEN;
+        }
+        offset += (size_t)read_size;
+    }
+    if (close(fd) != 0)
+        return LIBMPQ_ERROR_OPEN;
+    return LIBMPQ_SUCCESS;
+}
+
+/* Create one temporary file using an unpredictable O_EXCL basename. */
+static int32_t
+temporary_output_file(
+    int directory, char *path, size_t random_offset, size_t random_size, mode_t mode, int *file
+)
+{
+    static const char hex[] = "0123456789abcdef";
+    uint8_t random[16] = { 0 };
+    size_t i;
+    uint32_t attempt;
+    int flags = O_RDWR | O_CREAT | O_EXCL;
+
+    if (random_size == 0 || random_size > 2U * sizeof(random))
+        return LIBMPQ_ERROR_EXIST;
+#ifdef O_CLOEXEC
+    flags |= O_CLOEXEC;
+#endif
+    for (attempt = 0; attempt < 128U; ++attempt) {
+        int32_t result = random_bytes(random, (random_size + 1U) / 2U);
+
+        if (result != LIBMPQ_SUCCESS)
+            return result;
+        for (i = 0; i < random_size; ++i) {
+            uint8_t byte = random[i / 2U];
+
+            path[random_offset + i] = hex[(i & 1U) == 0 ? byte >> 4 : byte & 0x0fU];
+        }
+        *file = openat(directory, path, flags, mode);
+        if (*file >= 0) {
+#ifndef O_CLOEXEC
+            if (!set_cloexec(*file)) {
+                (void)close(*file);
+                (void)unlinkat(directory, path, 0);
+                return LIBMPQ_ERROR_OPEN;
+            }
+#endif
+            return LIBMPQ_SUCCESS;
+        }
+        if (errno != EEXIST)
+            return LIBMPQ_ERROR_OPEN;
+    }
+    return LIBMPQ_ERROR_OPEN;
+}
+
+/* Split a destination once and retain its directory descriptor for later publication. */
+static int32_t
+destination_directory(const char *destination, int *directory, char **name)
+{
+    const char *slash;
+    const char *directory_path;
+    char *allocated_directory = NULL;
+    char *destination_name;
+    size_t directory_size;
+    int flags = O_RDONLY;
+    int fd;
+    struct stat status;
+
+    if (destination == NULL || destination[0] == '\0' || directory == NULL || name == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *directory = -1;
+    *name = NULL;
+    slash = (strrchr)(destination, '/');
+    if (slash == NULL) {
+        directory_path = ".";
+        destination_name = strdup(destination);
+    } else {
+        directory_size = (size_t)(slash - destination);
+        if (slash[1] == '\0')
+            return LIBMPQ_ERROR_EXIST;
+        if (directory_size == 0) {
+            directory_path = "/";
+        } else {
+            allocated_directory = malloc(directory_size + 1U);
+            if (allocated_directory == NULL)
+                return LIBMPQ_ERROR_MALLOC;
+            memcpy(allocated_directory, destination, directory_size);
+            allocated_directory[directory_size] = '\0';
+            directory_path = allocated_directory;
+        }
+        destination_name = strdup(slash + 1);
+    }
+    if (destination_name == NULL) {
+        free(allocated_directory);
+        return LIBMPQ_ERROR_MALLOC;
+    }
+#ifdef O_DIRECTORY
+    flags |= O_DIRECTORY;
+#endif
+#ifdef O_CLOEXEC
+    flags |= O_CLOEXEC;
+#endif
+    fd = open(directory_path, flags);
+    free(allocated_directory);
+    if (fd < 0) {
+        free(destination_name);
+        return LIBMPQ_ERROR_OPEN;
+    }
+#ifndef O_CLOEXEC
+    if (!set_cloexec(fd)) {
+        (void)close(fd);
+        free(destination_name);
+        return LIBMPQ_ERROR_OPEN;
+    }
+#endif
+    if (fstat(fd, &status) != 0 || !S_ISDIR(status.st_mode)) {
+        (void)close(fd);
+        free(destination_name);
+        return LIBMPQ_ERROR_OPEN;
+    }
+    *directory = fd;
+    *name = destination_name;
+    return LIBMPQ_SUCCESS;
+}
+
+/* Securely create one private temporary file below an already-opened directory. */
+static int32_t
+temporary_file(int directory, const char *suffix, mode_t mode, char **path, FILE **file)
+{
+    char *template_path;
+    size_t i;
+    size_t suffix_size;
+    int32_t result;
+    int fd;
+
+    if (directory < 0 || suffix == NULL || path == NULL || file == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *path = NULL;
+    *file = NULL;
+    suffix_size = strlen(suffix);
+    if (suffix_size < 32U)
+        return LIBMPQ_ERROR_EXIST;
+    for (i = 0; i < 32U; ++i) {
+        if (suffix[suffix_size - 32U + i] != 'X')
+            return LIBMPQ_ERROR_EXIST;
+    }
+    template_path = strdup(suffix);
+    if (template_path == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    result = temporary_output_file(directory, template_path, suffix_size - 32U, 32U, mode, &fd);
+    if (result != LIBMPQ_SUCCESS) {
+        free(template_path);
+        return result;
+    }
+    *file = fdopen(fd, "w+b");
+    if (*file == NULL) {
+        (void)close(fd);
+        (void)unlinkat(directory, template_path, 0);
+        free(template_path);
+        return LIBMPQ_ERROR_OPEN;
+    }
+    *path = template_path;
+    return LIBMPQ_SUCCESS;
+}
+
+/*
+ * Publish a complete same-directory encrypted temporary output. On POSIX,
+ * renameat is the atomic replacement primitive: observers see either the old
+ * destination or the complete encrypted replacement, never a partial file.
+ */
+static int32_t
+atomic_replace(int directory, const char *temporary, const char *destination)
+{
+    if (directory < 0 || temporary == NULL || destination == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    return renameat(directory, temporary, directory, destination) == 0 ? LIBMPQ_SUCCESS
+                                                                       : LIBMPQ_ERROR_WRITE;
+}
+
+/* Transform the finalized raw archive with bounded sequential MPQE I/O. */
+static int32_t
+transform_mpqe(mpq_archive_s *a)
+{
+    uint8_t chunk[LIBMPQ_MPQE_CHUNK_SIZE];
+    uint64_t offset = 0;
+    size_t read;
+
+    if (fflush(a->fp) != 0)
+        return LIBMPQ_ERROR_WRITE;
+    if (fseeko(a->fp, 0, SEEK_SET) < 0)
+        return LIBMPQ_ERROR_SEEK;
+    while ((read = fread(chunk, 1, sizeof(chunk), a->fp)) != 0) {
+        if (read < sizeof(chunk))
+            memset(chunk + read, 0, sizeof(chunk) - read);
+        libmpq__mpqe_transform_chunk(chunk, a->write_mpqe_key, offset);
+        if (fwrite(chunk, 1, read, a->write_mpqe_output) != read) {
+            libmpq__mpqe_clear(chunk, sizeof(chunk));
+            return LIBMPQ_ERROR_WRITE;
+        }
+        offset += read;
+    }
+    libmpq__mpqe_clear(chunk, sizeof(chunk));
+    if (ferror(a->fp) || fflush(a->write_mpqe_output) != 0)
+        return LIBMPQ_ERROR_WRITE;
+    return LIBMPQ_SUCCESS;
+}
+
+/* Production MPQE finalization operations used by every newly created MPQE archive. */
+static const mpq_writer_mpqe_ops_s default_mpqe_ops = {
+    finalize_archive,
+    transform_mpqe,
+    fclose,
+    atomic_replace,
+};
+
+/* Finish MPQE output only after the ordinary MPQ writer has finalized its raw stream. */
+int32_t
+libmpq__writer_finalize_mpqe(mpq_archive_s *a)
+{
+    const mpq_writer_mpqe_ops_s *ops;
+    int32_t result;
+
+    if (a == NULL || !a->write_mpqe)
+        return LIBMPQ_ERROR_EXIST;
+    ops = a->write_mpqe_ops;
+    if (ops == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    result = ops->transform(a);
+    if (a->fp != NULL && fclose(a->fp) != 0 && result == LIBMPQ_SUCCESS)
+        result = LIBMPQ_ERROR_CLOSE;
+    a->fp = NULL;
+    if (result != LIBMPQ_SUCCESS)
+        return result;
+    if (unlinkat(a->write_mpqe_directory, a->filename, 0) != 0)
+        return LIBMPQ_ERROR_WRITE;
+    if (ops->close_output(a->write_mpqe_output) != 0) {
+        a->write_mpqe_output = NULL;
+        return LIBMPQ_ERROR_CLOSE;
+    }
+    a->write_mpqe_output = NULL;
+    result =
+        ops->publish(a->write_mpqe_directory, a->write_mpqe_output_path, a->write_mpqe_destination);
+    if (result == LIBMPQ_SUCCESS)
+        a->write_finalized = TRUE;
+    return result;
+}
+
+/* Close/unlink private MPQE artifacts on every handled completion or failure. */
+void
+libmpq__writer_mpqe_cleanup(mpq_archive_s *a)
+{
+    if (a == NULL)
+        return;
+    if (a->write_mpqe_output != NULL)
+        (void)fclose(a->write_mpqe_output);
+    a->write_mpqe_output = NULL;
+    if (a->write_mpqe && a->write_mpqe_directory >= 0 && a->filename != NULL)
+        (void)unlinkat(a->write_mpqe_directory, a->filename, 0);
+    if (a->write_mpqe_directory >= 0 && a->write_mpqe_output_path != NULL)
+        (void)unlinkat(a->write_mpqe_directory, a->write_mpqe_output_path, 0);
+    if (a->write_mpqe_directory >= 0)
+        (void)close(a->write_mpqe_directory);
+    a->write_mpqe_directory = -1;
+    libmpq__mpqe_clear(a->write_mpqe_key, sizeof(a->write_mpqe_key));
 }
 
 /* Create a new seekable MPQ v1 or v2 archive with reserved metadata tables.
  * The function validates creation options, reserves table space, initializes
  * empty hash entries, and leaves the file positioned at the first payload. */
-int32_t
-libmpq__writer_archive_create(
-    mpq_archive_s **out, const char *path, const mpq_archive_create_options_s *options
+static int32_t
+writer_validate_options(const mpq_archive_create_options_s *options)
+{
+    if (options == NULL)
+        return LIBMPQ_SUCCESS;
+    if (options->version > LIBMPQ_ARCHIVE_VERSION_TWO || options->max_files == UINT32_MAX ||
+        (options->max_files && options->max_files > 0x40000000u))
+        return LIBMPQ_ERROR_FORMAT;
+    if (options->sector_size &&
+        (options->sector_size < 512 || (options->sector_size & (options->sector_size - 1)) != 0))
+        return LIBMPQ_ERROR_FORMAT;
+    if ((options->attributes & ~LIBMPQ_ATTRIBUTES_ALL) != 0)
+        return LIBMPQ_ERROR_FORMAT;
+    if (options->attributes != 0 && options->max_files != 0 &&
+        options->max_files < 1u + ((options->flags & LIBMPQ_ARCHIVE_CREATE_LISTFILE) != 0))
+        return LIBMPQ_ERROR_SIZE;
+    return LIBMPQ_SUCCESS;
+}
+
+/* Allocate the writer before opening ordinary output, or adopt a private stream. */
+static int32_t
+writer_archive_create_handle(
+    mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options
 )
 {
-    mpq_archive_create_options_s defaults = { LIBMPQ_ARCHIVE_VERSION_ONE, 1024, 4096, 0 };
+    mpq_archive_create_options_s defaults = { LIBMPQ_ARCHIVE_VERSION_ONE, 1024, 4096, 0, 0 };
     mpq_archive_s *a;
     uint32_t i;
     uint32_t header_size;
@@ -385,20 +805,25 @@ libmpq__writer_archive_create(
         options = &defaults;
 
     /* Reject versions, capacities, and sector sizes that cannot be represented safely. */
-    if (options->version > LIBMPQ_ARCHIVE_VERSION_TWO || options->max_files == UINT32_MAX ||
-        (options->max_files && options->max_files > 0x40000000u))
+    if (writer_validate_options(options) != LIBMPQ_SUCCESS) {
+        if (file != NULL)
+            (void)fclose(file);
         return LIBMPQ_ERROR_FORMAT;
-    if (options->sector_size &&
-        (options->sector_size < 512 || (options->sector_size & (options->sector_size - 1)) != 0))
-        return LIBMPQ_ERROR_FORMAT;
+    }
     a = calloc(1, sizeof(*a));
-    if (a == NULL)
+    if (a == NULL) {
+        if (file != NULL)
+            (void)fclose(file);
         return LIBMPQ_ERROR_MALLOC;
-    a->fp = fopen(path, "w+b");
+    }
+    a->write_mpqe_directory = -1;
+    a->fp = file;
+    if (a->fp == NULL)
+        a->fp = fopen(path, "w+b");
     a->filename = strdup(path);
     if (a->fp == NULL || a->filename == NULL) {
-        if (a->fp)
-            fclose(a->fp);
+        if (a->fp != NULL)
+            (void)fclose(a->fp);
         free(a->filename);
         free(a);
         return LIBMPQ_ERROR_OPEN;
@@ -407,6 +832,7 @@ libmpq__writer_archive_create(
     a->write_capacity = options->max_files ? options->max_files : 1024;
     a->write_sector_size = options->sector_size ? options->sector_size : 4096;
     a->write_flags = options->flags;
+    a->write_attributes_flags = options->attributes;
 
     /* Keep hash load below one half so linear probing remains bounded. */
     a->write_hash_capacity = next_power_two(a->write_capacity * 2);
@@ -419,7 +845,13 @@ libmpq__writer_archive_create(
     a->mpq_header.hash_table_count = a->write_hash_capacity;
     a->mpq_header.block_table_count = a->write_capacity;
     a->mpq_header.hash_table_offset = header_size;
-    a->mpq_header.block_table_offset = header_size + a->write_hash_capacity * 16;
+
+    /* StormLib skips v1 attributes when a table starts exactly at header end.
+     * Reserve a small gap only for opt-in attributes, leaving ordinary output unchanged. */
+    if (options->version == LIBMPQ_ARCHIVE_VERSION_ONE && libmpq__attributes_write_flags(a))
+        a->mpq_header.hash_table_offset += 16;
+    a->mpq_header.block_table_offset =
+        a->mpq_header.hash_table_offset + a->write_hash_capacity * 16;
     a->mpq_header_ex.extended_offset = 0;
     offset = (uint64_t)a->mpq_header.block_table_offset + (uint64_t)a->write_capacity * 16;
     if (options->version == LIBMPQ_ARCHIVE_VERSION_TWO) {
@@ -486,6 +918,95 @@ libmpq__writer_archive_create(
     return LIBMPQ_SUCCESS;
 }
 
+/* Create an ordinary seekable MPQ directly at its requested destination. */
+int32_t
+libmpq__writer_archive_create(
+    mpq_archive_s **out, const char *path, const mpq_archive_create_options_s *options
+)
+{
+    if (out == NULL || path == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *out = NULL;
+    if (writer_validate_options(options) != LIBMPQ_SUCCESS)
+        return LIBMPQ_ERROR_FORMAT;
+    return writer_archive_create_handle(out, path, NULL, options);
+}
+
+/* Create raw and encrypted private files, then initialize the unchanged MPQ writer on raw output.
+ */
+int32_t
+libmpq__writer_archive_create_mpqe(
+    mpq_archive_s **out, const char *path, const uint8_t *auth_code, size_t auth_code_size,
+    const mpq_archive_create_options_s *options
+)
+{
+    FILE *raw = NULL;
+    FILE *encrypted = NULL;
+    char *raw_path = NULL;
+    char *encrypted_path = NULL;
+    char *destination = NULL;
+    uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE];
+    int directory = -1;
+    int32_t result;
+
+    if (out == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *out = NULL;
+    result = libmpq__mpqe_key(key, auth_code, auth_code_size);
+    if (result != LIBMPQ_SUCCESS)
+        return result;
+    result = writer_validate_options(options);
+    if (result != LIBMPQ_SUCCESS) {
+        libmpq__mpqe_clear(key, sizeof(key));
+        return result;
+    }
+    result = destination_directory(path, &directory, &destination);
+    if (result == LIBMPQ_SUCCESS)
+        result = temporary_file(
+            directory, ".libmpq-raw-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", 0600, &raw_path, &raw
+        );
+    if (result == LIBMPQ_SUCCESS)
+        result = temporary_file(
+            directory, ".libmpq-mpqe-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", 0666, &encrypted_path,
+            &encrypted
+        );
+    if (result == LIBMPQ_SUCCESS) {
+        result = writer_archive_create_handle(out, raw_path, raw, options);
+        raw = NULL;
+    }
+    if (result != LIBMPQ_SUCCESS) {
+        if (raw != NULL)
+            (void)fclose(raw);
+        if (encrypted != NULL)
+            (void)fclose(encrypted);
+        if (directory >= 0 && raw_path != NULL)
+            (void)unlinkat(directory, raw_path, 0);
+        if (directory >= 0 && encrypted_path != NULL)
+            (void)unlinkat(directory, encrypted_path, 0);
+        if (directory >= 0)
+            (void)close(directory);
+        free(raw_path);
+        free(encrypted_path);
+        free(destination);
+        libmpq__mpqe_clear(key, sizeof(key));
+        return result;
+    }
+    (*out)->write_mpqe = TRUE;
+    memcpy((*out)->write_mpqe_key, key, sizeof(key));
+    (*out)->write_mpqe_output = encrypted;
+    (*out)->write_mpqe_directory = directory;
+    (*out)->write_mpqe_destination = destination;
+    (*out)->write_mpqe_output_path = encrypted_path;
+    (*out)->write_mpqe_ops = &default_mpqe_ops;
+    encrypted = NULL;
+    encrypted_path = NULL;
+    destination = NULL;
+    directory = -1;
+    free(raw_path);
+    libmpq__mpqe_clear(key, sizeof(key));
+    return LIBMPQ_SUCCESS;
+}
+
 /* Begin streaming one file into the archive using the requested options.
  * It validates flags and duplicate names, allocates one sector of input space,
  * and reserves an offset table when compressed multi-sector storage requires it. */
@@ -501,6 +1022,29 @@ libmpq__writer_file_begin(
         return LIBMPQ_ERROR_FORMAT;
     if (options == NULL)
         options = &defaults;
+    if (libmpq__attributes_write_flags(a) != 0) {
+        uint32_t reserved = 1u + ((a->write_flags & LIBMPQ_ARCHIVE_CREATE_LISTFILE) != 0);
+        uint32_t hash1;
+        uint32_t hash2;
+        uint32_t hash3;
+        uint32_t internal1;
+        uint32_t internal2;
+        uint32_t internal3;
+        if (!a->write_internal &&
+            (reserved > a->write_capacity || a->write_next_block >= a->write_capacity - reserved))
+            return LIBMPQ_ERROR_SIZE;
+        libmpq__file_hash(name, &hash1, &hash2, &hash3);
+        libmpq__file_hash(LIBMPQ_ATTRIBUTES_NAME, &internal1, &internal2, &internal3);
+        if (!a->write_internal && hash1 == internal1 && hash2 == internal2 && hash3 == internal3)
+            return LIBMPQ_ERROR_FORMAT;
+        if (a->write_attributes == NULL) {
+            if ((uint64_t)a->write_capacity * sizeof(*a->write_attributes) > SIZE_MAX)
+                return LIBMPQ_ERROR_SIZE;
+            a->write_attributes = calloc(a->write_capacity, sizeof(*a->write_attributes));
+            if (a->write_attributes == NULL)
+                return LIBMPQ_ERROR_MALLOC;
+        }
+    }
     w = calloc(1, sizeof(*w));
     if (w == NULL)
         return LIBMPQ_ERROR_MALLOC;
@@ -514,8 +1058,12 @@ libmpq__writer_file_begin(
         return LIBMPQ_ERROR_FORMAT;
     }
     if ((options->flags & LIBMPQ_FILE_FLAG_COMPRESS) &&
-        (!libmpq__compression_supported_mask(options->compression_first) ||
-         !libmpq__compression_supported_mask(options->compression_next))) {
+        (!libmpq__compression_allowed(
+             a->mpq_header.version, options->compression_first, compression_policy(a)
+         ) ||
+         !libmpq__compression_allowed(
+             a->mpq_header.version, options->compression_next, compression_policy(a)
+         ))) {
         free(w);
         return LIBMPQ_ERROR_FORMAT;
     }
@@ -558,8 +1106,17 @@ libmpq__writer_file_begin(
     w->archive = a;
     w->expected = size;
     w->options = *options;
+    if (size == 0 || (w->options.flags & LIBMPQ_FILE_FLAG_SINGLE) != 0 ||
+        (w->options.flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE)) == 0)
+        w->options.flags &= ~LIBMPQ_FILE_FLAG_SECTOR_CRC;
     w->options.compression_first &=
         ~(LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO);
+
+    /* STANDARD v2 keeps the first WAVE sector lossless without standalone Huffman. */
+    if (!libmpq__compression_allowed(
+            a->mpq_header.version, w->options.compression_first, compression_policy(a)
+        ))
+        w->options.compression_first = LIBMPQ_COMPRESSION_ZLIB;
     if (w->options.compression_next == 0)
         w->options.compression_next = w->options.compression_first;
     if (a->write_sector_size == 0) {
@@ -578,9 +1135,19 @@ libmpq__writer_file_begin(
     /* Reserve offset-table space before the first packed sector is written. */
     if (!(w->options.flags & LIBMPQ_FILE_FLAG_SINGLE) &&
         (w->options.flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE))) {
-        size_t table_size = (size_t)(w->block_count + 1) * 4;
-        w->offsets = calloc(w->block_count + 1, sizeof(*w->offsets));
-        if (w->offsets == NULL || table_size > UINT32_MAX) {
+        uint32_t crc = (w->options.flags & LIBMPQ_FILE_FLAG_SECTOR_CRC) != 0;
+        uint64_t entries = (uint64_t)w->block_count + 1 + crc;
+        uint64_t allocated = entries + (crc ? w->block_count : 0);
+        size_t table_size;
+        if (entries > UINT32_MAX / 4 || allocated > SIZE_MAX / sizeof(*w->offsets)) {
+            free(w->data);
+            free(w->name);
+            free(w);
+            return LIBMPQ_ERROR_SIZE;
+        }
+        table_size = (size_t)entries * 4;
+        w->offsets = calloc((size_t)allocated, sizeof(*w->offsets));
+        if (w->offsets == NULL) {
             free(w->offsets);
             free(w->data);
             free(w->name);
@@ -588,6 +1155,8 @@ libmpq__writer_file_begin(
             return LIBMPQ_ERROR_MALLOC;
         }
         w->offsets[0] = (uint32_t)table_size;
+        if (crc)
+            w->checksums = w->offsets + (size_t)entries;
         if (fseeko(a->fp, (off_t)(w->payload_offset + table_size), SEEK_SET) < 0) {
             free(w->offsets);
             free(w->data);
@@ -597,6 +1166,9 @@ libmpq__writer_file_begin(
         }
     }
     a->write_current = w;
+    w->attributes.flags = libmpq__attributes_write_flags(a);
+    if (w->attributes.flags & LIBMPQ_ATTRIBUTE_MD5)
+        libmpq__md5_init(&w->md5);
     *out = w;
     return LIBMPQ_SUCCESS;
 }
@@ -614,6 +1186,10 @@ libmpq__writer_file_write(mpq_writer_s *w, const uint8_t *buffer, libmpq__off_t 
     while (size != 0) {
         uint32_t room = w->archive->write_sector_size - w->data_size;
         uint32_t take = (uint32_t)((size < room) ? size : room);
+        if (w->attributes.flags & LIBMPQ_ATTRIBUTE_CRC32)
+            w->attributes.crc32 = (uint32_t)crc32(w->attributes.crc32, buffer, take);
+        if (w->attributes.flags & LIBMPQ_ATTRIBUTE_MD5)
+            libmpq__md5_update(&w->md5, buffer, take);
         memcpy(w->data + w->data_size, buffer, take);
         w->data_size += take;
         w->written += take;
@@ -625,6 +1201,21 @@ libmpq__writer_file_write(mpq_writer_s *w, const uint8_t *buffer, libmpq__off_t 
                 return result;
         }
     }
+    return LIBMPQ_SUCCESS;
+}
+
+/* Assign FILETIME without importing filesystem state or altering file bytes.
+ * Only the currently active writer can accept this metadata. */
+int32_t
+libmpq__writer_file_timestamp(mpq_writer_s *writer, uint64_t filetime)
+{
+    if (writer == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (writer->archive->write_current != writer)
+        return LIBMPQ_ERROR_NOT_INITIALIZED;
+    if (!(writer->attributes.flags & LIBMPQ_ATTRIBUTE_FILETIME))
+        return LIBMPQ_ERROR_FORMAT;
+    writer->attributes.filetime = filetime;
     return LIBMPQ_SUCCESS;
 }
 
@@ -732,5 +1323,9 @@ libmpq__writer_file_add_path(
 int32_t
 libmpq__writer_finalize(mpq_archive_s *a)
 {
+    if (a == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (a->write_mpqe && a->write_mpqe_ops != NULL)
+        return a->write_mpqe_ops->finalize(a);
     return finalize_archive(a);
 }

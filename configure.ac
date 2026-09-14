@@ -1,6 +1,6 @@
 # Initialize the Autoconf package metadata.
-AC_INIT([libmpq],[0.6.1],[mbroemme@libmpq.org],[libmpq])
-AC_SUBST(LIBMPQ_ABI, [3:0:2])
+AC_INIT([libmpq],[0.7.0],[mbroemme@libmpq.org],[libmpq])
+AC_SUBST(LIBMPQ_ABI, [4:0:0])
 
 # Detect the canonical host and target build environments.
 AC_CANONICAL_TARGET
@@ -62,6 +62,17 @@ AC_CHECK_LIB([z], [inflateEnd], [], [AC_MSG_ERROR([*** inflateEnd is required, i
 # Check for the bzip2 compression library.
 AC_CHECK_HEADER([bzlib.h], [], [AC_MSG_ERROR([*** bzlib.h is required, install bzip2 header files])])
 AC_CHECK_LIB([bz2], [BZ2_bzDecompressInit], [], [AC_MSG_ERROR([*** BZ2_bzDecompressInit is required, install bzip2 library files])])
+
+# Check for the liblzma compression library.
+AC_CHECK_HEADER([lzma.h], [], [AC_MSG_ERROR([*** lzma.h is required, install xz header files])])
+AC_CHECK_LIB([lzma], [lzma_code], [], [AC_MSG_ERROR([*** liblzma is required, install liblzma library files])])
+AC_CHECK_FUNCS([
+	lzma_properties_decode
+	lzma_properties_encode
+	lzma_raw_buffer_encode
+	lzma_raw_decoder
+	lzma_raw_decoder_memusage
+], [], [AC_MSG_ERROR([*** required raw liblzma APIs are unavailable])])
 
 # Generate package metadata and the runtime configuration script.
 AC_CONFIG_FILES([libmpq.pc])

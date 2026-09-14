@@ -28,18 +28,22 @@ import java.util.Objects;
  * strings and buffers, and translates failures into {@code LibmpqException}.
  */
 public final class LibmpqNative {
+    private static final Linker LINKER = Linker.nativeLinker();
     private static final ValueLayout.OfInt C_INT = ValueLayout.JAVA_INT.withOrder(ByteOrder.nativeOrder());
     private static final ValueLayout.OfShort C_SHORT =
         ValueLayout.JAVA_SHORT.withOrder(ByteOrder.nativeOrder());
     private static final ValueLayout.OfLong C_LONG = ValueLayout.JAVA_LONG.withOrder(ByteOrder.nativeOrder());
+    private static final ValueLayout C_SIZE_T = canonicalValueLayout("size_t");
 
     /**
-     * Native layout of {@code struct mpq_archive_create_options_s}: four
-     * native-endian int32 fields for version, capacity, sector size, and flags.
+     * Native layout of {@code struct mpq_archive_create_options_s}: five
+     * native-endian uint32 fields for version, capacity, sector size, flags,
+     * and attributes. Nonzero attributes reserve one internal file slot.
      */
     public static final MemoryLayout ARCHIVE_OPTIONS = MemoryLayout.structLayout(
         C_INT.withName("version"), C_INT.withName("max_files"),
-        C_INT.withName("sector_size"), C_INT.withName("flags"));
+        C_INT.withName("sector_size"), C_INT.withName("flags"),
+        C_INT.withName("attributes"));
     /**
      * Native layout of {@code struct mpq_file_options_s}: three int32 fields
      * followed by two native-endian uint16-compatible locale fields.
@@ -50,14 +54,34 @@ public final class LibmpqNative {
         C_SHORT.withName("platform"));
 
     private static final MethodHandle VERSION;
+    private static final MethodHandle ARCHIVE_ATTRIBUTES;
+    private static final MethodHandle FILE_ATTRIBUTES;
+    private static final MethodHandle WRITER_TIMESTAMP;
+
+    /** 40-byte native result with explicit reserved bytes, not the disk layout. */
+    public static final MemoryLayout FILE_ATTRIBUTES_LAYOUT = attributesLayout();
+
+    private static MemoryLayout attributesLayout() {
+        long alignment = canonicalValueLayout("long long").byteAlignment();
+        return MemoryLayout.structLayout(
+            C_INT.withName("flags"), C_INT.withName("crc32"),
+            C_LONG.withByteAlignment(alignment).withName("filetime"),
+            MemoryLayout.sequenceLayout(16, ValueLayout.JAVA_BYTE).withName("md5"),
+            C_INT.withName("patch_bit"),
+            MemoryLayout.sequenceLayout(4, ValueLayout.JAVA_BYTE).withName("reserved")
+        );
+    }
     private static final MethodHandle STRERROR;
+    private static final MethodHandle ARCHIVE_COMPRESSION_ALLOWED;
     private static final MethodHandle ARCHIVE_OPEN;
+    private static final MethodHandle ARCHIVE_OPEN_MPQE;
     private static final MethodHandle ARCHIVE_CREATE;
-    private static final MethodHandle FILE_BEGIN;
-    private static final MethodHandle FILE_WRITE;
-    private static final MethodHandle FILE_FINISH;
-    private static final MethodHandle FILE_ADD;
-    private static final MethodHandle FILE_ADD_PATH;
+    private static final MethodHandle ARCHIVE_CREATE_MPQE;
+    private static final MethodHandle WRITER_BEGIN;
+    private static final MethodHandle WRITER_WRITE;
+    private static final MethodHandle WRITER_FINISH;
+    private static final MethodHandle ARCHIVE_ADD_DATA;
+    private static final MethodHandle ARCHIVE_ADD_PATH;
     private static final MethodHandle ARCHIVE_CLONE;
     private static final MethodHandle ARCHIVE_CLOSE;
     private static final MethodHandle ARCHIVE_SIZE_PACKED;
@@ -69,48 +93,68 @@ public final class LibmpqNative {
     private static final MethodHandle FILE_SIZE_UNPACKED;
     private static final MethodHandle FILE_OFFSET;
     private static final MethodHandle FILE_BLOCKS;
-    private static final MethodHandle FILE_ENCRYPTED;
-    private static final MethodHandle FILE_COMPRESSED;
-    private static final MethodHandle FILE_IMPLODED;
+    private static final MethodHandle FILE_FLAGS;
     private static final MethodHandle FILE_NUMBER;
     private static final MethodHandle FILE_HASH;
     private static final MethodHandle FILE_NUMBER_FROM_HASH;
     private static final MethodHandle FILE_READ;
-    private static final MethodHandle BLOCK_OPEN_OFFSET;
-    private static final MethodHandle BLOCK_CLOSE_OFFSET;
+    private static final MethodHandle FILE_VERIFY;
+    private static final MethodHandle BLOCK_VERIFY;
     private static final MethodHandle BLOCK_SIZE_UNPACKED;
+    private static final MethodHandle BLOCK_SIZE_PACKED;
+    private static final MethodHandle BLOCK_COMPRESSION;
     private static final MethodHandle BLOCK_READ;
 
     static {
         SymbolLookup lookup = loadLibrary();
-        Linker linker = Linker.nativeLinker();
+        Linker linker = LINKER;
+        ARCHIVE_ATTRIBUTES = uintMetadata(linker, lookup, "libmpq__archive_attributes");
+        FILE_ATTRIBUTES = function(linker, lookup, "libmpq__file_attributes",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS));
+        FILE_VERIFY = function(linker, lookup, "libmpq__file_verify",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, C_INT, ValueLayout.ADDRESS));
+        BLOCK_VERIFY = function(linker, lookup, "libmpq__block_verify",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, C_INT,
+                                  ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+        WRITER_TIMESTAMP = function(linker, lookup, "libmpq__writer_timestamp",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_LONG));
         VERSION = function(linker, lookup, "libmpq__version",
                            FunctionDescriptor.of(ValueLayout.ADDRESS));
         STRERROR = function(linker, lookup, "libmpq__strerror",
                             FunctionDescriptor.of(ValueLayout.ADDRESS, C_INT));
+        ARCHIVE_COMPRESSION_ALLOWED = function(linker, lookup, "libmpq__archive_compression_allowed",
+                                         FunctionDescriptor.of(C_INT, C_INT, C_INT, C_INT));
         ARCHIVE_OPEN = function(linker, lookup, "libmpq__archive_open",
                                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                       ValueLayout.ADDRESS, C_LONG));
+        ARCHIVE_OPEN_MPQE = function(linker, lookup, "libmpq__archive_open_mpqe",
+                                     FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
+                                                           ValueLayout.ADDRESS, C_LONG,
+                                                           ValueLayout.ADDRESS, C_SIZE_T));
         ARCHIVE_CREATE = function(linker, lookup, "libmpq__archive_create",
                                   FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                         ValueLayout.ADDRESS, ValueLayout.ADDRESS));
-        FILE_BEGIN = function(linker, lookup, "libmpq__file_begin",
+        WRITER_BEGIN = function(linker, lookup, "libmpq__writer_begin",
                               FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                     ValueLayout.ADDRESS, C_LONG,
                                                     ValueLayout.ADDRESS, ValueLayout.ADDRESS));
-        FILE_WRITE = function(linker, lookup, "libmpq__file_write",
+        WRITER_WRITE = function(linker, lookup, "libmpq__writer_write",
                               FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                     ValueLayout.ADDRESS, C_LONG));
-        FILE_FINISH = function(linker, lookup, "libmpq__file_finish",
+        WRITER_FINISH = function(linker, lookup, "libmpq__writer_finish",
                                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
-        FILE_ADD = function(linker, lookup, "libmpq__file_add",
+        ARCHIVE_ADD_DATA = function(linker, lookup, "libmpq__archive_add_data",
                             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                   ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                                   C_LONG, ValueLayout.ADDRESS));
-        FILE_ADD_PATH = function(linker, lookup, "libmpq__file_add_path",
+        ARCHIVE_ADD_PATH = function(linker, lookup, "libmpq__archive_add_path",
                                  FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                        ValueLayout.ADDRESS, ValueLayout.ADDRESS,
-                                                       ValueLayout.ADDRESS));
+                                                        ValueLayout.ADDRESS));
+        ARCHIVE_CREATE_MPQE = function(linker, lookup, "libmpq__archive_create_mpqe",
+                                       FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
+                                                             ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                                             C_SIZE_T, ValueLayout.ADDRESS));
         ARCHIVE_CLONE = function(linker, lookup, "libmpq__archive_clone",
                                  FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                        ValueLayout.ADDRESS));
@@ -125,9 +169,7 @@ public final class LibmpqNative {
         FILE_SIZE_UNPACKED = fileMetadata(linker, lookup, "libmpq__file_size_unpacked");
         FILE_OFFSET = fileMetadata(linker, lookup, "libmpq__file_offset");
         FILE_BLOCKS = fileUintMetadata(linker, lookup, "libmpq__file_blocks");
-        FILE_ENCRYPTED = fileUintMetadata(linker, lookup, "libmpq__file_encrypted");
-        FILE_COMPRESSED = fileUintMetadata(linker, lookup, "libmpq__file_compressed");
-        FILE_IMPLODED = fileUintMetadata(linker, lookup, "libmpq__file_imploded");
+        FILE_FLAGS = fileUintMetadata(linker, lookup, "libmpq__file_flags");
         FILE_NUMBER = function(linker, lookup, "libmpq__file_number",
                                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                      ValueLayout.ADDRESS, ValueLayout.ADDRESS));
@@ -142,10 +184,10 @@ public final class LibmpqNative {
                              FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT,
                                                    ValueLayout.ADDRESS, C_LONG,
                                                    ValueLayout.ADDRESS));
-        BLOCK_OPEN_OFFSET = function(linker, lookup, "libmpq__block_open_offset",
-                                     FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT));
-        BLOCK_CLOSE_OFFSET = function(linker, lookup, "libmpq__block_close_offset",
-                                      FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT));
+        BLOCK_SIZE_PACKED = function(linker, lookup, "libmpq__block_size_packed",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, C_INT, ValueLayout.ADDRESS));
+        BLOCK_COMPRESSION = function(linker, lookup, "libmpq__block_compression",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, C_INT, ValueLayout.ADDRESS));
         BLOCK_SIZE_UNPACKED = function(linker, lookup, "libmpq__block_size_unpacked",
                                        FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT,
                                                              C_INT, ValueLayout.ADDRESS));
@@ -173,6 +215,34 @@ public final class LibmpqNative {
         MemorySegment address = lookup.find(name)
             .orElseThrow(() -> new UnsatisfiedLinkError("Missing libmpq symbol: " + name));
         return linker.downcallHandle(address, descriptor);
+    }
+
+    /** Returns the platform linker layout for one named native scalar type. */
+    private static ValueLayout canonicalValueLayout(String name) {
+        MemoryLayout layout = LINKER.canonicalLayouts().get(name);
+        if (!(layout instanceof ValueLayout valueLayout)) {
+            throw new IllegalStateException("Missing native value layout: " + name);
+        }
+        return valueLayout;
+    }
+
+    /** Converts a non-negative Java length without truncating native size_t. */
+    private static Object nativeSizeT(long value) {
+        Class<?> carrier = C_SIZE_T.carrier();
+
+        if (value < 0) {
+            throw new IllegalArgumentException("size_t value must not be negative: " + value);
+        }
+        if (carrier == long.class) {
+            return value;
+        }
+        if (carrier == int.class) {
+            if (value > Integer.toUnsignedLong(-1)) {
+                throw new IllegalArgumentException("size_t value is too large: " + value);
+            }
+            return (int) value;
+        }
+        throw new IllegalStateException("Unsupported native size_t carrier: " + carrier);
     }
 
     /** Builds a handle for archive int64 output queries returning a status. */
@@ -236,34 +306,78 @@ public final class LibmpqNative {
      * The pointer is borrowed and has static-library lifetime.
      */
     public static MemorySegment strerror(int code) { return callAddress(STRERROR, code); }
+    /**
+     * Returns 1 if compression is allowed for the version and policy, otherwise 0.
+     * Both policy and the return value are native int32_t values.
+     */
+    public static int archiveCompressionAllowed(int version, int mask, int policy) {
+        return callInt(ARCHIVE_COMPRESSION_ALLOWED, version, mask, policy);
+    }
     /** Calls {@code libmpq__archive_open} and writes the resulting handle to out. */
     public static int archiveOpen(MemorySegment out, MemorySegment path, long offset) {
         return callInt(ARCHIVE_OPEN, out, path, offset);
+    }
+    /** Calls {@code libmpq__archive_open_mpqe} with borrowed authentication bytes. */
+    public static int archiveOpenMpqe(MemorySegment out, MemorySegment path, long offset,
+                                      MemorySegment authCode, long authCodeSize) {
+        return callInt(ARCHIVE_OPEN_MPQE, out, path, offset, authCode, nativeSizeT(authCodeSize));
     }
     /** Calls {@code libmpq__archive_create} with a native options struct. */
     public static int archiveCreate(MemorySegment out, MemorySegment path, MemorySegment options) {
         return callInt(ARCHIVE_CREATE, out, path, options);
     }
+    /** Calls {@code libmpq__archive_create_mpqe} with borrowed authentication bytes. */
+    public static int archiveCreateMpqe(MemorySegment out, MemorySegment path,
+                                        MemorySegment authCode, long authCodeSize,
+                                        MemorySegment options) {
+        return callInt(ARCHIVE_CREATE_MPQE, out, path, authCode, nativeSizeT(authCodeSize), options);
+    }
     /** Starts a native streaming entry and writes its writer handle to out. */
-    public static int fileBegin(MemorySegment archive, MemorySegment name, long size,
+    public static int writerBegin(MemorySegment archive, MemorySegment name, long size,
                                 MemorySegment options, MemorySegment out) {
-        return callInt(FILE_BEGIN, archive, name, size, options, out);
+        return callInt(WRITER_BEGIN, archive, name, size, options, out);
     }
     /** Appends one native buffer to an active streaming writer. */
-    public static int fileWrite(MemorySegment writer, MemorySegment buffer, long size) {
-        return callInt(FILE_WRITE, writer, buffer, size);
+    public static int writerWrite(MemorySegment writer, MemorySegment buffer, long size) {
+        return callInt(WRITER_WRITE, writer, buffer, size);
     }
     /** Finalizes a native streaming writer and publishes its entry. */
-    public static int fileFinish(MemorySegment writer) { return callInt(FILE_FINISH, writer); }
+    public static int writerFinish(MemorySegment writer) { return callInt(WRITER_FINISH, writer); }
+
+    /** Query attributes presence flags without treating missing metadata as zero flags. */
+    public static int archiveAttributes(MemorySegment archive, MemorySegment flags) {
+        return callInt(ARCHIVE_ATTRIBUTES, archive, flags);
+    }
+
+    /** Read a native aligned attributes result for one public file number. */
+    public static int fileAttributes(MemorySegment archive, int number, MemorySegment output) {
+        return callInt(FILE_ATTRIBUTES, archive, number, output);
+    }
+
+    /** Verify available checksums; mismatches receives a subset of flags, or zero on error. */
+    public static int fileVerify(MemorySegment archive, int number, int flags, MemorySegment mismatches) {
+        return callInt(FILE_VERIFY, archive, number, flags, mismatches);
+    }
+
+    /** Return the stored sector Adler-32 and mismatch bit; both outputs are zero on error. */
+    public static int blockVerify(MemorySegment archive, int number, int block,
+                                  MemorySegment checksum, MemorySegment mismatches) {
+        return callInt(BLOCK_VERIFY, archive, number, block, checksum, mismatches);
+    }
+
+    /** Supply unsigned Windows FILETIME bits, not Unix time, to an active writer. */
+    public static int writerTimestamp(MemorySegment writer, long filetime) {
+        return callInt(WRITER_TIMESTAMP, writer, filetime);
+    }
     /** Adds a complete native buffer as one archive entry. */
-    public static int fileAdd(MemorySegment archive, MemorySegment name, MemorySegment buffer,
+    public static int archiveAddData(MemorySegment archive, MemorySegment name, MemorySegment buffer,
                               long size, MemorySegment options) {
-        return callInt(FILE_ADD, archive, name, buffer, size, options);
+        return callInt(ARCHIVE_ADD_DATA, archive, name, buffer, size, options);
     }
     /** Adds a filesystem path as one archive entry. */
-    public static int fileAddPath(MemorySegment archive, MemorySegment name, MemorySegment path,
+    public static int archiveAddPath(MemorySegment archive, MemorySegment name, MemorySegment path,
                                   MemorySegment options) {
-        return callInt(FILE_ADD_PATH, archive, name, path, options);
+        return callInt(ARCHIVE_ADD_PATH, archive, name, path, options);
     }
     /** Reopens an archive into an independent native handle. */
     public static int archiveClone(MemorySegment out, MemorySegment archive) {
@@ -293,9 +407,7 @@ public final class LibmpqNative {
     public static int fileUint(MemorySegment archive, int number, MemorySegment output, int kind) {
         MethodHandle handle = switch (kind) {
             case 0 -> FILE_BLOCKS;
-            case 1 -> FILE_ENCRYPTED;
-            case 2 -> FILE_COMPRESSED;
-            case 3 -> FILE_IMPLODED;
+            case 1 -> FILE_FLAGS;
             default -> throw new IllegalArgumentException("Unknown file query: " + kind);
         };
         return callInt(handle, archive, number, output);
@@ -319,15 +431,16 @@ public final class LibmpqNative {
                                MemorySegment transferred) {
         return callInt(FILE_READ, archive, number, output, size, transferred);
     }
-    /** Opens one file's native sector-offset table reference. */
-    public static int blockOpenOffset(MemorySegment archive, int number) {
-        return callInt(BLOCK_OPEN_OFFSET, archive, number);
+    /** Queries one sector's stored size, excluding offset/checksum tables. */
+    public static int blockSizePacked(MemorySegment archive, int number, int block, MemorySegment output) {
+        return callInt(BLOCK_SIZE_PACKED, archive, number, block, output);
     }
-    /** Releases one native sector-offset table reference. */
-    public static int blockCloseOffset(MemorySegment archive, int number) {
-        return callInt(BLOCK_CLOSE_OFFSET, archive, number);
+
+    public static int blockCompression(MemorySegment archive, int number, int block, MemorySegment output) {
+        return callInt(BLOCK_COMPRESSION, archive, number, block, output);
     }
-    /** Queries one decoded sector's unpacked size. */
+
+    /** Return one block's unpacked size. */
     public static int blockSize(MemorySegment archive, int number, int block, MemorySegment output) {
         return callInt(BLOCK_SIZE_UNPACKED, archive, number, block, output);
     }
@@ -342,11 +455,12 @@ public final class LibmpqNative {
      * layout expected by {@code libmpq__archive_create}.
      */
     public static void setArchiveOptions(MemorySegment memory, int version, int maxFiles,
-                                          int sectorSize, int flags) {
+                                          int sectorSize, int flags, int attributes) {
         memory.set(C_INT, 0, version);
         memory.set(C_INT, 4, maxFiles);
         memory.set(C_INT, 8, sectorSize);
         memory.set(C_INT, 12, flags);
+        memory.set(C_INT, 16, attributes);
     }
 
     /**

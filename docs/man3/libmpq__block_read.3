@@ -23,10 +23,10 @@ libmpq__block_read \- read, decrypt, and decompress one archive block.
 .BI "int32_t libmpq__block_read("
 .BI "        mpq_archive_s  *" "mpq_archive",
 .BI "        uint32_t        " "file_number",
-.BI "        uint32_t        " "block_number,
+.BI "        uint32_t        " "block_number",
 .BI "        uint8_t        *" "out_buf",
 .BI "        libmpq__off_t   " "out_size",
-.BI "        libmpq__off_t *" "transferred"
+.BI "        libmpq__off_t  *" "transferred"
 .BI ");"
 .fi
 .SH DESCRIPTION
@@ -39,16 +39,12 @@ The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The \fIfile_number\fP and \fIblock_number\fP
 arguments select the block. \fIout_buf\fP and \fIout_size\fP specify the
 output buffer. The function stores the number of bytes written in
-\fItransferred\fP.
+\fItransferred\fP. Offset-table caching is managed internally for this read.
 .SH RETURN VALUE
 On success, a zero is returned and on error one of the following constants.
 .TP
 .B LIBMPQ_ERROR_EXIST
 Block does not exist in archive.
-.TP
-.B LIBMPQ_ERROR_OPEN
-The block offset table is not open. Call
-\fBlibmpq__block_open_offset\fP() before reading the block.
 .TP
 .B LIBMPQ_ERROR_SIZE
 The output buffer is too small.
@@ -68,6 +64,7 @@ Decrypting the block failed.
 .B LIBMPQ_ERROR_UNPACK
 Decompressing the block failed.
 .SH SEE ALSO
+.BR libmpq__block_compression (3),
 .BR libmpq__file_read (3)
 .SH AUTHOR
 The libmpq project is maintained by
