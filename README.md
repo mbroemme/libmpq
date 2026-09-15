@@ -206,10 +206,10 @@ available through `man 3 libmpq`.
 
 ## Native C SDK packages
 
-Release downloads provide prebuilt x86_64 native C SDKs for Linux glibc,
-Linux musl, Windows MSVC, and Windows MinGW-w64. Each SDK includes public
-headers, a shared library, platform-appropriate import libraries or development
-metadata, licenses, and documentation.
+Individual release downloads provide prebuilt x86_64 native C SDKs for Linux
+glibc, Linux musl, Windows MSVC, and Windows MinGW-w64. Each SDK includes
+public headers, a shared library, platform-appropriate import libraries or
+development metadata, licenses, and documentation.
 
 Linux SDKs use the relevant system runtime and codec dependencies. Windows SDK
 ZIPs bundle the required non-system runtime DLLs under `bin/`; choose the MSVC

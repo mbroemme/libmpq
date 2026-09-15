@@ -121,7 +121,7 @@ jobs:
           if-no-files-found: error
 
   package:
-    name: Assemble native C SDK release
+    name: Collect native C SDK release archives
     needs: [binary-glibc, binary-musl]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -137,34 +137,9 @@ jobs:
           path: release/packages
           merge-multiple: true
 
-      - name: Assemble native C SDK ZIP
-        run: |
-          set -euxo pipefail
-          tag="${GITHUB_REF_NAME}"
-          version="${tag#v}"
-          if [[ "${tag}" != v* ]]; then
-            echo 'Native release packaging requires a v* tag.' >&2
-            exit 1
-          fi
-          mapfile -t packages < <(
-            find release/packages -maxdepth 1 -type f \
-              -name "libmpq-${version}-linux-*.tar.gz" -print | sort
-          )
-          if ((${#packages[@]} == 0)); then
-            echo 'No native SDK packages were downloaded.' >&2
-            exit 1
-          fi
-          mkdir -p release/package
-          cp "${packages[@]}" release/package/
-          (
-            cd release/package
-            zip -q "../libmpq-native-${version}.zip" ./*
-          )
-          unzip -t "release/libmpq-native-${version}.zip"
-
       - name: Upload native C SDK release
         uses: actions/upload-artifact@v7
         with:
           name: libmpq-native-release
-          path: release/libmpq-native-*.zip
+          path: release/packages/libmpq-*-linux-*.tar.gz
           if-no-files-found: error

@@ -188,8 +188,7 @@ complete download list.
 
 ### Linux
 
-The native binary release, `libmpq-native-X.Y.Z.zip`, contains relocatable
-x86_64 Linux SDK archives:
+Linux SDKs are available as individual relocatable x86_64 release archives:
 
 * `libmpq-X.Y.Z-linux-glibc-x86_64.tar.gz` for glibc 2.17 and later.
 * `libmpq-X.Y.Z-linux-musl-x86_64.tar.gz` for musl 1.2 and later.
@@ -358,9 +357,10 @@ key `libmpq-release-signing-key.asc`.
 | Package | Release archive | Contents |
 | --- | --- | --- |
 | Source distributions | `libmpq-X.Y.Z.tar.gz`, `libmpq-X.Y.Z.tar.bz2` | Configure-ready Automake distributions |
-| Native C SDK — Linux | `libmpq-native-X.Y.Z.zip` | glibc and musl x86_64 SDK packages |
-| Native C SDK — Windows MSVC | `libmpq-X.Y.Z-windows-msvc-x64.zip` | Shared DLL, `.lib` import library, headers, runtime DLLs, licenses, optional PDB |
-| Native C SDK — Windows MinGW | `libmpq-X.Y.Z-windows-mingw-x86_64.zip` | Shared DLL, `.dll.a` import library, headers, relocatable metadata, runtime DLLs, licenses |
+| Native C SDK - Linux glibc x86_64 | `libmpq-X.Y.Z-linux-glibc-x86_64.tar.gz` | Relocatable glibc SDK |
+| Native C SDK - Linux musl x86_64 | `libmpq-X.Y.Z-linux-musl-x86_64.tar.gz` | Relocatable musl SDK |
+| Native C SDK - Windows MSVC x64 | `libmpq-X.Y.Z-windows-msvc-x64.zip` | Shared DLL, `.lib` import library, headers, runtime DLLs, licenses, optional PDB |
+| Native C SDK - Windows MinGW x86_64 | `libmpq-X.Y.Z-windows-mingw-x86_64.zip` | Shared DLL, `.dll.a` import library, headers, relocatable metadata, runtime DLLs, licenses |
 | Python package | `libmpq-python-X.Y.Z.zip` | Python sdist and all wheels |
 | Java package | `libmpq-java-X.Y.Z.zip` | Runtime, sources, Javadoc, licenses, and README |
 | D package | `libmpq-d-X.Y.Z.zip` | D source and compiler/platform packages |
@@ -384,7 +384,7 @@ layout checks run before upload. The Bash helper tests also run in normal CI.
 
 Source packaging uses `make distcheck` followed by `make dist-bzip2` to produce
 gzip and bzip2 archives, and runs CMake/CTest from an extracted source archive.
-The final job requires all eight archives listed above and generates one
+The final job requires all archives listed above and generates one
 filename-sorted `SHA256SUMS` covering them. The existing `GPG_PRIVATE_KEY` and
 `GPG_PASSPHRASE` secrets sign that manifest; publication fails rather than
 falling back to unsigned checksums.
