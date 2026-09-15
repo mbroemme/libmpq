@@ -86,6 +86,9 @@ for toolchain in msvc mingw; do
 		--source "${project}" --output "${output}" --version 0.7.1)
 	reset_stage
 	bash "${project}/scripts/package-windows.sh" prepare "${options[@]}"
+	for document in README.md DEVELOPER.md MPQ.md; do
+		cmp "${project}/${document}" "${stage}/${document}"
+	done
 	[[ -f "${stage}/bin/Codec.DLL" && -f "${stage}/bin/helper.dll" ]]
 	[[ ! -e "${stage}/bin/KERNEL32.DLL" && ! -e "${stage}/runtime-dependencies.json" ]]
 	if [[ "${toolchain}" == msvc ]]; then
@@ -97,6 +100,9 @@ for toolchain in msvc mingw; do
 	fi
 	bash "${project}/scripts/package-windows.sh" archive "${options[@]}" > "${temporary}/zip.log"
 	unzip -t "${output}" > /dev/null
+	for document in README.md DEVELOPER.md MPQ.md; do
+		unzip -p "${output}" "${stage##*/}/${document}" | cmp "${project}/${document}" -
+	done
 	expect_failure bash "${project}/scripts/package-windows.sh" archive "${options[@]}"
 	grep -q 'Refusing to overwrite' "${temporary}/failure.log"
 
