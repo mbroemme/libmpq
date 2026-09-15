@@ -181,6 +181,13 @@ stays lossless (zlib for STANDARD v2).
 
 ## Native C SDK packages
 
+Prebuilt SDKs provide public headers, a shared library, development metadata,
+licenses, and documentation. Choose the package matching your platform and
+compiler; see the [release package summary](#release-package-summary) for the
+complete download list.
+
+### Linux
+
 The native binary release, `libmpq-native-X.Y.Z.zip`, contains relocatable
 x86_64 Linux SDK archives:
 
@@ -208,6 +215,30 @@ libmpq-config --prefix="${LIBMPQ_ROOT}" --libs
 man 1 libmpq-config
 man 3 libmpq
 ```
+
+### Windows MSVC
+
+Extract `libmpq-X.Y.Z-windows-msvc-x64.zip`. The SDK contains
+`bin/libmpq.dll`, the `lib/libmpq.lib` import library, and the public header
+`include/libmpq/mpq.h`. Required non-system runtime DLLs are bundled under
+`bin/`, together with `libmpq.pdb` when available.
+
+Add the SDK's `include/` directory to your compiler's include search path and
+link against `lib/libmpq.lib`. Put the SDK's `bin/` directory on `PATH` when
+running applications. No libmpq-specific consumer preprocessor define is
+required.
+
+### Windows MinGW-w64
+
+Extract `libmpq-X.Y.Z-windows-mingw-x86_64.zip`. The SDK contains
+`bin/libmpq*.dll`, the `lib/libmpq.dll.a` import library, and the public header
+`include/libmpq/mpq.h`. Required non-system runtime DLLs are bundled under
+`bin/`. No libmpq-specific consumer preprocessor define is required.
+
+Add `lib/pkgconfig/` to `PKG_CONFIG_PATH` and use
+`pkg-config --cflags --libs libmpq` for compiler and linker flags. The SDK also
+provides `bin/libmpq-config` for use from a shell such as MSYS2 Bash. Put the
+SDK's `bin/` directory on `PATH` when running applications.
 
 ## Binding development
 
@@ -314,21 +345,57 @@ project metadata, and API information.
 
 ## Release package summary
 
-The top-level release workflow publishes outer archives for the language
-bindings and the native binary SDK. These archives are included in the signed
-global `SHA256SUMS`:
+Pushing a `vX.Y.Z` tag runs the top-level release workflow. It rejects tags that
+do not exactly match `AC_INIT` and the CMake project version. Build jobs remain
+read-only; only the final job receives `contents: write` through `GITHUB_TOKEN`.
+
+All source, binding, Linux, and Windows packages are built before publication.
+The Windows SDKs add to the existing release set; they do not replace the Linux
+SDK or binding archives. The signed GitHub Release includes `SHA256SUMS`
+covering every archive, its detached signature `SHA256SUMS.asc`, and the public
+key `libmpq-release-signing-key.asc`.
 
 | Package | Release archive | Contents |
 | --- | --- | --- |
-| Native C SDK | `libmpq-native-X.Y.Z.zip` | glibc and musl x86_64 SDK packages |
-| Python | `libmpq-python-X.Y.Z.zip` | Python sdist and all wheels |
-| Java | `libmpq-java-X.Y.Z.zip` | Runtime, sources, Javadoc, licenses, and README |
-| D | `libmpq-d-X.Y.Z.zip` | D source and compiler/platform packages |
+| Source distributions | `libmpq-X.Y.Z.tar.gz`, `libmpq-X.Y.Z.tar.bz2` | Configure-ready Automake distributions |
+| Native C SDK — Linux | `libmpq-native-X.Y.Z.zip` | glibc and musl x86_64 SDK packages |
+| Native C SDK — Windows MSVC | `libmpq-X.Y.Z-windows-msvc-x64.zip` | Shared DLL, `.lib` import library, headers, runtime DLLs, licenses, optional PDB |
+| Native C SDK — Windows MinGW | `libmpq-X.Y.Z-windows-mingw-x86_64.zip` | Shared DLL, `.dll.a` import library, headers, relocatable metadata, runtime DLLs, licenses |
+| Python package | `libmpq-python-X.Y.Z.zip` | Python sdist and all wheels |
+| Java package | `libmpq-java-X.Y.Z.zip` | Runtime, sources, Javadoc, licenses, and README |
+| D package | `libmpq-d-X.Y.Z.zip` | D source and compiler/platform packages |
 
-The native source archives remain separate top-level assets:
-`libmpq-X.Y.Z.tar.gz` and `libmpq-X.Y.Z.tar.bz2`. The release workflow builds,
-tests, collects, and validates all packages before generating the single
-global checksum manifest and its GPG signature.
+### Windows release packaging
+
+MSVC uses CMake and MinGW uses Autotools. Both Windows SDKs contain shared
+libraries only; MSVC includes the Release PDB when available. Bash packaging
+helpers inspect PE imports recursively with `dumpbin` or `objdump`. Non-system
+DLLs are bundled from the selected toolchain. Their licenses are copied using
+vcpkg ownership metadata or MSYS2 `pacman` package records. Windows system DLLs
+and API sets are excluded. A final dependency scan resolves non-system imports
+only from the staged SDK, not the toolchain or `PATH`.
+
+Installed consumer smoke tests link against each staged SDK and run with only
+its `bin/` and Windows system directories on `PATH`; build-tree or toolchain
+DLLs cannot hide a missing bundled dependency. ZIP integrity and single-root
+layout checks run before upload. The Bash helper tests also run in normal CI.
+
+### Source validation and release publication
+
+Source packaging uses `make distcheck` followed by `make dist-bzip2` to produce
+gzip and bzip2 archives, and runs CMake/CTest from an extracted source archive.
+The final job requires all eight archives listed above and generates one
+filename-sorted `SHA256SUMS` covering them. The existing `GPG_PRIVATE_KEY` and
+`GPG_PASSPHRASE` secrets sign that manifest; publication fails rather than
+falling back to unsigned checksums.
+The release includes `SHA256SUMS`, its detached signature `SHA256SUMS.asc`, and
+the exported public key `libmpq-release-signing-key.asc`.
+
+After verifying the checksums and signature, the final job creates a draft
+release with all archives and signing assets, using `--notes-from-tag`, then
+publishes it. If a published release already exists, the job uploads the assets
+without replacing existing files. An existing draft causes a safe failure;
+inspect and publish or remove it before retrying.
 
 ## Registry publication dispatch
 

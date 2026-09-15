@@ -206,10 +206,17 @@ available through `man 3 libmpq`.
 
 ## Native C SDK packages
 
-Release downloads provide relocatable x86_64 Linux SDKs for glibc and musl.
-They include headers, shared libraries, manual pages, and build metadata;
-zlib, bzip2, and liblzma remain system dependencies. See the
-[SDK setup instructions](DEVELOPER.md#native-c-sdk-packages).
+Release downloads provide prebuilt x86_64 native C SDKs for Linux glibc,
+Linux musl, Windows MSVC, and Windows MinGW-w64. Each SDK includes public
+headers, a shared library, platform-appropriate import libraries or development
+metadata, licenses, and documentation.
+
+Linux SDKs use the relevant system runtime and codec dependencies. Windows SDK
+ZIPs bundle the required non-system runtime DLLs under `bin/`; choose the MSVC
+or MinGW-w64 package to match your compiler. No special libmpq consumer
+preprocessor define is required. See the
+[SDK setup instructions](DEVELOPER.md#native-c-sdk-packages) and
+[release package summary](DEVELOPER.md#release-package-summary).
 
 ## Bindings
 

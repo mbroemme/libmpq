@@ -96,6 +96,14 @@ install(FILES include/libmpq/mpq.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/libmpq
 )
 
+# Release builds may provide debugging symbols without requiring them to exist.
+if(MSVC AND BUILD_SHARED_LIBS)
+    install(FILES "$<TARGET_PDB_FILE:mpq>"
+        DESTINATION ${CMAKE_INSTALL_BINDIR}
+        OPTIONAL
+    )
+endif()
+
 # Each test has its own writable working directory, separate from the immutable
 # source fixtures and other tests, allowing independent/parallel execution.
 include(CTest)

@@ -148,6 +148,7 @@ jobs:
           echo 'deb [signed-by=/etc/apt/keyrings/apt.llvm.org.asc] http://apt.llvm.org/trixie/ llvm-toolchain-trixie-22 main' > /etc/apt/sources.list.d/llvm.list
           apt-get update
           apt-get install -y --no-install-recommends \
+            7zip \
             autoconf \
             automake \
             bear \
@@ -163,6 +164,8 @@ jobs:
             pkg-config \
             ripgrep \
             shellcheck \
+            unzip \
+            zip \
             zlib1g-dev
 
       - name: Check out repository
@@ -177,6 +180,9 @@ jobs:
         env:
           CLANG_FORMAT: clang-format-22
         run: scripts/check
+
+      - name: Test release packaging helpers
+        run: bash scripts/test-windows-package.sh
 
       - name: Generate build system
         run: |

@@ -26,8 +26,16 @@ main(int argc, char **argv)
 {
     const char *version = libmpq__version();
 
-    if (version == NULL || argc != 2 || strcmp(version, argv[1]) != 0)
+    if (version == NULL || (argc != 2 && argc != 3) || strcmp(version, argv[1]) != 0)
         return 1;
+    if (argc == 3) {
+        mpq_archive_s *archive = NULL;
+
+        if (libmpq__archive_open(&archive, argv[2], -1) != 0)
+            return 1;
+        if (libmpq__archive_close(archive) != 0)
+            return 1;
+    }
     puts(version);
     return 0;
 }
