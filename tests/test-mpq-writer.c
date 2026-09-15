@@ -847,6 +847,25 @@ test_create_one(const char *path, uint32_t version)
     return 0;
 }
 
+/* Closing after a write error consumes the archive and releases its writer. */
+static int
+test_writer_abort_on_close(void)
+{
+    char path[160];
+    mpq_archive_s *archive = NULL;
+    mpq_writer_s *writer = NULL;
+    mpq_file_options_s raw = { 0, 0, 0, 0, 0 };
+
+    TEST_CHECK(test_temp_path(path, sizeof(path), "writer-abort") == 0);
+    TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_ONE, 0) == 0);
+    TEST_CHECK(libmpq__writer_begin(archive, "unfinished.bin", 1, &raw, &writer) == 0);
+    TEST_CHECK(writer != NULL);
+    TEST_CHECK(libmpq__writer_write(writer, (const uint8_t *)"xx", 2) == LIBMPQ_ERROR_SIZE);
+    TEST_CHECK(libmpq__archive_close(archive) == LIBMPQ_ERROR_SIZE);
+    remove(path);
+    return 0;
+}
+
 /* Retain the byte-for-byte determinism check for repeated v1 output. */
 static int
 test_writer_determinism(void)
@@ -878,6 +897,7 @@ test_writer_determinism(void)
 int
 main(void)
 {
+    TEST_CHECK(test_writer_abort_on_close() == 0);
     TEST_CHECK(test_writer_determinism() == 0);
     TEST_CHECK(test_writer_properties() == 0);
     TEST_CHECK(test_mpqe_writer_credential_validation() == 0);

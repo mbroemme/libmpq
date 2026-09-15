@@ -57,6 +57,9 @@ int32_t libmpq__writer_file_write(mpq_writer_s *writer, const uint8_t *buffer, l
 /* Finish the current file, write its sector offsets, and publish its block entry. */
 int32_t libmpq__writer_file_finish(mpq_writer_s *writer);
 
+/* Discard an unfinished writer and release its private stream state. */
+void libmpq__writer_file_abort(mpq_writer_s *writer);
+
 /* Add a complete in-memory file using begin, write, and finish semantics. */
 int32_t libmpq__writer_file_add(
     mpq_archive_s *archive, const char *name, const uint8_t *data, libmpq__off_t size,

@@ -321,6 +321,7 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
 
         /* Writer closure must serialize tables before releasing writer storage. */
         result = libmpq__writer_finalize(mpq_archive);
+        libmpq__writer_file_abort(mpq_archive->write_current);
         if (result == LIBMPQ_SUCCESS && mpq_archive->write_mpqe)
             result = libmpq__writer_finalize_mpqe(mpq_archive);
         if (mpq_archive->fp != NULL && fclose(mpq_archive->fp) < 0 && result == LIBMPQ_SUCCESS)

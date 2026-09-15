@@ -1061,6 +1061,22 @@ libmpq__writer_file_finish(mpq_writer_s *w)
     return result;
 }
 
+/* Discard an unfinished file after a write failure or archive close.
+ * Any partially written payload remains unreachable because no block or hash
+ * table entry is committed until writer_file_finish succeeds. */
+void
+libmpq__writer_file_abort(mpq_writer_s *writer)
+{
+    if (writer == NULL)
+        return;
+    if (writer->archive->write_current == writer)
+        writer->archive->write_current = NULL;
+    free(writer->name);
+    free(writer->data);
+    free(writer->offsets);
+    free(writer);
+}
+
 /* Add an in-memory file through the streaming writer interface.
  * This convenience wrapper uses the same sector pipeline as explicit begin,
  * write, and finish calls and cleans up an aborted stream. */
@@ -1076,11 +1092,7 @@ libmpq__writer_file_add(
         return result;
     result = libmpq__writer_file_write(w, data, size);
     if (result < 0) {
-        free(w->name);
-        free(w->data);
-        free(w->offsets);
-        free(w);
-        a->write_current = NULL;
+        libmpq__writer_file_abort(w);
         return result;
     }
     return libmpq__writer_file_finish(w);
@@ -1126,13 +1138,8 @@ libmpq__writer_file_add_path(
     fclose(fp);
     if (result == 0)
         result = libmpq__writer_file_finish(writer);
-    else {
-        a->write_current = NULL;
-        free(writer->name);
-        free(writer->data);
-        free(writer->offsets);
-        free(writer);
-    }
+    else
+        libmpq__writer_file_abort(writer);
     return result;
 }
 
