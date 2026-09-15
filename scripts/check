@@ -48,11 +48,11 @@ shell_scripts=(
 	scripts/minimize-fuzz-crash.sh
 	scripts/package-d-binary.sh
 	scripts/package-d-source.sh
-	scripts/package-native-binary.sh
+	scripts/package-linux-binary.sh
 	scripts/package-windows.sh
 	scripts/test-windows-package.sh
 	scripts/validate-release.sh
-	scripts/test-native-package.sh
+	scripts/test-linux-package.sh
 	scripts/test-java-package.sh
 	scripts/test-python-sdist.sh
 )

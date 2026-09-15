@@ -55,8 +55,8 @@ jobs:
                 LIBMPQ_NATIVE_VERSION="${version}" \
                 LIBMPQ_NATIVE_BUILD_ENVIRONMENT=manylinux2014_x86_64 \
                 LIBMPQ_NATIVE_GLIBC_BASELINE=2.17 \
-                bash scripts/package-native-binary.sh
-              bash scripts/test-native-package.sh \
+                bash scripts/package-linux-binary.sh
+              bash scripts/test-linux-package.sh \
                 "release/libmpq-${version}-linux-glibc-x86_64.tar.gz" \
                 tests/fixtures/mpq-v1-features.mpq
             '
@@ -107,8 +107,8 @@ jobs:
                 LIBMPQ_NATIVE_VERSION="${version}" \
                 LIBMPQ_NATIVE_BUILD_ENVIRONMENT=musllinux_1_2_x86_64 \
                 LIBMPQ_NATIVE_MUSL_BASELINE=1.2 \
-                bash scripts/package-native-binary.sh
-              bash scripts/test-native-package.sh \
+                bash scripts/package-linux-binary.sh
+              bash scripts/test-linux-package.sh \
                 "release/libmpq-${version}-linux-musl-x86_64.tar.gz" \
                 tests/fixtures/mpq-v1-features.mpq
             '
