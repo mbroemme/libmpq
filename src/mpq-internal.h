@@ -71,6 +71,13 @@
 #define LIBMPQ_SIGNATURE_NAME "(signature)"
 #define LIBMPQ_ATTRIBUTES_NAME "(attributes)"
 
+/* Serialized MPQ wire sizes, independent of native structure alignment. */
+#define LIBMPQ_HEADER_WIRE_SIZE 32u
+#define LIBMPQ_HEADER_EX_WIRE_SIZE 12u
+#define LIBMPQ_HASH_ENTRY_WIRE_SIZE 16u
+#define LIBMPQ_BLOCK_ENTRY_WIRE_SIZE 16u
+#define LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE 2u
+
 /* Keep boolean-like constants available for old C environments. */
 #ifndef FALSE
 #define FALSE 0
@@ -79,10 +86,8 @@
 #define TRUE 1
 #endif
 
-#include "mpq-pack-begin.h"
-
 /*
- * The fixed portion of an MPQ archive header stored at the archive start.
+ * Native representation of the fixed MPQ archive header at the archive start.
  * It identifies the format, describes the sector-size exponent, and locates
  * the encrypted hash and block tables relative to the archive. Version 1
  * archives use the 32-bit offsets in this structure; version 2 archives pair
@@ -91,7 +96,7 @@
 typedef struct
 {
     uint32_t mpq_magic;          /* MPQ signature. */
-    uint32_t header_size;        /* Size of this header in bytes. */
+    uint32_t header_size;        /* Serialized header size in bytes. */
     uint32_t archive_size;       /* Size of the archive in bytes. */
     uint16_t version;            /* Archive format version. */
     uint16_t block_size;         /* File sector size exponent: 512 * 2 ^ block_size. */
@@ -99,7 +104,7 @@ typedef struct
     uint32_t block_table_offset; /* Offset of the block table from the archive start. */
     uint32_t hash_table_count;   /* Number of entries in the hash table. */
     uint32_t block_table_count;  /* Number of entries in the block table. */
-} PACK_STRUCT mpq_header_s;
+} mpq_header_s;
 
 /* Extended archive offsets used by version 2 archives. */
 typedef struct
@@ -107,7 +112,7 @@ typedef struct
     uint64_t extended_offset;         /* Extended block-table offset from the archive start. */
     uint16_t hash_table_offset_high;  /* High 16 bits of the hash-table offset. */
     uint16_t block_table_offset_high; /* High 16 bits of the block-table offset. */
-} PACK_STRUCT mpq_header_ex_s;
+} mpq_header_ex_s;
 
 /*
  * One encrypted-table entry used to resolve a filename without storing its
@@ -123,10 +128,10 @@ typedef struct
     uint16_t locale;            /* File locale identifier. */
     uint16_t platform;          /* File platform identifier; zero means default. */
     uint32_t block_table_index; /* Index into the block table. */
-} PACK_STRUCT mpq_hash_s;
+} mpq_hash_s;
 
 /*
- * The serialized metadata for one stored file payload. The offset and
+ * Native representation of the metadata for one stored file payload. The offset and
  * packed size identify the bytes on disk, while the unpacked size describes
  * the result after decryption and decompression. Flags select the storage,
  * encryption, and compression rules needed to interpret that payload.
@@ -137,7 +142,7 @@ typedef struct
     uint32_t packed_size;   /* Stored payload size. */
     uint32_t unpacked_size; /* Size after decryption and decompression. */
     uint32_t flags;         /* MPQ file flags. */
-} PACK_STRUCT mpq_block_s;
+} mpq_block_s;
 
 /*
  * The version 2 extension for a block-table entry whose payload offset does
@@ -148,7 +153,7 @@ typedef struct
 typedef struct
 {
     uint16_t offset_high; /* Upper 16 bits of the file payload offset. */
-} PACK_STRUCT mpq_block_ex_s;
+} mpq_block_ex_s;
 
 /* Cached state for an opened MPQ file entry. */
 typedef struct
@@ -158,7 +163,7 @@ typedef struct
     uint32_t *packed_offset;      /* Packed sector offsets for multi-sector files. */
     uint32_t packed_offset_count; /* Number of packed_offset entries. */
     uint32_t open_count;          /* Reference count for the cached sector table. */
-} PACK_STRUCT mpq_file_s;
+} mpq_file_s;
 
 /*
  * Translation from libmpq's compact public file numbering to the serialized
@@ -171,8 +176,7 @@ typedef struct
 {
     uint32_t block_table_indices; /* Block-table index for this public file number. */
     uint32_t block_table_diff;    /* Number of skipped invalid block entries before this file. */
-} PACK_STRUCT mpq_map_s;
-#include "mpq-pack-end.h"
+} mpq_map_s;
 
 struct mpq_writer_mpqe_ops;
 

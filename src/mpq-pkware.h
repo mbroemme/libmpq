@@ -63,9 +63,8 @@
 /* A decoder input/output callback stopped the expansion before completion. */
 #define LIBMPQ_PKZIP_CMP_ABORT 4
 
-#include "mpq-pack-begin.h"
-
-/* PKWARE explode decoder state; field offsets match the original workspace layout. */
+/* Native PKWARE explode decoder state. Hex labels describe the original
+ * workspace, not the offsets in this naturally aligned structure. */
 typedef struct
 {
     uint32_t offs0000;   /* 0000 - compatibility field from the original layout. */
@@ -94,8 +93,7 @@ typedef struct
     uint8_t slen_bits[0x10];  /* 30F4 - bit length per length prefix. */
     uint8_t clen_bits[0x10];  /* 3104 - extra bit count per length prefix. */
     uint16_t len_base[0x10];  /* 3114 - base copy length per prefix. */
-} PACK_STRUCT pkzip_cmp_s;
-#include "mpq-pack-end.h"
+} pkzip_cmp_s;
 
 /* Callback state that connects the PKWARE decoder to libmpq input and output buffers. */
 typedef struct

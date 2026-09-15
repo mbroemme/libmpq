@@ -853,7 +853,7 @@ decode_mpq_hash_table(mpq_hash_s *table, const uint8_t *raw, uint32_t count)
     if (table == 0 || raw == 0)
         return;
     for (i = 0; i < count; i++) {
-        const uint8_t *entry = raw + i * sizeof(mpq_hash_s);
+        const uint8_t *entry = raw + (size_t)i * LIBMPQ_HASH_ENTRY_WIRE_SIZE;
 
         table[i].hash_a = libmpq__load_le32(entry + 0);
         table[i].hash_b = libmpq__load_le32(entry + 4);
@@ -873,7 +873,7 @@ decode_mpq_block_table(mpq_block_s *table, const uint8_t *raw, uint32_t count)
     if (table == 0 || raw == 0)
         return;
     for (i = 0; i < count; i++) {
-        const uint8_t *entry = raw + i * sizeof(mpq_block_s);
+        const uint8_t *entry = raw + (size_t)i * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE;
 
         table[i].offset = libmpq__load_le32(entry + 0);
         table[i].packed_size = libmpq__load_le32(entry + 4);
@@ -893,7 +893,7 @@ decode_mpq_block_ex_table(mpq_block_ex_s *table, const uint8_t *raw, uint32_t co
     if (table == 0 || raw == 0)
         return;
     for (i = 0; i < count; i++) {
-        table[i].offset_high = libmpq__load_le16(raw + i * sizeof(mpq_block_ex_s));
+        table[i].offset_high = libmpq__load_le16(raw + (size_t)i * LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE);
     }
 }
 
@@ -925,8 +925,8 @@ libmpq__reader_archive_open_stream(
     uint32_t count = 0;
     int32_t result = 0;
     uint32_t header_search = FALSE;
-    uint8_t header_data[sizeof(mpq_header_s)];
-    uint8_t header_ex_data[sizeof(mpq_header_ex_s)];
+    uint8_t header_data[LIBMPQ_HEADER_WIRE_SIZE];
+    uint8_t header_ex_data[LIBMPQ_HEADER_EX_WIRE_SIZE];
     uint8_t *table_data = NULL;
     size_t table_bytes = 0;
 
@@ -997,16 +997,16 @@ libmpq__reader_archive_open_stream(
             if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE) {
 
                 /* Protected archives may store a bogus header size; normalize it locally. */
-                if ((*mpq_archive)->mpq_header.header_size != sizeof(mpq_header_s)) {
-                    (*mpq_archive)->mpq_header.header_size = sizeof(mpq_header_s);
+                if ((*mpq_archive)->mpq_header.header_size != LIBMPQ_HEADER_WIRE_SIZE) {
+                    (*mpq_archive)->mpq_header.header_size = LIBMPQ_HEADER_WIRE_SIZE;
                 }
             }
 
             if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO) {
                 if ((*mpq_archive)->mpq_header.header_size !=
-                    sizeof(mpq_header_s) + sizeof(mpq_header_ex_s)) {
+                    LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE) {
                     (*mpq_archive)->mpq_header.header_size =
-                        sizeof(mpq_header_s) + sizeof(mpq_header_ex_s);
+                        LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE;
                 }
             }
 
@@ -1033,11 +1033,12 @@ libmpq__reader_archive_open_stream(
     (*mpq_archive)->block_size = 512U << (*mpq_archive)->mpq_header.block_size;
     (*mpq_archive)->archive_offset = archive_offset;
 
-    if (table_size((*mpq_archive)->mpq_header.hash_table_count, sizeof(mpq_hash_s), &table_bytes) <
-            0 ||
+    if (table_size(
+            (*mpq_archive)->mpq_header.hash_table_count, LIBMPQ_HASH_ENTRY_WIRE_SIZE, &table_bytes
+        ) < 0 ||
         (uint64_t)table_bytes > (*mpq_archive)->file_size ||
         table_size(
-            (*mpq_archive)->mpq_header.block_table_count, sizeof(mpq_block_s), &table_bytes
+            (*mpq_archive)->mpq_header.block_table_count, LIBMPQ_BLOCK_ENTRY_WIRE_SIZE, &table_bytes
         ) < 0 ||
         (uint64_t)table_bytes > (*mpq_archive)->file_size) {
         result = LIBMPQ_ERROR_FORMAT;
@@ -1046,15 +1047,15 @@ libmpq__reader_archive_open_stream(
 
     /* MPQ v2 stores high table offsets in a separate extension immediately after v1. */
     if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO) {
-        if ((uint64_t)archive_offset > UINT64_MAX - sizeof(mpq_header_s) ||
-            (uint64_t)archive_offset + sizeof(mpq_header_s) > (*mpq_archive)->file_size ||
+        if ((uint64_t)archive_offset > UINT64_MAX - LIBMPQ_HEADER_WIRE_SIZE ||
+            (uint64_t)archive_offset + LIBMPQ_HEADER_WIRE_SIZE > (*mpq_archive)->file_size ||
             sizeof(header_ex_data) >
-                (*mpq_archive)->file_size - ((uint64_t)archive_offset + sizeof(mpq_header_s))) {
+                (*mpq_archive)->file_size - ((uint64_t)archive_offset + LIBMPQ_HEADER_WIRE_SIZE)) {
             result = LIBMPQ_ERROR_FORMAT;
             goto error;
         }
         if ((result = libmpq__stream_read_at(
-                 (*mpq_archive)->stream, (uint64_t)archive_offset + sizeof(mpq_header_s),
+                 (*mpq_archive)->stream, (uint64_t)archive_offset + LIBMPQ_HEADER_WIRE_SIZE,
                  header_ex_data, sizeof(header_ex_data)
              )) < 0)
             goto error;
@@ -1081,8 +1082,9 @@ libmpq__reader_archive_open_stream(
         goto error;
     }
 
-    if (table_size((*mpq_archive)->mpq_header.hash_table_count, sizeof(mpq_hash_s), &table_bytes) <
-        0) {
+    if (table_size(
+            (*mpq_archive)->mpq_header.hash_table_count, LIBMPQ_HASH_ENTRY_WIRE_SIZE, &table_bytes
+        ) < 0) {
         result = LIBMPQ_ERROR_FORMAT;
         goto error;
     }
@@ -1113,7 +1115,7 @@ libmpq__reader_archive_open_stream(
     table_data = NULL;
 
     if (table_size(
-            (*mpq_archive)->mpq_header.block_table_count, sizeof(mpq_block_s), &table_bytes
+            (*mpq_archive)->mpq_header.block_table_count, LIBMPQ_BLOCK_ENTRY_WIRE_SIZE, &table_bytes
         ) < 0) {
         result = LIBMPQ_ERROR_FORMAT;
         goto error;
@@ -1147,7 +1149,8 @@ libmpq__reader_archive_open_stream(
     /* v2 block high words are optional and are loaded only when present. */
     if ((*mpq_archive)->mpq_header_ex.extended_offset > 0) {
         if (table_size(
-                (*mpq_archive)->mpq_header.block_table_count, sizeof(mpq_block_ex_s), &table_bytes
+                (*mpq_archive)->mpq_header.block_table_count, LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE,
+                &table_bytes
             ) < 0) {
             result = LIBMPQ_ERROR_FORMAT;
             goto error;

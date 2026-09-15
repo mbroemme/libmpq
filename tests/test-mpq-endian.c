@@ -2,6 +2,7 @@
 #include "test-mpq-helper.h"
 
 #include "../src/mpq-endian.h"
+#include "../src/mpq-internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,6 +50,9 @@ test_serialized_vectors(void)
     size_t size;
     char hash[65];
     size_t i;
+    mpq_archive_s *archive = NULL;
+    uint8_t extracted[sizeof(payload)];
+    uint32_t file_number;
 
     for (i = 0; i < 2; ++i) {
         TEST_CHECK(
@@ -61,9 +65,54 @@ test_serialized_vectors(void)
         TEST_CHECK(memcmp(data + 512, payload, sizeof(payload)) == 0);
         TEST_CHECK(test_sha256(data, size, hash) == 0);
         TEST_CHECK(strcmp(hash, hashes[i]) == 0);
+        TEST_CHECK(libmpq__archive_open(&archive, paths[i], 0) == 0);
+        TEST_CHECK(libmpq__file_number(archive, "vector.bin", &file_number) == 0);
+        TEST_CHECK(
+            libmpq__file_read(archive, file_number, extracted, sizeof(extracted), NULL) == 0
+        );
+        TEST_CHECK(memcmp(extracted, payload, sizeof(payload)) == 0);
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+        archive = NULL;
         free(data);
         remove(paths[i]);
     }
+    return 0;
+}
+
+/* The v2 extension occupies exactly 12 wire bytes, including at physical EOF. */
+static int
+test_header_extension_size(void)
+{
+    static const uint8_t header[LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE] = {
+        0x4d, 0x50, 0x51, 0x1a, 0x2c, 0, 0, 0, 0x2c, 0, 0, 0,
+        1,    0,    0,    0,    0x2c, 0, 0, 0, 0x2c, 0, 0, 0,
+    };
+    static const size_t sizes[] = { sizeof(header), sizeof(header) - 1 };
+    char path[128];
+    FILE *file;
+    mpq_archive_s *archive = NULL;
+    uint32_t count;
+    size_t size;
+    size_t i;
+
+    TEST_CHECK(test_temp_path(path, sizeof(path), "v2-extension-eof") == 0);
+    for (i = 0; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
+        size = sizes[i];
+        file = fopen(path, "wb");
+        TEST_CHECK(file != NULL);
+        TEST_CHECK(fwrite(header, 1, size, file) == size);
+        TEST_CHECK(fclose(file) == 0);
+        if (size == sizeof(header)) {
+            TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+            TEST_CHECK(libmpq__archive_files(archive, &count) == 0 && count == 0);
+            TEST_CHECK(libmpq__archive_close(archive) == 0);
+            archive = NULL;
+        } else {
+            TEST_CHECK(libmpq__archive_open(&archive, path, 0) == LIBMPQ_ERROR_FORMAT);
+            TEST_CHECK(archive == NULL);
+        }
+    }
+    TEST_CHECK(remove(path) == 0);
     return 0;
 }
 
@@ -72,6 +121,14 @@ int
 main(void)
 {
     uint8_t raw[16] = { 0 };
+
+    /* Wire sizes are fixed even when native structures have alignment padding. */
+    TEST_CHECK(LIBMPQ_HEADER_WIRE_SIZE == 32u);
+    TEST_CHECK(LIBMPQ_HEADER_EX_WIRE_SIZE == 12u);
+    TEST_CHECK(LIBMPQ_HASH_ENTRY_WIRE_SIZE == 16u);
+    TEST_CHECK(LIBMPQ_BLOCK_ENTRY_WIRE_SIZE == 16u);
+    TEST_CHECK(LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE == 2u);
+    TEST_CHECK(test_header_extension_size() == 0);
 
     TEST_CHECK(libmpq__load_le16((const uint8_t[]){ 0x78, 0x56 }) == 0x5678);
     TEST_CHECK(libmpq__load_le32((const uint8_t[]){ 0x78, 0x56, 0x34, 0x12 }) == 0x12345678);

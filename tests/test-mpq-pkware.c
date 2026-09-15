@@ -228,11 +228,20 @@ main(void)
 {
     char path[512];
     const char *names[] = { "pkware.txt", "implode.txt" };
+    const char *lines[] = {
+        "This text uses PKWARE compression as a masked COMPRESS stage.\n",
+        "This text uses standalone PKWARE implode compression.\n",
+    };
     mpq_archive_s *archive = NULL;
     uint8_t *data = NULL;
     size_t size;
     uint32_t number;
+    uint32_t blocks;
+    uint32_t block;
+    uint32_t compression;
     size_t i;
+    size_t j;
+    size_t line_size;
 
     TEST_CHECK(test_window_flush() == 0);
     TEST_CHECK(test_partial_chains() == 0);
@@ -245,7 +254,16 @@ main(void)
     TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
     for (i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
         TEST_CHECK(libmpq__file_number(archive, names[i], &number) == 0);
-        TEST_CHECK(test_archive_read(archive, number, &data, &size) == 0 && size > 0);
+        TEST_CHECK(libmpq__file_blocks(archive, number, &blocks) == 0 && blocks > 0);
+        for (block = 0; block < blocks; ++block) {
+            TEST_CHECK(libmpq__block_compression(archive, number, block, &compression) == 0);
+            TEST_CHECK(compression == LIBMPQ_COMPRESSION_PKZIP);
+        }
+        TEST_CHECK(test_archive_read(archive, number, &data, &size) == 0);
+        line_size = strlen(lines[i]);
+        TEST_CHECK(size == 32 * line_size);
+        for (j = 0; j < 32; ++j)
+            TEST_CHECK(memcmp(data + j * line_size, lines[i], line_size) == 0);
         free(data);
         data = NULL;
     }
