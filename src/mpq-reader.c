@@ -459,7 +459,7 @@ read_block(
 
         /* The payload's leading mask selects and orders its decompression stages. */
         if ((tb = libmpq__compression_decompress_block(
-                 in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_MULTI,
+                 in_buf, in_size, out_buf, unpacked_size, LIBMPQ_FLAG_COMPRESS_MULTI,
                  mpq_archive->mpq_header.version
              )) < 0) {
             if (!use_out_buf) {
@@ -474,7 +474,7 @@ read_block(
 
         /* Standalone PKWARE payloads use the legacy decoder without a mask byte. */
         if ((tb = libmpq__compression_decompress_block(
-                 in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_PKZIP,
+                 in_buf, in_size, out_buf, unpacked_size, LIBMPQ_FLAG_COMPRESS_PKZIP,
                  mpq_archive->mpq_header.version
              )) < 0) {
             if (!use_out_buf) {
@@ -495,7 +495,7 @@ read_block(
 
         /* A raw block is copied only after encrypted and compressed paths are excluded. */
         if ((tb = libmpq__compression_decompress_block(
-                 in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_NONE,
+                 in_buf, in_size, out_buf, unpacked_size, LIBMPQ_FLAG_COMPRESS_NONE,
                  mpq_archive->mpq_header.version
              )) < 0) {
             if (!use_out_buf) {

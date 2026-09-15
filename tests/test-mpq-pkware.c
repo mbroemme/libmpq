@@ -1,5 +1,6 @@
 /* Exercise extraction of PKWARE and implode fixture payloads. */
 #include "mpq-compression.h"
+#include "mpq-internal.h"
 #include "mpq-pkware.h"
 #include "test-mpq-helper.h"
 
@@ -84,6 +85,25 @@ test_round_trip(const uint8_t *input, uint32_t size, int compressible)
     free(output);
     if (compressible)
         TEST_CHECK(packed_size < size / 2u);
+    return 0;
+}
+
+/* The encoder's four-byte empty stream must decode successfully to zero bytes. */
+static int
+test_empty_stream(void)
+{
+    uint8_t input = 0;
+    uint8_t output = 0xa5;
+    uint8_t *packed = NULL;
+    uint32_t packed_size = 0;
+    int32_t result;
+
+    TEST_CHECK(libmpq__pkzip_compress(&input, 0, &packed, &packed_size) == 0);
+    result = libmpq__compression_decompress_pkzip(packed, packed_size, &output, 1);
+    free(packed);
+    TEST_CHECK(packed_size == 4);
+    TEST_CHECK(result == 0);
+    TEST_CHECK(output == 0xa5);
     return 0;
 }
 
@@ -222,6 +242,75 @@ test_short_runs(void)
     return 0;
 }
 
+/* Decoder status errors must not be mistaken for zero or partial output. */
+static int
+test_invalid_streams(void)
+{
+    uint8_t input[512];
+    uint8_t output[sizeof(input) + 1];
+    uint8_t masked[sizeof(input) * 2];
+    uint8_t *packed = NULL;
+    uint32_t packed_size = 0;
+    uint8_t mode;
+    uint8_t dictionary;
+    uint32_t size;
+    int32_t result;
+
+    memset(input, 'P', sizeof(input));
+    TEST_CHECK(libmpq__pkzip_compress(input, sizeof(input), &packed, &packed_size) == 0);
+    TEST_CHECK(packed_size > 5 && packed_size + 1 < sizeof(masked));
+    mode = packed[0];
+    dictionary = packed[1];
+    packed[0] = 2;
+    result = libmpq__compression_decompress_pkzip(packed, packed_size, output, sizeof(output));
+    TEST_CHECK(result == LIBMPQ_ERROR_UNPACK);
+    packed[0] = mode;
+    packed[1] = 3;
+    result = libmpq__compression_decompress_pkzip(packed, packed_size, output, sizeof(output));
+    TEST_CHECK(result == LIBMPQ_ERROR_UNPACK);
+    packed[1] = dictionary;
+    for (size = 0; size <= 4; ++size)
+        TEST_CHECK(
+            libmpq__compression_decompress_pkzip(packed, size, output, sizeof(output)) ==
+            LIBMPQ_ERROR_UNPACK
+        );
+    TEST_CHECK(
+        libmpq__compression_decompress_pkzip(packed, packed_size - 2, output, sizeof(output)) ==
+        LIBMPQ_ERROR_UNPACK
+    );
+
+    /* Capacity is not an exact size at an intermediate codec stage. */
+    TEST_CHECK(
+        libmpq__compression_decompress_pkzip(packed, packed_size, output, sizeof(output)) ==
+        (int32_t)sizeof(input)
+    );
+    TEST_CHECK(memcmp(input, output, sizeof(input)) == 0);
+    TEST_CHECK(
+        libmpq__compression_decompress_block(
+            packed, packed_size, output, sizeof(input), LIBMPQ_FLAG_COMPRESS_PKZIP,
+            LIBMPQ_ARCHIVE_VERSION_ONE
+        ) == (int32_t)sizeof(input)
+    );
+
+    /* Complete blocks cannot accept an early end marker as a short success. */
+    TEST_CHECK(
+        libmpq__compression_decompress_block(
+            packed, packed_size, output, sizeof(output), LIBMPQ_FLAG_COMPRESS_PKZIP,
+            LIBMPQ_ARCHIVE_VERSION_ONE
+        ) == LIBMPQ_ERROR_UNPACK
+    );
+    masked[0] = LIBMPQ_COMPRESSION_PKZIP;
+    memcpy(masked + 1, packed, packed_size);
+    free(packed);
+    TEST_CHECK(
+        libmpq__compression_decompress_block(
+            masked, packed_size + 1, output, sizeof(output), LIBMPQ_FLAG_COMPRESS_MULTI,
+            LIBMPQ_ARCHIVE_VERSION_ONE
+        ) == LIBMPQ_ERROR_UNPACK
+    );
+    return 0;
+}
+
 /* Read both PKWARE-backed fixture entries to exercise the decoder path. */
 int
 main(void)
@@ -234,6 +323,9 @@ main(void)
     };
     mpq_archive_s *archive = NULL;
     uint8_t *data = NULL;
+    uint8_t block_data[4096];
+    libmpq__off_t transferred;
+    libmpq__off_t block_size;
     size_t size;
     uint32_t number;
     uint32_t blocks;
@@ -244,6 +336,8 @@ main(void)
     size_t line_size;
 
     TEST_CHECK(test_window_flush() == 0);
+    TEST_CHECK(test_empty_stream() == 0);
+    TEST_CHECK(test_invalid_streams() == 0);
     TEST_CHECK(test_partial_chains() == 0);
     TEST_CHECK(test_general_matches() == 0);
     TEST_CHECK(test_match_boundaries() == 0);
@@ -264,6 +358,16 @@ main(void)
         TEST_CHECK(size == 32 * line_size);
         for (j = 0; j < 32; ++j)
             TEST_CHECK(memcmp(data + j * line_size, lines[i], line_size) == 0);
+
+        /* A larger caller buffer does not change the expected decoded block size. */
+        TEST_CHECK(libmpq__block_size_unpacked(archive, number, 0, &block_size) == 0);
+        TEST_CHECK(block_size > 0 && (uint64_t)block_size < sizeof(block_data));
+        TEST_CHECK(
+            libmpq__block_read(archive, number, 0, block_data, sizeof(block_data), &transferred) ==
+            0
+        );
+        TEST_CHECK(transferred == block_size);
+        TEST_CHECK(memcmp(data, block_data, (size_t)block_size) == 0);
         free(data);
         data = NULL;
     }
