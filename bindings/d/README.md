@@ -101,10 +101,10 @@ The canonical release installation path is
 [code.dlang.org](https://code.dlang.org/packages/libmpq):
 
 ```sdl
-dependency "libmpq" version="~>0.7.0"
+dependency "libmpq" version="~>0.7.1"
 ```
 
-code.dlang.org discovers versions from Git tags such as `v0.7.0`; registration
+code.dlang.org discovers versions from Git tags such as `v0.7.1`; registration
 and registry credentials are intentionally kept out of the build and release
 workflows. See the [DUB publishing guide](https://dub.pm/dub-guide/publishing/).
 
