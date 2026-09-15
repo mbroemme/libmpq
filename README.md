@@ -33,23 +33,25 @@ MPQ v2+ LZMA method.
 
 ## Features
 
-* Read MPQ archives and embedded archives located at a file offset.
-* Read MPQE-wrapped MPQ streams and create new MPQE archives with a
-  caller-supplied authentication code.
-* Read archive metadata, file names, file sizes, flags, and block information.
-* Create seekable MPQ v1 and v2 archives with fixed file-table capacity.
-* Add files through streaming, memory-buffer, or filesystem-path APIs.
-* Decrypt encrypted hash tables, block tables, and file payloads.
-* Create encrypted hash and block tables, file payloads, and sector offsets.
-* Create raw, single-unit, sectorized, and multi-sector file entries.
-* Compress file sectors with PKWARE implode, Huffman, zlib, bzip2, SPARSE,
-  or WAVE ADPCM using separate first-sector and later-sector masks.
-* Compress MPQ v2+ file sectors with the exclusive LZMA compression method.
-* Decompress zlib, bzip2, SPARSE, MPQ v2+ LZMA, Huffman, PKWARE implode, Blizzard
-  multi-compression, and mono or stereo WAVE ADPCM payloads.
-* Generate an optional `(listfile)` entry during archive creation.
-* Read and create optional version-100 `(attributes)` metadata in MPQ v1+:
-  CRC32, explicit FILETIME, MD5, and read-only patch-bit information.
+* Read, inspect, and extract MPQ archives, including embedded archives at a
+  file offset.
+* Read, inspect, and extract MPQE-wrapped MPQ archives, and create new MPQE
+  archives with a caller-supplied authentication code.
+* Create seekable MPQ v1 and v2 archives with fixed file-table capacity,
+  optional `(listfile)` generation, and encrypted tables and file payloads.
+* Add raw, single-unit, sectorized, and multi-sector files through streaming,
+  memory-buffer, and filesystem-path APIs.
+* Inspect archive, file, and block metadata, including names, sizes, flags,
+  packed block sizes, and effective per-block compression methods.
+* Read and write encrypted hash tables, block tables, sector offsets, and file
+  payloads.
+* Read and write PKWARE implode, Huffman, zlib, bzip2, SPARSE, and mono or
+  stereo WAVE ADPCM compression. MPQ v2+ also supports the exclusive LZMA
+  method; readers accept Blizzard multi-compression payloads.
+* Read and create version-100 `(attributes)` metadata in MPQ v1+: CRC32,
+  explicit FILETIME, MD5, and read-only patch-bit information.
+* Explicitly verify stored sector Adler-32 checksums and available attributes
+  CRC32 or MD5 values without changing normal extraction behavior.
 * Support big-endian hosts through explicit little-endian serialization; CI
   runs the full test suite on emulated s390x.
 * Provide optional Python 3.11+, D, and Java bindings.
