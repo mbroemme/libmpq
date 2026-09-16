@@ -15,8 +15,8 @@ set -euo pipefail
 : "${MACOSX_DEPLOYMENT_TARGET:?MACOSX_DEPLOYMENT_TARGET is required}"
 
 readonly project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-readonly package_name="libmpq-${LIBMPQ_NATIVE_VERSION}"
-readonly archive_name="${package_name}-macos-${LIBMPQ_NATIVE_ARCHITECTURE}.tar.gz"
+readonly package_name="libmpq-${LIBMPQ_NATIVE_VERSION}-macos-${LIBMPQ_NATIVE_ARCHITECTURE}"
+readonly archive_name="${package_name}.tar.gz"
 readonly package_dir="${project_root}/release/${package_name}"
 readonly archive_path="${project_root}/release/${archive_name}"
 readonly temporary="$(mktemp -d -t libmpq-macos-package.XXXXXX)"

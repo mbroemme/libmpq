@@ -18,6 +18,8 @@ fi
 readonly package_archive="$1"
 readonly fixture_archive="$2"
 readonly architecture="$3"
+readonly archive_basename="${package_archive##*/}"
+readonly package_name="${archive_basename%.tar.gz}"
 readonly project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly temporary="$(mktemp -d -t libmpq-macos-test.XXXXXX)"
 readonly consumer_source="${temporary}/consumer.c"
@@ -152,7 +154,7 @@ validate_sdk()
 		fi
 	done
 
-	if [[ "$(buildinfo_value libmpq_version)" != "${package_name#libmpq-}" ]] ||
+	if [[ "$(buildinfo_value libmpq_version)" != "${expected_version}" ]] ||
 		[[ "$(buildinfo_value architecture)" != "${architecture}" ]] ||
 		[[ "$(buildinfo_value os)" != macos ]] ||
 		[[ -z "$(buildinfo_value macos_deployment_target)" ]] ||
@@ -280,6 +282,18 @@ for path in "${package_archive}" "${fixture_archive}"; do
 	fi
 done
 
+if [[ "${archive_basename}" != *.tar.gz ]] ||
+	! [[ "${package_name}" =~ ^libmpq-([0-9]+([.][0-9]+)*)-macos-(arm64|x86_64)$ ]]; then
+	printf 'macOS package archive name is invalid: %s\n' "${archive_basename}" >&2
+	exit 1
+fi
+readonly expected_version="${BASH_REMATCH[1]}"
+readonly expected_architecture="${BASH_REMATCH[3]}"
+if [[ "${expected_architecture}" != "${architecture}" ]]; then
+	printf 'macOS package architecture does not match archive name.\n' >&2
+	exit 1
+fi
+
 cat > "${consumer_source}" <<'EOF'
 #include <libmpq/mpq.h>
 
@@ -315,11 +329,11 @@ for location in first relocated; do
 		package_entries[${package_entry}]="${package_entries[${package_entry}]##*/}"
 	done
 	if ((${#package_entries[@]} != 1)) ||
-		[[ ! "${package_entries[0]}" =~ ^libmpq-[0-9] ]]; then
-		printf 'macOS package must contain exactly one top-level version directory.\n' >&2
+		[[ "${package_entries[0]}" != "${package_name}" ]]; then
+		printf 'macOS package root must match archive basename: %s\n' \
+			"${package_name}" >&2
 		exit 1
 	fi
-	package_name="${package_entries[0]}"
 	sdk_root="${extraction_dir}/${package_name}"
 	library_dir="${sdk_root}/lib"
 	pkgconfig_dir="${library_dir}/pkgconfig"

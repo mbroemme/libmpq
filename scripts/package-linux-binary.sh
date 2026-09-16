@@ -14,8 +14,8 @@ set -euo pipefail
 : "${LIBMPQ_NATIVE_BUILD_ENVIRONMENT:?LIBMPQ_NATIVE_BUILD_ENVIRONMENT is required}"
 
 readonly project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-readonly package_name="libmpq-${LIBMPQ_NATIVE_VERSION}"
-readonly archive_name="${package_name}-linux-${LIBMPQ_NATIVE_LIBC}-x86_64.tar.gz"
+readonly package_name="libmpq-${LIBMPQ_NATIVE_VERSION}-linux-${LIBMPQ_NATIVE_LIBC}-x86_64"
+readonly archive_name="${package_name}.tar.gz"
 readonly package_dir="${project_root}/release/${package_name}"
 readonly archive_path="${project_root}/release/${archive_name}"
 readonly temporary="$(mktemp -d -t libmpq-native-package.XXXXXX)"

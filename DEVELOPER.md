@@ -199,10 +199,10 @@ applies to libmpq itself. Each archive extracts a single package directory
 containing the executable helper, public headers, shared library, pkg-config
 metadata, manual pages, licenses, README, and BUILDINFO.
 
-Extract the selected SDK anywhere convenient:
+For example, after extracting the glibc SDK, set:
 
 ```sh
-export LIBMPQ_ROOT="$PWD/libmpq-X.Y.Z"
+export LIBMPQ_ROOT="$PWD/libmpq-X.Y.Z-linux-glibc-x86_64"
 export PATH="${LIBMPQ_ROOT}/bin:${PATH}"
 export PKG_CONFIG_PATH="${LIBMPQ_ROOT}/lib/pkgconfig"
 export LD_LIBRARY_PATH="${LIBMPQ_ROOT}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
@@ -214,6 +214,9 @@ libmpq-config --prefix="${LIBMPQ_ROOT}" --libs
 man 1 libmpq-config
 man 3 libmpq
 ```
+
+For the musl SDK, use `libmpq-X.Y.Z-linux-musl-x86_64` as
+`LIBMPQ_ROOT` instead.
 
 ### macOS
 
@@ -230,13 +233,16 @@ install name and the package metadata derives paths relative to the extracted
 SDK. Select the archive that matches the native architecture; packages are not
 Universal 2 binaries.
 
+Set `LIBMPQ_ROOT` to the extracted `libmpq-X.Y.Z-macos-arm64` or
+`libmpq-X.Y.Z-macos-x86_64` directory, matching the selected package.
+
 The SDK depends on macOS-provided zlib, bzip2, and liblzma. Add its `bin/`
 directory to `PATH` to locate `libmpq-config`, then pass the extracted SDK
 root explicitly: `libmpq-config --prefix="${LIBMPQ_ROOT}" --cflags` and
 `libmpq-config --prefix="${LIBMPQ_ROOT}" --libs`. Add `lib/pkgconfig/` to
 `PKG_CONFIG_PATH` for compiler and linker flags. Consumers should add an
 application-appropriate runtime rpath for the SDK's `lib/` directory when
-linking, for example `-Wl,-rpath,/path/to/libmpq-X.Y.Z/lib`.
+linking, for example `-Wl,-rpath,"${LIBMPQ_ROOT}/lib"`.
 
 ### Windows MSVC
 
