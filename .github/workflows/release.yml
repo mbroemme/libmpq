@@ -247,9 +247,11 @@ jobs:
           collect release/d "libmpq-d-${RELEASE_VERSION}.zip"
           test -s "release/native/libmpq-${RELEASE_VERSION}-linux-glibc-x86_64.tar.gz"
           test -s "release/native/libmpq-${RELEASE_VERSION}-linux-musl-x86_64.tar.gz"
+          test -s "release/native/libmpq-${RELEASE_VERSION}-macos-arm64.tar.gz"
+          test -s "release/native/libmpq-${RELEASE_VERSION}-macos-x86_64.tar.gz"
           while IFS= read -r package; do
             collect release/native "${package}"
-          done < <(find release/native -type f -name "libmpq-${RELEASE_VERSION}-linux-*.tar.gz" -printf '%f\n' | LC_ALL=C sort -u)
+          done < <(find release/native -type f -name "libmpq-${RELEASE_VERSION}-*.tar.gz" -printf '%f\n' | LC_ALL=C sort -u)
           collect release/windows-msvc "libmpq-${RELEASE_VERSION}-windows-msvc-x64.zip"
           collect release/windows-mingw "libmpq-${RELEASE_VERSION}-windows-mingw-x86_64.zip"
           LC_ALL=C sort -o expected-assets expected-assets

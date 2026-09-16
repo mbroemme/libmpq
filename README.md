@@ -66,7 +66,13 @@ checksum verification, and writer compression policies.
 The native library requires a C compiler and development headers and libraries
 for zlib, bzip2, and lzma. Build tools depend on the platform:
 
-* Unix and MinGW-w64: a C99-capable compiler, GNU Autoconf, Automake, and Libtool.
+* Linux and other Unix systems: a C99-capable compiler, GNU Autoconf,
+  Automake, and Libtool.
+* macOS: Xcode or the standalone Command Line Tools for Xcode, providing
+  Apple Clang, the Apple linker, make, and the macOS SDK. Git checkouts also
+  require GNU Autoconf, Automake, and GNU Libtool; the CI-tested setup obtains
+  these build-generation tools through Homebrew.
+* MinGW-w64: a C99-capable compiler, GNU Autoconf, Automake, and Libtool.
 * Native MSVC: Visual Studio's C++ build tools, CMake 3.21 or newer, and vcpkg.
 
 The Python, D, and Java bindings are maintained and distributed through their
@@ -97,6 +103,10 @@ Use `./configure --prefix=DIR` to select a different installation prefix. Use
 `./configure --help` to list the available configuration options. C99 is the
 default language standard; callers may select another supported dialect through
 `CFLAGS`, for example `CFLAGS="-std=c17"`.
+
+Git checkouts require `sh autogen.sh` before `./configure`. Release source
+archives already include the generated Autotools files, including `configure`,
+so their users do not need to run `autogen.sh`.
 
 #### Debian or Ubuntu
 
@@ -135,6 +145,67 @@ Install the base build tools and required libraries with:
 sudo pacman -S --needed base-devel autoconf automake libtool \
   zlib bzip2 xz
 ```
+
+### macOS (Apple toolchain with Autotools)
+
+libmpq builds natively with Apple Clang, the Apple linker, the macOS SDK,
+and the Apple-provided `/usr/bin/make`. GNU Autotools supplies the build frontend.
+Use either full Xcode or the standalone Command Line Tools for Xcode. If you
+do not need the Xcode IDE, install the standalone tools:
+
+```sh
+xcode-select --install
+```
+
+The supported SDK lacks the liblzma development headers. Install them through
+Homebrew and add only their include directory, keeping system library linking:
+
+```sh
+brew install xz
+export CPPFLAGS="-I$(brew --prefix xz)/include ${CPPFLAGS:-}"
+```
+
+Release source archives include the generated Autotools files and need no
+Homebrew bootstrap tools. With the headers available, configure, build, test,
+and optionally install:
+
+```sh
+./configure --prefix="${HOME}/.local"
+/usr/bin/make -j"$(sysctl -n hw.ncpu)"
+/usr/bin/make check
+/usr/bin/make install
+```
+
+For a Git checkout, first install the GNU build-generation tools through
+Homebrew and make GNU Libtool's commands available:
+
+```sh
+brew install autoconf automake libtool
+export PATH="$(brew --prefix libtool)/libexec/gnubin:${PATH}"
+```
+
+Then bootstrap and build libmpq with the Apple toolchain:
+
+```sh
+sh autogen.sh
+./configure --prefix="${HOME}/.local"
+/usr/bin/make -j"$(sysctl -n hw.ncpu)"
+/usr/bin/make check
+/usr/bin/make install
+```
+
+Homebrew places the GNU Libtool commands in `libexec/gnubin` so they do not
+conflict with Apple's `/usr/bin/libtool`. The `autogen.sh` script requires GNU
+Libtool's `libtoolize` command.
+
+CI also installs `pkg-config` through Homebrew to validate the native SDK
+metadata and external consumers. It is not required by `autogen.sh` or the
+normal source configuration.
+
+The supported macOS CI configuration uses Homebrew's liblzma headers and links
+zlib, bzip2, and liblzma from its macOS SDK/system environment. No Homebrew
+library directory is added to the linker search path. The official macOS SDK
+archives do not bundle private copies of these codec libraries.
 
 ### Windows
 
@@ -208,15 +279,17 @@ available through `man 3 libmpq`.
 
 ## Native C SDK packages
 
-Individual release downloads provide prebuilt x86_64 native C SDKs for Linux
-glibc, Linux musl, Windows MSVC, and Windows MinGW-w64. Each SDK includes
-public headers, a shared library, platform-appropriate import libraries or
-development metadata, licenses, and documentation.
+Individual release downloads provide prebuilt native C SDKs for Linux glibc
+and musl, macOS arm64 and x86_64, Windows MSVC, and Windows MinGW-w64. Each
+SDK includes public headers, a shared library, platform-appropriate import
+libraries or development metadata, licenses, and documentation. The macOS
+SDKs are relocatable, architecture-specific `.tar.gz` development archives,
+not application installers.
 
-Linux SDKs use the relevant system runtime and codec dependencies. Windows SDK
-ZIPs bundle the required non-system runtime DLLs under `bin/`; choose the MSVC
-or MinGW-w64 package to match your compiler. No special libmpq consumer
-preprocessor define is required. See the
+Linux and macOS SDKs use their relevant system runtime and codec dependencies.
+Windows SDK ZIPs bundle the required non-system runtime DLLs under `bin/`;
+choose the MSVC or MinGW-w64 package to match your compiler. No special
+libmpq consumer preprocessor define is required. See the
 [SDK setup instructions](DEVELOPER.md#native-c-sdk-packages) and
 [release package summary](DEVELOPER.md#release-package-summary).
 

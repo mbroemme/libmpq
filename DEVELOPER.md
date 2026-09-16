@@ -215,6 +215,29 @@ man 1 libmpq-config
 man 3 libmpq
 ```
 
+### macOS
+
+macOS SDKs are available as individual relocatable archives for Apple silicon
+and Intel systems:
+
+* `libmpq-X.Y.Z-macos-arm64.tar.gz`
+* `libmpq-X.Y.Z-macos-x86_64.tar.gz`
+
+Each package contains `bin/libmpq-config`, `include/libmpq/mpq.h`, a versioned
+`lib/libmpq.*.dylib` with a `libmpq.dylib` symlink, `lib/pkgconfig/libmpq.pc`,
+manual pages, licenses, and project documentation. The dylib uses an `@rpath`
+install name and the package metadata derives paths relative to the extracted
+SDK. Select the archive that matches the native architecture; packages are not
+Universal 2 binaries.
+
+The SDK depends on macOS-provided zlib, bzip2, and liblzma. Add its `bin/`
+directory to `PATH` to locate `libmpq-config`, then pass the extracted SDK
+root explicitly: `libmpq-config --prefix="${LIBMPQ_ROOT}" --cflags` and
+`libmpq-config --prefix="${LIBMPQ_ROOT}" --libs`. Add `lib/pkgconfig/` to
+`PKG_CONFIG_PATH` for compiler and linker flags. Consumers should add an
+application-appropriate runtime rpath for the SDK's `lib/` directory when
+linking, for example `-Wl,-rpath,/path/to/libmpq-X.Y.Z/lib`.
+
 ### Windows MSVC
 
 Extract `libmpq-X.Y.Z-windows-msvc-x64.zip`. The SDK contains
@@ -348,17 +371,19 @@ Pushing a `vX.Y.Z` tag runs the top-level release workflow. It rejects tags that
 do not exactly match `AC_INIT` and the CMake project version. Build jobs remain
 read-only; only the final job receives `contents: write` through `GITHUB_TOKEN`.
 
-All source, binding, Linux, and Windows packages are built before publication.
-The Windows SDKs add to the existing release set; they do not replace the Linux
-SDK or binding archives. The signed GitHub Release includes `SHA256SUMS`
-covering every archive, its detached signature `SHA256SUMS.asc`, and the public
-key `libmpq-release-signing-key.asc`.
+All source, binding, Linux, macOS, and Windows packages are built before
+publication. The macOS and Windows SDKs add to the existing release set; they
+do not replace the Linux SDK or binding archives. The signed GitHub Release
+includes `SHA256SUMS` covering every archive, its detached signature
+`SHA256SUMS.asc`, and the public key `libmpq-release-signing-key.asc`.
 
 | Package | Release archive | Contents |
 | --- | --- | --- |
 | Source distributions | `libmpq-X.Y.Z.tar.gz`, `libmpq-X.Y.Z.tar.bz2` | Configure-ready Automake distributions |
 | Native C SDK - Linux glibc x86_64 | `libmpq-X.Y.Z-linux-glibc-x86_64.tar.gz` | Relocatable glibc SDK |
 | Native C SDK - Linux musl x86_64 | `libmpq-X.Y.Z-linux-musl-x86_64.tar.gz` | Relocatable musl SDK |
+| Native C SDK - macOS arm64 | `libmpq-X.Y.Z-macos-arm64.tar.gz` | Relocatable arm64 dylib SDK |
+| Native C SDK - macOS x86_64 | `libmpq-X.Y.Z-macos-x86_64.tar.gz` | Relocatable x86_64 dylib SDK |
 | Native C SDK - Windows MSVC x64 | `libmpq-X.Y.Z-windows-msvc-x64.zip` | Shared DLL, `.lib` import library, headers, runtime DLLs, licenses, optional PDB |
 | Native C SDK - Windows MinGW x86_64 | `libmpq-X.Y.Z-windows-mingw-x86_64.zip` | Shared DLL, `.dll.a` import library, headers, relocatable metadata, runtime DLLs, licenses |
 | Python package | `libmpq-python-X.Y.Z.zip` | Python sdist and all wheels |
@@ -379,6 +404,23 @@ Installed consumer smoke tests link against each staged SDK and run with only
 its `bin/` and Windows system directories on `PATH`; build-tree or toolchain
 DLLs cannot hide a missing bundled dependency. ZIP integrity and single-root
 layout checks run before upload. The Bash helper tests also run in normal CI.
+
+### macOS release packaging
+
+macOS SDKs are built natively for arm64 and x86_64 using Apple Clang, the Apple
+linker, the macOS SDK selected through `xcrun`, and `/usr/bin/make`. GNU
+Autotools supplies the build frontend; Homebrew supplies Autoconf, Automake,
+and GNU Libtool for build-system bootstrap, and pkg-config for package
+validation. Homebrew's xz supplies missing liblzma development headers through
+`CPPFLAGS` only; library linking still uses the macOS SDK/system environment,
+without a Homebrew library search path. The macOS build/package steps use
+`MACOSX_DEPLOYMENT_TARGET=11.0`. The package helper uses the installed
+GNU Libtool dylib names, normalizes each dylib ID to `@rpath`, and rejects
+Homebrew, MacPorts, build-tree, and temporary-path dependency leaks. Package
+tests validate the architecture, ad-hoc dylib signature, deployment target,
+dylib ID, dependency paths, `LC_RPATH` entries, relocatable pkg-config and
+explicit-prefix `libmpq-config` metadata, external consumers, and a second
+extraction location. macOS packages do not bundle system codec libraries.
 
 ### Source validation and release publication
 

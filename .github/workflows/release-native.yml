@@ -120,9 +120,129 @@ jobs:
           path: release/libmpq-*-linux-musl-x86_64.tar.gz
           if-no-files-found: error
 
+  binary-macos-arm64:
+    name: Build native macOS arm64 SDK package
+    runs-on: macos-15
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install macOS build prerequisites
+        run: |
+          set -euxo pipefail
+          brew install autoconf automake libtool pkg-config xz
+          echo "$(brew --prefix libtool)/libexec/gnubin" >> "${GITHUB_PATH}"
+
+      - name: Build and test the macOS arm64 SDK package
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '11.0'
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euxo pipefail
+          test "$(uname -m)" = arm64
+          CC="$(xcrun --sdk macosx --find clang)"
+          SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+
+          # Supply missing liblzma headers without linking Homebrew libraries.
+          CPPFLAGS="-I$(brew --prefix xz)/include ${CPPFLAGS:-}"
+          export CC SDKROOT CPPFLAGS
+          "${CC}" --version
+          xcrun --sdk macosx --show-sdk-path
+          sh autogen.sh
+          ./configure --prefix=/usr --enable-shared --disable-static
+          /usr/bin/make -j"$(sysctl -n hw.ncpu)" V=1
+          /usr/bin/make check
+          version="$(./configure --version | sed -n '1s/^libmpq configure //p')"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            test "${version}" = "${GITHUB_REF_NAME#v}"
+          fi
+          LIBMPQ_NATIVE_ARCHITECTURE=arm64 \
+            LIBMPQ_NATIVE_VERSION="${version}" \
+            LIBMPQ_NATIVE_BUILD_ENVIRONMENT=macos-15-arm64 \
+            bash scripts/package-macos-binary.sh
+          bash scripts/test-macos-package.sh \
+            "release/libmpq-${version}-macos-arm64.tar.gz" \
+            tests/fixtures/mpq-v1-features.mpq arm64
+
+      - name: Upload native macOS arm64 SDK package
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-native-macos-arm64-package
+          path: release/libmpq-*-macos-arm64.tar.gz
+          if-no-files-found: error
+
+  binary-macos-x86_64:
+    name: Build native macOS x86_64 SDK package
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install macOS build prerequisites
+        run: |
+          set -euxo pipefail
+          brew install autoconf automake libtool pkg-config xz
+          echo "$(brew --prefix libtool)/libexec/gnubin" >> "${GITHUB_PATH}"
+
+      - name: Build and test the macOS x86_64 SDK package
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '11.0'
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euxo pipefail
+          test "$(uname -m)" = x86_64
+          CC="$(xcrun --sdk macosx --find clang)"
+          SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+
+          # Supply missing liblzma headers without linking Homebrew libraries.
+          CPPFLAGS="-I$(brew --prefix xz)/include ${CPPFLAGS:-}"
+          export CC SDKROOT CPPFLAGS
+          "${CC}" --version
+          xcrun --sdk macosx --show-sdk-path
+          sh autogen.sh
+          ./configure --prefix=/usr --enable-shared --disable-static
+          /usr/bin/make -j"$(sysctl -n hw.ncpu)" V=1
+          /usr/bin/make check
+          version="$(./configure --version | sed -n '1s/^libmpq configure //p')"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            test "${version}" = "${GITHUB_REF_NAME#v}"
+          fi
+          LIBMPQ_NATIVE_ARCHITECTURE=x86_64 \
+            LIBMPQ_NATIVE_VERSION="${version}" \
+            LIBMPQ_NATIVE_BUILD_ENVIRONMENT=macos-15-intel \
+            bash scripts/package-macos-binary.sh
+          bash scripts/test-macos-package.sh \
+            "release/libmpq-${version}-macos-x86_64.tar.gz" \
+            tests/fixtures/mpq-v1-features.mpq x86_64
+
+      - name: Upload native macOS x86_64 SDK package
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-native-macos-x86_64-package
+          path: release/libmpq-*-macos-x86_64.tar.gz
+          if-no-files-found: error
+
   package:
     name: Collect native C SDK release archives
-    needs: [binary-glibc, binary-musl]
+    needs: [binary-glibc, binary-musl, binary-macos-arm64, binary-macos-x86_64]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -141,5 +261,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: libmpq-native-release
-          path: release/packages/libmpq-*-linux-*.tar.gz
+          path: release/packages/libmpq-*.tar.gz
           if-no-files-found: error
