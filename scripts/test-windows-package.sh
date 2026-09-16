@@ -23,8 +23,22 @@ touch "${SystemRoot}/System32/KERNEL32.DLL"
 cat > "${root}/tools/objdump" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-[[ "$1" == -p ]]
-while IFS= read -r dependency; do printf '    DLL Name: %s\n' "${dependency}"; done < "$2"
+case "$1" in
+	-f)
+		machine="${TEST_MACHINE}"
+		if [[ "${2##*/}" != libmpq.dll ]]; then machine="${TEST_RUNTIME_MACHINE:-${machine}}"; fi
+		case "${machine}" in
+			8664) format=pei-x86-64 ;;
+			AA64) format=coff-arm64 ;;
+			*) format=unknown ;;
+		esac
+		printf '%s: file format %s\r\n' "$2" "${format}"
+		;;
+	-p)
+		while IFS= read -r dependency; do printf '    DLL Name: %s\n' "${dependency}"; done < "$2"
+		;;
+	*) exit 1 ;;
+esac
 exit "${TEST_INSPECT_STATUS:-0}"
 EOF
 cat > "${root}/tools/dumpbin.exe" <<'EOF'
@@ -76,11 +90,11 @@ reset_stage()
 	printf '#!/bin/sh\nprefix=/usr\nprintf "%%s\\n" "${prefix}"\n' > "${stage}/bin/libmpq-config"
 }
 
-for combination in msvc:x64 msvc:arm64 mingw:x86_64; do
+for combination in msvc:x64 msvc:arm64 mingw:x86_64 mingw:aarch64; do
 	toolchain="${combination%:*}"
 	architecture="${combination#*:}"
 	export TEST_MACHINE=8664
-	if [[ "${architecture}" == arm64 ]]; then TEST_MACHINE=AA64; fi
+	if [[ "${architecture}" == arm64 || "${architecture}" == aarch64 ]]; then TEST_MACHINE=AA64; fi
 	export TEST_RUNTIME="${root}/installed/${architecture}-windows"
 	mkdir -p "${TEST_RUNTIME}/bin" "${TEST_RUNTIME}/share/codec" \
 		"${TEST_RUNTIME}/share/licenses/codec" "${TEST_RUNTIME}/../vcpkg/info"
@@ -93,7 +107,7 @@ for combination in msvc:x64 msvc:arm64 mingw:x86_64; do
 	if [[ "${toolchain}" == msvc ]]; then
 		suffix="msvc-${architecture}"; library=libmpq.lib
 	else
-		suffix=mingw-x86_64; library=libmpq.dll.a
+		suffix="mingw-${architecture}"; library=libmpq.dll.a
 	fi
 	stage="${root}/libmpq-0.7.1-windows-${suffix}"
 	output="${root}/dist/${stage##*/}.zip"
@@ -102,17 +116,17 @@ for combination in msvc:x64 msvc:arm64 mingw:x86_64; do
 	reset_stage
 	expect_failure bash "${project}/scripts/package-windows.sh" prepare "${options[@]}" --architecture unsupported
 	grep -q 'Unsupported Windows toolchain/architecture' "${temporary}/failure.log"
+
+	# MinGW uses aarch64, not the MSVC arm64 spelling.
 	expect_failure bash "${project}/scripts/package-windows.sh" prepare "${options[@]}" --toolchain mingw --architecture arm64
 	grep -q 'Unsupported Windows toolchain/architecture' "${temporary}/failure.log"
-	if [[ "${toolchain}" == msvc ]]; then
-		wrong_machine=AA64
-		if [[ "${architecture}" == arm64 ]]; then wrong_machine=8664; fi
-		expect_failure env TEST_MACHINE="${wrong_machine}" bash "${project}/scripts/package-windows.sh" prepare "${options[@]}"
-		grep -q 'PE architecture mismatch' "${temporary}/failure.log"
-		expect_failure env TEST_RUNTIME_MACHINE="${wrong_machine}" bash "${project}/scripts/package-windows.sh" prepare "${options[@]}"
-		grep -q 'PE architecture mismatch' "${temporary}/failure.log"
-		reset_stage
-	fi
+	wrong_machine=AA64
+	if [[ "${TEST_MACHINE}" == AA64 ]]; then wrong_machine=8664; fi
+	expect_failure env TEST_MACHINE="${wrong_machine}" bash "${project}/scripts/package-windows.sh" prepare "${options[@]}"
+	grep -q 'PE architecture mismatch' "${temporary}/failure.log"
+	expect_failure env TEST_RUNTIME_MACHINE="${wrong_machine}" bash "${project}/scripts/package-windows.sh" prepare "${options[@]}"
+	grep -q 'PE architecture mismatch' "${temporary}/failure.log"
+	reset_stage
 	bash "${project}/scripts/package-windows.sh" prepare "${options[@]}"
 	for document in README.md DEVELOPER.md MPQ.md; do
 		cmp "${project}/${document}" "${stage}/${document}"
@@ -121,13 +135,13 @@ for combination in msvc:x64 msvc:arm64 mingw:x86_64; do
 	[[ ! -e "${stage}/bin/KERNEL32.DLL" && ! -e "${stage}/runtime-dependencies.json" ]]
 	if [[ "${toolchain}" == msvc ]]; then
 		cmp "${TEST_RUNTIME}/share/codec/copyright" "${stage}/licenses/codec/copyright"
-		expect_failure env TEST_RUNTIME_MACHINE="${wrong_machine}" bash "${project}/scripts/package-windows.sh" archive "${options[@]}"
-		grep -q 'PE architecture mismatch' "${temporary}/failure.log"
 	else
 		cmp "${TEST_RUNTIME}/share/licenses/codec/LICENSE" "${stage}/licenses/codec/codec/LICENSE"
 		grep -Fx 'prefix=${pcfiledir}/../..' "${stage}/lib/pkgconfig/libmpq.pc"
 		[[ "$(sh "${stage}/bin/libmpq-config")" == "${stage}" ]]
 	fi
+	expect_failure env TEST_RUNTIME_MACHINE="${wrong_machine}" bash "${project}/scripts/package-windows.sh" archive "${options[@]}"
+	grep -q 'PE architecture mismatch' "${temporary}/failure.log"
 	bash "${project}/scripts/package-windows.sh" archive "${options[@]}" > "${temporary}/zip.log"
 	unzip -t "${output}" > /dev/null
 	for document in README.md DEVELOPER.md MPQ.md; do
@@ -175,7 +189,7 @@ done
 printf 'project(libmpq VERSION 0.7.2 LANGUAGES C)\n' > CMakeLists.txt
 expect_failure bash "${project}/scripts/validate-release.sh"
 
-# Exercise sorted checksum generation on the three test ZIPs, not release assets.
+# Exercise sorted checksum generation on the four test ZIPs, not release assets.
 cd "${root}/dist"
 printf '%s\n' *.zip | LC_ALL=C sort | while IFS= read -r asset; do
 	sha256sum "${asset}"

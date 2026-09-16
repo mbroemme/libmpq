@@ -108,47 +108,96 @@ jobs:
           & "${env:RUNNER_TEMP}/consumer.exe" ${version}
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
   mingw:
-    name: MinGW-w64 Autotools (${{ matrix.linkage }})
-    runs-on: windows-latest
+    name: MinGW-w64 ${{ matrix.architecture }} Autotools (${{ matrix.linkage }})
+    runs-on: ${{ matrix.runner }}
     strategy:
+      fail-fast: false
       matrix:
         linkage: [shared, static]
+        architecture: [x86_64, aarch64]
+        include:
+          - architecture: x86_64
+            runner: windows-latest
+            native_arch: x64
+            msystem: MINGW64
+            prefix: /mingw64
+            triplet: x86_64-w64-mingw32
+            compiler: x86_64-w64-mingw32-gcc
+            package_prefix: mingw-w64-x86_64
+            compiler_package: gcc
+            tools_package: binutils
+            pe_format: pei-x86-64
+          - architecture: aarch64
+            runner: windows-11-vs2026-arm
+            native_arch: arm64
+            msystem: CLANGARM64
+            prefix: /clangarm64
+            triplet: aarch64-w64-mingw32
+            compiler: clang
+            package_prefix: mingw-w64-clang-aarch64
+            compiler_package: clang
+            tools_package: llvm-tools
+            pe_format: coff-arm64
     defaults:
       run:
         shell: msys2 {0}
     steps:
       - uses: actions/checkout@v4
+      - name: Verify native Windows runner
+        shell: pwsh
+        run: |
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ine '${{ matrix.native_arch }}') { throw 'Native runner architecture mismatch' }
       - uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: ${{ matrix.msystem }}
           update: true
           install: >-
             autoconf automake libtool make diffutils
-            mingw-w64-x86_64-gcc mingw-w64-x86_64-zlib
-            mingw-w64-x86_64-bzip2 mingw-w64-x86_64-xz
-            mingw-w64-x86_64-pkgconf
+            ${{ matrix.package_prefix }}-${{ matrix.compiler_package }}
+            ${{ matrix.package_prefix }}-${{ matrix.tools_package }}
+            ${{ matrix.package_prefix }}-zlib ${{ matrix.package_prefix }}-bzip2
+            ${{ matrix.package_prefix }}-xz ${{ matrix.package_prefix }}-pkgconf
       - name: Build, test, install and link consumer
         env:
           LINKAGE: ${{ matrix.linkage }}
         run: |
           set -euxo pipefail
-          prefix="$(mktemp -d)"
+          test "${MSYSTEM}" = '${{ matrix.msystem }}'
+          for tool in '${{ matrix.compiler }}' ar ranlib nm dlltool objdump strip pkg-config; do
+            case "$(command -v "${tool}")" in '${{ matrix.prefix }}'/bin/*) ;; *) echo "Wrong toolchain path: ${tool}" >&2; exit 1 ;; esac
+          done
+          export CC='${{ matrix.prefix }}/bin/${{ matrix.compiler }}'
+          export AR='${{ matrix.prefix }}/bin/ar' RANLIB='${{ matrix.prefix }}/bin/ranlib'
+          export NM='${{ matrix.prefix }}/bin/nm' DLLTOOL='${{ matrix.prefix }}/bin/dlltool'
+          export OBJDUMP='${{ matrix.prefix }}/bin/objdump' STRIP='${{ matrix.prefix }}/bin/strip'
           sh autogen.sh
+          version="$(./configure --version | sed -n '1s/^libmpq configure //p')"
+          prefix="$(mktemp -d)/libmpq-${version}-windows-mingw-${{ matrix.architecture }}"
           if test "${LINKAGE}" = shared; then
-            ./configure --host=x86_64-w64-mingw32 --prefix="${prefix}" --enable-shared --disable-static
+            ./configure --host=${{ matrix.triplet }} --prefix="${prefix}" --enable-shared --disable-static
           else
-            ./configure --host=x86_64-w64-mingw32 --prefix="${prefix}" --disable-shared --enable-static
+            ./configure --host=${{ matrix.triplet }} --prefix="${prefix}" --disable-shared --enable-static
           fi
           make -j2
           make check
           make install
+          if test "${LINKAGE}" = shared; then
+            bash scripts/package-windows.sh prepare --toolchain mingw --architecture ${{ matrix.architecture }} --stage "${prefix}" --runtime '${{ matrix.prefix }}' --output "${prefix}.zip" --version "${version}"
+          fi
           export PKG_CONFIG_PATH="${prefix}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
           if test "${LINKAGE}" = shared; then
-            x86_64-w64-mingw32-gcc $(pkg-config --cflags libmpq) tests/test-mpq-consumer.c $(pkg-config --libs libmpq) -o "${prefix}/consumer.exe"
+            "${CC}" $(pkg-config --cflags libmpq) tests/test-mpq-consumer.c $(pkg-config --libs libmpq) -o "${prefix}/consumer.exe"
           else
-            x86_64-w64-mingw32-gcc $(pkg-config --cflags libmpq) tests/test-mpq-consumer.c $(pkg-config --static --libs libmpq) -o "${prefix}/consumer.exe"
+            "${CC}" $(pkg-config --cflags libmpq) tests/test-mpq-consumer.c $(pkg-config --static --libs libmpq) -o "${prefix}/consumer.exe"
           fi
-          PATH="${prefix}/bin:${PATH}" "${prefix}/consumer.exe" "$("${prefix}/bin/libmpq-config" --version)"
+          test "$(objdump -f "${prefix}/consumer.exe" | sed -nE 's/^.*file format[[:space:]]+([^[:space:]]+)[[:space:]]*$/\1/p')" = '${{ matrix.pe_format }}'
+          test "$("${prefix}/bin/libmpq-config" --version)" = "${version}"
+          if test "${LINKAGE}" = shared; then
+            system_root="$(cygpath -u "${SystemRoot:-${SYSTEMROOT}}")"
+            PATH="${prefix}/bin:${system_root}/System32:${system_root}" "${prefix}/consumer.exe" "${version}" "$(cygpath -w "${PWD}/tests/fixtures/mpq-v1-features.mpq")"
+          else
+            PATH="${prefix}/bin:${PATH}" "${prefix}/consumer.exe" "${version}"
+          fi
   lint:
     name: Lint and static analysis
     runs-on: ubuntu-latest

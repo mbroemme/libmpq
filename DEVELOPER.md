@@ -264,7 +264,9 @@ required.
 
 ### Windows MinGW-w64
 
-Extract `libmpq-X.Y.Z-windows-mingw-x86_64.zip`. The SDK contains
+Extract `libmpq-X.Y.Z-windows-mingw-x86_64.zip` for MINGW64 x86_64 or
+`libmpq-X.Y.Z-windows-mingw-aarch64.zip` for native Windows ARM64 using
+MSYS2 CLANGARM64. The SDK contains
 `bin/libmpq*.dll`, the `lib/libmpq.dll.a` import library, and the public header
 `include/libmpq/mpq.h`. Required non-system runtime DLLs are bundled under
 `bin/`. No libmpq-specific consumer preprocessor define is required.
@@ -403,22 +405,29 @@ includes `SHA256SUMS` covering every archive, its detached signature
 | Native C SDK - Windows MSVC x64 | `libmpq-X.Y.Z-windows-msvc-x64.zip` | Shared DLL, `.lib` import library, headers, runtime DLLs, licenses, optional PDB |
 | Native C SDK - Windows MSVC ARM64 | `libmpq-X.Y.Z-windows-msvc-arm64.zip` | Shared DLL, `.lib` import library, headers, runtime DLLs, licenses, optional PDB |
 | Native C SDK - Windows MinGW x86_64 | `libmpq-X.Y.Z-windows-mingw-x86_64.zip` | Shared DLL, `.dll.a` import library, headers, relocatable metadata, runtime DLLs, licenses |
+| Native C SDK - Windows MinGW aarch64 | `libmpq-X.Y.Z-windows-mingw-aarch64.zip` | Native MSYS2 CLANGARM64 SDK with the same MinGW layout |
 | Python package | `libmpq-python-X.Y.Z.zip` | Python sdist and all wheels |
 | Java package | `libmpq-java-X.Y.Z.zip` | Runtime, sources, Javadoc, licenses, and README |
 | D package | `libmpq-d-X.Y.Z.zip` | D source and compiler/platform packages |
 
 ### Windows release packaging
 
-MSVC x64 and ARM64 use CMake and MinGW x86_64 uses Autotools. Windows SDKs
-contain shared libraries only; MSVC includes the Release PDB when available.
+MSVC x64 and ARM64 use CMake; MinGW x86_64 and aarch64 use Autotools with
+MINGW64 and CLANGARM64 respectively. Windows SDKs contain shared libraries
+only; MSVC includes the Release PDB when available.
 Bash packaging helpers inspect PE imports recursively with `dumpbin` or
 `objdump`. Non-system DLLs are bundled from the selected toolchain. Their
 licenses are copied using vcpkg ownership metadata or MSYS2 `pacman` package
-records. MSVC packaging
-checks the PE machine type of libmpq and every bundled runtime DLL against
-the requested architecture. Windows system DLLs and API sets are excluded.
+records. Windows packaging checks the PE architecture of libmpq and every
+bundled runtime DLL against the requested architecture. Windows system DLLs
+and API sets are excluded.
 A final dependency scan resolves non-system imports only from the staged SDK,
 not the toolchain or `PATH`.
+
+CLANGARM64 builds use native Clang and LLVM tools from `/clangarm64/bin`.
+Runtime DLLs come only from `/clangarm64`, not `/mingw64`. Both MinGW targets
+run the full C suite and an installed consumer natively. The ARM64 package
+uses the GNU architecture token `aarch64`; MSVC keeps `arm64`.
 
 Installed consumer smoke tests link against each staged SDK and run with only
 its `bin/` and Windows system directories on `PATH`; build-tree or toolchain

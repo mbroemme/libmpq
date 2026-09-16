@@ -212,8 +212,8 @@ archives do not bundle private copies of these codec libraries.
 The native C library supports MSVC x64 and ARM64 through CMake. Native CI
 runners build both architectures, run the C regression suite through CTest,
 and compile and execute installed consumers. Autotools remains the POSIX and
-MinGW-w64 x86_64 build frontend. Windows language bindings are not included
-in this support.
+MinGW-w64 build frontend, including native aarch64 via MSYS2 CLANGARM64.
+Windows language bindings are not included in this support.
 
 #### MSVC (CMake)
 
@@ -228,8 +228,7 @@ ctest --test-dir build -C Release --output-on-failure
 ```
 
 For a native ARM64 build, use an ARM64 developer environment, replace
-`x64-windows` with `arm64-windows`, and use `-A ARM64`. MinGW ARM64 is not
-supported yet.
+`x64-windows` with `arm64-windows`, and use `-A ARM64`.
 
 Consumers include `libmpq/mpq.h` and link the DLL import library or static
 library, without special preprocessor definitions. Use `-DBUILD_SHARED_LIBS=OFF`
@@ -238,7 +237,8 @@ system libraries.
 
 #### MinGW-w64 (Autotools)
 
-MinGW-w64 uses Autotools, including in the separate Windows CI job:
+MinGW-w64 uses Autotools on native Windows runners for MINGW64 x86_64 and
+CLANGARM64 aarch64. For example, in an MSYS2 MINGW64 shell:
 
 ```sh
 sh autogen.sh
@@ -247,6 +247,14 @@ make
 make check
 make install
 ```
+
+For ARM64, use an MSYS2 CLANGARM64 shell on Windows ARM64. Install
+`mingw-w64-clang-aarch64-clang`, `mingw-w64-clang-aarch64-llvm-tools`,
+`mingw-w64-clang-aarch64-zlib`, `mingw-w64-clang-aarch64-bzip2`,
+`mingw-w64-clang-aarch64-xz`, and `mingw-w64-clang-aarch64-pkgconf`, plus
+`autoconf automake libtool make diffutils`. Use `CC=clang` and
+`--host=aarch64-w64-mingw32`; compiler and binary tools must resolve from
+`/clangarm64/bin`. This uses native Clang/LLVM, not a cross compiler.
 
 Provide MinGW-built zlib, bzip2, and lzma libraries, not Unix libraries. For
 cross-builds, set dependency include/library search paths as needed and run
@@ -286,8 +294,9 @@ available through `man 3 libmpq`.
 
 Individual release downloads provide prebuilt native C SDKs for Linux glibc
 and musl (both x86_64 and aarch64), macOS arm64 and x86_64, Windows MSVC
-x64 and ARM64, and Windows MinGW-w64 x86_64. Each SDK includes public headers,
-a shared library, platform-appropriate import libraries or development
+x64 and ARM64, and Windows MinGW-w64 x86_64 and aarch64 (MSYS2 CLANGARM64).
+Each SDK includes public headers, a shared library, platform-appropriate
+import libraries or development
 metadata, licenses, and documentation. The macOS SDKs are relocatable,
 architecture-specific `.tar.gz` development archives, not application installers.
 

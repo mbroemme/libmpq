@@ -49,11 +49,20 @@ index_dlls()
 validate_architecture()
 {
 	local output machine
-	[[ "${toolchain}" == msvc ]] || return 0
-	output="$(MSYS2_ARG_CONV_EXCL='*' MSYS_NO_PATHCONV=1 \
-		dumpbin.exe /nologo /headers "$(native_path "$1")")" || fail "Cannot inspect $1"
-	machine="$(printf '%s\n' "${output}" | tr -d '\r' | \
-		sed -nE 's/^[[:space:]]*([[:xdigit:]]+)[[:space:]]+machine[[:space:]]+\([^)]*\).*/\1/p')"
+	if [[ "${toolchain}" == msvc ]]; then
+		output="$(MSYS2_ARG_CONV_EXCL='*' MSYS_NO_PATHCONV=1 \
+			dumpbin.exe /nologo /headers "$(native_path "$1")")" || fail "Cannot inspect $1"
+		machine="$(printf '%s\n' "${output}" | tr -d '\r' | \
+			sed -nE 's/^[[:space:]]*([[:xdigit:]]+)[[:space:]]+machine[[:space:]]+\([^)]*\).*/\1/p')"
+	else
+		output="$(objdump -f "$1")" || fail "Cannot inspect $1"
+		machine="$(printf '%s\n' "${output}" | tr -d '\r' | \
+			sed -nE 's/^.*file format[[:space:]]+([^[:space:]]+)[[:space:]]*$/\1/p')"
+		case "${machine}" in
+			pei-x86-64|coff-x86-64) machine=8664 ;;
+			coff-arm64) machine=AA64 ;;
+		esac
+	fi
 	[[ "${machine^^}" == "${expected_machine}" ]] || \
 		fail "PE architecture mismatch for $1: expected ${architecture} (${expected_machine}), found ${machine:-unknown}"
 }
@@ -167,7 +176,8 @@ done
 case "${toolchain}:${architecture}" in
 	msvc:x64) suffix=msvc-x64; library=libmpq.lib; expected_machine=8664 ;;
 	msvc:arm64) suffix=msvc-arm64; library=libmpq.lib; expected_machine=AA64 ;;
-	mingw:x86_64) suffix=mingw-x86_64; library=libmpq.dll.a ;;
+	mingw:x86_64) suffix=mingw-x86_64; library=libmpq.dll.a; expected_machine=8664 ;;
+	mingw:aarch64) suffix=mingw-aarch64; library=libmpq.dll.a; expected_machine=AA64 ;;
 	*) fail "Unsupported Windows toolchain/architecture combination: ${toolchain}:${architecture}" ;;
 esac
 name="libmpq-${version}-windows-${suffix}"

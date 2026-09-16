@@ -153,9 +153,35 @@ jobs:
           if-no-files-found: error
 
   windows-mingw:
-    name: Package MinGW-w64 x86_64 SDK
+    name: Package MinGW-w64 ${{ matrix.architecture }} SDK
     needs: validate
-    runs-on: windows-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: windows-latest
+            native_arch: x64
+            msystem: MINGW64
+            prefix: /mingw64
+            triplet: x86_64-w64-mingw32
+            compiler: x86_64-w64-mingw32-gcc
+            package_prefix: mingw-w64-x86_64
+            compiler_package: gcc
+            tools_package: binutils
+            pe_format: pei-x86-64
+          - architecture: aarch64
+            runner: windows-11-vs2026-arm
+            native_arch: arm64
+            msystem: CLANGARM64
+            prefix: /clangarm64
+            triplet: aarch64-w64-mingw32
+            compiler: clang
+            package_prefix: mingw-w64-clang-aarch64
+            compiler_package: clang
+            tools_package: llvm-tools
+            pe_format: coff-arm64
     timeout-minutes: 45
     env:
       RELEASE_VERSION: ${{ needs.validate.outputs.version }}
@@ -166,23 +192,36 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Verify native Windows runner
+        shell: pwsh
+        run: |
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ine '${{ matrix.native_arch }}') { throw 'Native runner architecture mismatch' }
       - uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: ${{ matrix.msystem }}
           update: true
           install: >-
             autoconf automake libtool make diffutils zip unzip
-            mingw-w64-x86_64-gcc mingw-w64-x86_64-zlib
-            mingw-w64-x86_64-bzip2 mingw-w64-x86_64-xz
-            mingw-w64-x86_64-pkgconf
+            ${{ matrix.package_prefix }}-${{ matrix.compiler_package }}
+            ${{ matrix.package_prefix }}-${{ matrix.tools_package }}
+            ${{ matrix.package_prefix }}-zlib ${{ matrix.package_prefix }}-bzip2
+            ${{ matrix.package_prefix }}-xz ${{ matrix.package_prefix }}-pkgconf
       - name: Build, test, and stage shared SDK
         run: |
           set -euxo pipefail
-          name="libmpq-${RELEASE_VERSION}-windows-mingw-x86_64"
+          test "${MSYSTEM}" = '${{ matrix.msystem }}'
+          for tool in '${{ matrix.compiler }}' ar ranlib nm dlltool objdump strip pkg-config; do
+            case "$(command -v "${tool}")" in '${{ matrix.prefix }}'/bin/*) ;; *) echo "Wrong toolchain path: ${tool}" >&2; exit 1 ;; esac
+          done
+          export CC='${{ matrix.prefix }}/bin/${{ matrix.compiler }}'
+          export AR='${{ matrix.prefix }}/bin/ar' RANLIB='${{ matrix.prefix }}/bin/ranlib'
+          export NM='${{ matrix.prefix }}/bin/nm' DLLTOOL='${{ matrix.prefix }}/bin/dlltool'
+          export OBJDUMP='${{ matrix.prefix }}/bin/objdump' STRIP='${{ matrix.prefix }}/bin/strip'
+          name="libmpq-${RELEASE_VERSION}-windows-mingw-${{ matrix.architecture }}"
           stage="$(cygpath -u "${RUNNER_TEMP}")/sdk/${name}"
           test ! -e "${stage}"
           sh autogen.sh
-          ./configure --host=x86_64-w64-mingw32 --prefix=/usr --enable-shared --disable-static
+          ./configure --host=${{ matrix.triplet }} --prefix=/usr --enable-shared --disable-static
           make -j2
           make check
           install_root="$(mktemp -d)"
@@ -190,20 +229,21 @@ jobs:
           mkdir -p "$(dirname "${stage}")"
           mv "${install_root}/usr" "${stage}"
           rmdir "${install_root}"
-          bash scripts/package-windows.sh prepare --toolchain mingw --architecture x86_64 --stage "${stage}" --runtime /mingw64 --output "${PWD}/dist/${name}.zip" --version "${RELEASE_VERSION}"
+          bash scripts/package-windows.sh prepare --toolchain mingw --architecture ${{ matrix.architecture }} --stage "${stage}" --runtime '${{ matrix.prefix }}' --output "${PWD}/dist/${name}.zip" --version "${RELEASE_VERSION}"
           export PKG_CONFIG_PATH="${stage}/lib/pkgconfig"
           consumer="$(cygpath -u "${RUNNER_TEMP}")/consumer.exe"
-          x86_64-w64-mingw32-gcc $(pkg-config --cflags libmpq) tests/test-mpq-consumer.c $(pkg-config --libs libmpq) -o "${consumer}"
+          "${CC}" $(pkg-config --cflags libmpq) tests/test-mpq-consumer.c $(pkg-config --libs libmpq) -o "${consumer}"
+          test "$(objdump -f "${consumer}" | sed -nE 's/^.*file format[[:space:]]+([^[:space:]]+)[[:space:]]*$/\1/p')" = '${{ matrix.pe_format }}'
 
           # Only the staged SDK and Windows system DLLs may satisfy imports.
           system_root="$(cygpath -u "${SystemRoot:-${SYSTEMROOT}}")"
           PATH="${stage}/bin:${system_root}/System32:${system_root}" "${consumer}" "${RELEASE_VERSION}" "$(cygpath -w "${PWD}/tests/fixtures/mpq-v1-features.mpq")"
           test "$("${stage}/bin/libmpq-config" --version)" = "${RELEASE_VERSION}"
-          bash scripts/package-windows.sh archive --toolchain mingw --architecture x86_64 --stage "${stage}" --runtime /mingw64 --output "${PWD}/dist/${name}.zip" --version "${RELEASE_VERSION}"
+          bash scripts/package-windows.sh archive --toolchain mingw --architecture ${{ matrix.architecture }} --stage "${stage}" --runtime '${{ matrix.prefix }}' --output "${PWD}/dist/${name}.zip" --version "${RELEASE_VERSION}"
       - uses: actions/upload-artifact@v7
         with:
-          name: libmpq-windows-mingw-release
-          path: dist/libmpq-${{ needs.validate.outputs.version }}-windows-mingw-x86_64.zip
+          name: libmpq-windows-mingw-${{ matrix.architecture }}-release
+          path: dist/libmpq-${{ needs.validate.outputs.version }}-windows-mingw-${{ matrix.architecture }}.zip
           if-no-files-found: error
 
   finalize:
@@ -243,7 +283,8 @@ jobs:
           path: release/windows-msvc
       - uses: actions/download-artifact@v8
         with:
-          name: libmpq-windows-mingw-release
+          pattern: libmpq-windows-mingw-*-release
+          merge-multiple: true
           path: release/windows-mingw
       - name: Collect all release packages and generate checksums
         shell: bash
@@ -280,6 +321,7 @@ jobs:
           collect release/windows-msvc "libmpq-${RELEASE_VERSION}-windows-msvc-x64.zip"
           collect release/windows-msvc "libmpq-${RELEASE_VERSION}-windows-msvc-arm64.zip"
           collect release/windows-mingw "libmpq-${RELEASE_VERSION}-windows-mingw-x86_64.zip"
+          collect release/windows-mingw "libmpq-${RELEASE_VERSION}-windows-mingw-aarch64.zip"
           LC_ALL=C sort -o expected-assets expected-assets
           cd dist
           find . -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort > ../actual-assets
