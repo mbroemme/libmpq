@@ -46,6 +46,18 @@ index_dlls()
 	done
 }
 
+validate_architecture()
+{
+	local output machine
+	[[ "${toolchain}" == msvc ]] || return 0
+	output="$(MSYS2_ARG_CONV_EXCL='*' MSYS_NO_PATHCONV=1 \
+		dumpbin.exe /nologo /headers "$(native_path "$1")")" || fail "Cannot inspect $1"
+	machine="$(printf '%s\n' "${output}" | tr -d '\r' | \
+		sed -nE 's/^[[:space:]]*([[:xdigit:]]+)[[:space:]]+machine[[:space:]]+\([^)]*\).*/\1/p')"
+	[[ "${machine^^}" == "${expected_machine}" ]] || \
+		fail "PE architecture mismatch for $1: expected ${architecture} (${expected_machine}), found ${machine:-unknown}"
+}
+
 imports()
 {
 	local output names
@@ -116,6 +128,7 @@ dependency_closure()
 		name="${name,,}"
 		[[ -z "${visited[${name}]:-}" ]] || continue
 		visited["${name}"]=1
+		validate_architecture "${path}"
 		listing="$(imports "${path}")"
 		while IFS= read -r dependency; do
 			if [[ "${dependency}" == api-ms-* || "${dependency}" == ext-ms-* || \
@@ -134,11 +147,12 @@ dependency_closure()
 
 mode="${1:-}"
 [[ $# -gt 0 ]] && shift
-toolchain='' stage='' runtime='' output='' version='' source="${PWD}"
+toolchain='' architecture='' stage='' runtime='' output='' version='' source="${PWD}"
 while (($#)); do
 	[[ $# -ge 2 ]] || fail "Missing option value: $1"
 	case "$1" in
 		--toolchain) toolchain="$2" ;;
+		--architecture) architecture="$2" ;;
 		--stage) stage="$(unix_path "$2")" ;;
 		--runtime) runtime="$(unix_path "$2")" ;;
 		--source) source="$(unix_path "$2")" ;;
@@ -148,12 +162,13 @@ while (($#)); do
 	esac
 	shift 2
 done
-[[ "${mode}" == prepare || "${mode}" == archive ]] || fail "Usage: $0 prepare|archive --toolchain msvc|mingw --stage DIR --runtime DIR --output ZIP --version X.Y.Z"
+[[ "${mode}" == prepare || "${mode}" == archive ]] || fail "Usage: $0 prepare|archive --toolchain msvc|mingw --architecture ARCH --stage DIR --runtime DIR --output ZIP --version X.Y.Z"
 [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'Expected a numeric X.Y.Z version'
-case "${toolchain}" in
-	msvc) suffix=msvc-x64; library=libmpq.lib ;;
-	mingw) suffix=mingw-x86_64; library=libmpq.dll.a ;;
-	*) fail 'Expected msvc or mingw toolchain' ;;
+case "${toolchain}:${architecture}" in
+	msvc:x64) suffix=msvc-x64; library=libmpq.lib; expected_machine=8664 ;;
+	msvc:arm64) suffix=msvc-arm64; library=libmpq.lib; expected_machine=AA64 ;;
+	mingw:x86_64) suffix=mingw-x86_64; library=libmpq.dll.a ;;
+	*) fail "Unsupported Windows toolchain/architecture combination: ${toolchain}:${architecture}" ;;
 esac
 name="libmpq-${version}-windows-${suffix}"
 [[ "${stage##*/}" == "${name}" && "${output##*/}" == "${name}.zip" ]] || fail 'Invalid SDK directory or ZIP name'

@@ -64,9 +64,27 @@ jobs:
     uses: ./.github/workflows/release-native.yml
 
   windows-msvc:
-    name: Package MSVC x64 SDK
+    name: Package MSVC ${{ matrix.architecture }} SDK
     needs: validate
-    runs-on: windows-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x64
+            runner: windows-latest
+            cmake_platform: x64
+            vcpkg_triplet: x64-windows
+            dev_arch: x64
+            vs_component: Microsoft.VisualStudio.Component.VC.Tools.x86.x64
+            machine: '8664'
+          - architecture: arm64
+            runner: windows-11-vs2026-arm
+            cmake_platform: ARM64
+            vcpkg_triplet: arm64-windows
+            dev_arch: arm64
+            vs_component: Microsoft.VisualStudio.Component.VC.Tools.ARM64
+            machine: 'AA64'
     timeout-minutes: 45
     env:
       RELEASE_VERSION: ${{ needs.validate.outputs.version }}
@@ -79,11 +97,12 @@ jobs:
           persist-credentials: false
       - name: Install native dependencies
         run: |
-          & "${env:VCPKG_INSTALLATION_ROOT}/vcpkg.exe" install zlib:x64-windows bzip2:x64-windows liblzma:x64-windows
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ine '${{ matrix.architecture }}') { throw 'Native runner architecture mismatch' }
+          & "${env:VCPKG_INSTALLATION_ROOT}/vcpkg.exe" install zlib:${{ matrix.vcpkg_triplet }} bzip2:${{ matrix.vcpkg_triplet }} liblzma:${{ matrix.vcpkg_triplet }}
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
       - name: Configure shared Release build with symbols
         run: |
-          cmake -S . -B build -A x64 -DBUILD_SHARED_LIBS=ON "-DCMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake" "-DCMAKE_C_FLAGS_RELEASE=/O2 /Ob2 /DNDEBUG /Zi" "-DCMAKE_SHARED_LINKER_FLAGS_RELEASE=/DEBUG /OPT:REF /OPT:ICF"
+          cmake -S . -B build -A ${{ matrix.cmake_platform }} -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} -DBUILD_SHARED_LIBS=ON "-DCMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake" "-DCMAKE_C_FLAGS_RELEASE=/O2 /Ob2 /DNDEBUG /Zi" "-DCMAKE_SHARED_LINKER_FLAGS_RELEASE=/DEBUG /OPT:REF /OPT:ICF"
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
       - name: Build and test
         run: |
@@ -93,25 +112,28 @@ jobs:
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
       - name: Install, bundle runtime dependencies, and test installed SDK
         run: |
-          ${name} = "libmpq-${env:RELEASE_VERSION}-windows-msvc-x64"
+          ${name} = "libmpq-${env:RELEASE_VERSION}-windows-msvc-${{ matrix.architecture }}"
           ${stage} = "${env:RUNNER_TEMP}/sdk/${name}"
-          ${runtime} = "${env:VCPKG_INSTALLATION_ROOT}/installed/x64-windows"
+          ${runtime} = "${env:VCPKG_INSTALLATION_ROOT}/installed/${{ matrix.vcpkg_triplet }}"
           ${output} = "${env:GITHUB_WORKSPACE}/dist/${name}.zip"
           if (Test-Path ${stage}) { throw "Staging directory already exists" }
           cmake --install build --config Release --prefix "${stage}"
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
           ${vswhere} = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
-          ${vs} = & ${vswhere} -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          ${vs} = & ${vswhere} -latest -products '*' -requires ${{ matrix.vs_component }} -property installationPath
           Import-Module "${vs}/Common7/Tools/Microsoft.VisualStudio.DevShell.dll"
-          Enter-VsDevShell -VsInstallPath "${vs}" -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          Enter-VsDevShell -VsInstallPath "${vs}" -SkipAutomaticLocation -DevCmdArguments '-arch=${{ matrix.dev_arch }} -host_arch=${{ matrix.dev_arch }}'
 
           # Git Bash inherits the developer environment, including dumpbin.
           ${bash} = "${env:ProgramFiles}/Git/bin/bash.exe"
           ${env:PATH} = "${env:ProgramFiles}/7-Zip;${env:PATH}"
-          & ${bash} scripts/package-windows.sh prepare --toolchain msvc --stage "${stage}" --runtime "${runtime}" --output "${output}" --version "${env:RELEASE_VERSION}"
+          & ${bash} scripts/package-windows.sh prepare --toolchain msvc --architecture ${{ matrix.architecture }} --stage "${stage}" --runtime "${runtime}" --output "${output}" --version "${env:RELEASE_VERSION}"
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
           cl.exe /nologo /MD "/I${stage}/include" tests/test-mpq-consumer.c "/Fe${env:RUNNER_TEMP}/consumer.exe" "/Fo${env:RUNNER_TEMP}/consumer.obj" /link "/LIBPATH:${stage}/lib" libmpq.lib
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          ${headers} = & dumpbin.exe /nologo /headers "${env:RUNNER_TEMP}/consumer.exe"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          if (-not (${headers} -match '^\s*${{ matrix.machine }}\s+machine\s+\(')) { throw 'Consumer PE architecture mismatch' }
 
           # Exclude vcpkg and the build tree from runtime dependency resolution.
           ${savedPath} = ${env:PATH}
@@ -122,12 +144,12 @@ jobs:
           } finally {
             ${env:PATH} = ${savedPath}
           }
-          & ${bash} scripts/package-windows.sh archive --toolchain msvc --stage "${stage}" --runtime "${runtime}" --output "${output}" --version "${env:RELEASE_VERSION}"
+          & ${bash} scripts/package-windows.sh archive --toolchain msvc --architecture ${{ matrix.architecture }} --stage "${stage}" --runtime "${runtime}" --output "${output}" --version "${env:RELEASE_VERSION}"
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
       - uses: actions/upload-artifact@v7
         with:
-          name: libmpq-windows-msvc-release
-          path: dist/libmpq-${{ needs.validate.outputs.version }}-windows-msvc-x64.zip
+          name: libmpq-windows-msvc-${{ matrix.architecture }}-release
+          path: dist/libmpq-${{ needs.validate.outputs.version }}-windows-msvc-${{ matrix.architecture }}.zip
           if-no-files-found: error
 
   windows-mingw:
@@ -168,7 +190,7 @@ jobs:
           mkdir -p "$(dirname "${stage}")"
           mv "${install_root}/usr" "${stage}"
           rmdir "${install_root}"
-          bash scripts/package-windows.sh prepare --toolchain mingw --stage "${stage}" --runtime /mingw64 --output "${PWD}/dist/${name}.zip" --version "${RELEASE_VERSION}"
+          bash scripts/package-windows.sh prepare --toolchain mingw --architecture x86_64 --stage "${stage}" --runtime /mingw64 --output "${PWD}/dist/${name}.zip" --version "${RELEASE_VERSION}"
           export PKG_CONFIG_PATH="${stage}/lib/pkgconfig"
           consumer="$(cygpath -u "${RUNNER_TEMP}")/consumer.exe"
           x86_64-w64-mingw32-gcc $(pkg-config --cflags libmpq) tests/test-mpq-consumer.c $(pkg-config --libs libmpq) -o "${consumer}"
@@ -177,7 +199,7 @@ jobs:
           system_root="$(cygpath -u "${SystemRoot:-${SYSTEMROOT}}")"
           PATH="${stage}/bin:${system_root}/System32:${system_root}" "${consumer}" "${RELEASE_VERSION}" "$(cygpath -w "${PWD}/tests/fixtures/mpq-v1-features.mpq")"
           test "$("${stage}/bin/libmpq-config" --version)" = "${RELEASE_VERSION}"
-          bash scripts/package-windows.sh archive --toolchain mingw --stage "${stage}" --runtime /mingw64 --output "${PWD}/dist/${name}.zip" --version "${RELEASE_VERSION}"
+          bash scripts/package-windows.sh archive --toolchain mingw --architecture x86_64 --stage "${stage}" --runtime /mingw64 --output "${PWD}/dist/${name}.zip" --version "${RELEASE_VERSION}"
       - uses: actions/upload-artifact@v7
         with:
           name: libmpq-windows-mingw-release
@@ -216,7 +238,8 @@ jobs:
           path: release/native
       - uses: actions/download-artifact@v8
         with:
-          name: libmpq-windows-msvc-release
+          pattern: libmpq-windows-msvc-*-release
+          merge-multiple: true
           path: release/windows-msvc
       - uses: actions/download-artifact@v8
         with:
@@ -255,6 +278,7 @@ jobs:
             collect release/native "${package}"
           done < <(find release/native -type f -name "libmpq-${RELEASE_VERSION}-*.tar.gz" -printf '%f\n' | LC_ALL=C sort -u)
           collect release/windows-msvc "libmpq-${RELEASE_VERSION}-windows-msvc-x64.zip"
+          collect release/windows-msvc "libmpq-${RELEASE_VERSION}-windows-msvc-arm64.zip"
           collect release/windows-mingw "libmpq-${RELEASE_VERSION}-windows-mingw-x86_64.zip"
           LC_ALL=C sort -o expected-assets expected-assets
           cd dist

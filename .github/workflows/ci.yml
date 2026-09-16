@@ -30,21 +30,39 @@ permissions:
 
 jobs:
   windows:
-    name: Native Windows x64 (MSVC, shared=${{ matrix.shared }})
-    runs-on: windows-latest
+    name: Native Windows ${{ matrix.architecture }} (MSVC, shared=${{ matrix.shared }})
+    runs-on: ${{ matrix.runner }}
     strategy:
+      fail-fast: false
       matrix:
         shared: ['ON', 'OFF']
+        architecture: [x64, arm64]
+        include:
+          - architecture: x64
+            runner: windows-latest
+            cmake_platform: x64
+            vcpkg_triplet: x64-windows
+            dev_arch: x64
+            vs_component: Microsoft.VisualStudio.Component.VC.Tools.x86.x64
+            machine: '8664'
+          - architecture: arm64
+            runner: windows-11-vs2026-arm
+            cmake_platform: ARM64
+            vcpkg_triplet: arm64-windows
+            dev_arch: arm64
+            vs_component: Microsoft.VisualStudio.Component.VC.Tools.ARM64
+            machine: 'AA64'
     steps:
       - uses: actions/checkout@v4
       - name: Install native dependencies
         shell: pwsh
         run: |
-          & "${env:VCPKG_INSTALLATION_ROOT}/vcpkg.exe" install zlib:x64-windows bzip2:x64-windows liblzma:x64-windows
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ine '${{ matrix.architecture }}') { throw 'Native runner architecture mismatch' }
+          & "${env:VCPKG_INSTALLATION_ROOT}/vcpkg.exe" install zlib:${{ matrix.vcpkg_triplet }} bzip2:${{ matrix.vcpkg_triplet }} liblzma:${{ matrix.vcpkg_triplet }}
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
       - name: Configure
         shell: pwsh
-        run: cmake -S . -B build -A x64 -DBUILD_SHARED_LIBS=${{ matrix.shared }} "-DCMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        run: cmake -S . -B build -A ${{ matrix.cmake_platform }} -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} -DBUILD_SHARED_LIBS=${{ matrix.shared }} "-DCMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Test
@@ -56,11 +74,11 @@ jobs:
           cmake --install build --config Release --prefix "${prefix}"
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
           ${vswhere} = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
-          ${vs} = & ${vswhere} -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          ${vs} = & ${vswhere} -latest -products '*' -requires ${{ matrix.vs_component }} -property installationPath
           Import-Module "${vs}/Common7/Tools/Microsoft.VisualStudio.DevShell.dll"
-          Enter-VsDevShell -VsInstallPath "${vs}" -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          Enter-VsDevShell -VsInstallPath "${vs}" -SkipAutomaticLocation -DevCmdArguments '-arch=${{ matrix.dev_arch }} -host_arch=${{ matrix.dev_arch }}'
 
-          # Match the Release DLL runtime used by CMake and x64-windows vcpkg.
+          # Match the Release DLL runtime used by CMake and vcpkg.
           # A static libmpq archive does not imply a static C runtime.
           if ('${{ matrix.shared }}' -eq 'ON') {
             cl.exe /nologo /MD "/I${prefix}/include" tests/test-mpq-consumer.c "/Fe${env:RUNNER_TEMP}/consumer.exe" "/Fo${env:RUNNER_TEMP}/consumer.obj" /link "/LIBPATH:${prefix}/lib" libmpq.lib
@@ -77,7 +95,14 @@ jobs:
             cl.exe /nologo /MD "/I${prefix}/include" tests/test-mpq-consumer.c "/Fe${env:RUNNER_TEMP}/consumer.exe" "/Fo${env:RUNNER_TEMP}/consumer.obj" /link "/LIBPATH:${prefix}/lib" libmpq.lib ${codecLibraries} bcrypt.lib advapi32.lib
           }
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
-          ${env:PATH} = "${prefix}/bin;${env:VCPKG_INSTALLATION_ROOT}/installed/x64-windows/bin;${env:PATH}"
+          ${binaries} = @("${env:RUNNER_TEMP}/consumer.exe")
+          if ('${{ matrix.shared }}' -eq 'ON') { ${binaries} += "${prefix}/bin/libmpq.dll" }
+          foreach (${binary} in ${binaries}) {
+            ${headers} = & dumpbin.exe /nologo /headers ${binary}
+            if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+            if (-not (${headers} -match '^\s*${{ matrix.machine }}\s+machine\s+\(')) { throw "PE architecture mismatch: ${binary}" }
+          }
+          ${env:PATH} = "${prefix}/bin;${env:VCPKG_INSTALLATION_ROOT}/installed/${{ matrix.vcpkg_triplet }}/bin;${env:PATH}"
           ${version} = (Select-String -Path build/CMakeCache.txt -Pattern '^CMAKE_PROJECT_VERSION:STATIC=(.+)$').Matches.Groups[1].Value
           if (-not ${version}) { throw 'Missing CMake project version' }
           & "${env:RUNNER_TEMP}/consumer.exe" ${version}

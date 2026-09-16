@@ -209,15 +209,16 @@ archives do not bundle private copies of these codec libraries.
 
 ### Windows
 
-The native C library has an MSVC x64 CMake build. The `windows-latest` CI
-job builds the DLL and runs the C regression suite through CTest. Autotools
-remains the POSIX build; Windows bindings and release packaging are not
-included in this support.
+The native C library supports MSVC x64 and ARM64 through CMake. Native CI
+runners build both architectures, run the C regression suite through CTest,
+and compile and execute installed consumers. Autotools remains the POSIX and
+MinGW-w64 x86_64 build frontend. Windows language bindings are not included
+in this support.
 
 #### MSVC (CMake)
 
 Install CMake, Visual Studio's C++ build tools, and vcpkg. From a Developer
-PowerShell, install the native dependencies and build:
+PowerShell, install the native dependencies and build (x64 example):
 
 ```powershell
 vcpkg install zlib:x64-windows bzip2:x64-windows liblzma:x64-windows
@@ -225,6 +226,10 @@ cmake -S . -B build -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/build
 cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
+
+For a native ARM64 build, use an ARM64 developer environment, replace
+`x64-windows` with `arm64-windows`, and use `-A ARM64`. MinGW ARM64 is not
+supported yet.
 
 Consumers include `libmpq/mpq.h` and link the DLL import library or static
 library, without special preprocessor definitions. Use `-DBUILD_SHARED_LIBS=OFF`
@@ -280,11 +285,11 @@ available through `man 3 libmpq`.
 ## Native C SDK packages
 
 Individual release downloads provide prebuilt native C SDKs for Linux glibc
-and musl (both x86_64 and aarch64), macOS arm64 and x86_64, Windows MSVC,
-and Windows MinGW-w64. Each SDK includes public headers, a shared library,
-platform-appropriate import libraries or development metadata, licenses,
-and documentation. The macOS SDKs are relocatable, architecture-specific
-`.tar.gz` development archives, not application installers.
+and musl (both x86_64 and aarch64), macOS arm64 and x86_64, Windows MSVC
+x64 and ARM64, and Windows MinGW-w64 x86_64. Each SDK includes public headers,
+a shared library, platform-appropriate import libraries or development
+metadata, licenses, and documentation. The macOS SDKs are relocatable,
+architecture-specific `.tar.gz` development archives, not application installers.
 
 Linux and macOS SDKs use their relevant system runtime and codec dependencies.
 Windows SDK ZIPs bundle the required non-system runtime DLLs under `bin/`;

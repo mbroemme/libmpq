@@ -18,15 +18,7 @@ trap 'rm -rf "${temporary}"' EXIT
 root="${temporary}/paths with spaces"
 mkdir -p "${root}/tools" "${root}/Windows/System32" "${root}/project"
 export SystemRoot="${root}/Windows"
-export TEST_RUNTIME="${root}/installed/x64-windows"
-mkdir -p "${TEST_RUNTIME}/bin" "${TEST_RUNTIME}/share/codec" \
-	"${TEST_RUNTIME}/share/licenses/codec" "${TEST_RUNTIME}/../vcpkg/info"
-printf 'kernel32.dll\n' > "${TEST_RUNTIME}/bin/helper.dll"
-printf 'HELPER.DLL\ncodec.dll\n' > "${TEST_RUNTIME}/bin/Codec.DLL"
 touch "${SystemRoot}/System32/KERNEL32.DLL"
-printf 'Original dependency license\n' > "${TEST_RUNTIME}/share/codec/copyright"
-cp "${TEST_RUNTIME}/share/codec/copyright" "${TEST_RUNTIME}/share/licenses/codec/LICENSE"
-printf 'x64-windows/bin/Codec.DLL\nx64-windows/bin/helper.dll\n' > "${TEST_RUNTIME}/../vcpkg/info/codec_1.list"
 
 cat > "${root}/tools/objdump" <<'EOF'
 #!/usr/bin/env bash
@@ -39,8 +31,18 @@ cat > "${root}/tools/dumpbin.exe" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 [[ "${MSYS2_ARG_CONV_EXCL}" == '*' && "${MSYS_NO_PATHCONV}" == 1 ]]
-[[ "$1" == /nologo && "$2" == /dependents ]]
-while IFS= read -r dependency; do printf '    %s\r\n' "${dependency}"; done < "$3"
+[[ "$1" == /nologo ]]
+case "$2" in
+	/headers)
+		machine="${TEST_MACHINE}"
+		if [[ "${3##*/}" != libmpq.dll ]]; then machine="${TEST_RUNTIME_MACHINE:-${machine}}"; fi
+		printf '    %s machine (mock architecture)\r\n' "${machine}"
+		;;
+	/dependents)
+		while IFS= read -r dependency; do printf '    %s\r\n' "${dependency}"; done < "$3"
+		;;
+	*) exit 1 ;;
+esac
 exit "${TEST_INSPECT_STATUS:-0}"
 EOF
 cat > "${root}/tools/pacman" <<'EOF'
@@ -74,17 +76,43 @@ reset_stage()
 	printf '#!/bin/sh\nprefix=/usr\nprintf "%%s\\n" "${prefix}"\n' > "${stage}/bin/libmpq-config"
 }
 
-for toolchain in msvc mingw; do
+for combination in msvc:x64 msvc:arm64 mingw:x86_64; do
+	toolchain="${combination%:*}"
+	architecture="${combination#*:}"
+	export TEST_MACHINE=8664
+	if [[ "${architecture}" == arm64 ]]; then TEST_MACHINE=AA64; fi
+	export TEST_RUNTIME="${root}/installed/${architecture}-windows"
+	mkdir -p "${TEST_RUNTIME}/bin" "${TEST_RUNTIME}/share/codec" \
+		"${TEST_RUNTIME}/share/licenses/codec" "${TEST_RUNTIME}/../vcpkg/info"
+	printf 'kernel32.dll\n' > "${TEST_RUNTIME}/bin/helper.dll"
+	printf 'HELPER.DLL\ncodec.dll\n' > "${TEST_RUNTIME}/bin/Codec.DLL"
+	printf 'Original dependency license\n' > "${TEST_RUNTIME}/share/codec/copyright"
+	cp "${TEST_RUNTIME}/share/codec/copyright" "${TEST_RUNTIME}/share/licenses/codec/LICENSE"
+	printf '%s/bin/Codec.DLL\n%s/bin/helper.dll\n' "${architecture}-windows" \
+		"${architecture}-windows" > "${TEST_RUNTIME}/../vcpkg/info/codec_1_${architecture}.list"
 	if [[ "${toolchain}" == msvc ]]; then
-		suffix=msvc-x64; library=libmpq.lib
+		suffix="msvc-${architecture}"; library=libmpq.lib
 	else
 		suffix=mingw-x86_64; library=libmpq.dll.a
 	fi
 	stage="${root}/libmpq-0.7.1-windows-${suffix}"
 	output="${root}/dist/${stage##*/}.zip"
-	options=(--toolchain "${toolchain}" --stage "${stage}" --runtime "${TEST_RUNTIME}" \
+	options=(--toolchain "${toolchain}" --architecture "${architecture}" --stage "${stage}" --runtime "${TEST_RUNTIME}" \
 		--source "${project}" --output "${output}" --version 0.7.1)
 	reset_stage
+	expect_failure bash "${project}/scripts/package-windows.sh" prepare "${options[@]}" --architecture unsupported
+	grep -q 'Unsupported Windows toolchain/architecture' "${temporary}/failure.log"
+	expect_failure bash "${project}/scripts/package-windows.sh" prepare "${options[@]}" --toolchain mingw --architecture arm64
+	grep -q 'Unsupported Windows toolchain/architecture' "${temporary}/failure.log"
+	if [[ "${toolchain}" == msvc ]]; then
+		wrong_machine=AA64
+		if [[ "${architecture}" == arm64 ]]; then wrong_machine=8664; fi
+		expect_failure env TEST_MACHINE="${wrong_machine}" bash "${project}/scripts/package-windows.sh" prepare "${options[@]}"
+		grep -q 'PE architecture mismatch' "${temporary}/failure.log"
+		expect_failure env TEST_RUNTIME_MACHINE="${wrong_machine}" bash "${project}/scripts/package-windows.sh" prepare "${options[@]}"
+		grep -q 'PE architecture mismatch' "${temporary}/failure.log"
+		reset_stage
+	fi
 	bash "${project}/scripts/package-windows.sh" prepare "${options[@]}"
 	for document in README.md DEVELOPER.md MPQ.md; do
 		cmp "${project}/${document}" "${stage}/${document}"
@@ -93,6 +121,8 @@ for toolchain in msvc mingw; do
 	[[ ! -e "${stage}/bin/KERNEL32.DLL" && ! -e "${stage}/runtime-dependencies.json" ]]
 	if [[ "${toolchain}" == msvc ]]; then
 		cmp "${TEST_RUNTIME}/share/codec/copyright" "${stage}/licenses/codec/copyright"
+		expect_failure env TEST_RUNTIME_MACHINE="${wrong_machine}" bash "${project}/scripts/package-windows.sh" archive "${options[@]}"
+		grep -q 'PE architecture mismatch' "${temporary}/failure.log"
 	else
 		cmp "${TEST_RUNTIME}/share/licenses/codec/LICENSE" "${stage}/licenses/codec/codec/LICENSE"
 		grep -Fx 'prefix=${pcfiledir}/../..' "${stage}/lib/pkgconfig/libmpq.pc"
@@ -145,7 +175,7 @@ done
 printf 'project(libmpq VERSION 0.7.2 LANGUAGES C)\n' > CMakeLists.txt
 expect_failure bash "${project}/scripts/validate-release.sh"
 
-# Exercise sorted checksum generation on the two test ZIPs, not release assets.
+# Exercise sorted checksum generation on the three test ZIPs, not release assets.
 cd "${root}/dist"
 printf '%s\n' *.zip | LC_ALL=C sort | while IFS= read -r asset; do
 	sha256sum "${asset}"

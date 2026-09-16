@@ -250,7 +250,9 @@ linking, for example `-Wl,-rpath,"${LIBMPQ_ROOT}/lib"`.
 
 ### Windows MSVC
 
-Extract `libmpq-X.Y.Z-windows-msvc-x64.zip`. The SDK contains
+Extract `libmpq-X.Y.Z-windows-msvc-x64.zip` for x64 or
+`libmpq-X.Y.Z-windows-msvc-arm64.zip` for ARM64. Both are built and tested
+on native Windows runners. The SDK contains
 `bin/libmpq.dll`, the `lib/libmpq.lib` import library, and the public header
 `include/libmpq/mpq.h`. Required non-system runtime DLLs are bundled under
 `bin/`, together with `libmpq.pdb` when available.
@@ -399,6 +401,7 @@ includes `SHA256SUMS` covering every archive, its detached signature
 | Native C SDK - macOS arm64 | `libmpq-X.Y.Z-macos-arm64.tar.gz` | Relocatable arm64 dylib SDK |
 | Native C SDK - macOS x86_64 | `libmpq-X.Y.Z-macos-x86_64.tar.gz` | Relocatable x86_64 dylib SDK |
 | Native C SDK - Windows MSVC x64 | `libmpq-X.Y.Z-windows-msvc-x64.zip` | Shared DLL, `.lib` import library, headers, runtime DLLs, licenses, optional PDB |
+| Native C SDK - Windows MSVC ARM64 | `libmpq-X.Y.Z-windows-msvc-arm64.zip` | Shared DLL, `.lib` import library, headers, runtime DLLs, licenses, optional PDB |
 | Native C SDK - Windows MinGW x86_64 | `libmpq-X.Y.Z-windows-mingw-x86_64.zip` | Shared DLL, `.dll.a` import library, headers, relocatable metadata, runtime DLLs, licenses |
 | Python package | `libmpq-python-X.Y.Z.zip` | Python sdist and all wheels |
 | Java package | `libmpq-java-X.Y.Z.zip` | Runtime, sources, Javadoc, licenses, and README |
@@ -406,13 +409,16 @@ includes `SHA256SUMS` covering every archive, its detached signature
 
 ### Windows release packaging
 
-MSVC uses CMake and MinGW uses Autotools. Both Windows SDKs contain shared
-libraries only; MSVC includes the Release PDB when available. Bash packaging
-helpers inspect PE imports recursively with `dumpbin` or `objdump`. Non-system
-DLLs are bundled from the selected toolchain. Their licenses are copied using
-vcpkg ownership metadata or MSYS2 `pacman` package records. Windows system DLLs
-and API sets are excluded. A final dependency scan resolves non-system imports
-only from the staged SDK, not the toolchain or `PATH`.
+MSVC x64 and ARM64 use CMake and MinGW x86_64 uses Autotools. Windows SDKs
+contain shared libraries only; MSVC includes the Release PDB when available.
+Bash packaging helpers inspect PE imports recursively with `dumpbin` or
+`objdump`. Non-system DLLs are bundled from the selected toolchain. Their
+licenses are copied using vcpkg ownership metadata or MSYS2 `pacman` package
+records. MSVC packaging
+checks the PE machine type of libmpq and every bundled runtime DLL against
+the requested architecture. Windows system DLLs and API sets are excluded.
+A final dependency scan resolves non-system imports only from the staged SDK,
+not the toolchain or `PATH`.
 
 Installed consumer smoke tests link against each staged SDK and run with only
 its `bin/` and Windows system directories on `PATH`; build-tree or toolchain
