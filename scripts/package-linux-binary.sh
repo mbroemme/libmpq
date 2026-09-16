@@ -10,11 +10,12 @@
 set -euo pipefail
 
 : "${LIBMPQ_NATIVE_LIBC:?LIBMPQ_NATIVE_LIBC is required}"
+: "${LIBMPQ_NATIVE_ARCHITECTURE:?LIBMPQ_NATIVE_ARCHITECTURE is required}"
 : "${LIBMPQ_NATIVE_VERSION:?LIBMPQ_NATIVE_VERSION is required}"
 : "${LIBMPQ_NATIVE_BUILD_ENVIRONMENT:?LIBMPQ_NATIVE_BUILD_ENVIRONMENT is required}"
 
 readonly project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-readonly package_name="libmpq-${LIBMPQ_NATIVE_VERSION}-linux-${LIBMPQ_NATIVE_LIBC}-x86_64"
+readonly package_name="libmpq-${LIBMPQ_NATIVE_VERSION}-linux-${LIBMPQ_NATIVE_LIBC}-${LIBMPQ_NATIVE_ARCHITECTURE}"
 readonly archive_name="${package_name}.tar.gz"
 readonly package_dir="${project_root}/release/${package_name}"
 readonly archive_path="${project_root}/release/${archive_name}"
@@ -63,8 +64,17 @@ case "${LIBMPQ_NATIVE_LIBC}" in
 		;;
 esac
 
-if [[ "$(uname -m)" != x86_64 ]]; then
-	printf 'Native package builds require x86_64, found: %s\n' "$(uname -m)" >&2
+case "${LIBMPQ_NATIVE_ARCHITECTURE}" in
+	x86_64|aarch64) ;;
+	*)
+		printf 'Unsupported Linux architecture: %s\n' "${LIBMPQ_NATIVE_ARCHITECTURE}" >&2
+		exit 1
+		;;
+esac
+
+if [[ "$(uname -m)" != "${LIBMPQ_NATIVE_ARCHITECTURE}" ]]; then
+	printf 'Native package architecture mismatch: requested %s, host is %s\n' \
+		"${LIBMPQ_NATIVE_ARCHITECTURE}" "$(uname -m)" >&2
 	exit 1
 fi
 
@@ -135,7 +145,7 @@ mv "${package_pc}.new" "${package_pc}"
 
 {
 	printf 'libmpq_version=%s\n' "${LIBMPQ_NATIVE_VERSION}"
-	printf 'architecture=x86_64\n'
+	printf 'architecture=%s\n' "${LIBMPQ_NATIVE_ARCHITECTURE}"
 	printf 'os=linux\n'
 	printf 'libc=%s\n' "${LIBMPQ_NATIVE_LIBC}"
 	if [[ "${LIBMPQ_NATIVE_LIBC}" == glibc ]]; then

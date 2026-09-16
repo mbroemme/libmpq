@@ -188,10 +188,13 @@ complete download list.
 
 ### Linux
 
-Linux SDKs are available as individual relocatable x86_64 release archives:
+Linux SDKs are available as individual relocatable x86_64 and aarch64 release
+archives, built and tested on native runners:
 
 * `libmpq-X.Y.Z-linux-glibc-x86_64.tar.gz` for glibc 2.17 and later.
+* `libmpq-X.Y.Z-linux-glibc-aarch64.tar.gz` for glibc 2.17 and later.
 * `libmpq-X.Y.Z-linux-musl-x86_64.tar.gz` for musl 1.2 and later.
+* `libmpq-X.Y.Z-linux-musl-aarch64.tar.gz` for musl 1.2 and later.
 
 The SDKs use the host's zlib, bzip2, and liblzma shared libraries; those
 runtime and development dependencies are not bundled. The glibc baseline
@@ -216,7 +219,8 @@ man 3 libmpq
 ```
 
 For the musl SDK, use `libmpq-X.Y.Z-linux-musl-x86_64` as
-`LIBMPQ_ROOT` instead.
+`LIBMPQ_ROOT` instead. On aarch64, select the corresponding directory ending
+in `-aarch64` for either libc.
 
 ### macOS
 
@@ -387,7 +391,9 @@ includes `SHA256SUMS` covering every archive, its detached signature
 | --- | --- | --- |
 | Source distributions | `libmpq-X.Y.Z.tar.gz`, `libmpq-X.Y.Z.tar.bz2` | Configure-ready Automake distributions |
 | Native C SDK - Linux glibc x86_64 | `libmpq-X.Y.Z-linux-glibc-x86_64.tar.gz` | Relocatable glibc SDK |
+| Native C SDK - Linux glibc aarch64 | `libmpq-X.Y.Z-linux-glibc-aarch64.tar.gz` | Relocatable glibc SDK |
 | Native C SDK - Linux musl x86_64 | `libmpq-X.Y.Z-linux-musl-x86_64.tar.gz` | Relocatable musl SDK |
+| Native C SDK - Linux musl aarch64 | `libmpq-X.Y.Z-linux-musl-aarch64.tar.gz` | Relocatable musl SDK |
 | Native C SDK - macOS arm64 | `libmpq-X.Y.Z-macos-arm64.tar.gz` | Relocatable arm64 dylib SDK |
 | Native C SDK - macOS x86_64 | `libmpq-X.Y.Z-macos-x86_64.tar.gz` | Relocatable x86_64 dylib SDK |
 | Native C SDK - Windows MSVC x64 | `libmpq-X.Y.Z-windows-msvc-x64.zip` | Shared DLL, `.lib` import library, headers, runtime DLLs, licenses, optional PDB |

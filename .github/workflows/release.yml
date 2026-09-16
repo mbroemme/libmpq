@@ -246,7 +246,9 @@ jobs:
           collect release/java "libmpq-java-${RELEASE_VERSION}.zip"
           collect release/d "libmpq-d-${RELEASE_VERSION}.zip"
           test -s "release/native/libmpq-${RELEASE_VERSION}-linux-glibc-x86_64.tar.gz"
+          test -s "release/native/libmpq-${RELEASE_VERSION}-linux-glibc-aarch64.tar.gz"
           test -s "release/native/libmpq-${RELEASE_VERSION}-linux-musl-x86_64.tar.gz"
+          test -s "release/native/libmpq-${RELEASE_VERSION}-linux-musl-aarch64.tar.gz"
           test -s "release/native/libmpq-${RELEASE_VERSION}-macos-arm64.tar.gz"
           test -s "release/native/libmpq-${RELEASE_VERSION}-macos-x86_64.tar.gz"
           while IFS= read -r package; do

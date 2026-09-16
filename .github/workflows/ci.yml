@@ -576,9 +576,22 @@ jobs:
         uses: actions/deploy-pages@v4
 
   native-glibc:
-    name: Native C SDK package (glibc)
+    name: Native C SDK package (glibc) (${{ matrix.architecture }})
     needs: lint
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: ubuntu-24.04
+            image: manylinux2014_x86_64
+          - architecture: aarch64
+            runner: ubuntu-24.04-arm
+            image: manylinux2014_aarch64
+    env:
+      LIBMPQ_NATIVE_ARCHITECTURE: ${{ matrix.architecture }}
+      LIBMPQ_NATIVE_BUILD_ENVIRONMENT: ${{ matrix.image }}
     timeout-minutes: 30
     defaults:
       run:
@@ -595,28 +608,43 @@ jobs:
           set -euxo pipefail
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
-            -w /workspace quay.io/pypa/manylinux2014_x86_64 \
+            -e LIBMPQ_NATIVE_ARCHITECTURE \
+            -e LIBMPQ_NATIVE_BUILD_ENVIRONMENT \
+            -w /workspace "quay.io/pypa/${LIBMPQ_NATIVE_BUILD_ENVIRONMENT}" \
             bash -euxo pipefail -c '
               yum install -y autoconf automake binutils bzip2-devel findutils \
                 gcc libtool make pkgconfig tar xz-devel zlib-devel
               sh autogen.sh
               ./configure --prefix=/usr
               make -j"$(getconf _NPROCESSORS_ONLN)" V=1
+              make check
               version="$(./configure --version | sed -n "1s/^libmpq configure //p")"
               LIBMPQ_NATIVE_LIBC=glibc \
                 LIBMPQ_NATIVE_VERSION="${version}" \
-                LIBMPQ_NATIVE_BUILD_ENVIRONMENT=manylinux2014_x86_64 \
                 LIBMPQ_NATIVE_GLIBC_BASELINE=2.17 \
                 bash scripts/package-linux-binary.sh
               bash scripts/test-linux-package.sh \
-                "release/libmpq-${version}-linux-glibc-x86_64.tar.gz" \
+                "release/libmpq-${version}-linux-glibc-${LIBMPQ_NATIVE_ARCHITECTURE}.tar.gz" \
                 tests/fixtures/mpq-v1-features.mpq
             '
 
   native-musl:
-    name: Native C SDK package (musl)
+    name: Native C SDK package (musl) (${{ matrix.architecture }})
     needs: lint
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: ubuntu-24.04
+            image: musllinux_1_2_x86_64
+          - architecture: aarch64
+            runner: ubuntu-24.04-arm
+            image: musllinux_1_2_aarch64
+    env:
+      LIBMPQ_NATIVE_ARCHITECTURE: ${{ matrix.architecture }}
+      LIBMPQ_NATIVE_BUILD_ENVIRONMENT: ${{ matrix.image }}
     timeout-minutes: 30
     defaults:
       run:
@@ -633,20 +661,22 @@ jobs:
           set -euxo pipefail
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
-            -w /workspace quay.io/pypa/musllinux_1_2_x86_64 bash -euxo pipefail -c '
+            -e LIBMPQ_NATIVE_ARCHITECTURE \
+            -e LIBMPQ_NATIVE_BUILD_ENVIRONMENT \
+            -w /workspace "quay.io/pypa/${LIBMPQ_NATIVE_BUILD_ENVIRONMENT}" bash -euxo pipefail -c '
               apk add --no-cache autoconf automake bash binutils bzip2-dev \
                 build-base libtool linux-headers pkgconf tar xz-dev zlib-dev
               sh autogen.sh
               ./configure --prefix=/usr
               make -j"$(getconf _NPROCESSORS_ONLN)" V=1
+              make check
               version="$(./configure --version | sed -n "1s/^libmpq configure //p")"
               LIBMPQ_NATIVE_LIBC=musl \
                 LIBMPQ_NATIVE_VERSION="${version}" \
-                LIBMPQ_NATIVE_BUILD_ENVIRONMENT=musllinux_1_2_x86_64 \
                 LIBMPQ_NATIVE_MUSL_BASELINE=1.2 \
                 bash scripts/package-linux-binary.sh
               bash scripts/test-linux-package.sh \
-                "release/libmpq-${version}-linux-musl-x86_64.tar.gz" \
+                "release/libmpq-${version}-linux-musl-${LIBMPQ_NATIVE_ARCHITECTURE}.tar.gz" \
                 tests/fixtures/mpq-v1-features.mpq
             '
 

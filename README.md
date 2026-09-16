@@ -280,11 +280,11 @@ available through `man 3 libmpq`.
 ## Native C SDK packages
 
 Individual release downloads provide prebuilt native C SDKs for Linux glibc
-and musl, macOS arm64 and x86_64, Windows MSVC, and Windows MinGW-w64. Each
-SDK includes public headers, a shared library, platform-appropriate import
-libraries or development metadata, licenses, and documentation. The macOS
-SDKs are relocatable, architecture-specific `.tar.gz` development archives,
-not application installers.
+and musl (both x86_64 and aarch64), macOS arm64 and x86_64, Windows MSVC,
+and Windows MinGW-w64. Each SDK includes public headers, a shared library,
+platform-appropriate import libraries or development metadata, licenses,
+and documentation. The macOS SDKs are relocatable, architecture-specific
+`.tar.gz` development archives, not application installers.
 
 Linux and macOS SDKs use their relevant system runtime and codec dependencies.
 Windows SDK ZIPs bundle the required non-system runtime DLLs under `bin/`;

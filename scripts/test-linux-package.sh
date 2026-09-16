@@ -84,12 +84,18 @@ mkdir -p "${extraction_dir}"
 tar -xzf "${package_archive}" -C "${extraction_dir}"
 
 if [[ "${archive_basename}" != *.tar.gz ]] ||
-	! [[ "${package_name}" =~ ^libmpq-([0-9]+([.][0-9]+)*)-linux-(glibc|musl)-x86_64$ ]]; then
+	! [[ "${package_name}" =~ ^libmpq-([0-9]+([.][0-9]+)*)-linux-(glibc|musl)-(x86_64|aarch64)$ ]]; then
 	printf 'Native package archive name is invalid: %s\n' "${archive_basename}" >&2
 	exit 1
 fi
 readonly expected_version="${BASH_REMATCH[1]}"
 readonly expected_libc="${BASH_REMATCH[3]}"
+readonly expected_architecture="${BASH_REMATCH[4]}"
+if [[ "$(uname -m)" != "${expected_architecture}" ]]; then
+	printf 'Native package architecture mismatch: package is %s, host is %s\n' \
+		"${expected_architecture}" "$(uname -m)" >&2
+	exit 1
+fi
 
 mapfile -t package_entries < <(
 	find "${extraction_dir}" -mindepth 1 -maxdepth 1 -print | sed 's#.*/##'
@@ -121,7 +127,7 @@ for path in \
 done
 
 if [[ "$(buildinfo_value libmpq_version)" != "${expected_version}" ]] ||
-	[[ "$(buildinfo_value architecture)" != x86_64 ]] ||
+	[[ "$(buildinfo_value architecture)" != "${expected_architecture}" ]] ||
 	[[ "$(buildinfo_value os)" != linux ]] ||
 	[[ "$(buildinfo_value libc)" != "${expected_libc}" ]] ||
 	[[ -z "$(buildinfo_value build_environment)" ]]; then
@@ -148,6 +154,18 @@ if ((${#shared_libraries[@]} != 1)); then
 fi
 
 readonly shared_library="${shared_libraries[0]}"
+readonly elf_machine="$(LC_ALL=C readelf -h "${shared_library}" |
+	sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+case "${expected_architecture}" in
+	x86_64) expected_machine='Advanced Micro Devices X86-64' ;;
+	aarch64) expected_machine='AArch64' ;;
+esac
+if [[ "${elf_machine}" != "${expected_machine}" ]]; then
+	printf 'Native package ELF architecture mismatch: expected %s, found %s\n' \
+		"${expected_machine}" "${elf_machine}" >&2
+	exit 1
+fi
+
 readonly soname="$(readelf -d "${shared_library}" |
 	sed -n 's/.*SONAME.*\[\(.*\)\].*/\1/p')"
 if [[ "${soname}" != libmpq.so.4 ]] || [[ ! -e "${library_dir}/libmpq.so" ]] ||
