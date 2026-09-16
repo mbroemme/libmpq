@@ -37,6 +37,11 @@ archs = ["native"]
 test-requires = ["pytest"]
 test-command = "LIBMPQ_EXPECT_BUNDLED=1 python -m pytest {package}/tests"
 
+[tool.cibuildwheel.windows]
+before-build = "python -m pip install delvewheel"
+repair-wheel-command = 'python -m delvewheel repair --analyze-existing --custom-patch --add-path "%LIBMPQ_RUNTIME%" -w {dest_dir} {wheel}'
+test-command = "set LIBMPQ_EXPECT_BUNDLED=1&& python -m pytest {package}/tests"
+
 [[tool.cibuildwheel.overrides]]
 select = "*-manylinux_x86_64"
 manylinux-x86_64-image = "manylinux2014"

@@ -125,6 +125,135 @@ jobs:
           path: wheelhouse/*.whl
           if-no-files-found: error
 
+  windows-wheel:
+    name: Build Python ${{ matrix.platform }} wheel
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-amd64
+            runner: windows-latest
+            build: cp311-win_amd64
+            architecture: AMD64
+            python_arch: x64
+            cmake_platform: x64
+            vcpkg_triplet: x64-windows
+            vs_component: Microsoft.VisualStudio.Component.VC.Tools.x86.x64
+            machine: '8664'
+            wheel_platform: win_amd64
+          - platform: windows-arm64
+            runner: windows-11-vs2026-arm
+            build: cp311-win_arm64
+            architecture: ARM64
+            python_arch: arm64
+            cmake_platform: ARM64
+            vcpkg_triplet: arm64-windows
+            vs_component: Microsoft.VisualStudio.Component.VC.Tools.ARM64
+            machine: 'AA64'
+            wheel_platform: win_arm64
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          architecture: ${{ matrix.python_arch }}
+      - name: Verify native execution and install dependencies
+        run: |
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ine '${{ matrix.python_arch }}') { throw 'Native runner architecture mismatch' }
+          python -c "import platform, sysconfig; assert platform.machine().upper() == '${{ matrix.architecture }}'; assert sysconfig.get_platform().replace('-', '_') == '${{ matrix.wheel_platform }}'"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          & "${env:VCPKG_INSTALLATION_ROOT}/vcpkg.exe" install zlib:${{ matrix.vcpkg_triplet }} bzip2:${{ matrix.vcpkg_triplet }} liblzma:${{ matrix.vcpkg_triplet }}
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+      - name: Build and test native shared library
+        run: |
+          cmake -S . -B build -A ${{ matrix.cmake_platform }} -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} -DBUILD_SHARED_LIBS=ON "-DCMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          cmake --build build --config Release --parallel
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          ctest --test-dir build -C Release --output-on-failure
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          ${stage} = "${env:RUNNER_TEMP}/python-native"
+          cmake --install build --config Release --prefix "${stage}"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          ${vswhere} = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          ${vs} = & ${vswhere} -latest -products '*' -requires ${{ matrix.vs_component }} -property installationPath
+          Import-Module "${vs}/Common7/Tools/Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath "${vs}" -SkipAutomaticLocation -DevCmdArguments '-arch=${{ matrix.python_arch }} -host_arch=${{ matrix.python_arch }}'
+          ${headers} = & dumpbin.exe /nologo /headers "${stage}/bin/libmpq.dll"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          if (-not (${headers} -match '^\s*${{ matrix.machine }}\s+machine\s+\(')) { throw 'libmpq PE architecture mismatch' }
+          "LIBMPQ_LIBRARY=${stage}/bin/libmpq.dll" >> "${env:GITHUB_ENV}"
+          "LIBMPQ_RUNTIME=${env:VCPKG_INSTALLATION_ROOT}/installed/${{ matrix.vcpkg_triplet }}/bin" >> "${env:GITHUB_ENV}"
+      - name: Build and repair wheel
+        uses: pypa/cibuildwheel@v4.2.0
+        env:
+          CIBW_BUILD: ${{ matrix.build }}
+          CIBW_TEST_ENVIRONMENT: 'LIBMPQ_LIBRARY="" LIBMPQ_EXPECT_BUNDLED=1'
+        with:
+          package-dir: bindings/python
+      - name: Validate repaired wheel and test without build runtimes
+        env:
+          WHEEL_PLATFORM: ${{ matrix.wheel_platform }}
+          WHEEL_MACHINE: ${{ matrix.machine }}
+        run: |
+          python -m pip install packaging
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          @'
+          import os, struct, zipfile
+          from pathlib import Path
+          from packaging.tags import Tag
+          from packaging.utils import parse_wheel_filename
+          wheels = list(Path("wheelhouse").glob("*.whl"))
+          assert len(wheels) == 1, wheels
+          tags = parse_wheel_filename(wheels[0].name)[3]
+          expected = Tag("py3", "none", os.environ["WHEEL_PLATFORM"])
+          assert tags == {expected}, tags
+          with zipfile.ZipFile(wheels[0]) as wheel:
+              assert "mpq_libs/libmpq.dll" in wheel.namelist()
+              metadata = next(n for n in wheel.namelist() if n.endswith(".dist-info/WHEEL"))
+              assert [line for line in wheel.read(metadata).decode().splitlines()
+                      if line.startswith("Tag: ")] == [f"Tag: {expected}"]
+              dlls = [n for n in wheel.namelist() if n.lower().endswith(".dll")]
+              assert len(dlls) > 1, "Missing vendored runtime DLLs"
+              print("Bundled runtime libraries:", *dlls, sep="\n")
+              for name in dlls:
+                  data = wheel.read(name)
+                  assert data[:2] == b"MZ", name
+                  offset = struct.unpack_from("<I", data, 0x3c)[0]
+                  assert data[offset:offset + 4] == b"PE\0\0", name
+                  assert struct.unpack_from("<H", data, offset + 4)[0] == int(os.environ["WHEEL_MACHINE"], 16), name
+          '@ | python -
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          ${venv} = "${env:RUNNER_TEMP}/wheel-test"
+          python -m venv "${venv}"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          ${python} = "${venv}/Scripts/python.exe"
+          ${wheel} = (Get-ChildItem wheelhouse/*.whl).FullName
+          & ${python} -m pip install pytest "${wheel}"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          Remove-Item Env:LIBMPQ_LIBRARY -ErrorAction SilentlyContinue
+          Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+          ${env:LIBMPQ_EXPECT_BUNDLED} = '1'
+          ${env:PATH} = "${venv}/Scripts;${env:pythonLocation};${env:SystemRoot}/System32;${env:SystemRoot}"
+          Set-Location "${env:RUNNER_TEMP}"
+          & ${python} -I -c "import platform, sysconfig, mpq; assert platform.machine().upper() == '${{ matrix.architecture }}'; assert sysconfig.get_platform().replace('-', '_') == '${{ matrix.wheel_platform }}'; print(mpq.version())"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          & ${python} -I -m pytest --import-mode=importlib "${env:GITHUB_WORKSPACE}/bindings/python/tests"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-python-${{ matrix.platform }}-wheel
+          path: wheelhouse/*.whl
+          if-no-files-found: error
+
   sdist:
     name: Build Python release source
     needs: prepare
@@ -152,7 +281,7 @@ jobs:
 
   validate-distributions:
     name: Validate Python distributions
-    needs: [prepare, wheel, sdist]
+    needs: [prepare, wheel, windows-wheel, sdist]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8
@@ -175,7 +304,7 @@ jobs:
           python -m pip install --upgrade twine
           python -m twine check dist/*
           test "$(find dist -maxdepth 1 -name "libmpq-${LIBMPQ_PYTHON_VERSION}.tar.gz" | wc -l)" -eq 1
-          test "$(find dist -maxdepth 1 -name "libmpq-${LIBMPQ_PYTHON_VERSION}-*.whl" | wc -l)" -eq 4
+          test "$(find dist -maxdepth 1 -name "libmpq-${LIBMPQ_PYTHON_VERSION}-*.whl" | wc -l)" -eq 6
           python - <<'PY'
           import os
           from pathlib import Path
@@ -185,21 +314,30 @@ jobs:
           expected = {
               "manylinux_2_17_x86_64", "manylinux_2_17_aarch64",
               "musllinux_1_2_x86_64", "musllinux_1_2_aarch64",
+              "win_amd64", "win_arm64",
           }
           wheels = list(Path("dist").glob("*.whl"))
-          if len(wheels) != 4:
-              raise SystemExit("Expected exactly four Linux wheels")
+          if len(wheels) != 6:
+              raise SystemExit("Expected exactly six Linux/Windows wheels")
           seen = set()
+          aliases = {
+              "manylinux2014_x86_64": "manylinux_2_17_x86_64",
+              "manylinux2014_aarch64": "manylinux_2_17_aarch64",
+          }
           for wheel in wheels:
               name, version, _, tags = parse_wheel_filename(wheel.name)
-              platforms = {tag.platform for tag in tags} & expected
+              platforms = {
+                  aliases.get(tag.platform, tag.platform)
+                  for tag in tags
+              }
               if (name != "libmpq" or
                       version != Version(os.environ["LIBMPQ_PYTHON_VERSION"]) or
-                      len(platforms) != 1 or platforms & seen):
+                      len(platforms) != 1 or not platforms <= expected or platforms & seen or
+                      any(tag.interpreter != "py3" or tag.abi != "none" for tag in tags)):
                   raise SystemExit(f"Unexpected or duplicate wheel target: {wheel.name}")
               seen.update(platforms)
           if seen != expected:
-              raise SystemExit(f"Missing Linux wheel targets: {expected - seen}")
+              raise SystemExit(f"Missing wheel targets: {expected - seen}")
           PY
 
   package:
@@ -227,7 +365,7 @@ jobs:
           test -s "${sdist}"
           mkdir -p release/package
           find release/wheels -type f -name "libmpq-${LIBMPQ_PYTHON_VERSION}-*.whl" -exec cp {} release/package/ \;
-          test "$(find release/package -maxdepth 1 -name '*.whl' | wc -l)" -eq 4
+          test "$(find release/package -maxdepth 1 -name '*.whl' | wc -l)" -eq 6
           cp "${sdist}" release/package/
           (cd release/package && zip -q "../libmpq-python-${LIBMPQ_PYTHON_VERSION}.zip" ./*)
           unzip -t "release/libmpq-python-${LIBMPQ_PYTHON_VERSION}.zip"

@@ -55,13 +55,24 @@ LIBMPQ_LIBRARY="$PWD/src/.libs/libmpq.so" python -m pytest bindings/python/tests
 Linux release wheels target `manylinux_2_17_x86_64`,
 `manylinux_2_17_aarch64`, `musllinux_1_2_x86_64`, and
 `musllinux_1_2_aarch64`. Each is built and tested natively using CPython 3.11.
+Windows release wheels target `win_amd64` and `win_arm64`, also built and
+tested natively using CPython 3.11. All six wheels use the `py3-none` ABI.
 
-Release wheels contain a private native library at `mpq_libs/libmpq.so`. It
+Linux release wheels contain a private native library at `mpq_libs/libmpq.so`. It
 is loaded by its exact package path through `ctypes`, intentionally has no ELF
 `DT_SONAME`, and does not require a separate system libmpq installation. The
-release Python ZIP contains one sdist and all four manylinux/musllinux
+release Python ZIP contains one sdist and all six Linux/Windows
 wheels as a supplementary GitHub Release download. The sdist contains the
 canonical C and header sources and is free of native build products.
+
+Windows wheels bundle `mpq_libs/libmpq.dll` and its required non-system
+runtime DLLs, so no separately installed libmpq SDK is needed. The release
+build reuses MSVC/CMake and architecture-matched vcpkg dependencies, then
+delvewheel repairs the wheel using existing-DLL analysis and a custom patch
+before `ctypes` loads the library. Installed-wheel tests run with vcpkg and
+native build directories excluded from `PATH`. Local Windows wheel builds
+must set `LIBMPQ_LIBRARY` to a prebuilt shared CMake DLL; the backend does
+not compile Windows sources itself.
 
 Typical usage is explicitly closeable and safe with context managers:
 

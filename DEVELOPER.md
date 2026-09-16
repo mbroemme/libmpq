@@ -302,12 +302,23 @@ LIBMPQ_LIBRARY="$PWD/src/.libs/libmpq.so" \
 
 The release wheels are built with cibuildwheel and repaired for
 `manylinux_2_17_x86_64`, `manylinux_2_17_aarch64`, `musllinux_1_2_x86_64`,
-and `musllinux_1_2_aarch64`. Builds and bundled-library tests run natively
-on each architecture using CPython 3.11. They contain a private
+`musllinux_1_2_aarch64`, `win_amd64`, and `win_arm64`. Builds and
+bundled-library tests run natively on each architecture using CPython 3.11,
+while wheel tags remain `py3-none`. Linux wheels contain a private
 native library at `mpq_libs/libmpq.so`, loaded directly by package path; the
 wheel does not require a separately installed libmpq library. This private
 library intentionally has no ELF SONAME. The Python release archive,
-`libmpq-python-X.Y.Z.zip`, contains one sdist and all four Linux wheels.
+`libmpq-python-X.Y.Z.zip`, contains one sdist and all six Linux/Windows wheels.
+
+Windows wheels reuse the shared MSVC/CMake build with matching `x64-windows`
+or `arm64-windows` vcpkg dependencies. The backend receives `LIBMPQ_LIBRARY`
+and bundles `mpq_libs/libmpq.dll`; delvewheel uses `--analyze-existing`,
+`--custom-patch`, and the matching runtime directory through `--add-path`
+to bundle required non-system dependencies. No separate libmpq SDK is
+required. Release validation checks the repaired wheel tags and every
+bundled DLL's PE architecture. Native installed-wheel tests clear the
+library override and exclude vcpkg/build paths from `PATH` before importing
+the binding and running the full Python suite.
 
 See [`bindings/python/README.md`](bindings/python/README.md) for API examples,
 package installation, native-library behavior, and test instructions.

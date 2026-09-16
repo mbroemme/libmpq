@@ -11,6 +11,7 @@ import ctypes
 import hashlib
 import os
 import struct
+import sys
 import zlib
 from pathlib import Path
 
@@ -116,8 +117,10 @@ def test_wheel_uses_bundled_library():
     if not os.environ.get("LIBMPQ_EXPECT_BUNDLED"):
         pytest.skip("only required for installed wheel tests")
     native = Path(mpq.libmpq._name).resolve()
-    assert native.name == "libmpq.so"
+    suffix = {"win32": ".dll", "darwin": ".dylib"}.get(sys.platform, ".so")
+    assert native.name == "libmpq" + suffix
     assert native.parent.name == "mpq_libs"
+    assert native.parent.parent == Path(mpq.__file__).resolve().parent
     assert mpq.version() == mpq.__version__
 
 
