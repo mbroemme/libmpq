@@ -302,13 +302,14 @@ LIBMPQ_LIBRARY="$PWD/src/.libs/libmpq.so" \
 
 The release wheels are built with cibuildwheel and repaired for
 `manylinux_2_17_x86_64`, `manylinux_2_17_aarch64`, `musllinux_1_2_x86_64`,
-`musllinux_1_2_aarch64`, `win_amd64`, and `win_arm64`. Builds and
+`musllinux_1_2_aarch64`, `win_amd64`, `win_arm64`, `macosx_11_0_x86_64`,
+and `macosx_11_0_arm64`. Builds and
 bundled-library tests run natively on each architecture using CPython 3.11,
 while wheel tags remain `py3-none`. Linux wheels contain a private
 native library at `mpq_libs/libmpq.so`, loaded directly by package path; the
 wheel does not require a separately installed libmpq library. This private
 library intentionally has no ELF SONAME. The Python release archive,
-`libmpq-python-X.Y.Z.zip`, contains one sdist and all six Linux/Windows wheels.
+`libmpq-python-X.Y.Z.zip`, contains one sdist and all eight Linux/Windows/macOS wheels.
 
 Windows wheels reuse the shared MSVC/CMake build with matching `x64-windows`
 or `arm64-windows` vcpkg dependencies. The backend receives `LIBMPQ_LIBRARY`
@@ -319,6 +320,22 @@ required. Release validation checks the repaired wheel tags and every
 bundled DLL's PE architecture. Native installed-wheel tests clear the
 library override and exclude vcpkg/build paths from `PATH` before importing
 the binding and running the full Python suite.
+
+macOS wheels reuse the native SDK's Apple Clang/SDK and Autotools build,
+including the full C regression suite and Apple-provided `/usr/bin/make`.
+Both architectures preserve its macOS 11.0 baseline, declared once in the
+Python workflow and checked against the actual Mach-O deployment target.
+Homebrew xz supplies headers only; zlib, bzip2, and liblzma resolve to the
+system libraries. The installed dylib is passed through `LIBMPQ_LIBRARY`
+and bundled as `mpq_libs/libmpq.dylib`. Delocate repairs any non-system
+dependencies without copying macOS system libraries. No separate SDK is
+required, and no universal2 wheel is produced.
+
+Inline macOS wheel checks validate tags, every dylib's architecture,
+signatures, and obvious absolute build/Homebrew runtime paths. Native Intel
+and Apple Silicon jobs install the repaired wheel
+into a clean virtual environment and run all Python tests without build
+overrides, Homebrew paths, or dynamic-library search environment variables.
 
 See [`bindings/python/README.md`](bindings/python/README.md) for API examples,
 package installation, native-library behavior, and test instructions.

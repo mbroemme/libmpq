@@ -38,12 +38,16 @@ on:
 permissions:
   contents: read
 
+env:
+  LIBMPQ_MACOS_DEPLOYMENT_TARGET: '11.0'
+
 jobs:
   prepare:
     name: Derive Python package metadata
     runs-on: ubuntu-latest
     outputs:
       package_version: ${{ steps.metadata.outputs.package_version }}
+
     steps:
       - uses: actions/checkout@v7
         with:
@@ -254,6 +258,154 @@ jobs:
           path: wheelhouse/*.whl
           if-no-files-found: error
 
+  macos-wheel:
+    name: Build Python ${{ matrix.platform }} wheel
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-x86_64
+            runner: macos-15-intel
+            build: cp311-macosx_x86_64
+            architecture: x86_64
+            python_arch: x64
+          - platform: macos-arm64
+            runner: macos-15
+            build: cp311-macosx_arm64
+            architecture: arm64
+            python_arch: arm64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          architecture: ${{ matrix.python_arch }}
+      - name: Install macOS build prerequisites
+        run: |
+          set -euxo pipefail
+          brew install autoconf automake libtool pkg-config xz
+          echo "$(brew --prefix libtool)/libexec/gnubin" >> "${GITHUB_PATH}"
+      - name: Build and test native shared library
+        env:
+          MACOSX_DEPLOYMENT_TARGET: ${{ env.LIBMPQ_MACOS_DEPLOYMENT_TARGET }}
+        run: |
+          set -euxo pipefail
+          test "$(uname -m)" = '${{ matrix.architecture }}'
+          python -c "import platform; assert platform.machine() == '${{ matrix.architecture }}'"
+          CC="$(xcrun --sdk macosx --find clang)"
+          SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+
+          # Match the native SDK: use xz headers, not Homebrew library paths.
+          CPPFLAGS="-I$(brew --prefix xz)/include ${CPPFLAGS:-}"
+          export CC SDKROOT CPPFLAGS
+          "${CC}" --version
+          xcrun --sdk macosx --show-sdk-path
+          sh autogen.sh
+          ./configure --prefix="${RUNNER_TEMP}/python-native" --enable-shared --disable-static
+          /usr/bin/make -j"$(sysctl -n hw.ncpu)" V=1
+          /usr/bin/make check
+          /usr/bin/make install
+          library="${RUNNER_TEMP}/python-native/lib/libmpq.dylib"
+          file "${library}"
+          test "$(lipo -archs "${library}")" = '${{ matrix.architecture }}'
+          minimum="$(otool -l "${library}" | awk '
+            $1 == "cmd" { command = $2 }
+            command == "LC_BUILD_VERSION" && $1 == "minos" { print $2 }
+            command == "LC_VERSION_MIN_MACOSX" && $1 == "version" { print $2 }
+          ')"
+          test "${minimum}" = "${MACOSX_DEPLOYMENT_TARGET}"
+          otool -L "${library}"
+          otool -L "${library}" | grep -Eq '/usr/lib/liblzma[^/[:space:]]*\.dylib[[:space:]]'
+
+          # Remove the installed prefix from the wheel's own dylib ID.
+          install_name_tool -id @rpath/libmpq.dylib "${library}"
+          codesign --force --sign - "${library}"
+          codesign --verify --strict "${library}"
+          echo "LIBMPQ_LIBRARY=${library}" >> "${GITHUB_ENV}"
+          echo "LIBMPQ_WHEEL_PLATFORM=macosx_${minimum//./_}_${{ matrix.architecture }}" >> "${GITHUB_ENV}"
+      - name: Build and repair wheel
+        uses: pypa/cibuildwheel@v4.2.0
+        env:
+          CIBW_BUILD: ${{ matrix.build }}
+          MACOSX_DEPLOYMENT_TARGET: ${{ env.LIBMPQ_MACOS_DEPLOYMENT_TARGET }}
+          CIBW_TEST_ENVIRONMENT: 'LIBMPQ_LIBRARY="" LIBMPQ_EXPECT_BUNDLED=1'
+        with:
+          package-dir: bindings/python
+      - name: Validate repaired wheel and test without build runtimes
+        env:
+          MACOSX_DEPLOYMENT_TARGET: ${{ env.LIBMPQ_MACOS_DEPLOYMENT_TARGET }}
+        run: |
+          set -euxo pipefail
+          python -m pip install packaging
+          temporary="$(mktemp -d -t libmpq-macos-wheel.XXXXXX)"
+          trap 'rm -rf "${temporary}"' EXIT
+          python - "${temporary}" '${{ matrix.architecture }}' <<'PY'
+          import os
+          from pathlib import Path
+          import platform
+          import re
+          import subprocess
+          import sys
+          import zipfile
+          from packaging.tags import Tag
+          from packaging.utils import parse_wheel_filename
+
+          temporary, architecture = sys.argv[1:]
+          assert platform.machine() == architecture, "Python is not running natively"
+          target = os.environ["MACOSX_DEPLOYMENT_TARGET"].replace(".", "_")
+          expected = Tag("py3", "none", f"macosx_{target}_{architecture}")
+          wheels = list(Path("wheelhouse").glob("*.whl"))
+          assert len(wheels) == 1, wheels
+          assert parse_wheel_filename(wheels[0].name)[3] == {expected}, wheels[0].name
+          root = Path(temporary) / "unpacked"
+          with zipfile.ZipFile(wheels[0]) as wheel:
+              assert "mpq_libs/libmpq.dylib" in wheel.namelist(), "Missing bundled libmpq"
+              metadata = next(n for n in wheel.namelist() if n.endswith(".dist-info/WHEEL"))
+              assert [line for line in wheel.read(metadata).decode().splitlines()
+                      if line.startswith("Tag: ")] == [f"Tag: {expected}"]
+              wheel.extractall(root)
+          for binary in sorted(root.rglob("*.dylib")):
+              actual = subprocess.check_output(["lipo", "-archs", str(binary)], text=True).strip()
+              assert actual == architecture, f"Wrong architecture: {binary}: {actual}"
+              subprocess.run(["codesign", "--verify", "--strict", str(binary)], check=True)
+              for option in ("-L", "-l"):
+                  commands = subprocess.check_output(["otool", option, str(binary)], text=True)
+                  commands = "\n".join(commands.splitlines()[1:])
+                  assert not re.search(
+                      r"(?:^|\s)/(?:Users/|tmp/|private/|var/folders/|opt/homebrew/|"
+                      r"usr/local/|opt/local/)", commands), f"Leaked runtime path: {binary}"
+          PY
+          shopt -s nullglob
+          wheels=("${GITHUB_WORKSPACE}"/wheelhouse/*.whl)
+          test "${#wheels[@]}" -eq 1
+          python -m venv "${temporary}/venv"
+          python_bin="${temporary}/venv/bin/python"
+          "${python_bin}" -m pip install pytest "${wheels[0]}"
+
+          # Test outside the checkout without build overrides or library paths.
+          unset LIBMPQ_LIBRARY PYTHONPATH DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH
+          unset DYLD_FRAMEWORK_PATH DYLD_FALLBACK_FRAMEWORK_PATH DYLD_INSERT_LIBRARIES
+          unset DYLD_VERSIONED_LIBRARY_PATH DYLD_VERSIONED_FRAMEWORK_PATH
+          unset LIBRARY_PATH CPATH PKG_CONFIG_PATH
+          export PATH="${temporary}/venv/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+          export LIBMPQ_EXPECT_BUNDLED=1
+          cd "${temporary}"
+          "${python_bin}" -I -c 'import mpq; print(mpq.version())'
+          "${python_bin}" -I -m pytest --import-mode=importlib "${GITHUB_WORKSPACE}/bindings/python/tests"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-python-${{ matrix.platform }}-wheel
+          path: wheelhouse/*.whl
+          if-no-files-found: error
+
   sdist:
     name: Build Python release source
     needs: prepare
@@ -281,7 +433,7 @@ jobs:
 
   validate-distributions:
     name: Validate Python distributions
-    needs: [prepare, wheel, windows-wheel, sdist]
+    needs: [prepare, wheel, windows-wheel, macos-wheel, sdist]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8
@@ -304,21 +456,23 @@ jobs:
           python -m pip install --upgrade twine
           python -m twine check dist/*
           test "$(find dist -maxdepth 1 -name "libmpq-${LIBMPQ_PYTHON_VERSION}.tar.gz" | wc -l)" -eq 1
-          test "$(find dist -maxdepth 1 -name "libmpq-${LIBMPQ_PYTHON_VERSION}-*.whl" | wc -l)" -eq 6
+          test "$(find dist -maxdepth 1 -name "libmpq-${LIBMPQ_PYTHON_VERSION}-*.whl" | wc -l)" -eq 8
           python - <<'PY'
           import os
           from pathlib import Path
           from packaging.utils import parse_wheel_filename
           from packaging.version import Version
 
+          macos_target = os.environ["LIBMPQ_MACOS_DEPLOYMENT_TARGET"].replace(".", "_")
           expected = {
               "manylinux_2_17_x86_64", "manylinux_2_17_aarch64",
               "musllinux_1_2_x86_64", "musllinux_1_2_aarch64",
               "win_amd64", "win_arm64",
+              f"macosx_{macos_target}_x86_64", f"macosx_{macos_target}_arm64",
           }
           wheels = list(Path("dist").glob("*.whl"))
-          if len(wheels) != 6:
-              raise SystemExit("Expected exactly six Linux/Windows wheels")
+          if len(wheels) != 8:
+              raise SystemExit("Expected exactly eight Linux/Windows/macOS wheels")
           seen = set()
           aliases = {
               "manylinux2014_x86_64": "manylinux_2_17_x86_64",
@@ -365,7 +519,7 @@ jobs:
           test -s "${sdist}"
           mkdir -p release/package
           find release/wheels -type f -name "libmpq-${LIBMPQ_PYTHON_VERSION}-*.whl" -exec cp {} release/package/ \;
-          test "$(find release/package -maxdepth 1 -name '*.whl' | wc -l)" -eq 6
+          test "$(find release/package -maxdepth 1 -name '*.whl' | wc -l)" -eq 8
           cp "${sdist}" release/package/
           (cd release/package && zip -q "../libmpq-python-${LIBMPQ_PYTHON_VERSION}.zip" ./*)
           unzip -t "release/libmpq-python-${LIBMPQ_PYTHON_VERSION}.zip"

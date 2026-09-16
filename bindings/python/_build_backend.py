@@ -148,8 +148,10 @@ def _bundle_wheel(wheel_path, native_path, wheel_directory):
     wheel_text = files[wheel_name].decode("utf-8")
     wheel_text = wheel_text.replace("Root-Is-Purelib: true", "Root-Is-Purelib: false")
     wheel_text = "\n".join(line for line in wheel_text.splitlines()
-                             if not line.startswith("Tag: "))
-    wheel_text += "\nTag: py3-none-{}\n".format(platform_tag)
+                             if not line.startswith("Tag: ")).rstrip()
+
+    # Keep Tag in the header section, before the terminating blank line.
+    wheel_text += "\nTag: py3-none-{}\n\n".format(platform_tag)
     files[wheel_name] = wheel_text.encode("utf-8")
     files[native_member] = native_path.read_bytes()
     record_name = next(name for name in files if name.endswith(".dist-info/RECORD"))
