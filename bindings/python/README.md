@@ -52,10 +52,14 @@ make
 LIBMPQ_LIBRARY="$PWD/src/.libs/libmpq.so" python -m pytest bindings/python/tests
 ```
 
+Linux release wheels target `manylinux_2_17_x86_64`,
+`manylinux_2_17_aarch64`, `musllinux_1_2_x86_64`, and
+`musllinux_1_2_aarch64`. Each is built and tested natively using CPython 3.11.
+
 Release wheels contain a private native library at `mpq_libs/libmpq.so`. It
 is loaded by its exact package path through `ctypes`, intentionally has no ELF
 `DT_SONAME`, and does not require a separate system libmpq installation. The
-release Python ZIP contains the sdist and all generated manylinux/musllinux
+release Python ZIP contains one sdist and all four manylinux/musllinux
 wheels as a supplementary GitHub Release download. The sdist contains the
 canonical C and header sources and is free of native build products.
 

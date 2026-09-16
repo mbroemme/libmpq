@@ -297,11 +297,13 @@ LIBMPQ_LIBRARY="$PWD/src/.libs/libmpq.so" \
 ```
 
 The release wheels are built with cibuildwheel and repaired for
-`manylinux_2_17_x86_64` and `musllinux_1_2_x86_64`. They contain a private
+`manylinux_2_17_x86_64`, `manylinux_2_17_aarch64`, `musllinux_1_2_x86_64`,
+and `musllinux_1_2_aarch64`. Builds and bundled-library tests run natively
+on each architecture using CPython 3.11. They contain a private
 native library at `mpq_libs/libmpq.so`, loaded directly by package path; the
 wheel does not require a separately installed libmpq library. This private
 library intentionally has no ELF SONAME. The Python release archive,
-`libmpq-python-X.Y.Z.zip`, contains the sdist and all generated wheels.
+`libmpq-python-X.Y.Z.zip`, contains one sdist and all four Linux wheels.
 
 See [`bindings/python/README.md`](bindings/python/README.md) for API examples,
 package installation, native-library behavior, and test instructions.

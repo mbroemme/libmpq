@@ -81,20 +81,34 @@ jobs:
           echo "package_version=${package_version}" >> "${GITHUB_OUTPUT}"
 
   wheel:
-    name: Build Python ${{ matrix.platform }} wheel
+    name: Build Python ${{ matrix.platform }} ${{ matrix.architecture }} wheel
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: manylinux
+            architecture: x86_64
+            runner: ubuntu-latest
             build: cp311-manylinux_x86_64
-            artifact: libmpq-python-manylinux-wheel
+            artifact: libmpq-python-manylinux-x86_64-wheel
+          - platform: manylinux
+            architecture: aarch64
+            runner: ubuntu-24.04-arm
+            build: cp311-manylinux_aarch64
+            artifact: libmpq-python-manylinux-aarch64-wheel
           - platform: musllinux
+            architecture: x86_64
+            runner: ubuntu-latest
             build: cp311-musllinux_x86_64
-            artifact: libmpq-python-musllinux-wheel
+            artifact: libmpq-python-musllinux-x86_64-wheel
+          - platform: musllinux
+            architecture: aarch64
+            runner: ubuntu-24.04-arm
+            build: cp311-musllinux_aarch64
+            artifact: libmpq-python-musllinux-aarch64-wheel
     steps:
       - uses: actions/checkout@v7
         with:
@@ -161,7 +175,32 @@ jobs:
           python -m pip install --upgrade twine
           python -m twine check dist/*
           test "$(find dist -maxdepth 1 -name "libmpq-${LIBMPQ_PYTHON_VERSION}.tar.gz" | wc -l)" -eq 1
-          test "$(find dist -maxdepth 1 -name "libmpq-${LIBMPQ_PYTHON_VERSION}-*.whl" | wc -l)" -eq 2
+          test "$(find dist -maxdepth 1 -name "libmpq-${LIBMPQ_PYTHON_VERSION}-*.whl" | wc -l)" -eq 4
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from packaging.utils import parse_wheel_filename
+          from packaging.version import Version
+
+          expected = {
+              "manylinux_2_17_x86_64", "manylinux_2_17_aarch64",
+              "musllinux_1_2_x86_64", "musllinux_1_2_aarch64",
+          }
+          wheels = list(Path("dist").glob("*.whl"))
+          if len(wheels) != 4:
+              raise SystemExit("Expected exactly four Linux wheels")
+          seen = set()
+          for wheel in wheels:
+              name, version, _, tags = parse_wheel_filename(wheel.name)
+              platforms = {tag.platform for tag in tags} & expected
+              if (name != "libmpq" or
+                      version != Version(os.environ["LIBMPQ_PYTHON_VERSION"]) or
+                      len(platforms) != 1 or platforms & seen):
+                  raise SystemExit(f"Unexpected or duplicate wheel target: {wheel.name}")
+              seen.update(platforms)
+          if seen != expected:
+              raise SystemExit(f"Missing Linux wheel targets: {expected - seen}")
+          PY
 
   package:
     if: inputs.assemble_release
@@ -188,7 +227,7 @@ jobs:
           test -s "${sdist}"
           mkdir -p release/package
           find release/wheels -type f -name "libmpq-${LIBMPQ_PYTHON_VERSION}-*.whl" -exec cp {} release/package/ \;
-          test "$(find release/package -maxdepth 1 -name '*.whl' | wc -l)" -eq 2
+          test "$(find release/package -maxdepth 1 -name '*.whl' | wc -l)" -eq 4
           cp "${sdist}" release/package/
           (cd release/package && zip -q "../libmpq-python-${LIBMPQ_PYTHON_VERSION}.zip" ./*)
           unzip -t "release/libmpq-python-${LIBMPQ_PYTHON_VERSION}.zip"
