@@ -13,6 +13,12 @@
 # shellcheck disable=SC2016
 set -euo pipefail
 project="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+version="$(sed -nE 's/^AC_INIT\(\[libmpq\],[[:space:]]*\[([^]]+)\].*/\1/p' "${project}/configure.ac")"
+if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+	printf 'Cannot determine release version from configure.ac: %s\n' "${version}" >&2
+	exit 1
+fi
+mismatched_version="${version%.*}.$((10#${version##*.} + 1))"
 temporary="$(mktemp -d)"
 trap 'rm -rf "${temporary}"' EXIT
 root="${temporary}/paths with spaces"
@@ -109,10 +115,10 @@ for combination in msvc:x64 msvc:arm64 mingw:x86_64 mingw:aarch64; do
 	else
 		suffix="mingw-${architecture}"; library=libmpq.dll.a
 	fi
-	stage="${root}/libmpq-0.7.1-windows-${suffix}"
+	stage="${root}/libmpq-${version}-windows-${suffix}"
 	output="${root}/dist/${stage##*/}.zip"
 	options=(--toolchain "${toolchain}" --architecture "${architecture}" --stage "${stage}" --runtime "${TEST_RUNTIME}" \
-		--source "${project}" --output "${output}" --version 0.7.1)
+		--source "${project}" --output "${output}" --version "${version}")
 	reset_stage
 	expect_failure bash "${project}/scripts/package-windows.sh" prepare "${options[@]}" --architecture unsupported
 	grep -q 'Unsupported Windows toolchain/architecture' "${temporary}/failure.log"
@@ -176,17 +182,17 @@ for combination in msvc:x64 msvc:arm64 mingw:x86_64 mingw:aarch64; do
 done
 
 cd "${root}/project"
-printf 'AC_INIT([libmpq],[0.7.1],[mail],[libmpq])\n' > configure.ac
-printf 'project(libmpq VERSION 0.7.1 LANGUAGES C)\n' > CMakeLists.txt
-export GITHUB_REF=refs/tags/v0.7.1 GITHUB_REF_NAME=v0.7.1 GITHUB_OUTPUT="${temporary}/output"
+printf 'AC_INIT([libmpq],[%s],[mail],[libmpq])\n' "${version}" > configure.ac
+printf 'project(libmpq VERSION %s LANGUAGES C)\n' "${version}" > CMakeLists.txt
+export GITHUB_REF="refs/tags/v${version}" GITHUB_REF_NAME="v${version}" GITHUB_OUTPUT="${temporary}/output"
 bash "${project}/scripts/validate-release.sh"
-grep -Fx 'version=0.7.1' "${GITHUB_OUTPUT}"
-expect_failure env GITHUB_REF=refs/heads/v0.7.1 bash "${project}/scripts/validate-release.sh"
-for tag in v0.7.2 v0.7.1-rc1 'v0.7.1;false'; do
+grep -Fx "version=${version}" "${GITHUB_OUTPUT}"
+expect_failure env GITHUB_REF="refs/heads/v${version}" bash "${project}/scripts/validate-release.sh"
+for tag in "v${mismatched_version}" "v${version}-rc1" "v${version};false"; do
 	expect_failure env GITHUB_REF="refs/tags/${tag}" GITHUB_REF_NAME="${tag}" \
 		bash "${project}/scripts/validate-release.sh"
 done
-printf 'project(libmpq VERSION 0.7.2 LANGUAGES C)\n' > CMakeLists.txt
+printf 'project(libmpq VERSION %s LANGUAGES C)\n' "${mismatched_version}" > CMakeLists.txt
 expect_failure bash "${project}/scripts/validate-release.sh"
 
 # Exercise sorted checksum generation on the four test ZIPs, not release assets.
