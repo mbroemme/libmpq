@@ -14,6 +14,16 @@ set -euo pipefail
 : "${LIBMPQ_D_LIBC:?LIBMPQ_D_LIBC is required}"
 : "${LIBMPQ_D_VERSION:?LIBMPQ_D_VERSION is required}"
 : "${DC:?DC is required}"
+: "${LIBMPQ_D_ARCHITECTURE:?LIBMPQ_D_ARCHITECTURE is required}"
+
+case "${LIBMPQ_D_ARCHITECTURE}" in
+	x86_64|aarch64) ;;
+	*) echo "Unsupported D package architecture: ${LIBMPQ_D_ARCHITECTURE}" >&2; exit 1 ;;
+esac
+if [[ "$(uname -m)" != "${LIBMPQ_D_ARCHITECTURE}" ]]; then
+	echo "D package architecture ${LIBMPQ_D_ARCHITECTURE} does not match native host $(uname -m)" >&2
+	exit 1
+fi
 
 readonly project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${project_root}"

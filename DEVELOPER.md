@@ -366,9 +366,14 @@ LIBRARY_PATH="$PWD/src/.libs" LD_LIBRARY_PATH="$PWD/src/.libs" \
 
 The D release archive is `libmpq-d-X.Y.Z.zip`. It contains the D source
 package and compiler-specific binary packages for DMD and LDC on Linux
-x86_64, with separate glibc and musl variants. Binary packages include the
-precompiled D archive and the complete `libmpq.so` SONAME chain. Their bundled
-library directory is supplied automatically at link time; runtime loading may
+x86_64, plus LDC on Linux aarch64, with separate glibc and musl variants.
+DMD remains x86_64-only in the existing release toolchains. All packages are
+built and tested natively, using Ubuntu 24.04 for glibc and Alpine 3.22 for
+musl. Binary archives use
+`libmpq-d-X.Y.Z-<compiler>-linux-<libc>-<architecture>.tar.gz`; the D release ZIP
+requires all six binary archives plus the source package. Binary packages
+include the precompiled D archive and the complete `libmpq.so` SONAME chain.
+Their bundled library directory is supplied automatically at link time; runtime loading may
 still require `LD_LIBRARY_PATH`. `BUILDINFO` records compiler and native build
 metadata.
 

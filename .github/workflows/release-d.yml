@@ -97,20 +97,25 @@ jobs:
           echo "package_version=${package_version}" >> "${GITHUB_OUTPUT}"
 
   binary-glibc:
-    name: Build D ${{ matrix.compiler.name }} glibc package
+    name: Build D ${{ matrix.compiler.name }} glibc ${{ matrix.architecture }} package
     needs: prepare
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        compiler:
-          - name: dmd
-            setup: dmd
-            dub: dmd
-          - name: ldc
-            setup: ldc
-            dub: ldc2
+
+        # The current Linux DMD release toolchain is x86_64-only; LDC supplies native aarch64.
+        include:
+          - compiler: {name: dmd, setup: dmd, dub: dmd}
+            architecture: x86_64
+            runner: ubuntu-24.04
+          - compiler: {name: ldc, setup: ldc, dub: ldc2}
+            architecture: x86_64
+            runner: ubuntu-24.04
+          - compiler: {name: ldc, setup: ldc, dub: ldc2}
+            architecture: aarch64
+            runner: ubuntu-24.04-arm
     steps:
       - name: Install glibc package dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends autoconf automake binutils build-essential jq libbz2-dev liblzma-dev libtool zlib1g-dev
@@ -126,32 +131,36 @@ jobs:
           LIBMPQ_D_COMPILER_NAME: ${{ matrix.compiler.name }}
           LIBMPQ_D_DUB_COMPILER: ${{ matrix.compiler.dub }}
           LIBMPQ_D_LIBC: glibc
+          LIBMPQ_D_ARCHITECTURE: ${{ matrix.architecture }}
           LIBMPQ_D_VERSION: ${{ needs.prepare.outputs.package_version }}
           DC: ${{ matrix.compiler.dub }}
         run: bash scripts/build-d-binary-package.sh
       - uses: actions/upload-artifact@v7
         with:
-          name: libmpq-d-${{ matrix.compiler.name }}-package
-          path: release/libmpq-d-*-linux-glibc-x86_64.tar.gz
+          name: libmpq-d-${{ matrix.compiler.name }}-glibc-${{ matrix.architecture }}-package
+          path: release/libmpq-d-*-linux-glibc-${{ matrix.architecture }}.tar.gz
           if-no-files-found: error
 
   binary-musl:
-    name: Build D ${{ matrix.compiler.name }} musl package
+    name: Build D ${{ matrix.compiler.name }} musl ${{ matrix.architecture }} package
     needs: prepare
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        compiler:
-          - name: dmd
-            package: dmd
-            dub: dmd
-            dc: dmd
-          - name: ldc
-            package: ldc
-            dub: ldc2
-            dc: ldc2
+
+        # Alpine 3.22 provides DMD on x86_64 and LDC on both architectures.
+        include:
+          - compiler: {name: dmd, package: dmd, dub: dmd, dc: dmd}
+            architecture: x86_64
+            runner: ubuntu-24.04
+          - compiler: {name: ldc, package: ldc, dub: ldc2, dc: ldc2}
+            architecture: x86_64
+            runner: ubuntu-24.04
+          - compiler: {name: ldc, package: ldc, dub: ldc2, dc: ldc2}
+            architecture: aarch64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
         with:
@@ -164,13 +173,16 @@ jobs:
           LIBMPQ_D_COMPILER_PACKAGE: ${{ matrix.compiler.package }}
           LIBMPQ_D_DC: ${{ matrix.compiler.dc }}
           LIBMPQ_D_LIBC: musl
+          LIBMPQ_D_ARCHITECTURE: ${{ matrix.architecture }}
           LIBMPQ_D_VERSION: ${{ needs.prepare.outputs.package_version }}
         run: |
           set -euxo pipefail
+          test "$(uname -m)" = "${LIBMPQ_D_ARCHITECTURE}"
           docker run --rm \
             -e LIBMPQ_D_COMPILER_NAME -e LIBMPQ_D_DUB_COMPILER \
             -e LIBMPQ_D_COMPILER_PACKAGE -e LIBMPQ_D_DC -e LIBMPQ_D_LIBC \
-            -e LIBMPQ_D_VERSION -v "${GITHUB_WORKSPACE}:/workspace" \
+            -e LIBMPQ_D_VERSION -e LIBMPQ_D_ARCHITECTURE \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
             -w /workspace alpine:3.22 sh -euxc '
               apk add --no-cache autoconf automake bash binutils bzip2-dev \
                 build-base ca-certificates dub jq libtool linux-headers \
@@ -180,8 +192,8 @@ jobs:
             '
       - uses: actions/upload-artifact@v7
         with:
-          name: libmpq-d-${{ matrix.compiler.name }}-musl-package
-          path: release/libmpq-d-*-linux-musl-x86_64.tar.gz
+          name: libmpq-d-${{ matrix.compiler.name }}-musl-${{ matrix.architecture }}-package
+          path: release/libmpq-d-*-linux-musl-${{ matrix.architecture }}.tar.gz
           if-no-files-found: error
 
   source:
@@ -236,9 +248,13 @@ jobs:
           package_name="libmpq-d-${LIBMPQ_D_VERSION}"
           mkdir -p release/package
           mapfile -t packages < <(find release/packages -type f -name "${package_name}-*.tar.gz" -printf '%f\n' | sort)
-          ((${#packages[@]} > 0))
-          printf '%s\n' "${packages[@]}" | grep -- '-source.tar.gz$' >/dev/null
-          printf '%s\n' "${packages[@]}" | grep -- '-linux-.*-x86_64.tar.gz$' >/dev/null
+          expected=("${package_name}-source.tar.gz")
+          for libc in glibc musl; do
+            for target in dmd:x86_64 ldc:x86_64 ldc:aarch64; do
+              expected+=("${package_name}-${target%:*}-linux-${libc}-${target#*:}.tar.gz")
+            done
+          done
+          diff -u <(printf '%s\n' "${expected[@]}" | sort) <(printf '%s\n' "${packages[@]}")
           for package in "${packages[@]}"; do cp "release/packages/${package}" release/package/; done
           (cd release/package && zip -q "../${package_name}.zip" ./*)
           unzip -t "release/${package_name}.zip"

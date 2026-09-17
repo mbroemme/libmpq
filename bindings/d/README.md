@@ -61,8 +61,26 @@ the bundled library at runtime, for example through `LD_LIBRARY_PATH`. The
 compiler and native build metadata, including the libc build version, build
 environment, and maximum required glibc symbol version, is recorded in
 `BUILDINFO`; use the source package when the recorded compiler or platform does
-not match the consumer environment. The release currently provides
-`linux-glibc-x86_64` and `linux-musl-x86_64` packages for both DMD and LDC.
+not match the consumer environment. Linux binary packages are built and tested
+natively with the following compiler/architecture matrix:
+
+| Compiler | glibc (Ubuntu 24.04) | musl (Alpine 3.22) |
+| --- | --- | --- |
+| DMD | x86_64 | x86_64 |
+| LDC | x86_64, aarch64 | x86_64, aarch64 |
+
+Archives are named
+`libmpq-d-X.Y.Z-<compiler>-linux-<libc>-<architecture>.tar.gz`, for example
+`libmpq-d-X.Y.Z-ldc-linux-glibc-aarch64.tar.gz` and
+`libmpq-d-X.Y.Z-ldc-linux-musl-aarch64.tar.gz`. DMD remains x86_64-only because
+the existing release toolchains do not provide native Linux aarch64 DMD
+packages. No compiler substitution or emulation is used. macOS and Windows D
+binary packages are not currently published.
+
+Packaging requires an explicit `LIBMPQ_D_ARCHITECTURE` (`x86_64` or `aarch64`)
+matching the native host. The package records it in `BUILDINFO` and validates
+the ELF architecture of the bundled native library, D archive members, and
+installed consumer before publication.
 
 ## Example
 

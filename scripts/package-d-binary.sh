@@ -14,13 +14,49 @@ set -euo pipefail
 : "${LIBMPQ_D_LIBC:?LIBMPQ_D_LIBC is required}"
 : "${LIBMPQ_D_VERSION:?LIBMPQ_D_VERSION is required}"
 : "${DC:?DC is required}"
+: "${LIBMPQ_D_ARCHITECTURE:?LIBMPQ_D_ARCHITECTURE is required}"
+
+case "${LIBMPQ_D_ARCHITECTURE}" in
+	x86_64) elf_machine='Advanced Micro Devices X86-64' ;;
+	aarch64) elf_machine='AArch64' ;;
+	*) echo "Unsupported D package architecture: ${LIBMPQ_D_ARCHITECTURE}" >&2; exit 1 ;;
+esac
+if [[ "$(uname -m)" != "${LIBMPQ_D_ARCHITECTURE}" ]]; then
+	echo "D package architecture ${LIBMPQ_D_ARCHITECTURE} does not match native host $(uname -m)" >&2
+	exit 1
+fi
+
+# BFD handles DMD's archive format where readelf's archive reader does not.
+# Inspect every member, while using ELF headers for libraries and executables.
+validate_architecture() {
+	local machines machine expected="${elf_machine}"
+	case "$1" in
+		*.a)
+		machines="$(LC_ALL=C objdump -f "$1" | sed -n 's/^architecture: \([^,]*\),.*/\1/p')"
+		case "${LIBMPQ_D_ARCHITECTURE}" in
+			x86_64) expected='i386:x86-64' ;;
+			aarch64) expected='aarch64' ;;
+		esac
+		;;
+		*)
+		machines="$(LC_ALL=C readelf -h "$1" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+		;;
+	esac
+	test -n "${machines}"
+	while IFS= read -r machine; do
+		if [[ "${machine}" != "${expected}" ]]; then
+			echo "Unexpected ELF architecture in $1: ${machine}; expected ${expected}" >&2
+			exit 1
+		fi
+	done <<<"${machines}"
+}
 
 readonly package_name="libmpq-d-${LIBMPQ_D_VERSION}"
 readonly package_dir="release/${package_name}"
 readonly interface_dir="release/interfaces"
 readonly object_dir="release/objects"
-readonly archive_name="${package_name}-${LIBMPQ_D_COMPILER_NAME}-linux-${LIBMPQ_D_LIBC}-x86_64.tar.gz"
-readonly dub_platform="linux-x86_64-${LIBMPQ_D_COMPILER_NAME}"
+readonly archive_name="${package_name}-${LIBMPQ_D_COMPILER_NAME}-linux-${LIBMPQ_D_LIBC}-${LIBMPQ_D_ARCHITECTURE}.tar.gz"
+readonly dub_platform="linux-${LIBMPQ_D_ARCHITECTURE}-${LIBMPQ_D_COMPILER_NAME}"
 
 mkdir -p "${package_dir}/source/libmpq" "${package_dir}/tests" \
 	"${package_dir}/lib" "${interface_dir}" "${object_dir}"
@@ -78,6 +114,8 @@ test -s "${d_library}"
 test -s src/.libs/libmpq.so
 cp "${d_library}" "${package_dir}/lib/libmpq-${LIBMPQ_D_COMPILER_NAME}.a"
 cp -a src/.libs/libmpq.so* "${package_dir}/lib/"
+validate_architecture "${package_dir}/lib/libmpq.so"
+validate_architecture "${package_dir}/lib/libmpq-${LIBMPQ_D_COMPILER_NAME}.a"
 
 soname="$(readelf -d "${package_dir}/lib/libmpq.so" |
 	sed -n 's/.*SONAME.*\[\(.*\)\].*/\1/p')"
@@ -107,7 +145,7 @@ esac
 	echo "libmpq_version=${LIBMPQ_D_VERSION}"
 	echo "compiler=${LIBMPQ_D_COMPILER_NAME}"
 	echo "compiler_version=${compiler_version}"
-	echo "architecture=x86_64"
+	echo "architecture=${LIBMPQ_D_ARCHITECTURE}"
 	echo "os=linux"
 	echo "libc=${LIBMPQ_D_LIBC}"
 	echo "libc_build_version=${libc_build_version}"
@@ -149,5 +187,7 @@ DUB_HOME="${consumer_dub_home}" \
 	dub run --root="${consumer}" --compiler="${LIBMPQ_D_DUB_COMPILER}"
 consumer_binary="${consumer}/libmpq-consumer"
 test -x "${consumer_binary}"
+validate_architecture "${consumer_binary}"
+test "$(LD_LIBRARY_PATH="${extracted}/${package_name}/lib" "${consumer_binary}")" = "${LIBMPQ_D_VERSION}"
 LD_LIBRARY_PATH="${extracted}/${package_name}/lib" ldd "${consumer_binary}" |
 	grep -F "${extracted}/${package_name}/lib/${soname}"
