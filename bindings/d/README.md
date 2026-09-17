@@ -70,7 +70,7 @@ for the following compiler/architecture matrix:
 | Compiler | Linux glibc (Ubuntu 24.04) | Linux musl (Alpine 3.22) | macOS | Windows |
 | --- | --- | --- | --- | --- |
 | DMD | x86_64 | x86_64 | x86_64, arm64 | x86_64 |
-| LDC | x86_64, aarch64 | x86_64, aarch64 | x86_64, arm64 | x86_64 |
+| LDC | x86_64, aarch64 | x86_64, aarch64 | x86_64, arm64 | x86_64, arm64 |
 
 Archives are named
 `libmpq-d-X.Y.Z-<compiler>-linux-<libc>-<architecture>.tar.gz`, for example
@@ -112,13 +112,25 @@ under `licenses/`. Add the extracted `bin/` directory to `PATH` when running
 applications. DUB selects the precompiled library through
 `windows-x86_64-<compiler>` metadata. Both compilers are tested using an
 extracted-package consumer with no vcpkg or native build directories on
-the runtime `PATH`. Windows ARM64 D packages are not provided.
+the runtime `PATH`.
+
+Windows ARM64 is supported by LDC only, as
+`libmpq-d-X.Y.Z-ldc-windows-arm64.zip`. It uses the MSVC ARM64 native SDK
+and `arm64-windows` dependencies. All D compilation uses the explicit target
+`aarch64-windows-msvc` (`dub --arch=aarch64-windows-msvc`), with validated
+`windows-aarch64-ldc` binary metadata. The release token is `arm64`; DUB's
+internal architecture is `aarch64`. The LDC multilib compiler executable may
+itself be x64 and run through Windows-on-ARM emulation, but the packaged DLLs,
+library objects, and extracted consumer must be genuine ARM64. The consumer
+executes natively on the ARM64 runner. `BUILDINFO` records the target triple
+and inspected compiler-host architecture. DMD Windows ARM64 is not supported.
 
 Packaging requires explicit `LIBMPQ_D_OS` and `LIBMPQ_D_ARCHITECTURE` values:
 `linux` with `x86_64`/`aarch64`, `macos` with `x86_64`/`arm64`, or `windows`
-with `x86_64`, matching the native host. ELF/Mach-O/PE checks validate the native
-shared library, every D archive member, and the extracted consumer. macOS consumers execute with the
-requested native architecture and verify that the extracted dylib is loaded.
+with `x86_64` or LDC-only `arm64`, matching the native host OS. ELF/Mach-O/PE
+checks validate the native shared library, every D archive member, and the
+extracted consumer. macOS consumers execute with the requested native
+architecture and verify that the extracted dylib is loaded.
 
 ## Example
 

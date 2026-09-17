@@ -36,18 +36,31 @@ case "${LIBMPQ_D_OS}:${LIBMPQ_D_ARCHITECTURE}:$(uname -s)" in
 	dub_arch="${LIBMPQ_D_ARCHITECTURE}"
 	[[ "${dub_arch}" != arm64 ]] || dub_arch=aarch64
 	;;
-	windows:x86_64:MINGW64_NT-*|windows:x86_64:MSYS_NT-*)
-	package_platform=windows-x86_64
+	windows:x86_64:MINGW64_NT-*|windows:x86_64:MSYS_NT-*|windows:arm64:MINGW*_NT-*|windows:arm64:MSYS_NT-*)
+	package_platform="windows-${LIBMPQ_D_ARCHITECTURE}"
 	dub_os=windows
 	dub_arch=x86_64
 	archive_extension=zip
 	d_library_extension=lib
 	dub_options=(--arch=x86_64)
 	interface_options=(-m64)
+	msvc_arch=x64
+	pe_machine=8664
+	if [[ "${LIBMPQ_D_ARCHITECTURE}" == arm64 ]]; then
+		[[ "${LIBMPQ_D_COMPILER_NAME}" == ldc ]] || { echo 'Windows ARM64 requires LDC' >&2; exit 1; }
+		msvc_arch=arm64
+		pe_machine=AA64
+		dub_arch=aarch64
+		dub_options=(--arch=aarch64-windows-msvc)
+		interface_options=(-mtriple=aarch64-windows-msvc)
+	fi
 	;;
 	*) echo "Unsupported D package platform or host: ${LIBMPQ_D_OS}/${LIBMPQ_D_ARCHITECTURE}/$(uname -s)" >&2; exit 1 ;;
 esac
-if [[ "$(uname -m)" != "${LIBMPQ_D_ARCHITECTURE}" ]]; then
+if [[ "${LIBMPQ_D_OS}" == windows ]]; then
+	native_arch="$(pwsh.exe -NoProfile -Command '[System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()' | tr -d '\r\n')"
+	[[ "${native_arch,,}" == "${msvc_arch}" ]] || { echo 'Native Windows architecture mismatch' >&2; exit 1; }
+elif [[ "$(uname -m)" != "${LIBMPQ_D_ARCHITECTURE}" ]]; then
 	echo "D package architecture ${LIBMPQ_D_ARCHITECTURE} does not match native host $(uname -m)" >&2
 	exit 1
 fi
@@ -59,7 +72,7 @@ validate_architecture() {
 	if [[ "${LIBMPQ_D_OS}" == windows ]]; then
 
 		# Keep the SDK's dumpbin machine parsing, including import-library
-		# headers. A COFF archive must have x64 objects in every member.
+		# headers. Every COFF member must match the requested architecture.
 		machines="$(MSYS2_ARG_CONV_EXCL='*' MSYS_NO_PATHCONV=1 \
 			dumpbin.exe /nologo /headers "$(cygpath -aw "$1")" | tr -d '\r' |
 			sed -nE \
@@ -69,8 +82,8 @@ validate_architecture() {
 			echo "No PE/COFF machine headers found in $1" >&2; exit 1;
 		}
 		while IFS= read -r machine; do
-			[[ "${machine^^}" == 8664 ]] || {
-				echo "Unexpected PE/COFF machine in $1: ${machine}; expected 8664" >&2; exit 1;
+			[[ "${machine^^}" == "${pe_machine}" ]] || {
+				echo "Unexpected PE/COFF machine in $1: ${machine}; expected ${pe_machine}" >&2; exit 1;
 			}
 		done <<<"${machines}"
 		return
@@ -142,8 +155,8 @@ if [[ "${LIBMPQ_D_OS}" == macos ]]; then
 fi
 if [[ "${LIBMPQ_D_OS}" == windows ]]; then
 	dub describe "${dub_options[@]}" --compiler="${LIBMPQ_D_DUB_COMPILER}" |
-		jq -e --arg compiler "${LIBMPQ_D_COMPILER_NAME}" \
-			'(.platform | index("windows")) != null and .architecture == ["x86_64"] and .compiler == $compiler'
+		jq -e --arg compiler "${LIBMPQ_D_COMPILER_NAME}" --arg arch "${dub_arch}" \
+			'(.platform | index("windows")) != null and .architecture == [$arch] and .compiler == $compiler'
 fi
 
 mkdir -p "${package_dir}/source/libmpq" "${package_dir}/tests" \
@@ -255,12 +268,13 @@ elif [[ "${LIBMPQ_D_OS}" == macos ]]; then
 	# the actual deployment target, and signatures before copying these files.
 	grep -Fx "macos_deployment_target=${MACOSX_DEPLOYMENT_TARGET}" "${native_sdk}/BUILDINFO"
 else
-	native_sdk="release/libmpq-${LIBMPQ_D_VERSION}-windows-msvc-x64"
+	native_sdk="release/libmpq-${LIBMPQ_D_VERSION}-windows-msvc-${msvc_arch}"
 	cp -a "${native_sdk}/bin" "${native_sdk}/licenses" "${package_dir}/"
 	cp "${native_sdk}/lib/libmpq.lib" "${package_dir}/lib/"
 	for binary in "${package_dir}/bin/"*.dll "${package_dir}/lib/libmpq.lib" libmpq.exe; do
 		validate_architecture "${binary}"
 	done
+	test ! -e "${package_dir}/lib/mpq.lib"
 fi
 validate_architecture "${package_dir}/lib/${packaged_d_library}"
 {
@@ -279,7 +293,11 @@ validate_architecture "${package_dir}/lib/${packaged_d_library}"
 		echo "dylib_id=${dylib_id}"
 	else
 		echo 'native_toolchain=msvc'
-		echo 'vcpkg_triplet=x64-windows'
+		echo "vcpkg_triplet=${msvc_arch}-windows"
+		if [[ "${LIBMPQ_D_ARCHITECTURE}" == arm64 ]]; then
+			echo 'd_target=aarch64-windows-msvc'
+			echo "compiler_host_architecture=${LIBMPQ_D_COMPILER_HOST_ARCHITECTURE:?Compiler host architecture is required}"
+		fi
 	fi
 } > "${package_dir}/BUILDINFO"
 
@@ -325,6 +343,10 @@ consumer_dub_path="${consumer_dub_home}"
 if [[ "${LIBMPQ_D_OS}" == windows ]]; then
 	consumer_root="$(cygpath -am "${consumer}")"
 	consumer_dub_path="$(cygpath -am "${consumer_dub_home}")"
+	DUB_HOME="${consumer_dub_path}" \
+		dub describe --root="${consumer_root}" "${dub_options[@]}" --compiler="${LIBMPQ_D_DUB_COMPILER}" |
+		jq -e --arg compiler "${LIBMPQ_D_COMPILER_NAME}" --arg arch "${dub_arch}" \
+			'(.platform | index("windows")) != null and .architecture == [$arch] and .compiler == $compiler'
 fi
 describe="$(DUB_HOME="${consumer_dub_path}" \
 	dub describe --root="${consumer_root}" --compiler="${LIBMPQ_D_DUB_COMPILER}" \

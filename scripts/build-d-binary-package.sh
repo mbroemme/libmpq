@@ -24,9 +24,17 @@ case "${LIBMPQ_D_OS}:${LIBMPQ_D_ARCHITECTURE}:$(uname -s)" in
 	: "${MACOSX_DEPLOYMENT_TARGET:?MACOSX_DEPLOYMENT_TARGET is required}"
 	;;
 	windows:x86_64:MINGW64_NT-*|windows:x86_64:MSYS_NT-*) ;;
+	windows:arm64:MINGW*_NT-*|windows:arm64:MSYS_NT-*)
+	[[ "${LIBMPQ_D_COMPILER_NAME}" == ldc ]] || { echo 'Windows ARM64 requires LDC' >&2; exit 1; }
+	;;
 	*) echo "Unsupported D package platform or host: ${LIBMPQ_D_OS}/${LIBMPQ_D_ARCHITECTURE}/$(uname -s)" >&2; exit 1 ;;
 esac
-if [[ "$(uname -m)" != "${LIBMPQ_D_ARCHITECTURE}" ]]; then
+if [[ "${LIBMPQ_D_OS}" == windows ]]; then
+	msvc_arch=x64
+	[[ "${LIBMPQ_D_ARCHITECTURE}" != arm64 ]] || msvc_arch=arm64
+	native_arch="$(pwsh.exe -NoProfile -Command '[System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()' | tr -d '\r\n')"
+	[[ "${native_arch,,}" == "${msvc_arch}" ]] || { echo 'Native Windows architecture mismatch' >&2; exit 1; }
+elif [[ "$(uname -m)" != "${LIBMPQ_D_ARCHITECTURE}" ]]; then
 	echo "D package architecture ${LIBMPQ_D_ARCHITECTURE} does not match native host $(uname -m)" >&2
 	exit 1
 fi
@@ -48,7 +56,7 @@ dub_options=()
 if [[ "${LIBMPQ_D_OS}" == windows ]]; then
 	# CMake/CTest and SDK dependency preparation are performed by the workflow
 	# in its MSVC developer environment before invoking this D build helper.
-	native_sdk="${project_root}/release/libmpq-${LIBMPQ_D_VERSION}-windows-msvc-x64"
+	native_sdk="${project_root}/release/libmpq-${LIBMPQ_D_VERSION}-windows-msvc-${msvc_arch}"
 	: "${LIBMPQ_D_MSVC_BIN:?MSVC developer tools directory is required}"
 	export PATH="$(cygpath -au "${LIBMPQ_D_MSVC_BIN}"):${PATH}"
 	test -s "${native_sdk}/lib/libmpq.lib"
@@ -63,9 +71,14 @@ if [[ "${LIBMPQ_D_OS}" == windows ]]; then
 	export PATH="${native_sdk}/bin:${PATH}"
 	export DUB_HOME="$(cygpath -am "${DUB_HOME}")"
 	dub_options=(--arch=x86_64)
+	dub_arch=x86_64
+	if [[ "${LIBMPQ_D_ARCHITECTURE}" == arm64 ]]; then
+		dub_options=(--arch=aarch64-windows-msvc)
+		dub_arch=aarch64
+	fi
 	dub describe "${dub_options[@]}" --compiler="${LIBMPQ_D_DUB_COMPILER}" |
-		jq -e --arg compiler "${LIBMPQ_D_COMPILER_NAME}" \
-			'(.platform | index("windows")) != null and .architecture == ["x86_64"] and .compiler == $compiler'
+		jq -e --arg compiler "${LIBMPQ_D_COMPILER_NAME}" --arg arch "${dub_arch}" \
+			'(.platform | index("windows")) != null and .architecture == [$arch] and .compiler == $compiler'
 	TMPDIR="$(cygpath -am "${temporary}")" \
 		dub run --config=tests "${dub_options[@]}" --compiler="${LIBMPQ_D_DUB_COMPILER}"
 elif [[ "${LIBMPQ_D_OS}" == macos ]]; then

@@ -399,15 +399,31 @@ discovery, architecture validation, and dependency licenses. Each D package
 contains `bin/libmpq.dll` and its non-system dependencies, `lib/libmpq.lib`,
 and the precompiled `lib/libmpq-<compiler>.lib` in MS-COFF format.
 DUB's `windows-x86_64-<compiler>` configuration selects both packaged libraries.
-PE/COFF checks require x64 for every DLL, library object, and consumer.
+PE/COFF checks require the package architecture for every DLL, library object,
+and consumer.
 The extracted-package consumer executes with only package and Windows system
 directories on `PATH`, excluding vcpkg and native build paths. `BUILDINFO`
 records the compiler version, Windows architecture, MSVC native toolchain,
-and `x64-windows` triplet, without libc or macOS fields. Windows ARM64 D
-packages remain out of scope.
+and `x64-windows` triplet, without libc or macOS fields.
+
+LDC additionally produces `libmpq-d-X.Y.Z-ldc-windows-arm64.zip` on
+`windows-11-vs2026-arm`, reusing MSVC ARM64 and `arm64-windows` dependencies.
+The existing setup action installs official LDC multilib. Its compiler PE
+architecture selects the VS host tools: x64 under Windows-on-ARM emulation or
+native ARM64, always targeting ARM64. DUB receives
+`--arch=aarch64-windows-msvc`, which passes LDC's explicit `-mtriple` option
+to target probing and compilation; direct interface generation uses the same
+triple. DUB must report `windows`, `aarch64`, and `ldc`. Release filenames
+retain `arm64`, while the binary selector is `windows-aarch64-ldc`.
+All packaged PE/COFF members and the native extracted consumer must be AA64,
+not x64. `BUILDINFO` additionally records `d_target` and the actual
+`compiler_host_architecture`. Windows ARM64 does not support DMD packages.
+The source recipe remains `libs "mpq"`: only source-tree builds see a temporary
+`mpq.lib` compatibility copy. Binary recipes select `libmpq.lib` explicitly,
+and extracted consumers restore the original MSVC `LIB` before linking.
 
 The D release ZIP requires the exact set of six Linux binary packages, four
-macOS binary packages, two Windows binary packages, and one source package.
+macOS binary packages, three Windows binary packages, and one source package.
 
 See [`bindings/d/README.md`](bindings/d/README.md) for DUB usage, compiler
 requirements, binary package details, and examples.
