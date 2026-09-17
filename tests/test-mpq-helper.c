@@ -9,7 +9,23 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#ifdef _WIN32
+#include <direct.h>
+#include <process.h>
+#else
+#include <sys/stat.h>
 #include <unistd.h>
+#endif
+
+static int
+test_process_id(void)
+{
+#ifdef _WIN32
+    return _getpid();
+#else
+    return (int)getpid();
+#endif
+}
 
 typedef struct
 {
@@ -123,7 +139,7 @@ test_failure(const char *file, unsigned line, const char *condition)
 int
 test_temp_path(char *path, size_t path_size, const char *tag)
 {
-    int result = snprintf(path, path_size, "libmpq-test-%ld-%s.mpq", (long)getpid(), tag);
+    int result = snprintf(path, path_size, "libmpq-test-%ld-%s.mpq", (long)test_process_id(), tag);
     return result > 0 && (size_t)result < path_size ? 0 : -1;
 }
 
@@ -297,4 +313,45 @@ test_archive_offsets(mpq_archive_s *archive, uint32_t number, uint32_t **offsets
     }
     *offsets = snapshot.offsets;
     return 0;
+}
+
+/* Portable filesystem helpers for ASCII test workspace paths. */
+int
+test_mkdir(const char *path)
+{
+#ifdef _WIN32
+    return _mkdir(path);
+#else
+    return mkdir(path, 0700);
+#endif
+}
+
+int
+test_chdir(const char *path)
+{
+#ifdef _WIN32
+    return _chdir(path);
+#else
+    return chdir(path);
+#endif
+}
+
+int
+test_rmdir(const char *path)
+{
+#ifdef _WIN32
+    return _rmdir(path);
+#else
+    return rmdir(path);
+#endif
+}
+
+char *
+test_getcwd(void)
+{
+#ifdef _WIN32
+    return _getcwd(NULL, 0);
+#else
+    return getcwd(NULL, 0);
+#endif
 }

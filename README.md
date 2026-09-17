@@ -33,23 +33,25 @@ MPQ v2+ LZMA method.
 
 ## Features
 
-* Read MPQ archives and embedded archives located at a file offset.
-* Read MPQE-wrapped MPQ streams and create new MPQE archives with a
-  caller-supplied authentication code.
-* Read archive metadata, file names, file sizes, flags, and block information.
-* Create seekable MPQ v1 and v2 archives with fixed file-table capacity.
-* Add files through streaming, memory-buffer, or filesystem-path APIs.
-* Decrypt encrypted hash tables, block tables, and file payloads.
-* Create encrypted hash and block tables, file payloads, and sector offsets.
-* Create raw, single-unit, sectorized, and multi-sector file entries.
-* Compress file sectors with PKWARE implode, Huffman, zlib, bzip2, SPARSE,
-  or WAVE ADPCM using separate first-sector and later-sector masks.
-* Compress MPQ v2+ file sectors with the exclusive LZMA compression method.
-* Decompress zlib, bzip2, SPARSE, MPQ v2+ LZMA, Huffman, PKWARE implode, Blizzard
-  multi-compression, and mono or stereo WAVE ADPCM payloads.
-* Generate an optional `(listfile)` entry during archive creation.
-* Read and create optional version-100 `(attributes)` metadata in MPQ v1+:
-  CRC32, explicit FILETIME, MD5, and read-only patch-bit information.
+* Read, inspect, and extract MPQ archives, including embedded archives at a
+  file offset.
+* Read, inspect, and extract MPQE-wrapped MPQ archives, and create new MPQE
+  archives with a caller-supplied authentication code.
+* Create seekable MPQ v1 and v2 archives with fixed file-table capacity,
+  optional `(listfile)` generation, and encrypted tables and file payloads.
+* Add raw, single-unit, sectorized, and multi-sector files through streaming,
+  memory-buffer, and filesystem-path APIs.
+* Inspect archive, file, and block metadata, including names, sizes, flags,
+  packed block sizes, and effective per-block compression methods.
+* Read and write encrypted hash tables, block tables, sector offsets, and file
+  payloads.
+* Read and write PKWARE implode, Huffman, zlib, bzip2, SPARSE, and mono or
+  stereo WAVE ADPCM compression. MPQ v2+ also supports the exclusive LZMA
+  method; readers accept Blizzard multi-compression payloads.
+* Read and create version-100 `(attributes)` metadata in MPQ v1+: CRC32,
+  explicit FILETIME, MD5, and read-only patch-bit information.
+* Explicitly verify stored sector Adler-32 checksums and available attributes
+  CRC32 or MD5 values without changing normal extraction behavior.
 * Support big-endian hosts through explicit little-endian serialization; CI
   runs the full test suite on emulated s390x.
 * Provide optional Python 3.11+, D, and Java bindings.
@@ -61,13 +63,17 @@ checksum verification, and writer compression policies.
 
 ## Requirements
 
-The build system requires:
+The native library requires a C compiler and development headers and libraries
+for zlib, bzip2, and lzma. Build tools depend on the platform:
 
-* A C99-capable C compiler.
-* GNU Autoconf, Automake, and Libtool.
-* zlib development headers and libraries.
-* bzip2 development headers and libraries.
-* xz development headers and libraries.
+* Linux and other Unix systems: a C99-capable compiler, GNU Autoconf,
+  Automake, and Libtool.
+* macOS: Xcode or the standalone Command Line Tools for Xcode, providing
+  Apple Clang, the Apple linker, make, and the macOS SDK. Git checkouts also
+  require GNU Autoconf, Automake, and GNU Libtool; the CI-tested setup obtains
+  these build-generation tools through Homebrew.
+* MinGW-w64: a C99-capable compiler, GNU Autoconf, Automake, and Libtool.
+* Native MSVC: Visual Studio's C++ build tools, CMake 3.21 or newer, and vcpkg.
 
 The Python, D, and Java bindings are maintained and distributed through their
 native package ecosystems. They are included in source distributions but are
@@ -80,6 +86,8 @@ documentation below for build, test, and library-loading instructions.
 
 ## Building
 
+### Unix (Autotools)
+
 For build and install use the commands below. If `--prefix=/usr` is used, the
 `make install` command must be run as root. It installs the native shared
 library, public headers, tools, and manual pages. Language bindings are built
@@ -91,7 +99,16 @@ make &&
 make install
 ```
 
-### Debian or Ubuntu
+Use `./configure --prefix=DIR` to select a different installation prefix. Use
+`./configure --help` to list the available configuration options. C99 is the
+default language standard; callers may select another supported dialect through
+`CFLAGS`, for example `CFLAGS="-std=c17"`.
+
+Git checkouts require `sh autogen.sh` before `./configure`. Release source
+archives already include the generated Autotools files, including `configure`,
+so their users do not need to run `autogen.sh`.
+
+#### Debian or Ubuntu
 
 Install the build tools and compression-library development packages with:
 
@@ -100,7 +117,7 @@ sudo apt install build-essential autoconf automake libtool \
   zlib1g-dev libbz2-dev liblzma-dev
 ```
 
-### Fedora
+#### Fedora
 
 Install the compiler, Autotools, and compression-library development packages
 with:
@@ -110,7 +127,7 @@ sudo dnf install gcc make autoconf automake libtool \
   zlib-devel bzip2-devel xz-devel
 ```
 
-### openSUSE
+#### openSUSE
 
 Install the compiler, Autotools, and compression-library development packages
 with:
@@ -120,7 +137,7 @@ sudo zypper install gcc make autoconf automake libtool \
   zlib-devel libbz2-devel liblzma-devel
 ```
 
-### Arch Linux
+#### Arch Linux
 
 Install the base build tools and required libraries with:
 
@@ -129,10 +146,135 @@ sudo pacman -S --needed base-devel autoconf automake libtool \
   zlib bzip2 xz
 ```
 
-Use `./configure --prefix=DIR` to select a different installation prefix. Use
-`./configure --help` to list the available configuration options. C99 is the
-default language standard; callers may select another supported dialect through
-`CFLAGS`, for example `CFLAGS="-std=c17"`.
+### macOS (Apple toolchain with Autotools)
+
+libmpq builds natively with Apple Clang, the Apple linker, the macOS SDK,
+and the Apple-provided `/usr/bin/make`. GNU Autotools supplies the build frontend.
+Use either full Xcode or the standalone Command Line Tools for Xcode. If you
+do not need the Xcode IDE, install the standalone tools:
+
+```sh
+xcode-select --install
+```
+
+The supported SDK lacks the liblzma development headers. Install them through
+Homebrew and add only their include directory, keeping system library linking:
+
+```sh
+brew install xz
+export CPPFLAGS="-I$(brew --prefix xz)/include ${CPPFLAGS:-}"
+```
+
+Release source archives include the generated Autotools files and need no
+Homebrew bootstrap tools. With the headers available, configure, build, test,
+and optionally install:
+
+```sh
+./configure --prefix="${HOME}/.local"
+/usr/bin/make -j"$(sysctl -n hw.ncpu)"
+/usr/bin/make check
+/usr/bin/make install
+```
+
+For a Git checkout, first install the GNU build-generation tools through
+Homebrew and make GNU Libtool's commands available:
+
+```sh
+brew install autoconf automake libtool
+export PATH="$(brew --prefix libtool)/libexec/gnubin:${PATH}"
+```
+
+Then bootstrap and build libmpq with the Apple toolchain:
+
+```sh
+sh autogen.sh
+./configure --prefix="${HOME}/.local"
+/usr/bin/make -j"$(sysctl -n hw.ncpu)"
+/usr/bin/make check
+/usr/bin/make install
+```
+
+Homebrew places the GNU Libtool commands in `libexec/gnubin` so they do not
+conflict with Apple's `/usr/bin/libtool`. The `autogen.sh` script requires GNU
+Libtool's `libtoolize` command.
+
+CI also installs `pkg-config` through Homebrew to validate the native SDK
+metadata and external consumers. It is not required by `autogen.sh` or the
+normal source configuration.
+
+The supported macOS CI configuration uses Homebrew's liblzma headers and links
+zlib, bzip2, and liblzma from its macOS SDK/system environment. No Homebrew
+library directory is added to the linker search path. The official macOS SDK
+archives do not bundle private copies of these codec libraries.
+
+### Windows
+
+The native C library supports MSVC x64 and ARM64 through CMake. Native CI
+runners build both architectures, run the C regression suite through CTest,
+and compile and execute installed consumers. Autotools remains the POSIX and
+MinGW-w64 build frontend, including native aarch64 via MSYS2 CLANGARM64.
+Windows language bindings are not included in this support.
+
+#### MSVC (CMake)
+
+Install CMake, Visual Studio's C++ build tools, and vcpkg. From a Developer
+PowerShell, install the native dependencies and build (x64 example):
+
+```powershell
+vcpkg install zlib:x64-windows bzip2:x64-windows liblzma:x64-windows
+cmake -S . -B build -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+cmake --build build --config Release --parallel
+ctest --test-dir build -C Release --output-on-failure
+```
+
+For a native ARM64 build, use an ARM64 developer environment, replace
+`x64-windows` with `arm64-windows`, and use `-A ARM64`.
+
+Consumers include `libmpq/mpq.h` and link the DLL import library or static
+library, without special preprocessor definitions. Use `-DBUILD_SHARED_LIBS=OFF`
+for a static CMake build. Static consumers also link the codec and Windows
+system libraries.
+
+#### MinGW-w64 (Autotools)
+
+MinGW-w64 uses Autotools on native Windows runners for MINGW64 x86_64 and
+CLANGARM64 aarch64. For example, in an MSYS2 MINGW64 shell:
+
+```sh
+sh autogen.sh
+./configure --host=x86_64-w64-mingw32 --enable-shared --disable-static
+make
+make check
+make install
+```
+
+For ARM64, use an MSYS2 CLANGARM64 shell on Windows ARM64. Install
+`mingw-w64-clang-aarch64-clang`, `mingw-w64-clang-aarch64-llvm-tools`,
+`mingw-w64-clang-aarch64-zlib`, `mingw-w64-clang-aarch64-bzip2`,
+`mingw-w64-clang-aarch64-xz`, and `mingw-w64-clang-aarch64-pkgconf`, plus
+`autoconf automake libtool make diffutils`. Use `CC=clang` and
+`--host=aarch64-w64-mingw32`; compiler and binary tools must resolve from
+`/clangarm64/bin`. This uses native Clang/LLVM, not a cross compiler.
+
+Provide MinGW-built zlib, bzip2, and lzma libraries, not Unix libraries. For
+cross-builds, set dependency include/library search paths as needed and run
+`make check LOG_COMPILER=wine` with the DLL directories in `WINEPATH`.
+For a static-only build use `--disable-shared --enable-static`; the generated
+`libmpq-config --cflags --libs` supplies the include path and required libraries.
+
+#### Filesystem behavior
+
+Public filesystem paths are UTF-8 on Windows, converted to UTF-16 for native
+filesystem calls. Both slash styles and absolute or relative paths are
+accepted. Archive streams always use binary mode. Clone identity checks use
+the opened file's volume and file ID.
+
+MPQE creation retains the destination directory independently of cwd changes.
+Windows temporary files use exclusive creation, system-generated randomness,
+and non-inheritable handles. Plaintext has a protected owner-only ACL; encrypted
+output inherits the destination directory's normal ACL. Publication replaces
+the destination in one same-directory operation, only after finalization and
+plaintext cleanup. Handled failures attempt cleanup; crashes can leave temps.
 
 ## Usage
 
@@ -150,10 +292,20 @@ available through `man 3 libmpq`.
 
 ## Native C SDK packages
 
-Release downloads provide relocatable x86_64 Linux SDKs for glibc and musl.
-They include headers, shared libraries, manual pages, and build metadata;
-zlib, bzip2, and liblzma remain system dependencies. See the
-[SDK setup instructions](DEVELOPER.md#native-c-sdk-packages).
+Individual release downloads provide prebuilt native C SDKs for Linux glibc
+and musl (both x86_64 and aarch64), macOS arm64 and x86_64, Windows MSVC
+x64 and ARM64, and Windows MinGW-w64 x86_64 and aarch64 (MSYS2 CLANGARM64).
+Each SDK includes public headers, a shared library, platform-appropriate
+import libraries or development
+metadata, licenses, and documentation. The macOS SDKs are relocatable,
+architecture-specific `.tar.gz` development archives, not application installers.
+
+Linux and macOS SDKs use their relevant system runtime and codec dependencies.
+Windows SDK ZIPs bundle the required non-system runtime DLLs under `bin/`;
+choose the MSVC or MinGW-w64 package to match your compiler. No special
+libmpq consumer preprocessor define is required. See the
+[SDK setup instructions](DEVELOPER.md#native-c-sdk-packages) and
+[release package summary](DEVELOPER.md#release-package-summary).
 
 ## Bindings
 
@@ -185,11 +337,10 @@ headers, tables, encryption, sectors, and compression, see the
 * MPQE supports reading and creation of new archives with a caller-supplied
   authentication code. Existing MPQE archives cannot be modified and encrypted
   random-access writing is unsupported. Creation uses an owner-only plaintext
-  temporary file; the completed archive uses normal caller-umask permissions.
+  temporary file; completed POSIX archives use normal caller-umask permissions.
   Cleanup is best effort, so a crash can leave the plaintext temporary behind.
 * Signature generation, patch creation/application, and StormLib-specific key
   modes are not supported. Stored attributes are not automatically verified.
-* Windows support is not currently tested or documented by the Autotools build.
 
 ## Contributing
 

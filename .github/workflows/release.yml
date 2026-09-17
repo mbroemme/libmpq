@@ -10,7 +10,7 @@ name: Release libmpq
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*.*.*'
 
 concurrency:
   group: release-${{ github.ref }}
@@ -20,12 +20,26 @@ permissions:
   contents: read
 
 jobs:
+  validate:
+    name: Validate version tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check tag against project declarations
+        id: tag
+        run: bash scripts/validate-release.sh
+
   source:
-    name: Build source package
+    needs: validate
     uses: ./.github/workflows/release-source.yml
 
   python:
     name: Build Python packages
+    needs: validate
     uses: ./.github/workflows/release-python.yml
     with:
       mode: release
@@ -33,10 +47,12 @@ jobs:
 
   java:
     name: Build Java package
+    needs: validate
     uses: ./.github/workflows/release-java.yml
 
   d:
     name: Build D package
+    needs: validate
     uses: ./.github/workflows/release-d.yml
     with:
       mode: release
@@ -44,104 +60,279 @@ jobs:
 
   native:
     name: Build native C SDK package
+    needs: validate
     uses: ./.github/workflows/release-native.yml
 
-  finalize:
-    name: Sign and publish release
-    needs: [source, python, java, d, native]
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  windows-msvc:
+    name: Package MSVC ${{ matrix.architecture }} SDK
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x64
+            runner: windows-latest
+            cmake_platform: x64
+            vcpkg_triplet: x64-windows
+            dev_arch: x64
+            vs_component: Microsoft.VisualStudio.Component.VC.Tools.x86.x64
+            machine: '8664'
+          - architecture: arm64
+            runner: windows-11-vs2026-arm
+            cmake_platform: ARM64
+            vcpkg_triplet: arm64-windows
+            dev_arch: arm64
+            vs_component: Microsoft.VisualStudio.Component.VC.Tools.ARM64
+            machine: 'AA64'
+    timeout-minutes: 45
+    env:
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
     defaults:
       run:
-        shell: bash
-
+        shell: pwsh
     steps:
-      - name: Download source package
-        uses: actions/download-artifact@v8
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install native dependencies
+        run: |
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ine '${{ matrix.architecture }}') { throw 'Native runner architecture mismatch' }
+          & "${env:VCPKG_INSTALLATION_ROOT}/vcpkg.exe" install zlib:${{ matrix.vcpkg_triplet }} bzip2:${{ matrix.vcpkg_triplet }} liblzma:${{ matrix.vcpkg_triplet }}
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+      - name: Configure shared Release build with symbols
+        run: |
+          cmake -S . -B build -A ${{ matrix.cmake_platform }} -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} -DBUILD_SHARED_LIBS=ON "-DCMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake" "-DCMAKE_C_FLAGS_RELEASE=/O2 /Ob2 /DNDEBUG /Zi" "-DCMAKE_SHARED_LINKER_FLAGS_RELEASE=/DEBUG /OPT:REF /OPT:ICF"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+      - name: Build and test
+        run: |
+          cmake --build build --config Release --parallel
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          ctest --test-dir build -C Release --output-on-failure
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+      - name: Install, bundle runtime dependencies, and test installed SDK
+        run: |
+          ${name} = "libmpq-${env:RELEASE_VERSION}-windows-msvc-${{ matrix.architecture }}"
+          ${stage} = "${env:RUNNER_TEMP}/sdk/${name}"
+          ${runtime} = "${env:VCPKG_INSTALLATION_ROOT}/installed/${{ matrix.vcpkg_triplet }}"
+          ${output} = "${env:GITHUB_WORKSPACE}/dist/${name}.zip"
+          if (Test-Path ${stage}) { throw "Staging directory already exists" }
+          cmake --install build --config Release --prefix "${stage}"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          ${vswhere} = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          ${vs} = & ${vswhere} -latest -products '*' -requires ${{ matrix.vs_component }} -property installationPath
+          Import-Module "${vs}/Common7/Tools/Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath "${vs}" -SkipAutomaticLocation -DevCmdArguments '-arch=${{ matrix.dev_arch }} -host_arch=${{ matrix.dev_arch }}'
+
+          # Git Bash inherits the developer environment, including dumpbin.
+          ${bash} = "${env:ProgramFiles}/Git/bin/bash.exe"
+          ${env:PATH} = "${env:ProgramFiles}/7-Zip;${env:PATH}"
+          & ${bash} scripts/package-windows.sh prepare --toolchain msvc --architecture ${{ matrix.architecture }} --stage "${stage}" --runtime "${runtime}" --output "${output}" --version "${env:RELEASE_VERSION}"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          cl.exe /nologo /MD "/I${stage}/include" tests/test-mpq-consumer.c "/Fe${env:RUNNER_TEMP}/consumer.exe" "/Fo${env:RUNNER_TEMP}/consumer.obj" /link "/LIBPATH:${stage}/lib" libmpq.lib
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          ${headers} = & dumpbin.exe /nologo /headers "${env:RUNNER_TEMP}/consumer.exe"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          if (-not (${headers} -match '^\s*${{ matrix.machine }}\s+machine\s+\(')) { throw 'Consumer PE architecture mismatch' }
+
+          # Exclude vcpkg and the build tree from runtime dependency resolution.
+          ${savedPath} = ${env:PATH}
+          try {
+            ${env:PATH} = "${stage}/bin;${env:SystemRoot}/System32;${env:SystemRoot}"
+            & "${env:RUNNER_TEMP}/consumer.exe" "${env:RELEASE_VERSION}" "${env:GITHUB_WORKSPACE}/tests/fixtures/mpq-v1-features.mpq"
+            if (${LASTEXITCODE}) { throw "Staged MSVC consumer failed" }
+          } finally {
+            ${env:PATH} = ${savedPath}
+          }
+          & ${bash} scripts/package-windows.sh archive --toolchain msvc --architecture ${{ matrix.architecture }} --stage "${stage}" --runtime "${runtime}" --output "${output}" --version "${env:RELEASE_VERSION}"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-windows-msvc-${{ matrix.architecture }}-release
+          path: dist/libmpq-${{ needs.validate.outputs.version }}-windows-msvc-${{ matrix.architecture }}.zip
+          if-no-files-found: error
+
+  windows-mingw:
+    name: Package MinGW-w64 ${{ matrix.architecture }} SDK
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: windows-latest
+            native_arch: x64
+            msystem: MINGW64
+            prefix: /mingw64
+            triplet: x86_64-w64-mingw32
+            compiler: x86_64-w64-mingw32-gcc
+            package_prefix: mingw-w64-x86_64
+            compiler_package: gcc
+            tools_package: binutils
+            pe_format: pei-x86-64
+          - architecture: aarch64
+            runner: windows-11-vs2026-arm
+            native_arch: arm64
+            msystem: CLANGARM64
+            prefix: /clangarm64
+            triplet: aarch64-w64-mingw32
+            compiler: clang
+            package_prefix: mingw-w64-clang-aarch64
+            compiler_package: clang
+            tools_package: llvm-tools
+            pe_format: coff-arm64
+    timeout-minutes: 45
+    env:
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Verify native Windows runner
+        shell: pwsh
+        run: |
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ine '${{ matrix.native_arch }}') { throw 'Native runner architecture mismatch' }
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          update: true
+          install: >-
+            autoconf automake libtool make diffutils zip unzip
+            ${{ matrix.package_prefix }}-${{ matrix.compiler_package }}
+            ${{ matrix.package_prefix }}-${{ matrix.tools_package }}
+            ${{ matrix.package_prefix }}-zlib ${{ matrix.package_prefix }}-bzip2
+            ${{ matrix.package_prefix }}-xz ${{ matrix.package_prefix }}-pkgconf
+      - name: Build, test, and stage shared SDK
+        run: |
+          set -euxo pipefail
+          test "${MSYSTEM}" = '${{ matrix.msystem }}'
+          for tool in '${{ matrix.compiler }}' ar ranlib nm dlltool objdump strip pkg-config; do
+            case "$(command -v "${tool}")" in '${{ matrix.prefix }}'/bin/*) ;; *) echo "Wrong toolchain path: ${tool}" >&2; exit 1 ;; esac
+          done
+          export CC='${{ matrix.prefix }}/bin/${{ matrix.compiler }}'
+          export AR='${{ matrix.prefix }}/bin/ar' RANLIB='${{ matrix.prefix }}/bin/ranlib'
+          export NM='${{ matrix.prefix }}/bin/nm' DLLTOOL='${{ matrix.prefix }}/bin/dlltool'
+          export OBJDUMP='${{ matrix.prefix }}/bin/objdump' STRIP='${{ matrix.prefix }}/bin/strip'
+          name="libmpq-${RELEASE_VERSION}-windows-mingw-${{ matrix.architecture }}"
+          stage="$(cygpath -u "${RUNNER_TEMP}")/sdk/${name}"
+          test ! -e "${stage}"
+          sh autogen.sh
+          ./configure --host=${{ matrix.triplet }} --prefix=/usr --enable-shared --disable-static
+          make -j2
+          make check
+          install_root="$(mktemp -d)"
+          make DESTDIR="${install_root}" install
+          mkdir -p "$(dirname "${stage}")"
+          mv "${install_root}/usr" "${stage}"
+          rmdir "${install_root}"
+          bash scripts/package-windows.sh prepare --toolchain mingw --architecture ${{ matrix.architecture }} --stage "${stage}" --runtime '${{ matrix.prefix }}' --output "${PWD}/dist/${name}.zip" --version "${RELEASE_VERSION}"
+          export PKG_CONFIG_PATH="${stage}/lib/pkgconfig"
+          consumer="$(cygpath -u "${RUNNER_TEMP}")/consumer.exe"
+          "${CC}" $(pkg-config --cflags libmpq) tests/test-mpq-consumer.c $(pkg-config --libs libmpq) -o "${consumer}"
+          test "$(objdump -f "${consumer}" | sed -nE 's/^.*file format[[:space:]]+([^[:space:]]+)[[:space:]]*$/\1/p')" = '${{ matrix.pe_format }}'
+
+          # Only the staged SDK and Windows system DLLs may satisfy imports.
+          system_root="$(cygpath -u "${SystemRoot:-${SYSTEMROOT}}")"
+          PATH="${stage}/bin:${system_root}/System32:${system_root}" "${consumer}" "${RELEASE_VERSION}" "$(cygpath -w "${PWD}/tests/fixtures/mpq-v1-features.mpq")"
+          test "$("${stage}/bin/libmpq-config" --version)" = "${RELEASE_VERSION}"
+          bash scripts/package-windows.sh archive --toolchain mingw --architecture ${{ matrix.architecture }} --stage "${stage}" --runtime '${{ matrix.prefix }}' --output "${PWD}/dist/${name}.zip" --version "${RELEASE_VERSION}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-windows-mingw-${{ matrix.architecture }}-release
+          path: dist/libmpq-${{ needs.validate.outputs.version }}-windows-mingw-${{ matrix.architecture }}.zip
+          if-no-files-found: error
+
+  finalize:
+    name: Sign and publish tested release assets
+    needs: [validate, source, python, java, d, native, windows-msvc, windows-mingw]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v8
         with:
           name: libmpq-source-release
           path: release/source
-
-      - name: Download Python package
-        uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v8
         with:
           name: libmpq-python-release
           path: release/python
-
-      - name: Download Java package
-        uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v8
         with:
           name: libmpq-java-artifacts
           path: release/java
-
-      - name: Download D package
-        uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v8
         with:
           name: libmpq-d-release
           path: release/d
-
-      - name: Download native C SDK package
-        uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v8
         with:
           name: libmpq-native-release
           path: release/native
-
-      - name: Collect release packages
-        id: packages
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: libmpq-windows-msvc-*-release
+          merge-multiple: true
+          path: release/windows-msvc
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: libmpq-windows-mingw-*-release
+          merge-multiple: true
+          path: release/windows-mingw
+      - name: Collect all release packages and generate checksums
+        shell: bash
         run: |
           set -euxo pipefail
-          tag="${GITHUB_REF_NAME}"
-          version="${tag#v}"
           mkdir -p dist
-
-          source_gz="$(find release/source -type f -name 'libmpq-*.tar.gz' -print -quit)"
-          source_bz2="$(find release/source -type f -name 'libmpq-*.tar.bz2' -print -quit)"
-          python_zip="$(find release/python -type f -name 'libmpq-python-*.zip' -print -quit)"
-          java_zip="$(find release/java -type f -name 'libmpq-java-*.zip' -print -quit)"
-          d_zip="$(find release/d -type f -name 'libmpq-d-*.zip' -print -quit)"
-          native_zip="$(find release/native -type f -name 'libmpq-native-*.zip' -print -quit)"
-
-          test -s "${source_gz}"
-          test -s "${source_bz2}"
-          test -s "${python_zip}"
-          test -s "${java_zip}"
-          test -s "${d_zip}"
-          test -s "${native_zip}"
-          test "$(basename "${source_gz}")" = "libmpq-${version}.tar.gz"
-          test "$(basename "${source_bz2}")" = "libmpq-${version}.tar.bz2"
-          test "$(basename "${python_zip}")" = "libmpq-python-${version}.zip"
-          test "$(basename "${java_zip}")" = "libmpq-java-${version}.zip"
-          test "$(basename "${d_zip}")" = "libmpq-d-${version}.zip"
-          test "$(basename "${native_zip}")" = "libmpq-native-${version}.zip"
-
-          cp "${source_gz}" "${source_bz2}" "${python_zip}" "${java_zip}" "${d_zip}" \
-            "${native_zip}" dist/
-          {
-            echo "version=${version}"
-            echo "source_gz=libmpq-${version}.tar.gz"
-            echo "source_bz2=libmpq-${version}.tar.bz2"
-            echo "python_zip=libmpq-python-${version}.zip"
-            echo "java_zip=libmpq-java-${version}.zip"
-            echo "d_zip=libmpq-d-${version}.zip"
-            echo "native_zip=libmpq-native-${version}.zip"
-          } >> "${GITHUB_OUTPUT}"
-
-      - name: Create combined SHA256SUMS
-        run: |
-          set -euxo pipefail
+          : > expected-assets
+          collect() {
+            local directory="$1" name="$2"
+            local -a matches
+            mapfile -t matches < <(find "${directory}" -type f -name "${name}" -print)
+            if ((${#matches[@]} != 1)); then
+              echo "Expected exactly one ${name} in ${directory}." >&2
+              exit 1
+            fi
+            test -s "${matches[0]}"
+            cp "${matches[0]}" "dist/${name}"
+            printf '%s\n' "${name}" >> expected-assets
+          }
+          collect release/source "libmpq-${RELEASE_VERSION}.tar.gz"
+          collect release/source "libmpq-${RELEASE_VERSION}.tar.bz2"
+          collect release/python "libmpq-python-${RELEASE_VERSION}.zip"
+          collect release/java "libmpq-java-${RELEASE_VERSION}.zip"
+          collect release/d "libmpq-d-${RELEASE_VERSION}.zip"
+          test -s "release/native/libmpq-${RELEASE_VERSION}-linux-glibc-x86_64.tar.gz"
+          test -s "release/native/libmpq-${RELEASE_VERSION}-linux-glibc-aarch64.tar.gz"
+          test -s "release/native/libmpq-${RELEASE_VERSION}-linux-musl-x86_64.tar.gz"
+          test -s "release/native/libmpq-${RELEASE_VERSION}-linux-musl-aarch64.tar.gz"
+          test -s "release/native/libmpq-${RELEASE_VERSION}-macos-arm64.tar.gz"
+          test -s "release/native/libmpq-${RELEASE_VERSION}-macos-x86_64.tar.gz"
+          while IFS= read -r package; do
+            collect release/native "${package}"
+          done < <(find release/native -type f -name "libmpq-${RELEASE_VERSION}-*.tar.gz" -printf '%f\n' | LC_ALL=C sort -u)
+          collect release/windows-msvc "libmpq-${RELEASE_VERSION}-windows-msvc-x64.zip"
+          collect release/windows-msvc "libmpq-${RELEASE_VERSION}-windows-msvc-arm64.zip"
+          collect release/windows-mingw "libmpq-${RELEASE_VERSION}-windows-mingw-x86_64.zip"
+          collect release/windows-mingw "libmpq-${RELEASE_VERSION}-windows-mingw-aarch64.zip"
+          LC_ALL=C sort -o expected-assets expected-assets
           cd dist
-          sha256sum \
-            "${{ steps.packages.outputs.source_gz }}" \
-            "${{ steps.packages.outputs.source_bz2 }}" \
-            "${{ steps.packages.outputs.python_zip }}" \
-            "${{ steps.packages.outputs.java_zip }}" \
-            "${{ steps.packages.outputs.d_zip }}" \
-            "${{ steps.packages.outputs.native_zip }}" \
-            > SHA256SUMS
-
+          find . -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort > ../actual-assets
+          diff -u ../expected-assets ../actual-assets
+          while IFS= read -r asset; do
+            test -s "${asset}"
+            sha256sum "${asset}"
+          done < ../expected-assets > SHA256SUMS
+          sha256sum --check SHA256SUMS
       - name: Sign combined SHA256SUMS
+        shell: bash
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
@@ -179,36 +370,24 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-      - name: Publish GitHub release
+      - name: Attach assets or create and publish release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-          assets=(
-            "dist/${{ steps.packages.outputs.source_gz }}"
-            "dist/${{ steps.packages.outputs.source_bz2 }}"
-            "dist/${{ steps.packages.outputs.python_zip }}"
-            "dist/${{ steps.packages.outputs.java_zip }}"
-            "dist/${{ steps.packages.outputs.d_zip }}"
-            "dist/${{ steps.packages.outputs.native_zip }}"
-            dist/SHA256SUMS
-            dist/SHA256SUMS.asc
-            dist/libmpq-release-signing-key.asc
-          )
-
-          if ! gh release view "${tag}" >/dev/null 2>&1; then
-            if gh release create "${tag}" "${assets[@]}" \
-              --verify-tag --title "${tag}" --notes-from-tag; then
-              exit 0
+          test "${GITHUB_REF}" = "refs/tags/v${RELEASE_VERSION}"
+          mapfile -t assets < expected-assets
+          assets=("${assets[@]/#/dist/}" dist/SHA256SUMS dist/SHA256SUMS.asc dist/libmpq-release-signing-key.asc)
+          if is_draft="$(gh release view "${tag}" --json isDraft --jq .isDraft)"; then
+            if [[ "${is_draft}" != "false" ]]; then
+              echo "Release ${tag} exists as a draft; publish or delete it before uploading assets." >&2
+              exit 1
             fi
-            gh release view "${tag}" >/dev/null
+            gh release upload "${tag}" "${assets[@]}"
+            exit 0
           fi
-
-          if [[ "$(gh release view "${tag}" --json isDraft --jq .isDraft)" == "true" ]]; then
-            echo "Release ${tag} exists as a draft; publish or delete it before uploading assets." >&2
-            exit 1
-          fi
-
-          gh release upload "${tag}" "${assets[@]}"
+          gh release create "${tag}" "${assets[@]}" --draft --verify-tag --title "${tag}" --notes-from-tag
+          gh release edit "${tag}" --draft=false

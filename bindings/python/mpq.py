@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+# delvewheel: patch
+
 import ctypes
 import ctypes.util
 import os

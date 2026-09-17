@@ -29,6 +29,175 @@ permissions:
   contents: read
 
 jobs:
+  windows:
+    name: Native Windows ${{ matrix.architecture }} (MSVC, shared=${{ matrix.shared }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shared: ['ON', 'OFF']
+        architecture: [x64, arm64]
+        include:
+          - architecture: x64
+            runner: windows-latest
+            cmake_platform: x64
+            vcpkg_triplet: x64-windows
+            dev_arch: x64
+            vs_component: Microsoft.VisualStudio.Component.VC.Tools.x86.x64
+            machine: '8664'
+          - architecture: arm64
+            runner: windows-11-vs2026-arm
+            cmake_platform: ARM64
+            vcpkg_triplet: arm64-windows
+            dev_arch: arm64
+            vs_component: Microsoft.VisualStudio.Component.VC.Tools.ARM64
+            machine: 'AA64'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native dependencies
+        shell: pwsh
+        run: |
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ine '${{ matrix.architecture }}') { throw 'Native runner architecture mismatch' }
+          & "${env:VCPKG_INSTALLATION_ROOT}/vcpkg.exe" install zlib:${{ matrix.vcpkg_triplet }} bzip2:${{ matrix.vcpkg_triplet }} liblzma:${{ matrix.vcpkg_triplet }}
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+      - name: Configure
+        shell: pwsh
+        run: cmake -S . -B build -A ${{ matrix.cmake_platform }} -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} -DBUILD_SHARED_LIBS=${{ matrix.shared }} "-DCMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Install and test MSVC consumer
+        shell: pwsh
+        run: |
+          ${prefix} = "${env:RUNNER_TEMP}/libmpq-msvc"
+          cmake --install build --config Release --prefix "${prefix}"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          ${vswhere} = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          ${vs} = & ${vswhere} -latest -products '*' -requires ${{ matrix.vs_component }} -property installationPath
+          Import-Module "${vs}/Common7/Tools/Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath "${vs}" -SkipAutomaticLocation -DevCmdArguments '-arch=${{ matrix.dev_arch }} -host_arch=${{ matrix.dev_arch }}'
+
+          # Match the Release DLL runtime used by CMake and vcpkg.
+          # A static libmpq archive does not imply a static C runtime.
+          if ('${{ matrix.shared }}' -eq 'ON') {
+            cl.exe /nologo /MD "/I${prefix}/include" tests/test-mpq-consumer.c "/Fe${env:RUNNER_TEMP}/consumer.exe" "/Fo${env:RUNNER_TEMP}/consumer.obj" /link "/LIBPATH:${prefix}/lib" libmpq.lib
+          } else {
+            # Reuse the exact Release libraries found for the native build;
+            # vcpkg library filenames can differ between port versions.
+            ${codecLibraries} = foreach (${key} in 'ZLIB_LIBRARY_RELEASE', 'BZIP2_LIBRARY_RELEASE', 'LIBLZMA_LIBRARY_RELEASE') {
+              ${entry} = Select-String -Path build/CMakeCache.txt -Pattern "^${key}:FILEPATH=(.+)$"
+              if (-not ${entry}) { throw "Missing ${key} in CMake cache" }
+              ${library} = ${entry}.Matches.Groups[1].Value
+              if (-not (Test-Path -LiteralPath ${library} -PathType Leaf)) { throw "Missing library: ${library}" }
+              ${library}
+            }
+            cl.exe /nologo /MD "/I${prefix}/include" tests/test-mpq-consumer.c "/Fe${env:RUNNER_TEMP}/consumer.exe" "/Fo${env:RUNNER_TEMP}/consumer.obj" /link "/LIBPATH:${prefix}/lib" libmpq.lib ${codecLibraries} bcrypt.lib advapi32.lib
+          }
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          ${binaries} = @("${env:RUNNER_TEMP}/consumer.exe")
+          if ('${{ matrix.shared }}' -eq 'ON') { ${binaries} += "${prefix}/bin/libmpq.dll" }
+          foreach (${binary} in ${binaries}) {
+            ${headers} = & dumpbin.exe /nologo /headers ${binary}
+            if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+            if (-not (${headers} -match '^\s*${{ matrix.machine }}\s+machine\s+\(')) { throw "PE architecture mismatch: ${binary}" }
+          }
+          ${env:PATH} = "${prefix}/bin;${env:VCPKG_INSTALLATION_ROOT}/installed/${{ matrix.vcpkg_triplet }}/bin;${env:PATH}"
+          ${version} = (Select-String -Path build/CMakeCache.txt -Pattern '^CMAKE_PROJECT_VERSION:STATIC=(.+)$').Matches.Groups[1].Value
+          if (-not ${version}) { throw 'Missing CMake project version' }
+          & "${env:RUNNER_TEMP}/consumer.exe" ${version}
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+  mingw:
+    name: MinGW-w64 ${{ matrix.architecture }} Autotools (${{ matrix.linkage }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        linkage: [shared, static]
+        architecture: [x86_64, aarch64]
+        include:
+          - architecture: x86_64
+            runner: windows-latest
+            native_arch: x64
+            msystem: MINGW64
+            prefix: /mingw64
+            triplet: x86_64-w64-mingw32
+            compiler: x86_64-w64-mingw32-gcc
+            package_prefix: mingw-w64-x86_64
+            compiler_package: gcc
+            tools_package: binutils
+            pe_format: pei-x86-64
+          - architecture: aarch64
+            runner: windows-11-vs2026-arm
+            native_arch: arm64
+            msystem: CLANGARM64
+            prefix: /clangarm64
+            triplet: aarch64-w64-mingw32
+            compiler: clang
+            package_prefix: mingw-w64-clang-aarch64
+            compiler_package: clang
+            tools_package: llvm-tools
+            pe_format: coff-arm64
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify native Windows runner
+        shell: pwsh
+        run: |
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ine '${{ matrix.native_arch }}') { throw 'Native runner architecture mismatch' }
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          update: true
+          install: >-
+            autoconf automake libtool make diffutils
+            ${{ matrix.package_prefix }}-${{ matrix.compiler_package }}
+            ${{ matrix.package_prefix }}-${{ matrix.tools_package }}
+            ${{ matrix.package_prefix }}-zlib ${{ matrix.package_prefix }}-bzip2
+            ${{ matrix.package_prefix }}-xz ${{ matrix.package_prefix }}-pkgconf
+      - name: Build, test, install and link consumer
+        env:
+          LINKAGE: ${{ matrix.linkage }}
+        run: |
+          set -euxo pipefail
+          test "${MSYSTEM}" = '${{ matrix.msystem }}'
+          for tool in '${{ matrix.compiler }}' ar ranlib nm dlltool objdump strip pkg-config; do
+            case "$(command -v "${tool}")" in '${{ matrix.prefix }}'/bin/*) ;; *) echo "Wrong toolchain path: ${tool}" >&2; exit 1 ;; esac
+          done
+          export CC='${{ matrix.prefix }}/bin/${{ matrix.compiler }}'
+          export AR='${{ matrix.prefix }}/bin/ar' RANLIB='${{ matrix.prefix }}/bin/ranlib'
+          export NM='${{ matrix.prefix }}/bin/nm' DLLTOOL='${{ matrix.prefix }}/bin/dlltool'
+          export OBJDUMP='${{ matrix.prefix }}/bin/objdump' STRIP='${{ matrix.prefix }}/bin/strip'
+          sh autogen.sh
+          version="$(./configure --version | sed -n '1s/^libmpq configure //p')"
+          prefix="$(mktemp -d)/libmpq-${version}-windows-mingw-${{ matrix.architecture }}"
+          if test "${LINKAGE}" = shared; then
+            ./configure --host=${{ matrix.triplet }} --prefix="${prefix}" --enable-shared --disable-static
+          else
+            ./configure --host=${{ matrix.triplet }} --prefix="${prefix}" --disable-shared --enable-static
+          fi
+          make -j2
+          make check
+          make install
+          if test "${LINKAGE}" = shared; then
+            bash scripts/package-windows.sh prepare --toolchain mingw --architecture ${{ matrix.architecture }} --stage "${prefix}" --runtime '${{ matrix.prefix }}' --output "${prefix}.zip" --version "${version}"
+          fi
+          export PKG_CONFIG_PATH="${prefix}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
+          if test "${LINKAGE}" = shared; then
+            "${CC}" $(pkg-config --cflags libmpq) tests/test-mpq-consumer.c $(pkg-config --libs libmpq) -o "${prefix}/consumer.exe"
+          else
+            "${CC}" $(pkg-config --cflags libmpq) tests/test-mpq-consumer.c $(pkg-config --static --libs libmpq) -o "${prefix}/consumer.exe"
+          fi
+          test "$(objdump -f "${prefix}/consumer.exe" | sed -nE 's/^.*file format[[:space:]]+([^[:space:]]+)[[:space:]]*$/\1/p')" = '${{ matrix.pe_format }}'
+          test "$("${prefix}/bin/libmpq-config" --version)" = "${version}"
+          if test "${LINKAGE}" = shared; then
+            system_root="$(cygpath -u "${SystemRoot:-${SYSTEMROOT}}")"
+            PATH="${prefix}/bin:${system_root}/System32:${system_root}" "${prefix}/consumer.exe" "${version}" "$(cygpath -w "${PWD}/tests/fixtures/mpq-v1-features.mpq")"
+          else
+            PATH="${prefix}/bin:${PATH}" "${prefix}/consumer.exe" "${version}"
+          fi
   lint:
     name: Lint and static analysis
     runs-on: ubuntu-latest
@@ -53,6 +222,7 @@ jobs:
           echo 'deb [signed-by=/etc/apt/keyrings/apt.llvm.org.asc] http://apt.llvm.org/trixie/ llvm-toolchain-trixie-22 main' > /etc/apt/sources.list.d/llvm.list
           apt-get update
           apt-get install -y --no-install-recommends \
+            7zip \
             autoconf \
             automake \
             bear \
@@ -68,6 +238,8 @@ jobs:
             pkg-config \
             ripgrep \
             shellcheck \
+            unzip \
+            zip \
             zlib1g-dev
 
       - name: Check out repository
@@ -76,12 +248,15 @@ jobs:
       - name: Trust repository checkout
         run: |
           set -euxo pipefail
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
 
       - name: Run source checks
         env:
           CLANG_FORMAT: clang-format-22
         run: scripts/check
+
+      - name: Test release packaging helpers
+        run: bash scripts/test-windows-package.sh
 
       - name: Generate build system
         run: |
@@ -190,7 +365,7 @@ jobs:
       - name: Trust repository checkout
         run: |
           set -euxo pipefail
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
 
       - name: Generate build system
         run: |
@@ -274,7 +449,7 @@ jobs:
       - name: Trust repository checkout
         run: |
           set -euxo pipefail
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
 
       - name: Generate build system
         run: |
@@ -378,7 +553,7 @@ jobs:
       - name: Trust repository checkout
         run: |
           set -euxo pipefail
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
 
       - name: Generate build system
         run: |
@@ -406,22 +581,22 @@ jobs:
           rm -f a-conftest.gcno
           mkdir -p coverage
           gcovr \
-            --root "$GITHUB_WORKSPACE" \
-            --filter "$GITHUB_WORKSPACE/src/" \
+            --root "${GITHUB_WORKSPACE}" \
+            --filter "${GITHUB_WORKSPACE}/src/" \
             --print-summary \
             --xml-pretty \
             --output coverage/cobertura.xml
           gcovr \
-            --root "$GITHUB_WORKSPACE" \
-            --filter "$GITHUB_WORKSPACE/src/" \
+            --root "${GITHUB_WORKSPACE}" \
+            --filter "${GITHUB_WORKSPACE}/src/" \
             --json-summary-pretty \
             --json-summary coverage/summary.json
           bash scripts/coverage-report.sh badge \
             --input coverage/summary.json \
             --output coverage/coverage.svg
           gcovr \
-            --root "$GITHUB_WORKSPACE" \
-            --filter "$GITHUB_WORKSPACE/src/" \
+            --root "${GITHUB_WORKSPACE}" \
+            --filter "${GITHUB_WORKSPACE}/src/" \
             --html-details coverage/index.html
 
       - name: Upload GCC coverage report
@@ -475,9 +650,22 @@ jobs:
         uses: actions/deploy-pages@v4
 
   native-glibc:
-    name: Native C SDK package (glibc)
+    name: Native C SDK package (glibc) (${{ matrix.architecture }})
     needs: lint
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: ubuntu-24.04
+            image: manylinux2014_x86_64
+          - architecture: aarch64
+            runner: ubuntu-24.04-arm
+            image: manylinux2014_aarch64
+    env:
+      LIBMPQ_NATIVE_ARCHITECTURE: ${{ matrix.architecture }}
+      LIBMPQ_NATIVE_BUILD_ENVIRONMENT: ${{ matrix.image }}
     timeout-minutes: 30
     defaults:
       run:
@@ -494,28 +682,43 @@ jobs:
           set -euxo pipefail
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
-            -w /workspace quay.io/pypa/manylinux2014_x86_64 \
+            -e LIBMPQ_NATIVE_ARCHITECTURE \
+            -e LIBMPQ_NATIVE_BUILD_ENVIRONMENT \
+            -w /workspace "quay.io/pypa/${LIBMPQ_NATIVE_BUILD_ENVIRONMENT}" \
             bash -euxo pipefail -c '
               yum install -y autoconf automake binutils bzip2-devel findutils \
                 gcc libtool make pkgconfig tar xz-devel zlib-devel
               sh autogen.sh
               ./configure --prefix=/usr
               make -j"$(getconf _NPROCESSORS_ONLN)" V=1
+              make check
               version="$(./configure --version | sed -n "1s/^libmpq configure //p")"
               LIBMPQ_NATIVE_LIBC=glibc \
                 LIBMPQ_NATIVE_VERSION="${version}" \
-                LIBMPQ_NATIVE_BUILD_ENVIRONMENT=manylinux2014_x86_64 \
                 LIBMPQ_NATIVE_GLIBC_BASELINE=2.17 \
-                bash scripts/package-native-binary.sh
-              bash scripts/test-native-package.sh \
-                "release/libmpq-${version}-linux-glibc-x86_64.tar.gz" \
+                bash scripts/package-linux-binary.sh
+              bash scripts/test-linux-package.sh \
+                "release/libmpq-${version}-linux-glibc-${LIBMPQ_NATIVE_ARCHITECTURE}.tar.gz" \
                 tests/fixtures/mpq-v1-features.mpq
             '
 
   native-musl:
-    name: Native C SDK package (musl)
+    name: Native C SDK package (musl) (${{ matrix.architecture }})
     needs: lint
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: ubuntu-24.04
+            image: musllinux_1_2_x86_64
+          - architecture: aarch64
+            runner: ubuntu-24.04-arm
+            image: musllinux_1_2_aarch64
+    env:
+      LIBMPQ_NATIVE_ARCHITECTURE: ${{ matrix.architecture }}
+      LIBMPQ_NATIVE_BUILD_ENVIRONMENT: ${{ matrix.image }}
     timeout-minutes: 30
     defaults:
       run:
@@ -532,22 +735,120 @@ jobs:
           set -euxo pipefail
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
-            -w /workspace quay.io/pypa/musllinux_1_2_x86_64 bash -euxo pipefail -c '
+            -e LIBMPQ_NATIVE_ARCHITECTURE \
+            -e LIBMPQ_NATIVE_BUILD_ENVIRONMENT \
+            -w /workspace "quay.io/pypa/${LIBMPQ_NATIVE_BUILD_ENVIRONMENT}" bash -euxo pipefail -c '
               apk add --no-cache autoconf automake bash binutils bzip2-dev \
                 build-base libtool linux-headers pkgconf tar xz-dev zlib-dev
               sh autogen.sh
               ./configure --prefix=/usr
               make -j"$(getconf _NPROCESSORS_ONLN)" V=1
+              make check
               version="$(./configure --version | sed -n "1s/^libmpq configure //p")"
               LIBMPQ_NATIVE_LIBC=musl \
                 LIBMPQ_NATIVE_VERSION="${version}" \
-                LIBMPQ_NATIVE_BUILD_ENVIRONMENT=musllinux_1_2_x86_64 \
                 LIBMPQ_NATIVE_MUSL_BASELINE=1.2 \
-                bash scripts/package-native-binary.sh
-              bash scripts/test-native-package.sh \
-                "release/libmpq-${version}-linux-musl-x86_64.tar.gz" \
+                bash scripts/package-linux-binary.sh
+              bash scripts/test-linux-package.sh \
+                "release/libmpq-${version}-linux-musl-${LIBMPQ_NATIVE_ARCHITECTURE}.tar.gz" \
                 tests/fixtures/mpq-v1-features.mpq
             '
+
+  native-macos-arm64:
+    name: Native C SDK package (macOS arm64)
+    needs: lint
+    runs-on: macos-15
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install macOS build prerequisites
+        run: |
+          set -euxo pipefail
+          brew install autoconf automake libtool pkg-config xz
+          echo "$(brew --prefix libtool)/libexec/gnubin" >> "${GITHUB_PATH}"
+
+      - name: Build and test the macOS arm64 SDK package
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '11.0'
+        run: |
+          set -euxo pipefail
+          test "$(uname -m)" = arm64
+          CC="$(xcrun --sdk macosx --find clang)"
+          SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+
+          # Supply missing liblzma headers without linking Homebrew libraries.
+          CPPFLAGS="-I$(brew --prefix xz)/include ${CPPFLAGS:-}"
+          export CC SDKROOT CPPFLAGS
+          "${CC}" --version
+          xcrun --sdk macosx --show-sdk-path
+          sh autogen.sh
+          ./configure --prefix=/usr --enable-shared --disable-static
+          /usr/bin/make -j"$(sysctl -n hw.ncpu)" V=1
+          /usr/bin/make check
+          version="$(./configure --version | sed -n '1s/^libmpq configure //p')"
+          LIBMPQ_NATIVE_ARCHITECTURE=arm64 \
+            LIBMPQ_NATIVE_VERSION="${version}" \
+            LIBMPQ_NATIVE_BUILD_ENVIRONMENT=macos-15-arm64 \
+            bash scripts/package-macos-binary.sh
+          bash scripts/test-macos-package.sh \
+            "release/libmpq-${version}-macos-arm64.tar.gz" \
+            tests/fixtures/mpq-v1-features.mpq arm64
+
+  native-macos-x86_64:
+    name: Native C SDK package (macOS x86_64)
+    needs: lint
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install macOS build prerequisites
+        run: |
+          set -euxo pipefail
+          brew install autoconf automake libtool pkg-config xz
+          echo "$(brew --prefix libtool)/libexec/gnubin" >> "${GITHUB_PATH}"
+
+      - name: Build and test the macOS x86_64 SDK package
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '11.0'
+        run: |
+          set -euxo pipefail
+          test "$(uname -m)" = x86_64
+          CC="$(xcrun --sdk macosx --find clang)"
+          SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+
+          # Supply missing liblzma headers without linking Homebrew libraries.
+          CPPFLAGS="-I$(brew --prefix xz)/include ${CPPFLAGS:-}"
+          export CC SDKROOT CPPFLAGS
+          "${CC}" --version
+          xcrun --sdk macosx --show-sdk-path
+          sh autogen.sh
+          ./configure --prefix=/usr --enable-shared --disable-static
+          /usr/bin/make -j"$(sysctl -n hw.ncpu)" V=1
+          /usr/bin/make check
+          version="$(./configure --version | sed -n '1s/^libmpq configure //p')"
+          LIBMPQ_NATIVE_ARCHITECTURE=x86_64 \
+            LIBMPQ_NATIVE_VERSION="${version}" \
+            LIBMPQ_NATIVE_BUILD_ENVIRONMENT=macos-15-intel \
+            bash scripts/package-macos-binary.sh
+          bash scripts/test-macos-package.sh \
+            "release/libmpq-${version}-macos-x86_64.tar.gz" \
+            tests/fixtures/mpq-v1-features.mpq x86_64
 
   d-packages:
     name: Validate D packages

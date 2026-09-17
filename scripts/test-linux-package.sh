@@ -16,6 +16,8 @@ fi
 
 readonly package_archive="$1"
 readonly fixture_archive="$2"
+readonly archive_basename="${package_archive##*/}"
+readonly package_name="${archive_basename%.tar.gz}"
 readonly project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly temporary="$(mktemp -d -t libmpq-native-test.XXXXXX)"
 readonly extraction_dir="${temporary}/package"
@@ -81,11 +83,25 @@ done
 mkdir -p "${extraction_dir}"
 tar -xzf "${package_archive}" -C "${extraction_dir}"
 
+if [[ "${archive_basename}" != *.tar.gz ]] ||
+	! [[ "${package_name}" =~ ^libmpq-([0-9]+([.][0-9]+)*)-linux-(glibc|musl)-(x86_64|aarch64)$ ]]; then
+	printf 'Native package archive name is invalid: %s\n' "${archive_basename}" >&2
+	exit 1
+fi
+readonly expected_version="${BASH_REMATCH[1]}"
+readonly expected_libc="${BASH_REMATCH[3]}"
+readonly expected_architecture="${BASH_REMATCH[4]}"
+if [[ "$(uname -m)" != "${expected_architecture}" ]]; then
+	printf 'Native package architecture mismatch: package is %s, host is %s\n' \
+		"${expected_architecture}" "$(uname -m)" >&2
+	exit 1
+fi
+
 mapfile -t package_entries < <(
 	find "${extraction_dir}" -mindepth 1 -maxdepth 1 -print | sed 's#.*/##'
 )
-if ((${#package_entries[@]} != 1)) || [[ ! "${package_entries[0]}" =~ ^libmpq-[0-9] ]]; then
-	printf 'Native package must contain exactly one top-level libmpq version directory.\n' >&2
+if ((${#package_entries[@]} != 1)) || [[ "${package_entries[0]}" != "${package_name}" ]]; then
+	printf 'Native package root must match archive basename: %s\n' "${package_name}" >&2
 	exit 1
 fi
 
@@ -110,9 +126,10 @@ for path in \
 	fi
 done
 
-if [[ "$(buildinfo_value libmpq_version)" != "${package_entries[0]#libmpq-}" ]] ||
-	[[ "$(buildinfo_value architecture)" != x86_64 ]] ||
+if [[ "$(buildinfo_value libmpq_version)" != "${expected_version}" ]] ||
+	[[ "$(buildinfo_value architecture)" != "${expected_architecture}" ]] ||
 	[[ "$(buildinfo_value os)" != linux ]] ||
+	[[ "$(buildinfo_value libc)" != "${expected_libc}" ]] ||
 	[[ -z "$(buildinfo_value build_environment)" ]]; then
 	printf 'Native package has inconsistent basic BUILDINFO metadata.\n' >&2
 	exit 1
@@ -137,6 +154,18 @@ if ((${#shared_libraries[@]} != 1)); then
 fi
 
 readonly shared_library="${shared_libraries[0]}"
+readonly elf_machine="$(LC_ALL=C readelf -h "${shared_library}" |
+	sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+case "${expected_architecture}" in
+	x86_64) expected_machine='Advanced Micro Devices X86-64' ;;
+	aarch64) expected_machine='AArch64' ;;
+esac
+if [[ "${elf_machine}" != "${expected_machine}" ]]; then
+	printf 'Native package ELF architecture mismatch: expected %s, found %s\n' \
+		"${expected_machine}" "${elf_machine}" >&2
+	exit 1
+fi
+
 readonly soname="$(readelf -d "${shared_library}" |
 	sed -n 's/.*SONAME.*\[\(.*\)\].*/\1/p')"
 if [[ "${soname}" != libmpq.so.4 ]] || [[ ! -e "${library_dir}/libmpq.so" ]] ||
@@ -183,7 +212,7 @@ readonly config_cflags="$("${sdk_root}/bin/libmpq-config" \
 readonly config_libs="$("${sdk_root}/bin/libmpq-config" \
 	--prefix="${sdk_root}" --libs)"
 if [[ "${config_cflags}" != "-I${sdk_root}/include" ]] ||
-	[[ "${config_libs}" != "-L${sdk_root}/lib -lmpq -lbz2 -lz -llzma" ]]; then
+	[[ "${config_libs}" != "-L${sdk_root}/lib -lmpq "* ]]; then
 	printf 'Packaged libmpq-config does not describe the extracted SDK layout.\n' >&2
 	exit 1
 fi
@@ -192,6 +221,17 @@ export PKG_CONFIG_PATH="${pkgconfig_dir}"
 export PKG_CONFIG_LIBDIR="${pkgconfig_dir}"
 readonly pkgconfig_cflags="$(pkg-config --cflags libmpq)"
 readonly pkgconfig_libs="$(pkg-config --libs libmpq)"
+
+# Compare both helpers with the same explicit prefix. The default relocatable
+# pkg-config prefix may contain /../.. even when it names the same directory.
+# The consumer checks below still use the unmodified relocatable metadata.
+read -r -a config_link_flags <<< "${config_libs}"
+read -r -a pkgconfig_link_flags <<< "$(pkg-config --define-variable=prefix="${sdk_root}" --static --libs libmpq)"
+if [[ "${config_link_flags[*]}" != "${pkgconfig_link_flags[*]}" ]]; then
+	printf 'Packaged link dependency metadata is inconsistent.\n' >&2
+	exit 1
+fi
+
 if [[ "${pkgconfig_cflags}" != *"-I${sdk_root}/"* ]] ||
 	[[ "${pkgconfig_libs}" != *"-L${sdk_root}/"* ]]; then
 	printf 'Packaged libmpq.pc does not describe the extracted SDK layout.\n' >&2

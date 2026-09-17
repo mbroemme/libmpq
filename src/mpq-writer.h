@@ -20,6 +20,7 @@
 #ifndef LIBMPQ_WRITER_H
 #define LIBMPQ_WRITER_H
 
+#include "mpq-file.h"
 #include <libmpq/mpq.h>
 #include <stdio.h>
 
@@ -32,7 +33,7 @@ typedef struct mpq_writer_mpqe_ops
     int32_t (*finalize)(mpq_archive_s *archive);
     int32_t (*transform)(mpq_archive_s *archive);
     int (*close_output)(FILE *output);
-    int32_t (*publish)(int directory, const char *temporary, const char *destination);
+    int32_t (*publish)(mpq_directory_s *directory, const char *temporary, const char *destination);
 } mpq_writer_mpqe_ops_s;
 
 /* Create a seekable archive and initialize its writer metadata from options. */
@@ -55,6 +56,9 @@ int32_t libmpq__writer_file_write(mpq_writer_s *writer, const uint8_t *buffer, l
 
 /* Finish the current file, write its sector offsets, and publish its block entry. */
 int32_t libmpq__writer_file_finish(mpq_writer_s *writer);
+
+/* Discard an unfinished writer and release its private stream state. */
+void libmpq__writer_file_abort(mpq_writer_s *writer);
 
 /* Add a complete in-memory file using begin, write, and finish semantics. */
 int32_t libmpq__writer_file_add(

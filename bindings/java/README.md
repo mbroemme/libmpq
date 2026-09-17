@@ -33,7 +33,7 @@ The canonical release installation path is Maven Central:
 <dependency>
   <groupId>org.libmpq</groupId>
   <artifactId>libmpq-java</artifactId>
-  <version>0.7.0</version>
+  <version>0.7.1</version>
 </dependency>
 ```
 

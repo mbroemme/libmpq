@@ -97,20 +97,25 @@ jobs:
           echo "package_version=${package_version}" >> "${GITHUB_OUTPUT}"
 
   binary-glibc:
-    name: Build D ${{ matrix.compiler.name }} glibc package
+    name: Build D ${{ matrix.compiler.name }} glibc ${{ matrix.architecture }} package
     needs: prepare
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        compiler:
-          - name: dmd
-            setup: dmd
-            dub: dmd
-          - name: ldc
-            setup: ldc
-            dub: ldc2
+
+        # The current Linux DMD release toolchain is x86_64-only; LDC supplies native aarch64.
+        include:
+          - compiler: {name: dmd, setup: dmd, dub: dmd}
+            architecture: x86_64
+            runner: ubuntu-24.04
+          - compiler: {name: ldc, setup: ldc, dub: ldc2}
+            architecture: x86_64
+            runner: ubuntu-24.04
+          - compiler: {name: ldc, setup: ldc, dub: ldc2}
+            architecture: aarch64
+            runner: ubuntu-24.04-arm
     steps:
       - name: Install glibc package dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends autoconf automake binutils build-essential jq libbz2-dev liblzma-dev libtool zlib1g-dev
@@ -126,32 +131,37 @@ jobs:
           LIBMPQ_D_COMPILER_NAME: ${{ matrix.compiler.name }}
           LIBMPQ_D_DUB_COMPILER: ${{ matrix.compiler.dub }}
           LIBMPQ_D_LIBC: glibc
+          LIBMPQ_D_OS: linux
+          LIBMPQ_D_ARCHITECTURE: ${{ matrix.architecture }}
           LIBMPQ_D_VERSION: ${{ needs.prepare.outputs.package_version }}
           DC: ${{ matrix.compiler.dub }}
         run: bash scripts/build-d-binary-package.sh
       - uses: actions/upload-artifact@v7
         with:
-          name: libmpq-d-${{ matrix.compiler.name }}-package
-          path: release/libmpq-d-*-linux-glibc-x86_64.tar.gz
+          name: libmpq-d-${{ matrix.compiler.name }}-glibc-${{ matrix.architecture }}-package
+          path: release/libmpq-d-*-linux-glibc-${{ matrix.architecture }}.tar.gz
           if-no-files-found: error
 
   binary-musl:
-    name: Build D ${{ matrix.compiler.name }} musl package
+    name: Build D ${{ matrix.compiler.name }} musl ${{ matrix.architecture }} package
     needs: prepare
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        compiler:
-          - name: dmd
-            package: dmd
-            dub: dmd
-            dc: dmd
-          - name: ldc
-            package: ldc
-            dub: ldc2
-            dc: ldc2
+
+        # Alpine 3.22 provides DMD on x86_64 and LDC on both architectures.
+        include:
+          - compiler: {name: dmd, package: dmd, dub: dmd, dc: dmd}
+            architecture: x86_64
+            runner: ubuntu-24.04
+          - compiler: {name: ldc, package: ldc, dub: ldc2, dc: ldc2}
+            architecture: x86_64
+            runner: ubuntu-24.04
+          - compiler: {name: ldc, package: ldc, dub: ldc2, dc: ldc2}
+            architecture: aarch64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
         with:
@@ -164,13 +174,17 @@ jobs:
           LIBMPQ_D_COMPILER_PACKAGE: ${{ matrix.compiler.package }}
           LIBMPQ_D_DC: ${{ matrix.compiler.dc }}
           LIBMPQ_D_LIBC: musl
+          LIBMPQ_D_OS: linux
+          LIBMPQ_D_ARCHITECTURE: ${{ matrix.architecture }}
           LIBMPQ_D_VERSION: ${{ needs.prepare.outputs.package_version }}
         run: |
           set -euxo pipefail
+          test "$(uname -m)" = "${LIBMPQ_D_ARCHITECTURE}"
           docker run --rm \
             -e LIBMPQ_D_COMPILER_NAME -e LIBMPQ_D_DUB_COMPILER \
             -e LIBMPQ_D_COMPILER_PACKAGE -e LIBMPQ_D_DC -e LIBMPQ_D_LIBC \
-            -e LIBMPQ_D_VERSION -v "${GITHUB_WORKSPACE}:/workspace" \
+            -e LIBMPQ_D_VERSION -e LIBMPQ_D_ARCHITECTURE -e LIBMPQ_D_OS \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
             -w /workspace alpine:3.22 sh -euxc '
               apk add --no-cache autoconf automake bash binutils bzip2-dev \
                 build-base ca-certificates dub jq libtool linux-headers \
@@ -180,8 +194,197 @@ jobs:
             '
       - uses: actions/upload-artifact@v7
         with:
-          name: libmpq-d-${{ matrix.compiler.name }}-musl-package
-          path: release/libmpq-d-*-linux-musl-x86_64.tar.gz
+          name: libmpq-d-${{ matrix.compiler.name }}-musl-${{ matrix.architecture }}-package
+          path: release/libmpq-d-*-linux-musl-${{ matrix.architecture }}.tar.gz
+          if-no-files-found: error
+
+  binary-macos:
+    name: Build D ${{ matrix.compiler }} macOS ${{ matrix.architecture }} package
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: dmd
+            dc: dmd
+            architecture: x86_64
+            runner: macos-15-intel
+          - compiler: ldc
+            dc: ldc2
+            architecture: x86_64
+            runner: macos-15-intel
+          - compiler: ldc
+            dc: ldc2
+            architecture: arm64
+            runner: macos-15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install macOS build prerequisites
+        run: |
+          set -euxo pipefail
+          test "$(uname -m)" = '${{ matrix.architecture }}'
+          brew install autoconf automake libtool pkg-config xz jq
+          echo "$(brew --prefix libtool)/libexec/gnubin" >> "${GITHUB_PATH}"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Build and validate macOS D package
+        env:
+          LIBMPQ_D_OS: macos
+          LIBMPQ_D_COMPILER_NAME: ${{ matrix.compiler }}
+          LIBMPQ_D_DUB_COMPILER: ${{ matrix.dc }}
+          LIBMPQ_D_ARCHITECTURE: ${{ matrix.architecture }}
+          LIBMPQ_D_VERSION: ${{ needs.prepare.outputs.package_version }}
+          MACOSX_DEPLOYMENT_TARGET: '11.0'
+          DC: ${{ matrix.dc }}
+        run: |
+          set -euxo pipefail
+          test "$(uname -m)" = "${LIBMPQ_D_ARCHITECTURE}"
+          CC="$(xcrun --sdk macosx --find clang)"
+          SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+
+          # Match the native SDK: xz supplies headers, not Homebrew libraries.
+          CPPFLAGS="-I$(brew --prefix xz)/include ${CPPFLAGS:-}"
+          export CC SDKROOT CPPFLAGS
+          "${CC}" --version
+          file "$(command -v "${DC}")"
+          if [[ "${LIBMPQ_D_COMPILER_NAME}" == ldc ]]; then
+            /usr/bin/arch -"${LIBMPQ_D_ARCHITECTURE}" "${DC}" --version
+          else
+            "${DC}" --version
+          fi
+          dub --version
+          bash scripts/build-d-binary-package.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-d-${{ matrix.compiler }}-macos-${{ matrix.architecture }}-package
+          path: release/libmpq-d-*-macos-${{ matrix.architecture }}.tar.gz
+          if-no-files-found: error
+
+  binary-windows:
+    name: Build D ${{ matrix.compiler }} Windows ${{ matrix.architecture }} package
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: dmd
+            dc: dmd
+            runner: windows-latest
+            architecture: x86_64
+            cmake_platform: x64
+            msvc_arch: x64
+            vcpkg_triplet: x64-windows
+            vs_component: Microsoft.VisualStudio.Component.VC.Tools.x86.x64
+          - compiler: ldc
+            dc: ldc2
+            runner: windows-latest
+            architecture: x86_64
+            cmake_platform: x64
+            msvc_arch: x64
+            vcpkg_triplet: x64-windows
+            vs_component: Microsoft.VisualStudio.Component.VC.Tools.x86.x64
+          - compiler: ldc
+            dc: ldc2
+            runner: windows-11-vs2026-arm
+            architecture: arm64
+            cmake_platform: ARM64
+            msvc_arch: arm64
+            vcpkg_triplet: arm64-windows
+            vs_component: Microsoft.VisualStudio.Component.VC.Tools.ARM64
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Install native MSVC dependencies
+        run: |
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ine '${{ matrix.msvc_arch }}') { throw 'Native runner architecture mismatch' }
+          & "${env:VCPKG_INSTALLATION_ROOT}/vcpkg.exe" install 'zlib:${{ matrix.vcpkg_triplet }}' 'bzip2:${{ matrix.vcpkg_triplet }}' 'liblzma:${{ matrix.vcpkg_triplet }}'
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+      - name: Build, test, install, and package Windows D binding
+        env:
+          LIBMPQ_D_OS: windows
+          LIBMPQ_D_ARCHITECTURE: ${{ matrix.architecture }}
+          LIBMPQ_D_COMPILER_NAME: ${{ matrix.compiler }}
+          LIBMPQ_D_DUB_COMPILER: ${{ matrix.dc }}
+          LIBMPQ_D_VERSION: ${{ needs.prepare.outputs.package_version }}
+          DC: ${{ matrix.dc }}
+        run: |
+          ${hostArch} = 'x64'
+          if ('${{ matrix.architecture }}' -eq 'arm64') {
+
+            # Inspect the compiler before selecting VS host tools. Official
+            # LDC multilib may use an x64 compiler on the native ARM64 runner.
+            ${compilerPath} = (Get-Command ${env:DC} -ErrorAction Stop).Source
+            ${pe} = [IO.File]::ReadAllBytes(${compilerPath})
+            ${offset} = [BitConverter]::ToInt32(${pe}, 0x3c)
+            if ([BitConverter]::ToUInt32(${pe}, ${offset}) -ne 0x4550) { throw 'Invalid compiler PE signature' }
+            switch ([BitConverter]::ToUInt16(${pe}, ${offset} + 4)) {
+              0x8664 { ${hostArch} = 'x64' }
+              0xAA64 { ${hostArch} = 'arm64' }
+              default { throw 'Unsupported LDC compiler host architecture' }
+            }
+            ${env:LIBMPQ_D_COMPILER_HOST_ARCHITECTURE} = ${hostArch}
+            Write-Host "LDC compiler host: ${hostArch}; D target: aarch64-windows-msvc"
+          }
+          ${vswhere} = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          ${vs} = & ${vswhere} -latest -products '*' -requires '${{ matrix.vs_component }}' -property installationPath
+          Import-Module "${vs}/Common7/Tools/Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath "${vs}" -SkipAutomaticLocation -DevCmdArguments "-arch=${{ matrix.msvc_arch }} -host_arch=${hostArch}"
+          foreach (${tool} in 'cl.exe', 'link.exe', 'lib.exe', 'dumpbin.exe') {
+            ${resolved} = (Get-Command ${tool} -ErrorAction Stop).Source
+            if (-not ${resolved}.StartsWith(${vs}, [StringComparison]::OrdinalIgnoreCase)) { throw "Unexpected MSVC tool: ${resolved}" }
+          }
+          ${env:LINKCMD64} = (Get-Command link.exe).Source
+          ${env:LIBMPQ_D_MSVC_BIN} = Split-Path (Get-Command cl.exe).Source
+          & ${env:DC} --version
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          dub --version
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          if ('${{ matrix.architecture }}' -eq 'arm64') {
+            dumpbin.exe /nologo /headers ${compilerPath}
+            if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+            & ${env:DC} -mtriple=aarch64-windows-msvc --version
+            if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          }
+          cmake -S . -B build -A '${{ matrix.cmake_platform }}' '-DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }}' -DBUILD_SHARED_LIBS=ON "-DCMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          cmake --build build --config Release --parallel
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          ctest --test-dir build -C Release --output-on-failure
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          ${name} = "libmpq-${env:LIBMPQ_D_VERSION}-windows-msvc-${{ matrix.msvc_arch }}"
+          ${stage} = "${env:GITHUB_WORKSPACE}/release/${name}"
+          if (Test-Path ${stage}) { throw 'Staging directory already exists' }
+          cmake --install build --config Release --prefix "${stage}"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          ${bash} = "${env:ProgramFiles}/Git/bin/bash.exe"
+          ${env:PATH} = "${env:ProgramFiles}/7-Zip;${env:PATH}"
+          & ${bash} scripts/package-windows.sh prepare --toolchain msvc --architecture '${{ matrix.msvc_arch }}' --stage "${stage}" --runtime "${env:VCPKG_INSTALLATION_ROOT}/installed/${{ matrix.vcpkg_triplet }}" --output "${env:RUNNER_TEMP}/${name}.zip" --version "${env:LIBMPQ_D_VERSION}"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          & ${bash} scripts/build-d-binary-package.sh
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-d-${{ matrix.compiler }}-windows-${{ matrix.architecture }}-package
+          path: release/libmpq-d-*-windows-${{ matrix.architecture }}.zip
           if-no-files-found: error
 
   source:
@@ -217,7 +420,7 @@ jobs:
   package:
     if: inputs.assemble_release
     name: Package D release
-    needs: [prepare, binary-glibc, binary-musl, source]
+    needs: [prepare, binary-glibc, binary-musl, binary-macos, binary-windows, source]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -235,10 +438,20 @@ jobs:
           set -euxo pipefail
           package_name="libmpq-d-${LIBMPQ_D_VERSION}"
           mkdir -p release/package
-          mapfile -t packages < <(find release/packages -type f -name "${package_name}-*.tar.gz" -printf '%f\n' | sort)
-          ((${#packages[@]} > 0))
-          printf '%s\n' "${packages[@]}" | grep -- '-source.tar.gz$' >/dev/null
-          printf '%s\n' "${packages[@]}" | grep -- '-linux-.*-x86_64.tar.gz$' >/dev/null
+          mapfile -t packages < <(find release/packages -type f \( -name "${package_name}-*.tar.gz" -o -name "${package_name}-*.zip" \) -printf '%f\n' | sort)
+          expected=("${package_name}-source.tar.gz" "${package_name}-ldc-windows-arm64.zip")
+          for libc in glibc musl; do
+            for target in dmd:x86_64 ldc:x86_64 ldc:aarch64; do
+              expected+=("${package_name}-${target%:*}-linux-${libc}-${target#*:}.tar.gz")
+            done
+          done
+          for compiler in dmd ldc; do
+            expected+=("${package_name}-${compiler}-windows-x86_64.zip")
+          done
+          for target in dmd:x86_64 ldc:x86_64 ldc:arm64; do
+            expected+=("${package_name}-${target%:*}-macos-${target#*:}.tar.gz")
+          done
+          diff -u <(printf '%s\n' "${expected[@]}" | sort) <(printf '%s\n' "${packages[@]}")
           for package in "${packages[@]}"; do cp "release/packages/${package}" release/package/; done
           (cd release/package && zip -q "../${package_name}.zip" ./*)
           unzip -t "release/${package_name}.zip"

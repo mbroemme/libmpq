@@ -54,15 +54,79 @@ The source/DUB package does not load a private copy of the native library.
 install libmpq or provide the equivalent library and runtime search path.
 
 Release downloads also provide compiler-specific binary packages. They contain
-the D interface files, a precompiled static D archive, and the complete
-`libmpq.so` SONAME chain. The binary DUB recipe supplies the bundled library
-directory to the linker automatically; the dynamic loader still needs to find
-the bundled library at runtime, for example through `LD_LIBRARY_PATH`. The
+the D interface files, a precompiled static D archive, and the native shared
+library (`libmpq.so` on Linux, `libmpq.dylib` on macOS, `libmpq.dll` on Windows).
+Unix packages preserve the shared-library symlinks.
+The binary package supplies the bundled native library to the linker.
+At runtime, its library directory must be available through the platform's
+loader search mechanism: `LD_LIBRARY_PATH` on Linux, `DYLD_LIBRARY_PATH` on
+macOS, or `PATH` on Windows (using the package's `bin/` directory). The
 compiler and native build metadata, including the libc build version, build
 environment, and maximum required glibc symbol version, is recorded in
 `BUILDINFO`; use the source package when the recorded compiler or platform does
-not match the consumer environment. The release currently provides
-`linux-glibc-x86_64` and `linux-musl-x86_64` packages for both DMD and LDC.
+not match the consumer environment. Binary packages are built and tested
+for the following compiler/architecture matrix:
+
+| Compiler | Linux glibc (Ubuntu 24.04) | Linux musl (Alpine 3.22) | macOS | Windows |
+| --- | --- | --- | --- | --- |
+| DMD | x86_64 | x86_64 | x86_64 | x86_64 |
+| LDC | x86_64, aarch64 | x86_64, aarch64 | x86_64, arm64 | x86_64, arm64 |
+
+Archives are named
+`libmpq-d-X.Y.Z-<compiler>-linux-<libc>-<architecture>.tar.gz`, for example
+`libmpq-d-X.Y.Z-ldc-linux-glibc-aarch64.tar.gz` and
+`libmpq-d-X.Y.Z-ldc-linux-musl-aarch64.tar.gz`. DMD remains x86_64-only because
+the existing release toolchains do not provide native Linux aarch64 DMD
+packages. Linux builds and tests run natively without emulation.
+
+macOS archives use these names:
+
+* `libmpq-d-X.Y.Z-dmd-macos-x86_64.tar.gz`
+* `libmpq-d-X.Y.Z-ldc-macos-x86_64.tar.gz`
+* `libmpq-d-X.Y.Z-ldc-macos-arm64.tar.gz`
+
+They contain the same D interfaces and compiler-specific archive, with the
+native SDK's versioned `libmpq.dylib` symlinks instead of `libmpq.so`. The dylib
+uses an `@rpath` install ID, ad-hoc signing, system codec dependencies, and the
+native SDK's macOS 11.0 deployment target, recorded in `BUILDINFO`. Applications
+must provide a runtime search path to the extracted `lib` directory, for example
+through `DYLD_LIBRARY_PATH`.
+
+Stable DMD 2.113.0 does not provide the required macOS ARM64 `-marm64` target.
+The DMD arm64 binary package is not published until a stable DMD release
+provides that support. LDC remains supported and runs natively on macOS arm64.
+The x86_64 DUB suffix is
+`osx-x86_64-<compiler>`; LDC arm64 uses `osx-aarch64-ldc`.
+
+Windows archives are `libmpq-d-X.Y.Z-dmd-windows-x86_64.zip` and
+`libmpq-d-X.Y.Z-ldc-windows-x86_64.zip`. Each contains a single
+`libmpq-d-X.Y.Z/` directory, using the MSVC x64 native SDK. Its `lib/`
+directory contains the compiler-specific `libmpq-dmd.lib` or `libmpq-ldc.lib`
+and the MSVC import library `libmpq.lib`. The `bin/` directory contains
+`libmpq.dll` and its required non-system runtime DLLs, with their licenses
+under `licenses/`. Add the extracted `bin/` directory to `PATH` when running
+applications. DUB selects the precompiled library through
+`windows-x86_64-<compiler>` metadata. Both compilers are tested using an
+extracted-package consumer with no vcpkg or native build directories on
+the runtime `PATH`.
+
+Windows ARM64 is supported by LDC only, as
+`libmpq-d-X.Y.Z-ldc-windows-arm64.zip`. It uses the MSVC ARM64 native SDK
+and `arm64-windows` dependencies. All D compilation uses the explicit target
+`aarch64-windows-msvc` (`dub --arch=aarch64-windows-msvc`), with validated
+`windows-aarch64-ldc` binary metadata. The release token is `arm64`; DUB's
+internal architecture is `aarch64`. The LDC multilib compiler executable may
+itself be x64 and run through Windows-on-ARM emulation, but the packaged DLLs,
+library objects, and extracted consumer must be genuine ARM64. The consumer
+executes natively on the ARM64 runner. `BUILDINFO` records the target triple
+and inspected compiler-host architecture. DMD Windows ARM64 is not supported.
+
+Packaging requires explicit `LIBMPQ_D_OS` and `LIBMPQ_D_ARCHITECTURE` values:
+`linux` with `x86_64`/`aarch64`, `macos` with `x86_64`/`arm64`, or `windows`
+with `x86_64` or LDC-only `arm64`, matching the native host OS. ELF/Mach-O/PE
+checks validate the native shared library, every D archive member, and the
+extracted consumer. macOS consumers execute with the requested native
+architecture and verify that the extracted dylib is loaded.
 
 ## Example
 
@@ -101,10 +165,10 @@ The canonical release installation path is
 [code.dlang.org](https://code.dlang.org/packages/libmpq):
 
 ```sdl
-dependency "libmpq" version="~>0.7.0"
+dependency "libmpq" version="~>0.7.1"
 ```
 
-code.dlang.org discovers versions from Git tags such as `v0.7.0`; registration
+code.dlang.org discovers versions from Git tags such as `v0.7.1`; registration
 and registry credentials are intentionally kept out of the build and release
 workflows. See the [DUB publishing guide](https://dub.pm/dub-guide/publishing/).
 

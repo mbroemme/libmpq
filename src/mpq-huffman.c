@@ -312,7 +312,7 @@ libmpq__huffman_insert_item(
     struct huffman_tree_item_s *prev2;
 
     /* Relative previous-link offset from the original pointer encoding. */
-    long next2;
+    intptr_t next2;
 
     if (next != 0) {
 
@@ -408,7 +408,7 @@ libmpq__huffman_remove_item(struct huffman_tree_s *ht, struct huffman_tree_item_
  * A negative link is a direct encoded reference, while a non-negative value
  * is interpreted relative to the neighboring item and supplied offset. */
 struct huffman_tree_item_s *
-libmpq__huffman_previous_item(struct huffman_tree_item_s *hi, long value)
+libmpq__huffman_previous_item(struct huffman_tree_item_s *hi, intptr_t value)
 {
 
     /* Negative pointer values encode direct references in the original layout. */

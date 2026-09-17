@@ -26,9 +26,9 @@ search_c_sources()
 filter_identifier_exceptions()
 {
 	if command -v rg >/dev/null 2>&1; then
-		rg -v 'uInt|inflateInit|inflateEnd|deflateInit|deflateEnd|LLVMFuzzerInitialize|LLVMFuzzerTestOneInput|MPQ\\x1A'
+		rg -v 'cFileName|dwVolumeSerialNumber|nFileIndexHigh|nFileIndexLow|lpSecurityDescriptor|uInt|inflateInit|inflateEnd|deflateInit|deflateEnd|LLVMFuzzerInitialize|LLVMFuzzerTestOneInput|MPQ\\x1A'
 	else
-		grep -E -v 'uInt|inflateInit|inflateEnd|deflateInit|deflateEnd|LLVMFuzzerInitialize|LLVMFuzzerTestOneInput|MPQ\\x1A'
+		grep -E -v 'cFileName|dwVolumeSerialNumber|nFileIndexHigh|nFileIndexLow|lpSecurityDescriptor|uInt|inflateInit|inflateEnd|deflateInit|deflateEnd|LLVMFuzzerInitialize|LLVMFuzzerTestOneInput|MPQ\\x1A'
 	fi
 }
 

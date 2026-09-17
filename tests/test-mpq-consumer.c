@@ -1,7 +1,7 @@
 /*
- *  mpq-pack-begin.h -- header file for struct packing used by libmpq.
+ *  test-mpq-consumer.c -- installed public library smoke test.
  *
- *  Copyright (c) 2010-2026 Georg Lukas <georg@op-co.de>
+ *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
  *  This file is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
@@ -17,17 +17,25 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef LIBMPQ_PACK_BEGIN
-#define LIBMPQ_PACK_BEGIN
-#else
-#error "mpq-pack-begin.h may not be included twice!"
-#endif
+#include <libmpq/mpq.h>
+#include <stdio.h>
+#include <string.h>
 
-#ifdef _MSC_VER
-#pragma pack(push, 1)
-#define PACK_STRUCT
-#else
+int
+main(int argc, char **argv)
+{
+    const char *version = libmpq__version();
 
-/* Fall back to the GNU packed-structure attribute. */
-#define PACK_STRUCT __attribute__((packed))
-#endif
+    if (version == NULL || (argc != 2 && argc != 3) || strcmp(version, argv[1]) != 0)
+        return 1;
+    if (argc == 3) {
+        mpq_archive_s *archive = NULL;
+
+        if (libmpq__archive_open(&archive, argv[2], -1) != 0)
+            return 1;
+        if (libmpq__archive_close(archive) != 0)
+            return 1;
+    }
+    puts(version);
+    return 0;
+}

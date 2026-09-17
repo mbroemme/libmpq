@@ -298,6 +298,7 @@ libmpq__compression_decompress_pkzip(
 
     /* PKZIP work buffer, callback state and transferred-byte count. */
     int32_t tb = 0;
+    uint32_t status;
     pkzip_cmp_s *work_buf;
     pkzip_data_s info;
 
@@ -316,9 +317,10 @@ libmpq__compression_decompress_pkzip(
     info.out_pos = 0;
     info.max_out = out_size;
 
-    if ((tb = libmpq__pkzip_decompress((uint8_t *)work_buf, &info)) < 0) {
+    status = libmpq__pkzip_decompress((uint8_t *)work_buf, &info);
+    if (status != LIBMPQ_PKZIP_CMP_NO_ERROR) {
         free(work_buf);
-        return tb;
+        return LIBMPQ_ERROR_UNPACK;
     }
 
     tb = info.out_pos;
@@ -789,11 +791,13 @@ libmpq__compression_decompress_block(
 )
 {
     int32_t tb = 0;
+    int pkzip = compression_type == LIBMPQ_FLAG_COMPRESS_PKZIP;
 
     if (compression_type == LIBMPQ_FLAG_COMPRESS_NONE) {
         if (in_size < out_size)
             return LIBMPQ_ERROR_SIZE;
-        memcpy(out_buf, in_buf, out_size);
+        if (out_buf != in_buf)
+            memcpy(out_buf, in_buf, out_size);
         tb = out_size;
     } else if (compression_type == LIBMPQ_FLAG_COMPRESS_PKZIP ||
                compression_type == LIBMPQ_FLAG_COMPRESS_MULTI) {
@@ -807,6 +811,8 @@ libmpq__compression_decompress_block(
                 return tb;
             }
         } else if (in_size < out_size) {
+            if (in_buf != NULL && in_size > 0)
+                pkzip = (in_buf[0] & LIBMPQ_COMPRESSION_PKZIP) != 0;
             if ((tb = libmpq__compression_decompress_multi(
                      in_buf, in_size, out_buf, out_size, format_version
                  )) < 0)
@@ -816,5 +822,10 @@ libmpq__compression_decompress_block(
             tb = out_size;
         }
     }
+
+    /* A PKWARE stage may produce a shorter intermediate stream, but a complete
+     * MPQ block must produce exactly its declared unpacked size. */
+    if (pkzip && tb >= 0 && (uint32_t)tb != out_size)
+        return LIBMPQ_ERROR_UNPACK;
     return tb;
 }

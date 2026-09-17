@@ -4,10 +4,11 @@ AUTOMAKE_OPTIONS = subdir-objects
 # Link every regression program against the library built from this tree.
 AM_CPPFLAGS = -I$(top_srcdir)/include -I$(top_srcdir)/src
 AM_LDFLAGS = -no-install
-LDADD = $(top_builddir)/src/libmpq.la
+LDADD = $(top_builddir)/src/mpq-file.lo $(top_builddir)/src/libmpq.la
 
 # Each executable mirrors one implementation module in src/.
 check_PROGRAMS = \
+	test-file \
 	test-verify \
 	test-attributes \
 	test-md5 \
@@ -30,10 +31,11 @@ TESTS = $(check_PROGRAMS)
 # Verify the generated build-tree helper honors configured installation paths.
 check-local:
 	test "$$($(top_builddir)/libmpq-config --cflags)" = "-I$(includedir)"
-	test "$$($(top_builddir)/libmpq-config --libs)" = "-L$(libdir) -lmpq -lbz2 -lz -llzma"
+	test "$$($(top_builddir)/libmpq-config --libs)" = "-L$(libdir) -lmpq @LIBS@"
 
 # Compile shared assertions and deterministic-data helpers into every test.
 COMMON_SOURCES = test-mpq-helper.c test-mpq-helper.h
+test_file_SOURCES = test-mpq-file.c $(COMMON_SOURCES)
 test_verify_SOURCES = test-mpq-verify.c $(COMMON_SOURCES)
 test_verify_LDADD = $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-stream.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
 test_attributes_SOURCES = test-mpq-attributes.c $(COMMON_SOURCES)
@@ -93,6 +95,7 @@ test_wave_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures
 
 # Ship the deterministic fixture corpus and all module-mapped test sources.
 EXTRA_DIST = \
+	test-mpq-consumer.c \
 	test-mpq-helper.h \
 	test-mpq-helper.c \
 	test-mpq-compression.c \

@@ -11,6 +11,11 @@
 #define FIXTURE_DIR "fixtures"
 #endif
 
+int test_mkdir(const char *path);
+int test_chdir(const char *path);
+int test_rmdir(const char *path);
+char *test_getcwd(void);
+
 /* Shared UTF-32LE fixture recipe, including its four-byte byte-order mark. */
 #define TEST_SPARSE_TEXT "This text uses SPARSE compression and decompression.\n"
 #define TEST_SPARSE_FIXTURE_SIZE (4U + 16U * (sizeof(TEST_SPARSE_TEXT) - 1U) * 4U)

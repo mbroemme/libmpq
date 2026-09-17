@@ -24,15 +24,13 @@
 #include "mpq-compression.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
+#include "mpq-file.h"
 #include "mpq-internal.h"
-#include "mpq-platform.h"
 #include "mpq-reader.h"
 #include "mpq-stream.h"
 
-#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <zlib.h>
 
 /* Release a cached block offset table when the last user closes it.
@@ -459,7 +457,7 @@ read_block(
 
         /* The payload's leading mask selects and orders its decompression stages. */
         if ((tb = libmpq__compression_decompress_block(
-                 in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_MULTI,
+                 in_buf, in_size, out_buf, unpacked_size, LIBMPQ_FLAG_COMPRESS_MULTI,
                  mpq_archive->mpq_header.version
              )) < 0) {
             if (!use_out_buf) {
@@ -474,7 +472,7 @@ read_block(
 
         /* Standalone PKWARE payloads use the legacy decoder without a mask byte. */
         if ((tb = libmpq__compression_decompress_block(
-                 in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_PKZIP,
+                 in_buf, in_size, out_buf, unpacked_size, LIBMPQ_FLAG_COMPRESS_PKZIP,
                  mpq_archive->mpq_header.version
              )) < 0) {
             if (!use_out_buf) {
@@ -495,7 +493,7 @@ read_block(
 
         /* A raw block is copied only after encrypted and compressed paths are excluded. */
         if ((tb = libmpq__compression_decompress_block(
-                 in_buf, in_size, out_buf, out_size, LIBMPQ_FLAG_COMPRESS_NONE,
+                 in_buf, in_size, out_buf, unpacked_size, LIBMPQ_FLAG_COMPRESS_NONE,
                  mpq_archive->mpq_header.version
              )) < 0) {
             if (!use_out_buf) {
@@ -853,7 +851,7 @@ decode_mpq_hash_table(mpq_hash_s *table, const uint8_t *raw, uint32_t count)
     if (table == 0 || raw == 0)
         return;
     for (i = 0; i < count; i++) {
-        const uint8_t *entry = raw + i * sizeof(mpq_hash_s);
+        const uint8_t *entry = raw + (size_t)i * LIBMPQ_HASH_ENTRY_WIRE_SIZE;
 
         table[i].hash_a = libmpq__load_le32(entry + 0);
         table[i].hash_b = libmpq__load_le32(entry + 4);
@@ -873,7 +871,7 @@ decode_mpq_block_table(mpq_block_s *table, const uint8_t *raw, uint32_t count)
     if (table == 0 || raw == 0)
         return;
     for (i = 0; i < count; i++) {
-        const uint8_t *entry = raw + i * sizeof(mpq_block_s);
+        const uint8_t *entry = raw + (size_t)i * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE;
 
         table[i].offset = libmpq__load_le32(entry + 0);
         table[i].packed_size = libmpq__load_le32(entry + 4);
@@ -893,7 +891,7 @@ decode_mpq_block_ex_table(mpq_block_ex_s *table, const uint8_t *raw, uint32_t co
     if (table == 0 || raw == 0)
         return;
     for (i = 0; i < count; i++) {
-        table[i].offset_high = libmpq__load_le16(raw + i * sizeof(mpq_block_ex_s));
+        table[i].offset_high = libmpq__load_le16(raw + (size_t)i * LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE);
     }
 }
 
@@ -925,8 +923,8 @@ libmpq__reader_archive_open_stream(
     uint32_t count = 0;
     int32_t result = 0;
     uint32_t header_search = FALSE;
-    uint8_t header_data[sizeof(mpq_header_s)];
-    uint8_t header_ex_data[sizeof(mpq_header_ex_s)];
+    uint8_t header_data[LIBMPQ_HEADER_WIRE_SIZE];
+    uint8_t header_ex_data[LIBMPQ_HEADER_EX_WIRE_SIZE];
     uint8_t *table_data = NULL;
     size_t table_bytes = 0;
 
@@ -960,17 +958,10 @@ libmpq__reader_archive_open_stream(
     }
     memcpy((*mpq_archive)->filename, mpq_filename, strlen(mpq_filename) + 1);
 
-#if !defined(_WIN32) && !defined(_WIN64)
-    {
-        struct stat file_status;
-
-        if (stat(mpq_filename, &file_status) == 0) {
-            (*mpq_archive)->file_device = (uint64_t)file_status.st_dev;
-            (*mpq_archive)->file_inode = (uint64_t)file_status.st_ino;
-            (*mpq_archive)->file_identity_valid = TRUE;
-        }
-    }
-#endif
+    (*mpq_archive)->file_identity_valid =
+        libmpq__file_identity(
+            stream->file, &(*mpq_archive)->file_device, &(*mpq_archive)->file_inode
+        ) == 0;
 
     (*mpq_archive)->file_size = libmpq__stream_size(stream);
 
@@ -997,16 +988,16 @@ libmpq__reader_archive_open_stream(
             if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE) {
 
                 /* Protected archives may store a bogus header size; normalize it locally. */
-                if ((*mpq_archive)->mpq_header.header_size != sizeof(mpq_header_s)) {
-                    (*mpq_archive)->mpq_header.header_size = sizeof(mpq_header_s);
+                if ((*mpq_archive)->mpq_header.header_size != LIBMPQ_HEADER_WIRE_SIZE) {
+                    (*mpq_archive)->mpq_header.header_size = LIBMPQ_HEADER_WIRE_SIZE;
                 }
             }
 
             if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO) {
                 if ((*mpq_archive)->mpq_header.header_size !=
-                    sizeof(mpq_header_s) + sizeof(mpq_header_ex_s)) {
+                    LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE) {
                     (*mpq_archive)->mpq_header.header_size =
-                        sizeof(mpq_header_s) + sizeof(mpq_header_ex_s);
+                        LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE;
                 }
             }
 
@@ -1033,11 +1024,12 @@ libmpq__reader_archive_open_stream(
     (*mpq_archive)->block_size = 512U << (*mpq_archive)->mpq_header.block_size;
     (*mpq_archive)->archive_offset = archive_offset;
 
-    if (table_size((*mpq_archive)->mpq_header.hash_table_count, sizeof(mpq_hash_s), &table_bytes) <
-            0 ||
+    if (table_size(
+            (*mpq_archive)->mpq_header.hash_table_count, LIBMPQ_HASH_ENTRY_WIRE_SIZE, &table_bytes
+        ) < 0 ||
         (uint64_t)table_bytes > (*mpq_archive)->file_size ||
         table_size(
-            (*mpq_archive)->mpq_header.block_table_count, sizeof(mpq_block_s), &table_bytes
+            (*mpq_archive)->mpq_header.block_table_count, LIBMPQ_BLOCK_ENTRY_WIRE_SIZE, &table_bytes
         ) < 0 ||
         (uint64_t)table_bytes > (*mpq_archive)->file_size) {
         result = LIBMPQ_ERROR_FORMAT;
@@ -1046,15 +1038,15 @@ libmpq__reader_archive_open_stream(
 
     /* MPQ v2 stores high table offsets in a separate extension immediately after v1. */
     if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO) {
-        if ((uint64_t)archive_offset > UINT64_MAX - sizeof(mpq_header_s) ||
-            (uint64_t)archive_offset + sizeof(mpq_header_s) > (*mpq_archive)->file_size ||
+        if ((uint64_t)archive_offset > UINT64_MAX - LIBMPQ_HEADER_WIRE_SIZE ||
+            (uint64_t)archive_offset + LIBMPQ_HEADER_WIRE_SIZE > (*mpq_archive)->file_size ||
             sizeof(header_ex_data) >
-                (*mpq_archive)->file_size - ((uint64_t)archive_offset + sizeof(mpq_header_s))) {
+                (*mpq_archive)->file_size - ((uint64_t)archive_offset + LIBMPQ_HEADER_WIRE_SIZE)) {
             result = LIBMPQ_ERROR_FORMAT;
             goto error;
         }
         if ((result = libmpq__stream_read_at(
-                 (*mpq_archive)->stream, (uint64_t)archive_offset + sizeof(mpq_header_s),
+                 (*mpq_archive)->stream, (uint64_t)archive_offset + LIBMPQ_HEADER_WIRE_SIZE,
                  header_ex_data, sizeof(header_ex_data)
              )) < 0)
             goto error;
@@ -1081,8 +1073,9 @@ libmpq__reader_archive_open_stream(
         goto error;
     }
 
-    if (table_size((*mpq_archive)->mpq_header.hash_table_count, sizeof(mpq_hash_s), &table_bytes) <
-        0) {
+    if (table_size(
+            (*mpq_archive)->mpq_header.hash_table_count, LIBMPQ_HASH_ENTRY_WIRE_SIZE, &table_bytes
+        ) < 0) {
         result = LIBMPQ_ERROR_FORMAT;
         goto error;
     }
@@ -1113,7 +1106,7 @@ libmpq__reader_archive_open_stream(
     table_data = NULL;
 
     if (table_size(
-            (*mpq_archive)->mpq_header.block_table_count, sizeof(mpq_block_s), &table_bytes
+            (*mpq_archive)->mpq_header.block_table_count, LIBMPQ_BLOCK_ENTRY_WIRE_SIZE, &table_bytes
         ) < 0) {
         result = LIBMPQ_ERROR_FORMAT;
         goto error;
@@ -1147,7 +1140,8 @@ libmpq__reader_archive_open_stream(
     /* v2 block high words are optional and are loaded only when present. */
     if ((*mpq_archive)->mpq_header_ex.extended_offset > 0) {
         if (table_size(
-                (*mpq_archive)->mpq_header.block_table_count, sizeof(mpq_block_ex_s), &table_bytes
+                (*mpq_archive)->mpq_header.block_table_count, LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE,
+                &table_bytes
             ) < 0) {
             result = LIBMPQ_ERROR_FORMAT;
             goto error;
@@ -1261,6 +1255,16 @@ libmpq__reader_archive_clone(mpq_archive_s **clone, const mpq_archive_s *source)
     if (source == NULL || source->stream == NULL || source->filename == NULL)
         return LIBMPQ_ERROR_EXIST;
     result = libmpq__stream_clone(&stream, source->stream, source->filename);
+    if (result == 0 && source->file_identity_valid) {
+        uint64_t device;
+        uint64_t inode;
+
+        result = libmpq__file_identity(stream->file, &device, &inode);
+        if (result == 0 && (device != source->file_device || inode != source->file_inode))
+            result = LIBMPQ_ERROR_EXIST;
+        if (result != 0)
+            libmpq__stream_discard(stream);
+    }
 
     return result == LIBMPQ_SUCCESS ? libmpq__reader_archive_open_stream(
                                           clone, source->filename, source->archive_offset, stream

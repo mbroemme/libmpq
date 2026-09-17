@@ -13,9 +13,9 @@
 #include "config.h"
 #endif
 
+#include "mpq-file.h"
 #include "mpq-internal.h"
 #include "mpq-mpqe.h"
-#include "mpq-platform.h"
 #include "mpq-stream.h"
 
 #include <errno.h>
@@ -32,16 +32,7 @@ static int32_t read_at(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, s
 static int32_t
 libmpq__stream_file_seek(mpq_stream_s *stream, uint64_t offset)
 {
-    libmpq__off_t position;
-
-    if (offset > (uint64_t)INT64_MAX)
-        return LIBMPQ_ERROR_SEEK;
-    position = (libmpq__off_t)offset;
-#if !defined(_MSC_VER)
-    if ((uint64_t)(off_t)position != offset)
-        return LIBMPQ_ERROR_SEEK;
-#endif
-    return fseeko(stream->file, position, SEEK_SET) < 0 ? LIBMPQ_ERROR_SEEK : LIBMPQ_SUCCESS;
+    return libmpq__file_seek(stream->file, offset, SEEK_SET);
 }
 
 /* Read an exact physical byte range from the underlying ordinary file. */
@@ -73,14 +64,14 @@ libmpq__stream_open_common(mpq_stream_s **stream, const char *path)
     *stream = calloc(1, sizeof(**stream));
     if (*stream == NULL)
         return LIBMPQ_ERROR_MALLOC;
-    (*stream)->file = fopen(path, "rb");
+    (*stream)->file = libmpq__file_open(path, "rb");
     if ((*stream)->file == NULL) {
         free(*stream);
         *stream = NULL;
         return errno == ENOENT ? LIBMPQ_ERROR_EXIST : LIBMPQ_ERROR_OPEN;
     }
-    if (fseeko((*stream)->file, (libmpq__off_t)0, SEEK_END) < 0 ||
-        (end = (libmpq__off_t)ftello((*stream)->file)) < 0) {
+    if (libmpq__file_seek((*stream)->file, (libmpq__off_t)0, SEEK_END) < 0 ||
+        (end = (libmpq__off_t)libmpq__file_tell((*stream)->file)) < 0) {
         fclose((*stream)->file);
         free(*stream);
         *stream = NULL;

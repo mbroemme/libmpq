@@ -69,6 +69,27 @@ test -n "${source_dir}"
 
 "${python_bin}" -m build "${build_options[@]}" --wheel "${source_dir}" \
 	--outdir "${temporary}/wheelhouse"
+
+# Repair tools parse WHEEL as email-style headers, not as arbitrary lines.
+"${python_bin}" - "${temporary}/wheelhouse" <<'PY'
+from email.parser import BytesParser
+from pathlib import Path
+import sys
+import zipfile
+from packaging.tags import parse_tag
+from packaging.utils import parse_wheel_filename
+
+wheels = list(Path(sys.argv[1]).glob("*.whl"))
+assert len(wheels) == 1, wheels
+with zipfile.ZipFile(wheels[0]) as wheel:
+    metadata, = (n for n in wheel.namelist() if n.endswith(".dist-info/WHEEL"))
+    headers = BytesParser().parsebytes(wheel.read(metadata))
+    tags = headers.get_all("Tag", [])
+    assert len(tags) == 1, f"Expected one Tag header, got {tags}"
+    assert parse_tag(tags[0]) == parse_wheel_filename(wheels[0].name)[3], tags
+    assert not headers.get_payload().strip(), "WHEEL fields leaked into the body"
+PY
+
 if [[ "${PYTHON_TEST_SYSTEM_SITE_PACKAGES:-0}" == 1 ]]; then
 	"${python_bin}" -m venv --system-site-packages "${temporary}/venv"
 else

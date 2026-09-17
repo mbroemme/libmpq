@@ -51,7 +51,9 @@ jobs:
             libtool \
             make \
             tar \
-            zlib1g-dev
+            zlib1g-dev \
+            xz-utils \
+            cmake
 
       - name: Check out repository
         uses: actions/checkout@v7
@@ -59,54 +61,33 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Prepare release metadata
+      - name: Validate release tag
         id: release
+        run: bash scripts/validate-release.sh
+
+      - name: Build and validate configure-ready source archives
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
           set -euxo pipefail
-          tag="${GITHUB_REF_NAME}"
-          version="${tag#v}"
-
-          if [[ "${tag}" == "${version}" ]]; then
-            echo "Release tags must start with 'v' (for example: v0.2.0)." >&2
-            exit 1
-          fi
-
-          {
-            echo "tag=${tag}"
-            echo "version=${version}"
-            echo "archive_base=libmpq-${version}"
-          } >> "${GITHUB_OUTPUT}"
-
-      - name: Generate configure-ready source tree
-        run: |
-          set -euxo pipefail
-          archive_base="${{ steps.release.outputs.archive_base }}"
-
-          mkdir -p dist/build
-          git archive --format=tar --prefix="${archive_base}/" "${GITHUB_REF_NAME}" | \
-            tar -xf - -C dist/build
-
-          cd "dist/build/${archive_base}"
           sh autogen.sh
-          project_version="$(./configure --version | \
-            sed -n '1s/^libmpq configure //p')"
-          if [[ "${project_version}" != "${{ steps.release.outputs.version }}" ]]; then
-            echo "Package version ${project_version} does not match tag ${GITHUB_REF_NAME}" >&2
-            exit 1
-          fi
-          rm -rf .git .github autom4te.cache
-
-      - name: Create release archives
-        run: |
-          set -euxo pipefail
-          archive_base="${{ steps.release.outputs.archive_base }}"
-
-          cd "dist/build/${archive_base}"
           ./configure --prefix=/usr
+          make -j"$(nproc)"
+          make check
           make distcheck
           make dist-bzip2
-          mv "${archive_base}.tar.gz" ../../
-          mv "${archive_base}.tar.bz2" ../../
+          mkdir -p dist
+          mv "libmpq-${RELEASE_VERSION}.tar.gz" "libmpq-${RELEASE_VERSION}.tar.bz2" dist/
+          for archive in dist/*.tar.*; do
+            tar -tf "${archive}" | grep -Fx "libmpq-${RELEASE_VERSION}/CMakeLists.txt"
+            tar -tf "${archive}" | grep -Fx "libmpq-${RELEASE_VERSION}/configure"
+          done
+          temporary="$(mktemp -d)"
+          trap 'rm -rf "${temporary}"' EXIT
+          tar -xzf "dist/libmpq-${RELEASE_VERSION}.tar.gz" -C "${temporary}"
+          cmake -S "${temporary}/libmpq-${RELEASE_VERSION}" -B "${temporary}/build" -DBUILD_SHARED_LIBS=ON
+          cmake --build "${temporary}/build" --parallel
+          ctest --test-dir "${temporary}/build" --output-on-failure
 
       - name: Upload source release artifacts
         uses: actions/upload-artifact@v7

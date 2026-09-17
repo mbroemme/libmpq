@@ -623,7 +623,8 @@ libmpq__pkzip_decompress(uint8_t *work_buf, void *param)
     mpq_pkzip->in_bytes =
         mpq_pkzip->read_buf((char *)mpq_pkzip->in_buf, &in_size, mpq_pkzip->param);
 
-    if (mpq_pkzip->in_bytes <= 4) {
+    /* An empty stream needs only the two-byte header and its end marker. */
+    if (mpq_pkzip->in_bytes < 4) {
         return LIBMPQ_PKZIP_CMP_BAD_DATA;
     }
 

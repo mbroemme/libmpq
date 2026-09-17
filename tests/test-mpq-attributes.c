@@ -7,7 +7,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #define REQUIRE(condition)                                                                         \
     do {                                                                                           \
@@ -197,7 +196,7 @@ cleanup:
     if (clone != NULL)
         (void)libmpq__archive_close(clone);
     if (path[0] != 0)
-        unlink(path);
+        remove(path);
     return result;
 }
 
@@ -264,7 +263,7 @@ cleanup:
     if (archive != NULL)
         (void)libmpq__archive_close(archive);
     if (path[0] != 0)
-        unlink(path);
+        remove(path);
     return result;
 }
 
@@ -357,7 +356,7 @@ cleanup:
     if (archive != NULL)
         (void)libmpq__archive_close(archive);
     if (path[0] != 0)
-        unlink(path);
+        remove(path);
     return result;
 }
 
@@ -457,7 +456,7 @@ cleanup:
     if (archive != NULL)
         (void)libmpq__archive_close(archive);
     if (path[0] != 0)
-        unlink(path);
+        remove(path);
     return result;
 }
 
