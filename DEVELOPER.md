@@ -367,15 +367,34 @@ LIBRARY_PATH="$PWD/src/.libs" LD_LIBRARY_PATH="$PWD/src/.libs" \
 The D release archive is `libmpq-d-X.Y.Z.zip`. It contains the D source
 package and compiler-specific binary packages for DMD and LDC on Linux
 x86_64, plus LDC on Linux aarch64, with separate glibc and musl variants.
-DMD remains x86_64-only in the existing release toolchains. All packages are
-built and tested natively, using Ubuntu 24.04 for glibc and Alpine 3.22 for
-musl. Binary archives use
-`libmpq-d-X.Y.Z-<compiler>-linux-<libc>-<architecture>.tar.gz`; the D release ZIP
-requires all six binary archives plus the source package. Binary packages
+DMD remains Linux x86_64-only in the existing release toolchains. Linux packages
+are built and tested natively, using Ubuntu 24.04 for glibc and Alpine 3.22 for
+musl. Linux binary archives use
+`libmpq-d-X.Y.Z-<compiler>-linux-<libc>-<architecture>.tar.gz`. Binary packages
 include the precompiled D archive and the complete `libmpq.so` SONAME chain.
 Their bundled library directory is supplied automatically at link time; runtime loading may
 still require `LD_LIBRARY_PATH`. `BUILDINFO` records compiler and native build
 metadata.
+
+macOS adds `libmpq-d-X.Y.Z-<compiler>-macos-<architecture>.tar.gz` for both
+`dmd` and `ldc`, each on `x86_64` and `arm64`. Intel uses `macos-15-intel` and
+Apple Silicon uses `macos-15`. The existing native SDK installation, `@rpath`
+normalization, ad-hoc signing, deployment-target and dependency validation are
+reused; only its dylib/symlink chain is copied into the D package. The macOS
+11.0 target is recorded in `BUILDINFO`, without Linux libc fields.
+
+DMD generates native arm64 artifacts using `-marm64`; its compiler executable
+may run through Rosetta. A temporary launcher applies the flag to DUB's target
+probe as well as compilation. DUB's internal ARM platform token is `aarch64`,
+while macOS archive names use `arm64`. LDC uses the native Apple Silicon slice.
+All generated Mach-O artifacts must be single-architecture. Extracted consumers
+run with the requested native architecture, check the version, and trace loading
+of the packaged dylib. Compiler versions remain selected by
+`dlang-community/setup-dlang@v2` and recorded in each package's `BUILDINFO`.
+
+The D release ZIP requires the exact set of six Linux binary packages, four
+macOS binary packages, and one source package. Windows D packages remain outside
+the release matrix.
 
 See [`bindings/d/README.md`](bindings/d/README.md) for DUB usage, compiler
 requirements, binary package details, and examples.

@@ -54,33 +54,57 @@ The source/DUB package does not load a private copy of the native library.
 install libmpq or provide the equivalent library and runtime search path.
 
 Release downloads also provide compiler-specific binary packages. They contain
-the D interface files, a precompiled static D archive, and the complete
-`libmpq.so` SONAME chain. The binary DUB recipe supplies the bundled library
+the D interface files, a precompiled static D archive, and the native shared
+library (`libmpq.so` on Linux, `libmpq.dylib` on macOS) with its symlinks.
+The binary DUB recipe supplies the bundled library
 directory to the linker automatically; the dynamic loader still needs to find
 the bundled library at runtime, for example through `LD_LIBRARY_PATH`. The
 compiler and native build metadata, including the libc build version, build
 environment, and maximum required glibc symbol version, is recorded in
 `BUILDINFO`; use the source package when the recorded compiler or platform does
-not match the consumer environment. Linux binary packages are built and tested
-natively with the following compiler/architecture matrix:
+not match the consumer environment. Binary packages are built and tested
+for the following compiler/architecture matrix:
 
-| Compiler | glibc (Ubuntu 24.04) | musl (Alpine 3.22) |
-| --- | --- | --- |
-| DMD | x86_64 | x86_64 |
-| LDC | x86_64, aarch64 | x86_64, aarch64 |
+| Compiler | Linux glibc (Ubuntu 24.04) | Linux musl (Alpine 3.22) | macOS |
+| --- | --- | --- | --- |
+| DMD | x86_64 | x86_64 | x86_64, arm64 |
+| LDC | x86_64, aarch64 | x86_64, aarch64 | x86_64, arm64 |
 
 Archives are named
 `libmpq-d-X.Y.Z-<compiler>-linux-<libc>-<architecture>.tar.gz`, for example
 `libmpq-d-X.Y.Z-ldc-linux-glibc-aarch64.tar.gz` and
 `libmpq-d-X.Y.Z-ldc-linux-musl-aarch64.tar.gz`. DMD remains x86_64-only because
 the existing release toolchains do not provide native Linux aarch64 DMD
-packages. No compiler substitution or emulation is used. macOS and Windows D
-binary packages are not currently published.
+packages. Linux builds and tests run natively without emulation.
 
-Packaging requires an explicit `LIBMPQ_D_ARCHITECTURE` (`x86_64` or `aarch64`)
-matching the native host. The package records it in `BUILDINFO` and validates
-the ELF architecture of the bundled native library, D archive members, and
-installed consumer before publication.
+macOS archives use these names:
+
+* `libmpq-d-X.Y.Z-dmd-macos-x86_64.tar.gz`
+* `libmpq-d-X.Y.Z-dmd-macos-arm64.tar.gz`
+* `libmpq-d-X.Y.Z-ldc-macos-x86_64.tar.gz`
+* `libmpq-d-X.Y.Z-ldc-macos-arm64.tar.gz`
+
+They contain the same D interfaces and compiler-specific archive, with the
+native SDK's versioned `libmpq.dylib` symlinks instead of `libmpq.so`. The dylib
+uses an `@rpath` install ID, ad-hoc signing, system codec dependencies, and the
+native SDK's macOS 11.0 deployment target, recorded in `BUILDINFO`. Applications
+must provide a runtime search path to the extracted `lib` directory, for example
+through `DYLD_LIBRARY_PATH`. No Windows D binary packages are published.
+
+DMD generates and tests native arm64 package artifacts on Apple Silicon; the
+DMD compiler executable supplied by the current toolchain may itself run through
+Rosetta. LDC runs natively. Current DUB does not accept `--arch=aarch64` for DMD,
+so packaging uses a temporary compiler launcher that adds `-marm64` to every
+invocation, including DUB's target probe. DMD consumers of the arm64 package
+likewise need a compiler launcher adding `-marm64`, passed via `dub --compiler`,
+so DUB selects `osx-aarch64-dmd` metadata. The x86_64 suffix is
+`osx-x86_64-<compiler>`; LDC arm64 uses `osx-aarch64-ldc`.
+
+Packaging requires explicit `LIBMPQ_D_OS` and `LIBMPQ_D_ARCHITECTURE` values:
+`linux` with `x86_64`/`aarch64`, or `macos` with `x86_64`/`arm64`, matching the
+native host. ELF/Mach-O checks validate the native shared library, every D
+archive member, and the extracted consumer. macOS consumers execute with the
+requested native architecture and verify that the extracted dylib is loaded.
 
 ## Example
 
