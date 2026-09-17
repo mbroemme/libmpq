@@ -376,16 +376,17 @@ Their bundled library directory is supplied automatically at link time; runtime 
 still require `LD_LIBRARY_PATH`. `BUILDINFO` records compiler and native build
 metadata.
 
-macOS adds `libmpq-d-X.Y.Z-<compiler>-macos-<architecture>.tar.gz` for both
-`dmd` and `ldc`, each on `x86_64` and `arm64`. Intel uses `macos-15-intel` and
+macOS adds `libmpq-d-X.Y.Z-<compiler>-macos-<architecture>.tar.gz` for
+`dmd` on `x86_64` and `ldc` on `x86_64` and `arm64`. Intel uses `macos-15-intel` and
 Apple Silicon uses `macos-15`. The existing native SDK installation, `@rpath`
 normalization, ad-hoc signing, deployment-target and dependency validation are
 reused; only its dylib/symlink chain is copied into the D package. The macOS
 11.0 target is recorded in `BUILDINFO`, without Linux libc fields.
 
-DMD generates native arm64 artifacts using `-marm64`; its compiler executable
-may run through Rosetta. A temporary launcher applies the flag to DUB's target
-probe as well as compilation. DUB's internal ARM platform token is `aarch64`,
+Stable DMD 2.113.0 does not provide the required macOS ARM64 `-marm64` target.
+The DMD arm64 binary package is not published until a stable DMD release
+provides that support. LDC remains supported on macOS arm64.
+DUB's internal ARM platform token is `aarch64`,
 while macOS archive names use `arm64`. LDC uses the native Apple Silicon slice.
 All generated Mach-O artifacts must be single-architecture. Extracted consumers
 run with the requested native architecture, check the version, and trace loading
@@ -422,7 +423,7 @@ The source recipe remains `libs "mpq"`: only source-tree builds see a temporary
 `mpq.lib` compatibility copy. Binary recipes select `libmpq.lib` explicitly,
 and extracted consumers restore the original MSVC `LIB` before linking.
 
-The D release ZIP requires the exact set of six Linux binary packages, four
+The D release ZIP requires the exact set of six Linux binary packages, three
 macOS binary packages, three Windows binary packages, and one source package.
 
 See [`bindings/d/README.md`](bindings/d/README.md) for DUB usage, compiler

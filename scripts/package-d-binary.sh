@@ -151,18 +151,18 @@ readonly packaged_d_library="libmpq-${LIBMPQ_D_COMPILER_NAME}.${d_library_extens
 if [[ "${LIBMPQ_D_OS}" == macos ]]; then
 	dub describe --compiler="${LIBMPQ_D_DUB_COMPILER}" |
 		jq -e --arg arch "${dub_arch}" \
-			'(.platform | index("osx")) != null and .architecture == [$arch]'
+			'(.platform | index("osx")) != null and (.architecture - ["arm_hardfloat"]) == [$arch]'
 fi
 if [[ "${LIBMPQ_D_OS}" == windows ]]; then
 	dub describe "${dub_options[@]}" --compiler="${LIBMPQ_D_DUB_COMPILER}" |
 		jq -e --arg compiler "${LIBMPQ_D_COMPILER_NAME}" --arg arch "${dub_arch}" \
-			'(.platform | index("windows")) != null and .architecture == [$arch] and .compiler == $compiler'
+			'(.platform | index("windows")) != null and (.architecture - ["arm_hardfloat"]) == [$arch] and .compiler == $compiler'
 fi
 
 mkdir -p "${package_dir}/source/libmpq" "${package_dir}/tests" \
 	"${package_dir}/lib" "${interface_dir}" "${object_dir}"
 
-"${DC}" "${interface_options[@]}" -H -Hd="${interface_dir}" -od="${object_dir}" -c \
+"${DC}" ${interface_options[@]+"${interface_options[@]}"} -H -Hd="${interface_dir}" -od="${object_dir}" -c \
 	bindings/d/source/libmpq/*.d
 cp "${interface_dir}"/*.di "${package_dir}/source/libmpq/"
 cp bindings/d/tests/main.d "${package_dir}/tests/"
@@ -346,11 +346,11 @@ if [[ "${LIBMPQ_D_OS}" == windows ]]; then
 	DUB_HOME="${consumer_dub_path}" \
 		dub describe --root="${consumer_root}" "${dub_options[@]}" --compiler="${LIBMPQ_D_DUB_COMPILER}" |
 		jq -e --arg compiler "${LIBMPQ_D_COMPILER_NAME}" --arg arch "${dub_arch}" \
-			'(.platform | index("windows")) != null and .architecture == [$arch] and .compiler == $compiler'
+			'(.platform | index("windows")) != null and (.architecture - ["arm_hardfloat"]) == [$arch] and .compiler == $compiler'
 fi
 describe="$(DUB_HOME="${consumer_dub_path}" \
 	dub describe --root="${consumer_root}" --compiler="${LIBMPQ_D_DUB_COMPILER}" \
-		"${dub_options[@]}" \
+		${dub_options[@]+"${dub_options[@]}"} \
 		--data=source-files,linker-files --data-list)"
 if [[ "${LIBMPQ_D_OS}" == windows ]]; then
 	describe="$(tr '\\' '/' <<<"${describe}")"

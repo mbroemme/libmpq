@@ -53,6 +53,7 @@ else
 fi
 
 dub_options=()
+build_dflags="${DFLAGS:-}"
 if [[ "${LIBMPQ_D_OS}" == windows ]]; then
 	# CMake/CTest and SDK dependency preparation are performed by the workflow
 	# in its MSVC developer environment before invoking this D build helper.
@@ -68,6 +69,13 @@ if [[ "${LIBMPQ_D_OS}" == windows ]]; then
 	mkdir -p "${temporary}/linker"
 	cp "${native_sdk}/lib/libmpq.lib" "${temporary}/linker/mpq.lib"
 	export LIB="$(cygpath -am "${temporary}/linker");${LIB:-}"
+
+	# DMD's sc.ini may override LIB. DUB forwards DFLAGS to the linker too;
+	# scope this explicit search path to source-tree builds, not packaging.
+	# Use a short Windows path because DUB splits DFLAGS on whitespace.
+	linker_path="$(cygpath -ams "${temporary}/linker")"
+	[[ "${linker_path}" != *[[:space:]]* ]] || { echo 'DUB requires a whitespace-free temporary linker path' >&2; exit 1; }
+	build_dflags+=" -L/LIBPATH:${linker_path}"
 	export PATH="${native_sdk}/bin:${PATH}"
 	export DUB_HOME="$(cygpath -am "${DUB_HOME}")"
 	dub_options=(--arch=x86_64)
@@ -78,8 +86,9 @@ if [[ "${LIBMPQ_D_OS}" == windows ]]; then
 	fi
 	dub describe "${dub_options[@]}" --compiler="${LIBMPQ_D_DUB_COMPILER}" |
 		jq -e --arg compiler "${LIBMPQ_D_COMPILER_NAME}" --arg arch "${dub_arch}" \
-			'(.platform | index("windows")) != null and .architecture == [$arch] and .compiler == $compiler'
+			'(.platform | index("windows")) != null and (.architecture - ["arm_hardfloat"]) == [$arch] and .compiler == $compiler'
 	TMPDIR="$(cygpath -am "${temporary}")" \
+		DFLAGS="${build_dflags}" \
 		dub run --config=tests "${dub_options[@]}" --compiler="${LIBMPQ_D_DUB_COMPILER}"
 elif [[ "${LIBMPQ_D_OS}" == macos ]]; then
 	sh autogen.sh
@@ -98,23 +107,11 @@ elif [[ "${LIBMPQ_D_OS}" == macos ]]; then
 	export LIBRARY_PATH="${project_root}/release/libmpq-${LIBMPQ_D_VERSION}-macos-${LIBMPQ_D_ARCHITECTURE}/lib"
 	export DYLD_LIBRARY_PATH="${LIBRARY_PATH}"
 
-	# DUB's DMD --arch handling lacks aarch64. Include -marm64 even in its
-	# compiler probe so DUB selects osx-aarch64 metadata, not Rosetta's host.
-	if [[ "${LIBMPQ_D_COMPILER_NAME}:${LIBMPQ_D_ARCHITECTURE}" == dmd:arm64 ]]; then
-		export LIBMPQ_D_REAL_COMPILER="$(command -v "${DC}")"
-		cat > "${temporary}/dmd-arm64" <<'EOF'
-#!/usr/bin/env bash
-exec "${LIBMPQ_D_REAL_COMPILER}" -marm64 "$@"
-EOF
-		chmod +x "${temporary}/dmd-arm64"
-		export DC="${temporary}/dmd-arm64"
-		export LIBMPQ_D_DUB_COMPILER="${DC}"
-	fi
 	dub_arch="${LIBMPQ_D_ARCHITECTURE}"
 	[[ "${dub_arch}" != arm64 ]] || dub_arch=aarch64
 	dub describe --compiler="${LIBMPQ_D_DUB_COMPILER}" |
 		jq -e --arg arch "${dub_arch}" \
-			'(.platform | index("osx")) != null and .architecture == [$arch]'
+			'(.platform | index("osx")) != null and (.architecture - ["arm_hardfloat"]) == [$arch]'
 	dub build --config=tests --compiler="${LIBMPQ_D_DUB_COMPILER}"
 	test "$(lipo -archs libmpq)" = "${LIBMPQ_D_ARCHITECTURE}"
 	/usr/bin/arch -"${LIBMPQ_D_ARCHITECTURE}" \
@@ -127,5 +124,6 @@ else
 	export LD_LIBRARY_PATH="${project_root}/src/.libs"
 	dub run --config=tests --compiler="${LIBMPQ_D_DUB_COMPILER}"
 fi
-dub build --config=library "${dub_options[@]}" --compiler="${LIBMPQ_D_DUB_COMPILER}" --build=release
+# Bash 3.2 (macOS) treats an empty array as unset under nounset.
+DFLAGS="${build_dflags}" dub build --config=library ${dub_options[@]+"${dub_options[@]}"} --compiler="${LIBMPQ_D_DUB_COMPILER}" --build=release
 bash scripts/package-d-binary.sh

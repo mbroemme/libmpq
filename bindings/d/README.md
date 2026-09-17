@@ -69,7 +69,7 @@ for the following compiler/architecture matrix:
 
 | Compiler | Linux glibc (Ubuntu 24.04) | Linux musl (Alpine 3.22) | macOS | Windows |
 | --- | --- | --- | --- | --- |
-| DMD | x86_64 | x86_64 | x86_64, arm64 | x86_64 |
+| DMD | x86_64 | x86_64 | x86_64 | x86_64 |
 | LDC | x86_64, aarch64 | x86_64, aarch64 | x86_64, arm64 | x86_64, arm64 |
 
 Archives are named
@@ -82,7 +82,6 @@ packages. Linux builds and tests run natively without emulation.
 macOS archives use these names:
 
 * `libmpq-d-X.Y.Z-dmd-macos-x86_64.tar.gz`
-* `libmpq-d-X.Y.Z-dmd-macos-arm64.tar.gz`
 * `libmpq-d-X.Y.Z-ldc-macos-x86_64.tar.gz`
 * `libmpq-d-X.Y.Z-ldc-macos-arm64.tar.gz`
 
@@ -93,13 +92,10 @@ native SDK's macOS 11.0 deployment target, recorded in `BUILDINFO`. Applications
 must provide a runtime search path to the extracted `lib` directory, for example
 through `DYLD_LIBRARY_PATH`.
 
-DMD generates and tests native arm64 package artifacts on Apple Silicon; the
-DMD compiler executable supplied by the current toolchain may itself run through
-Rosetta. LDC runs natively. Current DUB does not accept `--arch=aarch64` for DMD,
-so packaging uses a temporary compiler launcher that adds `-marm64` to every
-invocation, including DUB's target probe. DMD consumers of the arm64 package
-likewise need a compiler launcher adding `-marm64`, passed via `dub --compiler`,
-so DUB selects `osx-aarch64-dmd` metadata. The x86_64 suffix is
+Stable DMD 2.113.0 does not provide the required macOS ARM64 `-marm64` target.
+The DMD arm64 binary package is not published until a stable DMD release
+provides that support. LDC remains supported and runs natively on macOS arm64.
+The x86_64 DUB suffix is
 `osx-x86_64-<compiler>`; LDC arm64 uses `osx-aarch64-ldc`.
 
 Windows archives are `libmpq-d-X.Y.Z-dmd-windows-x86_64.zip` and
