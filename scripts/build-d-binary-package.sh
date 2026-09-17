@@ -23,6 +23,7 @@ case "${LIBMPQ_D_OS}:${LIBMPQ_D_ARCHITECTURE}:$(uname -s)" in
 	macos:x86_64:Darwin|macos:arm64:Darwin)
 	: "${MACOSX_DEPLOYMENT_TARGET:?MACOSX_DEPLOYMENT_TARGET is required}"
 	;;
+	windows:x86_64:MINGW64_NT-*|windows:x86_64:MSYS_NT-*) ;;
 	*) echo "Unsupported D package platform or host: ${LIBMPQ_D_OS}/${LIBMPQ_D_ARCHITECTURE}/$(uname -s)" >&2; exit 1 ;;
 esac
 if [[ "$(uname -m)" != "${LIBMPQ_D_ARCHITECTURE}" ]]; then
@@ -43,8 +44,32 @@ else
 	jobs="$(getconf _NPROCESSORS_ONLN)"
 fi
 
-sh autogen.sh
-if [[ "${LIBMPQ_D_OS}" == macos ]]; then
+dub_options=()
+if [[ "${LIBMPQ_D_OS}" == windows ]]; then
+	# CMake/CTest and SDK dependency preparation are performed by the workflow
+	# in its MSVC developer environment before invoking this D build helper.
+	native_sdk="${project_root}/release/libmpq-${LIBMPQ_D_VERSION}-windows-msvc-x64"
+	: "${LIBMPQ_D_MSVC_BIN:?MSVC developer tools directory is required}"
+	export PATH="$(cygpath -au "${LIBMPQ_D_MSVC_BIN}"):${PATH}"
+	test -s "${native_sdk}/lib/libmpq.lib"
+	test -s "${native_sdk}/bin/libmpq.dll"
+	export LIBMPQ_D_SYSTEM_LIB="${LIB:-}"
+
+	# The unchanged source recipe links mpq. Keep its compatibility import
+	# library private to this build; the binary package uses libmpq.lib directly.
+	mkdir -p "${temporary}/linker"
+	cp "${native_sdk}/lib/libmpq.lib" "${temporary}/linker/mpq.lib"
+	export LIB="$(cygpath -am "${temporary}/linker");${LIB:-}"
+	export PATH="${native_sdk}/bin:${PATH}"
+	export DUB_HOME="$(cygpath -am "${DUB_HOME}")"
+	dub_options=(--arch=x86_64)
+	dub describe "${dub_options[@]}" --compiler="${LIBMPQ_D_DUB_COMPILER}" |
+		jq -e --arg compiler "${LIBMPQ_D_COMPILER_NAME}" \
+			'(.platform | index("windows")) != null and .architecture == ["x86_64"] and .compiler == $compiler'
+	TMPDIR="$(cygpath -am "${temporary}")" \
+		dub run --config=tests "${dub_options[@]}" --compiler="${LIBMPQ_D_DUB_COMPILER}"
+elif [[ "${LIBMPQ_D_OS}" == macos ]]; then
+	sh autogen.sh
 	./configure --prefix=/usr --enable-shared --disable-static
 	/usr/bin/make -j"${jobs}" V=1
 	/usr/bin/make check
@@ -82,11 +107,12 @@ EOF
 	/usr/bin/arch -"${LIBMPQ_D_ARCHITECTURE}" \
 		-e "DYLD_LIBRARY_PATH=${LIBRARY_PATH}" ./libmpq
 else
+	sh autogen.sh
 	./configure --prefix=/usr
 	make -j"${jobs}" V=1
 	export LIBRARY_PATH="${project_root}/src/.libs"
 	export LD_LIBRARY_PATH="${project_root}/src/.libs"
 	dub run --config=tests --compiler="${LIBMPQ_D_DUB_COMPILER}"
 fi
-dub build --config=library --compiler="${LIBMPQ_D_DUB_COMPILER}" --build=release
+dub build --config=library "${dub_options[@]}" --compiler="${LIBMPQ_D_DUB_COMPILER}" --build=release
 bash scripts/package-d-binary.sh

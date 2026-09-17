@@ -55,20 +55,22 @@ install libmpq or provide the equivalent library and runtime search path.
 
 Release downloads also provide compiler-specific binary packages. They contain
 the D interface files, a precompiled static D archive, and the native shared
-library (`libmpq.so` on Linux, `libmpq.dylib` on macOS) with its symlinks.
-The binary DUB recipe supplies the bundled library
-directory to the linker automatically; the dynamic loader still needs to find
-the bundled library at runtime, for example through `LD_LIBRARY_PATH`. The
+library (`libmpq.so` on Linux, `libmpq.dylib` on macOS, `libmpq.dll` on Windows).
+Unix packages preserve the shared-library symlinks.
+The binary package supplies the bundled native library to the linker.
+At runtime, its library directory must be available through the platform's
+loader search mechanism: `LD_LIBRARY_PATH` on Linux, `DYLD_LIBRARY_PATH` on
+macOS, or `PATH` on Windows (using the package's `bin/` directory). The
 compiler and native build metadata, including the libc build version, build
 environment, and maximum required glibc symbol version, is recorded in
 `BUILDINFO`; use the source package when the recorded compiler or platform does
 not match the consumer environment. Binary packages are built and tested
 for the following compiler/architecture matrix:
 
-| Compiler | Linux glibc (Ubuntu 24.04) | Linux musl (Alpine 3.22) | macOS |
-| --- | --- | --- | --- |
-| DMD | x86_64 | x86_64 | x86_64, arm64 |
-| LDC | x86_64, aarch64 | x86_64, aarch64 | x86_64, arm64 |
+| Compiler | Linux glibc (Ubuntu 24.04) | Linux musl (Alpine 3.22) | macOS | Windows |
+| --- | --- | --- | --- | --- |
+| DMD | x86_64 | x86_64 | x86_64, arm64 | x86_64 |
+| LDC | x86_64, aarch64 | x86_64, aarch64 | x86_64, arm64 | x86_64 |
 
 Archives are named
 `libmpq-d-X.Y.Z-<compiler>-linux-<libc>-<architecture>.tar.gz`, for example
@@ -89,7 +91,7 @@ native SDK's versioned `libmpq.dylib` symlinks instead of `libmpq.so`. The dylib
 uses an `@rpath` install ID, ad-hoc signing, system codec dependencies, and the
 native SDK's macOS 11.0 deployment target, recorded in `BUILDINFO`. Applications
 must provide a runtime search path to the extracted `lib` directory, for example
-through `DYLD_LIBRARY_PATH`. No Windows D binary packages are published.
+through `DYLD_LIBRARY_PATH`.
 
 DMD generates and tests native arm64 package artifacts on Apple Silicon; the
 DMD compiler executable supplied by the current toolchain may itself run through
@@ -100,10 +102,22 @@ likewise need a compiler launcher adding `-marm64`, passed via `dub --compiler`,
 so DUB selects `osx-aarch64-dmd` metadata. The x86_64 suffix is
 `osx-x86_64-<compiler>`; LDC arm64 uses `osx-aarch64-ldc`.
 
+Windows archives are `libmpq-d-X.Y.Z-dmd-windows-x86_64.zip` and
+`libmpq-d-X.Y.Z-ldc-windows-x86_64.zip`. Each contains a single
+`libmpq-d-X.Y.Z/` directory, using the MSVC x64 native SDK. Its `lib/`
+directory contains the compiler-specific `libmpq-dmd.lib` or `libmpq-ldc.lib`
+and the MSVC import library `libmpq.lib`. The `bin/` directory contains
+`libmpq.dll` and its required non-system runtime DLLs, with their licenses
+under `licenses/`. Add the extracted `bin/` directory to `PATH` when running
+applications. DUB selects the precompiled library through
+`windows-x86_64-<compiler>` metadata. Both compilers are tested using an
+extracted-package consumer with no vcpkg or native build directories on
+the runtime `PATH`. Windows ARM64 D packages are not provided.
+
 Packaging requires explicit `LIBMPQ_D_OS` and `LIBMPQ_D_ARCHITECTURE` values:
-`linux` with `x86_64`/`aarch64`, or `macos` with `x86_64`/`arm64`, matching the
-native host. ELF/Mach-O checks validate the native shared library, every D
-archive member, and the extracted consumer. macOS consumers execute with the
+`linux` with `x86_64`/`aarch64`, `macos` with `x86_64`/`arm64`, or `windows`
+with `x86_64`, matching the native host. ELF/Mach-O/PE checks validate the native
+shared library, every D archive member, and the extracted consumer. macOS consumers execute with the
 requested native architecture and verify that the extracted dylib is loaded.
 
 ## Example

@@ -276,6 +276,83 @@ jobs:
           path: release/libmpq-d-*-macos-${{ matrix.architecture }}.tar.gz
           if-no-files-found: error
 
+  binary-windows:
+    name: Build D ${{ matrix.compiler }} Windows x86_64 package
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: dmd
+            dc: dmd
+            runner: windows-latest
+          - compiler: ldc
+            dc: ldc2
+            runner: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Install native MSVC dependencies
+        run: |
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ine 'X64') { throw 'Native runner architecture mismatch' }
+          & "${env:VCPKG_INSTALLATION_ROOT}/vcpkg.exe" install zlib:x64-windows bzip2:x64-windows liblzma:x64-windows
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+      - name: Build, test, install, and package Windows D binding
+        env:
+          LIBMPQ_D_OS: windows
+          LIBMPQ_D_ARCHITECTURE: x86_64
+          LIBMPQ_D_COMPILER_NAME: ${{ matrix.compiler }}
+          LIBMPQ_D_DUB_COMPILER: ${{ matrix.dc }}
+          LIBMPQ_D_VERSION: ${{ needs.prepare.outputs.package_version }}
+          DC: ${{ matrix.dc }}
+        run: |
+          ${vswhere} = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          ${vs} = & ${vswhere} -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          Import-Module "${vs}/Common7/Tools/Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath "${vs}" -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          foreach (${tool} in 'cl.exe', 'link.exe', 'lib.exe', 'dumpbin.exe') {
+            ${resolved} = (Get-Command ${tool} -ErrorAction Stop).Source
+            if (-not ${resolved}.StartsWith(${vs}, [StringComparison]::OrdinalIgnoreCase)) { throw "Unexpected MSVC tool: ${resolved}" }
+          }
+          ${env:LINKCMD64} = (Get-Command link.exe).Source
+          ${env:LIBMPQ_D_MSVC_BIN} = Split-Path (Get-Command cl.exe).Source
+          & ${env:DC} --version
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          dub --version
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          cmake -S . -B build -A x64 -DVCPKG_TARGET_TRIPLET=x64-windows -DBUILD_SHARED_LIBS=ON "-DCMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          cmake --build build --config Release --parallel
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          ctest --test-dir build -C Release --output-on-failure
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          ${name} = "libmpq-${env:LIBMPQ_D_VERSION}-windows-msvc-x64"
+          ${stage} = "${env:GITHUB_WORKSPACE}/release/${name}"
+          if (Test-Path ${stage}) { throw 'Staging directory already exists' }
+          cmake --install build --config Release --prefix "${stage}"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          ${bash} = "${env:ProgramFiles}/Git/bin/bash.exe"
+          ${env:PATH} = "${env:ProgramFiles}/7-Zip;${env:PATH}"
+          & ${bash} scripts/package-windows.sh prepare --toolchain msvc --architecture x64 --stage "${stage}" --runtime "${env:VCPKG_INSTALLATION_ROOT}/installed/x64-windows" --output "${env:RUNNER_TEMP}/${name}.zip" --version "${env:LIBMPQ_D_VERSION}"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          & ${bash} scripts/build-d-binary-package.sh
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-d-${{ matrix.compiler }}-windows-x86_64-package
+          path: release/libmpq-d-*-windows-x86_64.zip
+          if-no-files-found: error
+
   source:
     name: Build D source package
     needs: prepare
@@ -309,7 +386,7 @@ jobs:
   package:
     if: inputs.assemble_release
     name: Package D release
-    needs: [prepare, binary-glibc, binary-musl, binary-macos, source]
+    needs: [prepare, binary-glibc, binary-musl, binary-macos, binary-windows, source]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -327,7 +404,7 @@ jobs:
           set -euxo pipefail
           package_name="libmpq-d-${LIBMPQ_D_VERSION}"
           mkdir -p release/package
-          mapfile -t packages < <(find release/packages -type f -name "${package_name}-*.tar.gz" -printf '%f\n' | sort)
+          mapfile -t packages < <(find release/packages -type f \( -name "${package_name}-*.tar.gz" -o -name "${package_name}-*.zip" \) -printf '%f\n' | sort)
           expected=("${package_name}-source.tar.gz")
           for libc in glibc musl; do
             for target in dmd:x86_64 ldc:x86_64 ldc:aarch64; do
@@ -335,6 +412,7 @@ jobs:
             done
           done
           for compiler in dmd ldc; do
+            expected+=("${package_name}-${compiler}-windows-x86_64.zip")
             for architecture in x86_64 arm64; do
               expected+=("${package_name}-${compiler}-macos-${architecture}.tar.gz")
             done

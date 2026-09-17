@@ -392,9 +392,22 @@ run with the requested native architecture, check the version, and trace loading
 of the packaged dylib. Compiler versions remain selected by
 `dlang-community/setup-dlang@v2` and recorded in each package's `BUILDINFO`.
 
+Windows adds `libmpq-d-X.Y.Z-<compiler>-windows-x86_64.zip` for DMD and LDC
+on `windows-latest`. The existing MSVC x64 CMake/vcpkg shared build runs CTest
+before installation. The Windows SDK helper supplies recursive runtime DLL
+discovery, architecture validation, and dependency licenses. Each D package
+contains `bin/libmpq.dll` and its non-system dependencies, `lib/libmpq.lib`,
+and the precompiled `lib/libmpq-<compiler>.lib` in MS-COFF format.
+DUB's `windows-x86_64-<compiler>` configuration selects both packaged libraries.
+PE/COFF checks require x64 for every DLL, library object, and consumer.
+The extracted-package consumer executes with only package and Windows system
+directories on `PATH`, excluding vcpkg and native build paths. `BUILDINFO`
+records the compiler version, Windows architecture, MSVC native toolchain,
+and `x64-windows` triplet, without libc or macOS fields. Windows ARM64 D
+packages remain out of scope.
+
 The D release ZIP requires the exact set of six Linux binary packages, four
-macOS binary packages, and one source package. Windows D packages remain outside
-the release matrix.
+macOS binary packages, two Windows binary packages, and one source package.
 
 See [`bindings/d/README.md`](bindings/d/README.md) for DUB usage, compiler
 requirements, binary package details, and examples.
@@ -551,7 +564,8 @@ release packaging and Maven Central validation share one package build and
 consumer-validation script.
 
 D `validate` may run from a branch or tag and validates the complete D release
-package set: source, DMD/glibc, DMD/musl, LDC/glibc, and LDC/musl. It performs
+package set: source and the compiler-specific Linux, macOS, and Windows
+packages described above. It performs
 no registry activity. D `release` requires an exact `v*` tag where the tag,
 native project, and DUB versions agree; code.dlang.org independently discovers
 that tag, and the workflow waits until the exact package version appears. It

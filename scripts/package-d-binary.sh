@@ -16,6 +16,10 @@ set -euo pipefail
 : "${DC:?DC is required}"
 : "${LIBMPQ_D_ARCHITECTURE:?LIBMPQ_D_ARCHITECTURE is required}"
 
+archive_extension=tar.gz
+d_library_extension=a
+dub_options=()
+interface_options=()
 case "${LIBMPQ_D_OS}:${LIBMPQ_D_ARCHITECTURE}:$(uname -s)" in
 	linux:x86_64:Linux|linux:aarch64:Linux)
 	: "${LIBMPQ_D_LIBC:?LIBMPQ_D_LIBC is required}"
@@ -32,6 +36,15 @@ case "${LIBMPQ_D_OS}:${LIBMPQ_D_ARCHITECTURE}:$(uname -s)" in
 	dub_arch="${LIBMPQ_D_ARCHITECTURE}"
 	[[ "${dub_arch}" != arm64 ]] || dub_arch=aarch64
 	;;
+	windows:x86_64:MINGW64_NT-*|windows:x86_64:MSYS_NT-*)
+	package_platform=windows-x86_64
+	dub_os=windows
+	dub_arch=x86_64
+	archive_extension=zip
+	d_library_extension=lib
+	dub_options=(--arch=x86_64)
+	interface_options=(-m64)
+	;;
 	*) echo "Unsupported D package platform or host: ${LIBMPQ_D_OS}/${LIBMPQ_D_ARCHITECTURE}/$(uname -s)" >&2; exit 1 ;;
 esac
 if [[ "$(uname -m)" != "${LIBMPQ_D_ARCHITECTURE}" ]]; then
@@ -43,6 +56,25 @@ fi
 # Inspect every member, while using ELF headers for libraries and executables.
 validate_architecture() {
 	local machines machine expected
+	if [[ "${LIBMPQ_D_OS}" == windows ]]; then
+
+		# Keep the SDK's dumpbin machine parsing, including import-library
+		# headers. A COFF archive must have x64 objects in every member.
+		machines="$(MSYS2_ARG_CONV_EXCL='*' MSYS_NO_PATHCONV=1 \
+			dumpbin.exe /nologo /headers "$(cygpath -aw "$1")" | tr -d '\r' |
+			sed -nE \
+				-e 's/^[[:space:]]*([[:xdigit:]]+)[[:space:]]+machine[[:space:]]+\([^)]*\).*/\1/p' \
+				-e 's/^[[:space:]]*Machine[[:space:]]*:[[:space:]]*([[:xdigit:]]+).*/\1/p')"
+		test -n "${machines}" || {
+			echo "No PE/COFF machine headers found in $1" >&2; exit 1;
+		}
+		while IFS= read -r machine; do
+			[[ "${machine^^}" == 8664 ]] || {
+				echo "Unexpected PE/COFF machine in $1: ${machine}; expected 8664" >&2; exit 1;
+			}
+		done <<<"${machines}"
+		return
+	fi
 	if [[ "${LIBMPQ_D_OS}" == macos ]]; then
 		test "$(lipo -archs "$1")" = "${LIBMPQ_D_ARCHITECTURE}" || {
 			echo "Unexpected or universal Mach-O architecture in $1" >&2; exit 1;
@@ -99,25 +131,31 @@ readonly package_name="libmpq-d-${LIBMPQ_D_VERSION}"
 readonly package_dir="release/${package_name}"
 readonly interface_dir="release/interfaces"
 readonly object_dir="release/objects"
-readonly archive_name="${package_name}-${LIBMPQ_D_COMPILER_NAME}-${package_platform}.tar.gz"
+readonly archive_name="${package_name}-${LIBMPQ_D_COMPILER_NAME}-${package_platform}.${archive_extension}"
 readonly dub_platform="${dub_os}-${dub_arch}-${LIBMPQ_D_COMPILER_NAME}"
+readonly packaged_d_library="libmpq-${LIBMPQ_D_COMPILER_NAME}.${d_library_extension}"
 
 if [[ "${LIBMPQ_D_OS}" == macos ]]; then
 	dub describe --compiler="${LIBMPQ_D_DUB_COMPILER}" |
 		jq -e --arg arch "${dub_arch}" \
 			'(.platform | index("osx")) != null and .architecture == [$arch]'
 fi
+if [[ "${LIBMPQ_D_OS}" == windows ]]; then
+	dub describe "${dub_options[@]}" --compiler="${LIBMPQ_D_DUB_COMPILER}" |
+		jq -e --arg compiler "${LIBMPQ_D_COMPILER_NAME}" \
+			'(.platform | index("windows")) != null and .architecture == ["x86_64"] and .compiler == $compiler'
+fi
 
 mkdir -p "${package_dir}/source/libmpq" "${package_dir}/tests" \
 	"${package_dir}/lib" "${interface_dir}" "${object_dir}"
 
-"${DC}" -H -Hd="${interface_dir}" -od="${object_dir}" -c \
+"${DC}" "${interface_options[@]}" -H -Hd="${interface_dir}" -od="${object_dir}" -c \
 	bindings/d/source/libmpq/*.d
 cp "${interface_dir}"/*.di "${package_dir}/source/libmpq/"
 cp bindings/d/tests/main.d "${package_dir}/tests/"
 cp bindings/d/README.md COPYING COPYING.LESSER "${package_dir}/"
 
-compiler_version="$(${DC} --version | sed -n '1p')"
+compiler_version="$(${DC} --version | tr -d '\r' | sed -n '1p')"
 case "${LIBMPQ_D_COMPILER_NAME}" in
 	dmd)
 	toolchain_version="$(${DC} --version |
@@ -139,6 +177,8 @@ dub convert --recipe=dub.sdl --format=json --stdout |
 	jq --arg version "${LIBMPQ_D_VERSION}" \
 		--arg compiler "${LIBMPQ_D_COMPILER_NAME}" \
 		--arg platform "${dub_platform}" \
+		--arg os "${LIBMPQ_D_OS}" \
+		--arg library "${packaged_d_library}" \
 		--arg toolchain_version "${toolchain_version}" '
 		.version = $version
 		| .targetType = "sourceLibrary"
@@ -146,9 +186,14 @@ dub convert --recipe=dub.sdl --format=json --stdout |
 		| .importPaths = ["source"]
 		| .sourceFiles = []
 		| .["sourceFiles-" + $platform] = [
-			("lib/libmpq-" + $compiler + ".a")
+			("lib/" + $library)
 		  ]
 		| .["lflags-" + $platform] = ["-L$PACKAGE_DIR/lib"]
+		| if $os == "windows" then
+			.libs = [] | del(.["libs-windows"])
+			| .["sourceFiles-" + $platform] += ["lib/libmpq.lib"]
+			| .["lflags-" + $platform] = []
+		  else . end
 		| .toolchainRequirements =
 			if $compiler == "dmd" then
 				{dmd: ("==" + $toolchain_version), ldc: "no", gdc: "no"}
@@ -158,10 +203,14 @@ dub convert --recipe=dub.sdl --format=json --stdout |
 		| del(.configurations)
 	' > "${package_dir}/dub.json"
 
-d_library="$(find . -maxdepth 1 -type f \
-	\( -name 'liblibmpq.a' -o -name 'libmpq.a' \) -print -quit)"
+if [[ "${LIBMPQ_D_OS}" == windows ]]; then
+	d_library=mpq.lib
+else
+	d_library="$(find . -maxdepth 1 -type f \
+		\( -name 'liblibmpq.a' -o -name 'libmpq.a' \) -print -quit)"
+fi
 test -s "${d_library}"
-cp "${d_library}" "${package_dir}/lib/libmpq-${LIBMPQ_D_COMPILER_NAME}.a"
+cp "${d_library}" "${package_dir}/lib/${packaged_d_library}"
 if [[ "${LIBMPQ_D_OS}" == linux ]]; then
 	test -s src/.libs/libmpq.so
 	cp -a src/.libs/libmpq.so* "${package_dir}/lib/"
@@ -191,7 +240,7 @@ if [[ "${LIBMPQ_D_OS}" == linux ]]; then
 		exit 1
 		;;
 	esac
-else
+elif [[ "${LIBMPQ_D_OS}" == macos ]]; then
 	native_sdk="release/libmpq-${LIBMPQ_D_VERSION}-macos-${LIBMPQ_D_ARCHITECTURE}"
 	cp -a "${native_sdk}/lib/"libmpq*.dylib "${package_dir}/lib/"
 	shared_library="${package_dir}/lib/libmpq.dylib"
@@ -205,8 +254,15 @@ else
 	# The native SDK has already validated system dependencies, LC_RPATH,
 	# the actual deployment target, and signatures before copying these files.
 	grep -Fx "macos_deployment_target=${MACOSX_DEPLOYMENT_TARGET}" "${native_sdk}/BUILDINFO"
+else
+	native_sdk="release/libmpq-${LIBMPQ_D_VERSION}-windows-msvc-x64"
+	cp -a "${native_sdk}/bin" "${native_sdk}/licenses" "${package_dir}/"
+	cp "${native_sdk}/lib/libmpq.lib" "${package_dir}/lib/"
+	for binary in "${package_dir}/bin/"*.dll "${package_dir}/lib/libmpq.lib" libmpq.exe; do
+		validate_architecture "${binary}"
+	done
 fi
-validate_architecture "${package_dir}/lib/libmpq-${LIBMPQ_D_COMPILER_NAME}.a"
+validate_architecture "${package_dir}/lib/${packaged_d_library}"
 {
 	echo "libmpq_version=${LIBMPQ_D_VERSION}"
 	echo "compiler=${LIBMPQ_D_COMPILER_NAME}"
@@ -218,13 +274,24 @@ validate_architecture "${package_dir}/lib/libmpq-${LIBMPQ_D_COMPILER_NAME}.a"
 		echo "libc_build_version=${libc_build_version}"
 		echo "build_environment=${build_environment}"
 		echo "glibc_max_required_symbol=${glibc_max_required_symbol}"
-	else
+	elif [[ "${LIBMPQ_D_OS}" == macos ]]; then
 		echo "macos_deployment_target=${MACOSX_DEPLOYMENT_TARGET}"
 		echo "dylib_id=${dylib_id}"
+	else
+		echo 'native_toolchain=msvc'
+		echo 'vcpkg_triplet=x64-windows'
 	fi
 } > "${package_dir}/BUILDINFO"
 
-tar -czf "release/${archive_name}" -C release "${package_name}"
+if [[ "${LIBMPQ_D_OS}" == windows ]]; then
+	archive_path="$(cygpath -aw "release/${archive_name}")"
+	test ! -e "release/${archive_name}"
+	(cd release && MSYS2_ARG_CONV_EXCL='*' MSYS_NO_PATHCONV=1 \
+		7z.exe a -tzip "${archive_path}" "${package_name}")
+	MSYS2_ARG_CONV_EXCL='*' MSYS_NO_PATHCONV=1 7z.exe t "${archive_path}"
+else
+	tar -czf "release/${archive_name}" -C release "${package_name}"
+fi
 
 # Prove that a consumer selects the precompiled D archive and the bundled
 # native library without source-tree linker paths.
@@ -232,7 +299,12 @@ extracted="$(mktemp -d)"
 if [[ "${LIBMPQ_D_OS}" == macos ]]; then
 	extracted="$(cd "${extracted}" && pwd -P)"
 fi
-tar -xzf "release/${archive_name}" -C "${extracted}"
+if [[ "${LIBMPQ_D_OS}" == windows ]]; then
+	MSYS2_ARG_CONV_EXCL='*' MSYS_NO_PATHCONV=1 \
+		7z.exe x "${archive_path}" "-o$(cygpath -aw "${extracted}")"
+else
+	tar -xzf "release/${archive_name}" -C "${extracted}"
+fi
 consumer="${extracted}/consumer"
 mkdir -p "${consumer}/source"
 cat > "${consumer}/dub.sdl" <<EOF
@@ -248,10 +320,21 @@ void main() { writeln(Mpq.version_()); }
 EOF
 consumer_dub_home="$(mktemp -d)"
 trap 'rm -rf "${extracted}" "${consumer_dub_home}"' EXIT
-describe="$(DUB_HOME="${consumer_dub_home}" \
-	dub describe --root="${consumer}" --compiler="${LIBMPQ_D_DUB_COMPILER}" \
+consumer_root="${consumer}"
+consumer_dub_path="${consumer_dub_home}"
+if [[ "${LIBMPQ_D_OS}" == windows ]]; then
+	consumer_root="$(cygpath -am "${consumer}")"
+	consumer_dub_path="$(cygpath -am "${consumer_dub_home}")"
+fi
+describe="$(DUB_HOME="${consumer_dub_path}" \
+	dub describe --root="${consumer_root}" --compiler="${LIBMPQ_D_DUB_COMPILER}" \
+		"${dub_options[@]}" \
 		--data=source-files,linker-files --data-list)"
-grep -F "libmpq-${LIBMPQ_D_COMPILER_NAME}.a" <<<"${describe}"
+if [[ "${LIBMPQ_D_OS}" == windows ]]; then
+	describe="$(tr '\\' '/' <<<"${describe}")"
+	grep -F 'lib/libmpq.lib' <<<"${describe}"
+fi
+grep -F "${packaged_d_library}" <<<"${describe}"
 if grep -F 'source/libmpq/mpq.d' <<<"${describe}"; then
 	echo 'The binary package unexpectedly compiles D source.' >&2
 	exit 1
@@ -266,7 +349,7 @@ if [[ "${LIBMPQ_D_OS}" == linux ]]; then
 	test "$(LD_LIBRARY_PATH="${extracted}/${package_name}/lib" "${consumer_binary}")" = "${LIBMPQ_D_VERSION}"
 	LD_LIBRARY_PATH="${extracted}/${package_name}/lib" ldd "${consumer_binary}" |
 		grep -F "${extracted}/${package_name}/lib/${soname}"
-else
+elif [[ "${LIBMPQ_D_OS}" == macos ]]; then
 	# Only the extracted package may satisfy the libmpq runtime dependency.
 	unset LIBRARY_PATH LD_LIBRARY_PATH DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH
 	DUB_HOME="${consumer_dub_home}" \
@@ -283,4 +366,16 @@ else
 		-e DYLD_PRINT_LIBRARIES=1 "${consumer_binary}" \
 		2> "${consumer}/loaded-libraries")" = "${LIBMPQ_D_VERSION}"
 	grep -F "${extracted}/${package_name}/lib/libmpq" "${consumer}/loaded-libraries"
+else
+	# Do not let the build helper's SDK import-library path satisfy this link.
+	export LIB="${LIBMPQ_D_SYSTEM_LIB:?Original MSVC LIB is required}"
+	DUB_HOME="${consumer_dub_path}" \
+		dub build --root="${consumer_root}" "${dub_options[@]}" --compiler="${LIBMPQ_D_DUB_COMPILER}"
+	consumer_binary="${consumer}/libmpq-consumer.exe"
+	validate_architecture "${consumer_binary}"
+	system_root="$(cygpath -au "${SystemRoot:-${SYSTEMROOT:?SystemRoot is required}}")"
+	version="$(cd "${consumer}" && \
+		PATH="${extracted}/${package_name}/bin:${system_root}/System32:${system_root}" \
+		./libmpq-consumer.exe)"
+	test "${version%$'\r'}" = "${LIBMPQ_D_VERSION}"
 fi
