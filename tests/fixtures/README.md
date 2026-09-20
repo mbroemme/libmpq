@@ -1,5 +1,36 @@
 # MPQ regression fixtures
 
+The shared RSA-512 test key pair lives in `tests/test-mpq-helper.h`. The
+signature test keeps its independently computed MD5 DigestInfo block and RSA
+known answer local to its translation unit. The vectors were calculated with
+Python `hashlib.md5` and `pow(message, d, n)` and run unchanged on every
+architecture. The Python binding test also independently checks the generated
+archive digest and RSA result. These are not Blizzard keys or a third-party
+interoperability archive. Never use the test private key for real signing.
+
+All four feature fixtures contain a weak `(signature)` generated through
+`libmpq__archive_sign`. The uncompressed, unencrypted 72-byte entry has an
+eight-byte zero prefix and a 64-byte little-endian RSA signature. Its
+attributes row is zero. These are standard MPQ signatures, not Warcraft III
+`HM3W` map-header signatures.
+
+To refresh the fixtures, build in a disposable source copy, then run there:
+
+```sh
+make -C tests test-fixtures
+./tests/test-fixtures --refresh
+```
+
+With CMake, run the built `test-fixtures --refresh` executable instead.
+The refresh mode reads the canonical lossless text payloads and storage options, recreates
+the original WAVE samples from the formula below, and writes both versions
+using the public writer. Private attribute serialization retains the fixture's
+explicit sector-CRC storage without changing production writer defaults.
+It signs with the project test key before MPQE encryption with the existing
+test authentication code.
+Running it again produces identical bytes. Archive/listfile hashes in
+`test-mpq-fixtures.c` pin the result; regular-file hashes remain unchanged.
+
 `mpq-v1-features.mpq` and `mpq-v2-features.mpq` are deterministic archives
 created with libmpq. They share the feature descriptions and payloads, with
 an additional LZMA member in the v2 archive.

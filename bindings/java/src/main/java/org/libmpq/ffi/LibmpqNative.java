@@ -99,6 +99,9 @@ public final class LibmpqNative {
     private static final MethodHandle FILE_NUMBER_FROM_HASH;
     private static final MethodHandle FILE_READ;
     private static final MethodHandle FILE_VERIFY;
+    private static final MethodHandle ARCHIVE_SIGNATURES;
+    private static final MethodHandle ARCHIVE_VERIFY;
+    private static final MethodHandle ARCHIVE_SIGN;
     private static final MethodHandle BLOCK_VERIFY;
     private static final MethodHandle BLOCK_SIZE_UNPACKED;
     private static final MethodHandle BLOCK_SIZE_PACKED;
@@ -109,6 +112,12 @@ public final class LibmpqNative {
         SymbolLookup lookup = loadLibrary();
         Linker linker = LINKER;
         ARCHIVE_ATTRIBUTES = uintMetadata(linker, lookup, "libmpq__archive_attributes");
+        ARCHIVE_SIGNATURES = uintMetadata(linker, lookup, "libmpq__archive_signatures");
+        ARCHIVE_VERIFY = function(linker, lookup, "libmpq__archive_verify",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS,
+                                  C_SIZE_T, ValueLayout.ADDRESS));
+        ARCHIVE_SIGN = function(linker, lookup, "libmpq__archive_sign",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS, C_SIZE_T));
         FILE_ATTRIBUTES = function(linker, lookup, "libmpq__file_attributes",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS));
         FILE_VERIFY = function(linker, lookup, "libmpq__file_verify",
@@ -347,6 +356,19 @@ public final class LibmpqNative {
     /** Query attributes presence flags without treating missing metadata as zero flags. */
     public static int archiveAttributes(MemorySegment archive, MemorySegment flags) {
         return callInt(ARCHIVE_ATTRIBUTES, archive, flags);
+    }
+
+    public static int archiveSignatures(MemorySegment archive, MemorySegment flags) {
+        return callInt(ARCHIVE_SIGNATURES, archive, flags);
+    }
+
+    public static int archiveVerify(MemorySegment archive, int flags, MemorySegment key,
+                                    long size, MemorySegment mismatches) {
+        return callInt(ARCHIVE_VERIFY, archive, flags, key, nativeSizeT(size), mismatches);
+    }
+
+    public static int archiveSign(MemorySegment archive, int flags, MemorySegment key, long size) {
+        return callInt(ARCHIVE_SIGN, archive, flags, key, nativeSizeT(size));
     }
 
     /** Read a native aligned attributes result for one public file number. */

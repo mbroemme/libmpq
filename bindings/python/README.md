@@ -1,5 +1,14 @@
 # libmpq Python bindings
 
+Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
+Use `Writer.sign(privateKey)` before writer close, and
+`Archive.signatures()` / `Archive.verify(publicKey)` on reopened archives.
+Verification returns mismatch bits; malformed keys/archives raise normal binding
+errors. Keys are exactly 128 bytes: 64-byte big-endian modulus followed by a
+64-byte big-endian exponent. Signing supports v1 and v2; no keys are built
+in. MD5/RSA-512 is legacy compatibility, not modern authenticity protection.
+See [the format guide](../../MPQ.md) for details.
+
 The `mpq` module provides Python 3.11+ ctypes bindings for libmpq, with
 explicit archive and reader lifecycle management, typed native errors,
 archive creation, cloning, metadata, block access, compression, encryption,

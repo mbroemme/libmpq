@@ -36,6 +36,7 @@ public final class Mpq {
     public static final int VERIFY_FILE_MD5 = 0x4;
     /** Request all implemented file checksum comparisons. */
     public static final int VERIFY_ALL = VERIFY_SECTOR_CRC | VERIFY_FILE_CRC32 | VERIFY_FILE_MD5;
+    public static final int SIGNATURE_WEAK = 0x00000001;
     /** Native failure while opening or creating a file. */
     public static final int ERROR_OPEN = -1;
     /** Native failure while closing a file or archive. */

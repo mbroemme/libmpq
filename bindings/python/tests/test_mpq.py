@@ -28,6 +28,35 @@ SPARSE_TEXT = "This text uses SPARSE compression and decompression.\n" * 16
 SPARSE_BYTES = b"\xff\xfe\x00\x00" + SPARSE_TEXT.encode("utf-32-le")
 
 
+def test_weak_signature(tmp_path):
+    """Test-only RSA key, round trip, and independent integer verification."""
+    public = bytes.fromhex("a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001")
+    private = bytes.fromhex("a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a748315364c0c92a1a284b2ae77d5d49adea3bad7bafa639710661d443c0ad882f6c8d6787affd7f68145217cde42cf4dc2acb0ca2aeca535baf894084e590d719")
+    path = tmp_path / "signed.mpq"
+    with mpq.Writer(path, max_files=8, flags=mpq.ARCHIVE_CREATE_LISTFILE,
+                    attributes=mpq.ATTRIBUTE_MD5 | mpq.ATTRIBUTE_CRC32) as writer:
+        writer.sign(private)
+        writer.add("payload", b"signature binding test")
+    with mpq.Archive(path) as archive:
+        assert archive.signatures() == mpq.SIGNATURE_WEAK
+        assert archive.verify(public) == 0
+        with pytest.raises(mpq.LibmpqError):
+            archive.verify(public[:-1])
+        offset = archive["(signature)"].offset
+    data = bytearray(path.read_bytes())
+    signature = int.from_bytes(data[offset + 8:offset + 72], "little")
+    data[offset:offset + 72] = bytes(72)
+    digest = hashlib.md5(data).digest()
+    expected = b"\0\1" + b"\xff" * 27 + b"\0" + bytes.fromhex("3020300c06082a864886f70d020505000410") + digest
+    assert pow(signature, int.from_bytes(public[64:], "big"),
+               int.from_bytes(public[:64], "big")).to_bytes(64, "big") == expected
+    data = bytearray(path.read_bytes())
+    data[offset + 8] ^= 1
+    path.write_bytes(data)
+    with mpq.Archive(path) as archive:
+        assert archive.verify(public) == mpq.SIGNATURE_WEAK
+
+
 @pytest.mark.parametrize("layout,size,fields", [
     (mpq.ArchiveCreateOptions, 20, [
         ("version", 0, 4), ("max_files", 4, 4), ("sector_size", 8, 4),

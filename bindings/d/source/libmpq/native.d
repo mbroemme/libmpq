@@ -132,6 +132,8 @@ enum VERIFY_SECTOR_CRC = 0x1u;
 enum VERIFY_FILE_CRC32 = 0x2u;
 enum VERIFY_FILE_MD5 = 0x4u;
 enum VERIFY_ALL = VERIFY_SECTOR_CRC | VERIFY_FILE_CRC32 | VERIFY_FILE_MD5;
+enum SIGNATURE_WEAK = 0x00000001u;
+alias LIBMPQ_SIGNATURE_WEAK = SIGNATURE_WEAK;
 alias LIBMPQ_VERIFY_SECTOR_CRC = VERIFY_SECTOR_CRC;
 alias LIBMPQ_VERIFY_FILE_CRC32 = VERIFY_FILE_CRC32;
 alias LIBMPQ_VERIFY_FILE_MD5 = VERIFY_FILE_MD5;
@@ -190,6 +192,11 @@ extern(C) {
 
     /** Optional metadata queries and explicit writer FILETIME. */
     int libmpq__archive_attributes(mpq_archive_s* archive, uint* flags);
+    int libmpq__archive_signatures(mpq_archive_s* archive, uint* signatures);
+    int libmpq__archive_verify(mpq_archive_s* archive, uint flags,
+                               const(ubyte)* key, size_t keySize, uint* mismatches);
+    int libmpq__archive_sign(mpq_archive_s* archive, uint type,
+                             const(ubyte)* key, size_t keySize);
     int libmpq__file_attributes(mpq_archive_s* archive, uint number, mpq_file_attributes_s* attributes);
     int libmpq__file_verify(mpq_archive_s* archive, uint number, uint flags, uint* mismatches);
     int libmpq__block_verify(mpq_archive_s* archive, uint number, uint block,

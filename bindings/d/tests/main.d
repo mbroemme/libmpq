@@ -42,6 +42,17 @@ private string temporaryArchive(string suffix) {
 }
 
 private void testVersionAndErrors() {
+    const(ubyte)[] publicKey = cast(const(ubyte)[]) x"a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001";
+    const(ubyte)[] privateKey = cast(const(ubyte)[]) x"a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a748315364c0c92a1a284b2ae77d5d49adea3bad7bafa639710661d443c0ad882f6c8d6787affd7f68145217cde42cf4dc2acb0ca2aeca535baf894084e590d719";
+    auto signaturePath = temporaryArchive("signature");
+    scope(exit) remove(signaturePath);
+    auto signedArchive = Archive.create(signaturePath, ArchiveCreateOptions.v1());
+    signedArchive.sign(privateKey);
+    signedArchive.close();
+    auto verifiedArchive = new Archive(signaturePath);
+    scope(exit) verifiedArchive.close();
+    assert(verifiedArchive.signatures() == SIGNATURE_WEAK);
+    assert(verifiedArchive.verify(publicKey) == 0);
     static assert(mpq_archive_create_options_s.sizeof == 20);
     assert(Mpq.version_().length > 0);
     assert(Mpq.strerror(ERROR_OPEN).length > 0);

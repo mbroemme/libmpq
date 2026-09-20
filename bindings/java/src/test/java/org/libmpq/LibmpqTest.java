@@ -46,6 +46,24 @@ class LibmpqTest {
         assertTrue(Mpq.strerror(Mpq.ERROR_FORMAT).contains("format"));
     }
 
+    @Test
+    void weakSignatureRoundTrip() throws Exception {
+        byte[] publicKey = java.util.HexFormat.of().parseHex("a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001");
+        byte[] privateKey = java.util.HexFormat.of().parseHex("a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a748315364c0c92a1a284b2ae77d5d49adea3bad7bafa639710661d443c0ad882f6c8d6787affd7f68145217cde42cf4dc2acb0ca2aeca535baf894084e590d719");
+        Path path = java.nio.file.Files.createTempFile("libmpq-signature", ".mpq");
+        try {
+            try (Archive archive = Archive.create(path, ArchiveCreateOptions.v1())) {
+                archive.sign(privateKey);
+            }
+            try (Archive archive = Archive.open(path)) {
+                assertEquals(Mpq.SIGNATURE_WEAK, archive.signatures());
+                assertEquals(0, archive.verify(publicKey));
+            }
+        } finally {
+            java.nio.file.Files.deleteIfExists(path);
+        }
+    }
+
     /** Ensures Java's native struct layouts match the C ABI sizes. */
     @Test
     void preservesNativeStructLayouts() {

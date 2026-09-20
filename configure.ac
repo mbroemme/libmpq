@@ -1,6 +1,6 @@
 # Initialize the Autoconf package metadata.
 AC_INIT([libmpq],[0.8.0],[mbroemme@libmpq.org],[libmpq])
-AC_SUBST(LIBMPQ_ABI, [4:0:0])
+AC_SUBST(LIBMPQ_ABI, [5:0:1])
 
 # Detect the canonical host and target build environments.
 AC_CANONICAL_TARGET

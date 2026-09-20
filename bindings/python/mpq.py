@@ -43,6 +43,7 @@ VERIFY_SECTOR_CRC = 0x01
 VERIFY_FILE_CRC32 = 0x02
 VERIFY_FILE_MD5 = 0x04
 VERIFY_ALL = VERIFY_SECTOR_CRC | VERIFY_FILE_CRC32 | VERIFY_FILE_MD5
+SIGNATURE_WEAK = 0x01
 COMPRESSION_POLICY_STANDARD = 0
 COMPRESSION_POLICY_EXTENDED = 1
 FILE_FLAG_IMPLODE = 0x00000100
@@ -235,6 +236,10 @@ _configure("libmpq__archive_add_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_
 _configure("libmpq__archive_clone", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), _VOID_PTR)
 _configure("libmpq__archive_close", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__archive_attributes", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
+_configure("libmpq__archive_signatures", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
+_configure("libmpq__archive_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR,
+           ctypes.c_size_t, ctypes.POINTER(ctypes.c_uint32))
+_configure("libmpq__archive_sign", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR, ctypes.c_size_t)
 _configure("libmpq__file_attributes", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_FileAttributes))
 _configure("libmpq__file_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__block_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32))
@@ -450,6 +455,16 @@ class Writer:
         options, data = options or FileCreateOptions.raw(), bytes(data)
         pointer = None if not data else (ctypes.c_uint8 * len(data)).from_buffer_copy(data)
         return libmpq.libmpq__archive_add_data(self._mpq, _as_bytes(name), pointer, len(data), ctypes.byref(options))
+
+    def sign(self, private_key):
+        """Configure weak signing at close, using a 128-byte key: 64-byte big-endian n then d."""
+        self._ensure_open()
+        key = bytes(private_key)
+        pointer = (ctypes.c_uint8 * len(key)).from_buffer_copy(key)
+        try:
+            libmpq.libmpq__archive_sign(self._mpq, SIGNATURE_WEAK, pointer, len(key))
+        finally:
+            ctypes.memset(pointer, 0, len(key))
 
     def begin(self, name, size, options=None):
         """Begin a fixed-size streaming entry."""
@@ -760,6 +775,19 @@ class Archive:
             return _read_value(libmpq.libmpq__archive_attributes, ctypes.c_uint32, self._mpq)
         except LibmpqNotFoundError:
             return None
+
+    def signatures(self):
+        """Return signature type bits; malformed internal files raise."""
+        self._ensure_open()
+        return _read_value(libmpq.libmpq__archive_signatures, ctypes.c_uint32, self._mpq)
+
+    def verify(self, public_key):
+        """Return mismatch bits using a 128-byte key: 64-byte big-endian n then e."""
+        self._ensure_open()
+        key = bytes(public_key)
+        pointer = (ctypes.c_uint8 * len(key)).from_buffer_copy(key)
+        return _read_value(libmpq.libmpq__archive_verify, ctypes.c_uint32,
+                           self._mpq, SIGNATURE_WEAK, pointer, len(key))
 
     def _load_metadata(self):
         """Populate archive metadata from native queries."""

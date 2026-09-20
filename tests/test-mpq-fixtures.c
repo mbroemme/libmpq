@@ -1,4 +1,5 @@
 /* Verify every checked-in v1 and v2 fixture archive and extracted payload. */
+#include "mpq-attributes.h"
 #include "mpq-internal.h"
 #include "test-mpq-helper.h"
 
@@ -223,6 +224,7 @@ static const char fixture_listfile_v1[] = "overview.txt\n"
                                           "sparse.txt\n"
                                           "sparse-zlib.txt\n"
                                           "sparse-bzip2.txt\n"
+                                          "(signature)\n"
                                           "(attributes)\n";
 static const char fixture_listfile_v2[] = "overview.txt\n"
                                           "implode.txt\n"
@@ -238,12 +240,13 @@ static const char fixture_listfile_v2[] = "overview.txt\n"
                                           "sparse-zlib.txt\n"
                                           "sparse-bzip2.txt\n"
                                           "lzma.txt\n"
+                                          "(signature)\n"
                                           "(attributes)\n";
 
 /* Archive and extracted-file hashes are the single fixture source of truth. */
 static const char *const fixture_archive_hashes[] = {
-    "c0f1bc7eb454a67d98441e320d1f02b98fb9a5652f54bd4391c318c64b929ccb",
-    "421bb22f73a02afd56892daabcec2db6482b79c7a5c3940a48ab7be5e2071d04",
+    "930c17747f5d3a040c30a34e1c084c942ce55e4957ad003a5ecd1e7aec73b984",
+    "de1a4324eff6043a4a2ed604fb93427e389346ad01096d2d9f8571e49c8e583a",
 };
 
 static const char *const fixture_file_hashes[2][15] = {
@@ -261,7 +264,7 @@ static const char *const fixture_file_hashes[2][15] = {
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
-        "d84a86a55ecb32cb95bfb4725ef156e3be8d14bdcb19e84a95c0a4463da0c61f",
+        "1c1c534fce9fe0fdd104a0ee14321741e84b51a7d6ec499de93bf5672bbe784d",
         NULL,
     },
     {
@@ -279,7 +282,7 @@ static const char *const fixture_file_hashes[2][15] = {
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
         "da99ea7c15a1e60401f49c86b7d541714437891c4fc4a12d1dcff6674775e976",
-        "23fad524da76451f14ceacbe6acaeb7ff7aaff39e3f8e0aa3963cf1bac3bc396",
+        "5062529fc4cf90c04e97cff8971286d6546edcb22a550766e21b2daa406f5850",
     },
 };
 
@@ -307,7 +310,32 @@ test_fixture(const char *path, uint32_t expected_version, size_t fixture_index)
     TEST_CHECK(libmpq__archive_version(archive, &archive_version) == 0);
     TEST_CHECK(archive_version == expected_version);
     TEST_CHECK(libmpq__archive_files(archive, &file_count) == 0);
-    TEST_CHECK(file_count == names_count + 2);
+    TEST_CHECK(file_count == names_count + 3);
+    {
+        uint32_t signatures = 0;
+        uint32_t mismatches = UINT32_MAX;
+        mpq_file_attributes_s attributes;
+        TEST_CHECK(libmpq__archive_signatures(archive, &signatures) == 0);
+        TEST_CHECK(signatures == LIBMPQ_SIGNATURE_WEAK);
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, signatures, test_signature_public_key, sizeof(test_signature_public_key),
+                &mismatches
+            ) == 0
+        );
+        TEST_CHECK(mismatches == 0);
+        TEST_CHECK(libmpq__file_number(archive, "(signature)", &number) == 0);
+        TEST_CHECK(libmpq__file_flags(archive, number, &signatures) == 0);
+        TEST_CHECK(signatures == LIBMPQ_FLAG_EXISTS);
+        TEST_CHECK(test_archive_read(archive, number, &file_data, &file_size) == 0);
+        TEST_CHECK(file_size == 72 && memcmp(file_data, "\0\0\0\0\0\0\0\0", 8) == 0);
+        free(file_data);
+        file_data = NULL;
+        TEST_CHECK(libmpq__file_attributes(archive, number, &attributes) == 0);
+        TEST_CHECK(attributes.crc32 == 0 && attributes.filetime == 0 && attributes.patch_bit == 0);
+        for (i = 0; i < sizeof(attributes.md5); ++i)
+            TEST_CHECK(attributes.md5[i] == 0);
+    }
     TEST_CHECK(test_fixture_checksums(archive, archive_data, archive_size, expected_version) == 0);
 
     /* Verify the generated listfile and resolve every name it advertises. */
@@ -353,9 +381,122 @@ test_fixture(const char *path, uint32_t expected_version, size_t fixture_index)
     return 0;
 }
 
+/* Refresh the canonical archives without decoding/re-encoding lossy samples.
+ * Text comes from the canonical corpus; PCM is the original documented formula.
+ * Private attribute serialization preserves this corpus's sector-CRC layout;
+ * signing and MPQE finalization exercise the public writer APIs. */
+static int
+refresh_fixture(const char *path, uint32_t version, size_t fixture_index)
+{
+    static const uint8_t auth[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+    mpq_archive_s *source = NULL;
+    size_t count = sizeof(fixture_names) / sizeof(fixture_names[0]) - (fixture_index == 0);
+    uint8_t *payloads[14] = { NULL };
+    size_t sizes[14];
+    mpq_file_options_s storage[14];
+    char output[512];
+    size_t i;
+    unsigned encrypted;
+    TEST_CHECK(libmpq__archive_open(&source, path, 0) == 0);
+    for (i = 0; i < count; ++i) {
+        uint32_t number;
+        TEST_CHECK(libmpq__file_number(source, fixture_names[i], &number) == 0);
+        TEST_CHECK(test_archive_read(source, number, &payloads[i], &sizes[i]) == 0);
+        memset(&storage[i], 0, sizeof(storage[i]));
+        TEST_CHECK(libmpq__file_flags(source, number, &storage[i].flags) == 0);
+        storage[i].flags &= ~LIBMPQ_FLAG_EXISTS;
+        storage[i].compression_first = i == 7 ? 2 : fixture_methods[i];
+        storage[i].compression_next = storage[i].compression_first;
+        if (i == 13)
+            storage[i].compression_first = storage[i].compression_next = LIBMPQ_COMPRESSION_LZMA;
+        if (i == 8 || i == 9) {
+            size_t frame;
+            size_t channels = i == 8 ? 1 : 2;
+            storage[i].compression_first = LIBMPQ_COMPRESSION_ZLIB;
+            for (frame = 0; frame < 7000; ++frame) {
+                size_t channel;
+                int32_t phase = (int32_t)((frame * 17) % 4096);
+                int32_t base = phase < 2048 ? phase - 1024 : 3072 - phase;
+                for (channel = 0; channel < channels; ++channel) {
+                    uint16_t sample = (uint16_t)(base * 24 + (channel ? 1800 : 0));
+                    size_t offset = 44 + (frame * channels + channel) * 2;
+                    payloads[i][offset] = (uint8_t)sample;
+                    payloads[i][offset + 1] = (uint8_t)(sample >> 8);
+                }
+            }
+        }
+    }
+    TEST_CHECK(libmpq__archive_close(source) == 0);
+    for (encrypted = 0; encrypted < 2; ++encrypted) {
+        mpq_archive_s *writer = NULL;
+        mpq_archive_create_options_s options = { version - 1, 32, 4096,
+                                                 LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED,
+                                                 fixture_index == 0 ? 7 : 15 };
+        mpq_file_options_s list_storage = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
+        mpq_file_options_s attribute_storage = { LIBMPQ_FILE_FLAG_COMPRESS |
+                                                     LIBMPQ_FILE_FLAG_SECTOR_CRC,
+                                                 LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB,
+                                                 0, 0 };
+        const char *list = fixture_index == 0 ? fixture_listfile_v1 : fixture_listfile_v2;
+        uint8_t *attributes = NULL;
+        size_t attribute_size;
+        TEST_CHECK(snprintf(output, sizeof(output), "%s%s", path, encrypted ? "e" : "") > 0);
+        if (encrypted)
+            TEST_CHECK(
+                libmpq__archive_create_mpqe(&writer, output, auth, sizeof(auth) - 1, &options) == 0
+            );
+        else
+            TEST_CHECK(libmpq__archive_create(&writer, output, &options) == 0);
+        for (i = 0; i < count; ++i) {
+            mpq_writer_s *file = NULL;
+            TEST_CHECK(
+                libmpq__writer_begin(
+                    writer, fixture_names[i], (libmpq__off_t)sizes[i], &storage[i], &file
+                ) == 0
+            );
+            TEST_CHECK(libmpq__writer_timestamp(file, fixture_attributes[i].filetime) == 0);
+            TEST_CHECK(libmpq__writer_write(file, payloads[i], (libmpq__off_t)sizes[i]) == 0);
+            TEST_CHECK(libmpq__writer_finish(file) == 0);
+        }
+        TEST_CHECK(
+            libmpq__archive_sign(
+                writer, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+                sizeof(test_signature_private_key)
+            ) == 0
+        );
+        TEST_CHECK(
+            libmpq__archive_add_data(
+                writer, LIBMPQ_LISTFILE_NAME, (const uint8_t *)list, (libmpq__off_t)strlen(list),
+                &list_storage
+            ) == 0
+        );
+        TEST_CHECK(
+            libmpq__attributes_serialize(
+                writer->write_attributes, writer->write_capacity, writer->write_next_block,
+                options.attributes, &attributes, &attribute_size
+            ) == 0
+        );
+
+        /* Preserve the fixture's explicit checksummed attributes, not the default
+         * generated storage. Its self row and the signature row remain zero. */
+        writer->write_attributes_flags = 0;
+        TEST_CHECK(
+            libmpq__archive_add_data(
+                writer, LIBMPQ_ATTRIBUTES_NAME, attributes, (libmpq__off_t)attribute_size,
+                &attribute_storage
+            ) == 0
+        );
+        free(attributes);
+        TEST_CHECK(libmpq__archive_close(writer) == 0);
+    }
+    for (i = 0; i < count; ++i)
+        free(payloads[i]);
+    return 0;
+}
+
 /* Verify both deterministic fixture formats against the embedded manifest. */
 int
-main(void)
+main(int argc, char **argv)
 {
     char path[512];
     size_t i;
@@ -364,6 +505,10 @@ main(void)
         TEST_CHECK(
             snprintf(path, sizeof(path), "%s/mpq-v%zu-features.mpq", FIXTURE_DIR, i + 1) > 0
         );
+        if (argc == 2 && strcmp(argv[1], "--refresh") == 0) {
+            TEST_CHECK(refresh_fixture(path, (uint32_t)(i + 1), i) == 0);
+            continue;
+        }
         TEST_CHECK(test_fixture(path, (uint32_t)(i + 1), i) == 0);
     }
     return 0;

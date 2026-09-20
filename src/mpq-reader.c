@@ -33,6 +33,96 @@
 #include <string.h>
 #include <zlib.h>
 
+/* Accumulate a serialized range without wrapping.
+ * Callers decide whether zero-length ranges are meaningful. */
+static int32_t
+extend_extent(uint64_t offset, uint64_t length, uint64_t *extent)
+{
+    uint64_t end;
+    if (offset > UINT64_MAX - length)
+        return LIBMPQ_ERROR_FORMAT;
+    end = offset + length;
+    if (end > *extent)
+        *extent = end;
+    return LIBMPQ_SUCCESS;
+}
+
+int32_t
+libmpq__archive_required_extent(const mpq_archive_s *archive, uint64_t *size)
+{
+    uint64_t extent;
+    uint64_t hash;
+    uint64_t block;
+    uint32_t i;
+    if (size != NULL)
+        *size = 0;
+    if (archive == NULL || size == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (archive->archive_offset < 0 || archive->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_TWO ||
+        (archive->mpq_header.block_table_count != 0 &&
+         (archive->mpq_block == NULL || archive->mpq_block_ex == NULL)))
+        return LIBMPQ_ERROR_FORMAT;
+    extent = archive->mpq_header.header_size;
+    if (extent <
+        LIBMPQ_HEADER_WIRE_SIZE + (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO
+                                       ? LIBMPQ_HEADER_EX_WIRE_SIZE
+                                       : 0u))
+        return LIBMPQ_ERROR_FORMAT;
+    hash = archive->mpq_header.hash_table_offset |
+           ((uint64_t)archive->mpq_header_ex.hash_table_offset_high << 32);
+    block = archive->mpq_header.block_table_offset |
+            ((uint64_t)archive->mpq_header_ex.block_table_offset_high << 32);
+    if (extend_extent(
+            hash, (uint64_t)archive->mpq_header.hash_table_count * LIBMPQ_HASH_ENTRY_WIRE_SIZE,
+            &extent
+        ) != 0 ||
+        extend_extent(
+            block, (uint64_t)archive->mpq_header.block_table_count * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE,
+            &extent
+        ) != 0)
+        return LIBMPQ_ERROR_FORMAT;
+    if (archive->mpq_header_ex.extended_offset != 0 &&
+        extend_extent(
+            archive->mpq_header_ex.extended_offset,
+            (uint64_t)archive->mpq_header.block_table_count * LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE,
+            &extent
+        ) != 0)
+        return LIBMPQ_ERROR_FORMAT;
+    for (i = 0; i < archive->mpq_header.block_table_count; ++i) {
+        uint64_t offset =
+            archive->mpq_block[i].offset | ((uint64_t)archive->mpq_block_ex[i].offset_high << 32);
+        if ((archive->mpq_block[i].flags & LIBMPQ_FLAG_EXISTS) &&
+            archive->mpq_block[i].packed_size != 0 &&
+            extend_extent(offset, archive->mpq_block[i].packed_size, &extent) != 0)
+            return LIBMPQ_ERROR_FORMAT;
+    }
+    *size = extent;
+    return LIBMPQ_SUCCESS;
+}
+
+int32_t
+libmpq__archive_signature_extent(const mpq_archive_s *archive, uint64_t *size)
+{
+    uint64_t required;
+    uint64_t extent;
+    int32_t result;
+    if (size != NULL)
+        *size = 0;
+    if (archive == NULL || size == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    result = libmpq__archive_required_extent(archive, &required);
+    if (result != LIBMPQ_SUCCESS)
+        return result;
+    extent = archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE
+                 ? archive->mpq_header.archive_size
+                 : required;
+    if (extent < required || (uint64_t)archive->archive_offset > archive->file_size ||
+        extent > archive->file_size - (uint64_t)archive->archive_offset)
+        return LIBMPQ_ERROR_FORMAT;
+    *size = extent;
+    return LIBMPQ_SUCCESS;
+}
+
 /* Release a cached block offset table when the last user closes it.
  * Reference counting permits nested block operations while ensuring the cache
  * is freed only after the final matching close. */

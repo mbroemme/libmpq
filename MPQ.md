@@ -262,10 +262,46 @@ and hash table. This avoids StormLib's malformed-map heuristic, which skips
 attributes when a table begins exactly at the end of the v1 header. Writers
 without attributes retain their existing layout.
 
-Older archives can contain an internal weak `(signature)` file; a strong
-signature can follow the archive as `NGIS` plus a 2048-bit RSA signature. Use
-a maintained cryptographic library for signature verification and never treat
-a valid signature as a substitute for range validation.
+Weak `(signature)` files contain exactly 72 uncompressed, unencrypted bytes:
+eight zero bytes followed by a little-endian RSA-512 signature integer.
+libmpq hashes from the archive offset through the v1 declared archive size or
+the v2 metadata-derived required extent, treating all 72 signature bytes as
+zero, and checks the complete PKCS#1 v1.5 MD5 DigestInfo encoding. Bytes before
+or after that MPQ range are not hashed. This does not implement Warcraft III's
+special map-header hashing convention.
+
+For MPQ v2 archives, libmpq derives the weak-signature extent from the parsed
+64-bit archive structures rather than using the deprecated 32-bit
+`dwArchiveSize` field as the authoritative archive boundary.
+
+`libmpq__archive_signatures` returns `LIBMPQ_SIGNATURE_WEAK` when a valid
+weak-signature structure is present, or zero when absent. It does not prove
+cryptographic validity. `libmpq__archive_verify` takes that bit and a caller's
+public key; mismatches return success with the bit set, while missing
+signatures, malformed storage/keys, and I/O failures return negative errors.
+Output masks are initialized before validation.
+
+Keys are exactly 128 bytes: a 64-byte unsigned big-endian modulus followed by
+a 64-byte zero-padded big-endian exponent value. Use a public key to verify a
+signature and a private key to create one. The modulus must be full-width and
+odd; the exponent must be odd, at least 3, and less than the modulus. These
+checks validate representation,
+not the mathematical validity of the caller's RSA key pair. No PEM,
+certificates, ASN.1 parser, default public key, or private key is built in.
+
+On a new v1 or v2 writer, call `libmpq__archive_sign` once before closing, with no
+active file writer. It copies the private key and reserves one file-table slot
+and a zero signature payload immediately. Close finalizes listfile, attributes,
+tables, and header before hashing and overwriting only the 64 signature bytes.
+The signature entry's generated attribute values remain zero; the retained key
+is cleared on close, including error paths. Other files may be added after
+configuring signing. Readers do not impose the writer's version restriction.
+
+MD5 and RSA-512 are obsolete and unsuitable for modern authentication. The
+private fixed-width RSA code is deliberately limited to this legacy format,
+not a general-purpose hardened cryptographic service. Strong signatures
+(`NGIS` and RSA-2048) are not implemented. Never treat a matching signature as
+a substitute for range validation.
 
 ## Implementation order
 

@@ -1,5 +1,5 @@
 /*
- *  mpq-md5.h -- internal MD5 checksum declarations.
+ *  mpq-signature.h -- private weak archive signature declarations.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -17,23 +17,22 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef LIBMPQ_MD5_H
-#define LIBMPQ_MD5_H
+#ifndef LIBMPQ_SIGNATURE_H
+#define LIBMPQ_SIGNATURE_H
 
-#include <stddef.h>
-#include <stdint.h>
+#include <libmpq/mpq.h>
 
-#define LIBMPQ_MD5_SIZE 16u
+#include "mpq-rsa.h"
 
-typedef struct
-{
-    uint32_t state[4];
-    uint64_t size;
-    uint8_t buffer[64];
-} mpq_md5_s;
-
-void libmpq__md5_init(mpq_md5_s *context);
-void libmpq__md5_update(mpq_md5_s *context, const uint8_t *data, size_t size);
-void libmpq__md5_final(mpq_md5_s *context, uint8_t digest[LIBMPQ_MD5_SIZE]);
-
-#endif /* LIBMPQ_MD5_H */
+#define LIBMPQ_SIGNATURE_PREFIX_SIZE 8u
+#define LIBMPQ_SIGNATURE_SIZE (LIBMPQ_SIGNATURE_PREFIX_SIZE + LIBMPQ_RSA_SIZE)
+int32_t libmpq__signature_detect(mpq_archive_s *archive, uint32_t *signatures);
+int32_t libmpq__signature_verify(
+    mpq_archive_s *archive, uint32_t flags, const uint8_t *key, size_t key_size,
+    uint32_t *mismatches
+);
+int32_t libmpq__signature_configure(
+    mpq_archive_s *archive, uint32_t type, const uint8_t *key, size_t key_size
+);
+int32_t libmpq__signature_finish(mpq_archive_s *archive, uint64_t size);
+#endif /* LIBMPQ_SIGNATURE_H */

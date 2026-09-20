@@ -1,0 +1,71 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__ARCHIVE_SIGN 3 2026-09-18 "The MoPaQ archive library"
+.SH NAME
+libmpq__archive_sign \- configure weak signing before writer close
+.SH SYNOPSIS
+.nf
+#include <libmpq/mpq.h>
+
+int32_t libmpq__archive_sign(mpq_archive_s *archive, uint32_t type,
+    const uint8_t *private_key, size_t key_size);
+.fi
+.SH DESCRIPTION
+Weak MPQ signatures use MD5 with RSA-512 and PKCS#1 v1.5. They are obsolete
+and must not be used for modern authenticity decisions. Strong signatures
+are not supported.
+.PP
+Each raw key is exactly 128 bytes: a 64-byte unsigned big-endian modulus
+followed by a zero-padded 64-byte big-endian exponent value. Use a public key
+to verify a signature and a private key to create one. The modulus must be
+full-width and odd; the exponent
+must be odd, at least 3, and less than the modulus. No keys or PEM parser are
+built in. These checks do not establish mathematical key-pair validity.
+.PP
+Detection returns zero for absence or LIBMPQ_SIGNATURE_WEAK for structurally
+valid storage. Verification requires exactly LIBMPQ_SIGNATURE_WEAK and a
+public key. A mismatch returns success with that bit set, not a negative error.
+The non-NULL output masks are zeroed before validation and remain zero on errors.
+.PP
+Signing requires a v1 or v2 writer with no active file writer and may be configured
+only once. It immediately consumes one file slot for a zeroed 72-byte
+(signature) file, copies the key, and signs at close after finalizing all tables
+and internal files. Signature attribute values are zero. The retained key is
+cleared on close, including failure. Reopen to verify the signed result.
+.PP
+Hashing starts at the MPQ archive offset and covers the declared archive extent for v1
+or the metadata-derived required extent for v2,
+with all 72 signature bytes treated as zero. The stored signature integer is
+little-endian. The first eight bytes must be zero; compressed, encrypted,
+sector-CRC, overlapping, and incorrectly sized signature storage is rejected.
+Reader verification is independent of archive version and writer compression
+policy. Warcraft III map-header hashing is not implemented.
+.SH RETURN VALUE
+Zero on success; existing negative libmpq errors on failure.
+EXIST denotes NULL required handles/outputs or an absent requested signature;
+FORMAT denotes malformed storage/key, unsupported flags, or unsupported
+signing version; NOT_INITIALIZED denotes the wrong handle/lifecycle.
+I/O and writer capacity errors are propagated.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__archive_signatures (3),
+.BR libmpq__archive_verify (3)
+.SH AUTHOR
+Maik Broemme <mbroemme@libmpq.org>
+.SH REPORTING BUGS
+https://github.com/mbroemme/libmpq/issues
+.SH COPYRIGHT
+Copyright (c) 2003-2026 Maik Broemme.
+Licensed under the GNU Lesser General Public License, version 2.1 or later.

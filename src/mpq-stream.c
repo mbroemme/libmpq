@@ -50,6 +50,17 @@ libmpq__stream_file_read_at(mpq_stream_s *stream, uint64_t offset, uint8_t *buff
     return LIBMPQ_SUCCESS;
 }
 
+/* Adapt a writer's flushed FILE without taking ownership or reopening its path. */
+void
+libmpq__stream_borrow_file(mpq_stream_s *stream, FILE *file, uint64_t size)
+{
+    memset(stream, 0, sizeof(*stream));
+    stream->file = file;
+    stream->size = size;
+    stream->provider = LIBMPQ_STREAM_FILE;
+    stream->read_at = libmpq__stream_file_read_at;
+}
+
 /* Open a backing file and capture its immutable size for range validation. */
 static int32_t
 libmpq__stream_open_common(mpq_stream_s **stream, const char *path)

@@ -113,6 +113,7 @@ if(BUILD_TESTING)
         verify
         attributes
         md5
+        signature
         compression
         lzma
         sparse

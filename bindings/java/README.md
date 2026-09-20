@@ -1,5 +1,14 @@
 # libmpq Java bindings
 
+Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
+Use `Archive.sign(privateKey)` before writer close, and
+`Archive.signatures()` / `Archive.verify(publicKey)` on reopened archives.
+Verification returns mismatch bits; malformed keys/archives raise normal binding
+errors. Keys are exactly 128 bytes: 64-byte big-endian modulus followed by a
+64-byte big-endian exponent. Signing supports v1 and v2; no keys are built
+in. MD5/RSA-512 is legacy compatibility, not modern authenticity protection.
+See [the format guide](../../MPQ.md) for details.
+
 These bindings use the Java Foreign Function and Memory API and require JDK
 22 or newer. They provide a complete mapping of libmpq's stable public C API
 through `org.libmpq.ffi.LibmpqNative` and safer `AutoCloseable` wrappers in

@@ -259,6 +259,33 @@ typedef struct
  * attributes validity. */
 extern LIBMPQ_API int32_t libmpq__archive_attributes(mpq_archive_s *mpq_archive, uint32_t *flags);
 
+#define LIBMPQ_SIGNATURE_WEAK 0x00000001u
+
+/* Detect structurally valid weak signatures on readers; absence returns zero.
+ * All non-NULL outputs are initialized before validation.
+ * Raw RSA keys are exactly 128 bytes: an unsigned big-endian 64-byte modulus,
+ * followed by a zero-padded 64-byte big-endian exponent value. Pass a public
+ * key to verify a signature and a private key to create one. The modulus must
+ * be 512-bit and odd; the exponent must be odd, >=3 and less than the modulus.
+ * No PEM, ASN.1 or built-in keys are accepted. MD5/RSA-512 is legacy-only.
+ * Verification requires WEAK exactly and a caller public key. Missing signature
+ * returns EXIST; malformed storage/key returns FORMAT; I/O errors propagate.
+ * A cryptographic mismatch returns success with WEAK in *mismatches.
+ * Signing is configured once on a v1 or v2 writer without an active file writer.
+ * It copies the caller key and immediately consumes one max_files slot for
+ * (signature). Close signs the final archive and clears the retained key.
+ * Generated signature attribute values are zero. Reopen to verify.
+ * Reader verification is independent of archive version/compression policy. */
+extern LIBMPQ_API int32_t libmpq__archive_signatures(mpq_archive_s *archive, uint32_t *signatures);
+extern LIBMPQ_API int32_t libmpq__archive_verify(
+    mpq_archive_s *archive, uint32_t verify_flags, const uint8_t *public_key,
+    size_t public_key_size, uint32_t *mismatches
+);
+extern LIBMPQ_API int32_t libmpq__archive_sign(
+    mpq_archive_s *archive, uint32_t signature_type, const uint8_t *private_key,
+    size_t private_key_size
+);
+
 /* Return available stored attributes for a public file number on a reader.
  * Legacy missing entries return zero flags, not invented checksum values.
  * PATCH_BIT is metadata only and does not enable patch application. */

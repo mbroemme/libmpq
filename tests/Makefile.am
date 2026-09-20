@@ -12,6 +12,7 @@ check_PROGRAMS = \
 	test-verify \
 	test-attributes \
 	test-md5 \
+	test-signature \
 	test-compression \
 	test-lzma \
 	test-sparse \
@@ -41,6 +42,8 @@ test_verify_LDADD = $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-reade
 test_attributes_SOURCES = test-mpq-attributes.c $(COMMON_SOURCES)
 test_attributes_LDADD = $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-stream.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
 test_md5_SOURCES = test-mpq-md5.c $(COMMON_SOURCES)
+test_signature_SOURCES = test-mpq-signature.c $(COMMON_SOURCES)
+test_signature_LDADD = $(top_builddir)/src/mpq-rsa.lo $(top_builddir)/src/mpq-md5.lo $(test_attributes_LDADD)
 test_md5_LDADD = $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-endian.lo $(LDADD)
 test_compression_SOURCES = test-mpq-compression.c $(COMMON_SOURCES)
 test_lzma_SOURCES = test-mpq-lzma.c $(COMMON_SOURCES)
@@ -51,6 +54,7 @@ test_malformed_SOURCES = test-mpq-malformed.c $(COMMON_SOURCES)
 test_mpqe_SOURCES = test-mpq-mpqe.c $(COMMON_SOURCES)
 test_endian_SOURCES = test-mpq-endian.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_fixtures_SOURCES = test-mpq-fixtures.c $(COMMON_SOURCES)
+test_fixtures_LDADD = $(test_attributes_LDADD)
 test_mpq_SOURCES = test-mpq-api.c $(COMMON_SOURCES)
 test_pkware_SOURCES = test-mpq-pkware.c \
 	../src/mpq-compression.c \

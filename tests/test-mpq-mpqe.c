@@ -113,6 +113,7 @@ test_fixture_members(mpq_archive_s *archive, const char *raw_path, uint32_t vers
         "pkware.txt",       "bzip2.txt",       "chain.txt",   "encrypted-compress.txt",
         "wave-mono.wav",    "wave-stereo.wav", "sparse.txt",  "sparse-zlib.txt",
         "sparse-bzip2.txt", "lzma.txt",        "(listfile)",  "(attributes)",
+        "(signature)",
     };
     mpq_archive_s *raw_archive = NULL;
     uint8_t *raw_data = NULL;
@@ -133,6 +134,11 @@ test_fixture_members(mpq_archive_s *archive, const char *raw_path, uint32_t vers
             continue;
         TEST_CHECK(libmpq__file_number(raw_archive, names[i], &raw_number) == 0);
         TEST_CHECK(libmpq__file_number(archive, names[i], &mpqe_number) == 0);
+        if (strcmp(names[i], "(signature)") == 0) {
+            uint32_t flags;
+            TEST_CHECK(libmpq__file_flags(archive, mpqe_number, &flags) == 0);
+            TEST_CHECK(flags == LIBMPQ_FLAG_EXISTS);
+        }
         TEST_CHECK(libmpq__file_blocks(archive, mpqe_number, &blocks) == 0);
         for (block = 0; block < blocks; ++block) {
             uint32_t raw_method = UINT32_MAX;
@@ -149,7 +155,8 @@ test_fixture_members(mpq_archive_s *archive, const char *raw_path, uint32_t vers
             libmpq__file_verify(archive, mpqe_number, LIBMPQ_VERIFY_SECTOR_CRC, &verification) == 0
         );
         TEST_CHECK(verification == 0);
-        if (strstr(names[i], ".wav") == NULL && strcmp(names[i], "(attributes)") != 0) {
+        if (strstr(names[i], ".wav") == NULL && strcmp(names[i], "(attributes)") != 0 &&
+            strcmp(names[i], "(signature)") != 0) {
             verification = UINT32_MAX;
             TEST_CHECK(
                 libmpq__file_verify(archive, mpqe_number, LIBMPQ_VERIFY_ALL, &verification) == 0
@@ -285,8 +292,21 @@ test_fixture(const mpqe_fixture_s *fixture, size_t index)
         ) == 0
     );
     TEST_CHECK(libmpq__archive_version(archive, &version) == 0 && version == fixture->version);
+    {
+        uint32_t signatures = 0;
+        uint32_t mismatches = UINT32_MAX;
+        TEST_CHECK(libmpq__archive_signatures(archive, &signatures) == 0);
+        TEST_CHECK(signatures == LIBMPQ_SIGNATURE_WEAK);
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, signatures, test_signature_public_key, sizeof(test_signature_public_key),
+                &mismatches
+            ) == 0
+        );
+        TEST_CHECK(mismatches == 0);
+    }
     TEST_CHECK(
-        libmpq__archive_files(archive, &files) == 0 && files == (fixture->version == 2 ? 16 : 15)
+        libmpq__archive_files(archive, &files) == 0 && files == (fixture->version == 2 ? 17 : 16)
     );
     TEST_CHECK(libmpq__file_number(archive, "overview.txt", &number) == 0);
     TEST_CHECK(test_archive_read(archive, number, &data, &size) == 0);

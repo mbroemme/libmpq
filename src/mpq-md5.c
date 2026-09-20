@@ -112,7 +112,7 @@ libmpq__md5_update(mpq_md5_s *context, const uint8_t *data, size_t size)
 /* Append RFC padding and return the canonical sixteen-byte digest.
  * Finalization consumes the context and clears its buffered input. */
 void
-libmpq__md5_final(mpq_md5_s *context, uint8_t digest[16])
+libmpq__md5_final(mpq_md5_s *context, uint8_t digest[LIBMPQ_MD5_SIZE])
 {
     uint8_t padding[64] = { 0x80 };
     uint8_t length[8];

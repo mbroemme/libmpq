@@ -22,6 +22,43 @@ import org.libmpq.ffi.LibmpqNative;
  */
 public final class Archive implements AutoCloseable {
 
+    /** Return weak signature presence bits; malformed storage throws. */
+    public int signatures() throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment result = arena.allocate(ValueLayout.JAVA_INT);
+            Support.check(LibmpqNative.archiveSignatures(handle, result));
+            return result.get(ValueLayout.JAVA_INT, 0);
+        }
+    }
+
+    /** Verify with a 128-byte key: 64-byte big-endian n then e; return mismatch bits. */
+    public int verify(byte[] publicKey) throws LibmpqException {
+        checkOpen();
+        Objects.requireNonNull(publicKey);
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment key = arena.allocateFrom(ValueLayout.JAVA_BYTE, publicKey);
+            MemorySegment result = arena.allocate(ValueLayout.JAVA_INT);
+            Support.check(LibmpqNative.archiveVerify(handle, Mpq.SIGNATURE_WEAK,
+                                                    key, publicKey.length, result));
+            return result.get(ValueLayout.JAVA_INT, 0);
+        }
+    }
+
+    /** Configure signing with a 128-byte key: 64-byte big-endian n then d. */
+    public void sign(byte[] privateKey) throws LibmpqException {
+        checkOpen();
+        Objects.requireNonNull(privateKey);
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment key = arena.allocateFrom(ValueLayout.JAVA_BYTE, privateKey);
+            try {
+                Support.check(LibmpqNative.archiveSign(handle, Mpq.SIGNATURE_WEAK, key, privateKey.length));
+            } finally {
+                key.fill((byte) 0);
+            }
+        }
+    }
+
     /** Stored unsigned Adler-32 and zero or Mpq.VERIFY_SECTOR_CRC mismatch bits. */
     public record BlockVerification(long checksum, int mismatches) {}
 

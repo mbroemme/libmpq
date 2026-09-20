@@ -43,6 +43,9 @@ struct mpq_stream
 };
 
 int32_t libmpq__stream_open_file(mpq_stream_s **stream, const char *path);
+
+/* Borrow a finalized writer FILE for bounded read-at operations; do not close. */
+void libmpq__stream_borrow_file(mpq_stream_s *stream, FILE *file, uint64_t size);
 int32_t libmpq__stream_open_mpqe(
     mpq_stream_s **stream, const char *path, const uint8_t *auth_code, size_t auth_code_size
 );

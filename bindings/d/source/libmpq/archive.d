@@ -59,6 +59,26 @@ struct FileMetadata {
  * errors. A closed archive must not be used again.
  */
 class Archive {
+    /** Detect structurally valid weak signatures; absence returns zero. */
+    uint signatures() {
+        uint result;
+        checkStatus(libmpq__archive_signatures(nativeHandle(), &result), "libmpq__archive_signatures");
+        return result;
+    }
+
+    /** Verify using a 128-byte key: 64-byte big-endian n then e; return mismatch bits. */
+    uint verify(const(ubyte)[] publicKey) {
+        uint result;
+        checkStatus(libmpq__archive_verify(nativeHandle(), SIGNATURE_WEAK,
+                    publicKey.ptr, publicKey.length, &result), "libmpq__archive_verify");
+        return result;
+    }
+
+    /** Configure signing using a 128-byte key: 64-byte big-endian n then d. */
+    void sign(const(ubyte)[] privateKey) {
+        checkStatus(libmpq__archive_sign(nativeHandle(), SIGNATURE_WEAK,
+                    privateKey.ptr, privateKey.length), "libmpq__archive_sign");
+    }
     /** Return flags, or a null value when absent; malformed metadata still throws. */
     Nullable!uint attributes() {
         uint flags;

@@ -34,6 +34,8 @@
 #include "mpq-endian.h"
 #include "mpq-internal.h"
 #include "mpq-reader.h"
+#include "mpq-rsa.h"
+#include "mpq-signature.h"
 #include "mpq-stream.h"
 #include "mpq-verify.h"
 #include "mpq-writer.h"
@@ -106,6 +108,28 @@ libmpq__archive_compression_allowed(
 )
 {
     return libmpq__compression_allowed(archive_version, compression_mask, policy);
+}
+
+/* Signature queries and verification are explicit and do not affect reads. */
+int32_t
+libmpq__archive_signatures(mpq_archive_s *archive, uint32_t *signatures)
+{
+    return libmpq__signature_detect(archive, signatures);
+}
+
+int32_t
+libmpq__archive_verify(
+    mpq_archive_s *archive, uint32_t flags, const uint8_t *key, size_t key_size,
+    uint32_t *mismatches
+)
+{
+    return libmpq__signature_verify(archive, flags, key, key_size, mismatches);
+}
+
+int32_t
+libmpq__archive_sign(mpq_archive_s *archive, uint32_t type, const uint8_t *key, size_t key_size)
+{
+    return libmpq__signature_configure(archive, type, key, key_size);
 }
 
 /* Return the optional attributes header flags without affecting normal reads.
@@ -327,6 +351,9 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
         if (mpq_archive->fp != NULL && fclose(mpq_archive->fp) < 0 && result == LIBMPQ_SUCCESS)
             result = LIBMPQ_ERROR_CLOSE;
         libmpq__writer_mpqe_cleanup(mpq_archive);
+        libmpq__rsa_clear(
+            mpq_archive->write_signature_key, sizeof(mpq_archive->write_signature_key)
+        );
         for (i = 0; i < mpq_archive->write_capacity; i++)
             free(mpq_archive->write_names ? mpq_archive->write_names[i] : NULL);
         free(mpq_archive->write_names);

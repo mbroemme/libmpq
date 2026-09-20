@@ -131,9 +131,19 @@ wide_path(const char *path)
 static FILE *
 handle_stream(HANDLE handle, const char *mode)
 {
-    int flags = _O_BINARY | _O_NOINHERIT | (strchr(mode, '+') != NULL ? _O_RDWR : _O_RDONLY);
-    int fd = _open_osfhandle((intptr_t)handle, flags);
+    int flags = _O_BINARY | _O_NOINHERIT;
+    int fd;
     FILE *file;
+
+    if (strchr(mode, '+') != NULL)
+        flags |= _O_RDWR;
+    else if (mode[0] == 'w' || mode[0] == 'a')
+        flags |= _O_WRONLY;
+    else
+        flags |= _O_RDONLY;
+    if (mode[0] == 'a')
+        flags |= _O_APPEND;
+    fd = _open_osfhandle((intptr_t)handle, flags);
 
     if (fd < 0) {
         CloseHandle(handle);
@@ -151,6 +161,8 @@ libmpq__file_open(const char *path, const char *mode)
     wchar_t *wide;
     HANDLE handle;
     DWORD error;
+    DWORD access;
+    DWORD disposition;
 
     if (path == NULL || path[0] == '\0' || mode == NULL || mode[0] == '\0') {
         errno = EINVAL;
@@ -159,10 +171,16 @@ libmpq__file_open(const char *path, const char *mode)
     wide = wide_path(path);
     if (wide == NULL)
         return NULL;
+    if (strchr(mode, '+') != NULL)
+        access = GENERIC_READ | GENERIC_WRITE;
+    else if (mode[0] == 'w' || mode[0] == 'a')
+        access = GENERIC_WRITE;
+    else
+        access = GENERIC_READ;
+    disposition = mode[0] == 'w' ? CREATE_ALWAYS : mode[0] == 'a' ? OPEN_ALWAYS : OPEN_EXISTING;
     handle = CreateFileW(
-        wide, GENERIC_READ | (strchr(mode, '+') ? GENERIC_WRITE : 0),
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-        mode[0] == 'w' ? CREATE_ALWAYS : OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
+        wide, access, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, disposition,
+        FILE_ATTRIBUTE_NORMAL, NULL
     );
     error = GetLastError();
     free(wide);

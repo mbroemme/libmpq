@@ -28,6 +28,7 @@
 #include "mpq-internal.h"
 #include "mpq-mpqe.h"
 #include "mpq-pkware.h"
+#include "mpq-signature.h"
 #include "mpq-wave.h"
 #include "mpq-writer.h"
 #include <libmpq/mpq.h>
@@ -480,6 +481,11 @@ finalize_archive(mpq_archive_s *a)
     }
     if (write_at(a->fp, 0, header, a->mpq_header.header_size) < 0 || fflush(a->fp) != 0)
         return LIBMPQ_ERROR_WRITE;
+    {
+        int32_t result = libmpq__signature_finish(a, end);
+        if (result != LIBMPQ_SUCCESS)
+            return result;
+    }
     if (!a->write_mpqe)
         a->write_finalized = TRUE;
     return LIBMPQ_SUCCESS;
@@ -832,6 +838,18 @@ libmpq__writer_file_begin(
     mpq_writer_s *w;
     if (!a || !a->write_mode || !name || !out || size < 0 || a->write_current)
         return LIBMPQ_ERROR_FORMAT;
+    if (a->write_signature) {
+        uint32_t h1;
+        uint32_t h2;
+        uint32_t h3;
+        uint32_t s1;
+        uint32_t s2;
+        uint32_t s3;
+        libmpq__file_hash(name, &h1, &h2, &h3);
+        libmpq__file_hash(LIBMPQ_SIGNATURE_NAME, &s1, &s2, &s3);
+        if (h2 == s2 && h3 == s3)
+            return LIBMPQ_ERROR_FORMAT;
+    }
     if (options == NULL)
         options = &defaults;
     if (libmpq__attributes_write_flags(a) != 0) {
