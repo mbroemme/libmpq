@@ -26,6 +26,10 @@
 
 #define LIBMPQ_SIGNATURE_PREFIX_SIZE 8u
 #define LIBMPQ_SIGNATURE_SIZE (LIBMPQ_SIGNATURE_PREFIX_SIZE + LIBMPQ_RSA_SIZE)
+#define LIBMPQ_STRONG_SIGNATURE_MARKER_SIZE 4u
+#define LIBMPQ_STRONG_SIGNATURE_SIZE LIBMPQ_RSA_STRONG_SIZE
+#define LIBMPQ_STRONG_TRAILER_SIZE                                                                 \
+    (LIBMPQ_STRONG_SIGNATURE_MARKER_SIZE + LIBMPQ_STRONG_SIGNATURE_SIZE)
 int32_t libmpq__signature_detect(mpq_archive_s *archive, uint32_t *signatures);
 int32_t libmpq__signature_verify(
     mpq_archive_s *archive, uint32_t flags, const uint8_t *key, size_t key_size,

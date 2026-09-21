@@ -22,7 +22,7 @@ import org.libmpq.ffi.LibmpqNative;
  */
 public final class Archive implements AutoCloseable {
 
-    /** Return weak signature presence bits; malformed storage throws. */
+    /** Return weak and strong signature presence bits; malformed storage throws. */
     public int signatures() throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
@@ -34,12 +34,17 @@ public final class Archive implements AutoCloseable {
 
     /** Verify with a 128-byte key: 64-byte big-endian n then e; return mismatch bits. */
     public int verify(byte[] publicKey) throws LibmpqException {
+        return verify(Mpq.SIGNATURE_WEAK, publicKey);
+    }
+
+    /** Verify the selected weak or strong signature type using a caller public key. */
+    public int verify(int signatureType, byte[] publicKey) throws LibmpqException {
         checkOpen();
         Objects.requireNonNull(publicKey);
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment key = arena.allocateFrom(ValueLayout.JAVA_BYTE, publicKey);
             MemorySegment result = arena.allocate(ValueLayout.JAVA_INT);
-            Support.check(LibmpqNative.archiveVerify(handle, Mpq.SIGNATURE_WEAK,
+            Support.check(LibmpqNative.archiveVerify(handle, signatureType,
                                                     key, publicKey.length, result));
             return result.get(ValueLayout.JAVA_INT, 0);
         }

@@ -14,7 +14,7 @@
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
 .TH LIBMPQ__ARCHIVE_SIGNATURES 3 2026-09-18 "The MoPaQ archive library"
 .SH NAME
-libmpq__archive_signatures \- detect weak archive signatures
+libmpq__archive_signatures \- detect weak and strong archive signatures
 .SH SYNOPSIS
 .nf
 #include <libmpq/mpq.h>
@@ -22,20 +22,26 @@ libmpq__archive_signatures \- detect weak archive signatures
 int32_t libmpq__archive_signatures(mpq_archive_s *archive, uint32_t *signatures);
 .fi
 .SH DESCRIPTION
-Weak MPQ signatures use MD5 with RSA-512 and PKCS#1 v1.5. They are obsolete
-and must not be used for modern authenticity decisions. Strong signatures
-are not supported.
+Weak MPQ signatures use MD5 with RSA-512 and PKCS#1 v1.5. Strong signatures
+use an external NGIS trailer with SHA-1 and RSA-2048. Both are historical
+compatibility mechanisms and must not be used for modern authenticity decisions.
 .PP
-Each raw key is exactly 128 bytes: a 64-byte unsigned big-endian modulus
+Weak raw keys are exactly 128 bytes: a 64-byte unsigned big-endian modulus
 followed by a zero-padded 64-byte big-endian exponent value. Use a public key
 to verify a signature and a private key to create one. The modulus must be
 full-width and odd; the exponent
 must be odd, at least 3, and less than the modulus. No keys or PEM parser are
 built in. These checks do not establish mathematical key-pair validity.
 .PP
-Detection returns zero for absence or LIBMPQ_SIGNATURE_WEAK for structurally
-valid storage. Verification requires exactly LIBMPQ_SIGNATURE_WEAK and a
-public key. A mismatch returns success with that bit set, not a negative error.
+Strong public verification keys contain a 256-byte unsigned big-endian
+modulus and a 256-byte zero-padded unsigned big-endian public exponent,
+512 bytes total. Strong signing is unsupported. External strong NGIS
+trailers are not detected or verified for MPQE transport streams.
+.PP
+Detection returns zero for absence, LIBMPQ_SIGNATURE_WEAK, or
+LIBMPQ_SIGNATURE_STRONG, or both bits for structurally valid storage. Verification requires
+exactly one type and the matching caller public key: 128 bytes for weak or 512
+bytes for strong. A mismatch returns success with that bit set, not a negative error.
 The non-NULL output masks are zeroed before validation and remain zero on errors.
 .PP
 Signing requires a v1 or v2 writer with no active file writer and may be configured
@@ -50,7 +56,9 @@ with all 72 signature bytes treated as zero. The stored signature integer is
 little-endian. The first eight bytes must be zero; compressed, encrypted,
 sector-CRC, overlapping, and incorrectly sized signature storage is rejected.
 Reader verification is independent of archive version and writer compression
-policy. Warcraft III map-header hashing is not implemented.
+policy. For archives physically beginning with HM3W, weak and strong signature
+hashing starts at physical offset zero and ends at the logical MPQ end. Weak
+hashing treats the internal (signature) payload as zero.
 .SH RETURN VALUE
 Zero on success; existing negative libmpq errors on failure.
 EXIST denotes NULL required handles/outputs or an absent requested signature;

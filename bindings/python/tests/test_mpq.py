@@ -26,6 +26,19 @@ if not FIXTURES.is_dir():
 
 SPARSE_TEXT = "This text uses SPARSE compression and decompression.\n" * 16
 SPARSE_BYTES = b"\xff\xfe\x00\x00" + SPARSE_TEXT.encode("utf-32-le")
+STRONG_PUBLIC_KEY = (
+    bytes.fromhex("b76f7dc7cdd3a083b2e52f39a5b7d58f181ab7bc03c1eaa0931744f0218bf74397b68481776a3f49f7b9a7ea08abf1c3a9802b54ee75661190e521453f6e125cdaca5d4b5cb52c84a158f1bb1b51bb9138acc55b45a083d3dde6e9e9cc4cb03adf4dda27a4a673993ebddfefd06e7c8c976387df92ba92d6392b9baf1a40f7b39d3c0ad1a4e2d685b46caea30863c9055d8e0a151d2e5adf5b79c69cc849c8b879ecc53be1207334d60b4194583b44129f272fe4790570ba530df485e2188932d79abb5b3b8713fd2d16de821048328e9ae93da8de983519033806fbd55591ebf5542641af669ad73e7c0f01b2dea45040f6658d2c6ca0f55f8d91c482f81617")
+    + bytes(253)
+    + b"\x01\x00\x01"
+)
+
+
+def test_strong_signature():
+    """Verify independently signed test data through the public signature selector."""
+    assert len(STRONG_PUBLIC_KEY) == 512
+    with mpq.Archive(FIXTURES / "mpq-v1-features.mpq") as archive:
+        assert archive.signatures() == mpq.SIGNATURE_WEAK | mpq.SIGNATURE_STRONG
+        assert archive.verify(STRONG_PUBLIC_KEY, signature_type=mpq.SIGNATURE_STRONG) == 0
 
 
 def test_weak_signature(tmp_path):

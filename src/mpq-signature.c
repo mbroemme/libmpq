@@ -24,6 +24,7 @@
 #include "mpq-md5.h"
 #include "mpq-reader.h"
 #include "mpq-rsa.h"
+#include "mpq-sha1.h"
 #include "mpq-stream.h"
 #include "mpq-writer.h"
 #include <string.h>
@@ -144,10 +145,180 @@ digest_archive(
     return LIBMPQ_SUCCESS;
 }
 
+/* Locate a structurally complete external NGIS trailer. Trailing data is
+ * accepted for compatibility with Blizzard-format archives. */
+static int32_t
+strong_locate(mpq_archive_s *a, uint64_t *extent, uint8_t signature[LIBMPQ_STRONG_SIGNATURE_SIZE])
+{
+    static const uint8_t marker[LIBMPQ_STRONG_SIGNATURE_MARKER_SIZE] = { 'N', 'G', 'I', 'S' };
+    uint8_t trailer[LIBMPQ_STRONG_TRAILER_SIZE];
+    uint64_t offset;
+    int32_t result;
+
+    /* MPQE encrypts its complete transport stream and has no defined external
+     * strong-trailer representation. Do not interpret ciphertext as NGIS. */
+    if (a->stream->provider == LIBMPQ_STREAM_MPQE)
+        return LIBMPQ_ERROR_EXIST;
+    result = libmpq__archive_signature_extent(a, extent);
+    if (result != LIBMPQ_SUCCESS)
+        return result;
+    if (a->archive_offset < 0 || (uint64_t)a->archive_offset > UINT64_MAX - *extent)
+        return LIBMPQ_ERROR_FORMAT;
+    offset = (uint64_t)a->archive_offset + *extent;
+    if (offset > a->file_size || LIBMPQ_STRONG_TRAILER_SIZE > a->file_size - offset)
+        return LIBMPQ_ERROR_EXIST;
+    result = libmpq__stream_read_at(a->stream, offset, trailer, sizeof(trailer));
+    if (result != LIBMPQ_SUCCESS)
+        return result;
+    if (memcmp(trailer, marker, sizeof(marker)) != 0)
+        return LIBMPQ_ERROR_EXIST;
+    memcpy(signature, trailer + sizeof(marker), LIBMPQ_STRONG_SIGNATURE_SIZE);
+    return LIBMPQ_SUCCESS;
+}
+
+/* HM3W is a container-specific signed-range rule. */
+static int32_t
+signature_hash_range(mpq_archive_s *a, uint64_t extent, uint64_t *start, uint64_t *size)
+{
+    static const uint8_t hm3w[4] = { 'H', 'M', '3', 'W' };
+    uint8_t prefix[sizeof(hm3w)];
+    uint64_t end;
+    int32_t result;
+    if (a->archive_offset < 0 || (uint64_t)a->archive_offset > UINT64_MAX - extent)
+        return LIBMPQ_ERROR_FORMAT;
+    end = (uint64_t)a->archive_offset + extent;
+    *start = (uint64_t)a->archive_offset;
+    if (a->archive_offset > 0 && a->file_size >= sizeof(prefix)) {
+        result = libmpq__stream_read_at(a->stream, 0, prefix, sizeof(prefix));
+        if (result != LIBMPQ_SUCCESS)
+            return result;
+        if (memcmp(prefix, hm3w, sizeof(prefix)) == 0)
+            *start = 0;
+    }
+    if (*start > end)
+        return LIBMPQ_ERROR_FORMAT;
+    *size = end - *start;
+    return LIBMPQ_SUCCESS;
+}
+
+static int32_t
+strong_digest_base(mpq_archive_s *a, uint64_t start, uint64_t size, mpq_sha1_s *context)
+{
+    uint8_t buffer[16384];
+    uint64_t pos = 0;
+    int32_t result;
+    libmpq__sha1_init(context);
+    while (pos < size) {
+        size_t count = size - pos < sizeof(buffer) ? (size_t)(size - pos) : sizeof(buffer);
+        result = libmpq__stream_read_at(a->stream, start + pos, buffer, count);
+        if (result != LIBMPQ_SUCCESS)
+            return result;
+        libmpq__sha1_update(context, buffer, count);
+        pos += count;
+    }
+    return LIBMPQ_SUCCESS;
+}
+
+static int32_t
+strong_digest_variant(
+    mpq_archive_s *a, const mpq_sha1_s *base, unsigned int variant, uint8_t digest[LIBMPQ_SHA1_SIZE]
+)
+{
+    static const uint8_t archive_suffix[] = "ARCHIVE";
+    mpq_sha1_s context = *base;
+    if (variant == 1u) {
+        const char *name = a->filename;
+        const char *base = name;
+        size_t i;
+        if (name == NULL)
+            return LIBMPQ_ERROR_FORMAT;
+        for (i = 0; name[i] != '\0'; ++i)
+            if (name[i] == '/' || name[i] == '\\')
+                base = name + i + 1;
+        for (i = 0; base[i] != '\0'; ++i) {
+            uint8_t character = (uint8_t)base[i];
+            if (character >= 'a' && character <= 'z')
+                character = (uint8_t)(character - ('a' - 'A'));
+            libmpq__sha1_update(&context, &character, 1);
+        }
+    } else if (variant == 2u) {
+        libmpq__sha1_update(&context, archive_suffix, sizeof(archive_suffix) - 1);
+    }
+    libmpq__sha1_final(&context, digest);
+    return LIBMPQ_SUCCESS;
+}
+
+static void
+strong_encoded(
+    const uint8_t digest[LIBMPQ_SHA1_SIZE], uint8_t encoded[LIBMPQ_STRONG_SIGNATURE_SIZE]
+)
+{
+    size_t i;
+    encoded[0] = 0x0b;
+    memset(encoded + 1, 0xbb, LIBMPQ_STRONG_SIGNATURE_SIZE - LIBMPQ_SHA1_SIZE - 1);
+    for (i = 0; i < LIBMPQ_SHA1_SIZE; ++i)
+        encoded[LIBMPQ_STRONG_SIGNATURE_SIZE - LIBMPQ_SHA1_SIZE + i] =
+            digest[LIBMPQ_SHA1_SIZE - 1 - i];
+}
+
+static int32_t
+strong_verify(mpq_archive_s *a, const uint8_t *key, size_t key_size, uint32_t *mismatches)
+{
+    uint8_t signature[LIBMPQ_STRONG_SIGNATURE_SIZE];
+    uint8_t input[LIBMPQ_STRONG_SIGNATURE_SIZE];
+    uint8_t actual[LIBMPQ_STRONG_SIGNATURE_SIZE];
+    uint8_t expected[LIBMPQ_STRONG_SIGNATURE_SIZE];
+    uint8_t digest[LIBMPQ_SHA1_SIZE];
+    mpq_sha1_s base;
+    uint64_t extent;
+    uint64_t start;
+    uint64_t size;
+    size_t i;
+    unsigned int variant;
+    int32_t result;
+    if (libmpq__rsa_public_key_validate(key, key_size, LIBMPQ_RSA_STRONG_SIZE) != LIBMPQ_SUCCESS)
+        return LIBMPQ_ERROR_FORMAT;
+    result = strong_locate(a, &extent, signature);
+    if (result != LIBMPQ_SUCCESS)
+        return result;
+    result = signature_hash_range(a, extent, &start, &size);
+    if (result != LIBMPQ_SUCCESS)
+        return result;
+    for (i = 0; i < sizeof(input); ++i)
+        input[i] = signature[sizeof(input) - 1 - i];
+
+    /* A trailer value outside the RSA representative domain is a failed
+     * signature, not malformed MPQ storage or an invalid caller key. */
+    if (memcmp(input, key, LIBMPQ_RSA_STRONG_SIZE) >= 0) {
+        *mismatches |= LIBMPQ_SIGNATURE_STRONG;
+        return LIBMPQ_SUCCESS;
+    }
+    result = libmpq__rsa_public_operation(
+        key, LIBMPQ_RSA_STRONG_SIZE, key + LIBMPQ_RSA_STRONG_SIZE, LIBMPQ_RSA_STRONG_SIZE, input,
+        actual
+    );
+    if (result != LIBMPQ_SUCCESS)
+        return result;
+    result = strong_digest_base(a, start, size, &base);
+    if (result != LIBMPQ_SUCCESS)
+        return result;
+    for (variant = 0; variant < 3; ++variant) {
+        result = strong_digest_variant(a, &base, variant, digest);
+        if (result != LIBMPQ_SUCCESS)
+            return result;
+        strong_encoded(digest, expected);
+        if (memcmp(actual, expected, sizeof(actual)) == 0)
+            return LIBMPQ_SUCCESS;
+    }
+    *mismatches |= LIBMPQ_SIGNATURE_STRONG;
+    return LIBMPQ_SUCCESS;
+}
+
 int32_t
 libmpq__signature_detect(mpq_archive_s *a, uint32_t *signatures)
 {
     uint8_t payload[LIBMPQ_SIGNATURE_SIZE];
+    uint8_t strong[LIBMPQ_STRONG_SIGNATURE_SIZE];
     uint64_t offset;
     uint64_t extent;
     int32_t result;
@@ -158,10 +329,15 @@ libmpq__signature_detect(mpq_archive_s *a, uint32_t *signatures)
     if (a->write_mode)
         return LIBMPQ_ERROR_NOT_INITIALIZED;
     result = locate(a, &offset, &extent, payload);
+    if (result != LIBMPQ_ERROR_EXIST && result != LIBMPQ_SUCCESS)
+        return result;
+    if (result == LIBMPQ_SUCCESS)
+        *signatures = LIBMPQ_SIGNATURE_WEAK;
+    result = strong_locate(a, &extent, strong);
     if (result == LIBMPQ_ERROR_EXIST)
         return LIBMPQ_SUCCESS;
     if (result == LIBMPQ_SUCCESS)
-        *signatures = LIBMPQ_SIGNATURE_WEAK;
+        *signatures |= LIBMPQ_SIGNATURE_STRONG;
     return result;
 }
 
@@ -177,6 +353,9 @@ libmpq__signature_verify(
     uint8_t actual[LIBMPQ_RSA_SIZE];
     uint64_t offset;
     uint64_t extent;
+    uint64_t start;
+    uint64_t size;
+    uint64_t excluded;
     size_t i;
     int32_t result;
     if (mismatches != NULL)
@@ -185,12 +364,21 @@ libmpq__signature_verify(
         return LIBMPQ_ERROR_EXIST;
     if (a->write_mode)
         return LIBMPQ_ERROR_NOT_INITIALIZED;
+    if (flags == LIBMPQ_SIGNATURE_STRONG)
+        return strong_verify(a, key, key_size, mismatches);
     if (flags != LIBMPQ_SIGNATURE_WEAK || libmpq__rsa_key_validate(key, key_size) != 0)
         return LIBMPQ_ERROR_FORMAT;
     result = locate(a, &offset, &extent, payload);
     if (result != LIBMPQ_SUCCESS)
         return result;
-    result = digest_archive(a->stream, (uint64_t)a->archive_offset, extent, offset, digest);
+    result = signature_hash_range(a, extent, &start, &size);
+    if (result != LIBMPQ_SUCCESS)
+        return result;
+    if ((uint64_t)a->archive_offset > UINT64_MAX - offset ||
+        (uint64_t)a->archive_offset + offset < start)
+        return LIBMPQ_ERROR_FORMAT;
+    excluded = (uint64_t)a->archive_offset + offset - start;
+    result = digest_archive(a->stream, start, size, excluded, digest);
     if (result != LIBMPQ_SUCCESS)
         return result;
     libmpq__rsa_md5_encode(digest, expected);

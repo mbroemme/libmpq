@@ -10,7 +10,7 @@
 /** End-to-end D binding tests using deterministic native archives. */
 module libmpq.d_tests;
 
-import std.file : remove, write;
+import std.file : read, remove, write;
 import std.path : buildPath;
 import std.process : environment;
 import libmpq.mpq;
@@ -181,6 +181,33 @@ private void testFailures() {
     remove(path);
 }
 
+private ubyte[] strongPublicKey() {
+    enum modulus = "b76f7dc7cdd3a083b2e52f39a5b7d58f181ab7bc03c1eaa0931744f0218bf74397b68481776a3f49f7b9a7ea08abf1c3a9802b54ee75661190e521453f6e125cdaca5d4b5cb52c84a158f1bb1b51bb9138acc55b45a083d3dde6e9e9cc4cb03adf4dda27a4a673993ebddfefd06e7c8c976387df92ba92d6392b9baf1a40f7b39d3c0ad1a4e2d685b46caea30863c9055d8e0a151d2e5adf5b79c69cc849c8b879ecc53be1207334d60b4194583b44129f272fe4790570ba530df485e2188932d79abb5b3b8713fd2d16de821048328e9ae93da8de983519033806fbd55591ebf5542641af669ad73e7c0f01b2dea45040f6658d2c6ca0f55f8d91c482f81617";
+    auto result = new ubyte[](512);
+    foreach (i; 0 .. 256) {
+        immutable high = modulus[i * 2] <= '9' ? modulus[i * 2] - '0' : modulus[i * 2] - 'a' + 10;
+        immutable low = modulus[i * 2 + 1] <= '9' ? modulus[i * 2 + 1] - '0' : modulus[i * 2 + 1] - 'a' + 10;
+        result[i] = cast(ubyte)((high << 4) | low);
+    }
+    result[509] = 1;
+    result[510] = 0;
+    result[511] = 1;
+    return result;
+}
+
+/** Exercise the strong selector with the canonical feature fixture and test key. */
+private void testStrongSignature() {
+    auto root = buildPath(environment.get("LIBMPQ_SOURCE_DIR", "."), "tests", "fixtures");
+    auto publicKey = strongPublicKey();
+    assert(publicKey.length == 512);
+    auto archive = Archive.open(buildPath(root, "mpq-v1-features.mpq"));
+    scope(exit) archive.close();
+    assert(archive.signatures() == (SIGNATURE_WEAK | SIGNATURE_STRONG),
+           "canonical strong fixture detection");
+    assert(archive.verify(publicKey, SIGNATURE_STRONG) == 0,
+           "canonical strong fixture verification");
+}
+
 private void testFixture() {
     auto root = environment.get("LIBMPQ_SOURCE_DIR", ".");
     auto path = buildPath(root, "tests", "fixtures", "mpq-v1-features.mpq");
@@ -268,6 +295,7 @@ void main() {
     testCreateReadAndMetadata(ARCHIVE_VERSION_ONE);
     testCreateReadAndMetadata(ARCHIVE_VERSION_TWO);
     testFixture();
+    testStrongSignature();
     testMpqeFixture();
     testSparseFixtures();
     testMpqeCreate();

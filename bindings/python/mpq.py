@@ -44,6 +44,7 @@ VERIFY_FILE_CRC32 = 0x02
 VERIFY_FILE_MD5 = 0x04
 VERIFY_ALL = VERIFY_SECTOR_CRC | VERIFY_FILE_CRC32 | VERIFY_FILE_MD5
 SIGNATURE_WEAK = 0x01
+SIGNATURE_STRONG = 0x02
 COMPRESSION_POLICY_STANDARD = 0
 COMPRESSION_POLICY_EXTENDED = 1
 FILE_FLAG_IMPLODE = 0x00000100
@@ -781,13 +782,13 @@ class Archive:
         self._ensure_open()
         return _read_value(libmpq.libmpq__archive_signatures, ctypes.c_uint32, self._mpq)
 
-    def verify(self, public_key):
-        """Return mismatch bits using a 128-byte key: 64-byte big-endian n then e."""
+    def verify(self, public_key, signature_type=SIGNATURE_WEAK):
+        """Return mismatch bits using a weak 128-byte or strong 512-byte public key."""
         self._ensure_open()
         key = bytes(public_key)
         pointer = (ctypes.c_uint8 * len(key)).from_buffer_copy(key)
         return _read_value(libmpq.libmpq__archive_verify, ctypes.c_uint32,
-                           self._mpq, SIGNATURE_WEAK, pointer, len(key))
+                           self._mpq, signature_type, pointer, len(key))
 
     def _load_metadata(self):
         """Populate archive metadata from native queries."""

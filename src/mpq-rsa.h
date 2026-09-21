@@ -26,11 +26,19 @@
 
 #define LIBMPQ_RSA_SIZE 64u
 #define LIBMPQ_RSA_KEY_SIZE (2u * LIBMPQ_RSA_SIZE)
+#define LIBMPQ_RSA_STRONG_SIZE 256u
+#define LIBMPQ_RSA_STRONG_KEY_SIZE (2u * LIBMPQ_RSA_STRONG_SIZE)
+#define LIBMPQ_RSA_MAX_SIZE LIBMPQ_RSA_STRONG_SIZE
 
 int32_t libmpq__rsa_key_validate(const uint8_t *key, size_t size);
+int32_t libmpq__rsa_public_key_validate(const uint8_t *key, size_t key_size, size_t modulus_size);
 int32_t libmpq__rsa_operation(
     const uint8_t key[LIBMPQ_RSA_KEY_SIZE], const uint8_t input[LIBMPQ_RSA_SIZE],
     uint8_t output[LIBMPQ_RSA_SIZE]
+);
+int32_t libmpq__rsa_public_operation(
+    const uint8_t *modulus, size_t modulus_size, const uint8_t *exponent, size_t exponent_size,
+    const uint8_t *input, uint8_t *output
 );
 void
 libmpq__rsa_md5_encode(const uint8_t digest[LIBMPQ_MD5_SIZE], uint8_t encoded[LIBMPQ_RSA_SIZE]);

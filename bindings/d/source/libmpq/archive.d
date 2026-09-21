@@ -59,17 +59,22 @@ struct FileMetadata {
  * errors. A closed archive must not be used again.
  */
 class Archive {
-    /** Detect structurally valid weak signatures; absence returns zero. */
+    /** Detect structurally valid weak and strong signatures; absence returns zero. */
     uint signatures() {
         uint result;
         checkStatus(libmpq__archive_signatures(nativeHandle(), &result), "libmpq__archive_signatures");
         return result;
     }
 
-    /** Verify using a 128-byte key: 64-byte big-endian n then e; return mismatch bits. */
+    /** Verify a weak signature and return mismatch bits. */
     uint verify(const(ubyte)[] publicKey) {
+        return verify(publicKey, SIGNATURE_WEAK);
+    }
+
+    /** Verify the selected signature type and return mismatch bits. */
+    uint verify(const(ubyte)[] publicKey, uint signatureType) {
         uint result;
-        checkStatus(libmpq__archive_verify(nativeHandle(), SIGNATURE_WEAK,
+        checkStatus(libmpq__archive_verify(nativeHandle(), signatureType,
                     publicKey.ptr, publicKey.length, &result), "libmpq__archive_verify");
         return result;
     }

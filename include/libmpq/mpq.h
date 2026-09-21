@@ -260,21 +260,26 @@ typedef struct
 extern LIBMPQ_API int32_t libmpq__archive_attributes(mpq_archive_s *mpq_archive, uint32_t *flags);
 
 #define LIBMPQ_SIGNATURE_WEAK 0x00000001u
+#define LIBMPQ_SIGNATURE_STRONG 0x00000002u
 
-/* Detect structurally valid weak signatures on readers; absence returns zero.
+/* Detect structurally valid weak and strong signatures on readers; absence returns zero.
  * All non-NULL outputs are initialized before validation.
- * Raw RSA keys are exactly 128 bytes: an unsigned big-endian 64-byte modulus,
- * followed by a zero-padded 64-byte big-endian exponent value. Pass a public
- * key to verify a signature and a private key to create one. The modulus must
- * be 512-bit and odd; the exponent must be odd, >=3 and less than the modulus.
+ * Weak RSA keys are exactly 128 bytes: an unsigned big-endian 64-byte modulus,
+ * followed by a zero-padded 64-byte exponent value. Strong verification keys
+ * are exactly 512 bytes: an unsigned big-endian 256-byte modulus followed by
+ * a zero-padded 256-byte public exponent. Pass a public key to verify a
+ * signature and a private key to create a weak one. The modulus must be
+ * full-width and odd; the exponent must be odd, >=3 and less than the modulus.
  * No PEM, ASN.1 or built-in keys are accepted. MD5/RSA-512 is legacy-only.
- * Verification requires WEAK exactly and a caller public key. Missing signature
- * returns EXIST; malformed storage/key returns FORMAT; I/O errors propagate.
- * A cryptographic mismatch returns success with WEAK in *mismatches.
+ * Verification requires exactly one signature type and a caller public key.
+ * Missing signature returns EXIST; malformed storage/key returns FORMAT; I/O
+ * errors propagate. A cryptographic mismatch returns success with the
+ * requested type in *mismatches.
  * Signing is configured once on a v1 or v2 writer without an active file writer.
  * It copies the caller key and immediately consumes one max_files slot for
  * (signature). Close signs the final archive and clears the retained key.
- * Generated signature attribute values are zero. Reopen to verify.
+ * Generated signature attribute values are zero. Strong signing is unsupported.
+ * Reopen to verify.
  * Reader verification is independent of archive version/compression policy. */
 extern LIBMPQ_API int32_t libmpq__archive_signatures(mpq_archive_s *archive, uint32_t *signatures);
 extern LIBMPQ_API int32_t libmpq__archive_verify(

@@ -267,27 +267,45 @@ eight zero bytes followed by a little-endian RSA-512 signature integer.
 libmpq hashes from the archive offset through the v1 declared archive size or
 the v2 metadata-derived required extent, treating all 72 signature bytes as
 zero, and checks the complete PKCS#1 v1.5 MD5 DigestInfo encoding. Bytes before
-or after that MPQ range are not hashed. This does not implement Warcraft III's
-special map-header hashing convention.
+or after that MPQ range are not hashed. For archives physically beginning with
+`HM3W`, weak and strong signature hashing starts at physical offset zero and
+ends at the logical MPQ end; weak hashing still excludes the internal
+`(signature)` file.
 
 For MPQ v2 archives, libmpq derives the weak-signature extent from the parsed
 64-bit archive structures rather than using the deprecated 32-bit
 `dwArchiveSize` field as the authoritative archive boundary.
 
-`libmpq__archive_signatures` returns `LIBMPQ_SIGNATURE_WEAK` when a valid
-weak-signature structure is present, or zero when absent. It does not prove
-cryptographic validity. `libmpq__archive_verify` takes that bit and a caller's
-public key; mismatches return success with the bit set, while missing
-signatures, malformed storage/keys, and I/O failures return negative errors.
-Output masks are initialized before validation.
+`libmpq__archive_signatures` returns `LIBMPQ_SIGNATURE_WEAK` for an internal
+weak signature and `LIBMPQ_SIGNATURE_STRONG` for an external strong trailer.
+It reports structure, not cryptographic validity. Strong trailers are `NGIS`
+followed by a 256-byte RSA-2048 value immediately after the logical MPQ range.
+`libmpq__archive_verify` accepts one signature type at a time because weak and
+strong public keys have different sizes. Strong verification accepts SHA-1 of
+the archive range, the range plus uppercase archive basename, or the range plus
+`ARCHIVE`. For an `HM3W` wrapper, both signature hashes start at physical
+offset zero and still end at the logical MPQ end.
 
-Keys are exactly 128 bytes: a 64-byte unsigned big-endian modulus followed by
-a 64-byte zero-padded big-endian exponent value. Use a public key to verify a
+Weak signatures use MD5/RSA-512 and support creation and verification. Strong
+signatures use SHA-1/RSA-2048 and support verification only. Both are legacy
+compatibility mechanisms, not modern cryptographic trust primitives.
+
+External strong `NGIS` signatures are not detected or verified for MPQE
+transport streams because MPQE encrypts the complete transport and no external
+strong-trailer representation is defined.
+
+Weak public and private keys are exactly 128 bytes: a 64-byte unsigned big-endian
+modulus followed by a 64-byte zero-padded unsigned big-endian exponent value.
+Use a public key to verify a
 signature and a private key to create one. The modulus must be full-width and
 odd; the exponent must be odd, at least 3, and less than the modulus. These
 checks validate representation,
 not the mathematical validity of the caller's RSA key pair. No PEM,
 certificates, ASN.1 parser, default public key, or private key is built in.
+
+Strong public verification keys are exactly 512 bytes: a 256-byte unsigned
+big-endian modulus followed by a 256-byte zero-padded unsigned big-endian
+public exponent. There is no strong private-key or signing API.
 
 On a new v1 or v2 writer, call `libmpq__archive_sign` once before closing, with no
 active file writer. It copies the private key and reserves one file-table slot
@@ -299,8 +317,8 @@ configuring signing. Readers do not impose the writer's version restriction.
 
 MD5 and RSA-512 are obsolete and unsuitable for modern authentication. The
 private fixed-width RSA code is deliberately limited to this legacy format,
-not a general-purpose hardened cryptographic service. Strong signatures
-(`NGIS` and RSA-2048) are not implemented. Never treat a matching signature as
+not a general-purpose hardened cryptographic service. Strong verification
+also uses historical cryptography. Never treat a matching signature as
 a substitute for range validation.
 
 ## Implementation order

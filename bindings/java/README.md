@@ -1,10 +1,14 @@
 # libmpq Java bindings
 
 Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
+Strong verification uses a 512-byte raw public key: a 256-byte unsigned
+big-endian modulus followed by a 256-byte zero-padded unsigned big-endian
+public exponent. Strong signing is unsupported. External strong NGIS
+signatures are not detected or verified for MPQE transport streams.
 Use `Archive.sign(privateKey)` before writer close, and
 `Archive.signatures()` / `Archive.verify(publicKey)` on reopened archives.
 Verification returns mismatch bits; malformed keys/archives raise normal binding
-errors. Keys are exactly 128 bytes: 64-byte big-endian modulus followed by a
+errors. Weak keys are exactly 128 bytes: 64-byte big-endian modulus followed by a
 64-byte big-endian exponent. Signing supports v1 and v2; no keys are built
 in. MD5/RSA-512 is legacy compatibility, not modern authenticity protection.
 See [the format guide](../../MPQ.md) for details.
@@ -127,3 +131,8 @@ ordinary extraction. CRC32 and MD5 cover source bytes before compression,
 so lossy ADPCM output may differ; they are not authentication and are not
 automatically verified. FILETIME defaults to zero, never filesystem mtime.
 PATCH_BIT is read as metadata; creation writes zeros and does not make patches.
+
+`Archive.signatures()` reports weak MD5/RSA-512 internal signatures and strong
+SHA-1/RSA-2048 external `NGIS` trailers. `Archive.verify(byte[])` remains the
+weak convenience overload; `verify(int, byte[])` accepts `SIGNATURE_STRONG`
+and a 512-byte raw public key. Strong signatures are verification-only.

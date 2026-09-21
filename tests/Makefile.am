@@ -43,7 +43,7 @@ test_attributes_SOURCES = test-mpq-attributes.c $(COMMON_SOURCES)
 test_attributes_LDADD = $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-stream.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
 test_md5_SOURCES = test-mpq-md5.c $(COMMON_SOURCES)
 test_signature_SOURCES = test-mpq-signature.c $(COMMON_SOURCES)
-test_signature_LDADD = $(top_builddir)/src/mpq-rsa.lo $(top_builddir)/src/mpq-md5.lo $(test_attributes_LDADD)
+test_signature_LDADD = $(top_builddir)/src/mpq-rsa.lo $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-sha1.lo $(test_attributes_LDADD)
 test_md5_LDADD = $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-endian.lo $(LDADD)
 test_compression_SOURCES = test-mpq-compression.c $(COMMON_SOURCES)
 test_lzma_SOURCES = test-mpq-lzma.c $(COMMON_SOURCES)
@@ -95,10 +95,12 @@ test_fixtures_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixt
 test_mpqe_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_pkware_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_reader_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_signature_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_wave_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 
 # Ship the deterministic fixture corpus and all module-mapped test sources.
 EXTRA_DIST = \
+	fixtures/mpq-v1-features.w3x \
 	test-mpq-consumer.c \
 	test-mpq-helper.h \
 	test-mpq-helper.c \

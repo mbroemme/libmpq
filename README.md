@@ -52,10 +52,11 @@ MPQ v2+ LZMA method.
   explicit FILETIME, MD5, and read-only patch-bit information.
 * Explicitly verify stored sector Adler-32 checksums and available attributes
   CRC32 or MD5 values without changing normal extraction behavior.
-* Detect and verify weak MPQ `(signature)` files with caller-supplied RSA keys,
-  and sign new v1/v2 archives. Warcraft III `HM3W` map-header hashing is not
-  included. MD5/RSA-512 is legacy compatibility only, not modern
-  authenticity protection; strong signatures are not implemented.
+* Detect and verify weak internal `(signature)` files using MD5/RSA-512, and
+  sign new v1/v2 archives. Verify strong external `NGIS` trailers using
+  SHA-1/RSA-2048 and caller-supplied keys; strong signing is unsupported.
+  Both mechanisms are legacy compatibility only, not modern authenticity
+  protection.
 * Support big-endian hosts through explicit little-endian serialization; CI
   runs the full test suite on emulated s390x.
 * Provide optional Python 3.11+, D, and Java bindings.
@@ -343,8 +344,8 @@ headers, tables, encryption, sectors, and compression, see the
   random-access writing is unsupported. Creation uses an owner-only plaintext
   temporary file; completed POSIX archives use normal caller-umask permissions.
   Cleanup is best effort, so a crash can leave the plaintext temporary behind.
-* Signature generation, patch creation/application, and StormLib-specific key
-  modes are not supported. Stored attributes are not automatically verified.
+* Strong-signature generation, patch creation/application, and StormLib-specific
+  key modes are not supported. Stored attributes are not automatically verified.
 
 ## Contributing
 

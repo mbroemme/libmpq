@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HexFormat;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -61,6 +62,19 @@ class LibmpqTest {
             }
         } finally {
             java.nio.file.Files.deleteIfExists(path);
+        }
+    }
+
+    /** Verifies independently signed data through the existing native entry point. */
+    @Test
+    void strongSignatureFixture() throws Exception {
+        Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
+        byte[] publicKey = HexFormat.of().parseHex(
+            "b76f7dc7cdd3a083b2e52f39a5b7d58f181ab7bc03c1eaa0931744f0218bf74397b68481776a3f49f7b9a7ea08abf1c3a9802b54ee75661190e521453f6e125cdaca5d4b5cb52c84a158f1bb1b51bb9138acc55b45a083d3dde6e9e9cc4cb03adf4dda27a4a673993ebddfefd06e7c8c976387df92ba92d6392b9baf1a40f7b39d3c0ad1a4e2d685b46caea30863c9055d8e0a151d2e5adf5b79c69cc849c8b879ecc53be1207334d60b4194583b44129f272fe4790570ba530df485e2188932d79abb5b3b8713fd2d16de821048328e9ae93da8de983519033806fbd55591ebf5542641af669ad73e7c0f01b2dea45040f6658d2c6ca0f55f8d91c482f81617" + "00".repeat(253) + "010001");
+        assertEquals(512, publicKey.length);
+        try (Archive archive = Archive.open(root.resolve("mpq-v1-features.mpq"))) {
+            assertEquals(Mpq.SIGNATURE_WEAK | Mpq.SIGNATURE_STRONG, archive.signatures());
+            assertEquals(0, archive.verify(Mpq.SIGNATURE_STRONG, publicKey));
         }
     }
 

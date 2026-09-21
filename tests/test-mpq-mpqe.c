@@ -3,6 +3,7 @@
 
 #include "mpq-internal.h"
 #include "mpq-mpqe.h"
+#include "mpq-signature.h"
 #include "mpq-stream.h"
 
 #include <stdint.h>
@@ -184,21 +185,26 @@ test_stream_reads(const char *raw_path, const char *mpqe_path)
     uint8_t cross_chunk[96];
     uint8_t trailing[64];
     size_t raw_size;
+    size_t raw_extent;
     size_t trailing_size;
 
     TEST_CHECK(test_read_path(raw_path, &raw_data, &raw_size) == 0);
-    TEST_CHECK(raw_size > sizeof(cross_chunk) && raw_size % 64U != 0U);
+    raw_extent = raw_size;
+    if (raw_extent >= LIBMPQ_STRONG_TRAILER_SIZE &&
+        memcmp(raw_data + raw_extent - LIBMPQ_STRONG_TRAILER_SIZE, "NGIS", 4) == 0)
+        raw_extent -= LIBMPQ_STRONG_TRAILER_SIZE;
+    TEST_CHECK(raw_extent > sizeof(cross_chunk) && raw_extent % 64U != 0U);
     TEST_CHECK(
         libmpq__stream_open_mpqe(&stream, mpqe_path, auth_code, sizeof(auth_code) - 1U) == 0
     );
-    TEST_CHECK(libmpq__stream_size(stream) == raw_size);
+    TEST_CHECK(libmpq__stream_size(stream) == raw_extent);
     TEST_CHECK(libmpq__stream_read_at(stream, 32, cross_chunk, sizeof(cross_chunk)) == 0);
     TEST_CHECK(memcmp(cross_chunk, raw_data + 32, sizeof(cross_chunk)) == 0);
-    trailing_size = raw_size % 64U;
+    trailing_size = raw_extent % 64U;
     TEST_CHECK(
-        libmpq__stream_read_at(stream, raw_size - trailing_size, trailing, trailing_size) == 0
+        libmpq__stream_read_at(stream, raw_extent - trailing_size, trailing, trailing_size) == 0
     );
-    TEST_CHECK(memcmp(trailing, raw_data + raw_size - trailing_size, trailing_size) == 0);
+    TEST_CHECK(memcmp(trailing, raw_data + raw_extent - trailing_size, trailing_size) == 0);
     TEST_CHECK(libmpq__stream_close(stream) == 0);
     free(raw_data);
     return 0;
