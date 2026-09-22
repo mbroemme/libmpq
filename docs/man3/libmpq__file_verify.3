@@ -51,8 +51,10 @@ requires its full unpacked block buffer. FILETIME and PATCH_BIT are not verified
 MPQ sector CRCs are Adler-32 checksums over stored sectors after decryption
 and before decompression. Their table may be compressed but is not encrypted.
 Absent tables and zero or all-ones checksum entries are skipped. Single-unit
-files have no sector checksum table. Normal reads never check sector checksums.
-Sector metadata errors are reported only when sector verification is requested.
+files have no sector checksum table. Complete file reads automatically compare
+usable sector entries, including before lossy ADPCM decoding; malformed optional
+tables are skipped during normal extraction. This explicit interface continues
+to report sector metadata errors and per-check mismatches.
 .SS "Missing Metadata"
 Missing (attributes) is an error when either file checksum is requested.
 Sector-only requests do not require (attributes). Requested file checksums

@@ -337,8 +337,10 @@ and the attributes entry itself have zero values.
 Complete lossless \fBlibmpq__file_read\fP() calls automatically compare
 available file CRC32 and MD5 values after decoding the full logical member.
 Malformed optional metadata and lossy ADPCM members skip automatic comparison.
-FILETIME and PATCH_BIT remain metadata only; sector Adler-32 checks remain
-explicit.
+Complete reads also compare usable sector Adler-32 values over decrypted
+packed sectors before decompression, including lossy ADPCM. Malformed optional
+sector tables are skipped during ordinary extraction. FILETIME and PATCH_BIT
+remain metadata only.
 \fBlibmpq__file_verify\fP() compares requested, available file CRC32 and MD5
 values against complete extracted contents. LIBMPQ_VERIFY_FILE_CRC32 and
 LIBMPQ_VERIFY_FILE_MD5 select these checks. LIBMPQ_VERIFY_SECTOR_CRC checks

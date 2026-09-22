@@ -83,7 +83,7 @@ containing the original code and diagnostic text.
 Set `Mpq.FILE_FLAG_SECTOR_CRC` in file options alongside COMPRESS or IMPLODE
 to generate sector Adler-32 tables, including for encrypted files. Empty,
 raw, and single-unit files ignore this flag. Generation is opt-in and
-verification remains explicit.
+complete reads automatically verify usable sector entries.
 
 `archive.verify(fileNumber)` explicitly compares sector Adler-32 and file
 CRC32/MD5. For one sector, `archive.verifyBlock(fileNumber, blockNumber)`
@@ -134,7 +134,10 @@ bytes; malformed optional metadata is skipped during extraction but still
 raises the existing format exception when queried. CRC32 and MD5 cover source
 bytes before compression, so lossy ADPCM is not automatically compared.
 FILETIME defaults to zero, never filesystem mtime, and PATCH_BIT remains
-metadata only. Sector Adler-32 verification remains explicit.
+metadata only. Complete reads verify usable sector Adler-32 values over
+decrypted packed sectors before decoding, including lossy ADPCM. Malformed
+optional sector tables are skipped during extraction; lossy ADPCM skips only
+file-level CRC32/MD5 comparison.
 
 `Archive.signatures()` reports weak MD5/RSA-512 internal signatures and strong
 SHA-1/RSA-2048 external `NGIS` trailers. `Archive.verify(byte[])` remains the

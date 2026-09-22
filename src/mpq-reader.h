@@ -42,7 +42,7 @@ int32_t libmpq__reader_file_read(
 int32_t libmpq__reader_offsets_acquire(mpq_archive_s *archive, uint32_t number, const char *name);
 int32_t libmpq__reader_offsets_release(mpq_archive_s *archive, uint32_t number);
 
-/* Share block I/O; only explicit verification supplies a checksum and result. */
+/* Share block I/O; callers can supply one checksum and mismatch result. */
 int32_t libmpq__reader_block_read(
     mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint8_t *out_buf,
     libmpq__off_t out_size, libmpq__off_t *transferred, const uint32_t *checksum,

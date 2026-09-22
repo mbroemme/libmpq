@@ -235,15 +235,19 @@ does not create or apply patches. Checksums are metadata, not cryptographic
 authentication. Complete lossless file reads automatically compare available
 CRC32 and MD5 values against decoded contents; FILETIME and PATCH_BIT remain
 metadata only. Lossy ADPCM decoded bytes can differ from source-byte metadata,
-so those members are not automatically compared. Sector Adler-32 checks remain
-explicit.
+so those members are not automatically compared. Complete file reads also
+verify available sector Adler-32 values over decrypted packed sectors before
+decoding, including ADPCM. Unusable optional sector tables are skipped during
+ordinary extraction.
 
 `libmpq__file_verify()` explicitly compares sector checksums and file CRC32/MD5.
 MPQ sector CRCs are Adler-32 checksums over decrypted packed sectors, before
 decompression. Their optional table follows the sectors, may be compressed,
 and is not encrypted. Zero and all-ones entries are unavailable and skipped;
 single-unit files have no sector checksum table. `LIBMPQ_VERIFY_SECTOR_CRC`
-requests only this check and does not require `(attributes)`.
+requests only this check and does not require `(attributes)`. Complete reads
+automatically check usable entries, while explicit verification continues to
+report table errors and per-check mismatches.
 
 The writer generates these tables when `LIBMPQ_FILE_FLAG_SECTOR_CRC` is
 requested for sectorized COMPRESS or IMPLODE files. It checksums packed bytes

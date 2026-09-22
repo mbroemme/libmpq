@@ -609,9 +609,11 @@ extern LIBMPQ_API int32_t libmpq__file_number_from_hash(
  * The library decrypts and decompresses sectors as necessary and reports the
  * number of bytes copied through transferred. When available, stored CRC32
  * and MD5 values are checked after decoding a complete lossless logical file;
- * a mismatch returns LIBMPQ_ERROR_READ. Malformed optional attributes and
- * lossy ADPCM members skip automatic checking. out_size must be large enough
- * for the unpacked file or the operation returns LIBMPQ_ERROR_SIZE.
+ * usable sector Adler-32 values are checked over decrypted packed data before
+ * decoding. A mismatch returns LIBMPQ_ERROR_READ. Malformed optional metadata
+ * is skipped during extraction, and lossy ADPCM skips only file CRC32/MD5.
+ * out_size must be large enough for the unpacked file or the operation returns
+ * LIBMPQ_ERROR_SIZE.
  */
 extern LIBMPQ_API int32_t libmpq__file_read(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint8_t *out_buf, libmpq__off_t out_size,

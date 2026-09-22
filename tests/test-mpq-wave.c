@@ -236,6 +236,74 @@ cleanup:
     return 0;
 }
 
+/* Packed-sector checksums remain meaningful before lossy ADPCM decoding. */
+static int
+test_fixture_wave_checksum_mismatch(
+    const char *fixture, uint8_t *raw, size_t raw_size, uint16_t channels
+)
+{
+    const char *name = channels == 1 ? "wave-mono.wav" : "wave-stereo.wav";
+    char path[128] = { 0 };
+    mpq_archive_s *archive = NULL;
+    uint8_t *output = NULL;
+    uint32_t number;
+    uint32_t blocks;
+    uint32_t checksum_offset;
+    libmpq__off_t offset;
+    libmpq__off_t unpacked;
+    FILE *stream = NULL;
+    int result = 1;
+
+    if (libmpq__archive_open(&archive, fixture, 0) != 0 ||
+        libmpq__file_number(archive, name, &number) != 0 ||
+        libmpq__file_blocks(archive, number, &blocks) != 0 ||
+        libmpq__file_offset(archive, number, &offset) != 0 ||
+        libmpq__file_size_unpacked(archive, number, &unpacked) != 0 || offset < 0 ||
+        (uint64_t)offset > raw_size || blocks == 0 ||
+        (uint64_t)blocks * 4U > raw_size - (size_t)offset) {
+        goto cleanup;
+    }
+    checksum_offset = get_le32(raw + (size_t)offset + blocks * 4U);
+    if ((uint64_t)checksum_offset > raw_size - (size_t)offset ||
+        sizeof(uint32_t) > raw_size - (size_t)offset - checksum_offset) {
+        goto cleanup;
+    }
+    raw[(size_t)offset + checksum_offset] ^= 1;
+    if (libmpq__archive_close(archive) != 0)
+        goto cleanup;
+    archive = NULL;
+    if (test_temp_path(path, sizeof(path), "wave-adpcm-checksum") != 0 ||
+        (stream = fopen(path, "wb")) == NULL)
+        goto cleanup;
+    if (fwrite(raw, 1, raw_size, stream) != raw_size) {
+        fclose(stream);
+        stream = NULL;
+        goto cleanup;
+    }
+    if (fclose(stream) != 0) {
+        stream = NULL;
+        goto cleanup;
+    }
+    stream = NULL;
+    if (libmpq__archive_open(&archive, path, 0) != 0 ||
+        libmpq__file_number(archive, name, &number) != 0 || unpacked < 0 ||
+        (output = malloc((size_t)unpacked + 1U)) == NULL ||
+        libmpq__file_read(archive, number, output, unpacked, NULL) != LIBMPQ_ERROR_READ) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    if (stream != NULL)
+        fclose(stream);
+    if (archive != NULL)
+        libmpq__archive_close(archive);
+    free(output);
+    remove(path);
+    TEST_CHECK(result == 0);
+    return 0;
+}
+
 /* Exercise both real audio members through the ordinary and MPQE readers. */
 static int
 test_wave_fixtures(uint32_t version)
@@ -265,6 +333,9 @@ test_wave_fixtures(uint32_t version)
             goto cleanup;
         archive = NULL;
     }
+    snprintf(path, sizeof(path), "%s/mpq-v%u-features.mpq", FIXTURE_DIR, version);
+    if (test_fixture_wave_checksum_mismatch(path, raw, raw_size, 1) != 0)
+        goto cleanup;
     result = 0;
 
 cleanup:

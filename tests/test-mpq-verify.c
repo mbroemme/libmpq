@@ -234,16 +234,17 @@ test_sectors(
     }
     REQUIRE(
         libmpq__file_read(archive, number, output, sizeof(output), &transferred) ==
-        (attributes && (corrupt & (LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5)) != 0
+        ((!absent && (corrupt & LIBMPQ_VERIFY_SECTOR_CRC) != 0) ||
+                 (attributes &&
+                  (corrupt & (LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5)) != 0)
              ? LIBMPQ_ERROR_READ
              : 0)
     );
     REQUIRE(memcmp(plain, output, sizeof(plain)) == 0);
 
-    /* Block reads are intentionally partial and therefore do not compare
-     * whole-file metadata. A changed decoded final sector is rejected only by
-     * a subsequent complete file read. */
-    if (attributes && corrupt == 0 && !absent) {
+    /* Block reads are intentionally partial and do not load a checksum table.
+     * A changed packed final sector is rejected by the complete file read. */
+    if (corrupt == 0 && !absent && !encrypted) {
         read_failure_s failure;
         libmpq__off_t tail_size;
 
@@ -634,6 +635,7 @@ main(void)
                     TEST_CHECK(test_sectors(version, encrypted, compressed, corrupt, 1, 0) == 0);
     for (absent = 0; absent <= 2; ++absent)
         TEST_CHECK(test_sectors(1, 1, 1, LIBMPQ_VERIFY_SECTOR_CRC, 0, absent) == 0);
+    TEST_CHECK(test_sectors(1, 0, 1, 0, 0, 0) == 0);
     for (version = 0; version <= 1; ++version)
         for (i = 0; i < sizeof(storage) / sizeof(storage[0]); ++i)
             for (j = 0; j < sizeof(sizes) / sizeof(sizes[0]); ++j)

@@ -37,9 +37,10 @@ they are returned.
 When a valid (attributes) member supplies CRC32 and/or MD5 for the selected
 lossless file, a complete read compares decoded bytes before reporting success.
 A mismatch returns LIBMPQ_ERROR_READ. Malformed optional metadata and lossy
-ADPCM members skip automatic comparison. FILETIME and PATCH_BIT remain
-metadata; sector Adler-32 checks remain explicit through
-\fBlibmpq__file_verify\fP().
+ADPCM members skip automatic file CRC32/MD5 comparison. Usable sector
+Adler-32 entries are automatically compared over decrypted packed data before
+decompression, including ADPCM. Malformed optional sector tables are skipped
+during extraction. FILETIME and PATCH_BIT remain metadata.
 .LP
 The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The \fIfile_number\fP argument selects the

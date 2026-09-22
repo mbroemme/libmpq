@@ -50,8 +50,9 @@ MPQ v2+ LZMA method.
   method; readers accept Blizzard multi-compression payloads.
 * Read and create version-100 `(attributes)` metadata in MPQ v1+: CRC32,
   explicit FILETIME, MD5, and read-only patch-bit information.
-* Automatically verify available attribute CRC32/MD5 values on complete
-  lossless reads, with explicit file and sector Adler-32 verification controls.
+* Automatically verify available sector Adler-32 values and attribute CRC32/MD5
+  values on complete reads. Sector checks cover decrypted packed data before
+  decoding; file hashes cover complete lossless decoded data.
 * Detect, verify, and create weak internal `(signature)` files using MD5/RSA-512,
   and strong external `NGIS` trailers using SHA-1/RSA-2048 and caller-supplied
   keys. Strong creation emits the plain SHA-1 archive-range variant; basename
@@ -346,9 +347,10 @@ headers, tables, encryption, sectors, and compression, see the
   temporary file; completed POSIX archives use normal caller-umask permissions.
   Cleanup is best effort, so a crash can leave the plaintext temporary behind.
 * Patch creation/application and StormLib-specific key modes are not supported.
-  Complete lossless reads automatically verify available stored CRC32 and MD5
-  attributes. Malformed optional attributes and lossy ADPCM members are skipped;
-  FILETIME/PATCH_BIT remain metadata and sector Adler-32 checks are explicit.
+  Complete reads automatically verify available valid sector Adler-32 values;
+  complete lossless reads also verify stored CRC32 and MD5 attributes. Malformed
+  optional metadata is skipped during extraction. FILETIME/PATCH_BIT remain
+  metadata, and lossy ADPCM skips only file-level CRC32/MD5 comparison.
 
 ## Contributing
 

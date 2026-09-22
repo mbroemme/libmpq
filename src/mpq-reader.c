@@ -173,7 +173,9 @@ libmpq__reader_file_read(
     libmpq__off_t unpacked_size = 0;
     libmpq__off_t transferred_block = 0;
     libmpq__off_t transferred_total = 0;
+    uint32_t *checksums = NULL;
     uint32_t mismatches = 0;
+    uint32_t sector_mismatches = 0;
     int lossy = FALSE;
 
     if (libmpq__reader_validate_file_number(mpq_archive, file_number) < 0) {
@@ -193,6 +195,12 @@ libmpq__reader_file_read(
         return result;
     }
 
+    /* Sector tables are optional metadata. Explicit verification reports
+     * malformed tables, while complete reads skip unusable tables and retain
+     * normal extraction behavior. */
+    if (libmpq__reader_sector_checksums(mpq_archive, file_number, &checksums) < 0)
+        checksums = NULL;
+
     /* Read each block into its exact destination slice and maintain one total. */
     for (i = 0; i < blocks; i++) {
         int block_lossy = FALSE;
@@ -203,8 +211,10 @@ libmpq__reader_file_read(
 
         if ((result = libmpq__reader_block_read(
                  mpq_archive, file_number, i, out_buf + transferred_total, unpacked_size,
-                 &transferred_block, NULL, NULL, &block_lossy
+                 &transferred_block, checksums != NULL ? checksums + i : NULL, &sector_mismatches,
+                 &block_lossy
              )) < 0) {
+            free(checksums);
             libmpq__reader_offsets_release(mpq_archive, file_number);
             return result;
         }
@@ -215,12 +225,17 @@ libmpq__reader_file_read(
     }
 
     if (transferred_total != expected_size) {
+        free(checksums);
         (void)libmpq__reader_offsets_release(mpq_archive, file_number);
         return LIBMPQ_ERROR_READ;
     }
     result = libmpq__reader_offsets_release(mpq_archive, file_number);
+    free(checksums);
     if (result < 0)
         return result;
+
+    if (sector_mismatches != 0)
+        return LIBMPQ_ERROR_READ;
 
     /* file_read always decodes the complete logical member. Compare lossless
      * output against attributes without reopening or rereading the member. */
