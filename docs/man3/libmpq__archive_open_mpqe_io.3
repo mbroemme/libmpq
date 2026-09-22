@@ -1,0 +1,73 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__ARCHIVE_OPEN_MPQE_IO 3 2026-09-24 "The MoPaQ archive library"
+.SH NAME
+libmpq__archive_open_mpqe_io \- open an MPQE-wrapped MPQ through random-access I/O.
+.SH SYNOPSIS
+.nf
+.B
+#include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__archive_open_mpqe_io("
+.BI "        mpq_archive_s **" "mpq_archive,"
+.BI "        void            *" "context,"
+.BI "        libmpq_io_read_at_fn " "read_at,"
+.BI "        libmpq__off_t    " "stream_size,"
+.BI "        libmpq__off_t    " "archive_offset,"
+.BI "        const uint8_t    *" "auth_code,"
+.BI "        size_t            " "auth_code_size,"
+.BI "        const char       *" "source_name"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Open an MPQE transport stream through the same borrowed exact random-access
+callback contract as \fBlibmpq__archive_open_io\fP(). libmpq obtains encrypted
+bytes through the callback, applies its MPQE transform, and parses the result
+as an MPQ. The context remains caller-owned through every related clone.
+.PP
+\fIsource_name\fP follows the same optional copied logical-name rules as
+\fBlibmpq__archive_open_io\fP(), including basename-dependent legacy strong
+signature verification.
+.PP
+At least 32 authentication-code bytes are required. An incorrect code is not
+identifiable by MPQE alone and can therefore produce an ordinary MPQ parser
+error after decryption.
+.SH RETURN VALUE
+On success, *\fImpq_archive\fP receives a new \fBmpq_archive_s\fP and zero is
+returned. On failure, the output handle is NULL. The errors documented for
+\fBlibmpq__archive_open_io\fP can apply. \fBLIBMPQ_ERROR_DECRYPT\fP reports a
+NULL or too-short authentication code.
+.SH SEE ALSO
+.BR libmpq__archive_open_io (3),
+.BR libmpq__archive_clone (3),
+.BR libmpq__archive_close (3)
+.SH AUTHOR
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

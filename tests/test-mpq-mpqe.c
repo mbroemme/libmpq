@@ -13,6 +13,24 @@
 
 static const uint8_t auth_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
 
+typedef struct
+{
+    const uint8_t *data;
+    size_t size;
+} memory_source_s;
+
+static int32_t
+memory_read_at(void *context, libmpq__off_t offset, uint8_t *buffer, size_t size)
+{
+    const memory_source_s *source = context;
+
+    if (source == NULL || offset < 0 || (uint64_t)offset > source->size ||
+        size > source->size - (size_t)offset)
+        return LIBMPQ_ERROR_READ;
+    memcpy(buffer, source->data + (size_t)offset, size);
+    return LIBMPQ_SUCCESS;
+}
+
 /* Verify MPQE key derivation using a synthetic known-answer vector. */
 static int
 test_key_derivation(void)
@@ -210,6 +228,58 @@ test_stream_reads(const char *raw_path, const char *mpqe_path)
     return 0;
 }
 
+static int
+test_custom_io(const char *mpqe_path, libmpq__off_t archive_offset)
+{
+    uint8_t wrong_code[sizeof(auth_code) - 1U];
+    memory_source_s source = { 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_archive_s *clone = NULL;
+    uint8_t *data = NULL;
+    size_t size = 0;
+    uint32_t number;
+
+    TEST_CHECK(test_read_path(mpqe_path, &data, &size) == 0);
+    source.data = data;
+    source.size = size;
+    TEST_CHECK(
+        libmpq__archive_open_mpqe_io(
+            &archive, &source, memory_read_at, (libmpq__off_t)source.size, archive_offset,
+            auth_code, sizeof(auth_code) - 1U, NULL
+        ) == 0
+    );
+    TEST_CHECK(libmpq__file_number(archive, "overview.txt", &number) == 0);
+    TEST_CHECK(libmpq__archive_clone(&clone, archive) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+    TEST_CHECK(libmpq__file_number(clone, "overview.txt", &number) == 0);
+    TEST_CHECK(libmpq__archive_close(clone) == 0);
+    clone = NULL;
+    TEST_CHECK(
+        libmpq__archive_open_mpqe_io(
+            &archive, &source, memory_read_at, (libmpq__off_t)source.size, archive_offset,
+            auth_code, sizeof(auth_code) - 1U, NULL
+        ) == 0
+    );
+    TEST_CHECK(libmpq__archive_clone(&clone, archive) == 0);
+    TEST_CHECK(libmpq__archive_close(clone) == 0);
+    clone = NULL;
+    TEST_CHECK(libmpq__file_number(archive, "overview.txt", &number) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+    memcpy(wrong_code, auth_code, sizeof(wrong_code));
+    wrong_code[0] ^= 1U;
+    TEST_CHECK(
+        libmpq__archive_open_mpqe_io(
+            &archive, &source, memory_read_at, (libmpq__off_t)source.size, archive_offset,
+            wrong_code, sizeof(wrong_code), NULL
+        ) == LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(archive == NULL);
+    free(data);
+    return 0;
+}
+
 /* Build a temporary MPQE stream to cover an unaligned read through two batches. */
 static int
 test_stream_cross_batch(void)
@@ -330,6 +400,7 @@ test_fixture(const mpqe_fixture_s *fixture, size_t index)
     TEST_CHECK(strcmp(hash, fixture->overview_hash) == 0);
     free(data);
     TEST_CHECK(libmpq__archive_close(clone) == 0);
+    TEST_CHECK(test_custom_io(mpqe_path, index == 0 ? 0 : -1) == 0);
     return test_stream_reads(raw_path, mpqe_path);
 }
 

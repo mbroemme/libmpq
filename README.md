@@ -35,6 +35,8 @@ MPQ v2+ LZMA method.
 
 * Read, inspect, and extract MPQ archives, including archives embedded at a
   non-zero file offset.
+* Open MPQ and MPQE archives from filesystem paths or caller-provided
+  random-access I/O callbacks.
 * Create seekable MPQ v1 and v2 archives with configurable file-table capacity,
   sector size, optional `(listfile)` and `(attributes)` metadata, encrypted
   tables, and encrypted file payloads.

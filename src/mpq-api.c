@@ -327,6 +327,17 @@ libmpq__archive_open(
     return libmpq__reader_archive_open_path(mpq_archive, mpq_filename, archive_offset);
 }
 
+int32_t
+libmpq__archive_open_io(
+    mpq_archive_s **mpq_archive, void *context, libmpq_io_read_at_fn read_at,
+    libmpq__off_t stream_size, libmpq__off_t archive_offset, const char *source_name
+)
+{
+    return libmpq__reader_archive_open_io(
+        mpq_archive, context, read_at, stream_size, archive_offset, source_name
+    );
+}
+
 /* Open a caller-authenticated MPQE stream before parsing the contained MPQ. */
 int32_t
 libmpq__archive_open_mpqe(
@@ -339,10 +350,23 @@ libmpq__archive_open_mpqe(
     );
 }
 
+int32_t
+libmpq__archive_open_mpqe_io(
+    mpq_archive_s **mpq_archive, void *context, libmpq_io_read_at_fn read_at,
+    libmpq__off_t stream_size, libmpq__off_t archive_offset, const uint8_t *auth_code,
+    size_t auth_code_size, const char *source_name
+)
+{
+    return libmpq__reader_archive_open_mpqe_io(
+        mpq_archive, context, read_at, stream_size, archive_offset, auth_code, auth_code_size,
+        source_name
+    );
+}
+
 /*
  * Reopen an archive with independent file I/O, metadata, and lazy caches.
- * Cloning rejects writer handles and verifies the source path still identifies
- * the same file before reparsing it into a separate archive object.
+ * Cloning rejects writer handles and verifies a path-backed source still
+ * identifies the same file before reparsing it into a separate archive object.
  */
 int32_t
 libmpq__archive_clone(mpq_archive_s **clone, mpq_archive_s *source)
@@ -351,7 +375,7 @@ libmpq__archive_clone(mpq_archive_s **clone, mpq_archive_s *source)
         return LIBMPQ_ERROR_EXIST;
     *clone = NULL;
 
-    if (source == NULL || source->filename == NULL || source->write_mode)
+    if (source == NULL || source->write_mode)
         return LIBMPQ_ERROR_EXIST;
 
     return libmpq__reader_archive_clone(clone, source);

@@ -357,6 +357,15 @@ extern LIBMPQ_API int32_t libmpq__writer_timestamp(mpq_writer_s *writer, uint64_
 typedef int64_t libmpq__off_t;
 
 /*
+ * Read exactly size bytes at an absolute offset in a caller-owned source.
+ * Success requires a zero result and a fully populated buffer. Negative
+ * LIBMPQ_ERROR_* results report failure; callbacks must not retain buffer.
+ */
+typedef int32_t (*libmpq_io_read_at_fn)(
+    void *context, libmpq__off_t offset, uint8_t *buffer, size_t size
+);
+
+/*
  * Return the library package version as a static, NUL-terminated string.
  * The returned pointer is owned by libmpq and remains valid for the process
  * lifetime; callers must not modify or free it. This function cannot fail.
@@ -397,6 +406,19 @@ extern LIBMPQ_API int32_t libmpq__archive_open(
 );
 
 /*
+ * Open an MPQ from a caller-owned exact random-access byte source. The source
+ * is borrowed: context, including NULL for stateless callbacks, and callback
+ * state must remain valid through archive close and any derived clones.
+ * Negative archive_offset enables header scan. source_name is optional and is
+ * copied into archive-owned storage as the logical archive name. Its basename
+ * is used for legacy strong-signature verification; omit it when unavailable.
+ */
+extern LIBMPQ_API int32_t libmpq__archive_open_io(
+    mpq_archive_s **mpq_archive, void *context, libmpq_io_read_at_fn read_at,
+    libmpq__off_t stream_size, libmpq__off_t archive_offset, const char *source_name
+);
+
+/*
  * Open a read-only MPQE-encrypted stream containing an MPQ archive. MPQE is
  * an installer transport layer and is decrypted before the normal MPQ header,
  * table, and file processing begins. auth_code is an opaque
@@ -414,6 +436,17 @@ extern LIBMPQ_API int32_t libmpq__archive_open(
 extern LIBMPQ_API int32_t libmpq__archive_open_mpqe(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset,
     const uint8_t *auth_code, size_t auth_code_size
+);
+
+/*
+ * Open an MPQE-wrapped MPQ through a caller-owned exact random-access source.
+ * The source ownership and lifetime rules, including optional copied source_name,
+ * match libmpq__archive_open_io().
+ */
+extern LIBMPQ_API int32_t libmpq__archive_open_mpqe_io(
+    mpq_archive_s **mpq_archive, void *context, libmpq_io_read_at_fn read_at,
+    libmpq__off_t stream_size, libmpq__off_t archive_offset, const uint8_t *auth_code,
+    size_t auth_code_size, const char *source_name
 );
 
 /*

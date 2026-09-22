@@ -73,6 +73,15 @@ int32_t libmpq__reader_archive_open_mpqe(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset,
     const uint8_t *auth_code, size_t auth_code_size
 );
+int32_t libmpq__reader_archive_open_io(
+    mpq_archive_s **mpq_archive, void *context, libmpq_io_read_at_fn read_at,
+    libmpq__off_t stream_size, libmpq__off_t archive_offset, const char *source_name
+);
+int32_t libmpq__reader_archive_open_mpqe_io(
+    mpq_archive_s **mpq_archive, void *context, libmpq_io_read_at_fn read_at,
+    libmpq__off_t stream_size, libmpq__off_t archive_offset, const uint8_t *auth_code,
+    size_t auth_code_size, const char *source_name
+);
 int32_t libmpq__reader_archive_clone(mpq_archive_s **clone, const mpq_archive_s *source);
 
 /* Decode count serialized little-endian uint32 values into native storage. */

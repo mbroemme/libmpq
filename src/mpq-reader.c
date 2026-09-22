@@ -1145,12 +1145,14 @@ libmpq__reader_archive_open_stream(
     /* Transfer stream ownership before any later archive initialization can fail. */
     (*mpq_archive)->stream = stream;
 
-    (*mpq_archive)->filename = malloc(strlen(mpq_filename) + 1);
-    if ((*mpq_archive)->filename == NULL) {
-        result = LIBMPQ_ERROR_MALLOC;
-        goto error;
+    if (mpq_filename != NULL) {
+        (*mpq_archive)->filename = malloc(strlen(mpq_filename) + 1);
+        if ((*mpq_archive)->filename == NULL) {
+            result = LIBMPQ_ERROR_MALLOC;
+            goto error;
+        }
+        memcpy((*mpq_archive)->filename, mpq_filename, strlen(mpq_filename) + 1);
     }
-    memcpy((*mpq_archive)->filename, mpq_filename, strlen(mpq_filename) + 1);
 
     (*mpq_archive)->file_identity_valid =
         libmpq__stream_file_identity(
@@ -1438,6 +1440,63 @@ libmpq__reader_archive_open_mpqe(
 }
 
 int32_t
+libmpq__reader_archive_open_io(
+    mpq_archive_s **mpq_archive, void *context, libmpq_io_read_at_fn read_at,
+    libmpq__off_t stream_size, libmpq__off_t archive_offset, const char *source_name
+)
+{
+    mpq_stream_s *stream = NULL;
+    int32_t result;
+
+    if (mpq_archive == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *mpq_archive = NULL;
+    if (read_at == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (stream_size < 0)
+        return LIBMPQ_ERROR_SIZE;
+    if (archive_offset < -1)
+        return LIBMPQ_ERROR_SEEK;
+    if (archive_offset >= 0 && (uint64_t)archive_offset > (uint64_t)stream_size)
+        return LIBMPQ_ERROR_SEEK;
+    result = libmpq__stream_open_io(&stream, context, read_at, (uint64_t)stream_size);
+    return result == LIBMPQ_SUCCESS ? libmpq__reader_archive_open_stream(
+                                          mpq_archive, source_name, archive_offset, stream
+                                      )
+                                    : result;
+}
+
+int32_t
+libmpq__reader_archive_open_mpqe_io(
+    mpq_archive_s **mpq_archive, void *context, libmpq_io_read_at_fn read_at,
+    libmpq__off_t stream_size, libmpq__off_t archive_offset, const uint8_t *auth_code,
+    size_t auth_code_size, const char *source_name
+)
+{
+    mpq_stream_s *stream = NULL;
+    int32_t result;
+
+    if (mpq_archive == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *mpq_archive = NULL;
+    if (read_at == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (stream_size < 0)
+        return LIBMPQ_ERROR_SIZE;
+    if (archive_offset < -1)
+        return LIBMPQ_ERROR_SEEK;
+    if (archive_offset >= 0 && (uint64_t)archive_offset > (uint64_t)stream_size)
+        return LIBMPQ_ERROR_SEEK;
+    result = libmpq__stream_open_mpqe_io(
+        &stream, context, read_at, (uint64_t)stream_size, auth_code, auth_code_size
+    );
+    return result == LIBMPQ_SUCCESS ? libmpq__reader_archive_open_stream(
+                                          mpq_archive, source_name, archive_offset, stream
+                                      )
+                                    : result;
+}
+
+int32_t
 libmpq__reader_archive_clone(mpq_archive_s **clone, const mpq_archive_s *source)
 {
     mpq_stream_s *stream = NULL;
@@ -1446,7 +1505,7 @@ libmpq__reader_archive_clone(mpq_archive_s **clone, const mpq_archive_s *source)
     if (clone == NULL)
         return LIBMPQ_ERROR_EXIST;
     *clone = NULL;
-    if (source == NULL || source->stream == NULL || source->filename == NULL)
+    if (source == NULL || source->stream == NULL)
         return LIBMPQ_ERROR_EXIST;
     result = libmpq__stream_clone(&stream, source->stream, source->filename);
     if (result == 0 && source->file_identity_valid) {

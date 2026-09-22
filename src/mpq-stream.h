@@ -21,18 +21,20 @@
 #include "mpq-mpqe.h"
 
 typedef struct mpq_stream mpq_stream_s;
+typedef struct mpq_io_backend mpq_io_backend_s;
 
 typedef int32_t (*mpq_io_read_at_fn)(void *, uint64_t, uint8_t *, size_t);
 typedef int32_t (*mpq_io_identity_fn)(void *, uint64_t *, uint64_t *);
 typedef int32_t (*mpq_io_close_fn)(void *);
 typedef void (*mpq_io_discard_fn)(void *);
+typedef int32_t (*mpq_io_clone_fn)(void *, mpq_io_backend_s *);
 
 /*
  * A private random-access byte source with explicit context ownership.
  * close and discard both consume context; close reports finalization errors,
  * while discard ignores them.
  */
-typedef struct mpq_io_backend
+struct mpq_io_backend
 {
     void *context;
     uint64_t size;
@@ -40,7 +42,8 @@ typedef struct mpq_io_backend
     mpq_io_identity_fn identity;
     mpq_io_close_fn close;
     mpq_io_discard_fn discard;
-} mpq_io_backend_s;
+    mpq_io_clone_fn clone;
+};
 
 /* Logical archive bytes optionally transformed from an underlying backend. */
 struct mpq_stream
@@ -53,11 +56,18 @@ struct mpq_stream
 };
 
 int32_t libmpq__stream_open_file(mpq_stream_s **stream, const char *path);
+int32_t libmpq__stream_open_io(
+    mpq_stream_s **stream, void *context, libmpq_io_read_at_fn read_at, uint64_t size
+);
 
 /* Borrow a finalized writer FILE for bounded read-at operations; do not close. */
 int32_t libmpq__stream_borrow_file(mpq_stream_s *stream, FILE *file, uint64_t size);
 int32_t libmpq__stream_open_mpqe(
     mpq_stream_s **stream, const char *path, const uint8_t *auth_code, size_t auth_code_size
+);
+int32_t libmpq__stream_open_mpqe_io(
+    mpq_stream_s **stream, void *context, libmpq_io_read_at_fn read_at, uint64_t size,
+    const uint8_t *auth_code, size_t auth_code_size
 );
 int32_t libmpq__stream_clone(mpq_stream_s **stream, const mpq_stream_s *source, const char *path);
 int32_t libmpq__stream_read_at(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size);

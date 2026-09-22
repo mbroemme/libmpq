@@ -5,6 +5,161 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef struct
+{
+    const uint8_t *data;
+    size_t size;
+    unsigned reads;
+    int32_t failure;
+    uint8_t out_of_range;
+} memory_source_s;
+
+static memory_source_s null_source;
+
+static int32_t
+memory_read_at(void *context, libmpq__off_t offset, uint8_t *buffer, size_t size)
+{
+    memory_source_s *source = context;
+
+    if (source == NULL || offset < 0 || (uint64_t)offset > source->size ||
+        size > source->size - (size_t)offset) {
+        if (source != NULL)
+            source->out_of_range = 1;
+        return LIBMPQ_ERROR_READ;
+    }
+    ++source->reads;
+    if (source->failure != 0)
+        return source->failure;
+    memcpy(buffer, source->data + (size_t)offset, size);
+    return 0;
+}
+
+static int32_t
+null_context_read_at(void *context, libmpq__off_t offset, uint8_t *buffer, size_t size)
+{
+    (void)context;
+    return memory_read_at(&null_source, offset, buffer, size);
+}
+
+static int
+test_custom_io(const char *path)
+{
+    uint8_t prefix[512] = { 'n', 'o', 't', '-', 'h', 'm', '3', 'w' };
+    memory_source_s source = { 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_archive_s *clone = NULL;
+    uint8_t *embedded = NULL;
+    uint8_t *raw = NULL;
+    uint8_t output[16];
+    libmpq__off_t transferred = 0;
+    libmpq__off_t file_size = 0;
+    uint32_t files;
+    uint32_t number;
+    uint32_t version;
+
+    TEST_CHECK(test_read_path(path, &raw, &source.size) == 0);
+    source.data = raw;
+    TEST_CHECK(source.size <= INT64_MAX);
+    TEST_CHECK(
+        libmpq__archive_open_io(NULL, &source, memory_read_at, source.size, 0, NULL) ==
+        LIBMPQ_ERROR_EXIST
+    );
+    TEST_CHECK(
+        libmpq__archive_open_io(&archive, &source, NULL, source.size, 0, NULL) == LIBMPQ_ERROR_EXIST
+    );
+    TEST_CHECK(archive == NULL);
+    TEST_CHECK(
+        libmpq__archive_open_io(&archive, &source, memory_read_at, -1, 0, NULL) == LIBMPQ_ERROR_SIZE
+    );
+    TEST_CHECK(archive == NULL);
+    TEST_CHECK(
+        libmpq__archive_open_io(&archive, &source, memory_read_at, source.size, -2, NULL) ==
+        LIBMPQ_ERROR_SEEK
+    );
+    TEST_CHECK(archive == NULL);
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &archive, &source, memory_read_at, (libmpq__off_t)source.size,
+            (libmpq__off_t)source.size + 1, NULL
+        ) == LIBMPQ_ERROR_SEEK
+    );
+    TEST_CHECK(archive == NULL);
+
+    TEST_CHECK(
+        libmpq__archive_open_io(&archive, &source, memory_read_at, source.size, 0, NULL) == 0
+    );
+    TEST_CHECK(source.reads != 0);
+    TEST_CHECK(libmpq__archive_version(archive, &version) == 0 && version == 1);
+    TEST_CHECK(libmpq__archive_files(archive, &files) == 0 && files == 6);
+    TEST_CHECK(libmpq__file_number(archive, "payload", &number) == 0);
+    TEST_CHECK(libmpq__file_size_unpacked(archive, number, &file_size) == 0 && file_size == 10);
+    TEST_CHECK(libmpq__file_read(archive, number, output, 10, &transferred) == 0);
+    TEST_CHECK(transferred == 10 && memcmp(output, "public API", 10) == 0);
+    TEST_CHECK(libmpq__block_read(archive, number, 0, output, 10, &transferred) == 0);
+    TEST_CHECK(transferred == 10 && memcmp(output, "public API", 10) == 0);
+    TEST_CHECK(libmpq__archive_clone(&clone, archive) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+    TEST_CHECK(source.out_of_range == 0);
+    TEST_CHECK(libmpq__file_number(clone, "payload", &number) == 0);
+    TEST_CHECK(libmpq__archive_close(clone) == 0);
+    clone = NULL;
+
+    TEST_CHECK(
+        libmpq__archive_open_io(&archive, &source, memory_read_at, source.size, 0, NULL) == 0
+    );
+    TEST_CHECK(libmpq__archive_clone(&clone, archive) == 0);
+    TEST_CHECK(libmpq__archive_close(clone) == 0);
+    clone = NULL;
+    TEST_CHECK(libmpq__file_number(archive, "payload", &number) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+
+    embedded = malloc(sizeof(prefix) + source.size);
+    TEST_CHECK(embedded != NULL);
+    memcpy(embedded, prefix, sizeof(prefix));
+    memcpy(embedded + sizeof(prefix), source.data, source.size);
+    source.data = embedded;
+    source.size += sizeof(prefix);
+    source.reads = 0;
+    TEST_CHECK(
+        libmpq__archive_open_io(&archive, &source, memory_read_at, source.size, -1, NULL) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &archive, &source, memory_read_at, source.size, (libmpq__off_t)sizeof(prefix), NULL
+        ) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+
+    source.failure = LIBMPQ_ERROR_READ;
+    TEST_CHECK(
+        libmpq__archive_open_io(&archive, &source, memory_read_at, source.size, -1, NULL) ==
+        LIBMPQ_ERROR_READ
+    );
+    TEST_CHECK(archive == NULL);
+    source.failure = 1;
+    TEST_CHECK(
+        libmpq__archive_open_io(&archive, &source, memory_read_at, source.size, -1, NULL) ==
+        LIBMPQ_ERROR_READ
+    );
+    TEST_CHECK(archive == NULL);
+    source.failure = 0;
+
+    null_source = source;
+    TEST_CHECK(
+        libmpq__archive_open_io(&archive, NULL, null_context_read_at, source.size, -1, NULL) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(source.out_of_range == 0);
+    free(embedded);
+    free(raw);
+    return 0;
+}
+
 /* Verify every documented error code has a stable diagnostic. */
 static int
 test_error_strings(void)
@@ -196,6 +351,8 @@ main(void)
     TEST_CHECK(libmpq__archive_clone(&clone, archive) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     archive = NULL;
+
+    TEST_CHECK(test_custom_io(archive_path) == 0);
 
     TEST_CHECK(libmpq__archive_open(&archive, archive_path, -2) == LIBMPQ_ERROR_SEEK);
     TEST_CHECK(libmpq__archive_open(&archive, archive_path, 0) == 0);

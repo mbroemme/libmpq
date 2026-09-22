@@ -196,7 +196,7 @@ struct mpq_archive
 {
     FILE *fp;                     /* Backing file handle used only by writers. */
     struct mpq_stream *stream;    /* Read-only random-access stream provider for readers. */
-    char *filename;               /* Original path used to reopen this archive. */
+    char *filename;               /* Path or optional logical name retained by the archive. */
     uint64_t file_device;         /* Device or Windows volume identity. */
     uint64_t file_inode;          /* Inode or Windows file identity. */
     uint8_t file_identity_valid;  /* Whether the path identity is reliable. */

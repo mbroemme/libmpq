@@ -94,6 +94,24 @@ typedef struct
     uint64_t bytes;
 } strong_read_count_s;
 
+typedef struct
+{
+    const uint8_t *data;
+    size_t size;
+} strong_memory_source_s;
+
+static int32_t
+strong_memory_read_at(void *context, libmpq__off_t offset, uint8_t *buffer, size_t size)
+{
+    const strong_memory_source_s *source = context;
+
+    if (source == NULL || offset < 0 || (uint64_t)offset > source->size ||
+        size > source->size - (size_t)offset)
+        return LIBMPQ_ERROR_READ;
+    memcpy(buffer, source->data + (size_t)offset, size);
+    return LIBMPQ_SUCCESS;
+}
+
 static int32_t
 count_strong_read(void *context, uint64_t offset, uint8_t *buffer, size_t size)
 {
@@ -134,6 +152,118 @@ verify_strong_fixture(
         TEST_CHECK(mismatches == 0);
     }
     TEST_CHECK(libmpq__archive_close(archive) == 0);
+    return 0;
+}
+
+static int
+test_custom_io_strong_source_names(void)
+{
+    char source_name[] = "/custom/path/mpq-v1-features.w3x";
+    strong_memory_source_s source = { 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_archive_s *clone = NULL;
+    uint8_t *data = NULL;
+    size_t size = 0;
+    uint32_t mismatches = UINT32_MAX;
+
+    TEST_CHECK(test_read_path(FIXTURE_DIR "/mpq-v1-features.w3x", &data, &size) == 0);
+    source.data = data;
+    source.size = size;
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &archive, &source, strong_memory_read_at, (libmpq__off_t)source.size, -1, source_name
+        ) == LIBMPQ_SUCCESS
+    );
+    {
+        char *base = strrchr(source_name, '/');
+
+        TEST_CHECK(base != NULL);
+        base[1] = 'X';
+    }
+    TEST_CHECK(
+        libmpq__archive_verify(
+            archive, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
+            sizeof(test_strong_signature_public_key), &mismatches
+        ) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(mismatches == 0);
+    TEST_CHECK(libmpq__archive_clone(&clone, archive) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_close(archive) == LIBMPQ_SUCCESS);
+    archive = NULL;
+    TEST_CHECK(
+        libmpq__archive_verify(
+            clone, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
+            sizeof(test_strong_signature_public_key), &mismatches
+        ) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(mismatches == 0);
+    TEST_CHECK(libmpq__archive_close(clone) == LIBMPQ_SUCCESS);
+    clone = NULL;
+
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &archive, &source, strong_memory_read_at, (libmpq__off_t)source.size, -1, NULL
+        ) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(
+        libmpq__archive_verify(
+            archive, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
+            sizeof(test_strong_signature_public_key), &mismatches
+        ) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(mismatches == LIBMPQ_SIGNATURE_STRONG);
+    TEST_CHECK(libmpq__archive_clone(&clone, archive) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_close(archive) == LIBMPQ_SUCCESS);
+    archive = NULL;
+    TEST_CHECK(
+        libmpq__archive_verify(
+            clone, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
+            sizeof(test_strong_signature_public_key), &mismatches
+        ) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(mismatches == LIBMPQ_SIGNATURE_STRONG);
+    TEST_CHECK(libmpq__archive_close(clone) == LIBMPQ_SUCCESS);
+    clone = NULL;
+    free(data);
+    data = NULL;
+
+    TEST_CHECK(test_read_path(FIXTURE_DIR "/mpq-v1-features.mpq", &data, &size) == 0);
+    source.data = data;
+    source.size = size;
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &archive, &source, strong_memory_read_at, (libmpq__off_t)source.size, 0, NULL
+        ) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(
+        libmpq__archive_verify(
+            archive, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
+            sizeof(test_strong_signature_public_key), &mismatches
+        ) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(mismatches == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == LIBMPQ_SUCCESS);
+    archive = NULL;
+    free(data);
+    data = NULL;
+
+    TEST_CHECK(test_read_path(FIXTURE_DIR "/mpq-v2-features.mpq", &data, &size) == 0);
+    source.data = data;
+    source.size = size;
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &archive, &source, strong_memory_read_at, (libmpq__off_t)source.size, 0, NULL
+        ) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(
+        libmpq__archive_verify(
+            archive, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
+            sizeof(test_strong_signature_public_key), &mismatches
+        ) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(mismatches == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == LIBMPQ_SUCCESS);
+    free(data);
     return 0;
 }
 
@@ -824,6 +954,7 @@ main(void)
     TEST_CHECK(memcmp(encoded, test_encoded, 64) == 0);
     TEST_CHECK(test_strong_writer_signatures() == 0);
     TEST_CHECK(test_strong_signatures() == 0);
+    TEST_CHECK(test_custom_io_strong_source_names() == 0);
     TEST_CHECK(libmpq__rsa_weak_key_validate(NULL, 128) == LIBMPQ_ERROR_FORMAT);
     TEST_CHECK(
         libmpq__rsa_weak_key_validate(test_signature_public_key, 127) == LIBMPQ_ERROR_FORMAT

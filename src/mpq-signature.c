@@ -239,7 +239,7 @@ strong_digest_variant(
         const char *base = name;
         size_t i;
         if (name == NULL)
-            return LIBMPQ_ERROR_FORMAT;
+            return LIBMPQ_ERROR_EXIST;
         for (i = 0; name[i] != '\0'; ++i)
             if (name[i] == '/' || name[i] == '\\')
                 base = name + i + 1;
@@ -311,6 +311,8 @@ strong_verify(mpq_archive_s *a, const uint8_t *key, size_t key_size, uint32_t *m
         return result;
     for (variant = 0; variant < 3; ++variant) {
         result = strong_digest_variant(a, &base, variant, digest);
+        if (result == LIBMPQ_ERROR_EXIST && variant == 1u)
+            continue;
         if (result != LIBMPQ_SUCCESS)
             return result;
         strong_encoded(digest, expected);

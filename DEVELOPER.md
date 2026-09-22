@@ -30,11 +30,50 @@ and a 256-byte zero-padded unsigned big-endian exponent (512 bytes total).
 The writer accepts the private exponent and emits only the plain SHA-1 range variant.
 External strong trailers are not defined for MPQE, so strong signing is rejected there.
 
-The additive signature API advances libtool `CURRENT:REVISION:AGE` from
-`4:0:0` to `5:0:1`: existing interfaces remain compatible and the SONAME
-stays `libmpq.so.4`. Strong signature support extends these same entry points without
-another ABI change. For files beginning with `HM3W`, weak and strong hashing
+The additive signature and custom-I/O APIs advance libtool
+`CURRENT:REVISION:AGE` from `4:0:0` to `5:0:1` for v0.8.0. Existing
+interfaces remain compatible and the SONAME stays `libmpq.so.4`.
+For files beginning with `HM3W`, weak and strong hashing
 starts at physical offset zero; weak hashing still excludes `(signature)`.
+
+## Custom random-access I/O
+
+`libmpq__archive_open_io()` accepts an exact random-access callback instead
+of a path. The callback receives absolute source offsets and must synchronously
+fill the complete requested buffer before returning zero. libmpq range-checks
+every request and normalizes positive callback results to `LIBMPQ_ERROR_READ`.
+
+The callback context is borrowed and may be NULL for a stateless callback.
+Keep a non-NULL context, its storage, and the callback valid until the opened
+archive and every clone are closed. libmpq never frees or closes caller-owned
+context. Clones allocate independent parser state and adapter wrappers but
+share the borrowed context, so callers provide any needed synchronization.
+`source_name` is optional. When supplied, libmpq copies it as the logical
+archive name and uses its basename for legacy strong-signature verification.
+Without a source name, basename-dependent strong signatures are skipped while
+plain and `ARCHIVE` variants remain available. Clones preserve that name or
+anonymous state. `libmpq__archive_open_mpqe_io()` applies the same rules below
+the existing MPQE transform.
+
+```c
+typedef struct
+{
+    const uint8_t *data;
+    size_t size;
+} memory_source_s;
+
+static int32_t
+memory_read_at(void *context, libmpq__off_t offset, uint8_t *buffer, size_t size)
+{
+    const memory_source_s *source = context;
+
+    if (offset < 0 || (uint64_t)offset > source->size ||
+        size > source->size - (size_t)offset)
+        return LIBMPQ_ERROR_READ;
+    memcpy(buffer, source->data + (size_t)offset, size);
+    return 0;
+}
+```
 
 Python exposes `Writer.sign(private_key, signature_type=SIGNATURE_WEAK)`, `Archive.signatures()`, and
 `Archive.verify(public_key)`. D and Java expose equivalent `Archive.sign`,
