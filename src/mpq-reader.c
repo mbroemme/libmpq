@@ -285,7 +285,8 @@ read_packed(mpq_archive_s *archive, uint32_t number, uint32_t block, uint8_t *bu
     int32_t status = libmpq__stream_read_at(archive->stream, offset, buffer, size);
     if (status < 0)
         return status;
-    if ((archive->mpq_block[index].flags & LIBMPQ_FLAG_ENCRYPTED) != 0) {
+    if ((archive->mpq_block[index].flags & LIBMPQ_FLAG_ENCRYPTED) != 0 &&
+        size >= sizeof(uint32_t)) {
         if (libmpq__reader_get_block_seed(archive, number, block, &seed) < 0 ||
             libmpq__crypto_decrypt_block(buffer, (uint32_t)size, seed) < 0)
             return LIBMPQ_ERROR_DECRYPT;
@@ -816,10 +817,14 @@ libmpq__reader_offsets_acquire(mpq_archive_s *mpq_archive, uint32_t file_number,
         }
     }
 
-    /* Raw encrypted files have no encrypted offset table from which to derive a seed. */
+    /* Raw encrypted files have no encrypted offset table from which to derive a seed.
+     * The MPQ cipher leaves a trailing partial word unchanged, so an anonymous
+     * payload shorter than one word needs no seed and remains readable. */
     if ((mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags &
          (LIBMPQ_FLAG_ENCRYPTED | LIBMPQ_FLAG_COMPRESSED)) == LIBMPQ_FLAG_ENCRYPTED &&
-        !mpq_archive->mpq_file[file_number]->seed_known) {
+        !mpq_archive->mpq_file[file_number]->seed_known &&
+        mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].packed_size >=
+            sizeof(uint32_t)) {
         uint8_t first_block[8];
         uint32_t first_offset;
         uint32_t second_offset;

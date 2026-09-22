@@ -39,6 +39,34 @@ test_encrypted_file(const char *path)
     return 0;
 }
 
+/* An anonymous encrypted payload shorter than one cipher word is literal on
+ * disk. It must not require impossible filename-based seed recovery. */
+static int
+test_short_anonymous_encrypted_file(const char *path)
+{
+    static const uint8_t payload[] = { 0x2e };
+    mpq_archive_s *archive = NULL;
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_ENCRYPTED, 0, 0, 0, 0 };
+    uint8_t *output = NULL;
+    size_t output_size;
+    uint32_t number;
+
+    TEST_CHECK(test_add_archive(&archive, path, 0, 0) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(
+            archive, "anonymous-short.raw", payload, sizeof(payload), &options
+        ) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "anonymous-short.raw", &number) == 0);
+    TEST_CHECK(test_archive_read(archive, number, &output, &output_size) == 0);
+    TEST_CHECK(output_size == sizeof(payload) && memcmp(output, payload, sizeof(payload)) == 0);
+    free(output);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    return 0;
+}
+
 /* Verify encrypted compressed sectors and the encrypted sector-offset table. */
 static int
 test_encrypted_compressed_file(const char *path)
@@ -106,6 +134,9 @@ main(void)
     char path[128];
     TEST_CHECK(test_temp_path(path, sizeof(path), "crypto") == 0);
     TEST_CHECK(test_encrypted_file(path) == 0);
+    remove(path);
+    TEST_CHECK(test_temp_path(path, sizeof(path), "crypto-short") == 0);
+    TEST_CHECK(test_short_anonymous_encrypted_file(path) == 0);
     remove(path);
     TEST_CHECK(test_temp_path(path, sizeof(path), "crypto-compressed") == 0);
     TEST_CHECK(test_encrypted_compressed_file(path) == 0);
