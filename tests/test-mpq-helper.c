@@ -257,20 +257,21 @@ typedef struct
     uint32_t number;
     uint32_t count;
     uint32_t *offsets;
-    mpq_stream_read_at_fn read_at;
+    mpq_io_read_at_fn read_at;
+    void *context;
     int nested;
 } offset_snapshot_s;
 
 static int32_t
-snapshot_read(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size)
+snapshot_read(void *context, uint64_t offset, uint8_t *buffer, size_t size)
 {
-    offset_snapshot_s *snapshot = stream->read_context;
+    offset_snapshot_s *snapshot = context;
     mpq_file_s *file = snapshot->archive->mpq_file[snapshot->number];
     if (file != NULL && file->packed_offset != NULL && file->packed_offset[0] != 0) {
         memcpy(snapshot->offsets, file->packed_offset, snapshot->count * sizeof(uint32_t));
         snapshot->nested = file->open_count == 2;
     }
-    return snapshot->read_at(stream, offset, buffer, size);
+    return snapshot->read_at(snapshot->context, offset, buffer, size);
 }
 
 int
@@ -281,7 +282,7 @@ test_archive_offsets(mpq_archive_s *archive, uint32_t number, uint32_t **offsets
     uint8_t *buffer;
     int32_t result;
     offset_snapshot_s snapshot;
-    void *context = archive->stream->read_context;
+    void *context = archive->stream->backend.context;
     *offsets = NULL;
     if (libmpq__file_blocks(archive, number, &blocks) != 0 || blocks == 0 ||
         libmpq__file_size_unpacked(archive, number, &size) != 0 || size < 0 ||
@@ -299,13 +300,14 @@ test_archive_offsets(mpq_archive_s *archive, uint32_t number, uint32_t **offsets
     }
     snapshot.archive = archive;
     snapshot.number = number;
-    snapshot.read_at = archive->stream->read_at;
+    snapshot.read_at = archive->stream->backend.read_at;
+    snapshot.context = context;
     snapshot.nested = 0;
-    archive->stream->read_context = &snapshot;
-    archive->stream->read_at = snapshot_read;
+    archive->stream->backend.context = &snapshot;
+    archive->stream->backend.read_at = snapshot_read;
     result = libmpq__file_read(archive, number, buffer, size, NULL);
-    archive->stream->read_at = snapshot.read_at;
-    archive->stream->read_context = context;
+    archive->stream->backend.read_at = snapshot.read_at;
+    archive->stream->backend.context = context;
     free(buffer);
     if (result < 0 || !snapshot.nested || archive->mpq_file[number] != NULL) {
         free(snapshot.offsets);

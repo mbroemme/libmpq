@@ -26,13 +26,11 @@ libmpq__archive_close \- close an opened MPQ archive.
 .fi
 .SH DESCRIPTION
 Close the archive handle returned by an archive open or create function.
-The function takes a handle, not an output pointer. Successful close frees
-the archive structure and its contents.
+The function takes a handle, not an output pointer, and consumes it regardless
+of whether releasing its resources succeeds.
 .PP
-If a reader stream close fails, the reader handle remains valid so the caller
-may retry the close. Writer archives are always consumed by close, including
-when finalization or output close reports an error; callers must not use or
-close the writer archive again after the call.
+The archive handle must not be used or closed again after this call, including
+when finalization or output close reports an error.
 .SH RETURN VALUE
 On success, a zero is returned and on error one of the following constants.
 .TP

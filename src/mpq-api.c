@@ -404,8 +404,6 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
     }
 
     result = libmpq__stream_close(mpq_archive->stream);
-    if (result != LIBMPQ_SUCCESS)
-        return result;
 
     for (i = 0; i < mpq_archive->mpq_header.block_table_count; i++) {
         if (mpq_archive->mpq_file[i] != NULL) {

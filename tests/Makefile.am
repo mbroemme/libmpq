@@ -37,6 +37,7 @@ check-local:
 # Compile shared assertions and deterministic-data helpers into every test.
 COMMON_SOURCES = test-mpq-helper.c test-mpq-helper.h
 test_file_SOURCES = test-mpq-file.c $(COMMON_SOURCES)
+test_file_LDADD = $(top_builddir)/src/mpq-stream.lo $(PRIVATE_MPQE_LDADD) $(LDADD)
 test_verify_SOURCES = test-mpq-verify.c $(COMMON_SOURCES)
 test_verify_LDADD = $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-stream.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
 test_attributes_SOURCES = test-mpq-attributes.c $(COMMON_SOURCES)

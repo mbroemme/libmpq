@@ -165,7 +165,7 @@ strong_locate(mpq_archive_s *a, uint64_t *extent, uint8_t signature[LIBMPQ_STRON
      * MPQE encrypts its complete transport stream and has no defined external
      * strong-trailer representation. Do not interpret ciphertext as NGIS.
      */
-    if (a->stream->provider == LIBMPQ_STREAM_MPQE)
+    if (libmpq__stream_is_mpqe(a->stream))
         return LIBMPQ_ERROR_EXIST;
     result = libmpq__archive_signature_extent(a, extent);
     if (result != LIBMPQ_SUCCESS)
@@ -462,9 +462,9 @@ strong_finish(mpq_archive_s *a, uint64_t size)
 
     if (!a->write_strong_signature)
         return LIBMPQ_SUCCESS;
-    libmpq__stream_borrow_file(&stream, a->fp, size);
+    result = libmpq__stream_borrow_file(&stream, a->fp, size);
     libmpq__sha1_init(&context);
-    while (pos < size) {
+    while (result == LIBMPQ_SUCCESS && pos < size) {
         size_t count = size - pos < sizeof(buffer) ? (size_t)(size - pos) : sizeof(buffer);
         result = libmpq__stream_read_at(&stream, pos, buffer, count);
         if (result != LIBMPQ_SUCCESS)
@@ -491,6 +491,7 @@ strong_finish(mpq_archive_s *a, uint64_t size)
     libmpq__rsa_clear(a->write_strong_signature_key, sizeof(a->write_strong_signature_key));
     libmpq__rsa_clear(signature, sizeof(signature));
     libmpq__rsa_clear(reversed, sizeof(reversed));
+    libmpq__stream_discard(&stream);
     return result;
 }
 
@@ -505,8 +506,9 @@ libmpq__signature_finish(mpq_archive_s *a, uint64_t size)
     size_t i;
     int32_t result = LIBMPQ_SUCCESS;
     if (a->write_signature) {
-        libmpq__stream_borrow_file(&stream, a->fp, size);
-        result = digest_archive(&stream, 0, size, a->write_signature_offset, digest);
+        result = libmpq__stream_borrow_file(&stream, a->fp, size);
+        if (result == LIBMPQ_SUCCESS)
+            result = digest_archive(&stream, 0, size, a->write_signature_offset, digest);
         if (result == LIBMPQ_SUCCESS) {
             libmpq__rsa_md5_encode(digest, encoded);
             result = libmpq__rsa_weak_operation(a->write_signature_key, encoded, signature);
@@ -527,6 +529,7 @@ libmpq__signature_finish(mpq_archive_s *a, uint64_t size)
     libmpq__rsa_clear(a->write_signature_key, sizeof(a->write_signature_key));
     libmpq__rsa_clear(signature, sizeof(signature));
     libmpq__rsa_clear(reversed, sizeof(reversed));
+    libmpq__stream_discard(&stream);
     if (result == LIBMPQ_SUCCESS)
         result = strong_finish(a, size);
     return result;

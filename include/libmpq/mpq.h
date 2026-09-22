@@ -507,8 +507,8 @@ extern LIBMPQ_API int32_t libmpq__archive_clone(mpq_archive_s **clone, mpq_archi
 /*
  * Close an archive handle and release all decoded tables, caches, and streams.
  * For writer handles this also finalizes the archive header and encrypted
- * metadata tables. A reader close failure leaves the handle intact so the
- * caller may retry; otherwise the handle must not be used again after this call.
+ * metadata tables. The archive handle is invalid after this call regardless
+ * of the returned status.
  */
 extern LIBMPQ_API int32_t libmpq__archive_close(mpq_archive_s *mpq_archive);
 

@@ -1153,8 +1153,8 @@ libmpq__reader_archive_open_stream(
     memcpy((*mpq_archive)->filename, mpq_filename, strlen(mpq_filename) + 1);
 
     (*mpq_archive)->file_identity_valid =
-        libmpq__file_identity(
-            stream->file, &(*mpq_archive)->file_device, &(*mpq_archive)->file_inode
+        libmpq__stream_file_identity(
+            stream, &(*mpq_archive)->file_device, &(*mpq_archive)->file_inode
         ) == 0;
 
     (*mpq_archive)->file_size = libmpq__stream_size(stream);
@@ -1453,7 +1453,7 @@ libmpq__reader_archive_clone(mpq_archive_s **clone, const mpq_archive_s *source)
         uint64_t device;
         uint64_t inode;
 
-        result = libmpq__file_identity(stream->file, &device, &inode);
+        result = libmpq__stream_file_identity(stream, &device, &inode);
         if (result == 0 && (device != source->file_device || inode != source->file_inode))
             result = LIBMPQ_ERROR_EXIST;
         if (result != 0)

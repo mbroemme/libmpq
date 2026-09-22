@@ -20,6 +20,8 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "mpq-file.h"
+#include "mpq-internal.h"
+#include "mpq-stream.h"
 #include "test-mpq-helper.h"
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +29,95 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #endif
+
+typedef struct
+{
+    mpq_io_backend_s backend;
+    unsigned closes;
+} close_failure_s;
+
+static int32_t
+close_failure_read(void *context, uint64_t offset, uint8_t *buffer, size_t size)
+{
+    close_failure_s *failure = context;
+
+    return failure->backend.read_at(failure->backend.context, offset, buffer, size);
+}
+
+static int32_t
+close_failure_identity(void *context, uint64_t *device, uint64_t *inode)
+{
+    close_failure_s *failure = context;
+
+    return failure->backend.identity(failure->backend.context, device, inode);
+}
+
+static int32_t
+close_failure_close(void *context)
+{
+    close_failure_s *failure = context;
+    int32_t result;
+
+    ++failure->closes;
+    result = failure->backend.close == NULL ? LIBMPQ_SUCCESS
+                                            : failure->backend.close(failure->backend.context);
+    return result == LIBMPQ_SUCCESS ? LIBMPQ_ERROR_CLOSE : result;
+}
+
+static void
+close_failure_discard(void *context)
+{
+    close_failure_s *failure = context;
+
+    if (failure->backend.discard != NULL)
+        failure->backend.discard(failure->backend.context);
+    else if (failure->backend.close != NULL)
+        (void)failure->backend.close(failure->backend.context);
+}
+
+static void
+close_failure_install(mpq_stream_s *stream, close_failure_s *failure)
+{
+    failure->backend = stream->backend;
+    stream->backend.context = failure;
+    stream->backend.read_at = close_failure_read;
+    stream->backend.identity = close_failure_identity;
+    stream->backend.close = close_failure_close;
+    stream->backend.discard = close_failure_discard;
+}
+
+static int
+test_stream_ownership(mpq_archive_s *archive)
+{
+    mpq_stream_s borrowed = { 0 };
+    close_failure_s failure = { 0 };
+    FILE *file;
+    uint64_t device;
+    uint64_t inode;
+    mpq_io_identity_fn identity;
+
+    TEST_CHECK(libmpq__stream_file_identity(archive->stream, &device, &inode) == 0);
+    identity = archive->stream->backend.identity;
+    archive->stream->backend.identity = NULL;
+    TEST_CHECK(
+        libmpq__stream_file_identity(archive->stream, &device, &inode) == LIBMPQ_ERROR_EXIST
+    );
+    TEST_CHECK(device == 0 && inode == 0);
+    archive->stream->backend.identity = identity;
+
+    close_failure_install(archive->stream, &failure);
+    TEST_CHECK(libmpq__archive_close(archive) == LIBMPQ_ERROR_CLOSE);
+    TEST_CHECK(failure.closes == 1);
+
+    file = tmpfile();
+    TEST_CHECK(file != NULL);
+    TEST_CHECK(fwrite("x", 1, 1, file) == 1 && fflush(file) == 0);
+    TEST_CHECK(libmpq__stream_borrow_file(&borrowed, file, 1) == 0);
+    TEST_CHECK(libmpq__stream_close(&borrowed) == 0);
+    TEST_CHECK(fwrite("y", 1, 1, file) == 1);
+    TEST_CHECK(fclose(file) == 0);
+    return 0;
+}
 
 /* Invalid helper arguments must have identical contracts on both platforms. */
 static int
@@ -130,6 +221,9 @@ main(void)
     TEST_CHECK(libmpq__archive_clone(&clone, archive) == 0);
     TEST_CHECK(libmpq__archive_close(clone) == 0);
     clone = NULL;
+    TEST_CHECK(test_stream_ownership(archive) == 0);
+    archive = NULL;
+    TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
     original = libmpq__file_open(path, "rb");
     TEST_CHECK(original != NULL);
     TEST_CHECK(libmpq__file_identity(original, &device, &inode) == 0);

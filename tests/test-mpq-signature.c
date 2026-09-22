@@ -87,21 +87,22 @@ static int write_bytes(const char *path, const uint8_t *data, size_t size, size_
 /* Count signed-range reads without depending on verifier chunk sizes. */
 typedef struct
 {
-    mpq_stream_read_at_fn read_at;
+    mpq_io_read_at_fn read_at;
+    void *context;
     uint64_t start;
     uint64_t end;
     uint64_t bytes;
 } strong_read_count_s;
 
 static int32_t
-count_strong_read(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size)
+count_strong_read(void *context, uint64_t offset, uint8_t *buffer, size_t size)
 {
-    strong_read_count_s *count = stream->read_context;
+    strong_read_count_s *count = context;
 
     if (offset >= count->start && offset <= count->end && size <= count->end - offset &&
         !(offset == count->start && size == 4))
         count->bytes += size;
-    return count->read_at(stream, offset, buffer, size);
+    return count->read_at(count->context, offset, buffer, size);
 }
 
 static int
@@ -241,10 +242,11 @@ test_strong_signatures(void)
     TEST_CHECK(libmpq__archive_signature_extent(archive, &extent) == 0);
     TEST_CHECK(extent < size && size - (size_t)extent == LIBMPQ_STRONG_TRAILER_SIZE);
     {
-        strong_read_count_s count = { archive->stream->read_at, archive->archive_offset,
+        strong_read_count_s count = { archive->stream->backend.read_at,
+                                      archive->stream->backend.context, archive->archive_offset,
                                       archive->archive_offset + extent, 0 };
-        archive->stream->read_at = count_strong_read;
-        archive->stream->read_context = &count;
+        archive->stream->backend.read_at = count_strong_read;
+        archive->stream->backend.context = &count;
         TEST_CHECK(
             libmpq__archive_verify(
                 archive, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
@@ -252,8 +254,8 @@ test_strong_signatures(void)
             ) == 0
         );
         TEST_CHECK(mismatches == 0 && count.bytes == extent);
-        archive->stream->read_at = count.read_at;
-        archive->stream->read_context = NULL;
+        archive->stream->backend.read_at = count.read_at;
+        archive->stream->backend.context = count.context;
     }
     memcpy(invalid, test_strong_signature_public_key, sizeof(invalid));
     invalid[sizeof(invalid) - 1] = 3;
@@ -457,9 +459,9 @@ sign_padded_v1_archive(uint8_t *data, size_t size, uint64_t signature_offset)
 }
 
 static int32_t
-failed_read(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size)
+failed_read(void *context, uint64_t offset, uint8_t *buffer, size_t size)
 {
-    (void)stream;
+    (void)context;
     (void)offset;
     (void)buffer;
     (void)size;
@@ -472,7 +474,7 @@ failed_read(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size)
  * signature location. This tests the verifier's extent handoff as well.
  */
 static int32_t
-high_read(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size)
+high_read(void *context, uint64_t offset, uint8_t *buffer, size_t size)
 {
     if (offset == (UINT64_C(1) << 32) + 64 && size == 72) {
         memset(buffer, 0, size);
@@ -482,7 +484,7 @@ high_read(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size)
         memset(buffer, 0, size);
         return 0;
     }
-    *(size_t *)stream->read_context = size;
+    *(size_t *)context = size;
     return LIBMPQ_ERROR_READ;
 }
 
@@ -513,8 +515,9 @@ test_logical_extent(void)
     archive.file_size = UINT64_MAX;
     archive.stream = &stream;
     stream.size = UINT64_MAX;
-    stream.read_at = high_read;
-    stream.read_context = &digest_read;
+    stream.backend.size = UINT64_MAX;
+    stream.backend.read_at = high_read;
+    stream.backend.context = &digest_read;
     libmpq__file_hash("(signature)", &unused, &hash.hash_a, &hash.hash_b);
     block.offset = 64;
     block.packed_size = block.unpacked_size = 72;
@@ -907,7 +910,7 @@ main(void)
     a->mpq_block[0].offset = a->mpq_header.archive_size;
     TEST_CHECK(libmpq__archive_signatures(a, &types) == LIBMPQ_ERROR_FORMAT && types == 0);
     a->mpq_block[0].offset = saved_offset;
-    a->stream->read_at = failed_read;
+    a->stream->backend.read_at = failed_read;
     TEST_CHECK(
         libmpq__archive_verify(a, 1, test_signature_public_key, 128, &mismatch) ==
             LIBMPQ_ERROR_READ &&

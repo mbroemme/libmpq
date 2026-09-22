@@ -277,8 +277,8 @@ with \fBlibmpq__writer_finish\fP(). Finish consumes the writer handle
 regardless of its result.
 .PP
 Closing a writer archive finalizes the listfile, attributes, then the hash
-and block tables. Archive close consumes the writer archive even on failure.
-A reader archive remains valid if its stream close fails, allowing a retry.
+and block tables. Archive close consumes reader and writer archives even when
+finalization or stream close reports an error.
 .PP
 \fBlibmpq__archive_create_mpqe\fP() creates an MPQE-wrapped archive through
 a private temporary plaintext MPQ in the destination directory. The

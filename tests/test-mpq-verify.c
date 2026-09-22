@@ -41,30 +41,64 @@
 /* Each test archive borrows its own mock context; no process-global test mode. */
 typedef struct
 {
-    mpq_stream_read_at_fn read_at;
+    mpq_io_backend_s backend;
     uint64_t offset;
     unsigned reads;
 } read_failure_s;
 
 static int32_t
-fail_read(mpq_stream_s *stream, uint64_t offset, uint8_t *data, size_t size)
+failure_close(void *context)
 {
-    read_failure_s *failure = stream->read_context;
+    read_failure_s *failure = context;
+
+    return failure->backend.close == NULL ? LIBMPQ_SUCCESS
+                                          : failure->backend.close(failure->backend.context);
+}
+
+static void
+failure_discard(void *context)
+{
+    read_failure_s *failure = context;
+
+    if (failure->backend.discard != NULL)
+        failure->backend.discard(failure->backend.context);
+}
+
+static void
+failure_install(mpq_stream_s *stream, read_failure_s *failure, mpq_io_read_at_fn read_at)
+{
+    failure->backend = stream->backend;
+    stream->backend.context = failure;
+    stream->backend.read_at = read_at;
+    stream->backend.close = failure_close;
+    stream->backend.discard = failure_discard;
+}
+
+static void
+failure_restore(mpq_stream_s *stream, const read_failure_s *failure)
+{
+    stream->backend = failure->backend;
+}
+
+static int32_t
+fail_read(void *context, uint64_t offset, uint8_t *data, size_t size)
+{
+    read_failure_s *failure = context;
     if (offset == failure->offset) {
         ++failure->reads;
         return LIBMPQ_ERROR_READ;
     }
-    return failure->read_at(stream, offset, data, size);
+    return failure->backend.read_at(failure->backend.context, offset, data, size);
 }
 
 /* Corrupt a byte in a selected raw-fallback sector, leaving table metadata intact. */
 static int32_t
-corrupt_read(mpq_stream_s *stream, uint64_t offset, uint8_t *data, size_t size)
+corrupt_read(void *context, uint64_t offset, uint8_t *data, size_t size)
 {
-    read_failure_s *failure = stream->read_context;
-    int32_t status = failure->read_at(stream, offset, data, size);
-    if (status == 0 && offset == failure->offset && size != 0) {
-        data[size - 1] ^= 1;
+    read_failure_s *failure = context;
+    int32_t status = failure->backend.read_at(failure->backend.context, offset, data, size);
+    if (status == 0 && offset <= failure->offset && failure->offset - offset < size) {
+        data[(size_t)(failure->offset - offset)] ^= 1;
         ++failure->reads;
     }
     return status;
@@ -72,10 +106,10 @@ corrupt_read(mpq_stream_s *stream, uint64_t offset, uint8_t *data, size_t size)
 
 /* An invalid compression mask fails decoding after the Adler-32 comparison. */
 static int32_t
-corrupt_method(mpq_stream_s *stream, uint64_t offset, uint8_t *data, size_t size)
+corrupt_method(void *context, uint64_t offset, uint8_t *data, size_t size)
 {
-    read_failure_s *failure = stream->read_context;
-    int32_t status = failure->read_at(stream, offset, data, size);
+    read_failure_s *failure = context;
+    int32_t status = failure->backend.read_at(failure->backend.context, offset, data, size);
     if (status == 0 && offset == failure->offset && size != 0) {
         data[0] = 0x04;
         ++failure->reads;
@@ -253,18 +287,15 @@ test_sectors(
         libmpq__off_t tail_size;
 
         REQUIRE(libmpq__block_size_unpacked(archive, number, sectors - 1, &tail_size) == 0);
-        failure.read_at = archive->stream->read_at;
         failure.offset = (uint64_t)archive->archive_offset + archive->mpq_block[index].offset +
                          offsets[sectors - 1];
         failure.reads = 0;
-        archive->stream->read_context = &failure;
-        archive->stream->read_at = corrupt_read;
+        failure_install(archive->stream, &failure, corrupt_read);
         status = libmpq__block_read(archive, number, sectors - 1, output, tail_size, &transferred);
         REQUIRE(status == 0 && transferred == tail_size && failure.reads == 1);
         failure.reads = 0;
         status = libmpq__file_read(archive, number, output, sizeof(output), &transferred);
-        archive->stream->read_at = failure.read_at;
-        archive->stream->read_context = NULL;
+        failure_restore(archive->stream, &failure);
         REQUIRE(status == LIBMPQ_ERROR_READ && failure.reads == 1);
     }
 
@@ -283,12 +314,10 @@ test_sectors(
         );
         free(table);
         REQUIRE(status == 0 && observed == LIBMPQ_VERIFY_SECTOR_CRC);
-        failure.read_at = archive->stream->read_at;
         failure.offset =
             (uint64_t)archive->archive_offset + archive->mpq_block[index].offset + offsets[1];
         failure.reads = 0;
-        archive->stream->read_context = &failure;
-        archive->stream->read_at = fail_read;
+        failure_install(archive->stream, &failure, fail_read);
         bits = UINT32_MAX;
         status = libmpq__block_compression(archive, number, 1, &bits);
         REQUIRE(status == LIBMPQ_ERROR_READ && bits == 0 && failure.reads == 1);
@@ -299,8 +328,7 @@ test_sectors(
         failure.reads = 0;
         bits = UINT32_MAX;
         status = libmpq__file_verify(archive, number, LIBMPQ_VERIFY_SECTOR_CRC, &bits);
-        archive->stream->read_at = failure.read_at;
-        archive->stream->read_context = NULL;
+        failure_restore(archive->stream, &failure);
         REQUIRE(status == LIBMPQ_ERROR_READ && bits == 0 && failure.reads == 1);
         REQUIRE(archive->mpq_file[number] == NULL);
     }
@@ -326,20 +354,17 @@ test_sectors(
     }
     if (!absent && !encrypted) {
         read_failure_s failure;
-        failure.read_at = archive->stream->read_at;
         failure.offset =
             (uint64_t)archive->archive_offset + archive->mpq_block[index].offset + offsets[0];
         failure.reads = 0;
-        archive->stream->read_context = &failure;
-        archive->stream->read_at = corrupt_method;
+        failure_install(archive->stream, &failure, corrupt_method);
         bits = UINT32_MAX;
         status = libmpq__block_compression(archive, number, 0, &bits);
         REQUIRE(status == 0 && bits == 0x04 && failure.reads == 1);
         REQUIRE(archive->mpq_file[number] == NULL);
         failure.reads = 0;
         status = check_block_error(archive, number, 0, LIBMPQ_ERROR_UNPACK);
-        archive->stream->read_at = failure.read_at;
-        archive->stream->read_context = NULL;
+        failure_restore(archive->stream, &failure);
         REQUIRE(status == 0 && failure.reads == 1);
         REQUIRE(archive->mpq_file[number] == NULL);
     }
@@ -502,14 +527,13 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
         /* Even implode requests must perform the requested check, not skip it. */
         {
             read_failure_s failure;
-            failure.read_at = archive->stream->read_at;
             failure.offset = base + offsets[1];
+            if (mpqe)
+                failure.offset &= ~(uint64_t)(LIBMPQ_MPQE_CHUNK_SIZE - 1U);
             failure.reads = 0;
-            archive->stream->read_context = &failure;
-            archive->stream->read_at = fail_read;
+            failure_install(archive->stream, &failure, fail_read);
             status = libmpq__file_verify(archive, number, LIBMPQ_VERIFY_SECTOR_CRC, &bits);
-            archive->stream->read_at = failure.read_at;
-            archive->stream->read_context = NULL;
+            failure_restore(archive->stream, &failure);
 
             /* One-sector files hit this offset while loading the checksum table. */
             REQUIRE(status == LIBMPQ_ERROR_READ && bits == 0 && failure.reads == 1);
@@ -518,22 +542,27 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
             read_failure_s failure;
             REQUIRE(offsets[blocks] - offsets[blocks - 1] == 37);
             REQUIRE(offsets[1] - offsets[0] != 37);
-            failure.read_at = archive->stream->read_at;
-            failure.offset = base + offsets[blocks - 1];
+            failure.offset = base + offsets[blocks] - 1U;
             failure.reads = 0;
-            archive->stream->read_context = &failure;
-            archive->stream->read_at = corrupt_read;
+            failure_install(archive->stream, &failure, corrupt_read);
             {
                 uint32_t stored = 0;
                 status = libmpq__block_verify(archive, number, blocks - 1, &stored, &bits);
                 REQUIRE(status == 0 && stored == checksums[blocks - 1]);
-                REQUIRE(bits == LIBMPQ_VERIFY_SECTOR_CRC && failure.reads == 1);
+                REQUIRE(bits == LIBMPQ_VERIFY_SECTOR_CRC);
+                if (mpqe)
+                    REQUIRE(failure.reads >= 1);
+                else
+                    REQUIRE(failure.reads == 1);
                 failure.reads = 0;
             }
             status = libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &bits);
-            archive->stream->read_at = failure.read_at;
-            archive->stream->read_context = NULL;
-            REQUIRE(status == 0 && failure.reads == 1);
+            failure_restore(archive->stream, &failure);
+            REQUIRE(status == 0);
+            if (mpqe)
+                REQUIRE(failure.reads >= 1);
+            else
+                REQUIRE(failure.reads == 1);
             REQUIRE(
                 bits ==
                 (LIBMPQ_VERIFY_SECTOR_CRC | LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5)
