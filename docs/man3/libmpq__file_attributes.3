@@ -37,8 +37,9 @@ differ from the archive header flags. The result is zeroed on failure.
 FILETIME is an unsigned 64-bit Windows timestamp. MD5 is sixteen bytes,
 not hexadecimal text. CRC32 and MD5 describe source bytes before compression;
 lossy ADPCM output may not match. They are not cryptographic authentication.
-The query reports stored values without verifying them.
-Use \fBlibmpq__file_verify\fP() for an explicit checksum comparison.
+The query reports stored values without verifying them. Complete lossless file
+reads automatically compare available CRC32/MD5 values; use
+\fBlibmpq__file_verify\fP() to select explicit file or sector checks.
 .SS "Native Result Layout"
 The native ABI is 40 bytes: fields begin at offsets 0, 4, 8, 16, and 32,
 followed by reserved[4] at offset 36. Reserved bytes are returned as zero.

@@ -31,8 +31,8 @@ mask is distinct from an absent file. The output is zeroed on failure.
 .PP
 The query lazily loads (attributes) through ordinary MPQ file reading.
 Its payload version is 100, independent of archive format v1 or v2.
-Malformed optional metadata does not prevent opening an archive or reading
-other files. No checksum verification or patch application is performed.
+Malformed optional metadata does not prevent opening or ordinary extraction;
+it fails an explicit query. No patch application is performed.
 .SH RETURN VALUE
 Returns LIBMPQ_SUCCESS on success or a negative libmpq error.
 LIBMPQ_ERROR_EXIST means the (attributes) file is absent;

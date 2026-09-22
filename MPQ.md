@@ -207,8 +207,9 @@ not the public compact file numbering. Patch bits are most-significant-bit
 first within each byte.
 
 libmpq loads this optional file lazily through normal file decoding. Absence
-returns EXIST; malformed metadata returns FORMAT without preventing ordinary
-extraction. The reader accepts full arrays and recognized legacy layouts:
+returns EXIST; malformed metadata returns FORMAT when explicitly queried, while
+ordinary extraction skips unusable optional metadata. The reader accepts full
+arrays and recognized legacy layouts:
 one-entry-short arrays, omitted self patch bits, missing patch arrays, and
 all-zero legacy DWORD patch regions. Unavailable rows/patch values have their
 availability flags cleared rather than inventing checksum values. Unknown
@@ -231,7 +232,11 @@ file writer; filesystem timestamps are never imported. Finalization adds the
 listfile, then attributes, then serializes the final tables. Unused rows and
 the attributes entry itself are zero. Patch-bit creation emits zeros only and
 does not create or apply patches. Checksums are metadata, not cryptographic
-authentication, and extraction does not automatically verify them.
+authentication. Complete lossless file reads automatically compare available
+CRC32 and MD5 values against decoded contents; FILETIME and PATCH_BIT remain
+metadata only. Lossy ADPCM decoded bytes can differ from source-byte metadata,
+so those members are not automatically compared. Sector Adler-32 checks remain
+explicit.
 
 `libmpq__file_verify()` explicitly compares sector checksums and file CRC32/MD5.
 MPQ sector CRCs are Adler-32 checksums over decrypted packed sectors, before

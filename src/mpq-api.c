@@ -697,6 +697,6 @@ libmpq__block_read(
 )
 {
     return libmpq__reader_block_read(
-        archive, file_number, block_number, out_buf, out_size, transferred, NULL, NULL
+        archive, file_number, block_number, out_buf, out_size, transferred, NULL, NULL, NULL
     );
 }

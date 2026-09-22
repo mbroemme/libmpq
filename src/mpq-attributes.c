@@ -20,10 +20,13 @@
 #include "mpq-attributes.h"
 #include "mpq-endian.h"
 #include "mpq-internal.h"
+#include "mpq-md5.h"
 #include "mpq-reader.h"
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include <zlib.h>
 
 /* Calculate numeric-array offsets without narrowing unchecked file sizes.
  * The same helper handles full tables and the known one-entry-short layout. */
@@ -194,6 +197,92 @@ libmpq__attributes_load(mpq_archive_s *archive)
         return result;
     }
     archive->attributes = view;
+    return LIBMPQ_SUCCESS;
+}
+
+/* Compare only requested and available file checksum attributes. Explicit
+ * verification and automatic complete-read verification share this path. */
+void
+libmpq__attributes_compare_file(
+    const mpq_file_attributes_s *attributes, uint32_t verify_flags, uint32_t crc,
+    const uint8_t digest[LIBMPQ_MD5_SIZE], uint32_t *mismatches
+)
+{
+    if ((verify_flags & LIBMPQ_VERIFY_FILE_CRC32) != 0 &&
+        (attributes->flags & LIBMPQ_ATTRIBUTE_CRC32) != 0 && crc != attributes->crc32)
+        *mismatches |= LIBMPQ_VERIFY_FILE_CRC32;
+    if ((verify_flags & LIBMPQ_VERIFY_FILE_MD5) != 0 &&
+        (attributes->flags & LIBMPQ_ATTRIBUTE_MD5) != 0 &&
+        memcmp(digest, attributes->md5, LIBMPQ_MD5_SIZE) != 0)
+        *mismatches |= LIBMPQ_VERIFY_FILE_MD5;
+}
+
+/* Compare a complete decoded lossless file without rereading it. The optional
+ * attributes member is skipped itself to avoid recursive metadata loading;
+ * unusable optional metadata is left to explicit attribute APIs to report. */
+int32_t
+libmpq__attributes_verify_data(
+    mpq_archive_s *archive, uint32_t file_number, const uint8_t *data, size_t size,
+    uint32_t *mismatches
+)
+{
+    mpq_file_attributes_s attributes;
+    mpq_md5_s md5;
+    uint8_t digest[LIBMPQ_MD5_SIZE] = { 0 };
+    libmpq__off_t expected;
+    uint32_t metadata_number;
+    uint32_t crc = 0;
+    uint32_t verify_flags = 0;
+    int32_t status;
+
+    if (mismatches != NULL)
+        *mismatches = 0;
+    if (archive == NULL || mismatches == NULL || (data == NULL && size != 0))
+        return LIBMPQ_ERROR_EXIST;
+    if (archive->write_mode)
+        return LIBMPQ_ERROR_NOT_INITIALIZED;
+    if (libmpq__reader_validate_file_number(archive, file_number) < 0)
+        return LIBMPQ_ERROR_EXIST;
+    status = libmpq__file_size_unpacked(archive, file_number, &expected);
+    if (status < 0)
+        return status;
+    if (expected < 0 || (uint64_t)expected != size)
+        return LIBMPQ_ERROR_SIZE;
+    if (libmpq__file_number(archive, LIBMPQ_ATTRIBUTES_NAME, &metadata_number) == LIBMPQ_SUCCESS &&
+        metadata_number == file_number)
+        return LIBMPQ_SUCCESS;
+    if (libmpq__file_number(archive, LIBMPQ_SIGNATURE_NAME, &metadata_number) == LIBMPQ_SUCCESS &&
+        metadata_number == file_number)
+        return LIBMPQ_SUCCESS;
+
+    memset(&attributes, 0, sizeof(attributes));
+    status = libmpq__file_attributes(archive, file_number, &attributes);
+    if (status < 0)
+        return LIBMPQ_SUCCESS;
+    if ((attributes.flags & LIBMPQ_ATTRIBUTE_CRC32) != 0)
+        verify_flags |= LIBMPQ_VERIFY_FILE_CRC32;
+    if ((attributes.flags & LIBMPQ_ATTRIBUTE_MD5) != 0)
+        verify_flags |= LIBMPQ_VERIFY_FILE_MD5;
+    if (verify_flags == 0)
+        return LIBMPQ_SUCCESS;
+    if ((verify_flags & LIBMPQ_VERIFY_FILE_CRC32) != 0) {
+        size_t remaining = size;
+        const uint8_t *cursor = data;
+
+        while (remaining != 0) {
+            uInt chunk = remaining > UINT_MAX ? UINT_MAX : (uInt)remaining;
+            crc = (uint32_t)crc32(crc, cursor, chunk);
+            cursor += chunk;
+            remaining -= chunk;
+        }
+    }
+    if ((verify_flags & LIBMPQ_VERIFY_FILE_MD5) != 0) {
+        libmpq__md5_init(&md5);
+        if (size != 0)
+            libmpq__md5_update(&md5, data, size);
+        libmpq__md5_final(&md5, digest);
+    }
+    libmpq__attributes_compare_file(&attributes, verify_flags, crc, digest, mismatches);
     return LIBMPQ_SUCCESS;
 }
 

@@ -99,7 +99,8 @@ File checksum requests require attributes; sector-only requests do not.
 `Mpq.VERIFY_*` bits and is a subset of the request. Set bits mean available
 checksums mismatched; clear bits mean matched or unavailable/skipped.
 Operation errors throw existing exceptions. Zero does not prove availability.
-Normal extraction is unchanged; lossy ADPCM may differ from source hashes.
+Complete lossless reads automatically compare available CRC32/MD5 values;
+lossy ADPCM is not compared because decoded bytes may differ from source hashes.
 
 `archive.fileFlags(fileNumber)` returns the unsigned stored block-table flags
 as a `long`. Inspect `Mpq.FILE_FLAG_*` bits; convenience booleans use this
@@ -127,12 +128,13 @@ slot. Unknown bits are rejected. Creation flags remain separate. These options
 work for both MPQ v1 and v2, including MPQE creation. Payload version 100 is
 independent of the archive format version.
 
-Per-file flags distinguish unavailable fields from zero. Malformed optional
-metadata raises the existing format exception only when queried, not during
-ordinary extraction. CRC32 and MD5 cover source bytes before compression,
-so lossy ADPCM output may differ; they are not authentication and are not
-automatically verified. FILETIME defaults to zero, never filesystem mtime.
-PATCH_BIT is read as metadata; creation writes zeros and does not make patches.
+Per-file flags distinguish unavailable fields from zero. Complete lossless
+reads automatically verify available CRC32 and MD5 metadata against decoded
+bytes; malformed optional metadata is skipped during extraction but still
+raises the existing format exception when queried. CRC32 and MD5 cover source
+bytes before compression, so lossy ADPCM is not automatically compared.
+FILETIME defaults to zero, never filesystem mtime, and PATCH_BIT remains
+metadata only. Sector Adler-32 verification remains explicit.
 
 `Archive.signatures()` reports weak MD5/RSA-512 internal signatures and strong
 SHA-1/RSA-2048 external `NGIS` trailers. `Archive.verify(byte[])` remains the

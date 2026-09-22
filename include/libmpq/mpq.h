@@ -237,8 +237,8 @@ typedef struct mpq_file_options
     uint16_t platform;          /* MPQ platform identifier used for lookup and duplicates. */
 } mpq_file_options_s;
 
-/* Stored per-file metadata, not automatically verified during extraction.
- * flags identifies available fields; unavailable fields are zero. FILETIME
+/* Stored per-file metadata. Complete lossless reads verify available CRC32/MD5
+ * values; flags identifies available fields; unavailable fields are zero. FILETIME
  * is an unsigned Windows timestamp, MD5 is sixteen bytes, and patch_bit is
  * zero or one. The native ABI is 40 bytes with FILETIME at offset 8 and
  * four explicit reserved bytes at offset 36, always returned as zero.
@@ -607,7 +607,10 @@ extern LIBMPQ_API int32_t libmpq__file_number_from_hash(
 /*
  * Read a complete logical file into a caller-provided output buffer.
  * The library decrypts and decompresses sectors as necessary and reports the
- * number of bytes copied through transferred. out_size must be large enough
+ * number of bytes copied through transferred. When available, stored CRC32
+ * and MD5 values are checked after decoding a complete lossless logical file;
+ * a mismatch returns LIBMPQ_ERROR_READ. Malformed optional attributes and
+ * lossy ADPCM members skip automatic checking. out_size must be large enough
  * for the unpacked file or the operation returns LIBMPQ_ERROR_SIZE.
  */
 extern LIBMPQ_API int32_t libmpq__file_read(

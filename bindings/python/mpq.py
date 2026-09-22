@@ -626,7 +626,8 @@ class File:
         """Return (stored Adler-32, mismatches), with zero or VERIFY_SECTOR_CRC bits.
 
         Unavailable/unused checksums raise LibmpqNotFoundError. Other native
-        errors also raise; normal reads never verify implicitly.
+        errors also raise. Complete lossless reads automatically verify available
+        stored CRC32 and MD5 metadata.
         """
         self._archive._ensure_open()
         if not isinstance(block, int) or not 0 <= block <= 0xffffffff:

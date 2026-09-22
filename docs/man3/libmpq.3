@@ -316,23 +316,29 @@ the archive format version.
 .PP
 \fBlibmpq__archive_attributes\fP() queries the array-presence flags.
 \fBlibmpq__file_attributes\fP() returns available per-file CRC32, FILETIME,
-MD5, and patch-bit values. Loading is lazy: missing or malformed metadata
-does not prevent ordinary extraction. Availability flags distinguish zero
-from missing values. These queries do not verify checksums.
+MD5, and patch-bit values. Loading is lazy: missing or malformed optional
+metadata does not prevent ordinary extraction, while explicit queries return
+the corresponding error. Availability flags distinguish zero from missing
+values. These queries do not verify checksums.
 .PP
 Enable arrays through options.attributes using LIBMPQ_ATTRIBUTE_CRC32,
 LIBMPQ_ATTRIBUTE_FILETIME, LIBMPQ_ATTRIBUTE_MD5, and LIBMPQ_ATTRIBUTE_PATCH_BIT.
 Zero disables generation. Any nonzero combination creates one (attributes)
 file and consumes one reserved file slot. Unknown attribute bits are rejected.
 .PP
-Generated CRC32 and MD5 values cover source bytes before compression;
-lossy ADPCM output may differ. FILETIME defaults to zero and can be set
-explicitly through \fBlibmpq__writer_timestamp\fP() before file completion.
+Generated CRC32 and MD5 values cover source bytes before compression; lossy
+ADPCM output may differ and is not automatically compared. FILETIME defaults
+to zero and can be set explicitly through
+\fBlibmpq__writer_timestamp\fP() before file completion.
 Path addition does not import filesystem timestamps. Generated patch bits
 are zero; patch creation and application remain unsupported. Unused rows
 and the attributes entry itself have zero values.
-.SS "Explicit Checksum Verification"
-Normal opening, reading, and extraction never verify checksums implicitly.
+.SS "Checksum Verification"
+Complete lossless \fBlibmpq__file_read\fP() calls automatically compare
+available file CRC32 and MD5 values after decoding the full logical member.
+Malformed optional metadata and lossy ADPCM members skip automatic comparison.
+FILETIME and PATCH_BIT remain metadata only; sector Adler-32 checks remain
+explicit.
 \fBlibmpq__file_verify\fP() compares requested, available file CRC32 and MD5
 values against complete extracted contents. LIBMPQ_VERIFY_FILE_CRC32 and
 LIBMPQ_VERIFY_FILE_MD5 select these checks. LIBMPQ_VERIFY_SECTOR_CRC checks

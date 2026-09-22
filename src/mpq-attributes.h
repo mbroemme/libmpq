@@ -20,6 +20,8 @@
 #ifndef LIBMPQ_ATTRIBUTES_H
 #define LIBMPQ_ATTRIBUTES_H
 
+#include "mpq-md5.h"
+
 #include <libmpq/mpq.h>
 #include <stddef.h>
 
@@ -44,6 +46,14 @@ int32_t libmpq__attributes_parse(
 void
 libmpq__attributes_get(const mpq_attributes_s *view, uint32_t index, mpq_file_attributes_s *result);
 int32_t libmpq__attributes_load(mpq_archive_s *archive);
+void libmpq__attributes_compare_file(
+    const mpq_file_attributes_s *attributes, uint32_t verify_flags, uint32_t crc,
+    const uint8_t digest[LIBMPQ_MD5_SIZE], uint32_t *mismatches
+);
+int32_t libmpq__attributes_verify_data(
+    mpq_archive_s *archive, uint32_t file_number, const uint8_t *data, size_t size,
+    uint32_t *mismatches
+);
 void libmpq__attributes_free(mpq_archive_s *archive);
 uint32_t libmpq__attributes_write_flags(const mpq_archive_s *archive);
 int32_t libmpq__attributes_serialize(

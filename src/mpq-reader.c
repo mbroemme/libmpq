@@ -21,6 +21,7 @@
 #include "config.h"
 #endif
 
+#include "mpq-attributes.h"
 #include "mpq-compression.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
@@ -168,17 +169,20 @@ libmpq__reader_file_read(
     uint32_t blocks = 0;
     int32_t result = 0;
     libmpq__off_t file_offset = 0;
+    libmpq__off_t expected_size = 0;
     libmpq__off_t unpacked_size = 0;
     libmpq__off_t transferred_block = 0;
     libmpq__off_t transferred_total = 0;
+    uint32_t mismatches = 0;
+    int lossy = FALSE;
 
     if (libmpq__reader_validate_file_number(mpq_archive, file_number) < 0) {
         return LIBMPQ_ERROR_EXIST;
     }
 
-    libmpq__file_size_unpacked(mpq_archive, file_number, &unpacked_size);
+    libmpq__file_size_unpacked(mpq_archive, file_number, &expected_size);
 
-    if (unpacked_size > out_size) {
+    if (expected_size > out_size) {
         return LIBMPQ_ERROR_SIZE;
     }
 
@@ -191,22 +195,44 @@ libmpq__reader_file_read(
 
     /* Read each block into its exact destination slice and maintain one total. */
     for (i = 0; i < blocks; i++) {
+        int block_lossy = FALSE;
+
         unpacked_size = 0;
 
         libmpq__block_size_unpacked(mpq_archive, file_number, i, &unpacked_size);
 
-        if ((result = libmpq__block_read(
+        if ((result = libmpq__reader_block_read(
                  mpq_archive, file_number, i, out_buf + transferred_total, unpacked_size,
-                 &transferred_block
+                 &transferred_block, NULL, NULL, &block_lossy
              )) < 0) {
             libmpq__reader_offsets_release(mpq_archive, file_number);
             return result;
         }
 
+        if (block_lossy)
+            lossy = TRUE;
         transferred_total += transferred_block;
     }
 
-    libmpq__reader_offsets_release(mpq_archive, file_number);
+    if (transferred_total != expected_size) {
+        (void)libmpq__reader_offsets_release(mpq_archive, file_number);
+        return LIBMPQ_ERROR_READ;
+    }
+    result = libmpq__reader_offsets_release(mpq_archive, file_number);
+    if (result < 0)
+        return result;
+
+    /* file_read always decodes the complete logical member. Compare lossless
+     * output against attributes without reopening or rereading the member. */
+    if (!lossy) {
+        result = libmpq__attributes_verify_data(
+            mpq_archive, file_number, out_buf, (size_t)transferred_total, &mismatches
+        );
+        if (result < 0)
+            return result;
+        if (mismatches != 0)
+            return LIBMPQ_ERROR_READ;
+    }
 
     if (transferred != NULL) {
         *transferred = transferred_total;
@@ -431,22 +457,25 @@ cleanup:
  * raw or codec output, and reports the exact unpacked byte count. */
 static int32_t read_block(
     mpq_archive_s *archive, uint32_t number, uint32_t block, uint8_t *buffer, libmpq__off_t size,
-    libmpq__off_t *transferred, const uint32_t *checksum, uint32_t *mismatches
+    libmpq__off_t *transferred, const uint32_t *checksum, uint32_t *mismatches, int *lossy
 );
 
 int32_t
 libmpq__reader_block_read(
     mpq_archive_s *archive, uint32_t number, uint32_t block, uint8_t *buffer, libmpq__off_t size,
-    libmpq__off_t *transferred, const uint32_t *checksum, uint32_t *mismatches
+    libmpq__off_t *transferred, const uint32_t *checksum, uint32_t *mismatches, int *lossy
 )
 {
     int32_t result;
+    if (lossy != NULL)
+        *lossy = FALSE;
     if (libmpq__reader_validate_block_number(archive, number, block) < 0)
         return LIBMPQ_ERROR_EXIST;
     result = libmpq__reader_offsets_acquire(archive, number, NULL);
     if (result < 0)
         return result;
-    result = read_block(archive, number, block, buffer, size, transferred, checksum, mismatches);
+    result =
+        read_block(archive, number, block, buffer, size, transferred, checksum, mismatches, lossy);
     (void)libmpq__reader_offsets_release(archive, number);
     return result;
 }
@@ -455,7 +484,7 @@ static int32_t
 read_block(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number, uint8_t *out_buf,
     libmpq__off_t out_size, libmpq__off_t *transferred, const uint32_t *checksum,
-    uint32_t *mismatches
+    uint32_t *mismatches, int *lossy
 )
 {
 
@@ -536,6 +565,13 @@ read_block(
         }
         return tb;
     }
+
+    /* A multi-compression sector only carries a codec mask when it was
+     * actually compressed. MPQ WAVE ADPCM is lossy, so its decoded PCM cannot
+     * be compared with source-byte (attributes) CRC32/MD5 metadata. */
+    if (lossy != NULL && compressed && in_size < unpacked_size && in_size != 0 &&
+        (in_buf[0] & (LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO)) != 0)
+        *lossy = TRUE;
 
     /* MPQ sector CRCs are Adler-32 over decrypted packed bytes, not CRC32.
      * Zero and all-ones entries are unavailable legacy checksum values. */

@@ -162,6 +162,8 @@ test_roundtrip(uint32_t version, uint32_t flags, int mpqe)
     REQUIRE(libmpq__file_read(archive, number, output, sizeof(output), &transferred) == 0);
     REQUIRE(transferred == 9 && memcmp(output, "123456789", 9) == 0);
     REQUIRE(libmpq__file_number(archive, "empty.txt", &number) == 0);
+    REQUIRE(libmpq__file_read(archive, number, output, 0, &transferred) == 0);
+    REQUIRE(transferred == 0);
     found = UINT32_MAX;
     REQUIRE(
         libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &found) ==
@@ -249,8 +251,13 @@ test_manual(int malformed, uint32_t storage)
         (malformed ? LIBMPQ_ERROR_FORMAT : 0)
     );
     REQUIRE(flags == (malformed ? 0 : LIBMPQ_VERIFY_FILE_CRC32));
-    REQUIRE(libmpq__file_read(archive, number, output, 3, &transferred) == 0);
-    REQUIRE(transferred == 3 && memcmp(output, "abc", 3) == 0);
+    REQUIRE(
+        libmpq__file_read(archive, number, output, 3, &transferred) ==
+        (malformed ? LIBMPQ_SUCCESS : LIBMPQ_ERROR_READ)
+    );
+    if (malformed)
+        REQUIRE(transferred == 3);
+    REQUIRE(memcmp(output, "abc", 3) == 0);
     if (!malformed && storage == 0) {
         REQUIRE(libmpq__file_number(archive, "tail", &number) == 0);
         REQUIRE(libmpq__file_attributes(archive, number, &attributes) == 0);
@@ -313,8 +320,11 @@ test_verify(uint32_t version, uint32_t storage, uint32_t corrupt)
         REQUIRE(archive->mpq_file[number] == NULL);
     }
     REQUIRE(archive->mpq_file[number] == NULL);
-    REQUIRE(libmpq__file_read(archive, number, output, sizeof(output), &transferred) == 0);
-    REQUIRE(transferred == sizeof(payload) && memcmp(payload, output, sizeof(payload)) == 0);
+    REQUIRE(
+        libmpq__file_read(archive, number, output, sizeof(output), &transferred) ==
+        (corrupt == 0 ? 0 : LIBMPQ_ERROR_READ)
+    );
+    REQUIRE(memcmp(payload, output, sizeof(payload)) == 0);
     if (storage == 0 || (storage & LIBMPQ_FILE_FLAG_SINGLE) != 0) {
 
         /* A CRC flag alone does not create a table for raw or single-unit files. */

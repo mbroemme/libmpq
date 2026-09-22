@@ -33,6 +33,13 @@ libmpq__file_read \- read, decrypt, and decompress one file.
 Call \fBlibmpq__file_read\fP() to read one file into the caller's buffer.
 Encrypted files are decrypted and compressed files are decompressed before
 they are returned.
+.PP
+When a valid (attributes) member supplies CRC32 and/or MD5 for the selected
+lossless file, a complete read compares decoded bytes before reporting success.
+A mismatch returns LIBMPQ_ERROR_READ. Malformed optional metadata and lossy
+ADPCM members skip automatic comparison. FILETIME and PATCH_BIT remain
+metadata; sector Adler-32 checks remain explicit through
+\fBlibmpq__file_verify\fP().
 .LP
 The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The \fIfile_number\fP argument selects the

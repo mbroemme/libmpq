@@ -232,8 +232,36 @@ test_sectors(
         REQUIRE((bits & ~request) == 0);
         REQUIRE(archive->mpq_file[number] == NULL);
     }
-    REQUIRE(libmpq__file_read(archive, number, output, sizeof(output), &transferred) == 0);
-    REQUIRE(transferred == sizeof(plain) && memcmp(plain, output, sizeof(plain)) == 0);
+    REQUIRE(
+        libmpq__file_read(archive, number, output, sizeof(output), &transferred) ==
+        (attributes && (corrupt & (LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5)) != 0
+             ? LIBMPQ_ERROR_READ
+             : 0)
+    );
+    REQUIRE(memcmp(plain, output, sizeof(plain)) == 0);
+
+    /* Block reads are intentionally partial and therefore do not compare
+     * whole-file metadata. A changed decoded final sector is rejected only by
+     * a subsequent complete file read. */
+    if (attributes && corrupt == 0 && !absent) {
+        read_failure_s failure;
+        libmpq__off_t tail_size;
+
+        REQUIRE(libmpq__block_size_unpacked(archive, number, sectors - 1, &tail_size) == 0);
+        failure.read_at = archive->stream->read_at;
+        failure.offset = (uint64_t)archive->archive_offset + archive->mpq_block[index].offset +
+                         offsets[sectors - 1];
+        failure.reads = 0;
+        archive->stream->read_context = &failure;
+        archive->stream->read_at = corrupt_read;
+        status = libmpq__block_read(archive, number, sectors - 1, output, tail_size, &transferred);
+        REQUIRE(status == 0 && transferred == tail_size && failure.reads == 1);
+        failure.reads = 0;
+        status = libmpq__file_read(archive, number, output, sizeof(output), &transferred);
+        archive->stream->read_at = failure.read_at;
+        archive->stream->read_context = NULL;
+        REQUIRE(status == LIBMPQ_ERROR_READ && failure.reads == 1);
+    }
 
     if (!absent && (corrupt & LIBMPQ_VERIFY_SECTOR_CRC)) {
         uint32_t *table = NULL;
@@ -244,7 +272,7 @@ test_sectors(
          * The public verifier uses the per-stream mock without linker wrapping. */
         REQUIRE(libmpq__reader_sector_checksums(archive, number, &table) == 0);
         status = libmpq__reader_block_read(
-            archive, number, 0, output, sector_size, &transferred, table, &observed
+            archive, number, 0, output, sector_size, &transferred, table, &observed, NULL
         );
         free(table);
         REQUIRE(status == 0 && observed == LIBMPQ_VERIFY_SECTOR_CRC);
@@ -280,7 +308,12 @@ test_sectors(
                 LIBMPQ_ERROR_FORMAT &&
             bits == 0
         );
-        REQUIRE(libmpq__file_read(archive, number, output, sizeof(output), &transferred) == 0);
+        REQUIRE(
+            libmpq__file_read(archive, number, output, sizeof(output), &transferred) ==
+            (attributes && (corrupt & (LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5)) != 0
+                 ? LIBMPQ_ERROR_READ
+                 : 0)
+        );
         archive->mpq_block[index].packed_size = saved;
         REQUIRE(archive->mpq_file[number] == NULL);
     }

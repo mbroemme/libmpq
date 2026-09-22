@@ -46,7 +46,7 @@ int32_t libmpq__reader_offsets_release(mpq_archive_s *archive, uint32_t number);
 int32_t libmpq__reader_block_read(
     mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint8_t *out_buf,
     libmpq__off_t out_size, libmpq__off_t *transferred, const uint32_t *checksum,
-    uint32_t *mismatches
+    uint32_t *mismatches, int *lossy
 );
 
 /* Load optional checksums with an internally scoped sector-offset reference.

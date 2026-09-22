@@ -16,7 +16,7 @@ import libmpq.native;
 import libmpq.options : ArchiveCreateOptions, FileOptions;
 import std.typecons : Nullable, nullable;
 
-/** Owned stored metadata; hashes are not automatically verified on extraction. */
+/** Owned stored metadata; complete lossless reads verify available CRC32/MD5 hashes. */
 struct FileAttributes {
     uint flags;
     uint crc32;

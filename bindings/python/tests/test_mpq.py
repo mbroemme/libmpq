@@ -349,7 +349,7 @@ def test_creation_streaming_compression_clone_and_blocks(tmp_path):
     mpq.VERIFY_FILE_CRC32 | mpq.VERIFY_FILE_MD5,
 ])
 def test_explicit_verification_mismatches(tmp_path, corrupt):
-    """Mismatches use requested-check bits, not exceptions or implicit read failures."""
+    """Explicit mismatches stay bit-based; complete reads reject bad metadata."""
     path = tmp_path / "verify.mpq"
     payload = b"verification payload\n" * 100
     crc = zlib.crc32(payload) ^ bool(corrupt & mpq.VERIFY_FILE_CRC32)
@@ -366,7 +366,11 @@ def test_explicit_verification_mismatches(tmp_path, corrupt):
             mismatches = entry.verify(request)
             assert mismatches == (request & corrupt)
             assert mismatches & ~request == 0
-        assert entry.read() == payload
+        if corrupt:
+            with pytest.raises(mpq.LibmpqIOError):
+                entry.read()
+        else:
+            assert entry.read() == payload
 
 
 def test_errors_and_lifecycle(tmp_path):
