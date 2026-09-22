@@ -96,6 +96,12 @@ install(FILES include/libmpq/mpq.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/libmpq
 )
 
+# Keep CMake installs aligned with the section-3 API manuals shipped by Autotools.
+file(GLOB man3_pages CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/docs/man3/*.3")
+install(FILES ${man3_pages}
+    DESTINATION ${CMAKE_INSTALL_MANDIR}/man3
+)
+
 # Release builds may provide debugging symbols without requiring them to exist.
 if(MSVC AND BUILD_SHARED_LIBS)
     install(FILES "$<TARGET_PDB_FILE:mpq>"
