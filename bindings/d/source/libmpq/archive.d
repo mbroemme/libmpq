@@ -79,9 +79,14 @@ class Archive {
         return result;
     }
 
-    /** Configure signing using a 128-byte key: 64-byte big-endian n then d. */
+    /** Configure weak signing using a 128-byte key: 64-byte big-endian n then d. */
     void sign(const(ubyte)[] privateKey) {
-        checkStatus(libmpq__archive_sign(nativeHandle(), SIGNATURE_WEAK,
+        sign(privateKey, SIGNATURE_WEAK);
+    }
+
+    /** Configure weak or plain strong signing using the selected raw private key. */
+    void sign(const(ubyte)[] privateKey, uint signatureType) {
+        checkStatus(libmpq__archive_sign(nativeHandle(), signatureType,
                     privateKey.ptr, privateKey.length), "libmpq__archive_sign");
     }
     /** Return flags, or a null value when absent; malformed metadata still throws. */

@@ -78,6 +78,44 @@ class LibmpqTest {
         }
     }
 
+    @Test
+    void strongSignatureRoundTrip(@TempDir Path directory) throws Exception {
+        byte[] publicKey = strongPublicKey();
+        byte[] privateKey = java.util.Arrays.copyOf(publicKey, 512);
+        byte[] exponent = HexFormat.of().parseHex(
+            "14c9759f7c1ba1f24ab0de0bd253bac7b470e7fbf911088844783bea5a62da15"
+            + "0c24356fd670712b98a9aea03ecb52b7b18597637b2cf7f16afcb6d5cf67a727"
+            + "b9437abf078a75b907450fb4fc56396dd8d650a71484d4163641eca554997c29"
+            + "afbf201c4df444354c29882ef797b85580f259260f77efc686eeacd31da3d9c3"
+            + "37897433f8ef833890a04d55cbfc53f2dd8f96bd9b93e28fc6f022786b36e51d"
+            + "e38ec0d5d41aba3eed9647831fb16fcbc3b16eaca91e60894aa772b02b22a3ff"
+            + "b7042e52531163d089209df6412098613ef59664ed70884e33f3e3056ccfb911"
+            + "bcc04d2c73142996946d88be0daa29aafa1bab3d10ff4d52295880c8fad6d641");
+        System.arraycopy(exponent, 0, privateKey, 256, 256);
+        Path path = directory.resolve("strong.mpq");
+        try (Archive archive = Archive.create(path, ArchiveCreateOptions.v2())) {
+            archive.sign(Mpq.SIGNATURE_STRONG, privateKey);
+            archive.add("payload", "Java strong signing".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+        }
+        try (Archive archive = Archive.open(path)) {
+            assertEquals(Mpq.SIGNATURE_STRONG, archive.signatures());
+            assertEquals(0, archive.verify(Mpq.SIGNATURE_STRONG, publicKey));
+        }
+    }
+
+    private static byte[] strongPublicKey() {
+        return HexFormat.of().parseHex(
+            "b76f7dc7cdd3a083b2e52f39a5b7d58f181ab7bc03c1eaa0931744f0218bf743"
+            + "97b68481776a3f49f7b9a7ea08abf1c3a9802b54ee75661190e521453f6e125c"
+            + "daca5d4b5cb52c84a158f1bb1b51bb9138acc55b45a083d3dde6e9e9cc4cb03a"
+            + "df4dda27a4a673993ebddfefd06e7c8c976387df92ba92d6392b9baf1a40f7b3"
+            + "9d3c0ad1a4e2d685b46caea30863c9055d8e0a151d2e5adf5b79c69cc849c8b8"
+            + "79ecc53be1207334d60b4194583b44129f272fe4790570ba530df485e2188932"
+            + "d79abb5b3b8713fd2d16de821048328e9ae93da8de983519033806fbd55591eb"
+            + "f5542641af669ad73e7c0f01b2dea45040f6658d2c6ca0f55f8d91c482f81617"
+            + "00".repeat(253) + "010001");
+    }
+
     /** Ensures Java's native struct layouts match the C ABI sizes. */
     @Test
     void preservesNativeStructLayouts() {

@@ -36,21 +36,27 @@ built in. These checks do not establish mathematical key-pair validity.
 .PP
 Strong public verification keys contain a 256-byte unsigned big-endian
 modulus and a 256-byte zero-padded unsigned big-endian public exponent,
-512 bytes total. Strong signing is unsupported. External strong NGIS
+512 bytes total. Strong private signing keys use the same 512-byte layout
+with a zero-padded unsigned big-endian private exponent. Strong signing emits
+only the plain SHA-1 archive-range variant. External strong NGIS
 trailers are not detected or verified for MPQE transport streams.
+.PP
+Strong verification additionally accepts uppercase-basename and ARCHIVE
+digest variants, but the writer does not emit them.
 .PP
 Detection returns zero for absence, LIBMPQ_SIGNATURE_WEAK,
 LIBMPQ_SIGNATURE_STRONG, or LIBMPQ_SIGNATURE_WEAK | LIBMPQ_SIGNATURE_STRONG
-for structurally valid storage. Strong signing is not supported. Verification
+for structurally valid storage. Verification
 requires exactly one type and the matching caller public key: 128 bytes for
 weak or 512 bytes for strong.
 The non-NULL output masks are zeroed before validation and remain zero on errors.
 .PP
-Signing requires a v1 or v2 writer with no active file writer and may be configured
-only once. It immediately consumes one file slot for a zeroed 72-byte
-(signature) file, copies the key, and signs at close after finalizing all tables
-and internal files. Signature attribute values are zero. The retained key is
-cleared on close, including failure. Reopen to verify the signed result.
+Signing requires a v1 or v2 writer with no active file writer and may configure
+each signature type once. Weak signing immediately consumes one file slot for a
+zeroed 72-byte (signature) file. Signing copies the key and happens at close
+after finalizing all tables and internal files. Weak signature attribute values are zero. Strong signing
+appends a plain SHA-1 archive-range NGIS trailer after the logical archive. The
+retained key is cleared on close, including failure. Reopen to verify the signed result.
 .PP
 Hashing starts at the MPQ archive offset and covers the declared archive extent for v1
 or the metadata-derived required extent for v2,

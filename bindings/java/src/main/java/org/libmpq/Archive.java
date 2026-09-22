@@ -50,14 +50,19 @@ public final class Archive implements AutoCloseable {
         }
     }
 
-    /** Configure signing with a 128-byte key: 64-byte big-endian n then d. */
+    /** Configure weak signing with a 128-byte key: 64-byte big-endian n then d. */
     public void sign(byte[] privateKey) throws LibmpqException {
+        sign(Mpq.SIGNATURE_WEAK, privateKey);
+    }
+
+    /** Configure weak or plain strong signing using the selected raw private key. */
+    public void sign(int signatureType, byte[] privateKey) throws LibmpqException {
         checkOpen();
         Objects.requireNonNull(privateKey);
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment key = arena.allocateFrom(ValueLayout.JAVA_BYTE, privateKey);
             try {
-                Support.check(LibmpqNative.archiveSign(handle, Mpq.SIGNATURE_WEAK, key, privateKey.length));
+                Support.check(LibmpqNative.archiveSign(handle, signatureType, key, privateKey.length));
             } finally {
                 key.fill((byte) 0);
             }

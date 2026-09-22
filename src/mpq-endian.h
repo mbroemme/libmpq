@@ -1,5 +1,5 @@
 /*
- *  mpq-endian.h -- little-endian serialization helpers for MPQ data.
+ *  mpq-endian.h -- byte-order serialization helpers for MPQ data.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -39,5 +39,11 @@ void libmpq__store_le32(uint8_t *buffer, uint32_t value);
 
 /* Store a 64-bit value as two little-endian 32-bit halves. */
 void libmpq__store_le64(uint8_t *buffer, uint64_t value);
+
+/* Load a 32-bit big-endian value from an unaligned byte buffer. */
+uint32_t libmpq__load_be32(const uint8_t *buffer);
+
+/* Store a 32-bit value in big-endian byte order. */
+void libmpq__store_be32(uint8_t *buffer, uint32_t value);
 
 #endif /* LIBMPQ_ENDIAN_H */

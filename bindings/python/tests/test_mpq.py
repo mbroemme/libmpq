@@ -31,6 +31,16 @@ STRONG_PUBLIC_KEY = (
     + bytes(253)
     + b"\x01\x00\x01"
 )
+STRONG_PRIVATE_KEY = STRONG_PUBLIC_KEY[:256] + bytes.fromhex(
+    "14c9759f7c1ba1f24ab0de0bd253bac7b470e7fbf911088844783bea5a62da15"
+    "0c24356fd670712b98a9aea03ecb52b7b18597637b2cf7f16afcb6d5cf67a727"
+    "b9437abf078a75b907450fb4fc56396dd8d650a71484d4163641eca554997c29"
+    "afbf201c4df444354c29882ef797b85580f259260f77efc686eeacd31da3d9c3"
+    "37897433f8ef833890a04d55cbfc53f2dd8f96bd9b93e28fc6f022786b36e51d"
+    "e38ec0d5d41aba3eed9647831fb16fcbc3b16eaca91e60894aa772b02b22a3ff"
+    "b7042e52531163d089209df6412098613ef59664ed70884e33f3e3056ccfb911"
+    "bcc04d2c73142996946d88be0daa29aafa1bab3d10ff4d52295880c8fad6d641"
+)
 
 
 def test_strong_signature():
@@ -68,6 +78,18 @@ def test_weak_signature(tmp_path):
     path.write_bytes(data)
     with mpq.Archive(path) as archive:
         assert archive.verify(public) == mpq.SIGNATURE_WEAK
+
+
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO])
+def test_strong_signature_round_trip(tmp_path, version):
+    """Writer strong signing emits a plain NGIS trailer that verifies after reopening."""
+    path = tmp_path / f"strong-v{version}.mpq"
+    with mpq.Writer(path, version=version, max_files=8) as writer:
+        writer.sign(STRONG_PRIVATE_KEY, signature_type=mpq.SIGNATURE_STRONG)
+        writer.add("payload", b"strong signature binding test")
+    with mpq.Archive(path) as archive:
+        assert archive.signatures() == mpq.SIGNATURE_STRONG
+        assert archive.verify(STRONG_PUBLIC_KEY, signature_type=mpq.SIGNATURE_STRONG) == 0
 
 
 @pytest.mark.parametrize("layout,size,fields", [

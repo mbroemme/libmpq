@@ -3,9 +3,11 @@
 Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
 Strong verification uses a 512-byte raw public key: a 256-byte unsigned
 big-endian modulus followed by a 256-byte zero-padded unsigned big-endian
-public exponent. Strong signing is unsupported. External strong NGIS
+public exponent. Strong signing uses the same layout with the private exponent
+and emits only the plain SHA-1 archive-range variant. External strong NGIS
 signatures are not detected or verified for MPQE transport streams.
-Use `Archive.sign(privateKey)` before writer close, and
+Use `Archive.sign(privateKey)` for weak signing or
+`Archive.sign(SIGNATURE_STRONG, privateKey)` for strong signing before writer close, and
 `Archive.signatures()` / `Archive.verify(publicKey)` on reopened archives.
 Verification returns mismatch bits; malformed keys/archives raise normal binding
 errors. Weak keys are exactly 128 bytes: 64-byte big-endian modulus followed by a
@@ -135,4 +137,6 @@ PATCH_BIT is read as metadata; creation writes zeros and does not make patches.
 `Archive.signatures()` reports weak MD5/RSA-512 internal signatures and strong
 SHA-1/RSA-2048 external `NGIS` trailers. `Archive.verify(byte[])` remains the
 weak convenience overload; `verify(int, byte[])` accepts `SIGNATURE_STRONG`
-and a 512-byte raw public key. Strong signatures are verification-only.
+and a 512-byte raw public key. Strong signatures are legacy compatibility data.
+`Archive.sign(SIGNATURE_STRONG, key)` creates the plain SHA-1 archive-range
+strong variant from a 512-byte raw private key.

@@ -287,7 +287,9 @@ the archive range, the range plus uppercase archive basename, or the range plus
 offset zero and still end at the logical MPQ end.
 
 Weak signatures use MD5/RSA-512 and support creation and verification. Strong
-signatures use SHA-1/RSA-2048 and support verification only. Both are legacy
+signatures use SHA-1/RSA-2048 and support creation and verification. The writer
+currently emits only the plain SHA-1 archive-range variant; basename and
+`ARCHIVE` variants are accepted during verification only. Both are legacy
 compatibility mechanisms, not modern cryptographic trust primitives.
 
 External strong `NGIS` signatures are not detected or verified for MPQE
@@ -303,16 +305,18 @@ checks validate representation,
 not the mathematical validity of the caller's RSA key pair. No PEM,
 certificates, ASN.1 parser, default public key, or private key is built in.
 
-Strong public verification keys are exactly 512 bytes: a 256-byte unsigned
+Strong public and private keys are exactly 512 bytes: a 256-byte unsigned
 big-endian modulus followed by a 256-byte zero-padded unsigned big-endian
-public exponent. There is no strong private-key or signing API.
+exponent. Use the public exponent for verification and the private exponent
+for creation. The writer emits only the plain SHA-1 archive-range variant.
 
-On a new v1 or v2 writer, call `libmpq__archive_sign` once before closing, with no
-active file writer. It copies the private key and reserves one file-table slot
-and a zero signature payload immediately. Close finalizes listfile, attributes,
-tables, and header before hashing and overwriting only the 64 signature bytes.
-The signature entry's generated attribute values remain zero; the retained key
-is cleared on close, including error paths. Other files may be added after
+On a new v1 or v2 writer, call `libmpq__archive_sign` once for each requested
+signature type before closing, with no active file writer. It copies the private
+key. Weak signing reserves one file-table slot and a zero signature payload
+immediately. Close finalizes listfile, attributes, tables, and header before
+hashing, overwriting the weak signature bytes, then appending any strong trailer.
+The signature entry's generated attribute values remain zero; retained keys are
+cleared on close, including error paths. Other files may be added after
 configuring signing. Readers do not impose the writer's version restriction.
 
 MD5 and RSA-512 are obsolete and unsuitable for modern authentication. The

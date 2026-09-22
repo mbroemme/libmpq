@@ -26,6 +26,7 @@
 #include "mpq-signature.h"
 #include "mpq-stream.h"
 #include "test-mpq-helper.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -47,7 +48,38 @@ static const uint8_t test_signature[64] = {
     0x60, 0xbd, 0x89, 0xdf, 0x8e, 0x9a, 0x3a, 0x72, 0x24, 0x9b, 0x09, 0xc4, 0x78, 0xba, 0xc1, 0x4c,
 };
 
+/* Test-only private exponent matching test_strong_signature_public_key. */
+static const uint8_t test_strong_signature_private_exponent[LIBMPQ_RSA_STRONG_SIZE] = {
+    0x14, 0xc9, 0x75, 0x9f, 0x7c, 0x1b, 0xa1, 0xf2, 0x4a, 0xb0, 0xde, 0x0b, 0xd2, 0x53, 0xba, 0xc7,
+    0xb4, 0x70, 0xe7, 0xfb, 0xf9, 0x11, 0x08, 0x88, 0x44, 0x78, 0x3b, 0xea, 0x5a, 0x62, 0xda, 0x15,
+    0x0c, 0x24, 0x35, 0x6f, 0xd6, 0x70, 0x71, 0x2b, 0x98, 0xa9, 0xae, 0xa0, 0x3e, 0xcb, 0x52, 0xb7,
+    0xb1, 0x85, 0x97, 0x63, 0x7b, 0x2c, 0xf7, 0xf1, 0x6a, 0xfc, 0xb6, 0xd5, 0xcf, 0x67, 0xa7, 0x27,
+    0xb9, 0x43, 0x7a, 0xbf, 0x07, 0x8a, 0x75, 0xb9, 0x07, 0x45, 0x0f, 0xb4, 0xfc, 0x56, 0x39, 0x6d,
+    0xd8, 0xd6, 0x50, 0xa7, 0x14, 0x84, 0xd4, 0x16, 0x36, 0x41, 0xec, 0xa5, 0x54, 0x99, 0x7c, 0x29,
+    0xaf, 0xbf, 0x20, 0x1c, 0x4d, 0xf4, 0x44, 0x35, 0x4c, 0x29, 0x88, 0x2e, 0xf7, 0x97, 0xb8, 0x55,
+    0x80, 0xf2, 0x59, 0x26, 0x0f, 0x77, 0xef, 0xc6, 0x86, 0xee, 0xac, 0xd3, 0x1d, 0xa3, 0xd9, 0xc3,
+    0x37, 0x89, 0x74, 0x33, 0xf8, 0xef, 0x83, 0x38, 0x90, 0xa0, 0x4d, 0x55, 0xcb, 0xfc, 0x53, 0xf2,
+    0xdd, 0x8f, 0x96, 0xbd, 0x9b, 0x93, 0xe2, 0x8f, 0xc6, 0xf0, 0x22, 0x78, 0x6b, 0x36, 0xe5, 0x1d,
+    0xe3, 0x8e, 0xc0, 0xd5, 0xd4, 0x1a, 0xba, 0x3e, 0xed, 0x96, 0x47, 0x83, 0x1f, 0xb1, 0x6f, 0xcb,
+    0xc3, 0xb1, 0x6e, 0xac, 0xa9, 0x1e, 0x60, 0x89, 0x4a, 0xa7, 0x72, 0xb0, 0x2b, 0x22, 0xa3, 0xff,
+    0xb7, 0x04, 0x2e, 0x52, 0x53, 0x11, 0x63, 0xd0, 0x89, 0x20, 0x9d, 0xf6, 0x41, 0x20, 0x98, 0x61,
+    0x3e, 0xf5, 0x96, 0x64, 0xed, 0x70, 0x88, 0x4e, 0x33, 0xf3, 0xe3, 0x05, 0x6c, 0xcf, 0xb9, 0x11,
+    0xbc, 0xc0, 0x4d, 0x2c, 0x73, 0x14, 0x29, 0x96, 0x94, 0x6d, 0x88, 0xbe, 0x0d, 0xaa, 0x29, 0xaa,
+    0xfa, 0x1b, 0xab, 0x3d, 0x10, 0xff, 0x4d, 0x52, 0x29, 0x58, 0x80, 0xc8, 0xfa, 0xd6, 0xd6, 0x41,
+};
+
+static void
+test_strong_signature_private_key(uint8_t key[LIBMPQ_RSA_STRONG_KEY_SIZE])
+{
+    memcpy(key, test_strong_signature_public_key, LIBMPQ_RSA_STRONG_SIZE);
+    memcpy(
+        key + LIBMPQ_RSA_STRONG_SIZE, test_strong_signature_private_exponent,
+        sizeof(test_strong_signature_private_exponent)
+    );
+}
+
 static int test_rsa2048_public_vector(void);
+static int test_rsa2048_private_vector(void);
 static int write_bytes(const char *path, const uint8_t *data, size_t size, size_t prefix);
 
 /* Count signed-range reads without depending on verifier chunk sizes. */
@@ -237,11 +269,11 @@ test_strong_signatures(void)
     for (i = 0; i < 3; ++i) {
         memcpy(invalid, test_strong_signature_public_key, sizeof(invalid));
         if (i == 0)
-            invalid[255] &= 0xfe;
+            invalid[LIBMPQ_RSA_STRONG_SIZE - 1u] &= 0xfe;
         else if (i == 1)
             invalid[0] = 0;
         else
-            memset(invalid + 256, 0, 256);
+            memset(invalid + LIBMPQ_RSA_STRONG_SIZE, 0, LIBMPQ_RSA_STRONG_SIZE);
         TEST_CHECK(
             libmpq__archive_verify(
                 archive, LIBMPQ_SIGNATURE_STRONG, invalid, sizeof(invalid), &mismatches
@@ -266,11 +298,12 @@ test_strong_signatures(void)
         if (i == 0)
             changed[marker] ^= 1;
         else if (i == 1)
-            changed[extent + 4] ^= 1;
+            changed[extent + LIBMPQ_STRONG_SIGNATURE_MARKER_SIZE] ^= 1;
         else if (i == 2) {
             size_t j;
-            for (j = 0; j < 256; ++j)
-                changed[extent + 4 + j] = test_strong_signature_public_key[255 - j];
+            for (j = 0; j < LIBMPQ_STRONG_SIGNATURE_SIZE; ++j)
+                changed[extent + LIBMPQ_STRONG_SIGNATURE_MARKER_SIZE + j] =
+                    test_strong_signature_public_key[LIBMPQ_STRONG_SIGNATURE_SIZE - 1u - j];
         } else if (i == 3)
             length = (size_t)extent;
         else if (i == 4)
@@ -280,7 +313,10 @@ test_strong_signatures(void)
         else if (i == 6)
             changed[length++] = 0x5a;
         else
-            memset(changed + extent + 4, 0, 256);
+            memset(
+                changed + extent + LIBMPQ_STRONG_SIGNATURE_MARKER_SIZE, 0,
+                LIBMPQ_STRONG_SIGNATURE_SIZE
+            );
         TEST_CHECK(write_bytes(temporary, changed, length, 0) == 0);
         TEST_CHECK(libmpq__archive_open(&archive, temporary, 0) == 0);
         TEST_CHECK(libmpq__archive_signatures(archive, &signatures) == 0);
@@ -325,18 +361,6 @@ test_strong_signatures(void)
     TEST_CHECK(mismatches == 0);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
 
-    {
-        mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_ONE, 8, 4096, 0, 0 };
-        TEST_CHECK(libmpq__archive_create(&archive, temporary, &options) == 0);
-        TEST_CHECK(
-            libmpq__archive_sign(
-                archive, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
-                sizeof(test_strong_signature_public_key)
-            ) == LIBMPQ_ERROR_FORMAT
-        );
-        TEST_CHECK(libmpq__archive_close(archive) == 0);
-        TEST_CHECK(remove(temporary) == 0);
-    }
     return 0;
 }
 
@@ -417,7 +441,8 @@ sign_padded_v1_archive(uint8_t *data, size_t size, uint64_t signature_offset)
     libmpq__md5_update(&context, data, size);
     libmpq__md5_final(&context, digest);
     libmpq__rsa_md5_encode(digest, encoded);
-    if (libmpq__rsa_operation(test_signature_private_key, encoded, signature) != LIBMPQ_SUCCESS)
+    if (libmpq__rsa_weak_operation(test_signature_private_key, encoded, signature) !=
+        LIBMPQ_SUCCESS)
         return -1;
     for (i = 0; i < LIBMPQ_RSA_SIZE; ++i)
         data[signature_offset + LIBMPQ_SIGNATURE_PREFIX_SIZE + i] =
@@ -532,6 +557,215 @@ test_logical_extent(void)
     return 0;
 }
 
+/* Decode a writer-produced NGIS trailer directly. This distinguishes the
+ * plain SHA-1 archive-range encoding from every verification-only variant. */
+static int
+test_strong_writer_plain_block(mpq_archive_s *archive)
+{
+    static const uint8_t marker[LIBMPQ_STRONG_SIGNATURE_MARKER_SIZE] = { 'N', 'G', 'I', 'S' };
+    uint8_t trailer[LIBMPQ_STRONG_TRAILER_SIZE];
+    uint8_t input[LIBMPQ_STRONG_SIGNATURE_SIZE];
+    uint8_t actual[LIBMPQ_STRONG_SIGNATURE_SIZE];
+    uint8_t expected[LIBMPQ_STRONG_SIGNATURE_SIZE];
+    uint8_t digest[LIBMPQ_SHA1_SIZE];
+    uint8_t buffer[16384];
+    mpq_sha1_s context;
+    uint64_t extent;
+    uint64_t trailer_offset;
+    uint64_t position = 0;
+    size_t count;
+    size_t i;
+
+    TEST_CHECK(archive != NULL && archive->archive_offset >= 0);
+    TEST_CHECK(libmpq__archive_signature_extent(archive, &extent) == LIBMPQ_SUCCESS);
+    TEST_CHECK((uint64_t)archive->archive_offset <= UINT64_MAX - extent);
+    trailer_offset = (uint64_t)archive->archive_offset + extent;
+    TEST_CHECK(trailer_offset <= archive->file_size);
+    TEST_CHECK(sizeof(trailer) <= archive->file_size - trailer_offset);
+    TEST_CHECK(
+        libmpq__stream_read_at(archive->stream, trailer_offset, trailer, sizeof(trailer)) ==
+        LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(memcmp(trailer, marker, sizeof(marker)) == 0);
+    for (i = 0; i < sizeof(input); ++i)
+        input[i] = trailer[sizeof(marker) + sizeof(input) - 1 - i];
+    TEST_CHECK(
+        libmpq__rsa_strong_public_operation(test_strong_signature_public_key, input, actual) ==
+        LIBMPQ_SUCCESS
+    );
+
+    libmpq__sha1_init(&context);
+    while (position < extent) {
+        count = extent - position < sizeof(buffer) ? (size_t)(extent - position) : sizeof(buffer);
+        TEST_CHECK(
+            libmpq__stream_read_at(
+                archive->stream, (uint64_t)archive->archive_offset + position, buffer, count
+            ) == LIBMPQ_SUCCESS
+        );
+        libmpq__sha1_update(&context, buffer, count);
+        position += count;
+    }
+    libmpq__sha1_final(&context, digest);
+    expected[0] = 0x0b;
+    memset(expected + 1, 0xbb, LIBMPQ_STRONG_SIGNATURE_SIZE - LIBMPQ_SHA1_SIZE - 1u);
+    for (i = 0; i < sizeof(digest); ++i)
+        expected[LIBMPQ_STRONG_SIGNATURE_SIZE - LIBMPQ_SHA1_SIZE + i] =
+            digest[sizeof(digest) - 1 - i];
+    TEST_CHECK(memcmp(actual, expected, sizeof(actual)) == 0);
+    return 0;
+}
+
+static int
+test_strong_writer_signatures(void)
+{
+    static const uint8_t payload[] = "strong writer signature";
+    static const uint8_t auth[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+    mpq_archive_s *archive = NULL;
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_ONE, 8, 4096, 0, 0 };
+    mpq_file_options_s raw_options = { 0, 0, 0, 0, 0 };
+    uint8_t strong_private[LIBMPQ_RSA_STRONG_KEY_SIZE];
+    uint8_t invalid[LIBMPQ_RSA_STRONG_KEY_SIZE];
+    uint32_t signatures;
+    uint32_t mismatches;
+    uint32_t version;
+    char path[512];
+    char renamed[512];
+    mpq_writer_s *writer = NULL;
+
+    test_strong_signature_private_key(strong_private);
+    TEST_CHECK(test_temp_path(path, sizeof(path), "strong-writer") == 0);
+    for (version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_TWO; ++version) {
+        options.version = version;
+        TEST_CHECK(libmpq__archive_create(&archive, path, &options) == 0);
+        TEST_CHECK(
+            libmpq__archive_sign(
+                archive, LIBMPQ_SIGNATURE_STRONG, strong_private, sizeof(strong_private)
+            ) == 0
+        );
+        TEST_CHECK(
+            libmpq__archive_sign(
+                archive, LIBMPQ_SIGNATURE_STRONG, strong_private, sizeof(strong_private)
+            ) == LIBMPQ_ERROR_FORMAT
+        );
+        TEST_CHECK(
+            libmpq__archive_add_data(
+                archive, "payload", payload, sizeof(payload) - 1, &raw_options
+            ) == 0
+        );
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+        archive = NULL;
+        if (version == LIBMPQ_ARCHIVE_VERSION_ONE) {
+            TEST_CHECK(test_temp_path(renamed, sizeof(renamed), "strong-writer-renamed") == 0);
+            TEST_CHECK(rename(path, renamed) == 0);
+        }
+        TEST_CHECK(
+            libmpq__archive_open(
+                &archive, version == LIBMPQ_ARCHIVE_VERSION_ONE ? renamed : path, 0
+            ) == 0
+        );
+        TEST_CHECK(libmpq__archive_signatures(archive, &signatures) == 0);
+        TEST_CHECK(signatures == LIBMPQ_SIGNATURE_STRONG);
+        TEST_CHECK(test_strong_writer_plain_block(archive) == 0);
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
+                sizeof(test_strong_signature_public_key), &mismatches
+            ) == 0
+        );
+        TEST_CHECK(mismatches == 0);
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+        archive = NULL;
+        if (version == LIBMPQ_ARCHIVE_VERSION_ONE)
+            TEST_CHECK(remove(renamed) == 0);
+    }
+
+    options.version = LIBMPQ_ARCHIVE_VERSION_ONE;
+    TEST_CHECK(libmpq__archive_create(&archive, path, &options) == 0);
+    TEST_CHECK(
+        libmpq__archive_sign(
+            archive, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+            sizeof(test_signature_private_key)
+        ) == 0
+    );
+    TEST_CHECK(
+        libmpq__archive_sign(
+            archive, LIBMPQ_SIGNATURE_STRONG, strong_private, sizeof(strong_private)
+        ) == 0
+    );
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, "payload", payload, sizeof(payload) - 1, &raw_options) ==
+        0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(libmpq__archive_signatures(archive, &signatures) == 0);
+    TEST_CHECK(signatures == (LIBMPQ_SIGNATURE_WEAK | LIBMPQ_SIGNATURE_STRONG));
+    TEST_CHECK(
+        libmpq__archive_verify(
+            archive, LIBMPQ_SIGNATURE_WEAK, test_signature_public_key,
+            sizeof(test_signature_public_key), &mismatches
+        ) == 0
+    );
+    TEST_CHECK(mismatches == 0);
+    TEST_CHECK(
+        libmpq__archive_verify(
+            archive, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
+            sizeof(test_strong_signature_public_key), &mismatches
+        ) == 0
+    );
+    TEST_CHECK(mismatches == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+
+    TEST_CHECK(libmpq__archive_create(&archive, path, &options) == 0);
+    TEST_CHECK(libmpq__writer_begin(archive, "active", 0, &raw_options, &writer) == 0);
+    TEST_CHECK(
+        libmpq__archive_sign(
+            archive, LIBMPQ_SIGNATURE_STRONG, strong_private, sizeof(strong_private)
+        ) == LIBMPQ_ERROR_NOT_INITIALIZED
+    );
+    TEST_CHECK(libmpq__writer_finish(writer) == 0);
+    writer = NULL;
+    TEST_CHECK(
+        libmpq__archive_sign(
+            archive, LIBMPQ_SIGNATURE_STRONG, strong_private, sizeof(strong_private) - 1
+        ) == LIBMPQ_ERROR_FORMAT
+    );
+    memcpy(invalid, strong_private, sizeof(invalid));
+    invalid[LIBMPQ_RSA_STRONG_SIZE - 1u] &= 0xfe;
+    TEST_CHECK(
+        libmpq__archive_sign(archive, LIBMPQ_SIGNATURE_STRONG, invalid, sizeof(invalid)) ==
+        LIBMPQ_ERROR_FORMAT
+    );
+    memcpy(invalid, strong_private, sizeof(invalid));
+    memset(invalid + LIBMPQ_RSA_STRONG_SIZE, 0, LIBMPQ_RSA_STRONG_SIZE);
+    TEST_CHECK(
+        libmpq__archive_sign(archive, LIBMPQ_SIGNATURE_STRONG, invalid, sizeof(invalid)) ==
+        LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(
+        libmpq__archive_sign(
+            archive, LIBMPQ_SIGNATURE_WEAK | LIBMPQ_SIGNATURE_STRONG, strong_private,
+            sizeof(strong_private)
+        ) == LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+
+    TEST_CHECK(libmpq__archive_create_mpqe(&archive, path, auth, sizeof(auth) - 1, &options) == 0);
+    TEST_CHECK(
+        libmpq__archive_sign(
+            archive, LIBMPQ_SIGNATURE_STRONG, strong_private, sizeof(strong_private)
+        ) == LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+    TEST_CHECK(remove(path) == 0);
+    libmpq__rsa_clear(strong_private, sizeof(strong_private));
+    return 0;
+}
+
 int
 main(void)
 {
@@ -566,20 +800,24 @@ main(void)
     TEST_CHECK(test_logical_extent() == 0);
     TEST_CHECK(test_sha1_vectors() == 0);
     TEST_CHECK(test_rsa2048_public_vector() == 0);
-    TEST_CHECK(test_strong_signatures() == 0);
+    TEST_CHECK(test_rsa2048_private_vector() == 0);
     libmpq__rsa_md5_encode(test_digest, encoded);
     TEST_CHECK(memcmp(encoded, test_encoded, 64) == 0);
-    TEST_CHECK(libmpq__rsa_key_validate(test_signature_private_key, 128) == 0);
-    TEST_CHECK(libmpq__rsa_key_validate(test_signature_public_key, 128) == 0);
-    TEST_CHECK(libmpq__rsa_operation(test_signature_private_key, encoded, output) == 0);
+    TEST_CHECK(libmpq__rsa_weak_key_validate(test_signature_private_key, 128) == 0);
+    TEST_CHECK(libmpq__rsa_weak_key_validate(test_signature_public_key, 128) == 0);
+    TEST_CHECK(libmpq__rsa_weak_operation(test_signature_private_key, encoded, output) == 0);
     TEST_CHECK(memcmp(output, test_signature, 64) == 0);
-    TEST_CHECK(libmpq__rsa_operation(test_signature_public_key, output, encoded) == 0);
+    TEST_CHECK(libmpq__rsa_weak_operation(test_signature_public_key, output, encoded) == 0);
     TEST_CHECK(memcmp(encoded, test_encoded, 64) == 0);
-    TEST_CHECK(libmpq__rsa_key_validate(NULL, 128) == LIBMPQ_ERROR_FORMAT);
-    TEST_CHECK(libmpq__rsa_key_validate(test_signature_public_key, 127) == LIBMPQ_ERROR_FORMAT);
+    TEST_CHECK(test_strong_writer_signatures() == 0);
+    TEST_CHECK(test_strong_signatures() == 0);
+    TEST_CHECK(libmpq__rsa_weak_key_validate(NULL, 128) == LIBMPQ_ERROR_FORMAT);
+    TEST_CHECK(
+        libmpq__rsa_weak_key_validate(test_signature_public_key, 127) == LIBMPQ_ERROR_FORMAT
+    );
     memcpy(invalid_key, test_signature_public_key, 128);
     invalid_key[63] &= 0xfe;
-    TEST_CHECK(libmpq__rsa_key_validate(invalid_key, 128) == LIBMPQ_ERROR_FORMAT);
+    TEST_CHECK(libmpq__rsa_weak_key_validate(invalid_key, 128) == LIBMPQ_ERROR_FORMAT);
     TEST_CHECK(libmpq__archive_signatures(NULL, &types) == LIBMPQ_ERROR_EXIST && types == 0);
     TEST_CHECK(
         libmpq__archive_verify(NULL, 1, test_signature_public_key, 128, &mismatch) ==
@@ -781,7 +1019,7 @@ main(void)
 
 /* Test-only RSA-2048 public-operation KAT. Expected output was generated
  * independently with Python: pow(input, 65537, modulus), serialized big-endian. */
-static const uint8_t test_rsa2048_modulus[256] = {
+static const uint8_t test_rsa2048_modulus[LIBMPQ_RSA_STRONG_SIZE] = {
     0xc8, 0xb9, 0x7d, 0x0b, 0x16, 0xb3, 0x2a, 0x9b, 0x13, 0x0d, 0x73, 0x55, 0xb1, 0x99, 0x4a, 0x28,
     0x6d, 0x6d, 0xde, 0x05, 0xb6, 0x68, 0xcf, 0x9c, 0xe3, 0xc4, 0x84, 0x4f, 0xbd, 0x5b, 0x4b, 0x21,
     0x49, 0xb2, 0x81, 0x63, 0xf7, 0xe0, 0xd7, 0x53, 0xd6, 0x2b, 0x8e, 0xeb, 0x04, 0xc6, 0x87, 0xd0,
@@ -799,7 +1037,7 @@ static const uint8_t test_rsa2048_modulus[256] = {
     0x68, 0x3b, 0xd9, 0xf6, 0xe2, 0x2e, 0xca, 0xcc, 0x0d, 0x14, 0x18, 0xa3, 0x19, 0x44, 0x0f, 0x3d,
     0x0f, 0x5b, 0xb7, 0x83, 0x3d, 0x14, 0x07, 0x51, 0xf9, 0x66, 0x96, 0x29, 0x8f, 0xb3, 0x2a, 0x5b,
 };
-static const uint8_t test_rsa2048_exponent[256] = {
+static const uint8_t test_rsa2048_exponent[LIBMPQ_RSA_STRONG_SIZE] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -817,7 +1055,7 @@ static const uint8_t test_rsa2048_exponent[256] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01,
 };
-static const uint8_t test_rsa2048_input[256] = {
+static const uint8_t test_rsa2048_input[LIBMPQ_RSA_STRONG_SIZE] = {
     0x7a, 0x1a, 0x60, 0x32, 0x8a, 0x39, 0xe8, 0xe2, 0x99, 0x6b, 0x9a, 0xc7, 0xab, 0xef, 0xd3, 0x81,
     0xd6, 0x93, 0xf7, 0xfc, 0xd4, 0xb8, 0x66, 0x9c, 0x80, 0xab, 0xc2, 0x4c, 0x49, 0x61, 0x95, 0xc2,
     0xb4, 0x41, 0xb8, 0x87, 0xbd, 0xf6, 0xaa, 0x2a, 0x35, 0x14, 0xa9, 0xad, 0xf1, 0x8d, 0xa4, 0x17,
@@ -835,7 +1073,7 @@ static const uint8_t test_rsa2048_input[256] = {
     0xd4, 0x6c, 0x50, 0x5e, 0xa2, 0xa4, 0xc1, 0x93, 0x33, 0x0f, 0x8a, 0x34, 0x4e, 0xe8, 0xb7, 0x13,
     0xca, 0x29, 0x6b, 0xee, 0xaa, 0xb6, 0xd5, 0x2f, 0x0e, 0xdd, 0xe0, 0xbc, 0xd7, 0xc8, 0xf6, 0x9c,
 };
-static const uint8_t test_rsa2048_expected[256] = {
+static const uint8_t test_rsa2048_expected[LIBMPQ_RSA_STRONG_SIZE] = {
     0x3e, 0x8e, 0x76, 0x67, 0x70, 0xde, 0x75, 0x9c, 0xe6, 0x79, 0xfa, 0x68, 0x1d, 0x79, 0x78, 0xc9,
     0xd4, 0x9b, 0x56, 0x09, 0x27, 0x2f, 0x40, 0xbc, 0x75, 0xc3, 0x53, 0xba, 0x8b, 0xc6, 0x15, 0x7c,
     0xc2, 0xc5, 0x1c, 0x2d, 0xf0, 0xdc, 0xc0, 0xc5, 0xc6, 0xa1, 0xb6, 0x89, 0x14, 0x06, 0x33, 0x9b,
@@ -854,31 +1092,60 @@ static const uint8_t test_rsa2048_expected[256] = {
     0xcb, 0x06, 0x91, 0xaa, 0x50, 0xa4, 0x83, 0xb2, 0xec, 0x44, 0x94, 0xda, 0x82, 0xad, 0x97, 0xb1,
 };
 
+/* Independently calculated with Python pow(input, d, modulus), using the
+ * test-only strong key and the nontrivial public-operation KAT input. */
+static const uint8_t test_rsa2048_private_expected[LIBMPQ_RSA_STRONG_SIZE] = {
+    0x78, 0xc5, 0xbf, 0x14, 0x93, 0x66, 0xef, 0xd9, 0x93, 0x76, 0x8a, 0xf2, 0x95, 0xb6, 0x39, 0x2b,
+    0x31, 0xa3, 0x5b, 0x69, 0xed, 0x26, 0xa3, 0x7c, 0xf7, 0x94, 0x1a, 0xfd, 0x0d, 0xba, 0xfe, 0x3b,
+    0x98, 0x4e, 0x8a, 0xba, 0xd9, 0xf1, 0x22, 0x56, 0xf7, 0xbf, 0x7c, 0x31, 0x8c, 0xf4, 0x65, 0x6d,
+    0x2c, 0x6c, 0x02, 0xdb, 0x10, 0xcb, 0x05, 0x6b, 0xb6, 0xe0, 0xc4, 0x01, 0xc2, 0xdb, 0x96, 0xf6,
+    0xda, 0x54, 0xdd, 0xda, 0x3f, 0xd7, 0xfc, 0x4d, 0xf0, 0x6b, 0x3b, 0xfb, 0x88, 0x86, 0x59, 0x7f,
+    0xc4, 0x45, 0xfa, 0xb9, 0x28, 0xe0, 0xb9, 0x15, 0x81, 0xf4, 0x03, 0x87, 0x7e, 0x1b, 0xc2, 0x40,
+    0xd8, 0x50, 0xce, 0x6a, 0x07, 0xe6, 0xbf, 0x56, 0x56, 0xdf, 0x14, 0x7c, 0xb9, 0x52, 0x8e, 0xf8,
+    0x84, 0x08, 0xc0, 0xf6, 0x02, 0x12, 0xab, 0x0f, 0x6f, 0x70, 0x80, 0xf9, 0xa9, 0x19, 0xae, 0x59,
+    0x11, 0x44, 0x9c, 0xab, 0x32, 0xaf, 0xc6, 0x7b, 0xaa, 0xc8, 0xc2, 0x64, 0x0a, 0xcf, 0x2f, 0xa3,
+    0x90, 0x98, 0xd1, 0x49, 0x12, 0x17, 0x06, 0xb9, 0xb9, 0x6e, 0x1b, 0xb6, 0xf6, 0xa2, 0x71, 0x78,
+    0xf1, 0xbf, 0x3e, 0xd0, 0xb2, 0x05, 0x2e, 0x88, 0xf3, 0xc3, 0xfb, 0x0d, 0x20, 0xfd, 0xf0, 0x7e,
+    0x36, 0xf9, 0x1c, 0x58, 0xb1, 0xcc, 0xc3, 0x77, 0x1e, 0x67, 0x93, 0x51, 0xa6, 0x5a, 0xa5, 0xb8,
+    0x38, 0x86, 0xb6, 0x49, 0x94, 0x6d, 0x87, 0x23, 0x32, 0x4e, 0x50, 0xbe, 0x7c, 0x93, 0xe1, 0x4b,
+    0xd6, 0xcf, 0x6e, 0xb1, 0xd6, 0x68, 0x34, 0x4b, 0x63, 0x23, 0x5f, 0xdb, 0x58, 0xbc, 0xb0, 0xcb,
+    0x22, 0x23, 0xb6, 0xc1, 0x1e, 0x01, 0x72, 0x96, 0x1b, 0x0b, 0x73, 0xc1, 0xfa, 0x30, 0x5b, 0xf9,
+    0x08, 0x1d, 0xe0, 0x35, 0x39, 0xcc, 0x2c, 0x6d, 0x39, 0x49, 0x2d, 0x37, 0x0f, 0x68, 0x83, 0x2f,
+};
+
 static int
 test_rsa2048_public_vector(void)
 {
-    uint8_t output[256];
-    uint8_t greater[256];
+    uint8_t key[LIBMPQ_RSA_STRONG_KEY_SIZE];
+    uint8_t output[LIBMPQ_RSA_STRONG_SIZE];
+    uint8_t greater[LIBMPQ_RSA_STRONG_SIZE];
     memcpy(greater, test_rsa2048_modulus, sizeof(greater));
-    greater[255] = (uint8_t)(greater[255] + 2u);
+    greater[LIBMPQ_RSA_STRONG_SIZE - 1u] = (uint8_t)(greater[LIBMPQ_RSA_STRONG_SIZE - 1u] + 2u);
+    memcpy(key, test_rsa2048_modulus, sizeof(test_rsa2048_modulus));
+    memcpy(
+        key + sizeof(test_rsa2048_modulus), test_rsa2048_exponent, sizeof(test_rsa2048_exponent)
+    );
     TEST_CHECK(
-        libmpq__rsa_public_operation(
-            test_rsa2048_modulus, sizeof(test_rsa2048_modulus), test_rsa2048_exponent,
-            sizeof(test_rsa2048_exponent), test_rsa2048_input, output
-        ) == LIBMPQ_SUCCESS
+        libmpq__rsa_strong_public_operation(key, test_rsa2048_input, output) == LIBMPQ_SUCCESS
     );
     TEST_CHECK(memcmp(output, test_rsa2048_expected, sizeof(output)) == 0);
     TEST_CHECK(
-        libmpq__rsa_public_operation(
-            test_rsa2048_modulus, sizeof(test_rsa2048_modulus), test_rsa2048_exponent,
-            sizeof(test_rsa2048_exponent), test_rsa2048_modulus, output
-        ) == LIBMPQ_ERROR_FORMAT
+        libmpq__rsa_strong_public_operation(key, test_rsa2048_modulus, output) ==
+        LIBMPQ_ERROR_FORMAT
     );
+    TEST_CHECK(libmpq__rsa_strong_public_operation(key, greater, output) == LIBMPQ_ERROR_FORMAT);
+    return 0;
+}
+
+static int
+test_rsa2048_private_vector(void)
+{
+    uint8_t key[LIBMPQ_RSA_STRONG_KEY_SIZE];
+    uint8_t output[LIBMPQ_RSA_STRONG_SIZE];
+    test_strong_signature_private_key(key);
     TEST_CHECK(
-        libmpq__rsa_public_operation(
-            test_rsa2048_modulus, sizeof(test_rsa2048_modulus), test_rsa2048_exponent,
-            sizeof(test_rsa2048_exponent), greater, output
-        ) == LIBMPQ_ERROR_FORMAT
+        libmpq__rsa_strong_private_operation(key, test_rsa2048_input, output) == LIBMPQ_SUCCESS
     );
+    TEST_CHECK(memcmp(output, test_rsa2048_private_expected, sizeof(output)) == 0);
     return 0;
 }

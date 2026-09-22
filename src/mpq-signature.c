@@ -276,7 +276,7 @@ strong_verify(mpq_archive_s *a, const uint8_t *key, size_t key_size, uint32_t *m
     size_t i;
     unsigned int variant;
     int32_t result;
-    if (libmpq__rsa_public_key_validate(key, key_size, LIBMPQ_RSA_STRONG_SIZE) != LIBMPQ_SUCCESS)
+    if (libmpq__rsa_strong_key_validate(key, key_size) != LIBMPQ_SUCCESS)
         return LIBMPQ_ERROR_FORMAT;
     result = strong_locate(a, &extent, signature);
     if (result != LIBMPQ_SUCCESS)
@@ -293,10 +293,7 @@ strong_verify(mpq_archive_s *a, const uint8_t *key, size_t key_size, uint32_t *m
         *mismatches |= LIBMPQ_SIGNATURE_STRONG;
         return LIBMPQ_SUCCESS;
     }
-    result = libmpq__rsa_public_operation(
-        key, LIBMPQ_RSA_STRONG_SIZE, key + LIBMPQ_RSA_STRONG_SIZE, LIBMPQ_RSA_STRONG_SIZE, input,
-        actual
-    );
+    result = libmpq__rsa_strong_public_operation(key, input, actual);
     if (result != LIBMPQ_SUCCESS)
         return result;
     result = strong_digest_base(a, start, size, &base);
@@ -366,7 +363,7 @@ libmpq__signature_verify(
         return LIBMPQ_ERROR_NOT_INITIALIZED;
     if (flags == LIBMPQ_SIGNATURE_STRONG)
         return strong_verify(a, key, key_size, mismatches);
-    if (flags != LIBMPQ_SIGNATURE_WEAK || libmpq__rsa_key_validate(key, key_size) != 0)
+    if (flags != LIBMPQ_SIGNATURE_WEAK || libmpq__rsa_weak_key_validate(key, key_size) != 0)
         return LIBMPQ_ERROR_FORMAT;
     result = locate(a, &offset, &extent, payload);
     if (result != LIBMPQ_SUCCESS)
@@ -384,7 +381,7 @@ libmpq__signature_verify(
     libmpq__rsa_md5_encode(digest, expected);
     for (i = 0; i < LIBMPQ_RSA_SIZE; ++i)
         input[i] = payload[(LIBMPQ_SIGNATURE_SIZE - 1) - i];
-    if (libmpq__rsa_operation(key, input, actual) != LIBMPQ_SUCCESS ||
+    if (libmpq__rsa_weak_operation(key, input, actual) != LIBMPQ_SUCCESS ||
         memcmp(expected, actual, LIBMPQ_RSA_SIZE) != 0)
         *mismatches = LIBMPQ_SIGNATURE_WEAK;
     return LIBMPQ_SUCCESS;
@@ -407,8 +404,16 @@ libmpq__signature_configure(mpq_archive_s *a, uint32_t type, const uint8_t *key,
         return LIBMPQ_ERROR_EXIST;
     if (!a->write_mode || a->write_finalized || a->write_current)
         return LIBMPQ_ERROR_NOT_INITIALIZED;
+    if (type == LIBMPQ_SIGNATURE_STRONG) {
+        if (a->write_mpqe || a->write_strong_signature ||
+            libmpq__rsa_strong_key_validate(key, key_size) != LIBMPQ_SUCCESS)
+            return LIBMPQ_ERROR_FORMAT;
+        memcpy(a->write_strong_signature_key, key, LIBMPQ_RSA_STRONG_KEY_SIZE);
+        a->write_strong_signature = 1;
+        return LIBMPQ_SUCCESS;
+    }
     if (type != LIBMPQ_SIGNATURE_WEAK || a->write_signature ||
-        libmpq__rsa_key_validate(key, key_size) != LIBMPQ_SUCCESS)
+        libmpq__rsa_weak_key_validate(key, key_size) != LIBMPQ_SUCCESS)
         return LIBMPQ_ERROR_FORMAT;
     index = a->write_next_block;
     libmpq__file_hash(LIBMPQ_SIGNATURE_NAME, &h1, &h2, &h3);
@@ -428,6 +433,55 @@ libmpq__signature_configure(mpq_archive_s *a, uint32_t type, const uint8_t *key,
     return LIBMPQ_SUCCESS;
 }
 
+static int32_t
+strong_finish(mpq_archive_s *a, uint64_t size)
+{
+    static const uint8_t marker[LIBMPQ_STRONG_SIGNATURE_MARKER_SIZE] = { 'N', 'G', 'I', 'S' };
+    mpq_stream_s stream = { 0 };
+    mpq_sha1_s context;
+    uint8_t buffer[16384];
+    uint8_t digest[LIBMPQ_SHA1_SIZE];
+    uint8_t encoded[LIBMPQ_STRONG_SIGNATURE_SIZE];
+    uint8_t signature[LIBMPQ_STRONG_SIGNATURE_SIZE];
+    uint8_t reversed[LIBMPQ_STRONG_SIGNATURE_SIZE];
+    uint64_t pos = 0;
+    size_t i;
+    int32_t result = LIBMPQ_SUCCESS;
+
+    if (!a->write_strong_signature)
+        return LIBMPQ_SUCCESS;
+    libmpq__stream_borrow_file(&stream, a->fp, size);
+    libmpq__sha1_init(&context);
+    while (pos < size) {
+        size_t count = size - pos < sizeof(buffer) ? (size_t)(size - pos) : sizeof(buffer);
+        result = libmpq__stream_read_at(&stream, pos, buffer, count);
+        if (result != LIBMPQ_SUCCESS)
+            break;
+        libmpq__sha1_update(&context, buffer, count);
+        pos += count;
+    }
+    if (result == LIBMPQ_SUCCESS) {
+        libmpq__sha1_final(&context, digest);
+        strong_encoded(digest, encoded);
+        result =
+            libmpq__rsa_strong_private_operation(a->write_strong_signature_key, encoded, signature);
+    }
+    if (result == LIBMPQ_SUCCESS) {
+        for (i = 0; i < sizeof(reversed); ++i)
+            reversed[i] = signature[sizeof(reversed) - 1 - i];
+        if (libmpq__file_seek(a->fp, (libmpq__off_t)size, SEEK_SET) < 0)
+            result = LIBMPQ_ERROR_SEEK;
+        else if (fwrite(marker, 1, sizeof(marker), a->fp) != sizeof(marker) ||
+                 fwrite(reversed, 1, sizeof(reversed), a->fp) != sizeof(reversed) ||
+                 fflush(a->fp) != 0)
+            result = LIBMPQ_ERROR_WRITE;
+    }
+    libmpq__rsa_clear(a->write_strong_signature_key, sizeof(a->write_strong_signature_key));
+    libmpq__rsa_clear(signature, sizeof(signature));
+    libmpq__rsa_clear(reversed, sizeof(reversed));
+    return result;
+}
+
 int32_t
 libmpq__signature_finish(mpq_archive_s *a, uint64_t size)
 {
@@ -437,29 +491,31 @@ libmpq__signature_finish(mpq_archive_s *a, uint64_t size)
     uint8_t signature[LIBMPQ_RSA_SIZE];
     uint8_t reversed[LIBMPQ_RSA_SIZE];
     size_t i;
-    int32_t result;
-    if (!a->write_signature)
-        return LIBMPQ_SUCCESS;
-    libmpq__stream_borrow_file(&stream, a->fp, size);
-    result = digest_archive(&stream, 0, size, a->write_signature_offset, digest);
-    if (result == LIBMPQ_SUCCESS) {
-        libmpq__rsa_md5_encode(digest, encoded);
-        result = libmpq__rsa_operation(a->write_signature_key, encoded, signature);
-    }
-    if (result == LIBMPQ_SUCCESS) {
-        for (i = 0; i < LIBMPQ_RSA_SIZE; ++i)
-            reversed[i] = signature[(LIBMPQ_RSA_SIZE - 1) - i];
-        if (libmpq__file_seek(
-                a->fp, (libmpq__off_t)a->write_signature_offset + LIBMPQ_SIGNATURE_PREFIX_SIZE,
-                SEEK_SET
-            ) < 0)
-            result = LIBMPQ_ERROR_SEEK;
-        else if (fwrite(reversed, 1, LIBMPQ_RSA_SIZE, a->fp) != LIBMPQ_RSA_SIZE ||
-                 fflush(a->fp) != 0)
-            result = LIBMPQ_ERROR_WRITE;
+    int32_t result = LIBMPQ_SUCCESS;
+    if (a->write_signature) {
+        libmpq__stream_borrow_file(&stream, a->fp, size);
+        result = digest_archive(&stream, 0, size, a->write_signature_offset, digest);
+        if (result == LIBMPQ_SUCCESS) {
+            libmpq__rsa_md5_encode(digest, encoded);
+            result = libmpq__rsa_weak_operation(a->write_signature_key, encoded, signature);
+        }
+        if (result == LIBMPQ_SUCCESS) {
+            for (i = 0; i < LIBMPQ_RSA_SIZE; ++i)
+                reversed[i] = signature[(LIBMPQ_RSA_SIZE - 1) - i];
+            if (libmpq__file_seek(
+                    a->fp, (libmpq__off_t)a->write_signature_offset + LIBMPQ_SIGNATURE_PREFIX_SIZE,
+                    SEEK_SET
+                ) < 0)
+                result = LIBMPQ_ERROR_SEEK;
+            else if (fwrite(reversed, 1, LIBMPQ_RSA_SIZE, a->fp) != LIBMPQ_RSA_SIZE ||
+                     fflush(a->fp) != 0)
+                result = LIBMPQ_ERROR_WRITE;
+        }
     }
     libmpq__rsa_clear(a->write_signature_key, sizeof(a->write_signature_key));
     libmpq__rsa_clear(signature, sizeof(signature));
     libmpq__rsa_clear(reversed, sizeof(reversed));
+    if (result == LIBMPQ_SUCCESS)
+        result = strong_finish(a, size);
     return result;
 }

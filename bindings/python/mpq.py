@@ -457,13 +457,13 @@ class Writer:
         pointer = None if not data else (ctypes.c_uint8 * len(data)).from_buffer_copy(data)
         return libmpq.libmpq__archive_add_data(self._mpq, _as_bytes(name), pointer, len(data), ctypes.byref(options))
 
-    def sign(self, private_key):
-        """Configure weak signing at close, using a 128-byte key: 64-byte big-endian n then d."""
+    def sign(self, private_key, signature_type=SIGNATURE_WEAK):
+        """Configure weak or plain strong signing at close using a raw private key."""
         self._ensure_open()
         key = bytes(private_key)
         pointer = (ctypes.c_uint8 * len(key)).from_buffer_copy(key)
         try:
-            libmpq.libmpq__archive_sign(self._mpq, SIGNATURE_WEAK, pointer, len(key))
+            libmpq.libmpq__archive_sign(self._mpq, signature_type, pointer, len(key))
         finally:
             ctypes.memset(pointer, 0, len(key))
 

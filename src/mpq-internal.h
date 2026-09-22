@@ -220,21 +220,23 @@ struct mpq_archive
     uint8_t write_internal;                  /* Finalization is adding generated internal files. */
 
     /* Writer-only state. Reader handles leave these fields zeroed. */
-    uint8_t write_mode;      /* Whether this handle was opened for creation. */
-    uint8_t write_finalized; /* Whether the final header and tables were written. */
-    uint8_t write_signature; /* Caller requested weak signing. */
+    uint8_t write_mode;             /* Whether this handle was opened for creation. */
+    uint8_t write_finalized;        /* Whether the final header and tables were written. */
+    uint8_t write_signature;        /* Caller requested weak signing. */
+    uint8_t write_strong_signature; /* Caller requested plain strong signing. */
     uint64_t write_signature_offset;
-    uint8_t write_signature_key[LIBMPQ_RSA_KEY_SIZE]; /* Cleared on every close. */
-    uint32_t write_capacity;                          /* Reserved number of block-table entries. */
-    uint32_t write_hash_capacity;                     /* Reserved number of hash-table entries. */
-    uint32_t write_sector_size;  /* Sector size used while buffering and packing files. */
-    uint32_t write_flags;        /* Archive-creation flags, including listfile generation. */
-    uint32_t write_next_block;   /* Next block-table slot assigned to a completed file. */
-    char **write_names;          /* Names corresponding to assigned block-table entries. */
-    uint16_t *write_locales;     /* Locales corresponding to assigned file entries. */
-    uint16_t *write_platforms;   /* Platforms corresponding to assigned file entries. */
-    mpq_writer_s *write_current; /* Active file writer; only one file may be streamed at once. */
-    uint8_t write_mpqe;          /* Whether finalization publishes an MPQE stream. */
+    uint8_t write_signature_key[LIBMPQ_RSA_KEY_SIZE];               /* Cleared on every close. */
+    uint8_t write_strong_signature_key[LIBMPQ_RSA_STRONG_KEY_SIZE]; /* Cleared on close. */
+    uint32_t write_capacity;      /* Reserved number of block-table entries. */
+    uint32_t write_hash_capacity; /* Reserved number of hash-table entries. */
+    uint32_t write_sector_size;   /* Sector size used while buffering and packing files. */
+    uint32_t write_flags;         /* Archive-creation flags, including listfile generation. */
+    uint32_t write_next_block;    /* Next block-table slot assigned to a completed file. */
+    char **write_names;           /* Names corresponding to assigned block-table entries. */
+    uint16_t *write_locales;      /* Locales corresponding to assigned file entries. */
+    uint16_t *write_platforms;    /* Platforms corresponding to assigned file entries. */
+    mpq_writer_s *write_current;  /* Active file writer; only one file may be streamed at once. */
+    uint8_t write_mpqe;           /* Whether finalization publishes an MPQE stream. */
     uint8_t
         write_mpqe_key[LIBMPQ_MPQE_CHUNK_SIZE]; /* Derived MPQE key retained only while writing. */
     FILE *write_mpqe_output;                    /* Secure temporary encrypted output handle. */

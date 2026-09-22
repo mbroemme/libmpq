@@ -36,8 +36,12 @@ built in. These checks do not establish mathematical key-pair validity.
 .PP
 Strong public verification keys contain a 256-byte unsigned big-endian
 modulus and a 256-byte zero-padded unsigned big-endian public exponent,
-512 bytes total. Strong signing is unsupported. External strong NGIS
+512 bytes total. Strong creation emits the plain SHA-1 archive-range variant.
+External strong NGIS
 trailers are not detected or verified for MPQE transport streams.
+.PP
+Strong verification additionally accepts uppercase-basename and ARCHIVE
+digest variants, but the writer does not emit them.
 .PP
 Detection returns zero for absence, LIBMPQ_SIGNATURE_WEAK, or
 LIBMPQ_SIGNATURE_STRONG, or both bits for structurally valid storage. Verification requires

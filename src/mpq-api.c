@@ -354,6 +354,9 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
         libmpq__rsa_clear(
             mpq_archive->write_signature_key, sizeof(mpq_archive->write_signature_key)
         );
+        libmpq__rsa_clear(
+            mpq_archive->write_strong_signature_key, sizeof(mpq_archive->write_strong_signature_key)
+        );
         for (i = 0; i < mpq_archive->write_capacity; i++)
             free(mpq_archive->write_names ? mpq_archive->write_names[i] : NULL);
         free(mpq_archive->write_names);

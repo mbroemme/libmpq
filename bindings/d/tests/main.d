@@ -195,6 +195,17 @@ private ubyte[] strongPublicKey() {
     return result;
 }
 
+private ubyte[] strongPrivateKey() {
+    enum exponent = "14c9759f7c1ba1f24ab0de0bd253bac7b470e7fbf911088844783bea5a62da150c24356fd670712b98a9aea03ecb52b7b18597637b2cf7f16afcb6d5cf67a727b9437abf078a75b907450fb4fc56396dd8d650a71484d4163641eca554997c29afbf201c4df444354c29882ef797b85580f259260f77efc686eeacd31da3d9c337897433f8ef833890a04d55cbfc53f2dd8f96bd9b93e28fc6f022786b36e51de38ec0d5d41aba3eed9647831fb16fcbc3b16eaca91e60894aa772b02b22a3ffb7042e52531163d089209df6412098613ef59664ed70884e33f3e3056ccfb911bcc04d2c73142996946d88be0daa29aafa1bab3d10ff4d52295880c8fad6d641";
+    auto result = strongPublicKey();
+    foreach (i; 0 .. 256) {
+        immutable high = exponent[i * 2] <= '9' ? exponent[i * 2] - '0' : exponent[i * 2] - 'a' + 10;
+        immutable low = exponent[i * 2 + 1] <= '9' ? exponent[i * 2 + 1] - '0' : exponent[i * 2 + 1] - 'a' + 10;
+        result[256 + i] = cast(ubyte)((high << 4) | low);
+    }
+    return result;
+}
+
 /** Exercise the strong selector with the canonical feature fixture and test key. */
 private void testStrongSignature() {
     auto root = buildPath(environment.get("LIBMPQ_SOURCE_DIR", "."), "tests", "fixtures");
@@ -206,6 +217,19 @@ private void testStrongSignature() {
            "canonical strong fixture detection");
     assert(archive.verify(publicKey, SIGNATURE_STRONG) == 0,
            "canonical strong fixture verification");
+}
+
+private void testStrongSigning() {
+    auto path = temporaryArchive("strong-writer");
+    scope(exit) remove(path);
+    auto archive = Archive.create(path, ArchiveCreateOptions.v2());
+    archive.sign(strongPrivateKey(), SIGNATURE_STRONG);
+    archive.add("payload", cast(const(ubyte)[])"D strong signing");
+    archive.close();
+    auto reopened = Archive.open(path);
+    scope(exit) reopened.close();
+    assert(reopened.signatures() == SIGNATURE_STRONG);
+    assert(reopened.verify(strongPublicKey(), SIGNATURE_STRONG) == 0);
 }
 
 private void testFixture() {
@@ -296,6 +320,7 @@ void main() {
     testCreateReadAndMetadata(ARCHIVE_VERSION_TWO);
     testFixture();
     testStrongSignature();
+    testStrongSigning();
     testMpqeFixture();
     testSparseFixtures();
     testMpqeCreate();

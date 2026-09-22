@@ -11,26 +11,32 @@ Use `libmpq__archive_signatures` to detect weak and strong signatures. Use
 for weak verification and `LIBMPQ_SIGNATURE_STRONG` with a 512-byte public key
 for strong verification. A mismatch is a result bit, not an operational error;
 a missing signature returns `LIBMPQ_ERROR_EXIST`. Strong signatures use external
-`NGIS` trailers, SHA-1 and RSA-2048, and are verification-only.
-To sign, call `libmpq__archive_sign` on a v1 or v2 writer with a private key before
-close. This reserves one file slot and signs only after finalization.
+`NGIS` trailers, SHA-1 and RSA-2048. Writer creation emits only the plain
+SHA-1 archive-range variant. Basename and `ARCHIVE` variants are accepted
+during verification only.
+
+To sign, call `libmpq__archive_sign` on a v1 or v2 writer with the
+corresponding private key before close. Weak signing reserves one file
+slot for `(signature)`; strong signing appends an external `NGIS` trailer
+after finalization.
 
 The weak 128-byte raw key is two 64-byte unsigned big-endian integers: a modulus
 followed by a zero-padded exponent value. Use a public key to verify a signature and a private key to
 create one. There are no built-in keys. See [MPQ.md](MPQ.md) for storage,
 hashing, error, and key-format details. Weak signatures use
 obsolete MD5/RSA-512 and must not be used for modern trust decisions.
-Strong public verification keys contain a 256-byte unsigned big-endian modulus
-and a 256-byte zero-padded unsigned big-endian public exponent (512 bytes total).
-Strong signing is unsupported. External strong trailers are not defined for MPQE.
+Strong public and private keys contain a 256-byte unsigned big-endian modulus
+and a 256-byte zero-padded unsigned big-endian exponent (512 bytes total).
+The writer accepts the private exponent and emits only the plain SHA-1 range variant.
+External strong trailers are not defined for MPQE, so strong signing is rejected there.
 
 The additive signature API advances libtool `CURRENT:REVISION:AGE` from
 `4:0:0` to `5:0:1`: existing interfaces remain compatible and the SONAME
-stays `libmpq.so.4`. Strong verification extends these same entry points without
+stays `libmpq.so.4`. Strong signature support extends these same entry points without
 another ABI change. For files beginning with `HM3W`, weak and strong hashing
 starts at physical offset zero; weak hashing still excludes `(signature)`.
 
-Python exposes `Writer.sign(private_key)`, `Archive.signatures()`, and
+Python exposes `Writer.sign(private_key, signature_type=SIGNATURE_WEAK)`, `Archive.signatures()`, and
 `Archive.verify(public_key)`. D and Java expose equivalent `Archive.sign`,
 `signatures`, and `verify` methods taking raw key byte arrays. All wrappers
 preserve mismatch bits and raise their normal exceptions for native errors.

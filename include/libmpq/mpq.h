@@ -267,18 +267,21 @@ extern LIBMPQ_API int32_t libmpq__archive_attributes(mpq_archive_s *mpq_archive,
  * Weak RSA keys are exactly 128 bytes: an unsigned big-endian 64-byte modulus,
  * followed by a zero-padded 64-byte exponent value. Strong verification keys
  * are exactly 512 bytes: an unsigned big-endian 256-byte modulus followed by
- * a zero-padded 256-byte public exponent. Pass a public key to verify a
- * signature and a private key to create a weak one. The modulus must be
- * full-width and odd; the exponent must be odd, >=3 and less than the modulus.
+ * a zero-padded 256-byte public exponent. Strong private keys have the same
+ * layout with a zero-padded 256-byte private exponent. Pass a public key to
+ * verify a signature and a matching private key to create one. The modulus
+ * must be full-width and odd; the exponent must be odd, >=3 and less than
+ * the modulus.
  * No PEM, ASN.1 or built-in keys are accepted. MD5/RSA-512 is legacy-only.
  * Verification requires exactly one signature type and a caller public key.
  * Missing signature returns EXIST; malformed storage/key returns FORMAT; I/O
  * errors propagate. A cryptographic mismatch returns success with the
  * requested type in *mismatches.
- * Signing is configured once on a v1 or v2 writer without an active file writer.
- * It copies the caller key and immediately consumes one max_files slot for
- * (signature). Close signs the final archive and clears the retained key.
- * Generated signature attribute values are zero. Strong signing is unsupported.
+ * Each signature type is configured once on a v1 or v2 writer without an active
+ * file writer. It copies the caller key; weak signing immediately consumes one
+ * max_files slot for (signature). Close signs the final archive and clears keys.
+ * Generated weak signature attribute values are zero. Strong signing appends a
+ * plain SHA-1(range) NGIS trailer after the logical MPQ archive.
  * Reopen to verify.
  * Reader verification is independent of archive version/compression policy. */
 extern LIBMPQ_API int32_t libmpq__archive_signatures(mpq_archive_s *archive, uint32_t *signatures);
