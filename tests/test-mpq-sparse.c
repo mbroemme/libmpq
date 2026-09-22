@@ -116,8 +116,10 @@ test_sectors(void)
             test_sparse_payload(plain, sizeof(plain));
             if (i >= 3) {
 
-                /* Zero runs shrink first; repeated SPARSE tokens let the second
-                 * Huffman or PKWARE stage win too, without relying on fallback. */
+                /*
+                 * Zero runs shrink first; repeated SPARSE tokens let the second
+                 * Huffman or PKWARE stage win too, without relying on fallback.
+                 */
                 for (length = 0; length < sizeof(plain); ++length)
                     plain[length] = length % 4U == 0 ? 'A' : 0;
             }
@@ -187,8 +189,10 @@ test_archives(void)
             result = libmpq__archive_create(&archive, path, &create);
         TEST_CHECK(result == 0);
 
-        /* Match existing writer coverage: encrypted sectorized or plain single-unit.
-         * Compressed encrypted single units have no reader seed-recovery path. */
+        /*
+         * Match existing writer coverage: encrypted sectorized or plain single-unit.
+         * Compressed encrypted single units have no reader seed-recovery path.
+         */
         for (flags = 0; flags < 3; ++flags) {
             for (i = 0; i < sizeof(lengths) / sizeof(lengths[0]); ++i) {
                 if (lengths[i] == 0 || ((flags & 1U) && lengths[i] < 8U) ||

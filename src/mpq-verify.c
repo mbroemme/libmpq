@@ -28,8 +28,10 @@
 #include <string.h>
 #include <zlib.h>
 
-/* Reuse the same table loader and packed/decrypted checksum check as file
- * verification. Do not publish outputs until reading and decoding succeed. */
+/*
+ * Reuse the same table loader and packed/decrypted checksum check as file
+ * verification. Do not publish outputs until reading and decoding succeed.
+ */
 int32_t
 libmpq__verify_block(
     mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint32_t *checksum,
@@ -105,8 +107,10 @@ cleanup:
     return status;
 }
 
-/* Hash logical blocks through the existing reader without changing extraction.
- * Publish mismatch bits only after the entire verification operation succeeds. */
+/*
+ * Hash logical blocks through the existing reader without changing extraction.
+ * Publish mismatch bits only after the entire verification operation succeeds.
+ */
 int32_t
 libmpq__verify_file(
     mpq_archive_s *archive, uint32_t file_number, uint32_t verify_flags, uint32_t *mismatches

@@ -37,8 +37,10 @@ overlaps(uint64_t start, uint64_t size, uint64_t signature)
            (start > signature || size > signature - start);
 }
 
-/* Inspect the physical hash/block entry, including entries excluded from the
- * public reader map. An invalid internal file must not look like absence. */
+/*
+ * Inspect the physical hash/block entry, including entries excluded from the
+ * public reader map. An invalid internal file must not look like absence.
+ */
 static int32_t
 locate(mpq_archive_s *a, uint64_t *offset, uint64_t *extent, uint8_t payload[LIBMPQ_SIGNATURE_SIZE])
 {
@@ -113,8 +115,10 @@ locate(mpq_archive_s *a, uint64_t *offset, uint64_t *extent, uint8_t payload[LIB
     return LIBMPQ_SUCCESS;
 }
 
-/* Hash only the logical archive, zeroing every intersection with the internal
- * signature payload. The same read-at implementation handles finalized writers. */
+/*
+ * Hash only the logical archive, zeroing every intersection with the internal
+ * signature payload. The same read-at implementation handles finalized writers.
+ */
 static int32_t
 digest_archive(
     mpq_stream_s *stream, uint64_t start, uint64_t size, uint64_t excluded,
@@ -145,8 +149,10 @@ digest_archive(
     return LIBMPQ_SUCCESS;
 }
 
-/* Locate a structurally complete external NGIS trailer. Trailing data is
- * accepted for compatibility with Blizzard-format archives. */
+/*
+ * Locate a structurally complete external NGIS trailer. Trailing data is
+ * accepted for compatibility with Blizzard-format archives.
+ */
 static int32_t
 strong_locate(mpq_archive_s *a, uint64_t *extent, uint8_t signature[LIBMPQ_STRONG_SIGNATURE_SIZE])
 {
@@ -155,8 +161,10 @@ strong_locate(mpq_archive_s *a, uint64_t *extent, uint8_t signature[LIBMPQ_STRON
     uint64_t offset;
     int32_t result;
 
-    /* MPQE encrypts its complete transport stream and has no defined external
-     * strong-trailer representation. Do not interpret ciphertext as NGIS. */
+    /*
+     * MPQE encrypts its complete transport stream and has no defined external
+     * strong-trailer representation. Do not interpret ciphertext as NGIS.
+     */
     if (a->stream->provider == LIBMPQ_STREAM_MPQE)
         return LIBMPQ_ERROR_EXIST;
     result = libmpq__archive_signature_extent(a, extent);
@@ -287,8 +295,10 @@ strong_verify(mpq_archive_s *a, const uint8_t *key, size_t key_size, uint32_t *m
     for (i = 0; i < sizeof(input); ++i)
         input[i] = signature[sizeof(input) - 1 - i];
 
-    /* A trailer value outside the RSA representative domain is a failed
-     * signature, not malformed MPQ storage or an invalid caller key. */
+    /*
+     * A trailer value outside the RSA representative domain is a failed
+     * signature, not malformed MPQ storage or an invalid caller key.
+     */
     if (memcmp(input, key, LIBMPQ_RSA_STRONG_SIZE) >= 0) {
         *mismatches |= LIBMPQ_SIGNATURE_STRONG;
         return LIBMPQ_SUCCESS;
@@ -387,8 +397,10 @@ libmpq__signature_verify(
     return LIBMPQ_SUCCESS;
 }
 
-/* Reserve the zero payload immediately. Duplicate names are rejected by the
- * writer, and existing listfile/attributes reservations remain in force. */
+/*
+ * Reserve the zero payload immediately. Duplicate names are rejected by the
+ * writer, and existing listfile/attributes reservations remain in force.
+ */
 int32_t
 libmpq__signature_configure(mpq_archive_s *a, uint32_t type, const uint8_t *key, size_t key_size)
 {

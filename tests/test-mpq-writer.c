@@ -365,7 +365,8 @@ decrypt_mpqe_path(const char *path, uint8_t **data, size_t *size)
     return 0;
 }
 
-/* Compare normal writer bytes with the complete decrypted MPQE stream, including its final chunk.
+/*
+ * Compare normal writer bytes with the complete decrypted MPQE stream, including its final chunk.
  */
 static int
 test_mpqe_writer_byte_equality(uint32_t version)

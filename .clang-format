@@ -68,8 +68,9 @@ Cpp11BracedListStyle: false
 IncludeBlocks: Preserve
 
 # Standalone comment spacing
-# clang-format 22 cannot require an empty line before standalone comments.
-# scripts/check-comment-spacing enforces this rule alongside clang-format in CI.
+# clang-format cannot require an empty line before standalone comments or
+# enforce dedicated opening/closing lines for multiline block comments.
+# scripts/check-comment-spacing enforces these rules alongside clang-format in CI.
 
 # Line length
 # Sets the preferred maximum column width before clang-format starts wrapping.

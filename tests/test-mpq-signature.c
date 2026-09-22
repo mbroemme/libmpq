@@ -30,8 +30,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Independently calculated MD5 DigestInfo and RSA result for the libmpq
- * weak-signature known answer. */
+/*
+ * Independently calculated MD5 DigestInfo and RSA result for the libmpq
+ * weak-signature known answer.
+ */
 static const uint8_t test_digest[16] = {
     0xaa, 0xaf, 0x4f, 0x2e, 0x9f, 0x11, 0xa5, 0xf0, 0x62, 0xad, 0x92, 0x01, 0x8b, 0xe1, 0x24, 0x95,
 };
@@ -189,8 +191,10 @@ test_strong_signatures(void)
     }
     TEST_CHECK(libmpq__archive_close(archive) == 0);
 
-    /* Tamper an HM3W wrapper byte after the marker so range selection remains
-     * unchanged. Both weak and strong signatures must detect the change. */
+    /*
+     * Tamper an HM3W wrapper byte after the marker so range selection remains
+     * unchanged. Both weak and strong signatures must detect the change.
+     */
     TEST_CHECK(test_read_path(FIXTURE_DIR "/mpq-v1-features.w3x", &wrapped, &wrapped_size) == 0);
     TEST_CHECK(wrapped_size > 4 && memcmp(wrapped, "HM3W", 4) == 0);
     wrapped[4] ^= 1;
@@ -421,9 +425,11 @@ check_archive(const char *path, libmpq__off_t offset, uint32_t expected)
     return 0;
 }
 
-/* Re-sign a deliberately padded v1 archive. This follows the on-disk weak
+/*
+ * Re-sign a deliberately padded v1 archive. This follows the on-disk weak
  * signature representation so the reader is exercised against a genuine
- * archive rather than an in-memory metadata shortcut. */
+ * archive rather than an in-memory metadata shortcut.
+ */
 static int
 sign_padded_v1_archive(uint8_t *data, size_t size, uint64_t signature_offset)
 {
@@ -460,9 +466,11 @@ failed_read(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size)
     return LIBMPQ_ERROR_READ;
 }
 
-/* A virtual high-offset signature avoids allocating or hashing gigabytes.
+/*
+ * A virtual high-offset signature avoids allocating or hashing gigabytes.
  * Record the first digest read and fail it deliberately after successful
- * signature location. This tests the verifier's extent handoff as well. */
+ * signature location. This tests the verifier's extent handoff as well.
+ */
 static int32_t
 high_read(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size)
 {
@@ -557,8 +565,10 @@ test_logical_extent(void)
     return 0;
 }
 
-/* Decode a writer-produced NGIS trailer directly. This distinguishes the
- * plain SHA-1 archive-range encoding from every verification-only variant. */
+/*
+ * Decode a writer-produced NGIS trailer directly. This distinguishes the
+ * plain SHA-1 archive-range encoding from every verification-only variant.
+ */
 static int
 test_strong_writer_plain_block(mpq_archive_s *archive)
 {
@@ -991,8 +1001,10 @@ main(void)
     TEST_CHECK(libmpq__archive_close(a) == 0);
     TEST_CHECK(check_archive(changed, 0, 1) == 0);
 
-    /* Persist malformed payload lengths through the ordinary writer, rather
-     * than relying only on the defensive in-memory metadata checks above. */
+    /*
+     * Persist malformed payload lengths through the ordinary writer, rather
+     * than relying only on the defensive in-memory metadata checks above.
+     */
     for (i = 71; i <= 73; i += 2) {
         TEST_CHECK(libmpq__archive_create(&a, changed, &options) == 0);
         TEST_CHECK(libmpq__archive_add_data(a, "(signature)", payload, i, &raw_options) == 0);
@@ -1017,8 +1029,10 @@ main(void)
     return 0;
 }
 
-/* Test-only RSA-2048 public-operation KAT. Expected output was generated
- * independently with Python: pow(input, 65537, modulus), serialized big-endian. */
+/*
+ * Test-only RSA-2048 public-operation KAT. Expected output was generated
+ * independently with Python: pow(input, 65537, modulus), serialized big-endian.
+ */
 static const uint8_t test_rsa2048_modulus[LIBMPQ_RSA_STRONG_SIZE] = {
     0xc8, 0xb9, 0x7d, 0x0b, 0x16, 0xb3, 0x2a, 0x9b, 0x13, 0x0d, 0x73, 0x55, 0xb1, 0x99, 0x4a, 0x28,
     0x6d, 0x6d, 0xde, 0x05, 0xb6, 0x68, 0xcf, 0x9c, 0xe3, 0xc4, 0x84, 0x4f, 0xbd, 0x5b, 0x4b, 0x21,
@@ -1092,8 +1106,10 @@ static const uint8_t test_rsa2048_expected[LIBMPQ_RSA_STRONG_SIZE] = {
     0xcb, 0x06, 0x91, 0xaa, 0x50, 0xa4, 0x83, 0xb2, 0xec, 0x44, 0x94, 0xda, 0x82, 0xad, 0x97, 0xb1,
 };
 
-/* Independently calculated with Python pow(input, d, modulus), using the
- * test-only strong key and the nontrivial public-operation KAT input. */
+/*
+ * Independently calculated with Python pow(input, d, modulus), using the
+ * test-only strong key and the nontrivial public-operation KAT input.
+ */
 static const uint8_t test_rsa2048_private_expected[LIBMPQ_RSA_STRONG_SIZE] = {
     0x78, 0xc5, 0xbf, 0x14, 0x93, 0x66, 0xef, 0xd9, 0x93, 0x76, 0x8a, 0xf2, 0x95, 0xb6, 0x39, 0x2b,
     0x31, 0xa3, 0x5b, 0x69, 0xed, 0x26, 0xa3, 0x7c, 0xf7, 0x94, 0x1a, 0xfd, 0x0d, 0xba, 0xfe, 0x3b,

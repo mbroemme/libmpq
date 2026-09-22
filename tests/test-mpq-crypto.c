@@ -39,8 +39,10 @@ test_encrypted_file(const char *path)
     return 0;
 }
 
-/* An anonymous encrypted payload shorter than one cipher word is literal on
- * disk. It must not require impossible filename-based seed recovery. */
+/*
+ * An anonymous encrypted payload shorter than one cipher word is literal on
+ * disk. It must not require impossible filename-based seed recovery.
+ */
 static int
 test_short_anonymous_encrypted_file(const char *path)
 {

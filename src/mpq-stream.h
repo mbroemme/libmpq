@@ -30,8 +30,10 @@ typedef enum
 
 typedef int32_t (*mpq_stream_read_at_fn)(mpq_stream_s *, uint64_t, uint8_t *, size_t);
 
-/* Private per-stream dispatch. The context is borrowed, not copied to clones.
- * Normal streams use the built-in reader and no context. */
+/*
+ * Private per-stream dispatch. The context is borrowed, not copied to clones.
+ * Normal streams use the built-in reader and no context.
+ */
 struct mpq_stream
 {
     FILE *file;

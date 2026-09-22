@@ -94,9 +94,11 @@ check_block_error(mpq_archive_s *archive, uint32_t number, uint32_t block, int32
     return 0;
 }
 
-/* Construct only the checksum-bearing file payload here. The normal writer
+/*
+ * Construct only the checksum-bearing file payload here. The normal writer
  * supplies archive tables and attributes. Checksums cover pre-encryption bytes,
- * including a deliberately raw final sector. The checksum table is never encrypted. */
+ * including a deliberately raw final sector. The checksum table is never encrypted.
+ */
 static int
 test_sectors(
     uint32_t version, int encrypted, int compressed_table, uint32_t corrupt, int attributes,
@@ -242,8 +244,10 @@ test_sectors(
     );
     REQUIRE(memcmp(plain, output, sizeof(plain)) == 0);
 
-    /* Block reads are intentionally partial and do not load a checksum table.
-     * A changed packed final sector is rejected by the complete file read. */
+    /*
+     * Block reads are intentionally partial and do not load a checksum table.
+     * A changed packed final sector is rejected by the complete file read.
+     */
     if (corrupt == 0 && !absent && !encrypted) {
         read_failure_s failure;
         libmpq__off_t tail_size;
@@ -269,8 +273,10 @@ test_sectors(
         uint32_t observed = 0;
         read_failure_s failure;
 
-        /* Prove the first sector mismatches, then fail the next physical read.
-         * The public verifier uses the per-stream mock without linker wrapping. */
+        /*
+         * Prove the first sector mismatches, then fail the next physical read.
+         * The public verifier uses the per-stream mock without linker wrapping.
+         */
         REQUIRE(libmpq__reader_sector_checksums(archive, number, &table) == 0);
         status = libmpq__reader_block_read(
             archive, number, 0, output, sector_size, &transferred, table, &observed, NULL
@@ -455,8 +461,10 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
     if (size == 0 && !(storage & LIBMPQ_FILE_FLAG_SINGLE) &&
         (storage & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE))) {
 
-        /* Empty sectorized codec files retain their existing reader behavior;
-         * this case checks only that requesting CRC produces no checksum table. */
+        /*
+         * Empty sectorized codec files retain their existing reader behavior;
+         * this case checks only that requesting CRC produces no checksum table.
+         */
         goto cleanup;
     }
     REQUIRE(libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &bits) == 0 && bits == 0);
@@ -548,9 +556,11 @@ cleanup:
     return result;
 }
 
-/* Single-unit encryption has no offset table from which to recover a key.
+/*
+ * Single-unit encryption has no offset table from which to recover a key.
  * Preserve the reader's DECRYPT error, and reuse a named internal cache when
- * its key is available. The inspection must leave that outer reference alive. */
+ * its key is available. The inspection must leave that outer reference alive.
+ */
 static int
 test_single_compression(void)
 {

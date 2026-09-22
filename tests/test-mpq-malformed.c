@@ -99,8 +99,10 @@ test_malformed_corpus(void)
     return 0;
 }
 
-/* Corrupt a generated sector table and require a format error before any
- * archive-controlled sector length can be used for allocation. */
+/*
+ * Corrupt a generated sector table and require a format error before any
+ * archive-controlled sector length can be used for allocation.
+ */
 static int
 test_malformed_sector_offsets(void)
 {

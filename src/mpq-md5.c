@@ -22,8 +22,10 @@
 
 #include <string.h>
 
-/* Transform one complete block using fixed-width unsigned arithmetic.
- * Explicit little-endian loads make the result independent of host byte order. */
+/*
+ * Transform one complete block using fixed-width unsigned arithmetic.
+ * Explicit little-endian loads make the result independent of host byte order.
+ */
 static void
 transform(mpq_md5_s *context, const uint8_t block[64])
 {
@@ -80,8 +82,10 @@ transform(mpq_md5_s *context, const uint8_t block[64])
     context->state[3] += d;
 }
 
-/* Initialize a caller-owned incremental checksum context.
- * No allocation or external cryptographic provider is needed. */
+/*
+ * Initialize a caller-owned incremental checksum context.
+ * No allocation or external cryptographic provider is needed.
+ */
 void
 libmpq__md5_init(mpq_md5_s *context)
 {
@@ -92,8 +96,10 @@ libmpq__md5_init(mpq_md5_s *context)
     context->state[3] = 0x10325476;
 }
 
-/* Add bytes to the checksum, buffering at most one incomplete block.
- * The byte count wraps modulo 2^64 as required for the encoded bit length. */
+/*
+ * Add bytes to the checksum, buffering at most one incomplete block.
+ * The byte count wraps modulo 2^64 as required for the encoded bit length.
+ */
 void
 libmpq__md5_update(mpq_md5_s *context, const uint8_t *data, size_t size)
 {
@@ -109,8 +115,10 @@ libmpq__md5_update(mpq_md5_s *context, const uint8_t *data, size_t size)
     }
 }
 
-/* Append RFC padding and return the canonical sixteen-byte digest.
- * Finalization consumes the context and clears its buffered input. */
+/*
+ * Append RFC padding and return the canonical sixteen-byte digest.
+ * Finalization consumes the context and clears its buffered input.
+ */
 void
 libmpq__md5_final(mpq_md5_s *context, uint8_t digest[LIBMPQ_MD5_SIZE])
 {

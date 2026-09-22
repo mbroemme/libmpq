@@ -38,8 +38,10 @@ main(void)
     TEST_CHECK(transferred == block_size);
     TEST_CHECK(memcmp(block_data, data, (size_t)block_size) == 0);
 
-    /* Raw unencrypted reads share input/output storage and must skip self-copy.
-     * Their logical size remains independent of the caller buffer capacity. */
+    /*
+     * Raw unencrypted reads share input/output storage and must skip self-copy.
+     * Their logical size remains independent of the caller buffer capacity.
+     */
     TEST_CHECK(libmpq__file_flags(archive, number, &flags) == 0);
     TEST_CHECK(
         (flags &

@@ -80,9 +80,11 @@ libmpq__sparse_decompress(
         uint8_t token = in_buf[input++];
         uint32_t count = (uint32_t)(token & 0x7fU) + ((token & 0x80U) ? 1U : 3U);
 
-        /* Accept the short terminal literal form emitted by Storm-style compressors,
+        /*
+         * Accept the short terminal literal form emitted by Storm-style compressors,
          * even when the token nominally describes more bytes than remain in the
-         * declared output. The required literal bytes must be physically present. */
+         * declared output. The required literal bytes must be physically present.
+         */
         if (count > length - output)
             count = length - output;
         if (token & 0x80U) {

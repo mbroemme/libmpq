@@ -102,10 +102,12 @@ typedef struct mpq_writer mpq_writer_s;
 /* Opt into EXTENDED writer compression; absence selects STANDARD. */
 #define LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED 0x00000002u
 
-/* Array-presence flags in the independent version-100 attributes payload.
+/*
+ * Array-presence flags in the independent version-100 attributes payload.
  * Also accepted by mpq_archive_create_options_s.attributes in every supported
  * MPQ version. Any nonzero combination creates one `(attributes)` file and
- * consumes one reserved file slot, regardless of the number of selected arrays. */
+ * consumes one reserved file slot, regardless of the number of selected arrays.
+ */
 #define LIBMPQ_ATTRIBUTE_CRC32 0x01u
 #define LIBMPQ_ATTRIBUTE_FILETIME 0x02u
 #define LIBMPQ_ATTRIBUTE_MD5 0x04u
@@ -142,8 +144,10 @@ enum
 #define LIBMPQ_FILE_FLAG_ENCRYPTED 0x00010000u
 #define LIBMPQ_FILE_FLAG_SINGLE 0x01000000u
 
-/* Generate sector Adler-32 checksums for sectorized compressed/imploded files.
- * Ignored for empty, raw, or single-unit files. */
+/*
+ * Generate sector Adler-32 checksums for sectorized compressed/imploded files.
+ * Ignored for empty, raw, or single-unit files.
+ */
 #define LIBMPQ_FILE_FLAG_SECTOR_CRC 0x04000000u
 #define LIBMPQ_FILE_FLAG_LOCALE 0x00000000u
 
@@ -237,12 +241,14 @@ typedef struct mpq_file_options
     uint16_t platform;          /* MPQ platform identifier used for lookup and duplicates. */
 } mpq_file_options_s;
 
-/* Stored per-file metadata. Complete lossless reads verify available CRC32/MD5
+/*
+ * Stored per-file metadata. Complete lossless reads verify available CRC32/MD5
  * values; flags identifies available fields; unavailable fields are zero. FILETIME
  * is an unsigned Windows timestamp, MD5 is sixteen bytes, and patch_bit is
  * zero or one. The native ABI is 40 bytes with FILETIME at offset 8 and
  * four explicit reserved bytes at offset 36, always returned as zero.
- * Natural alignment is retained; this is not the serialized attributes layout. */
+ * Natural alignment is retained; this is not the serialized attributes layout.
+ */
 typedef struct
 {
     uint32_t flags;
@@ -253,16 +259,19 @@ typedef struct
     uint8_t reserved[4]; /* Explicit ABI padding; not serialized attribute data. */
 } mpq_file_attributes_s;
 
-/* Query the optional internal file on a reader. Returns EXIST if absent,
+/*
+ * Query the optional internal file on a reader. Returns EXIST if absent,
  * FORMAT for invalid metadata, and stores its header flags in *flags on
  * success. Ordinary archive opening and extraction do not depend on
- * attributes validity. */
+ * attributes validity.
+ */
 extern LIBMPQ_API int32_t libmpq__archive_attributes(mpq_archive_s *mpq_archive, uint32_t *flags);
 
 #define LIBMPQ_SIGNATURE_WEAK 0x00000001u
 #define LIBMPQ_SIGNATURE_STRONG 0x00000002u
 
-/* Detect structurally valid weak and strong signatures on readers; absence returns zero.
+/*
+ * Detect structurally valid weak and strong signatures on readers; absence returns zero.
  * All non-NULL outputs are initialized before validation.
  * Weak RSA keys are exactly 128 bytes: an unsigned big-endian 64-byte modulus,
  * followed by a zero-padded 64-byte exponent value. Strong verification keys
@@ -283,7 +292,8 @@ extern LIBMPQ_API int32_t libmpq__archive_attributes(mpq_archive_s *mpq_archive,
  * Generated weak signature attribute values are zero. Strong signing appends a
  * plain SHA-1(range) NGIS trailer after the logical MPQ archive.
  * Reopen to verify.
- * Reader verification is independent of archive version/compression policy. */
+ * Reader verification is independent of archive version/compression policy.
+ */
 extern LIBMPQ_API int32_t libmpq__archive_signatures(mpq_archive_s *archive, uint32_t *signatures);
 extern LIBMPQ_API int32_t libmpq__archive_verify(
     mpq_archive_s *archive, uint32_t verify_flags, const uint8_t *public_key,
@@ -294,14 +304,17 @@ extern LIBMPQ_API int32_t libmpq__archive_sign(
     size_t private_key_size
 );
 
-/* Return available stored attributes for a public file number on a reader.
+/*
+ * Return available stored attributes for a public file number on a reader.
  * Legacy missing entries return zero flags, not invented checksum values.
- * PATCH_BIT is metadata only and does not enable patch application. */
+ * PATCH_BIT is metadata only and does not enable patch application.
+ */
 extern LIBMPQ_API int32_t libmpq__file_attributes(
     mpq_archive_s *mpq_archive, uint32_t file_number, mpq_file_attributes_s *attributes
 );
 
-/* Verify requested available sector Adler-32 and file CRC32/MD5 checksums.
+/*
+ * Verify requested available sector Adler-32 and file CRC32/MD5 checksums.
  * Sector checks use decrypted packed bytes; file checks use extracted bytes.
  * Returns success with mismatch bits in *mismatches, or a negative operation error.
  * The output is a subset of verify_flags: set bits denote available mismatches;
@@ -310,25 +323,30 @@ extern LIBMPQ_API int32_t libmpq__file_attributes(
  * Missing individual values or sector tables are skipped.
  * A zero request is a no-op on a valid reader/file. Unknown bits return FORMAT.
  * *mismatches is zero on errors. Zero bits do not imply values were present.
- * Lossy ADPCM output can differ from the writer's source-byte checksums. */
+ * Lossy ADPCM output can differ from the writer's source-byte checksums.
+ */
 extern LIBMPQ_API int32_t libmpq__file_verify(
     mpq_archive_s *archive, uint32_t file_number, uint32_t verify_flags, uint32_t *mismatches
 );
 
-/* Verify one sector's stored Adler-32 over packed bytes after decryption.
+/*
+ * Verify one sector's stored Adler-32 over packed bytes after decryption.
  * Success returns the stored checksum and either zero or VERIFY_SECTOR_CRC
  * in mismatches. Unavailable checksums (including zero/all-ones entries) return
  * ERROR_EXIST. Both non-NULL outputs are zeroed before validation and remain
  * zero on any error. libmpq__block_read() does not implicitly verify the
- * stored sector checksum. */
+ * stored sector checksum.
+ */
 extern LIBMPQ_API int32_t libmpq__block_verify(
     mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint32_t *checksum,
     uint32_t *mismatches
 );
 
-/* Set Windows FILETIME, not Unix time, on an active file writer. Generation of
+/*
+ * Set Windows FILETIME, not Unix time, on an active file writer. Generation of
  * FILETIME must be enabled or FORMAT is returned. The default is zero;
- * neither this API nor path-based addition imports filesystem metadata. */
+ * neither this API nor path-based addition imports filesystem metadata.
+ */
 extern LIBMPQ_API int32_t libmpq__writer_timestamp(mpq_writer_s *writer, uint64_t filetime);
 
 /*
@@ -631,19 +649,23 @@ extern LIBMPQ_API int32_t libmpq__block_size_unpacked(
     libmpq__off_t *unpacked_size
 );
 
-/* Return one block's stored byte size, excluding offset/checksum tables.
+/*
+ * Return one block's stored byte size, excluding offset/checksum tables.
  * Compressed sector offsets are loaded internally; raw and single-unit sizes
  * come from archive metadata. Encryption does not change the size. A non-NULL
- * packed_size output is initialized to zero and remains zero on any failure. */
+ * packed_size output is initialized to zero and remains zero on any failure.
+ */
 extern LIBMPQ_API int32_t libmpq__block_size_packed(
     mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, libmpq__off_t *packed_size
 );
 
-/* Return the stored method byte, zero for raw storage (including fallback),
+/*
+ * Return the stored method byte, zero for raw storage (including fallback),
  * or LIBMPQ_COMPRESSION_PKZIP for a legacy imploded block. Method 0x12 is the
  * legacy bzip2/zlib chain in v1 and LZMA in v2; this is not the writer's LZMA
  * selector. No decompression or checksum verification is performed. A non-NULL
- * compression output is initialized to zero and remains zero on failure. */
+ * compression output is initialized to zero and remains zero on failure.
+ */
 extern LIBMPQ_API int32_t libmpq__block_compression(
     mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint32_t *compression
 );

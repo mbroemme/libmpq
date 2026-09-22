@@ -28,8 +28,10 @@
 #include <string.h>
 #include <zlib.h>
 
-/* Calculate numeric-array offsets without narrowing unchecked file sizes.
- * The same helper handles full tables and the known one-entry-short layout. */
+/*
+ * Calculate numeric-array offsets without narrowing unchecked file sizes.
+ * The same helper handles full tables and the known one-entry-short layout.
+ */
 static uint64_t
 array_layout(uint32_t count, uint32_t flags, mpq_attributes_s *view)
 {
@@ -48,8 +50,10 @@ array_layout(uint32_t count, uint32_t flags, mpq_attributes_s *view)
     return size;
 }
 
-/* Recognize an exact layout, including documented Storm-style exceptions.
- * Unknown DWORD patch contents are not interpreted as a bit array. */
+/*
+ * Recognize an exact layout, including documented Storm-style exceptions.
+ * Unknown DWORD patch contents are not interpreted as a bit array.
+ */
 static int
 match_layout(
     const uint8_t *data, size_t size, uint32_t count, uint32_t entries, mpq_attributes_s *view,
@@ -88,8 +92,10 @@ match_layout(
     return 1;
 }
 
-/* Parse an immutable payload against its physical block-table count.
- * Only recognized exact layouts are accepted; no partial result escapes on error. */
+/*
+ * Parse an immutable payload against its physical block-table count.
+ * Only recognized exact layouts are accepted; no partial result escapes on error.
+ */
 int32_t
 libmpq__attributes_parse(
     const uint8_t *data, size_t size, uint32_t count, uint32_t self, mpq_attributes_s *view
@@ -114,8 +120,10 @@ libmpq__attributes_parse(
     return LIBMPQ_SUCCESS;
 }
 
-/* Decode one physical block-table entry without changing its availability.
- * Omitted legacy rows and opaque patch arrays remain explicitly unavailable. */
+/*
+ * Decode one physical block-table entry without changing its availability.
+ * Omitted legacy rows and opaque patch arrays remain explicitly unavailable.
+ */
 void
 libmpq__attributes_get(const mpq_attributes_s *view, uint32_t index, mpq_file_attributes_s *result)
 {
@@ -140,8 +148,10 @@ libmpq__attributes_get(const mpq_attributes_s *view, uint32_t index, mpq_file_at
     }
 }
 
-/* Load optional metadata only when requested, using normal MPQ file I/O.
- * Structural errors and absence are cached; transient resource errors can be retried. */
+/*
+ * Load optional metadata only when requested, using normal MPQ file I/O.
+ * Structural errors and absence are cached; transient resource errors can be retried.
+ */
 int32_t
 libmpq__attributes_load(mpq_archive_s *archive)
 {
@@ -200,8 +210,10 @@ libmpq__attributes_load(mpq_archive_s *archive)
     return LIBMPQ_SUCCESS;
 }
 
-/* Compare only requested and available file checksum attributes. Explicit
- * verification and automatic complete-read verification share this path. */
+/*
+ * Compare only requested and available file checksum attributes. Explicit
+ * verification and automatic complete-read verification share this path.
+ */
 void
 libmpq__attributes_compare_file(
     const mpq_file_attributes_s *attributes, uint32_t verify_flags, uint32_t crc,
@@ -217,9 +229,11 @@ libmpq__attributes_compare_file(
         *mismatches |= LIBMPQ_VERIFY_FILE_MD5;
 }
 
-/* Compare a complete decoded lossless file without rereading it. The optional
+/*
+ * Compare a complete decoded lossless file without rereading it. The optional
  * attributes member is skipped itself to avoid recursive metadata loading;
- * unusable optional metadata is left to explicit attribute APIs to report. */
+ * unusable optional metadata is left to explicit attribute APIs to report.
+ */
 int32_t
 libmpq__attributes_verify_data(
     mpq_archive_s *archive, uint32_t file_number, const uint8_t *data, size_t size,
@@ -286,8 +300,10 @@ libmpq__attributes_verify_data(
     return LIBMPQ_SUCCESS;
 }
 
-/* Release both reader-owned payloads and writer-owned metadata records.
- * Reader callers invoke this only after a successful public close. */
+/*
+ * Release both reader-owned payloads and writer-owned metadata records.
+ * Reader callers invoke this only after a successful public close.
+ */
 void
 libmpq__attributes_free(mpq_archive_s *archive)
 {
@@ -307,8 +323,10 @@ libmpq__attributes_write_flags(const mpq_archive_s *archive)
     return archive->write_attributes_flags;
 }
 
-/* Serialize complete numeric arrays and Storm-compatible zero patch bits.
- * Self and unused records are zero, and true patch bits are never silently discarded. */
+/*
+ * Serialize complete numeric arrays and Storm-compatible zero patch bits.
+ * Self and unused records are zero, and true patch bits are never silently discarded.
+ */
 int32_t
 libmpq__attributes_serialize(
     const mpq_file_attributes_s *entries, uint32_t count, uint32_t self, uint32_t flags,

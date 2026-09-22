@@ -251,8 +251,10 @@ static const char *const fixture_archive_hashes[] = {
     "5b6c8a1a91fcc21bfe871a770da78724b8aaf247fa0077efedaf4d8cf0ba0ff0",
 };
 
-/* Independently generated NGIS trailers for the deterministic raw archives.
- * Python hashlib.sha1 and pow(m, d, n) produced these test-only values. */
+/*
+ * Independently generated NGIS trailers for the deterministic raw archives.
+ * Python hashlib.sha1 and pow(m, d, n) produced these test-only values.
+ */
 static const uint8_t fixture_v1_strong_trailer[260] = {
     0x4e, 0x47, 0x49, 0x53, 0x33, 0x7a, 0x69, 0x04, 0xca, 0x62, 0x0d, 0xec, 0x78, 0x84, 0x94, 0x68,
     0xbf, 0xf5, 0x1e, 0x78, 0xdc, 0xd6, 0xe7, 0x6b, 0x1e, 0x68, 0xc2, 0x7b, 0x08, 0x24, 0xc8, 0x5b,
@@ -440,8 +442,10 @@ test_fixture(const char *path, uint32_t expected_version, size_t fixture_index)
     return 0;
 }
 
-/* Add independently generated external strong trailers after the public
- * writer has deterministically finalized each raw MPQ feature fixture. */
+/*
+ * Add independently generated external strong trailers after the public
+ * writer has deterministically finalized each raw MPQ feature fixture.
+ */
 static int
 append_strong_trailer(const char *path, const uint8_t trailer[LIBMPQ_STRONG_TRAILER_SIZE])
 {
@@ -452,10 +456,12 @@ append_strong_trailer(const char *path, const uint8_t trailer[LIBMPQ_STRONG_TRAI
     return 0;
 }
 
-/* Refresh the canonical archives without decoding/re-encoding lossy samples.
+/*
+ * Refresh the canonical archives without decoding/re-encoding lossy samples.
  * Text comes from the canonical corpus; PCM is the original documented formula.
  * Private attribute serialization preserves this corpus's sector-CRC layout;
- * signing and MPQE finalization exercise the public writer APIs. */
+ * signing and MPQE finalization exercise the public writer APIs.
+ */
 static int
 refresh_fixture(const char *path, uint32_t version, size_t fixture_index)
 {
@@ -548,8 +554,10 @@ refresh_fixture(const char *path, uint32_t version, size_t fixture_index)
             ) == 0
         );
 
-        /* Preserve the fixture's explicit checksummed attributes, not the default
-         * generated storage. Its self row and the signature row remain zero. */
+        /*
+         * Preserve the fixture's explicit checksummed attributes, not the default
+         * generated storage. Its self row and the signature row remain zero.
+         */
         writer->write_attributes_flags = 0;
         TEST_CHECK(
             libmpq__archive_add_data(

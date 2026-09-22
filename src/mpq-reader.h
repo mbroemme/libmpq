@@ -37,8 +37,10 @@ int32_t libmpq__reader_file_read(
     libmpq__off_t *transferred
 );
 
-/* Internal scoped cache references shared by file reads, attributes and verify.
- * A name supplies the known internal file key. Every success needs a release. */
+/*
+ * Internal scoped cache references shared by file reads, attributes and verify.
+ * A name supplies the known internal file key. Every success needs a release.
+ */
 int32_t libmpq__reader_offsets_acquire(mpq_archive_s *archive, uint32_t number, const char *name);
 int32_t libmpq__reader_offsets_release(mpq_archive_s *archive, uint32_t number);
 
@@ -49,8 +51,10 @@ int32_t libmpq__reader_block_read(
     uint32_t *mismatches, int *lossy
 );
 
-/* Load optional checksums with an internally scoped sector-offset reference.
- * A successful NULL result means this file has no checksum table. */
+/*
+ * Load optional checksums with an internally scoped sector-offset reference.
+ * A successful NULL result means this file has no checksum table.
+ */
 int32_t
 libmpq__reader_sector_checksums(mpq_archive_s *archive, uint32_t file_number, uint32_t **checksums);
 int32_t libmpq__reader_validate_payload_range(
@@ -90,13 +94,17 @@ int32_t libmpq__reader_get_block_seed(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number, uint32_t *seed
 );
 
-/* Return the checked minimum archive-relative extent required by parsed v1/v2
- * serialized ranges. This does not include valid v1 trailing padding. */
+/*
+ * Return the checked minimum archive-relative extent required by parsed v1/v2
+ * serialized ranges. This does not include valid v1 trailing padding.
+ */
 int32_t libmpq__archive_required_extent(const mpq_archive_s *archive, uint64_t *size);
 
-/* Return the archive-relative extent weak signatures must cover. v1 uses its
+/*
+ * Return the archive-relative extent weak signatures must cover. v1 uses its
  * declared archive size after validating it contains the required extent;
- * v2 uses the full 64-bit required extent. */
+ * v2 uses the full 64-bit required extent.
+ */
 int32_t libmpq__archive_signature_extent(const mpq_archive_s *archive, uint64_t *size);
 
 #endif /* LIBMPQ_READER_H */

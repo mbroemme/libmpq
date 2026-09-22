@@ -19,15 +19,49 @@ for source in "$@"; do
 	if ! awk '
 		FNR == 1 {
 			previous = ""
-		}
-		FNR != 1 && /^[[:space:]]*\/(\*|\/)/ && previous !~ /^[[:space:]]*$/ {
-			printf "%s:%d: standalone comment requires a preceding empty line\n", FILENAME, FNR
-			failed = 1
+			in_block = 0
+			opener_line = 0
 		}
 		{
-			previous = $0
+			line = $0
+			if (in_block) {
+				if (line ~ /^[[:space:]]*\*\/[[:space:]]*$/) {
+					in_block = 0
+				} else if (line ~ /\*\//) {
+					printf "%s:%d: multiline block comment closer must be on its own line\n", FILENAME, FNR
+					failed = 1
+					in_block = 0
+				} else if (line !~ /^[[:space:]]*\*/) {
+					printf "%s:%d: multiline block comment line must start with '\''*'\''\n", FILENAME, FNR
+					failed = 1
+				}
+				previous = line
+				next
+			}
+
+			if (FNR != 1 && line ~ /^[[:space:]]*\/(\*|\/)/ && previous !~ /^[[:space:]]*$/) {
+				printf "%s:%d: standalone comment requires a preceding empty line\n", FILENAME, FNR
+				failed = 1
+			}
+			if (line ~ /^[[:space:]]*\/\*/) {
+				remainder = line
+				sub(/^[[:space:]]*\/\*/, "", remainder)
+				if (remainder !~ /\*\//) {
+					if (line !~ /^[[:space:]]*\/\*[[:space:]]*$/) {
+						printf "%s:%d: multiline block comment opener must be on its own line\n", FILENAME, FNR
+						failed = 1
+					}
+					in_block = 1
+					opener_line = FNR
+				}
+			}
+			previous = line
 		}
 		END {
+			if (in_block) {
+				printf "%s:%d: multiline block comment closer must be on its own line\n", FILENAME, opener_line
+				failed = 1
+			}
 			exit failed
 		}
 	' "${source}"; then

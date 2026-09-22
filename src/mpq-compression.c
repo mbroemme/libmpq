@@ -195,9 +195,11 @@ encode_lzma(
     return LIBMPQ_SUCCESS;
 }
 
-/* Decompress an MPQ Huffman-compressed stream into the caller-provided buffer.
+/*
+ * Decompress an MPQ Huffman-compressed stream into the caller-provided buffer.
  * The stream owns adaptive tree state, so the function initializes and frees
- * a separate tree and bit reader for each archive block. */
+ * a separate tree and bit reader for each archive block.
+ */
 int32_t
 libmpq__compression_decompress_huffman(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
@@ -243,9 +245,11 @@ libmpq__compression_decompress_huffman(
     return tb;
 }
 
-/* Decompress an MPQ zlib-compressed stream into the caller-provided buffer.
+/*
+ * Decompress an MPQ zlib-compressed stream into the caller-provided buffer.
  * The output count returned by zlib is converted to the libmpq block API's
- * signed transfer convention, while zlib failures are propagated unchanged. */
+ * signed transfer convention, while zlib failures are propagated unchanged.
+ */
 int32_t
 libmpq__compression_decompress_zlib(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
@@ -287,9 +291,11 @@ libmpq__compression_decompress_zlib(
     return tb;
 }
 
-/* Decompress an MPQ PKWARE Data Compression Library stream.
+/*
+ * Decompress an MPQ PKWARE Data Compression Library stream.
  * A scratch codec object and callback state isolate the decoder from the
- * caller's buffers while preserving the exact number of produced bytes. */
+ * caller's buffers while preserving the exact number of produced bytes.
+ */
 int32_t
 libmpq__compression_decompress_pkzip(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
@@ -330,9 +336,11 @@ libmpq__compression_decompress_pkzip(
     return tb;
 }
 
-/* Decompress an MPQ bzip2-compressed stream into the caller-provided buffer.
+/*
+ * Decompress an MPQ bzip2-compressed stream into the caller-provided buffer.
  * The bzip2 state consumes the compressed block and writes decoded bytes
- * directly to the destination supplied by the archive reader. */
+ * directly to the destination supplied by the archive reader.
+ */
 int32_t
 libmpq__compression_decompress_bzip2(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
@@ -387,9 +395,11 @@ libmpq__compression_decompress_bzip2(
     return tb;
 }
 
-/* Decompress an MPQ mono WAVE-compressed stream.
+/*
+ * Decompress an MPQ mono WAVE-compressed stream.
  * The channel count is fixed to one so the shared WAVE decoder can validate
- * the payload format and reconstruct the original PCM byte stream. */
+ * the payload format and reconstruct the original PCM byte stream.
+ */
 int32_t
 libmpq__compression_decompress_wave_mono(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
@@ -406,9 +416,11 @@ libmpq__compression_decompress_wave_mono(
     return tb;
 }
 
-/* Decompress an MPQ stereo WAVE-compressed stream.
+/*
+ * Decompress an MPQ stereo WAVE-compressed stream.
  * The channel count is fixed to two, matching the stereo ADPCM framing and
- * predictor state expected by the shared WAVE decoder. */
+ * predictor state expected by the shared WAVE decoder.
+ */
 int32_t
 libmpq__compression_decompress_wave_stereo(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
@@ -434,9 +446,11 @@ libmpq__compression_decompress_sparse(
     return libmpq__sparse_decompress(in_buf, in_size, out_buf, out_size);
 }
 
-/* Decode a Blizzard multi-compression stream by applying each flagged backend in order.
+/*
+ * Decode a Blizzard multi-compression stream by applying each flagged backend in order.
  * The leading mask selects supported codecs, and intermediate buffers preserve
- * each stage's output while the next stage consumes it. */
+ * each stage's output while the next stage consumes it.
+ */
 int32_t
 libmpq__compression_decompress_multi(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size, uint32_t format_version
@@ -530,8 +544,10 @@ libmpq__compression_decompress_multi(
     return tb;
 }
 
-/* Return whether the compression mask is allowed for this archive version
- * and writer policy. */
+/*
+ * Return whether the compression mask is allowed for this archive version
+ * and writer policy.
+ */
 int32_t
 libmpq__compression_allowed(
     uint32_t format_version, uint32_t mask, libmpq_compression_policy_t policy
@@ -574,9 +590,11 @@ libmpq__compression_allowed(
               LIBMPQ_COMPRESSION_WAVE_STEREO)) == 0;
 }
 
-/* Apply one selected compression backend and replace the current buffer.
+/*
+ * Apply one selected compression backend and replace the current buffer.
  * Each backend receives the current stage output and returns a newly owned
- * buffer, allowing the caller to retain the previous stage on fallback. */
+ * buffer, allowing the caller to retain the previous stage on fallback.
+ */
 static int32_t
 compression_stage(uint8_t **data, size_t *size, uint32_t mask)
 {
@@ -697,9 +715,11 @@ compression_stage(uint8_t **data, size_t *size, uint32_t mask)
     return LIBMPQ_SUCCESS;
 }
 
-/* Apply the selected compression chain and return its actual successful mask.
+/*
+ * Apply the selected compression chain and return its actual successful mask.
  * Stages run in canonical Storm order, and a stage is kept only when it saves
- * at least two bytes; the emitted mask therefore describes actual reductions. */
+ * at least two bytes; the emitted mask therefore describes actual reductions.
+ */
 int32_t
 libmpq__compression_encode_sector(
     const uint8_t *input, size_t input_size, uint32_t requested, uint32_t format_version,
@@ -781,9 +801,11 @@ libmpq__compression_encode_sector(
     return LIBMPQ_SUCCESS;
 }
 
-/* Decompress one archive block according to its MPQ compression flags.
+/*
+ * Decompress one archive block according to its MPQ compression flags.
  * Raw data is copied directly, while PKWARE and multi-compression payloads
- * are dispatched to the codec layer with MPQ-compatible expansion semantics. */
+ * are dispatched to the codec layer with MPQ-compatible expansion semantics.
+ */
 int32_t
 libmpq__compression_decompress_block(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size,
@@ -823,8 +845,10 @@ libmpq__compression_decompress_block(
         }
     }
 
-    /* A PKWARE stage may produce a shorter intermediate stream, but a complete
-     * MPQ block must produce exactly its declared unpacked size. */
+    /*
+     * A PKWARE stage may produce a shorter intermediate stream, but a complete
+     * MPQ block must produce exactly its declared unpacked size.
+     */
     if (pkzip && tb >= 0 && (uint32_t)tb != out_size)
         return LIBMPQ_ERROR_UNPACK;
     return tb;

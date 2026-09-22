@@ -22,10 +22,12 @@
 #include <libmpq/mpq.h>
 #include <string.h>
 
-/* Little-endian base-256 limbs avoid native word size and alignment assumptions.
+/*
+ * Little-endian base-256 limbs avoid native word size and alignment assumptions.
  * Weak RSA-512 and strong RSA-2048 private operations use fixed iterations and
  * mask selection. Strong RSA-2048 public operation skips leading zero exponent
- * bits for efficiency. This legacy implementation is not a modern cryptographic API. */
+ * bits for efficiency. This legacy implementation is not a modern cryptographic API.
+ */
 static void
 add_mod(uint8_t *out, const uint8_t *a, const uint8_t *b, const uint8_t *n, size_t size)
 {
@@ -73,8 +75,10 @@ multiply(uint8_t *out, const uint8_t *a, const uint8_t *b, const uint8_t *n, siz
 
 #define LIBMPQ_RSA_MAX_WORDS (LIBMPQ_RSA_MAX_SIZE / 4u)
 
-/* Montgomery multiplication with base 2^32. The inputs and output have the
- * same fixed width; the caller supplies values in Montgomery representation. */
+/*
+ * Montgomery multiplication with base 2^32. The inputs and output have the
+ * same fixed width; the caller supplies values in Montgomery representation.
+ */
 static void
 montgomery_multiply(
     uint32_t *output, const uint32_t *left, const uint32_t *right, const uint32_t *modulus,
@@ -151,8 +155,10 @@ montgomery_r_squared(uint32_t *output, const uint32_t *modulus, size_t words)
     libmpq__rsa_clear(bytes, sizeof(bytes));
 }
 
-/* A raw key is equal-width big-endian n || exponent components. A full-width
- * odd modulus and an odd exponent in [3,n) are required. */
+/*
+ * A raw key is equal-width big-endian n || exponent components. A full-width
+ * odd modulus and an odd exponent in [3,n) are required.
+ */
 static int32_t
 rsa_key_validate(const uint8_t *key, size_t key_size, size_t modulus_size)
 {
@@ -265,8 +271,10 @@ libmpq__rsa_weak_operation(
     return 0;
 }
 
-/* Public exponents are normally short (for example 65537), so begin at the
- * first set bit instead of needlessly processing every padded exponent bit. */
+/*
+ * Public exponents are normally short (for example 65537), so begin at the
+ * first set bit instead of needlessly processing every padded exponent bit.
+ */
 int32_t
 libmpq__rsa_strong_public_operation(
     const uint8_t key[LIBMPQ_RSA_STRONG_KEY_SIZE], const uint8_t input[LIBMPQ_RSA_STRONG_SIZE],
