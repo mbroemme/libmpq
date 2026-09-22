@@ -33,40 +33,39 @@ MPQ v2+ LZMA method.
 
 ## Features
 
-* Read, inspect, and extract MPQ archives, including embedded archives at a
-  file offset.
-* Read, inspect, and extract MPQE-wrapped MPQ archives, and create new MPQE
-  archives with a caller-supplied authentication code.
-* Create seekable MPQ v1 and v2 archives with fixed file-table capacity,
-  optional `(listfile)` generation, and encrypted tables and file payloads.
+* Read, inspect, and extract MPQ archives, including archives embedded at a
+  non-zero file offset.
+* Create seekable MPQ v1 and v2 archives with configurable file-table capacity,
+  sector size, optional `(listfile)` and `(attributes)` metadata, encrypted
+  tables, and encrypted file payloads.
 * Add raw, single-unit, sectorized, and multi-sector files through streaming,
   memory-buffer, and filesystem-path APIs.
-* Inspect archive, file, and block metadata, including names, sizes, flags,
-  packed block sizes, and effective per-block compression methods.
-* Read and write encrypted hash tables, block tables, sector offsets, and file
-  payloads.
+* Read and create MPQE-wrapped MPQ archives using a caller-supplied
+  authentication code.
 * Read and write PKWARE implode, Huffman, zlib, bzip2, SPARSE, and mono or
   stereo WAVE ADPCM compression. MPQ v2+ also supports the exclusive LZMA
-  method; readers accept Blizzard multi-compression payloads.
-* Read and create version-100 `(attributes)` metadata in MPQ v1+: CRC32,
-  explicit FILETIME, MD5, and read-only patch-bit information.
-* Automatically verify available sector Adler-32 values and attribute CRC32/MD5
-  values on complete reads. Sector checks cover decrypted packed data before
-  decoding; file hashes cover complete lossless decoded data.
-* Detect, verify, and create weak internal `(signature)` files using MD5/RSA-512,
-  and strong external `NGIS` trailers using SHA-1/RSA-2048 and caller-supplied
-  keys. Strong creation emits the plain SHA-1 archive-range variant; basename
-  and `ARCHIVE` variants are accepted during verification only.
-  Both mechanisms are legacy compatibility only, not modern authenticity
+  method, and readers accept Blizzard multi-compression payloads.
+* Provide STANDARD and EXTENDED writer compression policies to balance
+  interoperability with broader implemented compression combinations.
+* Inspect archive, file, and block metadata, including names, sizes, flags,
+  packed block sizes, compression methods, and stored attributes.
+* Read and create version-100 `(attributes)` metadata with CRC32, explicit
+  FILETIME, MD5, and read-only patch-bit information.
+* Generate and explicitly verify sector Adler-32 checksums and file-level
+  CRC32/MD5 attributes. Complete reads automatically verify available sector
+  checksums and, for lossless data, available CRC32/MD5 attributes.
+* Detect, verify, and create weak MD5/RSA-512 internal signatures and strong
+  SHA-1/RSA-2048 external `NGIS` signatures using caller-supplied keys. Both
+  mechanisms are legacy compatibility features, not modern authenticity
   protection.
-* Support big-endian hosts through explicit little-endian serialization; CI
-  runs the full test suite on emulated s390x.
+* Support little- and big-endian hosts through explicit little-endian MPQ
+  serialization.
+* Provide a stable C API with installed headers, API manual pages,
+  `pkg-config` metadata, and `libmpq-config`.
 * Provide optional Python 3.11+, D, and Java bindings.
-* Install API manual pages for the library functions and `libmpq-config`.
-* Provide a stable C API with installed headers under `include/libmpq`.
 
 See the [developer guide](DEVELOPER.md) for API examples, optional metadata,
-checksum verification, and writer compression policies.
+checksum verification, archive signatures, and writer compression policies.
 
 ## Requirements
 
@@ -347,10 +346,9 @@ headers, tables, encryption, sectors, and compression, see the
   temporary file; completed POSIX archives use normal caller-umask permissions.
   Cleanup is best effort, so a crash can leave the plaintext temporary behind.
 * Patch creation/application and StormLib-specific key modes are not supported.
-  Complete reads automatically verify available valid sector Adler-32 values;
-  complete lossless reads also verify stored CRC32 and MD5 attributes. Malformed
-  optional metadata is skipped during extraction. FILETIME/PATCH_BIT remain
-  metadata, and lossy ADPCM skips only file-level CRC32/MD5 comparison.
+  FILETIME and PATCH_BIT are exposed as metadata only. Automatic file-level
+  CRC32/MD5 comparison is skipped for lossy ADPCM data because the decoded
+  output is not byte-identical to the original input.
 
 ## Contributing
 

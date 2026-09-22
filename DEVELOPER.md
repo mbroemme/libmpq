@@ -185,8 +185,12 @@ unencrypted and compressed with zlib only when smaller.
 
 File checksum requests without `(attributes)` return `LIBMPQ_ERROR_EXIST`.
 Missing individual CRC32/MD5 values are skipped, so zero mismatch bits do not
-prove that hashes were present. Normal extraction never verifies implicitly.
-Lossy ADPCM output can differ from the writer's source-byte checksums.
+prove that hashes were present. Complete file reads automatically verify usable
+sector Adler-32 values and, for lossless data, available CRC32/MD5 attributes.
+`libmpq__file_verify()` remains available when callers need selected checks and
+mismatch bits. `libmpq__block_read()` is partial and does not implicitly verify
+its stored sector checksum. Lossy ADPCM output can differ from the writer's
+source-byte checksums, so automatic file-level CRC32/MD5 comparison is skipped.
 
 ## Writer compression policy
 

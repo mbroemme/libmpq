@@ -37,8 +37,10 @@ including encrypted sectors and MPQE archives.
 The existing reader loads the table, reads and decrypts the selected sector,
 compares its checksum, and decodes the sector. No other sector payload is
 verified. This does not require (attributes) and does not check file CRC32
-or MD5. Complete lossless file reads automatically check available CRC32/MD5
-attributes; block reads do not perform file-level attribute verification.
+or MD5. Complete file reads automatically check usable sector Adler-32 values;
+complete lossless file reads also check available CRC32/MD5 attributes.
+\fBlibmpq__block_read\fP() does not implicitly verify its stored sector
+checksum or perform file-level attribute verification.
 .SH RETURN VALUE
 LIBMPQ_SUCCESS means the operation completed. *checksum receives the stored
 Adler-32, not the calculated value. *mismatches is zero for a match or

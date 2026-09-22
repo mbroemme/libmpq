@@ -319,7 +319,8 @@ extern LIBMPQ_API int32_t libmpq__file_verify(
  * Success returns the stored checksum and either zero or VERIFY_SECTOR_CRC
  * in mismatches. Unavailable checksums (including zero/all-ones entries) return
  * ERROR_EXIST. Both non-NULL outputs are zeroed before validation and remain
- * zero on any error. Normal reads do not implicitly verify checksums. */
+ * zero on any error. libmpq__block_read() does not implicitly verify the
+ * stored sector checksum. */
 extern LIBMPQ_API int32_t libmpq__block_verify(
     mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint32_t *checksum,
     uint32_t *mismatches
