@@ -10,6 +10,7 @@
  */
 
 #include "mpq-sparse.h"
+#include "mpq-endian.h"
 #include <libmpq/mpq.h>
 
 #include <string.h>
@@ -27,10 +28,7 @@ libmpq__sparse_compress(
         return LIBMPQ_ERROR_UNPACK;
     if (out_size > INT32_MAX)
         out_size = INT32_MAX;
-    out_buf[0] = (uint8_t)(in_size >> 24);
-    out_buf[1] = (uint8_t)(in_size >> 16);
-    out_buf[2] = (uint8_t)(in_size >> 8);
-    out_buf[3] = (uint8_t)in_size;
+    libmpq__store_be32(out_buf, in_size);
     while (input < in_size) {
         uint32_t count = 0;
         uint32_t start = input;
@@ -75,8 +73,7 @@ libmpq__sparse_decompress(
 
     if (in_buf == NULL || out_buf == NULL || in_size < 5)
         return LIBMPQ_ERROR_UNPACK;
-    length = ((uint32_t)in_buf[0] << 24) | ((uint32_t)in_buf[1] << 16) |
-             ((uint32_t)in_buf[2] << 8) | (uint32_t)in_buf[3];
+    length = libmpq__load_be32(in_buf);
     if (length == 0 || length > out_size || length > INT32_MAX)
         return LIBMPQ_ERROR_UNPACK;
     while (input < in_size && output < length) {

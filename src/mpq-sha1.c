@@ -18,6 +18,7 @@
  */
 
 #include "mpq-sha1.h"
+#include "mpq-endian.h"
 #include <string.h>
 
 static uint32_t
@@ -37,8 +38,7 @@ transform(mpq_sha1_s *context, const uint8_t block[64])
     uint32_t e = context->state[4];
     size_t i;
     for (i = 0; i < 16; ++i)
-        words[i] = ((uint32_t)block[i * 4] << 24) | ((uint32_t)block[i * 4 + 1] << 16) |
-                   ((uint32_t)block[i * 4 + 2] << 8) | block[i * 4 + 3];
+        words[i] = libmpq__load_be32(block + i * sizeof(uint32_t));
     for (; i < 80; ++i)
         words[i] = rotate_left(words[i - 3] ^ words[i - 8] ^ words[i - 14] ^ words[i - 16], 1);
     for (i = 0; i < 80; ++i) {
@@ -117,11 +117,7 @@ libmpq__sha1_final(mpq_sha1_s *context, uint8_t digest[LIBMPQ_SHA1_SIZE])
         context, padding, context->used < 56 ? 56 - context->used : 120 - context->used
     );
     libmpq__sha1_update(context, length, sizeof(length));
-    for (i = 0; i < 5; ++i) {
-        digest[i * 4] = (uint8_t)(context->state[i] >> 24);
-        digest[i * 4 + 1] = (uint8_t)(context->state[i] >> 16);
-        digest[i * 4 + 2] = (uint8_t)(context->state[i] >> 8);
-        digest[i * 4 + 3] = (uint8_t)context->state[i];
-    }
+    for (i = 0; i < 5; ++i)
+        libmpq__store_be32(digest + i * sizeof(uint32_t), context->state[i]);
     memset(context, 0, sizeof(*context));
 }
