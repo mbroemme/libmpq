@@ -31,15 +31,26 @@ int32_t libmpq__file_seek(FILE *file, uint64_t offset, int origin);
 libmpq__off_t libmpq__file_tell(FILE *file);
 int32_t libmpq__file_identity(FILE *file, uint64_t *device, uint64_t *inode);
 char *libmpq__string_duplicate(const char *text);
+char *libmpq__file_absolute_path(const char *path);
 
 /* Retain the destination directory until publication and cleanup finish. */
 int32_t libmpq__directory_open(const char *path, mpq_directory_s **directory, char **name);
+
+/* Open a binary reader relative to a retained directory handle. */
+FILE *libmpq__directory_file_open(mpq_directory_s *directory, const char *name, const char *mode);
+int32_t libmpq__directory_file_validate(mpq_directory_s *directory, const char *name);
 int32_t libmpq__directory_temporary(
+    mpq_directory_s *directory, const char *suffix, int private_file, char **name, FILE **file
+);
+int32_t libmpq__directory_temporary_reopenable(
     mpq_directory_s *directory, const char *suffix, int private_file, char **name, FILE **file
 );
 int32_t libmpq__directory_remove(mpq_directory_s *directory, const char *name);
 int32_t libmpq__directory_replace(
     mpq_directory_s *directory, const char *temporary, const char *destination
+);
+int32_t libmpq__directory_copy_security(
+    mpq_directory_s *directory, const char *source, const char *destination
 );
 void libmpq__directory_close(mpq_directory_s *directory);
 

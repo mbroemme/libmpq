@@ -132,6 +132,7 @@ if(BUILD_TESTING)
         api
         pkware
         reader
+        update
         wave
         writer
     )

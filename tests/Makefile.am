@@ -25,6 +25,7 @@ check_PROGRAMS = \
 	test-mpq \
 	test-pkware \
 	test-reader \
+	test-update \
 	test-wave \
 	test-writer
 TESTS = $(check_PROGRAMS)
@@ -65,6 +66,8 @@ test_pkware_SOURCES = test-mpq-pkware.c \
 	../src/mpq-endian.c \
 	$(COMMON_SOURCES)
 test_reader_SOURCES = test-mpq-reader.c $(COMMON_SOURCES)
+test_update_SOURCES = test-mpq-update.c $(COMMON_SOURCES)
+test_update_LDADD = $(top_builddir)/src/mpq-update.lo $(LDADD)
 test_wave_SOURCES = test-mpq-wave.c ../src/mpq-wave.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_writer_SOURCES = test-mpq-writer.c $(COMMON_SOURCES)
 
@@ -97,6 +100,7 @@ test_mpqe_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures
 test_pkware_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_reader_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_signature_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_update_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_wave_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 
 # Ship the deterministic fixture corpus and all module-mapped test sources.
@@ -115,6 +119,7 @@ EXTRA_DIST = \
 	test-mpq-api.c \
 	test-mpq-pkware.c \
 	test-mpq-reader.c \
+	test-mpq-update.c \
 	test-mpq-wave.c \
 	test-mpq-writer.c \
 	test-mpq-fixtures.c \

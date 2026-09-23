@@ -2,7 +2,7 @@
 lib_LTLIBRARIES			= libmpq.la
 
 # Keep private implementation headers available to in-tree readers and fuzzers.
-noinst_HEADERS			= mpq-compression.h mpq-crypt-buf.h mpq-crypto.h mpq-endian.h mpq-huffman.h mpq-internal.h mpq-mpqe.h mpq-pkware.h mpq-file.h mpq-stream.h mpq-reader.h mpq-sparse.h mpq-source.h mpq-wave.h mpq-writer.h mpq-attributes.h mpq-md5.h mpq-sha1.h mpq-verify.h mpq-signature.h mpq-rsa.h
+noinst_HEADERS			= mpq-compression.h mpq-crypt-buf.h mpq-crypto.h mpq-endian.h mpq-huffman.h mpq-internal.h mpq-mpqe.h mpq-pkware.h mpq-file.h mpq-stream.h mpq-reader.h mpq-sparse.h mpq-source.h mpq-update.h mpq-wave.h mpq-writer.h mpq-attributes.h mpq-md5.h mpq-sha1.h mpq-verify.h mpq-signature.h mpq-rsa.h
 
 # Use generated configuration and installed public headers when compiling.
 AM_CPPFLAGS			= -I$(top_builddir) -I$(top_srcdir)/include
@@ -38,5 +38,6 @@ GENERAL_SRCS = \
 	mpq-reader.c \
 	mpq-sparse.c \
 	mpq-source.c \
+	mpq-update.c \
 	mpq-wave.c \
 	mpq-writer.c

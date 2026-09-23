@@ -30,6 +30,7 @@
 #ifdef _WIN32
 #include <windows.h>
 
+#include <aclapi.h>
 #include <bcrypt.h>
 #include <fcntl.h>
 #include <io.h>
@@ -52,6 +53,10 @@ valid_template(const char *suffix)
     return length >= 32 && strcmp(suffix + length - 32, "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX") == 0;
 }
 
+#ifdef _WIN32
+static wchar_t *wide_path(const char *path);
+#endif
+
 char *
 libmpq__string_duplicate(const char *text)
 {
@@ -65,6 +70,82 @@ libmpq__string_duplicate(const char *text)
     if (copy != NULL)
         memcpy(copy, text, size);
     return copy;
+}
+
+char *
+libmpq__file_absolute_path(const char *path)
+{
+#ifdef _WIN32
+    wchar_t *wide;
+    wchar_t *absolute;
+    DWORD characters;
+    int bytes;
+    char *result;
+
+    if (path == NULL || path[0] == '\0')
+        return NULL;
+    wide = wide_path(path);
+    if (wide == NULL)
+        return NULL;
+    characters = GetFullPathNameW(wide, 0, NULL, NULL);
+    if (characters == 0) {
+        free(wide);
+        return NULL;
+    }
+    absolute = malloc((size_t)characters * sizeof(*absolute));
+    if (absolute == NULL) {
+        free(wide);
+        return NULL;
+    }
+    if (GetFullPathNameW(wide, characters, absolute, NULL) >= characters) {
+        free(absolute);
+        free(wide);
+        return NULL;
+    }
+    free(wide);
+    bytes = WideCharToMultiByte(CP_UTF8, 0, absolute, -1, NULL, 0, NULL, NULL);
+    result = bytes > 0 ? malloc((size_t)bytes) : NULL;
+    if (result != NULL)
+        WideCharToMultiByte(CP_UTF8, 0, absolute, -1, result, bytes, NULL, NULL);
+    free(absolute);
+    return result;
+#else
+    size_t size = 256;
+    char *directory;
+    char *result;
+    size_t directory_size;
+    size_t path_size;
+
+    if (path == NULL || path[0] == '\0')
+        return NULL;
+    if (path[0] == '/')
+        return libmpq__string_duplicate(path);
+    for (;;) {
+        directory = malloc(size);
+        if (directory == NULL)
+            return NULL;
+        if (getcwd(directory, size) != NULL)
+            break;
+        free(directory);
+        if (errno != ERANGE || size > SIZE_MAX / 2U)
+            return NULL;
+        size *= 2U;
+    }
+    directory_size = strlen(directory);
+    path_size = strlen(path);
+    if (directory_size > SIZE_MAX - path_size - 2U) {
+        free(directory);
+        return NULL;
+    }
+    result = malloc(directory_size + path_size + 2U);
+    if (result != NULL) {
+        memcpy(result, directory, directory_size);
+        result[directory_size] = '/';
+        memcpy(result + directory_size + 1U, path, path_size + 1U);
+    }
+    free(directory);
+    return result;
+#endif
 }
 
 int32_t
@@ -240,6 +321,58 @@ directory_path(mpq_directory_s *directory, const char *name)
     return path;
 }
 
+FILE *
+libmpq__directory_file_open(mpq_directory_s *directory, const char *name, const char *mode)
+{
+    wchar_t *path;
+    HANDLE handle;
+    FILE *file = NULL;
+
+    if (directory == NULL || name == NULL || name[0] == '\0' || mode == NULL ||
+        strcmp(mode, "rb") != 0) {
+        errno = EINVAL;
+        return NULL;
+    }
+    path = directory_path(directory, name);
+    if (path != NULL) {
+        handle = CreateFileW(
+            path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, NULL
+        );
+        if (handle != INVALID_HANDLE_VALUE) {
+            BY_HANDLE_FILE_INFORMATION information;
+
+            if (GetFileInformationByHandle(handle, &information) &&
+                (information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0)
+                file = handle_stream(handle, mode);
+            else
+                CloseHandle(handle);
+        }
+    }
+    free(path);
+    return file;
+}
+
+int32_t
+libmpq__directory_file_validate(mpq_directory_s *directory, const char *name)
+{
+    wchar_t *path;
+    DWORD attributes;
+
+    if (directory == NULL || name == NULL || name[0] == '\0')
+        return LIBMPQ_ERROR_EXIST;
+    path = directory_path(directory, name);
+    if (path == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    attributes = GetFileAttributesW(path);
+    free(path);
+    if (attributes == INVALID_FILE_ATTRIBUTES)
+        return LIBMPQ_ERROR_EXIST;
+    if ((attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0)
+        return LIBMPQ_ERROR_FORMAT;
+    return 0;
+}
+
 int32_t
 libmpq__directory_open(const char *path, mpq_directory_s **directory, char **name)
 {
@@ -342,6 +475,53 @@ libmpq__directory_replace(
     return result;
 }
 
+int32_t
+libmpq__directory_copy_security(
+    mpq_directory_s *directory, const char *source_name, const char *destination_name
+)
+{
+    PSECURITY_DESCRIPTOR descriptor = NULL;
+    PACL dacl = NULL;
+    wchar_t *source;
+    wchar_t *destination;
+    DWORD error;
+
+    if (directory == NULL || source_name == NULL || destination_name == NULL ||
+        source_name[0] == '\0' || destination_name[0] == '\0')
+        return LIBMPQ_ERROR_EXIST;
+    source = directory_path(directory, source_name);
+    destination = directory_path(directory, destination_name);
+    if (source == NULL || destination == NULL) {
+        free(source);
+        free(destination);
+        return LIBMPQ_ERROR_MALLOC;
+    }
+    error = GetNamedSecurityInfoW(
+        source, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, &dacl, NULL, &descriptor
+    );
+    if (error == ERROR_SUCCESS) {
+        SECURITY_DESCRIPTOR_CONTROL control;
+        DWORD revision;
+        SECURITY_INFORMATION information = DACL_SECURITY_INFORMATION;
+
+        if (!GetSecurityDescriptorControl(descriptor, &control, &revision)) {
+            error = GetLastError();
+        } else {
+            information |= (control & SE_DACL_PROTECTED) != 0
+                               ? PROTECTED_DACL_SECURITY_INFORMATION
+                               : UNPROTECTED_DACL_SECURITY_INFORMATION;
+            error = SetNamedSecurityInfoW(
+                destination, SE_FILE_OBJECT, information, NULL, NULL, dacl, NULL
+            );
+        }
+    }
+    if (descriptor != NULL)
+        LocalFree(descriptor);
+    free(source);
+    free(destination);
+    return error == ERROR_SUCCESS ? 0 : LIBMPQ_ERROR_WRITE;
+}
+
 void
 libmpq__directory_close(mpq_directory_s *directory)
 {
@@ -395,9 +575,10 @@ owner_descriptor(PSECURITY_DESCRIPTOR *descriptor)
     return result;
 }
 
-int32_t
-libmpq__directory_temporary(
-    mpq_directory_s *directory, const char *suffix, int private_file, char **name, FILE **file
+static int32_t
+directory_temporary(
+    mpq_directory_s *directory, const char *suffix, int private_file, int reopenable, char **name,
+    FILE **file
 )
 {
     static const char hex[] = "0123456789abcdef";
@@ -439,8 +620,9 @@ libmpq__directory_temporary(
         if (path == NULL)
             break;
         handle = CreateFileW(
-            path, GENERIC_READ | GENERIC_WRITE, 0, private_file ? &security : NULL, CREATE_NEW,
-            FILE_ATTRIBUTE_NORMAL, NULL
+            path, GENERIC_READ | GENERIC_WRITE,
+            reopenable ? FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE : 0,
+            private_file ? &security : NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL
         );
         error = GetLastError();
         if (handle != INVALID_HANDLE_VALUE) {
@@ -464,12 +646,79 @@ libmpq__directory_temporary(
     return 0;
 }
 
+int32_t
+libmpq__directory_temporary(
+    mpq_directory_s *directory, const char *suffix, int private_file, char **name, FILE **file
+)
+{
+    return directory_temporary(directory, suffix, private_file, 0, name, file);
+}
+
+int32_t
+libmpq__directory_temporary_reopenable(
+    mpq_directory_s *directory, const char *suffix, int private_file, char **name, FILE **file
+)
+{
+    return directory_temporary(directory, suffix, private_file, 1, name, file);
+}
+
 #else
 
 struct mpq_directory
 {
     int fd;
 };
+
+#ifndef O_CLOEXEC
+static int set_cloexec(int fd);
+#endif
+
+FILE *
+libmpq__directory_file_open(mpq_directory_s *directory, const char *name, const char *mode)
+{
+    int file;
+    int flags = O_RDONLY;
+    FILE *stream;
+
+    if (directory == NULL || name == NULL || name[0] == '\0' || mode == NULL ||
+        strcmp(mode, "rb") != 0) {
+        errno = EINVAL;
+        return NULL;
+    }
+#ifdef O_CLOEXEC
+    flags |= O_CLOEXEC;
+#endif
+#ifdef O_NOFOLLOW
+    flags |= O_NOFOLLOW;
+#endif
+    file = openat(directory->fd, name, flags);
+    if (file < 0)
+        return NULL;
+#ifndef O_CLOEXEC
+    if (!set_cloexec(file)) {
+        (void)close(file);
+        return NULL;
+    }
+#endif
+    stream = fdopen(file, mode);
+    if (stream == NULL) {
+        (void)close(file);
+        return NULL;
+    }
+    return stream;
+}
+
+int32_t
+libmpq__directory_file_validate(mpq_directory_s *directory, const char *name)
+{
+    struct stat status;
+
+    if (directory == NULL || name == NULL || name[0] == '\0')
+        return LIBMPQ_ERROR_EXIST;
+    if (fstatat(directory->fd, name, &status, AT_SYMLINK_NOFOLLOW) != 0)
+        return LIBMPQ_ERROR_EXIST;
+    return S_ISREG(status.st_mode) ? 0 : LIBMPQ_ERROR_FORMAT;
+}
 
 FILE *
 libmpq__file_open(const char *path, const char *mode)
@@ -724,6 +973,14 @@ libmpq__directory_temporary(
     return 0;
 }
 
+int32_t
+libmpq__directory_temporary_reopenable(
+    mpq_directory_s *directory, const char *suffix, int private_file, char **path, FILE **file
+)
+{
+    return libmpq__directory_temporary(directory, suffix, private_file, path, file);
+}
+
 /*
  * Publish a complete same-directory encrypted temporary output. On POSIX,
  * renameat is the atomic replacement primitive: observers see either the old
@@ -739,6 +996,17 @@ libmpq__directory_replace(
         return LIBMPQ_ERROR_EXIST;
     return renameat(directory->fd, temporary, directory->fd, destination) == 0 ? 0
                                                                                : LIBMPQ_ERROR_WRITE;
+}
+
+int32_t
+libmpq__directory_copy_security(
+    mpq_directory_s *directory, const char *source, const char *destination
+)
+{
+    if (directory == NULL || source == NULL || destination == NULL || source[0] == '\0' ||
+        destination[0] == '\0')
+        return LIBMPQ_ERROR_EXIST;
+    return 0;
 }
 
 #endif
