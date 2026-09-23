@@ -36,7 +36,7 @@ typedef struct
 typedef struct
 {
     void *context;
-    libmpq_io_read_at_fn read_at;
+    libmpq_read_at_fn read_at;
     uint64_t size;
 } mpq_custom_backend_s;
 
@@ -176,7 +176,7 @@ source_set_file_backend(mpq_source_s *source, FILE *file, uint64_t size, uint8_t
 
 static int32_t
 source_set_custom_backend(
-    mpq_source_s *source, void *context, libmpq_io_read_at_fn read_at, uint64_t size
+    mpq_source_s *source, void *context, libmpq_read_at_fn read_at, uint64_t size
 )
 {
     mpq_custom_backend_s *backend;
@@ -268,7 +268,7 @@ libmpq__source_open_file(mpq_source_s **source, const char *path)
 
 int32_t
 libmpq__source_open_io(
-    mpq_source_s **source, void *context, libmpq_io_read_at_fn read_at, uint64_t size
+    mpq_source_s **source, void *context, libmpq_read_at_fn read_at, uint64_t size
 )
 {
     int32_t result;
@@ -317,7 +317,7 @@ libmpq__source_open_mpqe(
 
 int32_t
 libmpq__source_open_mpqe_io(
-    mpq_source_s **source, void *context, libmpq_io_read_at_fn read_at, uint64_t size,
+    mpq_source_s **source, void *context, libmpq_read_at_fn read_at, uint64_t size,
     const uint8_t *auth_code, size_t auth_code_size
 )
 {

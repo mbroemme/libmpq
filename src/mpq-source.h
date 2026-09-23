@@ -57,7 +57,7 @@ struct mpq_source
 
 int32_t libmpq__source_open_file(mpq_source_s **source, const char *path);
 int32_t libmpq__source_open_io(
-    mpq_source_s **source, void *context, libmpq_io_read_at_fn read_at, uint64_t size
+    mpq_source_s **source, void *context, libmpq_read_at_fn read_at, uint64_t size
 );
 
 /* Borrow a finalized writer FILE for bounded read-at operations; do not close. */
@@ -66,7 +66,7 @@ int32_t libmpq__source_open_mpqe(
     mpq_source_s **source, const char *path, const uint8_t *auth_code, size_t auth_code_size
 );
 int32_t libmpq__source_open_mpqe_io(
-    mpq_source_s **source, void *context, libmpq_io_read_at_fn read_at, uint64_t size,
+    mpq_source_s **source, void *context, libmpq_read_at_fn read_at, uint64_t size,
     const uint8_t *auth_code, size_t auth_code_size
 );
 int32_t libmpq__source_clone(mpq_source_s **clone, const mpq_source_s *source, const char *path);

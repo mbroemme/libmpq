@@ -368,7 +368,7 @@ typedef int64_t libmpq__off_t;
  * Success requires a zero result and a fully populated buffer. Negative
  * LIBMPQ_ERROR_* results report failure; callbacks must not retain buffer.
  */
-typedef int32_t (*libmpq_io_read_at_fn)(
+typedef int32_t (*libmpq_read_at_fn)(
     void *context, libmpq__off_t offset, uint8_t *buffer, size_t size
 );
 
@@ -421,7 +421,7 @@ extern LIBMPQ_API int32_t libmpq__archive_open(
  * is used for legacy strong-signature verification; omit it when unavailable.
  */
 extern LIBMPQ_API int32_t libmpq__archive_open_io(
-    mpq_archive_s **mpq_archive, void *context, libmpq_io_read_at_fn read_at,
+    mpq_archive_s **mpq_archive, void *context, libmpq_read_at_fn read_at,
     libmpq__off_t source_size, libmpq__off_t archive_offset, const char *source_name
 );
 
@@ -451,7 +451,7 @@ extern LIBMPQ_API int32_t libmpq__archive_open_mpqe(
  * match libmpq__archive_open_io().
  */
 extern LIBMPQ_API int32_t libmpq__archive_open_mpqe_io(
-    mpq_archive_s **mpq_archive, void *context, libmpq_io_read_at_fn read_at,
+    mpq_archive_s **mpq_archive, void *context, libmpq_read_at_fn read_at,
     libmpq__off_t source_size, libmpq__off_t archive_offset, const uint8_t *auth_code,
     size_t auth_code_size, const char *source_name
 );
@@ -487,7 +487,7 @@ extern LIBMPQ_API int32_t libmpq__archive_create_mpqe(
 );
 
 /*
- * Begin a file stream in a writer archive and reserve its declared size.
+ * Begin writing a file in a writer archive and reserve its declared size.
  * The returned writer accepts only the number of bytes specified by
  * unpacked_size and applies the copied file options sector by sector.
  * Only one writer may be active per archive; finish it or abandon it before

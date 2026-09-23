@@ -1,4 +1,4 @@
-/* Verify read-only MPQE stream-provider opening with public fixtures. */
+/* Verify read-only MPQE source opening with public fixtures. */
 #include "test-mpq-helper.h"
 
 #include "mpq-internal.h"

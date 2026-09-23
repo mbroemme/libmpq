@@ -79,11 +79,11 @@ int32_t libmpq__reader_archive_open_mpqe(
     const uint8_t *auth_code, size_t auth_code_size
 );
 int32_t libmpq__reader_archive_open_io(
-    mpq_archive_s **mpq_archive, void *context, libmpq_io_read_at_fn read_at,
+    mpq_archive_s **mpq_archive, void *context, libmpq_read_at_fn read_at,
     libmpq__off_t source_size, libmpq__off_t archive_offset, const char *source_name
 );
 int32_t libmpq__reader_archive_open_mpqe_io(
-    mpq_archive_s **mpq_archive, void *context, libmpq_io_read_at_fn read_at,
+    mpq_archive_s **mpq_archive, void *context, libmpq_read_at_fn read_at,
     libmpq__off_t source_size, libmpq__off_t archive_offset, const uint8_t *auth_code,
     size_t auth_code_size, const char *source_name
 );
