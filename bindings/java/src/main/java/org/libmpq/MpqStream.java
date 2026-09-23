@@ -17,9 +17,15 @@ import org.libmpq.ffi.LibmpqNative;
 /** Incremental, seekable decoded MPQ member stream. */
 public final class MpqStream implements AutoCloseable {
     private MemorySegment handle;
+    private SourceState sourceState;
 
     MpqStream(MemorySegment handle) {
         this.handle = Objects.requireNonNull(handle);
+    }
+
+    MpqStream(MemorySegment handle, SourceState sourceState) {
+        this.handle = Objects.requireNonNull(handle);
+        this.sourceState = sourceState == null ? null : sourceState.retain();
     }
 
     /** Read up to {@code length} bytes, returning -1 at EOF. */
@@ -79,7 +85,14 @@ public final class MpqStream implements AutoCloseable {
         if (!handle.equals(MemorySegment.NULL)) {
             MemorySegment current = handle;
             handle = MemorySegment.NULL;
-            Support.check(LibmpqNative.streamClose(current));
+            try {
+                Support.check(LibmpqNative.streamClose(current));
+            } finally {
+                if (sourceState != null) {
+                    sourceState.release();
+                    sourceState = null;
+                }
+            }
         }
     }
 

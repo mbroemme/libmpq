@@ -31,6 +31,12 @@ File.verify() when whole-file CRC32/MD5 verification is required.
     stream.seek(0, SeekOrigin.set);
     stream.close();
 
+Implement `MpqSource` to open a caller-owned random-access source. Archives
+and derived streams retain the source object while needed but never own an
+external resource represented by it.
+
+    auto archive = Archive.openSource(new MemorySource(data), "data.mpq");
+
 Low-level calls use `libmpq__*` names. Use `Mpq.version_()` for the version
 string and the high-level wrappers for checked calls. Metadata is available
 through `packedSize()`, `unpackedSize()`, `fileCount()`, `blockCount()`, and

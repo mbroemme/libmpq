@@ -33,6 +33,12 @@ checksums, but do not implicitly verify whole-file CRC32/MD5 attributes.
         chunk = stream.read(4096)
         stream.seek(0)
 
+Use `Archive.open_io(source, size, source_name=...)` for a caller-owned
+seekable source such as `io.BytesIO`. The binding retains the source while
+archives or derived streams are alive, but never closes it.
+
+    archive = mpq.Archive.open_io(io.BytesIO(data), len(data), source_name="data.mpq")
+
 Creation defaults to `COMPRESSION_POLICY_STANDARD`. Pass
 `flags=mpq.ARCHIVE_CREATE_COMPRESSION_EXTENDED` to `Writer` or
 `Writer.create_mpqe` for additional, potentially less interoperable methods.

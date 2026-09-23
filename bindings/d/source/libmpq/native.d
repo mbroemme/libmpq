@@ -102,6 +102,9 @@ extern(C) struct mpq_writer_s;
 /** Opaque native logical-member stream state owned by libmpq. */
 extern(C) struct mpq_stream_s;
 
+alias libmpq_read_at_fn = extern(C) int function(void* context, off_t offset,
+                                                  ubyte* buffer, size_t size);
+
 enum LIBMPQ_SEEK_SET = 0;
 enum LIBMPQ_SEEK_CUR = 1;
 enum LIBMPQ_SEEK_END = 2;
@@ -231,6 +234,14 @@ extern(C) {
                                   off_t offset,
                                   const(ubyte)* auth_code,
                                   size_t auth_code_size);
+
+    int libmpq__archive_open_io(mpq_archive_s** archive, void* context,
+                                libmpq_read_at_fn read_at, off_t source_size,
+                                off_t archive_offset, const(char)* source_name);
+    int libmpq__archive_open_mpqe_io(mpq_archive_s** archive, void* context,
+                                     libmpq_read_at_fn read_at, off_t source_size,
+                                     off_t archive_offset, const(ubyte)* auth_code,
+                                     size_t auth_code_size, const(char)* source_name);
 
     /** Create an archive using the supplied native option structure. */
     int libmpq__archive_create(mpq_archive_s** archive, const(char)* path,

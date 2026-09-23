@@ -75,6 +75,8 @@ public final class LibmpqNative {
     private static final MethodHandle ARCHIVE_COMPRESSION_ALLOWED;
     private static final MethodHandle ARCHIVE_OPEN;
     private static final MethodHandle ARCHIVE_OPEN_MPQE;
+    private static final MethodHandle ARCHIVE_OPEN_IO;
+    private static final MethodHandle ARCHIVE_OPEN_MPQE_IO;
     private static final MethodHandle ARCHIVE_CREATE;
     private static final MethodHandle ARCHIVE_CREATE_MPQE;
     private static final MethodHandle WRITER_BEGIN;
@@ -147,6 +149,15 @@ public final class LibmpqNative {
                                      FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                            ValueLayout.ADDRESS, C_LONG,
                                                            ValueLayout.ADDRESS, C_SIZE_T));
+        ARCHIVE_OPEN_IO = function(linker, lookup, "libmpq__archive_open_io",
+                                   FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
+                                                         ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                                         C_LONG, C_LONG, ValueLayout.ADDRESS));
+        ARCHIVE_OPEN_MPQE_IO = function(linker, lookup, "libmpq__archive_open_mpqe_io",
+                                        FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
+                                                              ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                                              C_LONG, C_LONG, ValueLayout.ADDRESS,
+                                                              C_SIZE_T, ValueLayout.ADDRESS));
         ARCHIVE_CREATE = function(linker, lookup, "libmpq__archive_create",
                                   FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                         ValueLayout.ADDRESS, ValueLayout.ADDRESS));
@@ -358,6 +369,24 @@ public final class LibmpqNative {
     public static int archiveOpenMpqe(MemorySegment out, MemorySegment path, long offset,
                                       MemorySegment authCode, long authCodeSize) {
         return callInt(ARCHIVE_OPEN_MPQE, out, path, offset, authCode, nativeSizeT(authCodeSize));
+    }
+    /** Opens a borrowed exact random-access source through a Java upcall stub. */
+    public static int archiveOpenIo(MemorySegment out, MemorySegment context, MemorySegment readAt,
+                                    long sourceSize, long offset, MemorySegment sourceName) {
+        return callInt(ARCHIVE_OPEN_IO, out, context, readAt, sourceSize, offset, sourceName);
+    }
+    /** Opens a borrowed exact random-access MPQE source through a Java upcall stub. */
+    public static int archiveOpenMpqeIo(MemorySegment out, MemorySegment context, MemorySegment readAt,
+                                        long sourceSize, long offset, MemorySegment authCode,
+                                        long authCodeSize, MemorySegment sourceName) {
+        return callInt(ARCHIVE_OPEN_MPQE_IO, out, context, readAt, sourceSize, offset,
+                       authCode, nativeSizeT(authCodeSize), sourceName);
+    }
+    /** Creates an ABI-correct upcall stub for the public libmpq_read_at_fn type. */
+    public static MemorySegment readAtUpcall(MethodHandle target, Arena arena) {
+        return LINKER.upcallStub(target, FunctionDescriptor.of(
+            C_INT, ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS, C_SIZE_T
+        ), arena);
     }
     /** Calls {@code libmpq__archive_create} with a native options struct. */
     public static int archiveCreate(MemorySegment out, MemorySegment path, MemorySegment options) {

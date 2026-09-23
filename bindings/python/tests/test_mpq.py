@@ -8,10 +8,14 @@
 """End-to-end tests for the public Python binding and native libmpq ABI."""
 
 import ctypes
+import concurrent.futures
+import gc
 import hashlib
+import io
 import os
 import struct
 import sys
+import weakref
 import zlib
 from pathlib import Path
 
@@ -91,6 +95,76 @@ def test_logical_stream_encrypted_numeric_and_mpqe_lifetime():
         assert stream.read() == expected
     finally:
         stream.close()
+
+
+def test_custom_io_sources_and_stream_lifetime():
+    """Borrowed BytesIO sources stay alive for archive clones owned by streams."""
+    data = (FIXTURES / "mpq-v1-features.mpq").read_bytes()
+    source = io.BytesIO(data)
+    archive = mpq.Archive.open_io(source, len(data), source_name="fixture.mpq")
+    expected = archive["overview.txt"].read()
+    stream = archive.open_stream("overview.txt")
+    archive.close()
+    assert stream.read() == expected
+    stream.close()
+    assert not source.closed
+
+    mpqe_data = (FIXTURES / "mpq-v1-features.mpqe").read_bytes()
+    source = io.BytesIO(mpqe_data)
+    archive = mpq.Archive.open_mpqe_io(
+        source, len(mpqe_data), b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001", source_name="fixture.mpqe"
+    )
+    stream = archive.open_stream("overview.txt")
+    expected = archive["overview.txt"].read()
+    archive.close()
+    assert stream.read() == expected
+    stream.close()
+    assert not source.closed
+
+
+def test_custom_io_short_and_failing_reads():
+    """Short reads and source exceptions become the binding's normal read error."""
+    data = (FIXTURES / "mpq-v1-features.mpq").read_bytes()
+
+    class ShortSource(io.BytesIO):
+        def read(self, size=-1):
+            return super().read(max(0, size - 1))
+
+    class FailingSource(io.BytesIO):
+        def read(self, size=-1):
+            raise OSError("read failure")
+
+    with pytest.raises(mpq.LibmpqIOError):
+        mpq.Archive.open_io(ShortSource(data), len(data))
+    with pytest.raises(mpq.LibmpqIOError):
+        mpq.Archive.open_io(FailingSource(data), len(data))
+
+
+def test_custom_io_shared_source_serializes_positional_reads():
+    """Streams derived from one archive cannot race seek/read/restore operations."""
+    data = (FIXTURES / "mpq-v1-features.mpq").read_bytes()
+    source = io.BytesIO(data)
+    with mpq.Archive.open_io(source, len(data)) as archive:
+        expected = archive["overview.txt"].read()
+        with archive.open_stream("overview.txt") as first, archive.open_stream("overview.txt") as second:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                actual = list(executor.map(lambda stream: stream.read(), (first, second)))
+    assert actual == [expected, expected]
+
+
+def test_custom_io_source_is_released_after_last_derived_handle():
+    """Closed wrappers do not retain a caller source after its final stream closes."""
+    source = io.BytesIO((FIXTURES / "mpq-v1-features.mpq").read_bytes())
+    reference = weakref.ref(source)
+    archive = mpq.Archive.open_io(source, source.getbuffer().nbytes)
+    stream = archive.open_stream("overview.txt")
+    del source
+    archive.close()
+    gc.collect()
+    assert reference() is not None
+    stream.close()
+    gc.collect()
+    assert reference() is None
 
 
 def test_weak_signature(tmp_path):

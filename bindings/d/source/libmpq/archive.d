@@ -51,6 +51,38 @@ struct FileMetadata {
     /** Non-zero when the entry uses PKWARE implode. */ uint imploded;
 }
 
+/** Caller-owned exact random-access source for Archive.openSource. */
+interface MpqSource {
+    ulong size();
+    void readAt(ulong offset, ubyte[] buffer);
+}
+
+/* Shared GC-owned state retained by archives and streams using one source. */
+private class SourceState {
+    MpqSource source;
+    ulong size;
+
+    this(MpqSource source, ulong size) {
+        this.source = source;
+        this.size = size;
+    }
+}
+
+private extern(C) int
+sourceReadAt(void* context, off_t offset, ubyte* buffer, size_t size)
+{
+    try {
+        auto state = cast(SourceState) context;
+        if (state is null || offset < 0 || cast(ulong)offset > state.size ||
+            size > state.size - cast(ulong)offset)
+            return ERROR_READ;
+        state.source.readAt(cast(ulong)offset, buffer[0 .. size]);
+        return 0;
+    } catch (Throwable) {
+        return ERROR_READ;
+    }
+}
+
 /**
  * An opened or newly created MPQ archive.
  *
@@ -99,6 +131,7 @@ class Archive {
     }
     private mpq_archive_s* handle;
     private bool closed;
+    private SourceState sourceState;
 
     /** Open an archive, optionally at a specific embedded offset. */
     this(string path, off_t offset = -1) {
@@ -122,6 +155,42 @@ class Archive {
                                                authCode.length),
                     "libmpq__archive_open_mpqe");
         return new Archive(result);
+    }
+
+    /** Open a borrowed typed random-access source; the source remains caller-owned. */
+    static Archive openSource(MpqSource source, string sourceName = null,
+                              off_t offset = -1) {
+        auto sourceSize = source is null ? ulong.max : source.size();
+        if (source is null || sourceSize > cast(ulong)long.max)
+            throw new MPQException("Archive.openSource", ERROR_SIZE);
+        auto state = new SourceState(source, sourceSize);
+        mpq_archive_s* result;
+        auto name = sourceName is null ? null : toStringz(sourceName);
+        checkStatus(libmpq__archive_open_io(&result, cast(void*)state, &sourceReadAt,
+                                             cast(off_t)state.size, offset, name),
+                    "libmpq__archive_open_io");
+        auto archive = new Archive(result);
+        archive.sourceState = state;
+        return archive;
+    }
+
+    /** Open a borrowed typed MPQE source; the source remains caller-owned. */
+    static Archive openMpqeSource(MpqSource source, const(ubyte)[] authCode,
+                                  string sourceName = null, off_t offset = -1) {
+        auto sourceSize = source is null ? ulong.max : source.size();
+        if (source is null || sourceSize > cast(ulong)long.max)
+            throw new MPQException("Archive.openMpqeSource", ERROR_SIZE);
+        auto state = new SourceState(source, sourceSize);
+        mpq_archive_s* result;
+        auto name = sourceName is null ? null : toStringz(sourceName);
+        auto authPointer = authCode.length == 0 ? null : authCode.ptr;
+        checkStatus(libmpq__archive_open_mpqe_io(&result, cast(void*)state, &sourceReadAt,
+                                                  cast(off_t)state.size, offset, authPointer,
+                                                  authCode.length, name),
+                    "libmpq__archive_open_mpqe_io");
+        auto archive = new Archive(result);
+        archive.sourceState = state;
+        return archive;
     }
 
     /** Create an archive using explicit v1/v2 and storage options. */
@@ -153,7 +222,9 @@ class Archive {
         mpq_archive_s* result;
         checkStatus(libmpq__archive_clone(&result, handle),
                     "libmpq__archive_clone");
-        return new Archive(result);
+        auto clone = new Archive(result);
+        clone.sourceState = sourceState;
+        return clone;
     }
 
     /** Close the native handle; repeated calls are harmless. */
@@ -162,6 +233,7 @@ class Archive {
         auto status = libmpq__archive_close(handle);
         closed = true;
         handle = null;
+        sourceState = null;
         checkStatus(status, "libmpq__archive_close");
     }
 
@@ -229,7 +301,7 @@ class Archive {
         ensureOpen();
         mpq_stream_s* result;
         checkStatus(libmpq__stream_open(handle, number, &result), "libmpq__stream_open");
-        return new MpqStream(result);
+        return new MpqStream(result, sourceState);
     }
 
     /** Open an independent seekable logical-member stream by plaintext name. */
@@ -238,7 +310,7 @@ class Archive {
         mpq_stream_s* result;
         checkStatus(libmpq__stream_open_name(handle, toStringz(name), &result),
                     "libmpq__stream_open_name");
-        return new MpqStream(result);
+        return new MpqStream(result, sourceState);
     }
 
     /** Add a complete in-memory file to a writer archive. */
@@ -300,8 +372,12 @@ enum SeekOrigin : int {
 class MpqStream {
     private mpq_stream_s* handle;
     private bool closed;
+    private SourceState sourceState;
 
-    private this(mpq_stream_s* handle) { this.handle = handle; }
+    private this(mpq_stream_s* handle, SourceState sourceState = null) {
+        this.handle = handle;
+        this.sourceState = sourceState;
+    }
 
     /** Read up to the supplied buffer length and return the copied byte count. */
     size_t read(ubyte[] buffer) {
@@ -344,7 +420,9 @@ class MpqStream {
         auto current = handle;
         handle = null;
         closed = true;
-        checkStatus(libmpq__stream_close(current), "libmpq__stream_close");
+        auto status = libmpq__stream_close(current);
+        sourceState = null;
+        checkStatus(status, "libmpq__stream_close");
     }
 
     /** Best-effort cleanup because D destructors cannot report errors. */

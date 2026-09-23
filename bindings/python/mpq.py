@@ -14,6 +14,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import os
+import threading
 from dataclasses import dataclass
 
 ERROR_OPEN = -1
@@ -66,6 +67,9 @@ COMPRESSION_LZMA = 0x00000100
 _OFF_T = ctypes.c_int64
 _BYTE_PTR = ctypes.POINTER(ctypes.c_uint8)
 _VOID_PTR = ctypes.c_void_p
+_READ_AT_FN = ctypes.CFUNCTYPE(
+    ctypes.c_int32, _VOID_PTR, _OFF_T, _BYTE_PTR, ctypes.c_size_t
+)
 
 
 class _FileAttributes(ctypes.Structure):
@@ -227,6 +231,10 @@ _configure("libmpq__strerror", ctypes.c_char_p, ctypes.c_int32)
 _configure("libmpq__archive_compression_allowed", ctypes.c_int32, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_int32)
 _configure("libmpq__archive_open", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _OFF_T)
 _configure("libmpq__archive_open_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _OFF_T, _BYTE_PTR, ctypes.c_size_t)
+_configure("libmpq__archive_open_io", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), _VOID_PTR,
+           _READ_AT_FN, _OFF_T, _OFF_T, ctypes.c_char_p)
+_configure("libmpq__archive_open_mpqe_io", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), _VOID_PTR,
+           _READ_AT_FN, _OFF_T, _OFF_T, _BYTE_PTR, ctypes.c_size_t, ctypes.c_char_p)
 _configure("libmpq__archive_create", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__archive_create_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _BYTE_PTR, ctypes.c_size_t, _VOID_PTR)
 _configure("libmpq__writer_begin", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _OFF_T, _VOID_PTR, ctypes.POINTER(_VOID_PTR))
@@ -626,11 +634,69 @@ class Reader:
             pass
 
 
+class _SourceState:
+    """Keep a borrowed seek/read source and its native callback alive."""
+
+    def __init__(self, source, size):
+        if not isinstance(size, int) or size < 0 or size > 0x7fffffffffffffff:
+            raise ValueError("source size must be a nonnegative signed 64-bit integer")
+        if not callable(getattr(source, "seek", None)) or not callable(getattr(source, "read", None)):
+            raise TypeError("source must provide seek(offset) and read(size)")
+        self.source = source
+        self.size = size
+        self._references = 0
+        self._lock = threading.RLock()
+        self._context = ctypes.py_object(self)
+        self._callback = _READ_AT_FN(self._read_at)
+
+    @property
+    def context(self):
+        return ctypes.cast(ctypes.pointer(self._context), _VOID_PTR)
+
+    def acquire(self):
+        self._references += 1
+        return self
+
+    def release(self):
+        self._references -= 1
+        if self._references == 0:
+            self.source = None
+            self._callback = None
+
+    @staticmethod
+    def _read_at(context, offset, buffer, size):
+        """Satisfy one exact native random-access read without leaking exceptions."""
+        try:
+            state = ctypes.cast(context, ctypes.POINTER(ctypes.py_object)).contents.value
+            if offset < 0 or size > state.size - offset:
+                return ERROR_READ
+            source = state.source
+            if source is None:
+                return ERROR_READ
+            with state._lock:
+                position = source.tell() if callable(getattr(source, "tell", None)) else None
+                try:
+                    source.seek(offset)
+                    data = source.read(size)
+                finally:
+                    if position is not None:
+                        source.seek(position)
+            data = memoryview(data).tobytes()
+            if len(data) != size:
+                return ERROR_READ
+            if size:
+                ctypes.memmove(buffer, data, size)
+            return 0
+        except BaseException:
+            return ERROR_READ
+
+
 class MpqStream:
     """Closeable incremental decoded stream backed by a private native clone."""
 
-    def __init__(self, native):
+    def __init__(self, native, source_state=None):
         self._stream = native
+        self._source_state = source_state.acquire() if source_state is not None else None
 
     def _ensure_open(self):
         if not self._stream:
@@ -677,7 +743,12 @@ class MpqStream:
         """Consume the native handle once; repeated Python closes are harmless."""
         if self._stream:
             stream, self._stream = self._stream, _VOID_PTR()
-            libmpq.libmpq__stream_close(stream)
+            try:
+                libmpq.libmpq__stream_close(stream)
+            finally:
+                if self._source_state is not None:
+                    self._source_state.release()
+                    self._source_state = None
 
     def __enter__(self):
         self._ensure_open()
@@ -818,6 +889,7 @@ class Archive:
         else:
             self.filename = os.fspath(source)
         self._mpq = _VOID_PTR()
+        self._source_state = None
         libmpq.libmpq__archive_open(ctypes.byref(self._mpq), _as_bytes(self.filename), offset)
         self._opened = True
         self._load_metadata()
@@ -835,6 +907,7 @@ class Archive:
         archive._source = path
         archive.filename = os.fspath(path)
         archive._mpq = _VOID_PTR()
+        archive._source_state = None
         buffer = None if not code else (ctypes.c_uint8 * len(code)).from_buffer_copy(code)
         pointer = None if buffer is None else ctypes.cast(buffer, _BYTE_PTR)
         libmpq.libmpq__archive_open_mpqe(
@@ -843,6 +916,51 @@ class Archive:
         archive._opened = True
         archive._load_metadata()
         return archive
+
+    @classmethod
+    def open_io(cls, source, size, offset=-1, source_name=None):
+        """Open a borrowed seekable source using exact random-access callbacks."""
+        state = _SourceState(source, size)
+        archive = object.__new__(cls)
+        archive._source = source_name if source_name is not None else "<custom source>"
+        archive.filename, archive._mpq = source_name, _VOID_PTR()
+        archive._source_state = state.acquire()
+        try:
+            libmpq.libmpq__archive_open_io(
+                ctypes.byref(archive._mpq), state.context, state._callback, state.size,
+                offset, None if source_name is None else _as_bytes(source_name)
+            )
+            archive._opened = True
+            archive._load_metadata()
+            return archive
+        except Exception:
+            archive._source_state.release()
+            archive._source_state = None
+            raise
+
+    @classmethod
+    def open_mpqe_io(cls, source, size, auth_code, offset=-1, source_name=None):
+        """Open a borrowed seekable MPQE source using an exact-read callback."""
+        code = _auth_code_bytes(auth_code)
+        state = _SourceState(source, size)
+        archive = object.__new__(cls)
+        archive._source = source_name if source_name is not None else "<custom source>"
+        archive.filename, archive._mpq = source_name, _VOID_PTR()
+        archive._source_state = state.acquire()
+        buffer = None if not code else (ctypes.c_uint8 * len(code)).from_buffer_copy(code)
+        try:
+            libmpq.libmpq__archive_open_mpqe_io(
+                ctypes.byref(archive._mpq), state.context, state._callback, state.size, offset,
+                None if buffer is None else ctypes.cast(buffer, _BYTE_PTR), len(code),
+                None if source_name is None else _as_bytes(source_name)
+            )
+            archive._opened = True
+            archive._load_metadata()
+            return archive
+        except Exception:
+            archive._source_state.release()
+            archive._source_state = None
+            raise
 
     def attributes(self):
         """Return stored flags, or None if absent; malformed metadata raises."""
@@ -869,7 +987,7 @@ class Archive:
             libmpq.libmpq__stream_open_name(
                 self._mpq, _as_bytes(member), ctypes.byref(stream)
             )
-        return MpqStream(stream)
+        return MpqStream(stream, self._source_state)
 
     def verify(self, public_key, signature_type=SIGNATURE_WEAK):
         """Return mismatch bits using a weak 128-byte or strong 512-byte public key."""
@@ -901,6 +1019,8 @@ class Archive:
         clone = object.__new__(type(self))
         clone._source, clone.filename, clone._mpq = self._source, self.filename, _VOID_PTR()
         libmpq.libmpq__archive_clone(ctypes.byref(clone._mpq), self._mpq)
+        clone._source_state = (self._source_state.acquire()
+                               if self._source_state is not None else None)
         clone._opened = True
         clone._load_metadata()
         return clone
@@ -909,7 +1029,12 @@ class Archive:
         """Close the native archive handle; repeated calls are harmless."""
         if self._opened:
             archive, self._mpq, self._opened = self._mpq, _VOID_PTR(), False
-            libmpq.libmpq__archive_close(archive)
+            try:
+                libmpq.libmpq__archive_close(archive)
+            finally:
+                if self._source_state is not None:
+                    self._source_state.release()
+                    self._source_state = None
 
     def _ensure_open(self):
         """Reject operations after archive close."""

@@ -41,6 +41,24 @@ private string temporaryArchive(string suffix) {
     return path;
 }
 
+private class MemorySource : MpqSource {
+    private ubyte[] data;
+    private bool fail;
+
+    this(ubyte[] data, bool fail = false) {
+        this.data = data;
+        this.fail = fail;
+    }
+
+    ulong size() { return data.length; }
+
+    void readAt(ulong offset, ubyte[] buffer) {
+        if (fail || offset > data.length || buffer.length > data.length - offset)
+            throw new Exception("source read failure");
+        buffer[] = data[offset .. offset + buffer.length];
+    }
+}
+
 private void testVersionAndErrors() {
     const(ubyte)[] publicKey = cast(const(ubyte)[]) x"a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001";
     const(ubyte)[] privateKey = cast(const(ubyte)[]) x"a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a748315364c0c92a1a284b2ae77d5d49adea3bad7bafa639710661d443c0ad882f6c8d6787affd7f68145217cde42cf4dc2acb0ca2aeca535baf894084e590d719";
@@ -293,6 +311,39 @@ private void testMpqeFixture() {
     assert(failed);
 }
 
+private void testCustomSources() {
+    auto root = environment.get("LIBMPQ_SOURCE_DIR", ".");
+    auto fixtureRoot = buildPath(root, "tests", "fixtures");
+    auto raw = cast(ubyte[]) read(buildPath(fixtureRoot, "mpq-v1-features.mpq"));
+    auto archive = Archive.openSource(new MemorySource(raw), "fixture.mpq");
+    auto expected = archive.file("overview.txt").read();
+    auto stream = archive.openStream("overview.txt");
+    archive.close();
+    ubyte[] actual = new ubyte[](expected.length);
+    assert(stream.read(actual) == actual.length && actual == expected);
+    stream.close();
+
+    bool failed;
+    try {
+        Archive.openSource(new MemorySource(raw, true));
+    } catch (MPQException error) {
+        failed = error.code == ERROR_READ;
+    }
+    assert(failed);
+
+    auto mpqe = cast(ubyte[]) read(buildPath(fixtureRoot, "mpq-v1-features.mpqe"));
+    auto mpqeArchive = Archive.openMpqeSource(
+        new MemorySource(mpqe), cast(const(ubyte)[])"LIBMPQ-MPQE-TEST-AUTH-CODE-00001",
+        "fixture.mpqe"
+    );
+    auto mpqeExpected = mpqeArchive.file("overview.txt").read();
+    auto mpqeStream = mpqeArchive.openStream("overview.txt");
+    mpqeArchive.close();
+    ubyte[] mpqeActual = new ubyte[](mpqeExpected.length);
+    assert(mpqeStream.read(mpqeActual) == mpqeActual.length && mpqeActual == mpqeExpected);
+    mpqeStream.close();
+}
+
 /** Verify UTF-32LE fixture bytes without using host-native character encoding. */
 private void testSparseFixtures() {
     enum sentence = "This text uses SPARSE compression and decompression.\n";
@@ -350,6 +401,7 @@ void main() {
     testStrongSignature();
     testStrongSigning();
     testMpqeFixture();
+    testCustomSources();
     testSparseFixtures();
     testMpqeCreate();
     testFailures();

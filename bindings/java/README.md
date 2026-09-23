@@ -88,6 +88,12 @@ checksums but do not implicitly verify whole-file CRC32/MD5 values.
         int count = stream.read(buffer);
     }
 
+Use `Archive.openSource(channel, sourceName)` for a caller-owned
+`SeekableByteChannel`. The binding retains it while archives or derived streams
+need it, serializes seek/read callbacks, and never closes the channel.
+
+    Archive archive = Archive.openSource(channel, "data.mpq");
+
 ## Optional attributes
 
 Set `Mpq.FILE_FLAG_SECTOR_CRC` in file options alongside COMPRESS or IMPLODE

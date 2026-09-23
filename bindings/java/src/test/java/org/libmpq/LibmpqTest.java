@@ -15,6 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.ByteBuffer;
+import java.nio.channels.SeekableByteChannel;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HexFormat;
@@ -284,6 +287,60 @@ class LibmpqTest {
             assertEquals(expected.length, stream.read(actual));
             assertArrayEquals(expected, actual);
         }
+    }
+
+    /** Borrowed seekable channels remain usable for archive-owned native clones. */
+    @Test
+    void opensCustomSourcesAndRetainsThemForStreams() throws Exception {
+        Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
+        try (SeekableByteChannel channel = Files.newByteChannel(root.resolve("mpq-v1-features.mpq"))) {
+            channel.position(3);
+            Archive archive = Archive.openSource(channel, "fixture.mpq");
+            assertEquals(3, channel.position());
+            byte[] expected = archive.readFile(archive.fileNumber("overview.txt"));
+            assertEquals(3, channel.position());
+            try (MpqStream stream = archive.openStream("overview.txt")) {
+                archive.close();
+                byte[] actual = new byte[expected.length];
+                assertEquals(expected.length, stream.read(actual));
+                assertArrayEquals(expected, actual);
+            }
+            assertTrue(channel.isOpen());
+        }
+        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
+        try (SeekableByteChannel channel = Files.newByteChannel(root.resolve("mpq-v1-features.mpqe"))) {
+            Archive archive = Archive.openMpqeSource(channel, code, "fixture.mpqe", 0);
+            MpqStream stream = archive.openStream("overview.txt");
+            archive.close();
+            assertTrue(stream.read(new byte[8]) > 0);
+            stream.close();
+            assertTrue(channel.isOpen());
+        }
+        try (SeekableByteChannel channel = new FailingChannel(
+                 Files.newByteChannel(root.resolve("mpq-v1-features.mpq")))) {
+            assertThrows(LibmpqException.class, () -> Archive.openSource(channel, null));
+        }
+    }
+
+    /** Channel wrapper that proves Java read failures do not escape the FFM upcall. */
+    private static final class FailingChannel implements SeekableByteChannel {
+        private final SeekableByteChannel delegate;
+
+        FailingChannel(SeekableByteChannel delegate) { this.delegate = delegate; }
+        @Override public int read(ByteBuffer target) throws IOException { throw new IOException("failure"); }
+        @Override public int write(ByteBuffer source) throws IOException { return delegate.write(source); }
+        @Override public long position() throws IOException { return delegate.position(); }
+        @Override public SeekableByteChannel position(long value) throws IOException {
+            delegate.position(value);
+            return this;
+        }
+        @Override public long size() throws IOException { return delegate.size(); }
+        @Override public SeekableByteChannel truncate(long size) throws IOException {
+            delegate.truncate(size);
+            return this;
+        }
+        @Override public boolean isOpen() { return delegate.isOpen(); }
+        @Override public void close() throws IOException { delegate.close(); }
     }
 
     /** Exercises MPQE v1/v2 opening, credential validation, and independent cloning. */

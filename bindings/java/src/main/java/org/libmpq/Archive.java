@@ -12,6 +12,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.file.Path;
+import java.nio.channels.SeekableByteChannel;
 import java.util.Objects;
 import org.libmpq.ffi.LibmpqNative;
 
@@ -126,10 +127,16 @@ public final class Archive implements AutoCloseable {
         }
     }
     private MemorySegment handle;
+    private SourceState sourceState;
 
     /** Wraps a newly returned native archive handle. */
     private Archive(MemorySegment handle) {
         this.handle = handle;
+    }
+
+    private Archive(MemorySegment handle, SourceState sourceState) {
+        this.handle = handle;
+        this.sourceState = sourceState == null ? null : sourceState.retain();
     }
 
     /**
@@ -200,6 +207,47 @@ public final class Archive implements AutoCloseable {
         }
     }
 
+    /** Open a borrowed seekable channel using libmpq's exact random-access input API. */
+    public static Archive openSource(SeekableByteChannel source, String sourceName)
+        throws LibmpqException {
+        return openSource(source, sourceName, -1);
+    }
+
+    /** Open a borrowed seekable channel at a standalone or embedded MPQ offset. */
+    public static Archive openSource(SeekableByteChannel source, String sourceName, long offset)
+        throws LibmpqException {
+        SourceState state = new SourceState(source);
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
+            MemorySegment name = sourceName == null ? MemorySegment.NULL : Support.text(arena, sourceName);
+            Support.check(LibmpqNative.archiveOpenIo(output, MemorySegment.NULL, state.callback(),
+                                                     state.size(), offset, name));
+            return new Archive(LibmpqNative.getAddress(output), state);
+        } catch (RuntimeException | LibmpqException error) {
+            state.discard();
+            throw error;
+        }
+    }
+
+    /** Open a borrowed MPQE seekable channel using the supplied authentication code. */
+    public static Archive openMpqeSource(SeekableByteChannel source, byte[] authCode,
+                                         String sourceName, long offset) throws LibmpqException {
+        Objects.requireNonNull(authCode, "authCode");
+        SourceState state = new SourceState(source);
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
+            MemorySegment name = sourceName == null ? MemorySegment.NULL : Support.text(arena, sourceName);
+            Support.check(LibmpqNative.archiveOpenMpqeIo(
+                output, MemorySegment.NULL, state.callback(), state.size(), offset,
+                Support.bytes(arena, authCode), authCode.length, name
+            ));
+            return new Archive(LibmpqNative.getAddress(output), state);
+        } catch (RuntimeException | LibmpqException error) {
+            state.discard();
+            throw error;
+        }
+    }
+
     /**
      * Creates a new archive and returns its writable native handle.  The
      * archive remains open for additions until this object is closed; closing
@@ -263,7 +311,7 @@ public final class Archive implements AutoCloseable {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
             Support.check(LibmpqNative.archiveClone(output, handle));
-            return new Archive(LibmpqNative.getAddress(output));
+            return new Archive(LibmpqNative.getAddress(output), sourceState);
         }
     }
 
@@ -423,7 +471,7 @@ public final class Archive implements AutoCloseable {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
             Support.check(LibmpqNative.streamOpen(handle, number, output));
-            return new MpqStream(LibmpqNative.getAddress(output));
+            return new MpqStream(LibmpqNative.getAddress(output), sourceState);
         }
     }
 
@@ -433,7 +481,7 @@ public final class Archive implements AutoCloseable {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
             Support.check(LibmpqNative.streamOpenName(handle, Support.text(arena, name), output));
-            return new MpqStream(LibmpqNative.getAddress(output));
+            return new MpqStream(LibmpqNative.getAddress(output), sourceState);
         }
     }
 
@@ -561,7 +609,14 @@ public final class Archive implements AutoCloseable {
             return;
         }
         handle = MemorySegment.NULL;
-        Support.check(LibmpqNative.archiveClose(current));
+        try {
+            Support.check(LibmpqNative.archiveClose(current));
+        } finally {
+            if (sourceState != null) {
+                sourceState.release();
+                sourceState = null;
+            }
+        }
     }
 
     /** Returns the live native handle for package-private writer operations. */
