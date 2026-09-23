@@ -32,11 +32,11 @@
 #include "mpq-compression.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
-#include "mpq-file-stream.h"
 #include "mpq-internal.h"
 #include "mpq-reader.h"
 #include "mpq-rsa.h"
 #include "mpq-signature.h"
+#include "mpq-source.h"
 #include "mpq-stream.h"
 #include "mpq-verify.h"
 #include "mpq-writer.h"
@@ -331,11 +331,11 @@ libmpq__archive_open(
 int32_t
 libmpq__archive_open_io(
     mpq_archive_s **mpq_archive, void *context, libmpq_io_read_at_fn read_at,
-    libmpq__off_t stream_size, libmpq__off_t archive_offset, const char *source_name
+    libmpq__off_t source_size, libmpq__off_t archive_offset, const char *source_name
 )
 {
     return libmpq__reader_archive_open_io(
-        mpq_archive, context, read_at, stream_size, archive_offset, source_name
+        mpq_archive, context, read_at, source_size, archive_offset, source_name
     );
 }
 
@@ -354,12 +354,12 @@ libmpq__archive_open_mpqe(
 int32_t
 libmpq__archive_open_mpqe_io(
     mpq_archive_s **mpq_archive, void *context, libmpq_io_read_at_fn read_at,
-    libmpq__off_t stream_size, libmpq__off_t archive_offset, const uint8_t *auth_code,
+    libmpq__off_t source_size, libmpq__off_t archive_offset, const uint8_t *auth_code,
     size_t auth_code_size, const char *source_name
 )
 {
     return libmpq__reader_archive_open_mpqe_io(
-        mpq_archive, context, read_at, stream_size, archive_offset, auth_code, auth_code_size,
+        mpq_archive, context, read_at, source_size, archive_offset, auth_code, auth_code_size,
         source_name
     );
 }
@@ -428,7 +428,7 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
         return result;
     }
 
-    result = libmpq__stream_close(mpq_archive->stream);
+    result = libmpq__source_close(mpq_archive->source);
 
     for (i = 0; i < mpq_archive->mpq_header.block_table_count; i++) {
         if (mpq_archive->mpq_file[i] != NULL) {
@@ -706,49 +706,47 @@ libmpq__file_read(
 }
 
 int32_t
-libmpq__file_stream_open(mpq_archive_s *archive, uint32_t file_number, mpq_file_stream_s **stream)
+libmpq__stream_open(mpq_archive_s *archive, uint32_t file_number, mpq_stream_s **stream)
 {
-    return libmpq__reader_file_stream_open(archive, file_number, stream);
+    return libmpq__reader_stream_open(archive, file_number, stream);
 }
 
 int32_t
-libmpq__file_stream_open_name(
-    mpq_archive_s *archive, const char *filename, mpq_file_stream_s **stream
+libmpq__stream_open_name(mpq_archive_s *archive, const char *filename, mpq_stream_s **stream)
+{
+    return libmpq__reader_stream_open_name(archive, filename, stream);
+}
+
+int32_t
+libmpq__stream_read(
+    mpq_stream_s *stream, uint8_t *buffer, libmpq__off_t size, libmpq__off_t *transferred
 )
 {
-    return libmpq__reader_file_stream_open_name(archive, filename, stream);
+    return libmpq__reader_stream_read(stream, buffer, size, transferred);
 }
 
 int32_t
-libmpq__file_stream_read(
-    mpq_file_stream_s *stream, uint8_t *buffer, libmpq__off_t size, libmpq__off_t *transferred
-)
+libmpq__stream_seek(mpq_stream_s *stream, libmpq__off_t offset, int32_t origin)
 {
-    return libmpq__reader_file_stream_read(stream, buffer, size, transferred);
+    return libmpq__reader_stream_seek(stream, offset, origin);
 }
 
 int32_t
-libmpq__file_stream_seek(mpq_file_stream_s *stream, libmpq__off_t offset, int32_t origin)
+libmpq__stream_tell(mpq_stream_s *stream, libmpq__off_t *position)
 {
-    return libmpq__reader_file_stream_seek(stream, offset, origin);
+    return libmpq__reader_stream_tell(stream, position);
 }
 
 int32_t
-libmpq__file_stream_tell(mpq_file_stream_s *stream, libmpq__off_t *position)
+libmpq__stream_size(mpq_stream_s *stream, libmpq__off_t *size)
 {
-    return libmpq__reader_file_stream_tell(stream, position);
+    return libmpq__reader_stream_size(stream, size);
 }
 
 int32_t
-libmpq__file_stream_size(mpq_file_stream_s *stream, libmpq__off_t *size)
+libmpq__stream_close(mpq_stream_s *stream)
 {
-    return libmpq__reader_file_stream_size(stream, size);
-}
-
-int32_t
-libmpq__file_stream_close(mpq_file_stream_s *stream)
-{
-    return libmpq__reader_file_stream_close(stream);
+    return libmpq__reader_stream_close(stream);
 }
 
 /*

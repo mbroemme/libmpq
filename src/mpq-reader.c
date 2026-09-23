@@ -28,7 +28,7 @@
 #include "mpq-file.h"
 #include "mpq-internal.h"
 #include "mpq-reader.h"
-#include "mpq-stream.h"
+#include "mpq-source.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -337,7 +337,7 @@ read_packed(mpq_archive_s *archive, uint32_t number, uint32_t block, uint8_t *bu
     uint64_t offset = (uint64_t)archive->archive_offset + archive->mpq_block[index].offset +
                       ((uint64_t)archive->mpq_block_ex[index].offset_high << 32) +
                       archive->mpq_file[number]->packed_offset[block];
-    int32_t status = libmpq__stream_read_at(archive->stream, offset, buffer, size);
+    int32_t status = libmpq__source_read_at(archive->source, offset, buffer, size);
     if (status < 0)
         return status;
     if ((archive->mpq_block[index].flags & LIBMPQ_FLAG_ENCRYPTED) != 0 &&
@@ -462,7 +462,7 @@ sector_checksums(mpq_archive_s *archive, uint32_t number, uint32_t **checksums)
         status = LIBMPQ_ERROR_MALLOC;
         goto cleanup;
     }
-    status = libmpq__stream_read_at(archive->stream, offset, packed, packed_size);
+    status = libmpq__source_read_at(archive->source, offset, packed, packed_size);
     if (status < 0)
         goto cleanup;
     status = libmpq__compression_decompress_block(
@@ -685,7 +685,7 @@ libmpq__reader_block_read_acquired(
  * Verify that a file payload subrange is both internally consistent and
  * contained in the physical backing file captured when the archive opened.
  * Sector offsets and block-table sizes are archive-controlled, so this check
- * must happen before using either value for allocation or stream reads.
+ * must happen before using either value for allocation or source reads.
  */
 int32_t
 libmpq__reader_validate_payload_range(
@@ -810,8 +810,8 @@ libmpq__reader_offsets_acquire(mpq_archive_s *mpq_archive, uint32_t file_number,
             result = LIBMPQ_ERROR_MALLOC;
             goto error;
         }
-        if ((result = libmpq__stream_read_at(
-                 mpq_archive->stream,
+        if ((result = libmpq__source_read_at(
+                 mpq_archive->source,
                  mpq_archive->mpq_block[block_table_index].offset +
                      ((uint64_t)mpq_archive->mpq_block_ex[block_table_index].offset_high << 32) +
                      (uint64_t)mpq_archive->archive_offset,
@@ -933,8 +933,8 @@ libmpq__reader_offsets_acquire(mpq_archive_s *mpq_archive, uint32_t file_number,
             goto error;
         }
 
-        if ((result = libmpq__stream_read_at(
-                 mpq_archive->stream,
+        if ((result = libmpq__source_read_at(
+                 mpq_archive->source,
                  mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices]
                          .offset +
                      ((uint64_t)mpq_archive
@@ -1107,9 +1107,9 @@ libmpq__reader_decode_uint32_table(uint32_t *table, const uint8_t *raw, uint32_t
  * builds the compact file map used by the public archive and block APIs.
  */
 static int32_t
-libmpq__reader_archive_open_stream(
+libmpq__reader_archive_open_source(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset,
-    mpq_stream_s *stream
+    mpq_source_s *source
 )
 {
 
@@ -1124,7 +1124,7 @@ libmpq__reader_archive_open_stream(
     size_t table_bytes = 0;
 
     if (mpq_archive == NULL) {
-        libmpq__stream_discard(stream);
+        libmpq__source_discard(source);
         return LIBMPQ_ERROR_EXIST;
     }
     *mpq_archive = NULL;
@@ -1134,17 +1134,17 @@ libmpq__reader_archive_open_stream(
         archive_offset = 0;
         header_search = TRUE;
     } else if (archive_offset < 0) {
-        libmpq__stream_discard(stream);
+        libmpq__source_discard(source);
         return LIBMPQ_ERROR_SEEK;
     }
 
     if ((*mpq_archive = calloc(1, sizeof(mpq_archive_s))) == NULL) {
-        libmpq__stream_discard(stream);
+        libmpq__source_discard(source);
         return LIBMPQ_ERROR_MALLOC;
     }
 
-    /* Transfer stream ownership before any later archive initialization can fail. */
-    (*mpq_archive)->stream = stream;
+    /* Transfer source ownership before any later archive initialization can fail. */
+    (*mpq_archive)->source = source;
 
     if (mpq_filename != NULL) {
         (*mpq_archive)->filename = malloc(strlen(mpq_filename) + 1);
@@ -1156,11 +1156,11 @@ libmpq__reader_archive_open_stream(
     }
 
     (*mpq_archive)->file_identity_valid =
-        libmpq__stream_file_identity(
-            stream, &(*mpq_archive)->file_device, &(*mpq_archive)->file_inode
+        libmpq__source_file_identity(
+            source, &(*mpq_archive)->file_device, &(*mpq_archive)->file_inode
         ) == 0;
 
-    (*mpq_archive)->file_size = libmpq__stream_size(stream);
+    (*mpq_archive)->file_size = libmpq__source_size(source);
 
     (*mpq_archive)->mpq_header.mpq_magic = 0;
     (*mpq_archive)->files = 0;
@@ -1174,8 +1174,8 @@ libmpq__reader_archive_open_stream(
             result = LIBMPQ_ERROR_FORMAT;
             goto error;
         }
-        if ((result = libmpq__stream_read_at(
-                 (*mpq_archive)->stream, (uint64_t)archive_offset, header_data, sizeof(header_data)
+        if ((result = libmpq__source_read_at(
+                 (*mpq_archive)->source, (uint64_t)archive_offset, header_data, sizeof(header_data)
              )) < 0)
             goto error;
 
@@ -1242,8 +1242,8 @@ libmpq__reader_archive_open_stream(
             result = LIBMPQ_ERROR_FORMAT;
             goto error;
         }
-        if ((result = libmpq__stream_read_at(
-                 (*mpq_archive)->stream, (uint64_t)archive_offset + LIBMPQ_HEADER_WIRE_SIZE,
+        if ((result = libmpq__source_read_at(
+                 (*mpq_archive)->source, (uint64_t)archive_offset + LIBMPQ_HEADER_WIRE_SIZE,
                  header_ex_data, sizeof(header_ex_data)
              )) < 0)
             goto error;
@@ -1282,8 +1282,8 @@ libmpq__reader_archive_open_stream(
     }
 
     /* Locate, read, decrypt, and decode the hash table before file lookup begins. */
-    if ((result = libmpq__stream_read_at(
-             (*mpq_archive)->stream,
+    if ((result = libmpq__source_read_at(
+             (*mpq_archive)->source,
              (*mpq_archive)->mpq_header.hash_table_offset +
                  ((uint64_t)(*mpq_archive)->mpq_header_ex.hash_table_offset_high << 32) +
                  (uint64_t)(*mpq_archive)->archive_offset,
@@ -1314,8 +1314,8 @@ libmpq__reader_archive_open_stream(
     }
 
     /* The block table uses the same fixed key pattern as the hash table. */
-    if ((result = libmpq__stream_read_at(
-             (*mpq_archive)->stream,
+    if ((result = libmpq__source_read_at(
+             (*mpq_archive)->source,
              (*mpq_archive)->mpq_header.block_table_offset +
                  ((uint64_t)(*mpq_archive)->mpq_header_ex.block_table_offset_high << 32) +
                  (uint64_t)(*mpq_archive)->archive_offset,
@@ -1348,8 +1348,8 @@ libmpq__reader_archive_open_stream(
             goto error;
         }
 
-        if ((result = libmpq__stream_read_at(
-                 (*mpq_archive)->stream,
+        if ((result = libmpq__source_read_at(
+                 (*mpq_archive)->source,
                  (*mpq_archive)->mpq_header_ex.extended_offset + (uint64_t)archive_offset,
                  table_data, table_bytes
              )) < 0) {
@@ -1385,8 +1385,8 @@ error:
 
     /* All partially allocated reader state is released through one failure path. */
     free(table_data);
-    if ((*mpq_archive)->stream)
-        libmpq__stream_discard((*mpq_archive)->stream);
+    if ((*mpq_archive)->source)
+        libmpq__source_discard((*mpq_archive)->source);
 
     free((*mpq_archive)->mpq_map);
     free((*mpq_archive)->mpq_file);
@@ -1406,16 +1406,16 @@ libmpq__reader_archive_open_path(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset
 )
 {
-    mpq_stream_s *stream = NULL;
+    mpq_source_s *source = NULL;
     int32_t result;
 
     if (mpq_archive == NULL)
         return LIBMPQ_ERROR_EXIST;
     *mpq_archive = NULL;
-    result = libmpq__stream_open_file(&stream, mpq_filename);
+    result = libmpq__source_open_file(&source, mpq_filename);
 
-    return result == LIBMPQ_SUCCESS ? libmpq__reader_archive_open_stream(
-                                          mpq_archive, mpq_filename, archive_offset, stream
+    return result == LIBMPQ_SUCCESS ? libmpq__reader_archive_open_source(
+                                          mpq_archive, mpq_filename, archive_offset, source
                                       )
                                     : result;
 }
@@ -1426,16 +1426,16 @@ libmpq__reader_archive_open_mpqe(
     const uint8_t *auth_code, size_t auth_code_size
 )
 {
-    mpq_stream_s *stream = NULL;
+    mpq_source_s *source = NULL;
     int32_t result;
 
     if (mpq_archive == NULL)
         return LIBMPQ_ERROR_EXIST;
     *mpq_archive = NULL;
-    result = libmpq__stream_open_mpqe(&stream, mpq_filename, auth_code, auth_code_size);
+    result = libmpq__source_open_mpqe(&source, mpq_filename, auth_code, auth_code_size);
 
-    return result == LIBMPQ_SUCCESS ? libmpq__reader_archive_open_stream(
-                                          mpq_archive, mpq_filename, archive_offset, stream
+    return result == LIBMPQ_SUCCESS ? libmpq__reader_archive_open_source(
+                                          mpq_archive, mpq_filename, archive_offset, source
                                       )
                                     : result;
 }
@@ -1443,10 +1443,10 @@ libmpq__reader_archive_open_mpqe(
 int32_t
 libmpq__reader_archive_open_io(
     mpq_archive_s **mpq_archive, void *context, libmpq_io_read_at_fn read_at,
-    libmpq__off_t stream_size, libmpq__off_t archive_offset, const char *source_name
+    libmpq__off_t source_size, libmpq__off_t archive_offset, const char *source_name
 )
 {
-    mpq_stream_s *stream = NULL;
+    mpq_source_s *source = NULL;
     int32_t result;
 
     if (mpq_archive == NULL)
@@ -1454,15 +1454,15 @@ libmpq__reader_archive_open_io(
     *mpq_archive = NULL;
     if (read_at == NULL)
         return LIBMPQ_ERROR_EXIST;
-    if (stream_size < 0)
+    if (source_size < 0)
         return LIBMPQ_ERROR_SIZE;
     if (archive_offset < -1)
         return LIBMPQ_ERROR_SEEK;
-    if (archive_offset >= 0 && (uint64_t)archive_offset > (uint64_t)stream_size)
+    if (archive_offset >= 0 && (uint64_t)archive_offset > (uint64_t)source_size)
         return LIBMPQ_ERROR_SEEK;
-    result = libmpq__stream_open_io(&stream, context, read_at, (uint64_t)stream_size);
-    return result == LIBMPQ_SUCCESS ? libmpq__reader_archive_open_stream(
-                                          mpq_archive, source_name, archive_offset, stream
+    result = libmpq__source_open_io(&source, context, read_at, (uint64_t)source_size);
+    return result == LIBMPQ_SUCCESS ? libmpq__reader_archive_open_source(
+                                          mpq_archive, source_name, archive_offset, source
                                       )
                                     : result;
 }
@@ -1470,11 +1470,11 @@ libmpq__reader_archive_open_io(
 int32_t
 libmpq__reader_archive_open_mpqe_io(
     mpq_archive_s **mpq_archive, void *context, libmpq_io_read_at_fn read_at,
-    libmpq__off_t stream_size, libmpq__off_t archive_offset, const uint8_t *auth_code,
+    libmpq__off_t source_size, libmpq__off_t archive_offset, const uint8_t *auth_code,
     size_t auth_code_size, const char *source_name
 )
 {
-    mpq_stream_s *stream = NULL;
+    mpq_source_s *source = NULL;
     int32_t result;
 
     if (mpq_archive == NULL)
@@ -1482,17 +1482,17 @@ libmpq__reader_archive_open_mpqe_io(
     *mpq_archive = NULL;
     if (read_at == NULL)
         return LIBMPQ_ERROR_EXIST;
-    if (stream_size < 0)
+    if (source_size < 0)
         return LIBMPQ_ERROR_SIZE;
     if (archive_offset < -1)
         return LIBMPQ_ERROR_SEEK;
-    if (archive_offset >= 0 && (uint64_t)archive_offset > (uint64_t)stream_size)
+    if (archive_offset >= 0 && (uint64_t)archive_offset > (uint64_t)source_size)
         return LIBMPQ_ERROR_SEEK;
-    result = libmpq__stream_open_mpqe_io(
-        &stream, context, read_at, (uint64_t)stream_size, auth_code, auth_code_size
+    result = libmpq__source_open_mpqe_io(
+        &source, context, read_at, (uint64_t)source_size, auth_code, auth_code_size
     );
-    return result == LIBMPQ_SUCCESS ? libmpq__reader_archive_open_stream(
-                                          mpq_archive, source_name, archive_offset, stream
+    return result == LIBMPQ_SUCCESS ? libmpq__reader_archive_open_source(
+                                          mpq_archive, source_name, archive_offset, source
                                       )
                                     : result;
 }
@@ -1500,30 +1500,31 @@ libmpq__reader_archive_open_mpqe_io(
 int32_t
 libmpq__reader_archive_clone(mpq_archive_s **clone, const mpq_archive_s *source)
 {
-    mpq_stream_s *stream = NULL;
+    mpq_source_s *clone_source = NULL;
     int32_t result;
 
     if (clone == NULL)
         return LIBMPQ_ERROR_EXIST;
     *clone = NULL;
-    if (source == NULL || source->stream == NULL)
+    if (source == NULL || source->source == NULL)
         return LIBMPQ_ERROR_EXIST;
-    result = libmpq__stream_clone(&stream, source->stream, source->filename);
+    result = libmpq__source_clone(&clone_source, source->source, source->filename);
     if (result == 0 && source->file_identity_valid) {
         uint64_t device;
         uint64_t inode;
 
-        result = libmpq__stream_file_identity(stream, &device, &inode);
+        result = libmpq__source_file_identity(clone_source, &device, &inode);
         if (result == 0 && (device != source->file_device || inode != source->file_inode))
             result = LIBMPQ_ERROR_EXIST;
         if (result != 0)
-            libmpq__stream_discard(stream);
+            libmpq__source_discard(clone_source);
     }
 
-    return result == LIBMPQ_SUCCESS ? libmpq__reader_archive_open_stream(
-                                          clone, source->filename, source->archive_offset, stream
-                                      )
-                                    : result;
+    return result == LIBMPQ_SUCCESS
+               ? libmpq__reader_archive_open_source(
+                     clone, source->filename, source->archive_offset, clone_source
+                 )
+               : result;
 }
 
 /*

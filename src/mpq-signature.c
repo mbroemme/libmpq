@@ -25,7 +25,7 @@
 #include "mpq-reader.h"
 #include "mpq-rsa.h"
 #include "mpq-sha1.h"
-#include "mpq-stream.h"
+#include "mpq-source.h"
 #include "mpq-writer.h"
 #include <string.h>
 
@@ -102,8 +102,8 @@ locate(mpq_archive_s *a, uint64_t *offset, uint64_t *extent, uint8_t payload[LIB
                 return LIBMPQ_ERROR_FORMAT;
         }
     }
-    result = libmpq__stream_read_at(
-        a->stream, (uint64_t)a->archive_offset + pos, payload, LIBMPQ_SIGNATURE_SIZE
+    result = libmpq__source_read_at(
+        a->source, (uint64_t)a->archive_offset + pos, payload, LIBMPQ_SIGNATURE_SIZE
     );
     if (result != LIBMPQ_SUCCESS)
         return result;
@@ -121,7 +121,7 @@ locate(mpq_archive_s *a, uint64_t *offset, uint64_t *extent, uint8_t payload[LIB
  */
 static int32_t
 digest_archive(
-    mpq_stream_s *stream, uint64_t start, uint64_t size, uint64_t excluded,
+    mpq_source_s *source, uint64_t start, uint64_t size, uint64_t excluded,
     uint8_t digest[LIBMPQ_MD5_SIZE]
 )
 {
@@ -137,7 +137,7 @@ digest_archive(
         uint64_t end = pos + count < excluded + LIBMPQ_SIGNATURE_SIZE
                            ? pos + count
                            : excluded + LIBMPQ_SIGNATURE_SIZE;
-        int32_t result = libmpq__stream_read_at(stream, start + pos, buffer, count);
+        int32_t result = libmpq__source_read_at(source, start + pos, buffer, count);
         if (result != LIBMPQ_SUCCESS)
             return result;
         if (begin < end)
@@ -162,10 +162,10 @@ strong_locate(mpq_archive_s *a, uint64_t *extent, uint8_t signature[LIBMPQ_STRON
     int32_t result;
 
     /*
-     * MPQE encrypts its complete transport stream and has no defined external
+     * MPQE encrypts its complete transport source and has no defined external
      * strong-trailer representation. Do not interpret ciphertext as NGIS.
      */
-    if (libmpq__stream_is_mpqe(a->stream))
+    if (libmpq__source_is_mpqe(a->source))
         return LIBMPQ_ERROR_EXIST;
     result = libmpq__archive_signature_extent(a, extent);
     if (result != LIBMPQ_SUCCESS)
@@ -175,7 +175,7 @@ strong_locate(mpq_archive_s *a, uint64_t *extent, uint8_t signature[LIBMPQ_STRON
     offset = (uint64_t)a->archive_offset + *extent;
     if (offset > a->file_size || LIBMPQ_STRONG_TRAILER_SIZE > a->file_size - offset)
         return LIBMPQ_ERROR_EXIST;
-    result = libmpq__stream_read_at(a->stream, offset, trailer, sizeof(trailer));
+    result = libmpq__source_read_at(a->source, offset, trailer, sizeof(trailer));
     if (result != LIBMPQ_SUCCESS)
         return result;
     if (memcmp(trailer, marker, sizeof(marker)) != 0)
@@ -197,7 +197,7 @@ signature_hash_range(mpq_archive_s *a, uint64_t extent, uint64_t *start, uint64_
     end = (uint64_t)a->archive_offset + extent;
     *start = (uint64_t)a->archive_offset;
     if (a->archive_offset > 0 && a->file_size >= sizeof(prefix)) {
-        result = libmpq__stream_read_at(a->stream, 0, prefix, sizeof(prefix));
+        result = libmpq__source_read_at(a->source, 0, prefix, sizeof(prefix));
         if (result != LIBMPQ_SUCCESS)
             return result;
         if (memcmp(prefix, hm3w, sizeof(prefix)) == 0)
@@ -218,7 +218,7 @@ strong_digest_base(mpq_archive_s *a, uint64_t start, uint64_t size, mpq_sha1_s *
     libmpq__sha1_init(context);
     while (pos < size) {
         size_t count = size - pos < sizeof(buffer) ? (size_t)(size - pos) : sizeof(buffer);
-        result = libmpq__stream_read_at(a->stream, start + pos, buffer, count);
+        result = libmpq__source_read_at(a->source, start + pos, buffer, count);
         if (result != LIBMPQ_SUCCESS)
             return result;
         libmpq__sha1_update(context, buffer, count);
@@ -387,7 +387,7 @@ libmpq__signature_verify(
         (uint64_t)a->archive_offset + offset < start)
         return LIBMPQ_ERROR_FORMAT;
     excluded = (uint64_t)a->archive_offset + offset - start;
-    result = digest_archive(a->stream, start, size, excluded, digest);
+    result = digest_archive(a->source, start, size, excluded, digest);
     if (result != LIBMPQ_SUCCESS)
         return result;
     libmpq__rsa_md5_encode(digest, expected);
@@ -451,7 +451,7 @@ static int32_t
 strong_finish(mpq_archive_s *a, uint64_t size)
 {
     static const uint8_t marker[LIBMPQ_STRONG_SIGNATURE_MARKER_SIZE] = { 'N', 'G', 'I', 'S' };
-    mpq_stream_s stream = { 0 };
+    mpq_source_s source = { 0 };
     mpq_sha1_s context;
     uint8_t buffer[16384];
     uint8_t digest[LIBMPQ_SHA1_SIZE];
@@ -464,11 +464,11 @@ strong_finish(mpq_archive_s *a, uint64_t size)
 
     if (!a->write_strong_signature)
         return LIBMPQ_SUCCESS;
-    result = libmpq__stream_borrow_file(&stream, a->fp, size);
+    result = libmpq__source_borrow_file(&source, a->fp, size);
     libmpq__sha1_init(&context);
     while (result == LIBMPQ_SUCCESS && pos < size) {
         size_t count = size - pos < sizeof(buffer) ? (size_t)(size - pos) : sizeof(buffer);
-        result = libmpq__stream_read_at(&stream, pos, buffer, count);
+        result = libmpq__source_read_at(&source, pos, buffer, count);
         if (result != LIBMPQ_SUCCESS)
             break;
         libmpq__sha1_update(&context, buffer, count);
@@ -493,14 +493,14 @@ strong_finish(mpq_archive_s *a, uint64_t size)
     libmpq__rsa_clear(a->write_strong_signature_key, sizeof(a->write_strong_signature_key));
     libmpq__rsa_clear(signature, sizeof(signature));
     libmpq__rsa_clear(reversed, sizeof(reversed));
-    libmpq__stream_discard(&stream);
+    libmpq__source_discard(&source);
     return result;
 }
 
 int32_t
 libmpq__signature_finish(mpq_archive_s *a, uint64_t size)
 {
-    mpq_stream_s stream = { 0 };
+    mpq_source_s source = { 0 };
     uint8_t digest[LIBMPQ_MD5_SIZE];
     uint8_t encoded[LIBMPQ_RSA_SIZE];
     uint8_t signature[LIBMPQ_RSA_SIZE];
@@ -508,9 +508,9 @@ libmpq__signature_finish(mpq_archive_s *a, uint64_t size)
     size_t i;
     int32_t result = LIBMPQ_SUCCESS;
     if (a->write_signature) {
-        result = libmpq__stream_borrow_file(&stream, a->fp, size);
+        result = libmpq__source_borrow_file(&source, a->fp, size);
         if (result == LIBMPQ_SUCCESS)
-            result = digest_archive(&stream, 0, size, a->write_signature_offset, digest);
+            result = digest_archive(&source, 0, size, a->write_signature_offset, digest);
         if (result == LIBMPQ_SUCCESS) {
             libmpq__rsa_md5_encode(digest, encoded);
             result = libmpq__rsa_weak_operation(a->write_signature_key, encoded, signature);
@@ -531,7 +531,7 @@ libmpq__signature_finish(mpq_archive_s *a, uint64_t size)
     libmpq__rsa_clear(a->write_signature_key, sizeof(a->write_signature_key));
     libmpq__rsa_clear(signature, sizeof(signature));
     libmpq__rsa_clear(reversed, sizeof(reversed));
-    libmpq__stream_discard(&stream);
+    libmpq__source_discard(&source);
     if (result == LIBMPQ_SUCCESS)
         result = strong_finish(a, size);
     return result;

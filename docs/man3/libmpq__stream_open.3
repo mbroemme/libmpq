@@ -12,23 +12,35 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
-.TH LIBMPQ__FILE_STREAM_TELL 3 2026-09-24 "The MoPaQ archive library"
+.TH LIBMPQ__STREAM_OPEN 3 2026-09-24 "The MoPaQ archive library"
 .SH NAME
-libmpq__file_stream_tell \- return a logical file-stream position.
+libmpq__stream_open \- open a logical MPQ member stream by number.
 .SH SYNOPSIS
 .nf
 .B #include <libmpq/mpq.h>
-.BI "int32_t libmpq__file_stream_tell(mpq_file_stream_s *" stream ", libmpq__off_t *" position ");"
+.sp
+.BI "int32_t libmpq__stream_open(mpq_archive_s *" archive ", uint32_t " file_number ", mpq_stream_s **" stream ");"
 .fi
 .SH DESCRIPTION
-Store the current logical position in \fI*position\fP. This operation performs
-no archive I/O.
+Open file number \fIfile_number\fP as a decoded logical member stream. The output
+is set to NULL before later validation. On success, the stream owns a private
+archive clone, begins at logical position zero, and remains usable after the
+source archive closes. For custom-I/O archives, the caller must keep the
+borrowed callback context valid until this derived logical member stream closes.
+.PP
+Open encrypted members whose key cannot be recovered without their plaintext
+filename with \fBlibmpq__stream_open_name\fP().
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP on success.
+Returns \fBLIBMPQ_SUCCESS\fP on success. Otherwise returns an existing archive,
+file, clone, allocation, or decoding error and leaves \fI*stream\fP NULL.
 .SH ERRORS
-\fBLIBMPQ_ERROR_EXIST\fP reports an invalid stream or output pointer.
+\fBLIBMPQ_ERROR_EXIST\fP reports an invalid archive, output pointer, file
+number, or writer-mode archive.
 .SH SEE ALSO
-.BR libmpq__file_stream_seek (3)
+.BR libmpq__file_read (3),
+.BR libmpq__stream_open_name (3),
+.BR libmpq__file_verify (3),
+.BR libmpq__archive_close (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.
 .SH REPORTING BUGS

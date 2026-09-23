@@ -55,28 +55,29 @@ plain and `ARCHIVE` variants remain available. Clones preserve that name or
 anonymous state. `libmpq__archive_open_mpqe_io()` applies the same rules below
 the existing MPQE transform.
 
-## Logical file streams
+## Logical member streams
 
-`libmpq__file_stream_open()` and `libmpq__file_stream_open_name()` provide
+`libmpq__stream_open()` and `libmpq__stream_open_name()` provide
 incremental logical-member reads and seeks without a complete file buffer.
-An archive stream is the backing MPQ or MPQE byte source; a file stream is a
-decoded logical archive member.
+An archive source is the backing MPQ or MPQE byte source; a logical member
+stream is a decoded logical archive member.
 The handle owns a private archive clone, so the source archive may close after
 opening the stream. For custom I/O, the caller must retain its callback context
-until every derived file stream is closed. Ordinary sectorized members retain one
-decoded sector; a single-unit member can require its complete logical unit.
+until every derived logical member stream is closed. Ordinary sectorized
+members retain one decoded sector; a single-unit member can require its
+complete logical unit.
 
 ```c
-mpq_file_stream_s *stream = NULL;
+mpq_stream_s *stream = NULL;
 uint8_t buffer[4096];
 libmpq__off_t transferred;
 
-if (libmpq__file_stream_open_name(archive, "data/file.bin", &stream) == 0) {
-    while (libmpq__file_stream_read(stream, buffer, sizeof(buffer), &transferred) == 0 &&
+if (libmpq__stream_open_name(archive, "data/file.bin", &stream) == 0) {
+    while (libmpq__stream_read(stream, buffer, sizeof(buffer), &transferred) == 0 &&
            transferred != 0) {
         /* Consume buffer[0..transferred). */
     }
-    (void)libmpq__file_stream_close(stream);
+    (void)libmpq__stream_close(stream);
 }
 ```
 

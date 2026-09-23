@@ -22,7 +22,7 @@
 #include "mpq-internal.h"
 #include "mpq-md5.h"
 #include "mpq-reader.h"
-#include "mpq-stream.h"
+#include "mpq-source.h"
 #include "test-mpq-helper.h"
 
 #include <stdio.h>
@@ -66,19 +66,19 @@ failure_discard(void *context)
 }
 
 static void
-failure_install(mpq_stream_s *stream, read_failure_s *failure, mpq_io_read_at_fn read_at)
+failure_install(mpq_source_s *source, read_failure_s *failure, mpq_io_read_at_fn read_at)
 {
-    failure->backend = stream->backend;
-    stream->backend.context = failure;
-    stream->backend.read_at = read_at;
-    stream->backend.close = failure_close;
-    stream->backend.discard = failure_discard;
+    failure->backend = source->backend;
+    source->backend.context = failure;
+    source->backend.read_at = read_at;
+    source->backend.close = failure_close;
+    source->backend.discard = failure_discard;
 }
 
 static void
-failure_restore(mpq_stream_s *stream, const read_failure_s *failure)
+failure_restore(mpq_source_s *source, const read_failure_s *failure)
 {
-    stream->backend = failure->backend;
+    source->backend = failure->backend;
 }
 
 static int32_t
@@ -286,26 +286,26 @@ test_sectors(
     if (corrupt == 0 && !absent && !encrypted && !compressed_table) {
         read_failure_s failure;
         libmpq__off_t tail_size;
-        mpq_file_stream_s *stream = NULL;
+        mpq_stream_s *stream = NULL;
         FILE *file;
         uint8_t checksum[sizeof(uint32_t)];
 
         /* A valid stream verifies sector checksums before exposing its data. */
-        REQUIRE(libmpq__file_stream_open(archive, number, &stream) == 0);
-        REQUIRE(libmpq__file_stream_read(stream, output, sector_size, &transferred) == 0);
+        REQUIRE(libmpq__stream_open(archive, number, &stream) == 0);
+        REQUIRE(libmpq__stream_read(stream, output, sector_size, &transferred) == 0);
         REQUIRE(transferred == sector_size && memcmp(output, plain, sector_size) == 0);
-        REQUIRE(libmpq__file_stream_close(stream) == 0);
+        REQUIRE(libmpq__stream_close(stream) == 0);
 
         REQUIRE(libmpq__block_size_unpacked(archive, number, sectors - 1, &tail_size) == 0);
         failure.offset = (uint64_t)archive->archive_offset + archive->mpq_block[index].offset +
                          offsets[sectors - 1];
         failure.reads = 0;
-        failure_install(archive->stream, &failure, corrupt_read);
+        failure_install(archive->source, &failure, corrupt_read);
         status = libmpq__block_read(archive, number, sectors - 1, output, tail_size, &transferred);
         REQUIRE(status == 0 && transferred == tail_size && failure.reads == 1);
         failure.reads = 0;
         status = libmpq__file_read(archive, number, output, sizeof(output), &transferred);
-        failure_restore(archive->stream, &failure);
+        failure_restore(archive->source, &failure);
         REQUIRE(status == LIBMPQ_ERROR_READ && failure.reads == 1);
 
         /*
@@ -328,12 +328,12 @@ test_sectors(
         REQUIRE(fseek(file, -(long)sizeof(checksum), SEEK_CUR) == 0);
         REQUIRE(fwrite(checksum, 1, sizeof(checksum), file) == sizeof(checksum));
         REQUIRE(fclose(file) == 0);
-        REQUIRE(libmpq__file_stream_open(archive, number, &stream) == 0);
-        status = libmpq__file_stream_read(stream, output, sizeof(output), &transferred);
+        REQUIRE(libmpq__stream_open(archive, number, &stream) == 0);
+        status = libmpq__stream_read(stream, output, sizeof(output), &transferred);
         REQUIRE(status == LIBMPQ_ERROR_READ && transferred == sector_size);
         REQUIRE(memcmp(output, plain, sector_size) == 0);
-        REQUIRE(libmpq__file_stream_tell(stream, &tail_size) == 0 && tail_size == sector_size);
-        REQUIRE(libmpq__file_stream_close(stream) == 0);
+        REQUIRE(libmpq__stream_tell(stream, &tail_size) == 0 && tail_size == sector_size);
+        REQUIRE(libmpq__stream_close(stream) == 0);
     }
 
     if (!absent && (corrupt & LIBMPQ_VERIFY_SECTOR_CRC)) {
@@ -354,7 +354,7 @@ test_sectors(
         failure.offset =
             (uint64_t)archive->archive_offset + archive->mpq_block[index].offset + offsets[1];
         failure.reads = 0;
-        failure_install(archive->stream, &failure, fail_read);
+        failure_install(archive->source, &failure, fail_read);
         bits = UINT32_MAX;
         status = libmpq__block_compression(archive, number, 1, &bits);
         REQUIRE(status == LIBMPQ_ERROR_READ && bits == 0 && failure.reads == 1);
@@ -365,7 +365,7 @@ test_sectors(
         failure.reads = 0;
         bits = UINT32_MAX;
         status = libmpq__file_verify(archive, number, LIBMPQ_VERIFY_SECTOR_CRC, &bits);
-        failure_restore(archive->stream, &failure);
+        failure_restore(archive->source, &failure);
         REQUIRE(status == LIBMPQ_ERROR_READ && bits == 0 && failure.reads == 1);
         REQUIRE(archive->mpq_file[number] == NULL);
     }
@@ -394,14 +394,14 @@ test_sectors(
         failure.offset =
             (uint64_t)archive->archive_offset + archive->mpq_block[index].offset + offsets[0];
         failure.reads = 0;
-        failure_install(archive->stream, &failure, corrupt_method);
+        failure_install(archive->source, &failure, corrupt_method);
         bits = UINT32_MAX;
         status = libmpq__block_compression(archive, number, 0, &bits);
         REQUIRE(status == 0 && bits == 0x04 && failure.reads == 1);
         REQUIRE(archive->mpq_file[number] == NULL);
         failure.reads = 0;
         status = check_block_error(archive, number, 0, LIBMPQ_ERROR_UNPACK);
-        failure_restore(archive->stream, &failure);
+        failure_restore(archive->source, &failure);
         REQUIRE(status == 0 && failure.reads == 1);
         REQUIRE(archive->mpq_file[number] == NULL);
     }
@@ -554,7 +554,7 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
             REQUIRE(stored == checksums[i] && bits == 0);
             REQUIRE(length <= sizeof(packed));
             REQUIRE(
-                libmpq__stream_read_at(archive->stream, base + offsets[i], packed, length) == 0
+                libmpq__source_read_at(archive->source, base + offsets[i], packed, length) == 0
             );
             if (storage & LIBMPQ_FILE_FLAG_ENCRYPTED)
                 REQUIRE(libmpq__crypto_decrypt_block(packed, length, key + i) == 0);
@@ -568,9 +568,9 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
             if (mpqe)
                 failure.offset &= ~(uint64_t)(LIBMPQ_MPQE_CHUNK_SIZE - 1U);
             failure.reads = 0;
-            failure_install(archive->stream, &failure, fail_read);
+            failure_install(archive->source, &failure, fail_read);
             status = libmpq__file_verify(archive, number, LIBMPQ_VERIFY_SECTOR_CRC, &bits);
-            failure_restore(archive->stream, &failure);
+            failure_restore(archive->source, &failure);
 
             /* One-sector files hit this offset while loading the checksum table. */
             REQUIRE(status == LIBMPQ_ERROR_READ && bits == 0 && failure.reads == 1);
@@ -581,7 +581,7 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
             REQUIRE(offsets[1] - offsets[0] != 37);
             failure.offset = base + offsets[blocks] - 1U;
             failure.reads = 0;
-            failure_install(archive->stream, &failure, corrupt_read);
+            failure_install(archive->source, &failure, corrupt_read);
             {
                 uint32_t stored = 0;
                 status = libmpq__block_verify(archive, number, blocks - 1, &stored, &bits);
@@ -594,7 +594,7 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
                 failure.reads = 0;
             }
             status = libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &bits);
-            failure_restore(archive->stream, &failure);
+            failure_restore(archive->source, &failure);
             REQUIRE(status == 0);
             if (mpqe)
                 REQUIRE(failure.reads >= 1);
@@ -635,7 +635,7 @@ test_single_compression(void)
                                     LIBMPQ_FILE_FLAG_ENCRYPTED,
                                 LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
     mpq_archive_s *archive = NULL;
-    mpq_file_stream_s *stream = NULL;
+    mpq_stream_s *stream = NULL;
     uint8_t plain[512];
     uint8_t output[sizeof(plain)];
     uint32_t method = UINT32_MAX;
@@ -652,13 +652,13 @@ test_single_compression(void)
     archive = NULL;
     REQUIRE(status == 0);
     REQUIRE(libmpq__archive_open(&archive, path, 0) == 0);
-    status = libmpq__file_stream_open(archive, 0, &stream);
+    status = libmpq__stream_open(archive, 0, &stream);
     REQUIRE(status == LIBMPQ_ERROR_DECRYPT);
     REQUIRE(stream == NULL);
-    REQUIRE(libmpq__file_stream_open_name(archive, "payload", &stream) == 0);
-    REQUIRE(libmpq__file_stream_read(stream, output, sizeof(output), &transferred) == 0);
+    REQUIRE(libmpq__stream_open_name(archive, "payload", &stream) == 0);
+    REQUIRE(libmpq__stream_read(stream, output, sizeof(output), &transferred) == 0);
     REQUIRE(transferred == sizeof(plain) && memcmp(output, plain, sizeof(plain)) == 0);
-    REQUIRE(libmpq__file_stream_close(stream) == 0);
+    REQUIRE(libmpq__stream_close(stream) == 0);
     stream = NULL;
     REQUIRE(libmpq__block_compression(archive, 0, 0, &method) == LIBMPQ_ERROR_DECRYPT);
     REQUIRE(method == 0 && archive->mpq_file[0] == NULL);
@@ -672,7 +672,7 @@ test_single_compression(void)
     REQUIRE(archive->mpq_file[0] == NULL);
 cleanup:
     if (stream != NULL)
-        (void)libmpq__file_stream_close(stream);
+        (void)libmpq__stream_close(stream);
     if (archive != NULL)
         libmpq__archive_close(archive);
     if (path[0] != 0)
@@ -682,12 +682,12 @@ cleanup:
 
 /* A trailing encrypted partial word remains readable without a file seed. */
 static int
-test_short_encrypted_file_stream(void)
+test_short_encrypted_stream(void)
 {
     mpq_archive_create_options_s options = { 1, 1, 512, 0, 0 };
     mpq_file_options_s file = { LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED, 0, 0, 0, 0 };
     mpq_archive_s *archive = NULL;
-    mpq_file_stream_s *stream = NULL;
+    mpq_stream_s *stream = NULL;
     static const uint8_t plain[] = { 0x31, 0x32, 0x33 };
     uint8_t output[sizeof(plain)];
     libmpq__off_t packed_size;
@@ -703,14 +703,14 @@ test_short_encrypted_file_stream(void)
     REQUIRE(libmpq__archive_open(&archive, path, 0) == 0);
     REQUIRE(libmpq__block_size_packed(archive, 0, 0, &packed_size) == 0);
     REQUIRE(packed_size == sizeof(plain));
-    REQUIRE(libmpq__file_stream_open(archive, 0, &stream) == 0);
-    REQUIRE(libmpq__file_stream_read(stream, output, sizeof(output), &transferred) == 0);
+    REQUIRE(libmpq__stream_open(archive, 0, &stream) == 0);
+    REQUIRE(libmpq__stream_read(stream, output, sizeof(output), &transferred) == 0);
     REQUIRE(transferred == sizeof(plain) && memcmp(output, plain, sizeof(plain)) == 0);
-    REQUIRE(libmpq__file_stream_close(stream) == 0);
+    REQUIRE(libmpq__stream_close(stream) == 0);
     stream = NULL;
 cleanup:
     if (stream != NULL)
-        (void)libmpq__file_stream_close(stream);
+        (void)libmpq__stream_close(stream);
     if (archive != NULL)
         (void)libmpq__archive_close(archive);
     if (path[0] != 0)
@@ -741,7 +741,7 @@ main(void)
 
     TEST_CHECK(check_block_error(NULL, 0, 0, LIBMPQ_ERROR_EXIST) == 0);
     TEST_CHECK(test_single_compression() == 0);
-    TEST_CHECK(test_short_encrypted_file_stream() == 0);
+    TEST_CHECK(test_short_encrypted_stream() == 0);
     TEST_CHECK(libmpq__block_compression(NULL, 0, 0, &value) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(value == 0);
     {

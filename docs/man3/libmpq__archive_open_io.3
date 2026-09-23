@@ -24,7 +24,7 @@ libmpq__archive_open_io \- open an MPQ archive through random-access I/O.
 .BI "        mpq_archive_s **" "mpq_archive,"
 .BI "        void            *" "context,"
 .BI "        libmpq_io_read_at_fn " "read_at,"
-.BI "        libmpq__off_t    " "stream_size,"
+.BI "        libmpq__off_t    " "source_size,"
 .BI "        libmpq__off_t    " "archive_offset,"
 .BI "        const char       *" "source_name"
 .BI ");"
@@ -34,7 +34,7 @@ Open an MPQ through an exact random-access callback. A zero callback result
 means that the callback populated the full requested buffer. Negative
 \fBLIBMPQ_ERROR_*\fP results report failure. libmpq can request absolute
 offsets in arbitrary order, performs each range check against
-\fIstream_size\fP before dispatch, and reports positive callback results as
+\fIsource_size\fP before dispatch, and reports positive callback results as
 \fBLIBMPQ_ERROR_READ\fP. The callback runs synchronously and must not retain
 the buffer.
 .PP
@@ -51,7 +51,7 @@ strong variants remain available.
 On success, *\fImpq_archive\fP receives a new \fBmpq_archive_s\fP and zero is
 returned. On failure, the output handle is NULL. In addition to reader/parser
 errors, \fBLIBMPQ_ERROR_EXIST\fP reports a NULL output or callback,
-\fBLIBMPQ_ERROR_SIZE\fP reports a negative stream size, and
+\fBLIBMPQ_ERROR_SIZE\fP reports a negative source size, and
 \fBLIBMPQ_ERROR_SEEK\fP reports an invalid explicit archive offset.
 .SH SEE ALSO
 .BR libmpq__archive_open_mpqe_io (3),

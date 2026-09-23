@@ -24,7 +24,7 @@
 #include "mpq-rsa.h"
 #include "mpq-sha1.h"
 #include "mpq-signature.h"
-#include "mpq-stream.h"
+#include "mpq-source.h"
 #include "test-mpq-helper.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -372,11 +372,11 @@ test_strong_signatures(void)
     TEST_CHECK(libmpq__archive_signature_extent(archive, &extent) == 0);
     TEST_CHECK(extent < size && size - (size_t)extent == LIBMPQ_STRONG_TRAILER_SIZE);
     {
-        strong_read_count_s count = { archive->stream->backend.read_at,
-                                      archive->stream->backend.context, archive->archive_offset,
+        strong_read_count_s count = { archive->source->backend.read_at,
+                                      archive->source->backend.context, archive->archive_offset,
                                       archive->archive_offset + extent, 0 };
-        archive->stream->backend.read_at = count_strong_read;
-        archive->stream->backend.context = &count;
+        archive->source->backend.read_at = count_strong_read;
+        archive->source->backend.context = &count;
         TEST_CHECK(
             libmpq__archive_verify(
                 archive, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
@@ -384,8 +384,8 @@ test_strong_signatures(void)
             ) == 0
         );
         TEST_CHECK(mismatches == 0 && count.bytes == extent);
-        archive->stream->backend.read_at = count.read_at;
-        archive->stream->backend.context = count.context;
+        archive->source->backend.read_at = count.read_at;
+        archive->source->backend.context = count.context;
     }
     memcpy(invalid, test_strong_signature_public_key, sizeof(invalid));
     invalid[sizeof(invalid) - 1] = 3;
@@ -625,7 +625,7 @@ test_logical_extent(void)
     mpq_block_s block = { 0 };
     mpq_block_ex_s high = { 0 };
     mpq_hash_s hash = { 0 };
-    mpq_stream_s stream = { 0 };
+    mpq_source_s source = { 0 };
     uint64_t extent = 99;
     uint32_t unused;
     uint32_t signatures;
@@ -643,11 +643,11 @@ test_logical_extent(void)
     archive.mpq_block = &block;
     archive.mpq_block_ex = &high;
     archive.file_size = UINT64_MAX;
-    archive.stream = &stream;
-    stream.size = UINT64_MAX;
-    stream.backend.size = UINT64_MAX;
-    stream.backend.read_at = high_read;
-    stream.backend.context = &digest_read;
+    archive.source = &source;
+    source.size = UINT64_MAX;
+    source.backend.size = UINT64_MAX;
+    source.backend.read_at = high_read;
+    source.backend.context = &digest_read;
     libmpq__file_hash("(signature)", &unused, &hash.hash_a, &hash.hash_b);
     block.offset = 64;
     block.packed_size = block.unpacked_size = 72;
@@ -726,7 +726,7 @@ test_strong_writer_plain_block(mpq_archive_s *archive)
     TEST_CHECK(trailer_offset <= archive->file_size);
     TEST_CHECK(sizeof(trailer) <= archive->file_size - trailer_offset);
     TEST_CHECK(
-        libmpq__stream_read_at(archive->stream, trailer_offset, trailer, sizeof(trailer)) ==
+        libmpq__source_read_at(archive->source, trailer_offset, trailer, sizeof(trailer)) ==
         LIBMPQ_SUCCESS
     );
     TEST_CHECK(memcmp(trailer, marker, sizeof(marker)) == 0);
@@ -741,8 +741,8 @@ test_strong_writer_plain_block(mpq_archive_s *archive)
     while (position < extent) {
         count = extent - position < sizeof(buffer) ? (size_t)(extent - position) : sizeof(buffer);
         TEST_CHECK(
-            libmpq__stream_read_at(
-                archive->stream, (uint64_t)archive->archive_offset + position, buffer, count
+            libmpq__source_read_at(
+                archive->source, (uint64_t)archive->archive_offset + position, buffer, count
             ) == LIBMPQ_SUCCESS
         );
         libmpq__sha1_update(&context, buffer, count);
@@ -1041,7 +1041,7 @@ main(void)
     a->mpq_block[0].offset = a->mpq_header.archive_size;
     TEST_CHECK(libmpq__archive_signatures(a, &types) == LIBMPQ_ERROR_FORMAT && types == 0);
     a->mpq_block[0].offset = saved_offset;
-    a->stream->backend.read_at = failed_read;
+    a->source->backend.read_at = failed_read;
     TEST_CHECK(
         libmpq__archive_verify(a, 1, test_signature_public_key, 128, &mismatch) ==
             LIBMPQ_ERROR_READ &&

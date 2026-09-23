@@ -12,16 +12,16 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
-.TH LIBMPQ__FILE_STREAM_OPEN_NAME 3 2026-09-24 "The MoPaQ archive library"
+.TH LIBMPQ__STREAM_OPEN_NAME 3 2026-09-24 "The MoPaQ archive library"
 .SH NAME
-libmpq__file_stream_open_name \- open a logical MPQ member stream by name.
+libmpq__stream_open_name \- open a logical MPQ member stream by name.
 .SH SYNOPSIS
 .nf
 .B #include <libmpq/mpq.h>
-.BI "int32_t libmpq__file_stream_open_name(mpq_archive_s *" archive ", const char *" filename ", mpq_file_stream_s **" stream ");"
+.BI "int32_t libmpq__stream_open_name(mpq_archive_s *" archive ", const char *" filename ", mpq_stream_s **" stream ");"
 .fi
 .SH DESCRIPTION
-Resolve \fIfilename\fP and open its decoded logical file stream. The plaintext
+Resolve \fIfilename\fP and open its decoded logical member stream. The plaintext
 filename is supplied during stream initialization when encrypted-member key
 derivation requires it. The stream owns a private archive clone, starts at
 zero, and outlives its source archive;
@@ -32,7 +32,7 @@ allocation error with \fI*stream\fP NULL.
 .SH ERRORS
 \fBLIBMPQ_ERROR_EXIST\fP reports invalid input, a missing name, or writer mode.
 .SH SEE ALSO
-.BR libmpq__file_stream_open (3),
+.BR libmpq__stream_open (3),
 .BR libmpq__file_number (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.

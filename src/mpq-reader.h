@@ -69,7 +69,7 @@ int32_t libmpq__reader_validate_payload_range(
 /*
  * Open and parse an archive at archive_offset. A negative offset enables the
  * embedded-archive scan; otherwise the offset is interpreted as an absolute
- * file position. On success the returned archive owns its input stream and metadata.
+ * file position. On success the returned archive owns its input source and metadata.
  */
 int32_t libmpq__reader_archive_open_path(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset
@@ -80,11 +80,11 @@ int32_t libmpq__reader_archive_open_mpqe(
 );
 int32_t libmpq__reader_archive_open_io(
     mpq_archive_s **mpq_archive, void *context, libmpq_io_read_at_fn read_at,
-    libmpq__off_t stream_size, libmpq__off_t archive_offset, const char *source_name
+    libmpq__off_t source_size, libmpq__off_t archive_offset, const char *source_name
 );
 int32_t libmpq__reader_archive_open_mpqe_io(
     mpq_archive_s **mpq_archive, void *context, libmpq_io_read_at_fn read_at,
-    libmpq__off_t stream_size, libmpq__off_t archive_offset, const uint8_t *auth_code,
+    libmpq__off_t source_size, libmpq__off_t archive_offset, const uint8_t *auth_code,
     size_t auth_code_size, const char *source_name
 );
 int32_t libmpq__reader_archive_clone(mpq_archive_s **clone, const mpq_archive_s *source);

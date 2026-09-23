@@ -276,7 +276,7 @@ For a static-only build use `--disable-shared --enable-static`; the generated
 
 Public filesystem paths are UTF-8 on Windows, converted to UTF-16 for native
 filesystem calls. Both slash styles and absolute or relative paths are
-accepted. Archive streams always use binary mode. Clone identity checks use
+accepted. Archive sources always use binary mode. Clone identity checks use
 the opened file's volume and file ID.
 
 MPQE creation retains the destination directory independently of cwd changes.

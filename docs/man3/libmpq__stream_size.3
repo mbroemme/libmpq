@@ -12,27 +12,24 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
-.TH LIBMPQ__FILE_STREAM_CLOSE 3 2026-09-24 "The MoPaQ archive library"
+.TH LIBMPQ__STREAM_SIZE 3 2026-09-24 "The MoPaQ archive library"
 .SH NAME
-libmpq__file_stream_close \- close and consume a logical MPQ member stream.
+libmpq__stream_size \- return a logical MPQ member size.
 .SH SYNOPSIS
 .nf
 .B #include <libmpq/mpq.h>
-.BI "int32_t libmpq__file_stream_close(mpq_file_stream_s *" stream ");"
+.BI "int32_t libmpq__stream_size(mpq_stream_s *" stream ", libmpq__off_t *" size ");"
 .fi
 .SH DESCRIPTION
-Release retained offset-table state and the decoded block cache, then close the
-private archive clone owned by \fIstream\fP. The handle is consumed regardless
-of the returned status and must not be reused.
+Store the immutable logical unpacked member size in \fI*size\fP. This operation
+performs no archive I/O.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP or the first cleanup error while all cleanup is
-still attempted.
+Returns \fBLIBMPQ_SUCCESS\fP on success.
 .SH ERRORS
-\fBLIBMPQ_ERROR_EXIST\fP reports a NULL stream. A clone close can report its
-underlying close error.
+\fBLIBMPQ_ERROR_EXIST\fP reports an invalid stream or output pointer.
 .SH SEE ALSO
-.BR libmpq__file_stream_open (3),
-.BR libmpq__archive_close (3)
+.BR libmpq__stream_tell (3),
+.BR libmpq__file_size_unpacked (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.
 .SH REPORTING BUGS

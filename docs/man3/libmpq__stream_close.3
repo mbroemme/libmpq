@@ -12,34 +12,26 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
-.TH LIBMPQ__FILE_STREAM_OPEN 3 2026-09-24 "The MoPaQ archive library"
+.TH LIBMPQ__STREAM_CLOSE 3 2026-09-24 "The MoPaQ archive library"
 .SH NAME
-libmpq__file_stream_open \- open a logical MPQ member stream by number.
+libmpq__stream_close \- close and consume a logical MPQ member stream.
 .SH SYNOPSIS
 .nf
 .B #include <libmpq/mpq.h>
-.sp
-.BI "int32_t libmpq__file_stream_open(mpq_archive_s *" archive ", uint32_t " file_number ", mpq_file_stream_s **" stream ");"
+.BI "int32_t libmpq__stream_close(mpq_stream_s *" stream ");"
 .fi
 .SH DESCRIPTION
-Open file number \fIfile_number\fP as a decoded logical file stream. The output
-is set to NULL before later validation. On success, the stream owns a private
-archive clone, begins at logical position zero, and remains usable after the
-source archive closes. For custom-I/O archives, the caller must keep the
-borrowed callback context valid until this derived file stream closes.
-.PP
-Open encrypted members whose key cannot be recovered without their plaintext
-filename with \fBlibmpq__file_stream_open_name\fP().
+Release retained offset-table state and the decoded block cache, then close the
+private archive clone owned by \fIstream\fP. The handle is consumed regardless
+of the returned status and must not be reused.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP on success. Otherwise returns an existing archive,
-file, clone, allocation, or decoding error and leaves \fI*stream\fP NULL.
+Returns \fBLIBMPQ_SUCCESS\fP or the first cleanup error while all cleanup is
+still attempted.
 .SH ERRORS
-\fBLIBMPQ_ERROR_EXIST\fP reports an invalid archive, output pointer, file
-number, or writer-mode archive.
+\fBLIBMPQ_ERROR_EXIST\fP reports a NULL stream. A clone close can report its
+underlying close error.
 .SH SEE ALSO
-.BR libmpq__file_read (3),
-.BR libmpq__file_stream_open_name (3),
-.BR libmpq__file_verify (3),
+.BR libmpq__stream_open (3),
 .BR libmpq__archive_close (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.

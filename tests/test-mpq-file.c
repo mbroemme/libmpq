@@ -21,7 +21,7 @@
 
 #include "mpq-file.h"
 #include "mpq-internal.h"
-#include "mpq-stream.h"
+#include "mpq-source.h"
 #include "test-mpq-helper.h"
 #include <stdlib.h>
 #include <string.h>
@@ -76,44 +76,44 @@ close_failure_discard(void *context)
 }
 
 static void
-close_failure_install(mpq_stream_s *stream, close_failure_s *failure)
+close_failure_install(mpq_source_s *source, close_failure_s *failure)
 {
-    failure->backend = stream->backend;
-    stream->backend.context = failure;
-    stream->backend.read_at = close_failure_read;
-    stream->backend.identity = close_failure_identity;
-    stream->backend.close = close_failure_close;
-    stream->backend.discard = close_failure_discard;
+    failure->backend = source->backend;
+    source->backend.context = failure;
+    source->backend.read_at = close_failure_read;
+    source->backend.identity = close_failure_identity;
+    source->backend.close = close_failure_close;
+    source->backend.discard = close_failure_discard;
 }
 
 static int
-test_stream_ownership(mpq_archive_s *archive)
+test_source_ownership(mpq_archive_s *archive)
 {
-    mpq_stream_s borrowed = { 0 };
+    mpq_source_s borrowed = { 0 };
     close_failure_s failure = { 0 };
     FILE *file;
     uint64_t device;
     uint64_t inode;
     mpq_io_identity_fn identity;
 
-    TEST_CHECK(libmpq__stream_file_identity(archive->stream, &device, &inode) == 0);
-    identity = archive->stream->backend.identity;
-    archive->stream->backend.identity = NULL;
+    TEST_CHECK(libmpq__source_file_identity(archive->source, &device, &inode) == 0);
+    identity = archive->source->backend.identity;
+    archive->source->backend.identity = NULL;
     TEST_CHECK(
-        libmpq__stream_file_identity(archive->stream, &device, &inode) == LIBMPQ_ERROR_EXIST
+        libmpq__source_file_identity(archive->source, &device, &inode) == LIBMPQ_ERROR_EXIST
     );
     TEST_CHECK(device == 0 && inode == 0);
-    archive->stream->backend.identity = identity;
+    archive->source->backend.identity = identity;
 
-    close_failure_install(archive->stream, &failure);
+    close_failure_install(archive->source, &failure);
     TEST_CHECK(libmpq__archive_close(archive) == LIBMPQ_ERROR_CLOSE);
     TEST_CHECK(failure.closes == 1);
 
     file = tmpfile();
     TEST_CHECK(file != NULL);
     TEST_CHECK(fwrite("x", 1, 1, file) == 1 && fflush(file) == 0);
-    TEST_CHECK(libmpq__stream_borrow_file(&borrowed, file, 1) == 0);
-    TEST_CHECK(libmpq__stream_close(&borrowed) == 0);
+    TEST_CHECK(libmpq__source_borrow_file(&borrowed, file, 1) == 0);
+    TEST_CHECK(libmpq__source_close(&borrowed) == 0);
     TEST_CHECK(fwrite("y", 1, 1, file) == 1);
     TEST_CHECK(fclose(file) == 0);
     return 0;
@@ -221,7 +221,7 @@ main(void)
     TEST_CHECK(libmpq__archive_clone(&clone, archive) == 0);
     TEST_CHECK(libmpq__archive_close(clone) == 0);
     clone = NULL;
-    TEST_CHECK(test_stream_ownership(archive) == 0);
+    TEST_CHECK(test_source_ownership(archive) == 0);
     archive = NULL;
     TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
     original = libmpq__file_open(path, "rb");

@@ -12,13 +12,13 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
-.TH LIBMPQ__FILE_STREAM_READ 3 2026-09-24 "The MoPaQ archive library"
+.TH LIBMPQ__STREAM_READ 3 2026-09-24 "The MoPaQ archive library"
 .SH NAME
-libmpq__file_stream_read \- read decoded logical MPQ member bytes.
+libmpq__stream_read \- read decoded logical MPQ member bytes.
 .SH SYNOPSIS
 .nf
 .B #include <libmpq/mpq.h>
-.BI "int32_t libmpq__file_stream_read(mpq_file_stream_s *" stream ", uint8_t *" buffer ", libmpq__off_t " size ", libmpq__off_t *" transferred ");"
+.BI "int32_t libmpq__stream_read(mpq_stream_s *" stream ", uint8_t *" buffer ", libmpq__off_t " size ", libmpq__off_t *" transferred ");"
 .fi
 .SH DESCRIPTION
 Read up to \fIsize\fP decoded logical bytes, crossing sectors as needed. The
@@ -26,8 +26,8 @@ position advances only by successfully returned bytes. EOF and zero-length
 reads succeed with zero transferred bytes. An error after earlier sectors
 returns their count; bytes from a failing sector are not transferred.
 .PP
-Usable sector Adler-32 values are checked as sectors load. Arbitrary file
-stream reads do not implicitly verify whole-file CRC32/MD5 attributes; use
+Usable sector Adler-32 values are checked as sectors load. Arbitrary logical
+member stream reads do not implicitly verify whole-file CRC32/MD5 attributes; use
 .BR libmpq__file_verify (3)
 for explicit whole-file integrity verification.
 .SH RETURN VALUE
@@ -39,7 +39,7 @@ buffer. \fBLIBMPQ_ERROR_SIZE\fP reports an invalid size.
 decryption, decompression, allocation, and malformed-data errors can also
 propagate from the sector decoder.
 .SH SEE ALSO
-.BR libmpq__file_stream_open (3),
+.BR libmpq__stream_open (3),
 .BR libmpq__file_verify (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.

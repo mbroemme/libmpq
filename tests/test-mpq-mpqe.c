@@ -4,7 +4,7 @@
 #include "mpq-internal.h"
 #include "mpq-mpqe.h"
 #include "mpq-signature.h"
-#include "mpq-stream.h"
+#include "mpq-source.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -99,7 +99,7 @@ transform_chunk(uint8_t chunk[LIBMPQ_MPQE_CHUNK_SIZE], uint64_t offset)
     return result;
 }
 
-/* The raw and MPQE fixtures are paired archive streams with matching bytes. */
+/* The raw and MPQE fixtures are paired archive sources with matching bytes. */
 typedef struct
 {
     const char *raw_name;
@@ -196,9 +196,9 @@ test_fixture_members(mpq_archive_s *archive, const char *raw_path, uint32_t vers
 
 /* Compare random-access MPQE reads with the corresponding raw MPQ fixture. */
 static int
-test_stream_reads(const char *raw_path, const char *mpqe_path)
+test_source_reads(const char *raw_path, const char *mpqe_path)
 {
-    mpq_stream_s *stream = NULL;
+    mpq_source_s *source = NULL;
     uint8_t *raw_data = NULL;
     uint8_t cross_chunk[96];
     uint8_t trailing[64];
@@ -213,17 +213,17 @@ test_stream_reads(const char *raw_path, const char *mpqe_path)
         raw_extent -= LIBMPQ_STRONG_TRAILER_SIZE;
     TEST_CHECK(raw_extent > sizeof(cross_chunk) && raw_extent % 64U != 0U);
     TEST_CHECK(
-        libmpq__stream_open_mpqe(&stream, mpqe_path, auth_code, sizeof(auth_code) - 1U) == 0
+        libmpq__source_open_mpqe(&source, mpqe_path, auth_code, sizeof(auth_code) - 1U) == 0
     );
-    TEST_CHECK(libmpq__stream_size(stream) == raw_extent);
-    TEST_CHECK(libmpq__stream_read_at(stream, 32, cross_chunk, sizeof(cross_chunk)) == 0);
+    TEST_CHECK(libmpq__source_size(source) == raw_extent);
+    TEST_CHECK(libmpq__source_read_at(source, 32, cross_chunk, sizeof(cross_chunk)) == 0);
     TEST_CHECK(memcmp(cross_chunk, raw_data + 32, sizeof(cross_chunk)) == 0);
     trailing_size = raw_extent % 64U;
     TEST_CHECK(
-        libmpq__stream_read_at(stream, raw_extent - trailing_size, trailing, trailing_size) == 0
+        libmpq__source_read_at(source, raw_extent - trailing_size, trailing, trailing_size) == 0
     );
     TEST_CHECK(memcmp(trailing, raw_data + raw_extent - trailing_size, trailing_size) == 0);
-    TEST_CHECK(libmpq__stream_close(stream) == 0);
+    TEST_CHECK(libmpq__source_close(source) == 0);
     free(raw_data);
     return 0;
 }
@@ -235,7 +235,7 @@ test_custom_io(const char *mpqe_path, libmpq__off_t archive_offset)
     memory_source_s source = { 0 };
     mpq_archive_s *archive = NULL;
     mpq_archive_s *clone = NULL;
-    mpq_file_stream_s *stream = NULL;
+    mpq_stream_s *stream = NULL;
     uint8_t *data = NULL;
     uint8_t byte;
     libmpq__off_t transferred;
@@ -252,13 +252,13 @@ test_custom_io(const char *mpqe_path, libmpq__off_t archive_offset)
         ) == 0
     );
     TEST_CHECK(libmpq__file_number(archive, "overview.txt", &number) == 0);
-    TEST_CHECK(libmpq__file_stream_open_name(archive, "overview.txt", &stream) == 0);
+    TEST_CHECK(libmpq__stream_open_name(archive, "overview.txt", &stream) == 0);
     TEST_CHECK(libmpq__archive_clone(&clone, archive) == 0);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     archive = NULL;
-    TEST_CHECK(libmpq__file_stream_read(stream, &byte, 1, &transferred) == 0);
+    TEST_CHECK(libmpq__stream_read(stream, &byte, 1, &transferred) == 0);
     TEST_CHECK(transferred == 1);
-    TEST_CHECK(libmpq__file_stream_close(stream) == 0);
+    TEST_CHECK(libmpq__stream_close(stream) == 0);
     stream = NULL;
     TEST_CHECK(libmpq__file_number(clone, "overview.txt", &number) == 0);
     TEST_CHECK(libmpq__archive_close(clone) == 0);
@@ -290,7 +290,7 @@ test_custom_io(const char *mpqe_path, libmpq__off_t archive_offset)
 
 /* Build a temporary MPQE stream to cover an unaligned read through two batches. */
 static int
-test_stream_cross_batch(void)
+test_source_cross_batch(void)
 {
     enum
     {
@@ -300,7 +300,7 @@ test_stream_cross_batch(void)
     };
     char path[512];
     FILE *file;
-    mpq_stream_s *stream = NULL;
+    mpq_source_s *source = NULL;
     uint8_t plain[plain_size];
     uint8_t encrypted[plain_size];
     uint8_t read_data[read_size];
@@ -323,10 +323,10 @@ test_stream_cross_batch(void)
     TEST_CHECK(file != NULL);
     TEST_CHECK(fwrite(encrypted, 1, sizeof(encrypted), file) == sizeof(encrypted));
     TEST_CHECK(fclose(file) == 0);
-    TEST_CHECK(libmpq__stream_open_mpqe(&stream, path, auth_code, sizeof(auth_code) - 1U) == 0);
-    TEST_CHECK(libmpq__stream_read_at(stream, read_offset, read_data, sizeof(read_data)) == 0);
+    TEST_CHECK(libmpq__source_open_mpqe(&source, path, auth_code, sizeof(auth_code) - 1U) == 0);
+    TEST_CHECK(libmpq__source_read_at(source, read_offset, read_data, sizeof(read_data)) == 0);
     TEST_CHECK(memcmp(read_data, plain + read_offset, sizeof(read_data)) == 0);
-    TEST_CHECK(libmpq__stream_close(stream) == 0);
+    TEST_CHECK(libmpq__source_close(source) == 0);
     TEST_CHECK(remove(path) == 0);
     return 0;
 }
@@ -409,7 +409,7 @@ test_fixture(const mpqe_fixture_s *fixture, size_t index)
     free(data);
     TEST_CHECK(libmpq__archive_close(clone) == 0);
     TEST_CHECK(test_custom_io(mpqe_path, index == 0 ? 0 : -1) == 0);
-    return test_stream_reads(raw_path, mpqe_path);
+    return test_source_reads(raw_path, mpqe_path);
 }
 
 /* Open failures must clear caller output pointers before stream allocation. */
@@ -457,6 +457,6 @@ main(void)
     for (i = 0; i < sizeof(fixtures) / sizeof(fixtures[0]); ++i)
         TEST_CHECK(test_fixture(&fixtures[i], i) == 0);
     TEST_CHECK(test_open_failure_output() == 0);
-    TEST_CHECK(test_stream_cross_batch() == 0);
+    TEST_CHECK(test_source_cross_batch() == 0);
     return 0;
 }

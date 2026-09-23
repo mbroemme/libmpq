@@ -3,7 +3,7 @@
 
 #include "test-mpq-helper.h"
 #include "../src/mpq-internal.h"
-#include "../src/mpq-stream.h"
+#include "../src/mpq-source.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -282,7 +282,7 @@ test_archive_offsets(mpq_archive_s *archive, uint32_t number, uint32_t **offsets
     uint8_t *buffer;
     int32_t result;
     offset_snapshot_s snapshot;
-    void *context = archive->stream->backend.context;
+    void *context = archive->source->backend.context;
     *offsets = NULL;
     if (libmpq__file_blocks(archive, number, &blocks) != 0 || blocks == 0 ||
         libmpq__file_size_unpacked(archive, number, &size) != 0 || size < 0 ||
@@ -300,14 +300,14 @@ test_archive_offsets(mpq_archive_s *archive, uint32_t number, uint32_t **offsets
     }
     snapshot.archive = archive;
     snapshot.number = number;
-    snapshot.read_at = archive->stream->backend.read_at;
+    snapshot.read_at = archive->source->backend.read_at;
     snapshot.context = context;
     snapshot.nested = 0;
-    archive->stream->backend.context = &snapshot;
-    archive->stream->backend.read_at = snapshot_read;
+    archive->source->backend.context = &snapshot;
+    archive->source->backend.read_at = snapshot_read;
     result = libmpq__file_read(archive, number, buffer, size, NULL);
-    archive->stream->backend.read_at = snapshot.read_at;
-    archive->stream->backend.context = context;
+    archive->source->backend.read_at = snapshot.read_at;
+    archive->source->backend.context = context;
     free(buffer);
     if (result < 0 || !snapshot.nested || archive->mpq_file[number] != NULL) {
         free(snapshot.offsets);

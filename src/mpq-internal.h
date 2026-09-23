@@ -187,7 +187,7 @@ struct mpq_writer_mpqe_ops;
 
 /*
  * Runtime handle for an opened or newly created MPQ archive. It owns the
- * backing stream, decoded header and tables, file mappings, and per-file
+ * backing source, decoded header and tables, file mappings, and per-file
  * caches used during extraction. In write mode it additionally owns the
  * reserved table capacity and file-name metadata needed to finalize the
  * archive; reader handles leave those writer-only fields empty.
@@ -195,7 +195,7 @@ struct mpq_writer_mpqe_ops;
 struct mpq_archive
 {
     FILE *fp;                     /* Backing file handle used only by writers. */
-    struct mpq_stream *stream;    /* Read-only random-access stream provider for readers. */
+    struct mpq_source *source;    /* Read-only random-access source provider for readers. */
     char *filename;               /* Path or optional logical name retained by the archive. */
     uint64_t file_device;         /* Device or Windows volume identity. */
     uint64_t file_inode;          /* Inode or Windows file identity. */
