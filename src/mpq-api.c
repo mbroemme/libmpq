@@ -32,6 +32,7 @@
 #include "mpq-compression.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
+#include "mpq-file-stream.h"
 #include "mpq-internal.h"
 #include "mpq-reader.h"
 #include "mpq-rsa.h"
@@ -702,6 +703,52 @@ libmpq__file_read(
 )
 {
     return libmpq__reader_file_read(archive, number, buffer, size, transferred);
+}
+
+int32_t
+libmpq__file_stream_open(mpq_archive_s *archive, uint32_t file_number, mpq_file_stream_s **stream)
+{
+    return libmpq__reader_file_stream_open(archive, file_number, stream);
+}
+
+int32_t
+libmpq__file_stream_open_name(
+    mpq_archive_s *archive, const char *filename, mpq_file_stream_s **stream
+)
+{
+    return libmpq__reader_file_stream_open_name(archive, filename, stream);
+}
+
+int32_t
+libmpq__file_stream_read(
+    mpq_file_stream_s *stream, uint8_t *buffer, libmpq__off_t size, libmpq__off_t *transferred
+)
+{
+    return libmpq__reader_file_stream_read(stream, buffer, size, transferred);
+}
+
+int32_t
+libmpq__file_stream_seek(mpq_file_stream_s *stream, libmpq__off_t offset, int32_t origin)
+{
+    return libmpq__reader_file_stream_seek(stream, offset, origin);
+}
+
+int32_t
+libmpq__file_stream_tell(mpq_file_stream_s *stream, libmpq__off_t *position)
+{
+    return libmpq__reader_file_stream_tell(stream, position);
+}
+
+int32_t
+libmpq__file_stream_size(mpq_file_stream_s *stream, libmpq__off_t *size)
+{
+    return libmpq__reader_file_stream_size(stream, size);
+}
+
+int32_t
+libmpq__file_stream_close(mpq_file_stream_s *stream)
+{
+    return libmpq__reader_file_stream_close(stream);
 }
 
 /*

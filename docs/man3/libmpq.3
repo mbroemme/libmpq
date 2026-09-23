@@ -69,6 +69,35 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        mpq_archive_s  *" "source"
 .BI ");"
 .sp
+.BI "int32_t libmpq__file_stream_open("
+.BI "        mpq_archive_s *" "archive, uint32_t " "file_number, mpq_file_stream_s **" "stream"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_stream_open_name("
+.BI "        mpq_archive_s *" "archive, const char *" "filename, mpq_file_stream_s **" "stream"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_stream_read("
+.BI "        mpq_file_stream_s *" "stream, uint8_t *" "buffer, libmpq__off_t " "size,"
+.BI "        libmpq__off_t *" "transferred"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_stream_seek("
+.BI "        mpq_file_stream_s *" "stream, libmpq__off_t " "offset, int32_t " "origin"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_stream_tell("
+.BI "        mpq_file_stream_s *" "stream, libmpq__off_t *" "position"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_stream_size("
+.BI "        mpq_file_stream_s *" "stream, libmpq__off_t *" "size"
+.BI ");"
+.sp
+.BI "int32_t libmpq__file_stream_close("
+.BI "        mpq_file_stream_s *" "stream"
+.BI ");"
+.sp
 .BI "int32_t libmpq__archive_close("
 .BI "        mpq_archive_s  *" "mpq_archive"
 .BI ");"
@@ -270,6 +299,9 @@ with \fBlibmpq__archive_open_mpqe\fP() and a caller-supplied authentication
 code. Resolve a member with \fBlibmpq__file_number\fP(), then read its
 logical uncompressed contents with \fBlibmpq__file_read\fP().
 Close archive handles with \fBlibmpq__archive_close\fP().
+.PP
+The file-stream API provides incremental, seekable logical-member access as
+an alternative to complete-file \fBlibmpq__file_read\fP().
 .PP
 \fBlibmpq__file_flags\fP() reports stored block-table flags, while the file
 size and block-count queries describe the member's storage. Block APIs

@@ -488,7 +488,7 @@ cleanup:
  * The routine computes packed bounds, applies per-block encryption, selects
  * raw or codec output, and reports the exact unpacked byte count.
  */
-static int32_t read_block(
+int32_t libmpq__reader_block_read_acquired(
     mpq_archive_s *archive, uint32_t number, uint32_t block, uint8_t *buffer, libmpq__off_t size,
     libmpq__off_t *transferred, const uint32_t *checksum, uint32_t *mismatches, int *lossy
 );
@@ -507,14 +507,15 @@ libmpq__reader_block_read(
     result = libmpq__reader_offsets_acquire(archive, number, NULL);
     if (result < 0)
         return result;
-    result =
-        read_block(archive, number, block, buffer, size, transferred, checksum, mismatches, lossy);
+    result = libmpq__reader_block_read_acquired(
+        archive, number, block, buffer, size, transferred, checksum, mismatches, lossy
+    );
     (void)libmpq__reader_offsets_release(archive, number);
     return result;
 }
 
-static int32_t
-read_block(
+int32_t
+libmpq__reader_block_read_acquired(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number, uint8_t *out_buf,
     libmpq__off_t out_size, libmpq__off_t *transferred, const uint32_t *checksum,
     uint32_t *mismatches, int *lossy

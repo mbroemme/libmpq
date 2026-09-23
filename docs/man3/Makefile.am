@@ -23,6 +23,13 @@ man_MANS = \
 	libmpq__archive_open_io.3 \
 	libmpq__archive_open_mpqe.3 \
 	libmpq__archive_open_mpqe_io.3 \
+	libmpq__file_stream_open.3 \
+	libmpq__file_stream_open_name.3 \
+	libmpq__file_stream_read.3 \
+	libmpq__file_stream_seek.3 \
+	libmpq__file_stream_tell.3 \
+	libmpq__file_stream_size.3 \
+	libmpq__file_stream_close.3 \
 	libmpq__archive_size_packed.3 \
 	libmpq__archive_size_unpacked.3 \
 	libmpq__archive_version.3 \

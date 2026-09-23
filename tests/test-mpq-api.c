@@ -48,6 +48,8 @@ test_custom_io(const char *path)
     memory_source_s source = { 0 };
     mpq_archive_s *archive = NULL;
     mpq_archive_s *clone = NULL;
+    mpq_file_stream_s *stream = NULL;
+    mpq_file_stream_s *second_stream = NULL;
     uint8_t *embedded = NULL;
     uint8_t *raw = NULL;
     uint8_t output[16];
@@ -97,10 +99,26 @@ test_custom_io(const char *path)
     TEST_CHECK(transferred == 10 && memcmp(output, "public API", 10) == 0);
     TEST_CHECK(libmpq__block_read(archive, number, 0, output, 10, &transferred) == 0);
     TEST_CHECK(transferred == 10 && memcmp(output, "public API", 10) == 0);
+    TEST_CHECK(libmpq__file_stream_open(archive, number, &stream) == 0);
+    TEST_CHECK(libmpq__file_stream_open_name(archive, "payload", &second_stream) == 0);
     TEST_CHECK(libmpq__archive_clone(&clone, archive) == 0);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     archive = NULL;
     TEST_CHECK(source.out_of_range == 0);
+    TEST_CHECK(libmpq__file_stream_read(stream, output, 3, &transferred) == 0);
+    TEST_CHECK(transferred == 3 && memcmp(output, "pub", 3) == 0);
+    TEST_CHECK(libmpq__file_stream_seek(stream, -1, LIBMPQ_SEEK_CUR) == 0);
+    TEST_CHECK(libmpq__file_stream_tell(stream, &transferred) == 0 && transferred == 2);
+    TEST_CHECK(libmpq__file_stream_read(stream, output, 16, &transferred) == 0);
+    TEST_CHECK(transferred == 8 && memcmp(output, "blic API", 8) == 0);
+    TEST_CHECK(libmpq__file_stream_read(stream, output, 1, &transferred) == 0 && transferred == 0);
+    TEST_CHECK(libmpq__file_stream_seek(stream, 1, LIBMPQ_SEEK_END) == LIBMPQ_ERROR_SEEK);
+    TEST_CHECK(libmpq__file_stream_close(stream) == 0);
+    stream = NULL;
+    TEST_CHECK(libmpq__file_stream_read(second_stream, output, 1, &transferred) == 0);
+    TEST_CHECK(transferred == 1 && output[0] == 'p');
+    TEST_CHECK(libmpq__file_stream_close(second_stream) == 0);
+    second_stream = NULL;
     TEST_CHECK(libmpq__file_number(clone, "payload", &number) == 0);
     TEST_CHECK(libmpq__archive_close(clone) == 0);
     clone = NULL;
@@ -288,8 +306,10 @@ main(void)
     const uint8_t source[] = "archive_add_path";
     uint8_t *repetitive;
     uint8_t output[sizeof(payload)];
+    uint8_t stream_output[17];
     mpq_archive_s *archive = NULL;
     mpq_archive_s *clone = NULL;
+    mpq_file_stream_s *file_stream = NULL;
     mpq_writer_s *writer = NULL;
     mpq_file_options_s compressed = { LIBMPQ_FILE_FLAG_COMPRESS, LIBMPQ_COMPRESSION_ZLIB,
                                       LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
@@ -378,6 +398,14 @@ main(void)
     );
 
     TEST_CHECK(libmpq__file_number(archive, "missing", &number) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__file_stream_open_name(archive, "empty", &file_stream) == 0);
+    TEST_CHECK(libmpq__file_stream_size(file_stream, &unpacked) == 0 && unpacked == 0);
+    TEST_CHECK(
+        libmpq__file_stream_read(file_stream, NULL, 0, &transferred) == 0 && transferred == 0
+    );
+    TEST_CHECK(libmpq__file_stream_seek(file_stream, 0, LIBMPQ_SEEK_END) == 0);
+    TEST_CHECK(libmpq__file_stream_close(file_stream) == 0);
+    file_stream = NULL;
     libmpq__file_hash("missing", &hash1, &hash2, &hash3);
     TEST_CHECK(
         libmpq__file_number_from_hash(archive, hash1, hash2, hash3, &number) == LIBMPQ_ERROR_EXIST
@@ -396,6 +424,45 @@ main(void)
         libmpq__file_flags(archive, number, &flag) == 0 && (flag & LIBMPQ_FILE_FLAG_COMPRESS) != 0
     );
     TEST_CHECK(libmpq__file_blocks(archive, number, &blocks) == 0 && blocks == 2);
+    TEST_CHECK(libmpq__file_stream_open_name(archive, "compressed", &file_stream) == 0);
+    for (i = 0; i < 5000;) {
+        libmpq__off_t requested = (libmpq__off_t)(5000 - i);
+
+        if (requested > (libmpq__off_t)sizeof(stream_output))
+            requested = (libmpq__off_t)sizeof(stream_output);
+        TEST_CHECK(
+            libmpq__file_stream_read(file_stream, stream_output, requested, &transferred) == 0
+        );
+        TEST_CHECK(transferred == requested);
+        {
+            size_t j;
+
+            for (j = 0; j < (size_t)transferred; ++j)
+                TEST_CHECK(stream_output[j] == (uint8_t)('A' + ((i + j) % 3)));
+        }
+        i += (size_t)transferred;
+    }
+    TEST_CHECK(libmpq__file_stream_read(file_stream, stream_output, 1, &transferred) == 0);
+    TEST_CHECK(transferred == 0);
+    TEST_CHECK(libmpq__file_stream_tell(file_stream, &offset) == 0 && offset == 5000);
+    TEST_CHECK(libmpq__file_stream_seek(file_stream, 0, 3) == LIBMPQ_ERROR_SEEK);
+    TEST_CHECK(libmpq__file_stream_tell(file_stream, &offset) == 0 && offset == 5000);
+    TEST_CHECK(libmpq__file_stream_seek(file_stream, 1, LIBMPQ_SEEK_END) == LIBMPQ_ERROR_SEEK);
+    TEST_CHECK(libmpq__file_stream_seek(file_stream, -1, LIBMPQ_SEEK_SET) == LIBMPQ_ERROR_SEEK);
+    TEST_CHECK(libmpq__file_stream_tell(file_stream, &offset) == 0 && offset == 5000);
+    TEST_CHECK(libmpq__file_stream_seek(file_stream, 4095, LIBMPQ_SEEK_SET) == 0);
+    TEST_CHECK(libmpq__file_stream_read(file_stream, stream_output, 2, &transferred) == 0);
+    TEST_CHECK(transferred == 2 && stream_output[0] == 'A' && stream_output[1] == 'B');
+    TEST_CHECK(libmpq__file_stream_seek(file_stream, 1, LIBMPQ_SEEK_CUR) == 0);
+    TEST_CHECK(libmpq__file_stream_tell(file_stream, &offset) == 0 && offset == 4098);
+    TEST_CHECK(libmpq__file_stream_seek(file_stream, -1, LIBMPQ_SEEK_END) == 0);
+    TEST_CHECK(libmpq__file_stream_tell(file_stream, &offset) == 0 && offset == 4999);
+    TEST_CHECK(
+        libmpq__file_stream_seek(file_stream, INT64_MAX, LIBMPQ_SEEK_CUR) == LIBMPQ_ERROR_SEEK
+    );
+    TEST_CHECK(libmpq__file_stream_tell(file_stream, &offset) == 0 && offset == 4999);
+    TEST_CHECK(libmpq__file_stream_close(file_stream) == 0);
+    file_stream = NULL;
     TEST_CHECK(libmpq__block_size_unpacked(archive, number, 0, &unpacked) == 0 && unpacked == 4096);
     TEST_CHECK(
         libmpq__block_size_unpacked(archive, number, blocks, &unpacked) == LIBMPQ_ERROR_EXIST

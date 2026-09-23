@@ -235,7 +235,10 @@ test_custom_io(const char *mpqe_path, libmpq__off_t archive_offset)
     memory_source_s source = { 0 };
     mpq_archive_s *archive = NULL;
     mpq_archive_s *clone = NULL;
+    mpq_file_stream_s *stream = NULL;
     uint8_t *data = NULL;
+    uint8_t byte;
+    libmpq__off_t transferred;
     size_t size = 0;
     uint32_t number;
 
@@ -249,9 +252,14 @@ test_custom_io(const char *mpqe_path, libmpq__off_t archive_offset)
         ) == 0
     );
     TEST_CHECK(libmpq__file_number(archive, "overview.txt", &number) == 0);
+    TEST_CHECK(libmpq__file_stream_open_name(archive, "overview.txt", &stream) == 0);
     TEST_CHECK(libmpq__archive_clone(&clone, archive) == 0);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     archive = NULL;
+    TEST_CHECK(libmpq__file_stream_read(stream, &byte, 1, &transferred) == 0);
+    TEST_CHECK(transferred == 1);
+    TEST_CHECK(libmpq__file_stream_close(stream) == 0);
+    stream = NULL;
     TEST_CHECK(libmpq__file_number(clone, "overview.txt", &number) == 0);
     TEST_CHECK(libmpq__archive_close(clone) == 0);
     clone = NULL;

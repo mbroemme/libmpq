@@ -25,6 +25,7 @@
 #include "mpq-stream.h"
 #include "test-mpq-helper.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <zlib.h>
@@ -282,9 +283,18 @@ test_sectors(
      * Block reads are intentionally partial and do not load a checksum table.
      * A changed packed final sector is rejected by the complete file read.
      */
-    if (corrupt == 0 && !absent && !encrypted) {
+    if (corrupt == 0 && !absent && !encrypted && !compressed_table) {
         read_failure_s failure;
         libmpq__off_t tail_size;
+        mpq_file_stream_s *stream = NULL;
+        FILE *file;
+        uint8_t checksum[sizeof(uint32_t)];
+
+        /* A valid stream verifies sector checksums before exposing its data. */
+        REQUIRE(libmpq__file_stream_open(archive, number, &stream) == 0);
+        REQUIRE(libmpq__file_stream_read(stream, output, sector_size, &transferred) == 0);
+        REQUIRE(transferred == sector_size && memcmp(output, plain, sector_size) == 0);
+        REQUIRE(libmpq__file_stream_close(stream) == 0);
 
         REQUIRE(libmpq__block_size_unpacked(archive, number, sectors - 1, &tail_size) == 0);
         failure.offset = (uint64_t)archive->archive_offset + archive->mpq_block[index].offset +
@@ -297,6 +307,33 @@ test_sectors(
         status = libmpq__file_read(archive, number, output, sizeof(output), &transferred);
         failure_restore(archive->stream, &failure);
         REQUIRE(status == LIBMPQ_ERROR_READ && failure.reads == 1);
+
+        /*
+         * Corrupt sector one's stored Adler-32 after the source archive opened.
+         * The packed payload remains valid, so the stream failure is unambiguously
+         * caused by automatic sector checksum verification.
+         */
+        file = fopen(path, "r+b");
+        REQUIRE(file != NULL);
+        REQUIRE(
+            fseek(
+                file,
+                (long)((uint64_t)archive->archive_offset + archive->mpq_block[index].offset +
+                       offsets[sectors] + sizeof(checksum)),
+                SEEK_SET
+            ) == 0
+        );
+        REQUIRE(fread(checksum, 1, sizeof(checksum), file) == sizeof(checksum));
+        checksum[0] ^= 1;
+        REQUIRE(fseek(file, -(long)sizeof(checksum), SEEK_CUR) == 0);
+        REQUIRE(fwrite(checksum, 1, sizeof(checksum), file) == sizeof(checksum));
+        REQUIRE(fclose(file) == 0);
+        REQUIRE(libmpq__file_stream_open(archive, number, &stream) == 0);
+        status = libmpq__file_stream_read(stream, output, sizeof(output), &transferred);
+        REQUIRE(status == LIBMPQ_ERROR_READ && transferred == sector_size);
+        REQUIRE(memcmp(output, plain, sector_size) == 0);
+        REQUIRE(libmpq__file_stream_tell(stream, &tail_size) == 0 && tail_size == sector_size);
+        REQUIRE(libmpq__file_stream_close(stream) == 0);
     }
 
     if (!absent && (corrupt & LIBMPQ_VERIFY_SECTOR_CRC)) {
@@ -598,6 +635,7 @@ test_single_compression(void)
                                     LIBMPQ_FILE_FLAG_ENCRYPTED,
                                 LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
     mpq_archive_s *archive = NULL;
+    mpq_file_stream_s *stream = NULL;
     uint8_t plain[512];
     uint8_t output[sizeof(plain)];
     uint32_t method = UINT32_MAX;
@@ -614,6 +652,14 @@ test_single_compression(void)
     archive = NULL;
     REQUIRE(status == 0);
     REQUIRE(libmpq__archive_open(&archive, path, 0) == 0);
+    status = libmpq__file_stream_open(archive, 0, &stream);
+    REQUIRE(status == LIBMPQ_ERROR_DECRYPT);
+    REQUIRE(stream == NULL);
+    REQUIRE(libmpq__file_stream_open_name(archive, "payload", &stream) == 0);
+    REQUIRE(libmpq__file_stream_read(stream, output, sizeof(output), &transferred) == 0);
+    REQUIRE(transferred == sizeof(plain) && memcmp(output, plain, sizeof(plain)) == 0);
+    REQUIRE(libmpq__file_stream_close(stream) == 0);
+    stream = NULL;
     REQUIRE(libmpq__block_compression(archive, 0, 0, &method) == LIBMPQ_ERROR_DECRYPT);
     REQUIRE(method == 0 && archive->mpq_file[0] == NULL);
     REQUIRE(libmpq__reader_offsets_acquire(archive, 0, "payload") == 0);
@@ -625,8 +671,48 @@ test_single_compression(void)
     REQUIRE(libmpq__reader_offsets_release(archive, 0) == 0);
     REQUIRE(archive->mpq_file[0] == NULL);
 cleanup:
+    if (stream != NULL)
+        (void)libmpq__file_stream_close(stream);
     if (archive != NULL)
         libmpq__archive_close(archive);
+    if (path[0] != 0)
+        remove(path);
+    return result;
+}
+
+/* A trailing encrypted partial word remains readable without a file seed. */
+static int
+test_short_encrypted_file_stream(void)
+{
+    mpq_archive_create_options_s options = { 1, 1, 512, 0, 0 };
+    mpq_file_options_s file = { LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED, 0, 0, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_file_stream_s *stream = NULL;
+    static const uint8_t plain[] = { 0x31, 0x32, 0x33 };
+    uint8_t output[sizeof(plain)];
+    libmpq__off_t packed_size;
+    libmpq__off_t transferred;
+    int result = 0;
+    char path[256] = { 0 };
+
+    REQUIRE(test_temp_path(path, sizeof(path), "short-encrypted-stream") == 0);
+    REQUIRE(libmpq__archive_create(&archive, path, &options) == 0);
+    REQUIRE(libmpq__archive_add_data(archive, "payload", plain, sizeof(plain), &file) == 0);
+    REQUIRE(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+    REQUIRE(libmpq__archive_open(&archive, path, 0) == 0);
+    REQUIRE(libmpq__block_size_packed(archive, 0, 0, &packed_size) == 0);
+    REQUIRE(packed_size == sizeof(plain));
+    REQUIRE(libmpq__file_stream_open(archive, 0, &stream) == 0);
+    REQUIRE(libmpq__file_stream_read(stream, output, sizeof(output), &transferred) == 0);
+    REQUIRE(transferred == sizeof(plain) && memcmp(output, plain, sizeof(plain)) == 0);
+    REQUIRE(libmpq__file_stream_close(stream) == 0);
+    stream = NULL;
+cleanup:
+    if (stream != NULL)
+        (void)libmpq__file_stream_close(stream);
+    if (archive != NULL)
+        (void)libmpq__archive_close(archive);
     if (path[0] != 0)
         remove(path);
     return result;
@@ -655,6 +741,7 @@ main(void)
 
     TEST_CHECK(check_block_error(NULL, 0, 0, LIBMPQ_ERROR_EXIST) == 0);
     TEST_CHECK(test_single_compression() == 0);
+    TEST_CHECK(test_short_encrypted_file_stream() == 0);
     TEST_CHECK(libmpq__block_compression(NULL, 0, 0, &value) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(value == 0);
     {

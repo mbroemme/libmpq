@@ -71,6 +71,9 @@ extern "C" {
  */
 typedef struct mpq_archive mpq_archive_s;
 
+/* Opaque incremental stream for one logical archive member. */
+typedef struct mpq_file_stream mpq_file_stream_s;
+
 /*
  * Opaque state for one file currently being written to an archive. A writer
  * is created by libmpq__writer_begin and owns the streaming state until finish
@@ -89,6 +92,10 @@ typedef struct mpq_writer mpq_writer_s;
  */
 #define LIBMPQ_ARCHIVE_VERSION_ONE 0
 #define LIBMPQ_ARCHIVE_VERSION_TWO 1
+
+#define LIBMPQ_SEEK_SET 0
+#define LIBMPQ_SEEK_CUR 1
+#define LIBMPQ_SEEK_END 2
 
 /*
  * Archive-creation flags accepted by mpq_archive_create_options_s.flags.
@@ -671,6 +678,45 @@ extern LIBMPQ_API int32_t libmpq__file_read(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint8_t *out_buf, libmpq__off_t out_size,
     libmpq__off_t *transferred
 );
+
+/*
+ * Open an independent stream for a logical archive member. The stream owns a
+ * private archive clone and remains usable after archive closes.
+ * Open by name when the plaintext filename is needed for encrypted members.
+ */
+extern LIBMPQ_API int32_t
+libmpq__file_stream_open(mpq_archive_s *archive, uint32_t file_number, mpq_file_stream_s **stream);
+
+/* Open an independent incremental stream after resolving a plaintext filename. */
+extern LIBMPQ_API int32_t libmpq__file_stream_open_name(
+    mpq_archive_s *archive, const char *filename, mpq_file_stream_s **stream
+);
+
+/*
+ * Read up to size logical bytes and advance the stream position. Reads at EOF
+ * succeed with zero transferred bytes. Available sector Adler-32 values are
+ * checked as sectors load; file-level CRC32/MD5 attributes are not implicit.
+ */
+extern LIBMPQ_API int32_t libmpq__file_stream_read(
+    mpq_file_stream_s *stream, uint8_t *buffer, libmpq__off_t size, libmpq__off_t *transferred
+);
+
+/*
+ * Set the logical position relative to LIBMPQ_SEEK_SET, LIBMPQ_SEEK_CUR, or
+ * LIBMPQ_SEEK_END. Only positions from zero through the logical size are valid.
+ */
+extern LIBMPQ_API int32_t
+libmpq__file_stream_seek(mpq_file_stream_s *stream, libmpq__off_t offset, int32_t origin);
+
+/* Return the current logical read position without performing archive I/O. */
+extern LIBMPQ_API int32_t
+libmpq__file_stream_tell(mpq_file_stream_s *stream, libmpq__off_t *position);
+
+/* Return the immutable logical unpacked member size without performing archive I/O. */
+extern LIBMPQ_API int32_t libmpq__file_stream_size(mpq_file_stream_s *stream, libmpq__off_t *size);
+
+/* Close and consume a logical stream, releasing its cache and private clone. */
+extern LIBMPQ_API int32_t libmpq__file_stream_close(mpq_file_stream_s *stream);
 
 /*
  * Return the logical unpacked size of one sector in an archive member.

@@ -1,0 +1,52 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__FILE_STREAM_SEEK 3 2026-09-24 "The MoPaQ archive library"
+.SH NAME
+libmpq__file_stream_seek \- seek in a logical MPQ member stream.
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.BI "int32_t libmpq__file_stream_seek(mpq_file_stream_s *" stream ", libmpq__off_t " offset ", int32_t " origin ");"
+.fi
+.SH DESCRIPTION
+Seek relative to \fBLIBMPQ_SEEK_SET\fP, \fBLIBMPQ_SEEK_CUR\fP, or
+\fBLIBMPQ_SEEK_END\fP. Valid positions range from zero through the logical
+file size. Invalid origins, overflow, positions before zero, and positions
+after EOF fail without changing the current position.
+.SH RETURN VALUE
+Returns \fBLIBMPQ_SUCCESS\fP on success.
+.SH ERRORS
+\fBLIBMPQ_ERROR_EXIST\fP reports a NULL stream. \fBLIBMPQ_ERROR_SEEK\fP
+reports an invalid origin or position.
+.SH SEE ALSO
+.BR libmpq__file_stream_tell (3),
+.BR libmpq__file_stream_size (3)
+.SH AUTHOR
+The libmpq project is maintained by Maik Broemme.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.
