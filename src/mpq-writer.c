@@ -768,6 +768,14 @@ libmpq__writer_archive_create(
     return writer_archive_create_handle(out, path, NULL, options);
 }
 
+int32_t
+libmpq__writer_archive_create_file(
+    mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options
+)
+{
+    return writer_archive_create_handle(out, path, file, options);
+}
+
 /*
  * Create raw and encrypted private files, then initialize the unchanged MPQ writer on raw output.
  */
