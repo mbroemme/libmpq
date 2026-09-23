@@ -152,6 +152,19 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
                               0x58, 0xaa, 0xd8, 0x3c, 0x8c, 0x14, 0x97, 0x8e]);
     assert(!attributes.patchBit);
     assert(reopened.file("compressed.txt").read() == repetitive);
+    auto streamArchive = Archive.open(path);
+    auto memberStream = streamArchive.openStream("hello.txt");
+    assert(memberStream.size() == payload.length);
+    ubyte[4] first;
+    assert(memberStream.read(first[]) == first.length);
+    assert(first[] == payload[0 .. first.length]);
+    memberStream.seek(-1, SeekOrigin.end);
+    assert(memberStream.tell() == payload.length - 1);
+    streamArchive.close();
+    ubyte[1] last;
+    assert(memberStream.read(last[]) == 1 && last[0] == payload[$ - 1]);
+    memberStream.close();
+    memberStream.close();
     if (archiveVersion == ARCHIVE_VERSION_TWO)
         assert(reopened.file("lzma.txt").read() == repetitive);
     assert(reopened.file("source.txt").read() == cast(const(ubyte)[])"path payload");
@@ -243,6 +256,15 @@ private void testFixture() {
     assert(archive.file("(attributes)").verify(VERIFY_FILE_MD5) ==
            VERIFY_FILE_MD5);
     assert(archive.fileNumber(Mpq.fileHash("(listfile)")) == listfile.no());
+    auto encryptedExpected = archive.file("encrypted-compress.txt").read();
+    auto encrypted = archive.openStream("encrypted-compress.txt");
+    ubyte[] encryptedActual = new ubyte[](encryptedExpected.length);
+    assert(encrypted.read(encryptedActual) == encryptedActual.length);
+    assert(encryptedActual == encryptedExpected);
+    encrypted.close();
+    auto numeric = archive.openStream(archive.fileNumber("overview.txt"));
+    assert(numeric.read(new ubyte[](64)) > 0);
+    numeric.close();
 }
 
 private void testMpqeFixture() {
@@ -255,6 +277,12 @@ private void testMpqeFixture() {
     assert(archive.version_() == 1);
     assert(archive.file("overview.txt").read().length > 0);
     assert(archive.file("overview.txt").verify() == 0);
+    auto stream = archive.openStream("overview.txt");
+    auto expected = archive.file("overview.txt").read();
+    archive.close();
+    ubyte[] output = new ubyte[](expected.length);
+    assert(stream.read(output) == output.length && output == expected);
+    stream.close();
 
     bool failed;
     try {

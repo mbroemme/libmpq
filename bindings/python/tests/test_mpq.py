@@ -51,6 +51,48 @@ def test_strong_signature():
         assert archive.verify(STRONG_PUBLIC_KEY, signature_type=mpq.SIGNATURE_STRONG) == 0
 
 
+def test_logical_stream_lifetime_seek_and_eof():
+    """Native streams remain valid after their originating archive closes."""
+    archive = mpq.Archive(FIXTURES / "mpq-v1-features.mpq")
+    stream = archive.open_stream("overview.txt")
+    expected = archive["overview.txt"].read()
+    assert stream.size == len(expected)
+    assert stream.read(2) == expected[:2]
+    assert stream.tell() == 2
+    stream.seek(-1, os.SEEK_CUR)
+    assert stream.read(3) == expected[1:4]
+    stream.seek(-1, os.SEEK_END)
+    assert stream.read() == expected[-1:]
+    assert stream.read() == b""
+    archive.close()
+    stream.seek(0)
+    assert stream.read() == expected
+    stream.close()
+    stream.close()
+    with pytest.raises(mpq.LibmpqStateError):
+        stream.tell()
+
+
+def test_logical_stream_encrypted_numeric_and_mpqe_lifetime():
+    """Name-derived keys, numeric opens, and MPQE clones cross the binding boundary."""
+    with mpq.Archive(FIXTURES / "mpq-v1-features.mpq") as archive:
+        expected = archive["encrypted-compress.txt"].read()
+        with archive.open_stream("encrypted-compress.txt") as stream:
+            assert stream.read() == expected
+        with archive.open_stream(archive["overview.txt"].number) as stream:
+            assert stream.read() == archive["overview.txt"].read()
+
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    archive = mpq.Archive.open_mpqe(FIXTURES / "mpq-v1-features.mpqe", code, 0)
+    expected = archive["overview.txt"].read()
+    stream = archive.open_stream("overview.txt")
+    archive.close()
+    try:
+        assert stream.read() == expected
+    finally:
+        stream.close()
+
+
 def test_weak_signature(tmp_path):
     """Test-only RSA key, round trip, and independent integer verification."""
     public = bytes.fromhex("a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001")

@@ -238,6 +238,54 @@ class LibmpqTest {
         }
     }
 
+    /** Logical streams retain their private native clone after archive close. */
+    @Test
+    void streamsFixtureIncrementally() throws Exception {
+        Path fixture = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures",
+                               "mpq-v1-features.mpq");
+        Archive archive = Archive.open(fixture);
+        byte[] expected = archive.readFile(archive.fileNumber("overview.txt"));
+        try (MpqStream stream = archive.openStream("overview.txt")) {
+            assertEquals(expected.length, stream.size());
+            byte[] first = new byte[2];
+            assertEquals(2, stream.read(first));
+            assertArrayEquals(java.util.Arrays.copyOf(expected, 2), first);
+            stream.seek(-1, Mpq.SEEK_CUR);
+            stream.seek(0, Mpq.SEEK_SET);
+            archive.close();
+            byte[] all = new byte[expected.length];
+            assertEquals(expected.length, stream.read(all));
+            assertArrayEquals(expected, all);
+            assertEquals(-1, stream.read(new byte[1]));
+        }
+    }
+
+    /** Name-derived encrypted keys, numeric opens, and MPQE lifetime reach streams. */
+    @Test
+    void streamsEncryptedAndMpqeFixtures() throws Exception {
+        Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
+        try (Archive archive = Archive.open(root.resolve("mpq-v1-features.mpq"))) {
+            byte[] expected = archive.readFile(archive.fileNumber("encrypted-compress.txt"));
+            try (MpqStream stream = archive.openStream("encrypted-compress.txt")) {
+                byte[] actual = new byte[expected.length];
+                assertEquals(expected.length, stream.read(actual));
+                assertArrayEquals(expected, actual);
+            }
+            try (MpqStream stream = archive.openStream(archive.fileNumber("overview.txt"))) {
+                assertTrue(stream.read(new byte[8]) > 0);
+            }
+        }
+        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
+        Archive archive = Archive.openMpqe(root.resolve("mpq-v1-features.mpqe"), code, 0);
+        byte[] expected = archive.readFile(archive.fileNumber("overview.txt"));
+        try (MpqStream stream = archive.openStream("overview.txt")) {
+            archive.close();
+            byte[] actual = new byte[expected.length];
+            assertEquals(expected.length, stream.read(actual));
+            assertArrayEquals(expected, actual);
+        }
+    }
+
     /** Exercises MPQE v1/v2 opening, credential validation, and independent cloning. */
     @Test
     void opensMpqeFixturesAndClones() throws Exception {

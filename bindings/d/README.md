@@ -20,6 +20,17 @@ module. The high-level `Archive`, `File`, and `MpqFileWriter` classes translate
 negative C status values into `MPQException` while retaining the low-level
 `extern(C)` declarations for applications that need direct ABI access.
 
+Archive.openStream(name) returns an incremental seekable MpqStream. It owns an
+independent native archive clone, so it remains usable after the originating
+archive closes. Its reads validate available sector Adler-32 checksums; use
+File.verify() when whole-file CRC32/MD5 verification is required.
+
+    auto stream = archive.openStream("data/file.bin");
+    ubyte[] buffer = new ubyte[4096];
+    auto count = stream.read(buffer);
+    stream.seek(0, SeekOrigin.set);
+    stream.close();
+
 Low-level calls use `libmpq__*` names. Use `Mpq.version_()` for the version
 string and the high-level wrappers for checked calls. Metadata is available
 through `packedSize()`, `unpackedSize()`, `fileCount()`, `blockCount()`, and

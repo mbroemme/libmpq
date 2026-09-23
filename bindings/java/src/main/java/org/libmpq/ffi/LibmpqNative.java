@@ -98,6 +98,13 @@ public final class LibmpqNative {
     private static final MethodHandle FILE_HASH;
     private static final MethodHandle FILE_NUMBER_FROM_HASH;
     private static final MethodHandle FILE_READ;
+    private static final MethodHandle STREAM_OPEN;
+    private static final MethodHandle STREAM_OPEN_NAME;
+    private static final MethodHandle STREAM_READ;
+    private static final MethodHandle STREAM_SEEK;
+    private static final MethodHandle STREAM_TELL;
+    private static final MethodHandle STREAM_SIZE;
+    private static final MethodHandle STREAM_CLOSE;
     private static final MethodHandle FILE_VERIFY;
     private static final MethodHandle ARCHIVE_SIGNATURES;
     private static final MethodHandle ARCHIVE_VERIFY;
@@ -193,6 +200,27 @@ public final class LibmpqNative {
                              FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT,
                                                    ValueLayout.ADDRESS, C_LONG,
                                                    ValueLayout.ADDRESS));
+        STREAM_OPEN = function(linker, lookup, "libmpq__stream_open",
+                               FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT,
+                                                     ValueLayout.ADDRESS));
+        STREAM_OPEN_NAME = function(linker, lookup, "libmpq__stream_open_name",
+                                    FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
+                                                          ValueLayout.ADDRESS,
+                                                          ValueLayout.ADDRESS));
+        STREAM_READ = function(linker, lookup, "libmpq__stream_read",
+                               FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
+                                                     ValueLayout.ADDRESS, C_LONG,
+                                                     ValueLayout.ADDRESS));
+        STREAM_SEEK = function(linker, lookup, "libmpq__stream_seek",
+                               FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_LONG, C_INT));
+        STREAM_TELL = function(linker, lookup, "libmpq__stream_tell",
+                               FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
+                                                     ValueLayout.ADDRESS));
+        STREAM_SIZE = function(linker, lookup, "libmpq__stream_size",
+                               FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
+                                                     ValueLayout.ADDRESS));
+        STREAM_CLOSE = function(linker, lookup, "libmpq__stream_close",
+                                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
         BLOCK_SIZE_PACKED = function(linker, lookup, "libmpq__block_size_packed",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, C_INT, ValueLayout.ADDRESS));
         BLOCK_COMPRESSION = function(linker, lookup, "libmpq__block_compression",
@@ -453,6 +481,26 @@ public final class LibmpqNative {
                                MemorySegment transferred) {
         return callInt(FILE_READ, archive, number, output, size, transferred);
     }
+    public static int streamOpen(MemorySegment archive, int number, MemorySegment output) {
+        return callInt(STREAM_OPEN, archive, number, output);
+    }
+    public static int streamOpenName(MemorySegment archive, MemorySegment name, MemorySegment output) {
+        return callInt(STREAM_OPEN_NAME, archive, name, output);
+    }
+    public static int streamRead(MemorySegment stream, MemorySegment output, long size,
+                                 MemorySegment transferred) {
+        return callInt(STREAM_READ, stream, output, size, transferred);
+    }
+    public static int streamSeek(MemorySegment stream, long offset, int origin) {
+        return callInt(STREAM_SEEK, stream, offset, origin);
+    }
+    public static int streamTell(MemorySegment stream, MemorySegment position) {
+        return callInt(STREAM_TELL, stream, position);
+    }
+    public static int streamSize(MemorySegment stream, MemorySegment size) {
+        return callInt(STREAM_SIZE, stream, size);
+    }
+    public static int streamClose(MemorySegment stream) { return callInt(STREAM_CLOSE, stream); }
     /** Queries one sector's stored size, excluding offset/checksum tables. */
     public static int blockSizePacked(MemorySegment archive, int number, int block, MemorySegment output) {
         return callInt(BLOCK_SIZE_PACKED, archive, number, block, output);

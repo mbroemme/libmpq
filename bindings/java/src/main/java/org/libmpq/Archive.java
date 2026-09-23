@@ -417,6 +417,26 @@ public final class Archive implements AutoCloseable {
         }
     }
 
+    /** Open an independent incremental logical-member stream by file number. */
+    public MpqStream openStream(int number) throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
+            Support.check(LibmpqNative.streamOpen(handle, number, output));
+            return new MpqStream(LibmpqNative.getAddress(output));
+        }
+    }
+
+    /** Open an independent incremental logical-member stream by plaintext filename. */
+    public MpqStream openStream(String name) throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
+            Support.check(LibmpqNative.streamOpenName(handle, Support.text(arena, name), output));
+            return new MpqStream(LibmpqNative.getAddress(output));
+        }
+    }
+
     /** Returns stored sector bytes, excluding offset/checksum tables. */
     public long blockSizePacked(int number, int block) throws LibmpqException {
         checkOpen();

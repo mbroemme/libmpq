@@ -24,6 +24,15 @@ Use `packed_size` and `unpacked_size` for archive/file sizes and `file.read()`
 for payload bytes. Decode text explicitly, for example
 `file.read().decode("utf-8")`.
 
+Use archive.open_stream(name) for incremental seekable member access. Streams
+retain an independent native archive clone, so they remain usable after the
+originating archive closes. Stream reads validate available sector Adler-32
+checksums, but do not implicitly verify whole-file CRC32/MD5 attributes.
+
+    with archive.open_stream("data/file.bin") as stream:
+        chunk = stream.read(4096)
+        stream.seek(0)
+
 Creation defaults to `COMPRESSION_POLICY_STANDARD`. Pass
 `flags=mpq.ARCHIVE_CREATE_COMPRESSION_EXTENDED` to `Writer` or
 `Writer.create_mpqe` for additional, potentially less interoperable methods.

@@ -259,6 +259,13 @@ _configure("libmpq__file_number", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ct
 _configure("libmpq__file_hash", None, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_number_from_hash", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_read", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR, _OFF_T, ctypes.POINTER(_OFF_T))
+_configure("libmpq__stream_open", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_VOID_PTR))
+_configure("libmpq__stream_open_name", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.POINTER(_VOID_PTR))
+_configure("libmpq__stream_read", ctypes.c_int32, _VOID_PTR, _BYTE_PTR, _OFF_T, ctypes.POINTER(_OFF_T))
+_configure("libmpq__stream_seek", ctypes.c_int32, _VOID_PTR, _OFF_T, ctypes.c_int32)
+_configure("libmpq__stream_tell", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(_OFF_T))
+_configure("libmpq__stream_size", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(_OFF_T))
+_configure("libmpq__stream_close", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__block_size_unpacked", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(_OFF_T))
 _configure("libmpq__block_size_packed", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(_OFF_T))
 _configure("libmpq__block_compression", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
@@ -619,6 +626,73 @@ class Reader:
             pass
 
 
+class MpqStream:
+    """Closeable incremental decoded stream backed by a private native clone."""
+
+    def __init__(self, native):
+        self._stream = native
+
+    def _ensure_open(self):
+        if not self._stream:
+            raise LibmpqStateError(ERROR_NOT_INITIALIZED, "stream is closed")
+
+    @property
+    def size(self):
+        """Return the immutable logical member size."""
+        self._ensure_open()
+        return _read_value(libmpq.libmpq__stream_size, _OFF_T, self._stream)
+
+    def tell(self):
+        """Return the current logical stream position."""
+        self._ensure_open()
+        return _read_value(libmpq.libmpq__stream_tell, _OFF_T, self._stream)
+
+    def seek(self, offset, whence=os.SEEK_SET):
+        """Seek within the logical member; positions outside it are rejected."""
+        self._ensure_open()
+        if whence not in (os.SEEK_SET, os.SEEK_CUR, os.SEEK_END):
+            raise ValueError("invalid whence")
+        libmpq.libmpq__stream_seek(self._stream, int(offset), int(whence))
+        return self.tell()
+
+    def read(self, size=-1):
+        """Read decoded bytes; an omitted or negative size reads through EOF."""
+        self._ensure_open()
+        if size is None:
+            size = -1
+        if not isinstance(size, int):
+            raise TypeError("size must be an integer")
+        if size < 0:
+            size = self.size - self.tell()
+        if size == 0:
+            return b""
+        buffer = _native_buffer(size)
+        transferred = _OFF_T()
+        libmpq.libmpq__stream_read(
+            self._stream, buffer, size, ctypes.byref(transferred)
+        )
+        return bytes(buffer[:transferred.value])
+
+    def close(self):
+        """Consume the native handle once; repeated Python closes are harmless."""
+        if self._stream:
+            stream, self._stream = self._stream, _VOID_PTR()
+            libmpq.libmpq__stream_close(stream)
+
+    def __enter__(self):
+        self._ensure_open()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
 class File:
     """Metadata and complete/block access wrapper for one MPQ entry."""
 
@@ -782,6 +856,20 @@ class Archive:
         """Return signature type bits; malformed internal files raise."""
         self._ensure_open()
         return _read_value(libmpq.libmpq__archive_signatures, ctypes.c_uint32, self._mpq)
+
+    def open_stream(self, member):
+        """Open an independent incremental member stream by name or number."""
+        self._ensure_open()
+        stream = _VOID_PTR()
+        if isinstance(member, int):
+            if not 0 <= member <= 0xffffffff:
+                raise IndexError("file number is out of range")
+            libmpq.libmpq__stream_open(self._mpq, member, ctypes.byref(stream))
+        else:
+            libmpq.libmpq__stream_open_name(
+                self._mpq, _as_bytes(member), ctypes.byref(stream)
+            )
+        return MpqStream(stream)
 
     def verify(self, public_key, signature_type=SIGNATURE_WEAK):
         """Return mismatch bits using a weak 128-byte or strong 512-byte public key."""

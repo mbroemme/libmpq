@@ -224,6 +224,23 @@ class Archive {
         return file(cast(uint) number);
     }
 
+    /** Open an independent seekable logical-member stream by file number. */
+    MpqStream openStream(uint number) {
+        ensureOpen();
+        mpq_stream_s* result;
+        checkStatus(libmpq__stream_open(handle, number, &result), "libmpq__stream_open");
+        return new MpqStream(result);
+    }
+
+    /** Open an independent seekable logical-member stream by plaintext name. */
+    MpqStream openStream(string name) {
+        ensureOpen();
+        mpq_stream_s* result;
+        checkStatus(libmpq__stream_open_name(handle, toStringz(name), &result),
+                    "libmpq__stream_open_name");
+        return new MpqStream(result);
+    }
+
     /** Add a complete in-memory file to a writer archive. */
     void add(string name, const(ubyte)[] data, FileOptions options = FileOptions.raw()) {
         ensureOpen(); auto nativeOptions = options.nativeOptions();
@@ -264,6 +281,80 @@ class Archive {
     private void ensureOpen() {
         if (closed || handle is null)
             throw new MPQException("Archive", ERROR_NOT_INITIALIZED);
+    }
+}
+
+/** Seek origins accepted by MpqStream.seek. */
+enum SeekOrigin : int {
+    set = LIBMPQ_SEEK_SET,
+    current = LIBMPQ_SEEK_CUR,
+    end = LIBMPQ_SEEK_END
+}
+
+/**
+ * Incremental, seekable decoded member stream.
+ *
+ * The native stream owns a private archive clone, so it remains usable after
+ * its originating Archive is closed.
+ */
+class MpqStream {
+    private mpq_stream_s* handle;
+    private bool closed;
+
+    private this(mpq_stream_s* handle) { this.handle = handle; }
+
+    /** Read up to the supplied buffer length and return the copied byte count. */
+    size_t read(ubyte[] buffer) {
+        ensureOpen();
+        off_t transferred;
+        auto pointer = buffer.length == 0 ? null : buffer.ptr;
+        checkStatus(libmpq__stream_read(handle, pointer, cast(off_t) buffer.length, &transferred),
+                    "libmpq__stream_read");
+        if (transferred < 0 || cast(ulong) transferred > buffer.length)
+            throw new MPQException("MpqStream.read", ERROR_SIZE);
+        return cast(size_t) transferred;
+    }
+
+    /** Seek to a position from the selected origin. */
+    void seek(off_t offset, SeekOrigin origin = SeekOrigin.set) {
+        ensureOpen();
+        checkStatus(libmpq__stream_seek(handle, offset, cast(int) origin),
+                    "libmpq__stream_seek");
+    }
+
+    /** Return the current logical position without archive I/O. */
+    off_t tell() {
+        ensureOpen();
+        off_t result;
+        checkStatus(libmpq__stream_tell(handle, &result), "libmpq__stream_tell");
+        return result;
+    }
+
+    /** Return the immutable unpacked member size without archive I/O. */
+    off_t size() {
+        ensureOpen();
+        off_t result;
+        checkStatus(libmpq__stream_size(handle, &result), "libmpq__stream_size");
+        return result;
+    }
+
+    /** Consume the native stream; repeated calls are harmless. */
+    void close() {
+        if (closed) return;
+        auto current = handle;
+        handle = null;
+        closed = true;
+        checkStatus(libmpq__stream_close(current), "libmpq__stream_close");
+    }
+
+    /** Best-effort cleanup because D destructors cannot report errors. */
+    ~this() {
+        if (!closed && handle !is null) libmpq__stream_close(handle);
+    }
+
+    private void ensureOpen() {
+        if (closed || handle is null)
+            throw new MPQException("MpqStream", ERROR_NOT_INITIALIZED);
     }
 }
 

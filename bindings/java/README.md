@@ -78,6 +78,16 @@ cannot modify an existing MPQE archive and crash cleanup is best effort. All
 negative libmpq return codes are reported as `LibmpqException` values
 containing the original code and diagnostic text.
 
+Use Archive.openStream(name) for incremental seekable member access. The stream
+owns an independent native archive clone and remains usable after the
+originating archive closes. Stream reads validate available sector Adler-32
+checksums but do not implicitly verify whole-file CRC32/MD5 values.
+
+    try (MpqStream stream = archive.openStream("data/file.bin")) {
+        byte[] buffer = new byte[4096];
+        int count = stream.read(buffer);
+    }
+
 ## Optional attributes
 
 Set `Mpq.FILE_FLAG_SECTOR_CRC` in file options alongside COMPRESS or IMPLODE

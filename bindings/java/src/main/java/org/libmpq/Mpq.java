@@ -19,6 +19,12 @@ import org.libmpq.ffi.LibmpqNative;
  * private codec or archive-layout implementation details.
  */
 public final class Mpq {
+    /** Seek from the logical member start. */
+    public static final int SEEK_SET = 0;
+    /** Seek from the current logical member position. */
+    public static final int SEEK_CUR = 1;
+    /** Seek from the logical member end. */
+    public static final int SEEK_END = 2;
     /** Attributes CRC32 array presence. */
     public static final int ATTRIBUTE_CRC32 = 0x1;
     /** Attributes FILETIME array presence. */

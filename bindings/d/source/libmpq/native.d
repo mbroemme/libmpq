@@ -99,6 +99,13 @@ extern(C) struct mpq_archive_s;
 /** Opaque native streaming-writer state owned by libmpq. */
 extern(C) struct mpq_writer_s;
 
+/** Opaque native logical-member stream state owned by libmpq. */
+extern(C) struct mpq_stream_s;
+
+enum LIBMPQ_SEEK_SET = 0;
+enum LIBMPQ_SEEK_CUR = 1;
+enum LIBMPQ_SEEK_END = 2;
+
 /** Native layout passed to libmpq__archive_create. */
 extern(C) struct mpq_archive_create_options_s {
     uint version_;
@@ -308,6 +315,16 @@ extern(C) {
     /** Read one complete unpacked file into the caller's buffer. */
     int libmpq__file_read(mpq_archive_s* archive, uint number, ubyte* buffer,
                           off_t size, off_t* transferred);
+
+    int libmpq__stream_open(mpq_archive_s* archive, uint number, mpq_stream_s** stream);
+    int libmpq__stream_open_name(mpq_archive_s* archive, const(char)* filename,
+                                 mpq_stream_s** stream);
+    int libmpq__stream_read(mpq_stream_s* stream, ubyte* buffer, off_t size,
+                            off_t* transferred);
+    int libmpq__stream_seek(mpq_stream_s* stream, off_t offset, int origin);
+    int libmpq__stream_tell(mpq_stream_s* stream, off_t* position);
+    int libmpq__stream_size(mpq_stream_s* stream, off_t* size);
+    int libmpq__stream_close(mpq_stream_s* stream);
 
     /** Query one block's stored size, excluding offset/checksum tables. */
     int libmpq__block_size_packed(mpq_archive_s* archive, uint number,
