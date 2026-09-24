@@ -1,5 +1,23 @@
 # libmpq Java bindings
 
+Updates are separate transactions. Closing without commit aborts staged edits:
+
+```java
+try (MpqUpdate update = MpqUpdate.begin(Path.of("archive.mpq"))) {
+    update.replaceData("foo.txt", "new contents".getBytes(), null);
+    update.rename("old.txt", "new.txt");
+    update.commit();
+}
+```
+
+`replacePath`, `remove`, and explicit `abort` are also available. Commit and
+abort consume the handle even on error. Java uses `null` for no replacement
+options: it passes a native NULL pointer, so libmpq uses defaults and
+preserves the member's locale/platform identity. Pass explicit `FileOptions`
+for custom storage, including distinct first/later compression masks; their
+locale/platform must match the existing member. MPQE and embedded archive
+modification remain unsupported.
+
 Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
 Strong verification uses a 512-byte raw public key: a 256-byte unsigned
 big-endian modulus followed by a 256-byte zero-padded unsigned big-endian

@@ -33,6 +33,136 @@ import org.libmpq.ffi.LibmpqNative;
  * creation or fixture reading rather than mocking the FFM calls.
  */
 class LibmpqTest {
+    @Test
+    void localizedUpdateDefaults(@TempDir Path directory) throws Exception {
+        Path path = directory.resolve("localized.mpq");
+        Path source = directory.resolve("source.bin");
+        Files.write(source, "from path".getBytes(StandardCharsets.UTF_8));
+        FileOptions identity = new FileOptions(0, 0, 0, 0x409, 1);
+        ArchiveCreateOptions creation = new ArchiveCreateOptions(
+                Mpq.ARCHIVE_VERSION_ONE, 8, 0, 0, 0);
+        try (Archive archive = Archive.create(path, creation)) {
+            archive.add("localized", "original".getBytes(StandardCharsets.UTF_8), identity);
+        }
+
+        try (MpqUpdate update = MpqUpdate.begin(path)) {
+            update.replaceData("localized", "new data".getBytes(StandardCharsets.UTF_8), null);
+            update.commit();
+        }
+        try (Archive archive = Archive.open(path)) {
+            assertArrayEquals("new data".getBytes(StandardCharsets.UTF_8),
+                              archive.readFile(archive.fileNumber("localized")));
+        }
+
+        try (MpqUpdate update = MpqUpdate.begin(path)) {
+            LibmpqException dataError = assertThrows(LibmpqException.class,
+                () -> update.replaceData("localized", "wrong".getBytes(StandardCharsets.UTF_8),
+                                         FileOptions.raw()));
+            assertEquals(Mpq.ERROR_FORMAT, dataError.code());
+            LibmpqException pathError = assertThrows(LibmpqException.class,
+                () -> update.replacePath("localized", source, FileOptions.raw()));
+            assertEquals(Mpq.ERROR_FORMAT, pathError.code());
+            update.replaceData("localized", "matching".getBytes(StandardCharsets.UTF_8), identity);
+            update.commit();
+        }
+
+        try (MpqUpdate update = MpqUpdate.begin(path)) {
+            update.replacePath("localized", source, null);
+            update.commit();
+        }
+        try (Archive archive = Archive.open(path)) {
+            assertArrayEquals("from path".getBytes(StandardCharsets.UTF_8),
+                              archive.readFile(archive.fileNumber("localized")));
+        }
+        try (MpqUpdate update = MpqUpdate.begin(path)) {
+            update.replacePath("localized", source, identity);
+            update.abort();
+        }
+    }
+
+    @Test
+    void transactionalUpdate(@TempDir Path directory) throws Exception {
+        Path path = directory.resolve("update.mpq");
+        Path source = directory.resolve("source.bin");
+        Files.write(source, "from path".getBytes(StandardCharsets.UTF_8));
+        try (Archive archive = Archive.create(path, ArchiveCreateOptions.v1())) {
+            archive.add("data", "original".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+            archive.add("path", "old path".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+            archive.add("remove", "remove me".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+            archive.add("rename", "rename me".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+            archive.add("secret", "encrypted payload".getBytes(StandardCharsets.UTF_8),
+                        FileOptions.raw().encrypted());
+        }
+        byte[] replacement = new byte[9000];
+        java.util.Arrays.fill(replacement, (byte) 'R');
+        try (MpqUpdate update = MpqUpdate.begin(path)) {
+            update.replaceData("data", replacement,
+                    FileOptions.compressed(Mpq.COMPRESSION_ZLIB, Mpq.COMPRESSION_BZIP2));
+            update.replacePath("path", source, FileOptions.raw().encrypted());
+            update.remove("remove");
+            update.rename("rename", "renamed");
+            update.rename("secret", "secret-new");
+            try (Archive original = Archive.open(path)) {
+                assertArrayEquals("original".getBytes(StandardCharsets.UTF_8),
+                                  original.readFile(original.fileNumber("data")));
+            }
+            update.commit();
+            assertThrows(IllegalStateException.class, () -> update.remove("data"));
+        }
+        try (Archive archive = Archive.open(path)) {
+            assertArrayEquals(replacement,
+                              archive.readFile(archive.fileNumber("data")));
+            assertEquals(Mpq.COMPRESSION_ZLIB,
+                         archive.blockCompression(archive.fileNumber("data"), 0));
+            assertEquals(Mpq.COMPRESSION_BZIP2,
+                         archive.blockCompression(archive.fileNumber("data"), 1));
+            try (MpqStream stream = archive.openStream("path")) {
+                byte[] pathBytes = new byte["from path".length()];
+                assertEquals(pathBytes.length, stream.read(pathBytes));
+                assertArrayEquals("from path".getBytes(StandardCharsets.UTF_8), pathBytes);
+            }
+            assertArrayEquals("rename me".getBytes(StandardCharsets.UTF_8),
+                              archive.readFile(archive.fileNumber("renamed")));
+            assertThrows(LibmpqException.class, () -> archive.fileNumber("remove"));
+            try (MpqStream stream = archive.openStream("secret-new")) {
+                byte[] secret = new byte[17];
+                assertEquals(secret.length, stream.read(secret));
+                assertArrayEquals("encrypted payload".getBytes(StandardCharsets.UTF_8), secret);
+            }
+        }
+        try (MpqUpdate update = MpqUpdate.begin(path)) {
+            update.replaceData("data", "rollback".getBytes(StandardCharsets.UTF_8), null);
+            update.remove("path");
+            update.rename("renamed", "rollback-name");
+        }
+        try (Archive archive = Archive.open(path)) {
+            assertArrayEquals(replacement,
+                              archive.readFile(archive.fileNumber("data")));
+            try (MpqStream stream = archive.openStream("path")) {
+                byte[] pathBytes = new byte["from path".length()];
+                assertEquals(pathBytes.length, stream.read(pathBytes));
+                assertArrayEquals("from path".getBytes(StandardCharsets.UTF_8), pathBytes);
+            }
+            assertArrayEquals("rename me".getBytes(StandardCharsets.UTF_8),
+                              archive.readFile(archive.fileNumber("renamed")));
+        }
+        try (MpqUpdate update = MpqUpdate.begin(path)) {
+            assertThrows(LibmpqException.class, () -> update.remove("missing"));
+            FileOptions mismatch = new FileOptions(0, 0, 0, 1, 0);
+            assertThrows(LibmpqException.class, () -> update.replaceData("data",
+                "invalid".getBytes(StandardCharsets.UTF_8), mismatch));
+            update.abort();
+            assertThrows(IllegalStateException.class, update::commit);
+        }
+        try (MpqUpdate update = MpqUpdate.begin(path)) {
+            Path external = directory.resolve("external.mpq");
+            Files.copy(path, external);
+            Files.move(external, path, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            assertThrows(LibmpqException.class, update::commit);
+            assertThrows(IllegalStateException.class, update::abort);
+        }
+    }
+
     /** Skips integration tests when no native library path was configured. */
     @BeforeAll
     static void requireNativeLibrary() {

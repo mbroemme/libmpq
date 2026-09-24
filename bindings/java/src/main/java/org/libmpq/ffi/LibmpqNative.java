@@ -86,6 +86,13 @@ public final class LibmpqNative {
     private static final MethodHandle ARCHIVE_ADD_PATH;
     private static final MethodHandle ARCHIVE_CLONE;
     private static final MethodHandle ARCHIVE_CLOSE;
+    private static final MethodHandle UPDATE_BEGIN;
+    private static final MethodHandle UPDATE_REPLACE_DATA;
+    private static final MethodHandle UPDATE_REPLACE_PATH;
+    private static final MethodHandle UPDATE_REMOVE;
+    private static final MethodHandle UPDATE_RENAME;
+    private static final MethodHandle UPDATE_COMMIT;
+    private static final MethodHandle UPDATE_ABORT;
     private static final MethodHandle ARCHIVE_SIZE_PACKED;
     private static final MethodHandle ARCHIVE_SIZE_UNPACKED;
     private static final MethodHandle ARCHIVE_OFFSET;
@@ -187,6 +194,23 @@ public final class LibmpqNative {
                                                        ValueLayout.ADDRESS));
         ARCHIVE_CLOSE = function(linker, lookup, "libmpq__archive_close",
                                  FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
+        UPDATE_BEGIN = function(linker, lookup, "libmpq__update_begin",
+                                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+        UPDATE_REPLACE_DATA = function(linker, lookup, "libmpq__update_replace_data",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS));
+        UPDATE_REPLACE_PATH = function(linker, lookup, "libmpq__update_replace_path",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+        UPDATE_REMOVE = function(linker, lookup, "libmpq__update_remove",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+        UPDATE_RENAME = function(linker, lookup, "libmpq__update_rename",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS));
+        UPDATE_COMMIT = function(linker, lookup, "libmpq__update_commit",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
+        UPDATE_ABORT = function(linker, lookup, "libmpq__update_abort",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
         ARCHIVE_SIZE_PACKED = metadata(linker, lookup, "libmpq__archive_size_packed");
         ARCHIVE_SIZE_UNPACKED = metadata(linker, lookup, "libmpq__archive_size_unpacked");
         ARCHIVE_OFFSET = metadata(linker, lookup, "libmpq__archive_offset");
@@ -464,6 +488,26 @@ public final class LibmpqNative {
     }
     /** Closes one native archive handle. */
     public static int archiveClose(MemorySegment archive) { return callInt(ARCHIVE_CLOSE, archive); }
+    public static int updateBegin(MemorySegment out, MemorySegment path) {
+        return callInt(UPDATE_BEGIN, out, path);
+    }
+    public static int updateReplaceData(MemorySegment update, MemorySegment name,
+                                        MemorySegment data, long size, MemorySegment options) {
+        return callInt(UPDATE_REPLACE_DATA, update, name, data, size, options);
+    }
+    public static int updateReplacePath(MemorySegment update, MemorySegment name,
+                                        MemorySegment path, MemorySegment options) {
+        return callInt(UPDATE_REPLACE_PATH, update, name, path, options);
+    }
+    public static int updateRemove(MemorySegment update, MemorySegment name) {
+        return callInt(UPDATE_REMOVE, update, name);
+    }
+    public static int updateRename(MemorySegment update, MemorySegment oldName,
+                                   MemorySegment newName) {
+        return callInt(UPDATE_RENAME, update, oldName, newName);
+    }
+    public static int updateCommit(MemorySegment update) { return callInt(UPDATE_COMMIT, update); }
+    public static int updateAbort(MemorySegment update) { return callInt(UPDATE_ABORT, update); }
     /** Queries either packed or unpacked archive size through an int64 output. */
     public static int archiveLong(MemorySegment archive, MemorySegment output, boolean unpacked) {
         return callInt(unpacked ? ARCHIVE_SIZE_UNPACKED : ARCHIVE_SIZE_PACKED, archive, output);
