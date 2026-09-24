@@ -36,6 +36,14 @@
 
 static const uint8_t auth_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
 
+#define UPDATE_CHECK(condition)                                                                    \
+    do {                                                                                           \
+        if (!(condition)) {                                                                        \
+            test_failure(__FILE__, __LINE__, #condition);                                          \
+            goto fail;                                                                             \
+        }                                                                                          \
+    } while (0)
+
 static int
 check_named(mpq_archive_s *archive, const char *name, const uint8_t *expected, size_t size);
 
@@ -222,13 +230,30 @@ test_public_replace(const char *source)
     mpq_archive_s *archive = NULL;
     uint8_t bytes[sizeof(changed) - 1u];
     uint32_t number;
+    char *previous_path;
+    FILE *orphan;
+    int32_t replace_result;
+    int path_changed;
+    int old_removed;
 
     TEST_CHECK(copy_file(source, "update-public.mpq") == 0);
     TEST_CHECK(libmpq__update_begin(&update, "update-public.mpq") == LIBMPQ_SUCCESS);
-    TEST_CHECK(
-        libmpq__update_replace_data(update, "payload", changed, sizeof(changed) - 1u, NULL) ==
-        LIBMPQ_SUCCESS
-    );
+    previous_path = libmpq__string_duplicate(libmpq__update_path(update));
+    TEST_CHECK(previous_path != NULL);
+    replace_result =
+        libmpq__update_replace_data(update, "payload", changed, sizeof(changed) - 1u, NULL);
+    path_changed =
+        replace_result == LIBMPQ_SUCCESS && strcmp(previous_path, libmpq__update_path(update)) != 0;
+    orphan = fopen(previous_path, "rb");
+    old_removed = orphan == NULL;
+    if (orphan != NULL)
+        (void)fclose(orphan);
+    free(previous_path);
+    if (replace_result != LIBMPQ_SUCCESS)
+        fprintf(stderr, "update replacement returned %d\n", replace_result);
+    TEST_CHECK(replace_result == LIBMPQ_SUCCESS);
+    TEST_CHECK(path_changed);
+    TEST_CHECK(old_removed);
     TEST_CHECK(libmpq__archive_open(&archive, "update-public.mpq", 0) == LIBMPQ_SUCCESS);
     TEST_CHECK(libmpq__file_number(archive, "payload", &number) == LIBMPQ_SUCCESS);
     {
@@ -505,6 +530,8 @@ check_named(mpq_archive_s *archive, const char *name, const uint8_t *expected, s
     mpq_stream_s *stream = NULL;
     libmpq__off_t transferred = 0;
     int32_t result;
+    int32_t close_result = LIBMPQ_SUCCESS;
+    int matches;
 
     TEST_CHECK(buffer != NULL);
     result = libmpq__file_number(archive, name, &number);
@@ -512,10 +539,13 @@ check_named(mpq_archive_s *archive, const char *name, const uint8_t *expected, s
         result = libmpq__stream_open_name(archive, name, &stream);
     if (result == LIBMPQ_SUCCESS)
         result = libmpq__stream_read(stream, buffer, (libmpq__off_t)size, &transferred);
-    TEST_CHECK(result == LIBMPQ_SUCCESS && transferred == (libmpq__off_t)size);
-    TEST_CHECK(memcmp(buffer, expected, size) == 0);
-    TEST_CHECK(libmpq__stream_close(stream) == LIBMPQ_SUCCESS);
+    matches = result == LIBMPQ_SUCCESS && transferred == (libmpq__off_t)size &&
+              memcmp(buffer, expected, size) == 0;
+    if (stream != NULL)
+        close_result = libmpq__stream_close(stream);
     free(buffer);
+    TEST_CHECK(matches);
+    TEST_CHECK(close_result == LIBMPQ_SUCCESS);
     return 0;
 }
 
@@ -672,52 +702,67 @@ test_public_signatures(void)
     uint64_t packed_offset;
     uint32_t signatures = UINT32_MAX;
     mpq_file_attributes_s attributes;
+    int32_t result;
 
-    TEST_CHECK(copy_file(FIXTURE_DIR "/mpq-v1-features.mpq", "update-signatures.mpq") == 0);
-    TEST_CHECK(libmpq__archive_open(&archive, "update-signatures.mpq", 0) == LIBMPQ_SUCCESS);
-    TEST_CHECK(libmpq__file_number(archive, "wave-mono.wav", &wave_number) == LIBMPQ_SUCCESS);
+    UPDATE_CHECK(copy_file(FIXTURE_DIR "/mpq-v1-features.mpq", "update-signatures.mpq") == 0);
+    UPDATE_CHECK(libmpq__archive_open(&archive, "update-signatures.mpq", 0) == LIBMPQ_SUCCESS);
+    UPDATE_CHECK(libmpq__file_number(archive, "wave-mono.wav", &wave_number) == LIBMPQ_SUCCESS);
     wave_block = archive->mpq_map[wave_number].block_table_indices;
     packed_size = archive->mpq_block[wave_block].packed_size;
     packed_offset = archive->mpq_block[wave_block].offset;
     packed = malloc(packed_size);
     after = malloc(packed_size);
-    TEST_CHECK(packed != NULL && after != NULL);
-    TEST_CHECK(
+    UPDATE_CHECK(packed != NULL && after != NULL);
+    UPDATE_CHECK(
         libmpq__source_read_at(archive->source, packed_offset, packed, packed_size) ==
         LIBMPQ_SUCCESS
     );
-    TEST_CHECK(libmpq__archive_close(archive) == LIBMPQ_SUCCESS);
+    result = libmpq__archive_close(archive);
     archive = NULL;
-    TEST_CHECK(libmpq__update_begin(&update, "update-signatures.mpq") == LIBMPQ_SUCCESS);
-    TEST_CHECK(
+    UPDATE_CHECK(result == LIBMPQ_SUCCESS);
+    UPDATE_CHECK(libmpq__update_begin(&update, "update-signatures.mpq") == LIBMPQ_SUCCESS);
+    UPDATE_CHECK(
         libmpq__update_replace_data(
             update, "overview.txt", replacement, sizeof(replacement) - 1u, NULL
         ) == LIBMPQ_SUCCESS
     );
-    TEST_CHECK(libmpq__update_commit(update) == LIBMPQ_SUCCESS);
-    TEST_CHECK(libmpq__archive_open(&archive, "update-signatures.mpq", 0) == LIBMPQ_SUCCESS);
-    TEST_CHECK(check_named(archive, "overview.txt", replacement, sizeof(replacement) - 1u) == 0);
+    result = libmpq__update_commit(update);
+    update = NULL;
+    UPDATE_CHECK(result == LIBMPQ_SUCCESS);
+    UPDATE_CHECK(libmpq__archive_open(&archive, "update-signatures.mpq", 0) == LIBMPQ_SUCCESS);
+    UPDATE_CHECK(check_named(archive, "overview.txt", replacement, sizeof(replacement) - 1u) == 0);
     {
         uint32_t overview;
 
-        TEST_CHECK(libmpq__file_number(archive, "overview.txt", &overview) == LIBMPQ_SUCCESS);
-        TEST_CHECK(libmpq__file_attributes(archive, overview, &attributes) == LIBMPQ_SUCCESS);
-        TEST_CHECK(attributes.filetime == 0);
+        UPDATE_CHECK(libmpq__file_number(archive, "overview.txt", &overview) == LIBMPQ_SUCCESS);
+        UPDATE_CHECK(libmpq__file_attributes(archive, overview, &attributes) == LIBMPQ_SUCCESS);
+        UPDATE_CHECK(attributes.filetime == 0);
     }
-    TEST_CHECK(libmpq__file_number(archive, "wave-mono.wav", &wave_number) == LIBMPQ_SUCCESS);
-    TEST_CHECK(archive->mpq_map[wave_number].block_table_indices == wave_block);
-    TEST_CHECK(archive->mpq_block[wave_block].packed_size == packed_size);
-    TEST_CHECK(archive->mpq_block[wave_block].offset == packed_offset);
-    TEST_CHECK(
+    UPDATE_CHECK(libmpq__file_number(archive, "wave-mono.wav", &wave_number) == LIBMPQ_SUCCESS);
+    UPDATE_CHECK(archive->mpq_map[wave_number].block_table_indices == wave_block);
+    UPDATE_CHECK(archive->mpq_block[wave_block].packed_size == packed_size);
+    UPDATE_CHECK(archive->mpq_block[wave_block].offset == packed_offset);
+    UPDATE_CHECK(
         libmpq__source_read_at(archive->source, packed_offset, after, packed_size) == LIBMPQ_SUCCESS
     );
-    TEST_CHECK(memcmp(after, packed, packed_size) == 0);
-    TEST_CHECK(libmpq__archive_signatures(archive, &signatures) == LIBMPQ_SUCCESS);
-    TEST_CHECK(signatures == 0);
-    TEST_CHECK(libmpq__archive_close(archive) == LIBMPQ_SUCCESS);
+    UPDATE_CHECK(memcmp(after, packed, packed_size) == 0);
+    UPDATE_CHECK(libmpq__archive_signatures(archive, &signatures) == LIBMPQ_SUCCESS);
+    UPDATE_CHECK(signatures == 0);
+    result = libmpq__archive_close(archive);
+    archive = NULL;
+    UPDATE_CHECK(result == LIBMPQ_SUCCESS);
     free(packed);
     free(after);
     return 0;
+
+fail:
+    if (archive != NULL)
+        (void)libmpq__archive_close(archive);
+    if (update != NULL)
+        (void)libmpq__update_abort(update);
+    free(packed);
+    free(after);
+    return 1;
 }
 
 static int
@@ -753,6 +798,8 @@ test_public_trailing_bytes(void)
     uint8_t *bytes = NULL;
     size_t size = 0;
     FILE *file;
+    int valid_size;
+    int valid_suffix;
 
     TEST_CHECK(create_archive("update-trailing.mpq") == 0);
     file = fopen("update-trailing.mpq", "ab");
@@ -766,9 +813,12 @@ test_public_trailing_bytes(void)
     );
     TEST_CHECK(libmpq__update_commit(update) == LIBMPQ_SUCCESS);
     TEST_CHECK(read_bytes("update-trailing.mpq", &bytes, &size) == 0);
-    TEST_CHECK(size >= sizeof(suffix) - 1u);
-    TEST_CHECK(memcmp(bytes + size - (sizeof(suffix) - 1u), suffix, sizeof(suffix) - 1u) == 0);
+    valid_size = size >= sizeof(suffix) - 1u;
+    valid_suffix = valid_size &&
+                   memcmp(bytes + size - (sizeof(suffix) - 1u), suffix, sizeof(suffix) - 1u) == 0;
     free(bytes);
+    TEST_CHECK(valid_size);
+    TEST_CHECK(valid_suffix);
     return 0;
 }
 
@@ -991,26 +1041,31 @@ test_embedded_preservation(const char *archive_path, const char *path)
     static const uint8_t prefix[] = "container prefix";
     static const uint8_t suffix[] = "container suffix";
     mpq_update_s *update = NULL;
-    uint8_t *archive_bytes;
-    uint8_t *container;
+    uint8_t *archive_bytes = NULL;
+    uint8_t *container = NULL;
     size_t archive_size;
     size_t container_size;
 
-    TEST_CHECK(read_bytes(archive_path, &archive_bytes, &archive_size) == 0);
+    UPDATE_CHECK(read_bytes(archive_path, &archive_bytes, &archive_size) == 0);
     container_size = sizeof(prefix) - 1U + archive_size + sizeof(suffix) - 1U;
     container = malloc(container_size);
-    TEST_CHECK(container != NULL);
+    UPDATE_CHECK(container != NULL);
     memcpy(container, prefix, sizeof(prefix) - 1U);
     memcpy(container + sizeof(prefix) - 1U, archive_bytes, archive_size);
     memcpy(container + sizeof(prefix) - 1U + archive_size, suffix, sizeof(suffix) - 1U);
-    TEST_CHECK(write_bytes(path, container, container_size) == 0);
-    TEST_CHECK(write_bytes("update-embedded-reference.bin", container, container_size) == 0);
+    UPDATE_CHECK(write_bytes(path, container, container_size) == 0);
+    UPDATE_CHECK(write_bytes("update-embedded-reference.bin", container, container_size) == 0);
     free(container);
     free(archive_bytes);
     TEST_CHECK(libmpq__update_transaction_begin(&update, path) == LIBMPQ_SUCCESS);
     TEST_CHECK(libmpq__update_transaction_commit(update) == LIBMPQ_SUCCESS);
     TEST_CHECK(same_file(path, "update-embedded-reference.bin"));
     return 0;
+
+fail:
+    free(container);
+    free(archive_bytes);
+    return 1;
 }
 
 #ifndef _WIN32

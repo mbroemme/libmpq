@@ -958,7 +958,6 @@ update_apply(
     uint8_t has_list = 0;
     uint8_t has_attributes = 0;
     uint8_t has_signature = 0;
-    uint8_t rebuilt_installed = 0;
     uint8_t expected_md5[16] = { 0 };
     uint64_t expected_size = 0;
 
@@ -1246,13 +1245,29 @@ update_apply(
     archive = NULL;
     if (result != LIBMPQ_SUCCESS)
         goto done;
-    result = libmpq__directory_replace(update->directory, temporary, update->temporary);
-    if (result != LIBMPQ_SUCCESS)
-        goto done;
-    rebuilt_installed = 1;
-    (void)fclose(update->working);
-    update->working = rebuilt;
-    rebuilt = NULL;
+
+    /*
+     * Adopt the validated rebuild without replacing a still-open working file.
+     * This avoids sharing-sensitive replacement of an open destination on
+     * Windows. Final publication still uses the Phase 3 atomic replacement
+     * after the working file is closed.
+     */
+    {
+        FILE *previous_working = update->working;
+        char *previous_temporary = update->temporary;
+        char *previous_path = update->working_path;
+
+        update->working = rebuilt;
+        update->temporary = temporary;
+        update->working_path = rebuilt_path;
+        rebuilt = NULL;
+        temporary = NULL;
+        rebuilt_path = NULL;
+        (void)fclose(previous_working);
+        (void)libmpq__directory_remove(update->directory, previous_temporary);
+        free(previous_temporary);
+        free(previous_path);
+    }
 
 done:
     if (check != NULL)
@@ -1261,7 +1276,7 @@ done:
         (void)libmpq__archive_close(archive);
     if (rebuilt != NULL)
         (void)fclose(rebuilt);
-    if (temporary != NULL && !rebuilt_installed)
+    if (temporary != NULL)
         (void)libmpq__directory_remove(update->directory, temporary);
     free(temporary);
     free(rebuilt_path);
