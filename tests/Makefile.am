@@ -67,7 +67,14 @@ test_pkware_SOURCES = test-mpq-pkware.c \
 	$(COMMON_SOURCES)
 test_reader_SOURCES = test-mpq-reader.c $(COMMON_SOURCES)
 test_update_SOURCES = test-mpq-update.c $(COMMON_SOURCES)
-test_update_LDADD = $(top_builddir)/src/mpq-update.lo $(LDADD)
+test_update_LDADD = \
+	$(top_builddir)/src/mpq-update.lo \
+	$(top_builddir)/src/mpq-writer.lo \
+	$(top_builddir)/src/mpq-stream.lo \
+	$(top_builddir)/src/mpq-signature.lo \
+	$(top_builddir)/src/mpq-rsa.lo \
+	$(top_builddir)/src/mpq-sha1.lo \
+	$(test_attributes_LDADD)
 test_wave_SOURCES = test-mpq-wave.c ../src/mpq-wave.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_writer_SOURCES = test-mpq-writer.c $(COMMON_SOURCES)
 

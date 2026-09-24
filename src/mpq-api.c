@@ -38,6 +38,7 @@
 #include "mpq-signature.h"
 #include "mpq-source.h"
 #include "mpq-stream.h"
+#include "mpq-update.h"
 #include "mpq-verify.h"
 #include "mpq-writer.h"
 
@@ -250,6 +251,90 @@ libmpq__archive_create_mpqe(
 )
 {
     return libmpq__writer_archive_create_mpqe(out, path, auth_code, auth_code_size, options);
+}
+
+int32_t
+libmpq__update_begin(mpq_update_s **update, const char *path)
+{
+    mpq_archive_s *archive = NULL;
+    int32_t result = libmpq__update_transaction_begin(update, path);
+
+    if (result != LIBMPQ_SUCCESS)
+        return result;
+    result = libmpq__archive_open(&archive, libmpq__update_path(*update), 0);
+    if (result == LIBMPQ_SUCCESS && archive->archive_offset != 0)
+        result = LIBMPQ_ERROR_FORMAT;
+    if (archive != NULL) {
+        int32_t close_result = libmpq__archive_close(archive);
+
+        if (result == LIBMPQ_SUCCESS)
+            result = close_result;
+    }
+    if (result != LIBMPQ_SUCCESS) {
+        (void)libmpq__update_transaction_abort(*update);
+        *update = NULL;
+    }
+    return result;
+}
+
+int32_t
+libmpq__update_replace_data(
+    mpq_update_s *update, const char *filename, const uint8_t *data, libmpq__off_t size,
+    const mpq_file_options_s *options
+)
+{
+    return libmpq__update_transaction_replace(update, filename, data, size, NULL, options);
+}
+
+int32_t
+libmpq__update_replace_path(
+    mpq_update_s *update, const char *filename, const char *source_path,
+    const mpq_file_options_s *options
+)
+{
+    return libmpq__update_transaction_replace(update, filename, NULL, 0, source_path, options);
+}
+
+int32_t
+libmpq__update_remove(mpq_update_s *update, const char *filename)
+{
+    return libmpq__update_transaction_remove(update, filename);
+}
+
+int32_t
+libmpq__update_rename(mpq_update_s *update, const char *old_filename, const char *new_filename)
+{
+    return libmpq__update_transaction_rename(update, old_filename, new_filename);
+}
+
+int32_t
+libmpq__update_commit(mpq_update_s *update)
+{
+    mpq_archive_s *archive = NULL;
+    int32_t result;
+
+    if (update == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    result = libmpq__archive_open(&archive, libmpq__update_path(update), 0);
+    if (result == LIBMPQ_SUCCESS && archive->archive_offset != 0)
+        result = LIBMPQ_ERROR_FORMAT;
+    if (archive != NULL) {
+        int32_t close_result = libmpq__archive_close(archive);
+
+        if (result == LIBMPQ_SUCCESS)
+            result = close_result;
+    }
+    if (result != LIBMPQ_SUCCESS) {
+        (void)libmpq__update_transaction_abort(update);
+        return result;
+    }
+    return libmpq__update_transaction_commit(update);
+}
+
+int32_t
+libmpq__update_abort(mpq_update_s *update)
+{
+    return libmpq__update_transaction_abort(update);
 }
 
 /*

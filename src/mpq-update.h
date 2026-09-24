@@ -22,8 +22,6 @@
 
 #include "mpq-file.h"
 
-typedef struct mpq_update mpq_update_s;
-
 /* Private operations permit deterministic transaction finalization tests. */
 typedef struct mpq_update_ops
 {
@@ -32,10 +30,18 @@ typedef struct mpq_update_ops
     int32_t (*publish)(mpq_directory_s *directory, const char *temporary, const char *destination);
 } mpq_update_ops_s;
 
-int32_t libmpq__update_begin(mpq_update_s **update, const char *path);
+int32_t libmpq__update_transaction_begin(mpq_update_s **update, const char *path);
 const char *libmpq__update_path(const mpq_update_s *update);
-int32_t libmpq__update_commit(mpq_update_s *update);
-int32_t libmpq__update_abort(mpq_update_s *update);
+int32_t libmpq__update_transaction_commit(mpq_update_s *update);
+int32_t libmpq__update_transaction_abort(mpq_update_s *update);
+int32_t libmpq__update_transaction_replace(
+    mpq_update_s *update, const char *filename, const uint8_t *data, libmpq__off_t size,
+    const char *source_path, const mpq_file_options_s *options
+);
+int32_t libmpq__update_transaction_remove(mpq_update_s *update, const char *filename);
+int32_t libmpq__update_transaction_rename(
+    mpq_update_s *update, const char *old_filename, const char *new_filename
+);
 const mpq_update_ops_s *libmpq__update_ops(const mpq_update_s *update);
 void libmpq__update_set_ops(mpq_update_s *update, const mpq_update_ops_s *ops);
 

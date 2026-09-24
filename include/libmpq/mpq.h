@@ -82,6 +82,7 @@ typedef struct mpq_stream mpq_stream_s;
  * by libmpq__writer_finish(), regardless of its result.
  */
 typedef struct mpq_writer mpq_writer_s;
+typedef struct mpq_update mpq_update_s;
 
 /*
  * Archive format selectors accepted by mpq_archive_create_options_s.version.
@@ -231,13 +232,14 @@ typedef struct
 } mpq_archive_create_options_s;
 
 /*
- * Options controlling how one file is stored in a newly created archive.
- * Compression masks select the first-sector and later-sector pipelines, while
- * flags select raw, compressed, encrypted, imploded, or single-unit storage.
+ * Options controlling how one archive member is stored by writer, add, and
+ * replacement operations. Compression masks select the first-sector and
+ * later-sector pipelines, while flags select raw, compressed, encrypted,
+ * imploded, or single-unit storage.
  * LIBMPQ_COMPRESSION_LZMA is an exclusive MPQ v2+ selector rather than a
- * chainable pipeline mask. The locale and platform fields participate in
- * duplicate detection and hash lookup; the structure is copied when a file
- * writer is started.
+ * chainable pipeline mask. Locale and platform participate in duplicate
+ * detection and hash lookup; replacement requires them to match the existing
+ * member. The structure is copied when a file writer is started.
  */
 typedef struct mpq_file_options
 {
@@ -485,6 +487,40 @@ extern LIBMPQ_API int32_t libmpq__archive_create_mpqe(
     mpq_archive_s **mpq_archive, const char *mpqe_filename, const uint8_t *auth_code,
     size_t auth_code_size, const mpq_archive_create_options_s *options
 );
+
+/*
+ * Stage changes to an existing filesystem MPQ in a private working copy.
+ * Changes reach the original only when commit atomically publishes that copy.
+ * MPQE and embedded archives are not accepted by this update interface.
+ */
+extern LIBMPQ_API int32_t libmpq__update_begin(mpq_update_s **update, const char *path);
+
+/*
+ * Replace an existing named member using normal writer file options.
+ * Supplied locale and platform must match the existing member.
+ */
+extern LIBMPQ_API int32_t libmpq__update_replace_data(
+    mpq_update_s *update, const char *filename, const uint8_t *data, libmpq__off_t size,
+    const mpq_file_options_s *options
+);
+extern LIBMPQ_API int32_t libmpq__update_replace_path(
+    mpq_update_s *update, const char *filename, const char *source_path,
+    const mpq_file_options_s *options
+);
+
+/* Remove or rename an existing named member in the private working copy. */
+extern LIBMPQ_API int32_t libmpq__update_remove(mpq_update_s *update, const char *filename);
+extern LIBMPQ_API int32_t
+libmpq__update_rename(mpq_update_s *update, const char *old_filename, const char *new_filename);
+
+/*
+ * Commit and abort consume the handle even on error. Commit validates the
+ * staged archive and rechecks the original file identity immediately before
+ * publication, without locking out another process between that check and
+ * the atomic replacement.
+ */
+extern LIBMPQ_API int32_t libmpq__update_commit(mpq_update_s *update);
+extern LIBMPQ_API int32_t libmpq__update_abort(mpq_update_s *update);
 
 /*
  * Begin writing a file in a writer archive and reserve its declared size.
