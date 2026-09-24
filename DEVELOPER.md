@@ -193,6 +193,56 @@ Use `libmpq__writer_write()`, `libmpq__writer_timestamp()`, and
 Use `libmpq__archive_add_data()` to add an in-memory source in one call, or
 `libmpq__archive_add_path()` to add a filesystem-path source.
 
+## Transactional modification
+
+Use a separate `mpq_update_s` handle to stage changes to an existing,
+filesystem-backed MPQ. Each operation rebuilds the private working copy; the
+original path changes only on commit. For example:
+
+```c
+mpq_update_s *update = NULL;
+const uint8_t replacement[] = "new contents";
+
+if (libmpq__update_begin(&update, "data.mpq") == LIBMPQ_SUCCESS) {
+    if (libmpq__update_replace_data(update, "data/file.bin", replacement,
+                                    sizeof(replacement) - 1, NULL) == LIBMPQ_SUCCESS)
+        (void)libmpq__update_commit(update);
+    else
+        (void)libmpq__update_abort(update);
+}
+```
+
+`libmpq__update_replace_path()` reads replacement data from a filesystem
+path. `libmpq__update_remove()` and `libmpq__update_rename()` affect
+existing named entries only; rename rejects an existing destination name.
+Replacement accepts the same optional `mpq_file_options_s` as
+`libmpq__archive_add_data()` and `libmpq__archive_add_path()`, including
+separate `compression_first` and `compression_next` masks. A NULL options
+pointer uses default storage options. When options are supplied, their
+`locale` and `platform` must match the existing member; replacement cannot
+move a member to a different hash identity.
+When multiple names share one physical block, removing or renaming an
+unencrypted name leaves the other names intact. Replacing that block, or
+renaming it when encrypted, returns `LIBMPQ_ERROR_FORMAT` until block splitting
+is supported. Modification also rejects shared `(listfile)`, `(attributes)`, or
+`(signature)` blocks when those internal entries must be rewritten or removed.
+Commit and abort both consume the update handle, including on error. Commit
+rechecks the destination's filesystem identity immediately before atomic
+replacement, but this is best effort and does not lock out a concurrent change
+between check and publication.
+
+Unchanged physical entries, including entries absent from `(listfile)`, retain
+their packed representation. Encrypted rename decodes using the old plaintext
+name and re-encodes using the new name. Existing `(listfile)` and valid
+`(attributes)` metadata are updated. Replacement resets FILETIME to the normal
+writer default of zero; rename retains the existing FILETIME. Weak
+`(signature)` entries and external
+`NGIS` trailers are removed after mutation because this API takes no signing
+key. A no-op transaction preserves all original bytes. Embedded MPQs and MPQE
+are not accepted by the public update API. PATCH_BIT=true writing and archive
+patches remain unsupported. The current rebuild rejects an archive extent
+that cannot fit the 32-bit MPQ archive-size field.
+
 ## Optional attributes
 
 Select optional metadata separately from archive creation flags:

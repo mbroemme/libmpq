@@ -64,6 +64,20 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        const mpq_archive_create_options_s *" "options"
 .BI ");"
 .sp
+.BI "int32_t libmpq__update_begin(mpq_update_s **" "update", ", const char *" "path");"
+.sp
+.BI "int32_t libmpq__update_replace_data(mpq_update_s *" "update", ", const char *" "filename", ", const uint8_t *" "data", ", libmpq__off_t " "size", ", const mpq_file_options_s *" "options");"
+.sp
+.BI "int32_t libmpq__update_replace_path(mpq_update_s *" "update", ", const char *" "filename", ", const char *" "source_path", ", const mpq_file_options_s *" "options");"
+.sp
+.BI "int32_t libmpq__update_remove(mpq_update_s *" "update", ", const char *" "filename");"
+.sp
+.BI "int32_t libmpq__update_rename(mpq_update_s *" "update", ", const char *" "old_filename", ", const char *" "new_filename");"
+.sp
+.BI "int32_t libmpq__update_commit(mpq_update_s *" "update");"
+.sp
+.BI "int32_t libmpq__update_abort(mpq_update_s *" "update");"
+.sp
 .BI "int32_t libmpq__archive_clone("
 .BI "        mpq_archive_s **" "clone",
 .BI "        mpq_archive_s  *" "source"
@@ -310,6 +324,11 @@ stored compression method. A compressed file may contain raw fallback
 sectors; \fBlibmpq__block_compression\fP() distinguishes them.
 .SS "Creating Archives and Writing Files"
 \fBlibmpq__archive_create\fP() creates a seekable MPQ v1 or v2 archive.
+.PP
+The update API stages replace, remove, and rename operations on existing
+filesystem MPQs in a separate transaction handle. Commit validates and
+atomically publishes the working copy; abort discards it. MPQE and embedded
+MPQs are not modified through this API.
 Creation options select the archive version, sector size, fixed file-table
 capacity, and optional generated (listfile) and (attributes) entries.
 .PP

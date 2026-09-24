@@ -24,9 +24,10 @@ MPQ is a proprietary archive format created by Mike O'Brien in 1996. It is
 used by Blizzard games including Diablo, Diablo II, StarCraft, Warcraft II:
 Battle.net Edition, Warcraft III, and World of Warcraft.
 
-libmpq provides a C API for applications that need to inspect, create, and
-extract MPQ archives. Creation supports seekable v1 and v2 archives, streaming
-or buffer/path file addition, encrypted tables and payloads, optional listfiles,
+libmpq provides a C API for applications that need to inspect, create, modify,
+and extract MPQ archives. Creation supports seekable v1 and v2 archives,
+streaming or buffer/path file addition, encrypted tables and payloads,
+optional listfiles,
 raw and single-unit files, PKWARE implode, multi-compression sectors using
 Huffman, zlib, PKWARE, bzip2, or mono/stereo WAVE ADPCM, and the exclusive
 MPQ v2+ LZMA method.
@@ -44,6 +45,8 @@ MPQ v2+ LZMA method.
   tables, and encrypted file payloads.
 * Add raw, single-unit, sectorized, and multi-sector files through streaming,
   memory-buffer, and filesystem-path APIs.
+* Modify existing filesystem MPQ archives transactionally with named-file
+  replace, remove, and rename operations.
 * Read and create MPQE-wrapped MPQ archives using a caller-supplied
   authentication code.
 * Read and write PKWARE implode, Huffman, zlib, bzip2, SPARSE, and mono or
@@ -349,6 +352,8 @@ headers, tables, encryption, sectors, and compression, see the
   random-access writing is unsupported. Creation uses an owner-only plaintext
   temporary file; completed POSIX archives use normal caller-umask permissions.
   Cleanup is best effort, so a crash can leave the plaintext temporary behind.
+* Transactional modification does not support MPQE or embedded MPQs. Mutations
+  remove existing weak and strong signatures because no signing key is supplied.
 * Patch creation/application and StormLib-specific key modes are not supported.
   FILETIME and PATCH_BIT are exposed as metadata only. Automatic file-level
   CRC32/MD5 comparison is skipped for lossy ADPCM data because the decoded
