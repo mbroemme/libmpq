@@ -102,6 +102,9 @@ extern(C) struct mpq_writer_s;
 /** Opaque native logical-member stream state owned by libmpq. */
 extern(C) struct mpq_stream_s;
 
+/** Opaque native transactional update state owned by libmpq. */
+extern(C) struct mpq_update_s;
+
 alias libmpq_read_at_fn = extern(C) int function(void* context, off_t offset,
                                                   ubyte* buffer, size_t size);
 
@@ -278,6 +281,21 @@ extern(C) {
 
     /** Close an archive and release all native state. */
     int libmpq__archive_close(mpq_archive_s* archive);
+
+    /** Begin and stage filesystem archive updates. */
+    int libmpq__update_begin(mpq_update_s** update, const(char)* path);
+    int libmpq__update_replace_data(mpq_update_s* update, const(char)* filename,
+                                    const(ubyte)* data, off_t size,
+                                    const(mpq_file_options_s)* options);
+    int libmpq__update_replace_path(mpq_update_s* update, const(char)* filename,
+                                    const(char)* source_path,
+                                    const(mpq_file_options_s)* options);
+    int libmpq__update_remove(mpq_update_s* update, const(char)* filename);
+    int libmpq__update_rename(mpq_update_s* update, const(char)* old_filename,
+                              const(char)* new_filename);
+    /** Both lifecycle calls consume the handle, including on error. */
+    int libmpq__update_commit(mpq_update_s* update);
+    int libmpq__update_abort(mpq_update_s* update);
 
     /** Query aggregate packed archive size. */
     int libmpq__archive_size_packed(mpq_archive_s* archive, off_t* value);

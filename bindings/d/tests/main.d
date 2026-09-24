@@ -10,7 +10,7 @@
 /** End-to-end D binding tests using deterministic native archives. */
 module libmpq.d_tests;
 
-import std.file : read, remove, write;
+import std.file : read, remove, rename, write;
 import std.path : buildPath;
 import std.process : environment;
 import libmpq.mpq;
@@ -393,6 +393,143 @@ private void testMpqeCreate() {
            cast(const(ubyte)[])"D MPQE writer regression\n");
 }
 
+private void testUpdate() {
+    auto path = temporaryArchive("update");
+    auto source = path ~ ".source";
+    scope(exit) { remove(path); remove(source); }
+    write(source, cast(const(ubyte)[])"path replacement");
+    auto archive = Archive.create(path, ArchiveCreateOptions.v1());
+    archive.add("data", cast(const(ubyte)[])"original");
+    archive.add("path", cast(const(ubyte)[])"old path");
+    archive.add("remove", cast(const(ubyte)[])"remove me");
+    archive.add("rename", cast(const(ubyte)[])"rename me");
+    archive.add("secret", cast(const(ubyte)[])"encrypted payload",
+                FileOptions.raw().encrypted());
+    archive.close();
+
+    auto update = Update.begin(path);
+    ubyte[] replacement = new ubyte[](9000);
+    replacement[] = cast(ubyte)'R';
+    update.replaceData("data", replacement,
+                       FileOptions.compressed(COMPRESSION_ZLIB, COMPRESSION_BZIP2));
+    update.replacePath("path", source, FileOptions.raw().encrypted());
+    update.remove("remove");
+    update.rename("rename", "renamed");
+    update.rename("secret", "secret-new");
+    auto before = Archive.open(path);
+    assert(before.file("data").read() == cast(const(ubyte)[])"original");
+    before.close();
+    update.commit();
+    auto after = Archive.open(path);
+    assert(after.file("data").read() == replacement);
+    assert(after.file("data").blockCompression(0) == COMPRESSION_ZLIB);
+    assert(after.file("data").blockCompression(1) == COMPRESSION_BZIP2);
+    auto pathStream = after.openStream("path");
+    ubyte[] pathBytes = new ubyte[](16);
+    assert(pathStream.read(pathBytes) == pathBytes.length);
+    assert(pathBytes == cast(const(ubyte)[])"path replacement");
+    pathStream.close();
+    assert(after.file("renamed").read() == cast(const(ubyte)[])"rename me");
+    auto secret = after.openStream("secret-new");
+    ubyte[] secretBytes = new ubyte[](17);
+    assert(secret.read(secretBytes) == secretBytes.length);
+    assert(secretBytes == cast(const(ubyte)[])"encrypted payload");
+    secret.close();
+    bool missing;
+    try { after.file("remove"); } catch (MPQException) { missing = true; }
+    assert(missing);
+    after.close();
+
+    bool closed;
+    try { update.abort(); } catch (MPQException error) {
+        closed = error.code == ERROR_NOT_INITIALIZED;
+    }
+    assert(closed);
+    update = Update.begin(path);
+    auto mismatched = FileOptions.raw();
+    mismatched.locale = 1;
+    bool rejected;
+    try { update.replaceData("data", cast(const(ubyte)[])"invalid", mismatched); }
+    catch (MPQException) { rejected = true; }
+    assert(rejected);
+    update.abort();
+    update = Update.begin(path);
+    update.replaceData("data", cast(const(ubyte)[])"rollback");
+    update.remove("path");
+    update.rename("renamed", "rollback-name");
+    update.close();
+    after = Archive.open(path);
+    assert(after.file("data").read() == replacement);
+    pathStream = after.openStream("path");
+    assert(pathStream.read(pathBytes) == pathBytes.length);
+    assert(pathBytes == cast(const(ubyte)[])"path replacement");
+    pathStream.close();
+    assert(after.file("renamed").read() == cast(const(ubyte)[])"rename me");
+    after.close();
+    update = Update.begin(path);
+    update.replaceData("data", cast(const(ubyte)[])"destructor rollback");
+    destroy(update);
+    after = Archive.open(path);
+    assert(after.file("data").read() == replacement);
+    after.close();
+    update = Update.begin(path);
+    auto external = path ~ ".external";
+    write(external, read(path));
+    rename(external, path);
+    bool conflict;
+    try { update.commit(); } catch (MPQException) { conflict = true; }
+    assert(conflict);
+    closed = false;
+    try { update.abort(); } catch (MPQException error) {
+        closed = error.code == ERROR_NOT_INITIALIZED;
+    }
+    assert(closed);
+}
+
+private void testUpdateLocalizedDefaults() {
+    auto path = temporaryArchive("localized");
+    auto source = path ~ ".source";
+    scope(exit) { remove(path); remove(source); }
+    write(source, cast(const(ubyte)[])"from path");
+    auto createOptions = ArchiveCreateOptions.v1();
+    createOptions.maxFiles = 8;
+    auto identity = FileOptions.raw();
+    identity.locale = 0x409;
+    identity.platform = 1;
+    auto archive = Archive.create(path, createOptions);
+    archive.add("localized", cast(const(ubyte)[])"original", identity);
+    archive.close();
+
+    auto update = Update.begin(path);
+    update.replaceData("localized", cast(const(ubyte)[])"new data");
+    update.commit();
+    archive = Archive.open(path);
+    assert(archive.file("localized").read() == cast(const(ubyte)[])"new data");
+    archive.close();
+
+    update = Update.begin(path);
+    bool mismatch;
+    try { update.replaceData("localized", cast(const(ubyte)[])"wrong", FileOptions.raw()); }
+    catch (MPQException error) { mismatch = error.code == ERROR_FORMAT; }
+    assert(mismatch);
+    mismatch = false;
+    try { update.replacePath("localized", source, FileOptions.raw()); }
+    catch (MPQException error) { mismatch = error.code == ERROR_FORMAT; }
+    assert(mismatch);
+    update.replaceData("localized", cast(const(ubyte)[])"matching", identity);
+    update.commit();
+
+    update = Update.begin(path);
+    update.replacePath("localized", source);
+    update.commit();
+    archive = Archive.open(path);
+    assert(archive.file("localized").read() == cast(const(ubyte)[])"from path");
+    archive.close();
+    update = Update.begin(path);
+    update.replacePath("localized", source, identity);
+    update.abort();
+}
+
 void main() {
     testVersionAndErrors();
     testCreateReadAndMetadata(ARCHIVE_VERSION_ONE);
@@ -404,5 +541,7 @@ void main() {
     testCustomSources();
     testSparseFixtures();
     testMpqeCreate();
+    testUpdate();
+    testUpdateLocalizedDefaults();
     testFailures();
 }

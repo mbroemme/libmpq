@@ -6,6 +6,7 @@ EXTRA_DIST = \
 	source/libmpq/mpq.d \
 	source/libmpq/native.d \
 	source/libmpq/options.d \
+	source/libmpq/update.d \
 	README.md \
 	../../dub.sdl \
 	tests/main.d

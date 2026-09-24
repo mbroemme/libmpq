@@ -1,5 +1,25 @@
 # libmpq D bindings
 
+Transactional updates stage edits until commit. `Update` aborts any active
+transaction when it is destroyed or closed:
+
+```d
+auto update = Update.begin("archive.mpq");
+scope(exit) update.close();
+update.replaceData("foo.txt", cast(const(ubyte)[])"new contents");
+update.rename("old.txt", "new.txt");
+update.commit();
+```
+
+`replacePath`, `remove`, and `abort` are also available. Commit and abort
+consume the handle even on error. The no-options overload passes a native
+NULL options pointer, so libmpq uses defaults and preserves the member's
+locale/platform identity. Supply explicit `FileOptions` for custom storage,
+for example `update.replaceData("foo.txt", data, options);`. These options
+can select distinct first/later compression masks, but locale/platform must
+match the existing member. MPQE and embedded archive modification remain
+unsupported.
+
 Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
 Strong verification uses a 512-byte raw public key: a 256-byte unsigned
 big-endian modulus followed by a 256-byte zero-padded unsigned big-endian
