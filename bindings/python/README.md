@@ -1,5 +1,23 @@
 # libmpq Python bindings
 
+Transactional updates use a separate handle. Edits stay private until commit;
+leaving the context without committing aborts them automatically:
+
+```python
+with mpq.Update.begin("archive.mpq") as update:
+    update.replace_data("foo.txt", b"new contents")
+    update.rename("old.txt", "new.txt")
+    update.commit()
+```
+
+`replace_path`, `remove`, and explicit `abort` are also available. Commit and
+abort consume the update handle even on error. Omitting replacement options
+passes a native NULL options pointer, so libmpq uses defaults and preserves
+the member's locale/platform identity. Supply `FileCreateOptions` as the
+optional third argument for custom storage; its locale/platform must match
+the existing member. MPQE and embedded archive modification remain
+unsupported.
+
 Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
 Strong verification uses a 512-byte raw public key: a 256-byte unsigned
 big-endian modulus followed by a 256-byte zero-padded unsigned big-endian

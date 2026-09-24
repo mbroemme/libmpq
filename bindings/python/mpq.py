@@ -244,6 +244,13 @@ _configure("libmpq__archive_add_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_
 _configure("libmpq__archive_add_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__archive_clone", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), _VOID_PTR)
 _configure("libmpq__archive_close", ctypes.c_int32, _VOID_PTR)
+_configure("libmpq__update_begin", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p)
+_configure("libmpq__update_replace_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE_PTR, _OFF_T, _VOID_PTR)
+_configure("libmpq__update_replace_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
+_configure("libmpq__update_remove", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p)
+_configure("libmpq__update_rename", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p)
+_configure("libmpq__update_commit", ctypes.c_int32, _VOID_PTR)
+_configure("libmpq__update_abort", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__archive_attributes", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__archive_signatures", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__archive_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR,
@@ -339,6 +346,106 @@ class FileCreateOptions(ctypes.Structure):
     def encrypted(self):
         """Return a copy of these options with encryption enabled."""
         return type(self)(self.flags | FILE_FLAG_ENCRYPTED, self.compression_first, self.compression_next, self.locale, self.platform)
+
+
+class Update:
+    """Transactional edits to one filesystem MPQ; uncommitted changes abort."""
+
+    def __init__(self, path):
+        self._update = _VOID_PTR()
+        libmpq.libmpq__update_begin(ctypes.byref(self._update), _as_bytes(path))
+
+    @classmethod
+    def begin(cls, path):
+        """Begin an isolated update for an existing filesystem archive."""
+        return cls(path)
+
+    def _ensure_open(self):
+        if not self._update:
+            raise LibmpqStateError(ERROR_NOT_INITIALIZED, "update is closed")
+
+    @staticmethod
+    def _options(options):
+        if options is None:
+            return None
+        if not isinstance(options, FileCreateOptions):
+            raise TypeError("options must be FileCreateOptions")
+        return ctypes.byref(options)
+
+    def replace_data(self, name, data, options=None):
+        """Stage bytes-like replacement; None uses native storage defaults."""
+        self._ensure_open()
+        native_options = self._options(options)
+        view = memoryview(data)
+        try:
+            view = view.cast("B")
+            if view.readonly:
+                buffer = (ctypes.c_uint8 * len(view)).from_buffer_copy(view)
+            else:
+                buffer = (ctypes.c_uint8 * len(view)).from_buffer(view)
+            libmpq.libmpq__update_replace_data(
+                self._update, _as_bytes(name), buffer if len(view) else None,
+                len(view), native_options
+            )
+        finally:
+            view.release()
+
+    def replace_path(self, name, source_path, options=None):
+        """Stage path replacement; None uses native storage defaults."""
+        self._ensure_open()
+        native_options = self._options(options)
+        libmpq.libmpq__update_replace_path(
+            self._update, _as_bytes(name), _as_bytes(source_path),
+            native_options
+        )
+
+    def remove(self, name):
+        """Stage removal of an existing member."""
+        self._ensure_open()
+        libmpq.libmpq__update_remove(self._update, _as_bytes(name))
+
+    def rename(self, old_name, new_name):
+        """Stage a member rename."""
+        self._ensure_open()
+        libmpq.libmpq__update_rename(
+            self._update, _as_bytes(old_name), _as_bytes(new_name)
+        )
+
+    def commit(self):
+        """Publish staged changes and consume this handle, even on error."""
+        self._ensure_open()
+        handle, self._update = self._update, _VOID_PTR()
+        libmpq.libmpq__update_commit(handle)
+
+    def abort(self):
+        """Discard staged changes and consume this handle, even on error."""
+        self._ensure_open()
+        handle, self._update = self._update, _VOID_PTR()
+        libmpq.libmpq__update_abort(handle)
+
+    def close(self):
+        """Abort an active update; repeated closes are harmless."""
+        if self._update:
+            self.abort()
+
+    def __enter__(self):
+        self._ensure_open()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is not None:
+            try:
+                self.close()
+            except BaseException:
+                pass
+        else:
+            self.close()
+
+    def __del__(self):
+        try:
+            self.close()
+        except BaseException:
+            pass
 
 
 @dataclass(frozen=True)

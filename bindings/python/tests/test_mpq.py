@@ -77,6 +77,123 @@ def test_logical_stream_lifetime_seek_and_eof():
         stream.tell()
 
 
+def test_transactional_update_binding(tmp_path):
+    """All staged operations commit or abort without reusing consumed handles."""
+    path = tmp_path / "update.mpq"
+    source = tmp_path / "replacement.bin"
+    source.write_bytes(b"from path")
+    original = b"A" * 9000
+    with mpq.Writer(path, max_files=16, flags=mpq.ARCHIVE_CREATE_LISTFILE,
+                    attributes=mpq.ATTRIBUTE_CRC32 | mpq.ATTRIBUTE_MD5) as writer:
+        writer.add("data", original)
+        writer.add("path", b"old path")
+        writer.add("remove", b"remove me")
+        writer.add("rename", b"rename me")
+        writer.add("secret", b"encrypted payload",
+                   mpq.FileCreateOptions.raw().encrypted())
+
+    options = mpq.FileCreateOptions.compressed(mpq.COMPRESSION_ZLIB,
+                                                mpq.COMPRESSION_BZIP2)
+    with mpq.Update.begin(path) as update:
+        update.replace_data("data", memoryview(b"B" * 9000), options)
+        update.replace_path("path", source,
+                            mpq.FileCreateOptions.raw().encrypted())
+        update.remove("remove")
+        update.rename("rename", "renamed")
+        update.rename("secret", "secret-new")
+        with mpq.Archive(path) as archive:
+            assert archive["data"].read() == original
+        update.commit()
+    with mpq.Archive(path) as archive:
+        assert archive["data"].read() == b"B" * 9000
+        assert archive["data"].block_compression(0) == mpq.COMPRESSION_ZLIB
+        assert archive["data"].block_compression(1) == mpq.COMPRESSION_BZIP2
+        with archive.open_stream("path") as stream:
+            assert stream.read() == b"from path"
+        assert "remove" not in archive and "rename" not in archive
+        assert archive["renamed"].read() == b"rename me"
+        with archive.open_stream("secret-new") as stream:
+            assert stream.read() == b"encrypted payload"
+    with pytest.raises(mpq.LibmpqStateError):
+        update.remove("path")
+
+    with mpq.Update.begin(path) as update:
+        update.replace_data("data", bytearray(b"rollback"))
+        update.remove("path")
+        update.rename("renamed", "rollback-name")
+    with mpq.Archive(path) as archive:
+        assert archive["data"].read() == b"B" * 9000
+        with archive.open_stream("path") as stream:
+            assert stream.read() == b"from path"
+        assert archive["renamed"].read() == b"rename me"
+
+    with pytest.raises(RuntimeError, match="caller failure"):
+        with mpq.Update.begin(path) as update:
+            update.remove("path")
+            raise RuntimeError("caller failure")
+    with mpq.Archive(path) as archive:
+        with archive.open_stream("path") as stream:
+            assert stream.read() == b"from path"
+
+    update = mpq.Update.begin(path)
+    with pytest.raises(mpq.LibmpqNotFoundError):
+        update.remove("missing")
+    update.abort()
+    update.close()
+    with pytest.raises(mpq.LibmpqStateError):
+        update.commit()
+
+    update = mpq.Update.begin(path)
+    mismatched = mpq.FileCreateOptions.raw()
+    mismatched.locale = 1
+    with pytest.raises(mpq.LibmpqError):
+        update.replace_data("data", b"no", mismatched)
+    update.abort()
+
+    update = mpq.Update.begin(path)
+    replacement = tmp_path / "external.mpq"
+    replacement.write_bytes(path.read_bytes())
+    os.replace(replacement, path)
+    with pytest.raises(mpq.LibmpqError):
+        update.commit()
+    with pytest.raises(mpq.LibmpqStateError):
+        update.abort()
+
+
+def test_update_localized_member_defaults(tmp_path):
+    """Omitted options preserve nonzero locale/platform; explicit raw does not."""
+    path = tmp_path / "localized.mpq"
+    source = tmp_path / "replacement.bin"
+    source.write_bytes(b"from path")
+    identity = mpq.FileCreateOptions.raw()
+    identity.locale, identity.platform = 0x409, 1
+    with mpq.Writer(path, max_files=8) as writer:
+        writer.add("localized", b"original", identity)
+
+    with mpq.Update.begin(path) as update:
+        update.replace_data("localized", b"new data")
+        update.commit()
+    with mpq.Archive(path) as archive:
+        assert archive["localized"].read() == b"new data"
+
+    with mpq.Update.begin(path) as update:
+        with pytest.raises(mpq.LibmpqFormatError):
+            update.replace_data("localized", b"wrong", mpq.FileCreateOptions.raw())
+        with pytest.raises(mpq.LibmpqFormatError):
+            update.replace_path("localized", source, mpq.FileCreateOptions.raw())
+        update.replace_data("localized", b"matching", identity)
+        update.commit()
+
+    with mpq.Update.begin(path) as update:
+        update.replace_path("localized", source)
+        update.commit()
+    with mpq.Archive(path) as archive:
+        assert archive["localized"].read() == b"from path"
+    with mpq.Update.begin(path) as update:
+        update.replace_path("localized", source, identity)
+        update.abort()
+
+
 def test_logical_stream_encrypted_numeric_and_mpqe_lifetime():
     """Name-derived keys, numeric opens, and MPQE clones cross the binding boundary."""
     with mpq.Archive(FIXTURES / "mpq-v1-features.mpq") as archive:
