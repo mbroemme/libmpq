@@ -218,6 +218,7 @@ struct mpq_archive
     mpq_file_attributes_s *write_attributes; /* Records indexed by physical block slot. */
     uint32_t write_attributes_flags;         /* Selected LIBMPQ_ATTRIBUTE_* arrays. */
     uint8_t write_internal;                  /* Finalization is adding generated internal files. */
+    uint8_t write_patch_mode; /* Private patch writer may serialize true patch bits. */
 
     /* Writer-only state. Reader handles leave these fields zeroed. */
     uint8_t write_mode;             /* Whether this handle was opened for creation. */

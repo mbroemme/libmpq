@@ -266,11 +266,37 @@ This layer does not perform HM3W map-header hashing.
 Prefix-mapped patch namespaces are not resolved yet.
 The view retains usable `(listfile)` names, merges known patch-only names, and
 maps available `(attributes)` rows to resulting file entries by MPQ hash
-identity. Existing PATCH_BIT values remain readable, including true values
-carried from input metadata; Phase 5A does not create new PATCH_BIT=true values.
+identity. Existing PATCH_BIT values, including true values from input
+metadata, remain readable; the patch view does not create new true values.
 A content change invalidates the base archive's signatures, so the temporary
-view omits stale weak and strong signatures. Patch creation remains out of
-scope.
+view omits stale weak and strong signatures. Public patch creation remains
+out of scope.
+
+## Private patch writer foundation
+
+The private `mpq-patch-writer` module creates libmpq-compatible MPQ v1/v2
+whole-file replacement patch archives for round-trip tests with the private
+patch reader. It operates separately from update transactions and stages a
+same-directory temporary archive. It writes named replacements as PTCH COPY
+members and deletions as delete markers, then publishes only on finish. Abort
+discards the temporary output.
+Existing base members are read with their plaintext names, so encrypted
+members can supply their filename-derived keys.
+
+The patch writer emits a generated `(listfile)` and `(attributes)` with
+PATCH_BIT=true only for patch-file replacements, not delete markers. It does
+not emit a Blizzard `(patch_metadata)` structure; the private patch reader
+identifies these archives from patch-file and delete-marker flags. Full
+Blizzard patch metadata compatibility is deferred. Patch-file block sizes
+describe the resulting logical file, while the patch prefix describes the PTCH
+data size. The attributes MD5 records the resulting file; CRC32 retains the
+writer's stored-payload behavior. FILETIME is omitted, allowing the patched
+view to retain the base member's timestamp.
+Ordinary archive creation still rejects true PATCH_BIT values. The
+patch-writer tests generate temporary archives and apply them through the
+private patch view; no repository fixture needs to change. This foundation
+does not generate BSD0 or other PTCH binary deltas, sign patches, or write
+MPQE/embedded patch containers, and it exposes no public patch API.
 
 ## Optional attributes
 

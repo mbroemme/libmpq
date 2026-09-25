@@ -1249,7 +1249,7 @@ update_apply(
     /*
      * Adopt the validated rebuild without replacing a still-open working file.
      * This avoids sharing-sensitive replacement of an open destination on
-     * Windows. Final publication still uses the Phase 3 atomic replacement
+     * Windows. Final publication still uses same-directory atomic replacement
      * after the working file is closed.
      */
     {

@@ -69,6 +69,11 @@ int32_t libmpq__writer_file_add(
     const mpq_file_options_s *options
 );
 
+/* Write a zero-byte delete marker only for a private patch-mode archive. */
+int32_t libmpq__writer_patch_delete_marker(
+    mpq_archive_s *archive, const char *name, uint16_t locale, uint16_t platform
+);
+
 /* Read source from disk and add it as a named archive file. */
 int32_t libmpq__writer_file_add_path(
     mpq_archive_s *archive, const char *name, const char *source, const mpq_file_options_s *options

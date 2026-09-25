@@ -848,47 +848,6 @@ patch_set_attributes(
     libmpq__md5_final(&md5, attributes->md5);
 }
 
-/* A read-only patch view propagates existing true bits; it never invents one. */
-static int32_t
-patch_serialize_attributes(
-    const mpq_file_attributes_s *entries, uint32_t count, uint32_t self, uint32_t flags,
-    uint8_t **data, size_t *size
-)
-{
-    mpq_file_attributes_s *copy;
-    size_t bits_offset = 8;
-    int32_t status;
-
-    copy = malloc((size_t)count * sizeof(*copy));
-    if (copy == NULL)
-        return LIBMPQ_ERROR_MALLOC;
-    memcpy(copy, entries, (size_t)count * sizeof(*copy));
-    for (uint32_t i = 0; i < count; i++)
-        copy[i].patch_bit = 0;
-    status = libmpq__attributes_serialize(copy, count, self, flags, data, size);
-    free(copy);
-    if (status != LIBMPQ_SUCCESS || (flags & LIBMPQ_ATTRIBUTE_PATCH_BIT) == 0)
-        return status;
-    if (flags & LIBMPQ_ATTRIBUTE_CRC32)
-        bits_offset += (size_t)count * 4;
-    if (flags & LIBMPQ_ATTRIBUTE_FILETIME)
-        bits_offset += (size_t)count * 8;
-    if (flags & LIBMPQ_ATTRIBUTE_MD5)
-        bits_offset += (size_t)count * 16;
-    for (uint32_t i = 0; i < count; i++) {
-        if (entries[i].patch_bit == 0)
-            continue;
-        if (i == self || bits_offset > *size || i / 8 >= *size - bits_offset) {
-            free(*data);
-            *data = NULL;
-            *size = 0;
-            return LIBMPQ_ERROR_FORMAT;
-        }
-        (*data)[bits_offset + i / 8] |= (uint8_t)(0x80u >> (i % 8));
-    }
-    return LIBMPQ_SUCCESS;
-}
-
 /* Keep known live names, remove deleted names, and enrich new named entries. */
 static int32_t
 patch_rewrite_listfile(
@@ -1085,7 +1044,8 @@ patch_rewrite_attributes(
     if (target->mpq_header.block_table_count == UINT32_MAX)
         return LIBMPQ_ERROR_FORMAT;
     self = target->mpq_header.block_table_count;
-    status = patch_serialize_attributes(attributes, self + 1, self, flags, &data, &size);
+    status =
+        libmpq__attributes_serialize_patch_bits(attributes, self + 1, self, flags, &data, &size);
     if (status != LIBMPQ_SUCCESS)
         return status;
     status = patch_append_member(target, output, data, size, &block);

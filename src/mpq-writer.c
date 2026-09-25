@@ -27,6 +27,7 @@
 #include "mpq-file.h"
 #include "mpq-internal.h"
 #include "mpq-mpqe.h"
+#include "mpq-patch.h"
 #include "mpq-pkware.h"
 #include "mpq-signature.h"
 #include "mpq-wave.h"
@@ -383,10 +384,18 @@ finalize_archive(mpq_archive_s *a)
     if (libmpq__attributes_write_flags(a) != 0) {
         mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS, LIBMPQ_COMPRESSION_ZLIB,
                                        LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
-        int32_t result = libmpq__attributes_serialize(
-            a->write_attributes, a->write_capacity, a->write_next_block,
-            libmpq__attributes_write_flags(a), &raw, &bytes
-        );
+        if (a->write_patch_mode &&
+            (libmpq__attributes_write_flags(a) & LIBMPQ_ATTRIBUTE_PATCH_BIT) != 0) {
+            for (i = 0; i < a->write_next_block; i++)
+                a->write_attributes[i].patch_bit =
+                    (a->mpq_block[i].flags & LIBMPQ_FILE_FLAG_PATCH_FILE) != 0;
+        }
+        int32_t result =
+            (a->write_patch_mode ? libmpq__attributes_serialize_patch_bits
+                                 : libmpq__attributes_serialize)(
+                a->write_attributes, a->write_capacity, a->write_next_block,
+                libmpq__attributes_write_flags(a), &raw, &bytes
+            );
         if (result != LIBMPQ_SUCCESS)
             return result;
         result =
@@ -881,6 +890,9 @@ libmpq__writer_file_begin(
     }
     if (options == NULL)
         options = &defaults;
+    if ((options->flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) != 0 &&
+        (!a->write_patch_mode || options->flags != LIBMPQ_FILE_FLAG_DELETE_MARKER || size != 0))
+        return LIBMPQ_ERROR_FORMAT;
     if (libmpq__attributes_write_flags(a) != 0) {
         uint32_t reserved = 1u + ((a->write_flags & LIBMPQ_ARCHIVE_CREATE_LISTFILE) != 0);
         uint32_t hash1;
@@ -1153,6 +1165,19 @@ libmpq__writer_file_add(
         return result;
     }
     return libmpq__writer_file_finish(w);
+}
+
+/* Supply marker storage flags at begin, before its block and hash entries exist. */
+int32_t
+libmpq__writer_patch_delete_marker(
+    mpq_archive_s *archive, const char *name, uint16_t locale, uint16_t platform
+)
+{
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_DELETE_MARKER, 0, 0, locale, platform };
+
+    if (archive == NULL || !archive->write_patch_mode)
+        return LIBMPQ_ERROR_FORMAT;
+    return libmpq__writer_file_add(archive, name, NULL, 0, &options);
 }
 
 /*

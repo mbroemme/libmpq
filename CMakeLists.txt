@@ -133,6 +133,7 @@ if(BUILD_TESTING)
         pkware
         reader
         patch
+        patch-writer
         update
         wave
         writer

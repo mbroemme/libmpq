@@ -61,4 +61,10 @@ int32_t libmpq__attributes_serialize(
     uint8_t **data, size_t *size
 );
 
+/* Private patch output may serialize true PATCH_BIT values. */
+int32_t libmpq__attributes_serialize_patch_bits(
+    const mpq_file_attributes_s *entries, uint32_t count, uint32_t self, uint32_t flags,
+    uint8_t **data, size_t *size
+);
+
 #endif /* LIBMPQ_ATTRIBUTES_H */
