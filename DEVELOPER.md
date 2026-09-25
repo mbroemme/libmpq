@@ -240,8 +240,37 @@ writer default of zero; rename retains the existing FILETIME. Weak
 `NGIS` trailers are removed after mutation because this API takes no signing
 key. A no-op transaction preserves all original bytes. Embedded MPQs and MPQE
 are not accepted by the public update API. PATCH_BIT=true writing and archive
-patches remain unsupported. The current rebuild rejects an archive extent
+patch creation remain unsupported. The current rebuild rejects an archive extent
 that cannot fit the 32-bit MPQ archive-size field.
+
+## Private patch views
+
+The private `mpq-patch` layer composes a filesystem-backed base MPQ with ordered
+patch MPQs. It materializes a temporary read-only archive view; later layers
+override earlier ones, delete markers hide lower-layer names, and `PTCH` COPY
+or BSD0 payloads are checked against their before/after MD5 values. Existing
+archive and logical stream read APIs operate on the resulting private view.
+No public patch-composition API is exposed yet.
+
+Patch matching primarily uses each entry's MPQ hash identity, including locale
+and platform. `(listfile)` is optional metadata that enriches entries with
+plaintext names. An unnamed patch entry can replace an existing hash identity
+when its payload can be decoded without a name-derived key. A new patch-only
+member requires a recoverable plaintext name so its hash-table probe position
+can be computed. Otherwise that entry is rejected rather than
+silently omitted. Unnamed base members and their packed data remain intact.
+MPQE base/patch chains are unsupported. A `.w3x` input is treated only as an
+MPQ container; its prefix and unrelated trailing bytes are retained while a
+stale external strong-signature trailer is removed after a content change.
+This layer does not perform HM3W map-header hashing.
+Prefix-mapped patch namespaces are not resolved yet.
+The view retains usable `(listfile)` names, merges known patch-only names, and
+maps available `(attributes)` rows to resulting file entries by MPQ hash
+identity. Existing PATCH_BIT values remain readable, including true values
+carried from input metadata; Phase 5A does not create new PATCH_BIT=true values.
+A content change invalidates the base archive's signatures, so the temporary
+view omits stale weak and strong signatures. Patch creation remains out of
+scope.
 
 ## Optional attributes
 
