@@ -23,6 +23,7 @@
 #include "mpq-file.h"
 #include "mpq-internal.h"
 #include "mpq-md5.h"
+#include "mpq-patch-bsd0.h"
 #include "mpq-patch.h"
 #include "mpq-reader.h"
 #include "mpq-writer.h"
@@ -155,10 +156,11 @@ patch_writer_read_base(
     return result;
 }
 
-/* Produce a complete PTCH COPY member, including its stored patch-info prefix. */
+/* Build one complete PTCH candidate without changing its transform afterward. */
 static int32_t
-patch_writer_copy_payload(
+patch_writer_build_payload(
     const uint8_t *before, size_t before_size, const uint8_t *after, size_t after_size,
+    const uint8_t *transform, size_t transform_size, size_t patch_stream_size, uint8_t use_bsd0,
     uint8_t **payload, size_t *payload_size
 )
 {
@@ -166,6 +168,7 @@ patch_writer_copy_payload(
     static const uint8_t md5_tag[4] = { 'M', 'D', '5', '_' };
     static const uint8_t xfrm_tag[4] = { 'X', 'F', 'R', 'M' };
     static const uint8_t copy_tag[4] = { 'C', 'O', 'P', 'Y' };
+    static const uint8_t bsd0_tag[4] = { 'B', 'S', 'D', '0' };
     size_t encoded_size;
     uint8_t *raw;
     uint8_t *patch;
@@ -173,11 +176,11 @@ patch_writer_copy_payload(
 
     *payload = NULL;
     *payload_size = 0;
-    if (before_size > UINT32_MAX ||
-        after_size > UINT32_MAX - LIBMPQ_PATCH_INFO_SIZE - LIBMPQ_PATCH_COPY_HEADER_SIZE ||
-        after_size > SIZE_MAX - LIBMPQ_PATCH_INFO_SIZE - LIBMPQ_PATCH_COPY_HEADER_SIZE)
+    if (transform_size > UINT32_MAX - LIBMPQ_PATCH_COPY_HEADER_SIZE ||
+        patch_stream_size > UINT32_MAX - LIBMPQ_PATCH_COPY_HEADER_SIZE ||
+        transform_size > SIZE_MAX - LIBMPQ_PATCH_INFO_SIZE - LIBMPQ_PATCH_COPY_HEADER_SIZE)
         return LIBMPQ_ERROR_SIZE;
-    encoded_size = LIBMPQ_PATCH_COPY_HEADER_SIZE + after_size;
+    encoded_size = LIBMPQ_PATCH_COPY_HEADER_SIZE + transform_size;
     raw = calloc(1, LIBMPQ_PATCH_INFO_SIZE + encoded_size);
     if (raw == NULL)
         return LIBMPQ_ERROR_MALLOC;
@@ -186,7 +189,7 @@ patch_writer_copy_payload(
     libmpq__store_le32(raw + 4, 0x80000000u);
     libmpq__store_le32(raw + 8, (uint32_t)encoded_size);
     memcpy(patch, ptch_tag, sizeof(ptch_tag));
-    libmpq__store_le32(patch + 4, (uint32_t)encoded_size);
+    libmpq__store_le32(patch + 4, (uint32_t)(LIBMPQ_PATCH_COPY_HEADER_SIZE + patch_stream_size));
     libmpq__store_le32(patch + 8, (uint32_t)before_size);
     libmpq__store_le32(patch + 12, (uint32_t)after_size);
     memcpy(patch + 16, md5_tag, sizeof(md5_tag));
@@ -198,16 +201,100 @@ patch_writer_copy_payload(
     libmpq__md5_update(&md5, after, after_size);
     libmpq__md5_final(&md5, patch + 40);
     memcpy(patch + 56, xfrm_tag, sizeof(xfrm_tag));
-    libmpq__store_le32(patch + 60, (uint32_t)after_size + 12);
-    memcpy(patch + 64, copy_tag, sizeof(copy_tag));
-    if (after_size != 0)
-        memcpy(patch + LIBMPQ_PATCH_COPY_HEADER_SIZE, after, after_size);
+    libmpq__store_le32(patch + 60, (uint32_t)transform_size + 12);
+    memcpy(patch + 64, use_bsd0 ? bsd0_tag : copy_tag, sizeof(copy_tag));
+    if (transform_size != 0)
+        memcpy(patch + LIBMPQ_PATCH_COPY_HEADER_SIZE, transform, transform_size);
     libmpq__md5_init(&md5);
     libmpq__md5_update(&md5, patch, encoded_size);
     libmpq__md5_final(&md5, raw + 12);
+
     *payload = raw;
     *payload_size = LIBMPQ_PATCH_INFO_SIZE + encoded_size;
     return LIBMPQ_SUCCESS;
+}
+
+/* Select BSD0 only when its complete candidate is smaller and decodes correctly. */
+static int32_t
+patch_writer_payload(
+    const uint8_t *before, size_t before_size, const uint8_t *after, size_t after_size,
+    uint8_t **payload, size_t *payload_size
+)
+{
+    size_t transform_size = 0;
+    size_t patch_stream_size = 0;
+    size_t verified_size = 0;
+    uint8_t *transform = NULL;
+    uint8_t *candidate = NULL;
+    uint8_t *best = NULL;
+    uint8_t *verified = NULL;
+    size_t candidate_size = 0;
+    size_t best_size;
+    int32_t result;
+
+    *payload = NULL;
+    *payload_size = 0;
+    if (before_size > UINT32_MAX ||
+        after_size > UINT32_MAX - LIBMPQ_PATCH_INFO_SIZE - LIBMPQ_PATCH_COPY_HEADER_SIZE ||
+        after_size > SIZE_MAX - LIBMPQ_PATCH_INFO_SIZE - LIBMPQ_PATCH_COPY_HEADER_SIZE)
+        return LIBMPQ_ERROR_SIZE;
+    best_size = LIBMPQ_PATCH_INFO_SIZE + LIBMPQ_PATCH_COPY_HEADER_SIZE + after_size;
+    if (after_size != 0) {
+        for (uint8_t splice = 0; splice < 2; splice++) {
+            result = libmpq__patch_bsd0_encode(
+                before, before_size, after, after_size, splice, &transform, &transform_size,
+                &patch_stream_size
+            );
+            if (result != LIBMPQ_SUCCESS) {
+                free(best);
+                return result;
+            }
+            if (transform == NULL)
+                continue;
+            if (patch_stream_size > UINT32_MAX - LIBMPQ_PATCH_COPY_HEADER_SIZE ||
+                transform_size > UINT32_MAX - LIBMPQ_PATCH_COPY_HEADER_SIZE ||
+                transform_size >
+                    SIZE_MAX - LIBMPQ_PATCH_INFO_SIZE - LIBMPQ_PATCH_COPY_HEADER_SIZE) {
+                free(transform);
+                transform = NULL;
+                continue;
+            }
+            result = patch_writer_build_payload(
+                before, before_size, after, after_size, transform, transform_size,
+                patch_stream_size, 1, &candidate, &candidate_size
+            );
+            free(transform);
+            transform = NULL;
+            if (result != LIBMPQ_SUCCESS) {
+                free(best);
+                return result;
+            }
+            result = libmpq__patch_apply(
+                before, before_size, candidate + LIBMPQ_PATCH_INFO_SIZE,
+                candidate_size - LIBMPQ_PATCH_INFO_SIZE, &verified, &verified_size
+            );
+            if (result == LIBMPQ_SUCCESS && verified_size == after_size && verified != NULL &&
+                memcmp(verified, after, after_size) == 0 && candidate_size < best_size) {
+                free(best);
+                best = candidate;
+                best_size = candidate_size;
+                candidate = NULL;
+            }
+            free(verified);
+            verified = NULL;
+            free(candidate);
+            candidate = NULL;
+        }
+    }
+    if (best != NULL) {
+        *payload = best;
+        *payload_size = best_size;
+        return LIBMPQ_SUCCESS;
+    }
+    return patch_writer_build_payload(
+        before, before_size, after, after_size, after, after_size, after_size, 0, payload,
+        payload_size
+    );
 }
 
 /* Refuse to publish a patch over its own base archive. */
@@ -311,7 +398,7 @@ fail:
     return result;
 }
 
-/* Stage a named whole-file replacement without generating a binary delta. */
+/* Stage a named replacement, falling back to COPY unless BSD0 is smaller. */
 int32_t
 libmpq__patch_writer_replace(
     mpq_patch_writer_s *state, const char *name, const uint8_t *data, libmpq__off_t size
@@ -337,9 +424,10 @@ libmpq__patch_writer_replace(
         return result;
     result = patch_writer_read_base(state, name, number, &before, &before_size);
     if (result == LIBMPQ_SUCCESS)
-        result = patch_writer_copy_payload(
-            before, before_size, data, (size_t)size, &payload, &payload_size
-        );
+        result =
+            patch_writer_payload(before, before_size, data, (size_t)size, &payload, &payload_size);
+    if (result == LIBMPQ_SUCCESS && payload_size > state->archive->write_sector_size)
+        storage.flags = 0;
     if (result == LIBMPQ_SUCCESS)
         result = libmpq__writer_file_add(
             state->archive, name, payload, (libmpq__off_t)payload_size, &storage

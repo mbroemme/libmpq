@@ -29,7 +29,7 @@ int32_t libmpq__patch_writer_begin(
     mpq_patch_writer_s **patch_writer, const char *base_path, const char *patch_path
 );
 
-/* Add a whole-file PTCH COPY replacement for an existing named base member. */
+/* Add a PTCH replacement, selecting BSD0 only when smaller than COPY. */
 int32_t libmpq__patch_writer_replace(
     mpq_patch_writer_s *patch_writer, const char *name, const uint8_t *data, libmpq__off_t size
 );

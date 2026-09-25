@@ -18,8 +18,10 @@
  */
 
 #include "mpq-attributes.h"
+#include "mpq-endian.h"
 #include "mpq-internal.h"
 #include "mpq-md5.h"
+#include "mpq-patch-bsd0.h"
 #include "mpq-patch-writer.h"
 #include "mpq-patch.h"
 #include "mpq-source.h"
@@ -410,6 +412,264 @@ test_unsupported_base(void)
     return 0;
 }
 
+/* Inspect the splice candidate's literal copies and middle-only diff block. */
+static int
+check_splice_layout(
+    const uint8_t *encoded, size_t encoded_size, size_t raw_size, const uint8_t *before,
+    const uint8_t *after
+)
+{
+    const size_t prefix = 2048;
+    const size_t middle = 96;
+    const size_t suffix = 8192 - prefix - middle;
+    size_t input = 4;
+    size_t output = 0;
+    uint8_t expanded[32 + 36 + 8193] = { 0 };
+    const uint8_t *raw;
+    const uint8_t *diff;
+    const uint8_t *extra;
+
+    TEST_CHECK(raw_size == sizeof(expanded));
+    if (raw_size == encoded_size) {
+        raw = encoded;
+    } else {
+        TEST_CHECK(encoded_size >= 4);
+        while (input < encoded_size && output < raw_size) {
+            uint8_t command = encoded[input++];
+            size_t count = (command & 0x7fu) + 1;
+
+            TEST_CHECK(count <= raw_size - output);
+            if ((command & 0x80u) != 0) {
+                TEST_CHECK(count <= encoded_size - input);
+                memcpy(expanded + output, encoded + input, count);
+                input += count;
+            }
+            output += count;
+        }
+        TEST_CHECK(input == encoded_size && output == raw_size);
+        raw = expanded;
+    }
+    TEST_CHECK(memcmp(raw, "BSDIFF40", 8) == 0);
+    TEST_CHECK(libmpq__load_le64(raw + 8) == 36);
+    TEST_CHECK(libmpq__load_le64(raw + 16) == middle);
+    TEST_CHECK(libmpq__load_le32(raw + 32) == 0);
+    TEST_CHECK(libmpq__load_le32(raw + 36) == prefix);
+    TEST_CHECK(libmpq__load_le32(raw + 40) == prefix);
+    TEST_CHECK(libmpq__load_le32(raw + 44) == middle);
+    TEST_CHECK(libmpq__load_le32(raw + 48) == 1);
+    TEST_CHECK(libmpq__load_le32(raw + 52) == 0);
+    TEST_CHECK(libmpq__load_le32(raw + 56) == 0);
+    TEST_CHECK(libmpq__load_le32(raw + 60) == suffix);
+    diff = raw + 32 + 36;
+    extra = diff + middle;
+    for (size_t i = 0; i < middle; i++)
+        TEST_CHECK(diff[i] == (uint8_t)(after[prefix + i] - before[prefix + i]));
+    TEST_CHECK(memcmp(extra, after, prefix) == 0);
+    TEST_CHECK(extra[prefix] == after[prefix + middle]);
+    TEST_CHECK(memcmp(extra + prefix + 1, after + prefix + middle + 1, suffix) == 0);
+    return 0;
+}
+
+/* Inspect both transform choices and their distinct on-disk size/MD5 fields. */
+static int
+test_delta_selection(uint8_t kind)
+{
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_ONE, 8, 4096, 0, 0 };
+    mpq_file_options_s storage = { 0, 0, 0, 0, 0 };
+    char base_path[1024];
+    char patch_path[1024];
+    const char *layers[] = { patch_path };
+    mpq_archive_s *base = NULL;
+    mpq_archive_s *patch = NULL;
+    mpq_patch_writer_s *writer = NULL;
+    mpq_patch_view_s *view = NULL;
+    mpq_patch_info_s info;
+    mpq_file_attributes_s attributes;
+    mpq_md5_s md5;
+    uint8_t before[8192];
+    uint8_t after[8193];
+    uint8_t *decoded = NULL;
+    uint8_t *stored = NULL;
+    uint8_t digest[LIBMPQ_MD5_SIZE];
+    uint64_t offset;
+    uint32_t number;
+    uint32_t block;
+    uint32_t flags;
+    size_t decoded_size = 0;
+    size_t stored_size;
+    size_t after_size = kind ? sizeof(after) : sizeof(before);
+
+    for (size_t i = 0; i < sizeof(before); i++) {
+        before[i] = (uint8_t)((i * 97u + i / 11u) & 0xffu);
+        after[i] = kind ? before[i] : (uint8_t)((i * 71u + i / 7u + 3u) & 0xffu);
+    }
+    if (kind == 1) {
+        after[17] ^= 0x51u;
+        after[4102] ^= 0x81u;
+        after[8033] ^= 0x11u;
+        after[8192] = 0x5au;
+    } else if (kind == 2) {
+        after[3072] = before[3072] ^ 0x5au;
+        memcpy(after + 3073, before + 3072, sizeof(before) - 3072);
+    } else if (kind == 3) {
+        after[2048] ^= 0x31u;
+        after[2096] ^= 0x72u;
+        after[2143] ^= 0x14u;
+        after[2144] = before[2143] ^ 0x3fu;
+        memcpy(after + 2145, before + 2144, sizeof(before) - 2144);
+    }
+    TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "patch-delta-base") == 0);
+    TEST_CHECK(test_temp_path(patch_path, sizeof(patch_path), "patch-delta-output") == 0);
+    TEST_CHECK(libmpq__archive_create(&base, base_path, &options) == LIBMPQ_SUCCESS);
+    TEST_CHECK(
+        libmpq__archive_add_data(base, "delta.bin", before, sizeof(before), &storage) ==
+        LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(libmpq__archive_close(base) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_writer_begin(&writer, base_path, patch_path) == LIBMPQ_SUCCESS);
+    TEST_CHECK(
+        libmpq__patch_writer_replace(writer, "delta.bin", after, after_size) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(libmpq__patch_writer_finish(writer) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_open(&patch, patch_path, 0) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__file_number(patch, "delta.bin", &number) == LIBMPQ_SUCCESS);
+    block = patch->mpq_map[number].block_table_indices;
+    TEST_CHECK(libmpq__file_flags(patch, number, &flags) == LIBMPQ_SUCCESS);
+    TEST_CHECK((flags & LIBMPQ_FILE_FLAG_PATCH_FILE) != 0);
+    TEST_CHECK(patch->mpq_block[block].unpacked_size == after_size);
+    TEST_CHECK(libmpq__file_attributes(patch, number, &attributes) == LIBMPQ_SUCCESS);
+    TEST_CHECK(attributes.patch_bit == 1);
+    libmpq__md5_init(&md5);
+    libmpq__md5_update(&md5, after, after_size);
+    libmpq__md5_final(&md5, digest);
+    TEST_CHECK(memcmp(attributes.md5, digest, sizeof(digest)) == 0);
+    stored_size = patch->mpq_block[block].packed_size;
+    stored = malloc(stored_size);
+    TEST_CHECK(stored != NULL);
+    offset = (uint64_t)patch->archive_offset + patch->mpq_block[block].offset +
+             ((uint64_t)patch->mpq_block_ex[block].offset_high << 32);
+    TEST_CHECK(
+        libmpq__source_read_at(patch->source, offset, stored, stored_size) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(libmpq__patch_info_parse(stored, stored_size, &info) == LIBMPQ_SUCCESS);
+    TEST_CHECK(info.data_size + info.length == stored_size);
+    TEST_CHECK(libmpq__load_le32(stored + info.length + 8) == sizeof(before));
+    TEST_CHECK(libmpq__load_le32(stored + info.length + 12) == after_size);
+    TEST_CHECK(memcmp(stored + info.length + 40, digest, sizeof(digest)) == 0);
+    libmpq__md5_init(&md5);
+    libmpq__md5_update(&md5, before, sizeof(before));
+    libmpq__md5_final(&md5, digest);
+    TEST_CHECK(memcmp(stored + info.length + 24, digest, sizeof(digest)) == 0);
+    libmpq__md5_init(&md5);
+    libmpq__md5_update(&md5, stored + info.length, info.data_size);
+    libmpq__md5_final(&md5, digest);
+    TEST_CHECK(memcmp(info.md5, digest, sizeof(digest)) == 0);
+    TEST_CHECK(libmpq__load_le32(stored + info.length + 60) == info.data_size - 68 + 12);
+    if (kind) {
+        TEST_CHECK(memcmp(stored + info.length + 64, "BSD0", 4) == 0);
+        TEST_CHECK(info.data_size < 68 + after_size);
+        TEST_CHECK(libmpq__load_le32(stored + info.length + 4) > info.data_size);
+
+        /* Decode the stored PTCH bytes directly, without materializing a patch view. */
+        TEST_CHECK(
+            libmpq__patch_apply(
+                before, sizeof(before), stored + info.length, info.data_size, &decoded,
+                &decoded_size
+            ) == LIBMPQ_SUCCESS
+        );
+        TEST_CHECK(decoded_size == after_size);
+        TEST_CHECK(decoded != NULL);
+        TEST_CHECK(memcmp(decoded, after, after_size) == 0);
+        free(decoded);
+    } else {
+        TEST_CHECK(memcmp(stored + info.length + 64, "COPY", 4) == 0);
+        TEST_CHECK(info.data_size == 68 + after_size);
+    }
+    free(stored);
+    TEST_CHECK(libmpq__archive_close(patch) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_open(&view, base_path, layers, 1) == LIBMPQ_SUCCESS);
+    TEST_CHECK(check_file(libmpq__patch_view_archive(view), "delta.bin", after, after_size) == 0);
+    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(remove(patch_path) == 0);
+    TEST_CHECK(remove(base_path) == 0);
+    return 0;
+}
+
+/* Decode a splice with literal prefix/suffix copies and a middle-only diff. */
+static int
+test_splice_candidate(void)
+{
+    uint8_t before[8192];
+    uint8_t after[8193];
+    uint8_t *encoded = NULL;
+    uint8_t *patch = NULL;
+    uint8_t *decoded = NULL;
+    size_t encoded_size = 0;
+    size_t patch_stream_size = 0;
+    size_t decoded_size = 0;
+    mpq_md5_s md5;
+    int status = 1;
+
+#define SPLICE_CHECK(condition)                                                                    \
+    do {                                                                                           \
+        if (!(condition)) {                                                                        \
+            test_failure(__FILE__, __LINE__, #condition);                                          \
+            goto done;                                                                             \
+        }                                                                                          \
+    } while (0)
+
+    for (size_t i = 0; i < sizeof(before); i++) {
+        before[i] = (uint8_t)((i * 97u + i / 11u) & 0xffu);
+        after[i] = before[i];
+    }
+    after[2048] ^= 0x31u;
+    after[2096] ^= 0x72u;
+    after[2143] ^= 0x14u;
+    after[2144] = before[2143] ^ 0x3fu;
+    memcpy(after + 2145, before + 2144, sizeof(before) - 2144);
+    SPLICE_CHECK(
+        libmpq__patch_bsd0_encode(
+            before, sizeof(before), after, sizeof(after), 1, &encoded, &encoded_size,
+            &patch_stream_size
+        ) == LIBMPQ_SUCCESS
+    );
+    SPLICE_CHECK(encoded != NULL);
+    SPLICE_CHECK(check_splice_layout(encoded, encoded_size, patch_stream_size, before, after) == 0);
+    patch = calloc(1, 68 + encoded_size);
+    SPLICE_CHECK(patch != NULL);
+    memcpy(patch, "PTCH", 4);
+    libmpq__store_le32(patch + 4, (uint32_t)(68 + patch_stream_size));
+    libmpq__store_le32(patch + 8, sizeof(before));
+    libmpq__store_le32(patch + 12, sizeof(after));
+    memcpy(patch + 16, "MD5_", 4);
+    libmpq__store_le32(patch + 20, 40);
+    libmpq__md5_init(&md5);
+    libmpq__md5_update(&md5, before, sizeof(before));
+    libmpq__md5_final(&md5, patch + 24);
+    libmpq__md5_init(&md5);
+    libmpq__md5_update(&md5, after, sizeof(after));
+    libmpq__md5_final(&md5, patch + 40);
+    memcpy(patch + 56, "XFRM", 4);
+    libmpq__store_le32(patch + 60, (uint32_t)(encoded_size + 12));
+    memcpy(patch + 64, "BSD0", 4);
+    memcpy(patch + 68, encoded, encoded_size);
+    SPLICE_CHECK(
+        libmpq__patch_apply(
+            before, sizeof(before), patch, 68 + encoded_size, &decoded, &decoded_size
+        ) == LIBMPQ_SUCCESS
+    );
+    SPLICE_CHECK(decoded_size == sizeof(after));
+    SPLICE_CHECK(memcmp(decoded, after, sizeof(after)) == 0);
+    status = 0;
+
+done:
+    free(decoded);
+    free(patch);
+    free(encoded);
+#undef SPLICE_CHECK
+    return status;
+}
+
 int
 main(void)
 {
@@ -419,6 +679,10 @@ main(void)
     TEST_CHECK(round_trip(LIBMPQ_ARCHIVE_VERSION_TWO, 1, 1) == 0);
     TEST_CHECK(test_encrypted_base() == 0);
     TEST_CHECK(test_unlisted_base_member() == 0);
+    TEST_CHECK(test_delta_selection(1) == 0);
+    TEST_CHECK(test_delta_selection(2) == 0);
+    TEST_CHECK(test_splice_candidate() == 0);
+    TEST_CHECK(test_delta_selection(0) == 0);
     TEST_CHECK(test_abort() == 0);
     TEST_CHECK(test_unsupported_base() == 0);
     return 0;

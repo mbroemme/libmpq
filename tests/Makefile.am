@@ -73,6 +73,7 @@ test_patch_LDADD = $(top_builddir)/src/mpq-patch.lo $(test_attributes_LDADD)
 test_patch_writer_SOURCES = test-mpq-patch-writer.c $(COMMON_SOURCES)
 test_patch_writer_LDADD = \
 	$(top_builddir)/src/mpq-patch-writer.lo \
+	$(top_builddir)/src/mpq-patch-bsd0.lo \
 	$(top_builddir)/src/mpq-patch.lo \
 	$(top_builddir)/src/mpq-writer.lo \
 	$(top_builddir)/src/mpq-stream.lo \

@@ -275,11 +275,19 @@ out of scope.
 ## Private patch writer foundation
 
 The private `mpq-patch-writer` module creates libmpq-compatible MPQ v1/v2
-whole-file replacement patch archives for round-trip tests with the private
+replacement patch archives for round-trip tests with the private
 patch reader. It operates separately from update transactions and stages a
-same-directory temporary archive. It writes named replacements as PTCH COPY
-members and deletions as delete markers, then publishes only on finish. Abort
-discards the temporary output.
+same-directory temporary archive. It writes named replacements as PTCH BSD0
+members when a deterministic binary delta is smaller than PTCH COPY, and uses
+COPY otherwise. Deletions are delete markers. It publishes only on finish;
+abort discards the temporary output.
+The BSD0 splice candidate uses the existing libmpq decoder's control tuples:
+literal extra-block copies for unchanged prefix and suffix bytes, and base-byte
+differences plus optional inserted literals for the changed middle. Every BSD0
+candidate is decoded and compared with the target before size-based selection.
+This guarantees compatibility with libmpq's reader, not generic bsdiff or
+external StormLib compatibility. Testing against independently generated
+StormLib patches remains a private validation step.
 Existing base members are read with their plaintext names, so encrypted
 members can supply their filename-derived keys.
 
@@ -295,8 +303,8 @@ view to retain the base member's timestamp.
 Ordinary archive creation still rejects true PATCH_BIT values. The
 patch-writer tests generate temporary archives and apply them through the
 private patch view; no repository fixture needs to change. This foundation
-does not generate BSD0 or other PTCH binary deltas, sign patches, or write
-MPQE/embedded patch containers, and it exposes no public patch API.
+does not generate optimized BSD0 deltas, sign patches, or write MPQE/embedded
+patch containers, and it exposes no public patch API.
 
 ## Optional attributes
 
