@@ -22,7 +22,7 @@
 
 #include <libmpq/mpq.h>
 
-typedef struct mpq_patch_writer mpq_patch_writer_s;
+typedef mpq_patch_s mpq_patch_writer_s;
 
 /* Begin a private libmpq-compatible whole-file patch for a path-backed MPQ. */
 int32_t libmpq__patch_writer_begin(
@@ -31,7 +31,13 @@ int32_t libmpq__patch_writer_begin(
 
 /* Add a PTCH replacement, selecting BSD0 only when smaller than COPY. */
 int32_t libmpq__patch_writer_replace(
-    mpq_patch_writer_s *patch_writer, const char *name, const uint8_t *data, libmpq__off_t size
+    mpq_patch_writer_s *patch_writer, const char *name, const uint8_t *data, libmpq__off_t size,
+    const mpq_file_options_s *options
+);
+
+int32_t libmpq__patch_writer_replace_path(
+    mpq_patch_writer_s *patch_writer, const char *name, const char *source_path,
+    const mpq_file_options_s *options
 );
 
 /* Add a delete marker for an existing named base member. */

@@ -1,0 +1,50 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__PATCH_REPLACE_DATA 3 2026-09-28 "The MoPaQ archive library"
+.SH NAME
+libmpq__patch_replace_data \- stage a named replacement from memory
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__patch_replace_data(mpq_patch_s *patch, const char *filename, const uint8_t *data, libmpq__off_t size, const mpq_file_options_s *options);"
+.fi
+.SH DESCRIPTION
+Stages a replacement for an existing named base member using \fIsize\fP bytes from \fIdata\fP. It does not modify the base archive or publish the patch. The private writer selects a validated BSD0 delta only when smaller than a whole-file PTCH COPY payload. NULL \fIoptions\fP selects patch-writer defaults. Explicit options control storage of the patch member, not the final patched file; locale and platform must match the base member. Add and rename operations are not supported.
+.SH RETURN VALUE
+Returns \fBLIBMPQ_SUCCESS\fP or a negative libmpq error.
+.SH ERRORS
+A missing member or invalid pointer returns LIBMPQ_ERROR_EXIST. Locale/platform mismatches or unsupported options return LIBMPQ_ERROR_FORMAT. Size, allocation, decoding, and I/O errors may also propagate.
+.SH SEE ALSO
+.BR libmpq__patch_replace_path (3),
+.BR libmpq__patch_finish (3),
+.BR libmpq__archive_add_data (3)
+.SH AUTHOR
+The libmpq project is maintained by Maik Broemme.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

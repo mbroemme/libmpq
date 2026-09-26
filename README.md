@@ -47,6 +47,7 @@ MPQ v2+ LZMA method.
   memory-buffer, and filesystem-path APIs.
 * Modify existing filesystem MPQ archives transactionally with named-file
   replace, remove, and rename operations.
+* Create replacement and deletion patch archives without changing the base MPQ.
 * Read and create MPQE-wrapped MPQ archives using a caller-supplied
   authentication code.
 * Read and write PKWARE implode, Huffman, zlib, bzip2, SPARSE, and mono or

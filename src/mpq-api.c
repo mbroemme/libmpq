@@ -33,6 +33,7 @@
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
 #include "mpq-internal.h"
+#include "mpq-patch-writer.h"
 #include "mpq-reader.h"
 #include "mpq-rsa.h"
 #include "mpq-signature.h"
@@ -335,6 +336,48 @@ int32_t
 libmpq__update_abort(mpq_update_s *update)
 {
     return libmpq__update_transaction_abort(update);
+}
+
+int32_t
+libmpq__patch_begin(mpq_patch_s **patch, const char *base_archive, const char *output_patch)
+{
+    return libmpq__patch_writer_begin(patch, base_archive, output_patch);
+}
+
+int32_t
+libmpq__patch_replace_data(
+    mpq_patch_s *patch, const char *filename, const uint8_t *data, libmpq__off_t size,
+    const mpq_file_options_s *options
+)
+{
+    return libmpq__patch_writer_replace(patch, filename, data, size, options);
+}
+
+int32_t
+libmpq__patch_replace_path(
+    mpq_patch_s *patch, const char *filename, const char *source_path,
+    const mpq_file_options_s *options
+)
+{
+    return libmpq__patch_writer_replace_path(patch, filename, source_path, options);
+}
+
+int32_t
+libmpq__patch_remove(mpq_patch_s *patch, const char *filename)
+{
+    return libmpq__patch_writer_remove(patch, filename);
+}
+
+int32_t
+libmpq__patch_finish(mpq_patch_s *patch)
+{
+    return libmpq__patch_writer_finish(patch);
+}
+
+int32_t
+libmpq__patch_abort(mpq_patch_s *patch)
+{
+    return libmpq__patch_writer_abort(patch);
 }
 
 /*

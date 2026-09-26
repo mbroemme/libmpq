@@ -135,8 +135,10 @@ typedef struct
 /*
  * Native representation of the metadata for one stored file payload. The offset and
  * packed size identify the bytes on disk, while the unpacked size describes
- * the result after decryption and decompression. Flags select the storage,
- * encryption, and compression rules needed to interpret that payload.
+ * the result after decryption and decompression. Patch-file blocks instead
+ * record the reconstructed result size; their plaintext prefix supplies the
+ * decoded PTCH-body size. Flags select the storage, encryption, and
+ * compression rules needed to interpret that payload.
  */
 typedef struct
 {
@@ -265,6 +267,9 @@ struct mpq_writer
     uint32_t sector_index;            /* Index of the next sector to flush. */
     uint32_t block_count;             /* Number of sectors expected for this file. */
     uint64_t payload_offset;          /* Archive offset where this file's payload begins. */
+    uint32_t prefix_size;             /* Plaintext patch prefix before stored member data. */
+    uint32_t patch_result_size;       /* Reconstructed size recorded for a patch-file block. */
+    uint8_t patch_file;               /* This writer emits a private patch-file entry. */
     uint64_t packed_total;            /* Bytes written for packed sectors, excluding the table. */
     uint32_t *offsets;                /* Relative sector offsets for compressed files. */
     uint32_t *checksums;              /* Optional slice owned by the offsets allocation. */

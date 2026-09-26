@@ -78,6 +78,18 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .sp
 .BI "int32_t libmpq__update_abort(mpq_update_s *" "update");"
 .sp
+.BI "int32_t libmpq__patch_begin(mpq_patch_s **" "patch", ", const char *" "base_archive", ", const char *" "output_patch");"
+.sp
+.BI "int32_t libmpq__patch_replace_data(mpq_patch_s *" "patch", ", const char *" "filename", ", const uint8_t *" "data", ", libmpq__off_t " "size", ", const mpq_file_options_s *" "options");"
+.sp
+.BI "int32_t libmpq__patch_replace_path(mpq_patch_s *" "patch", ", const char *" "filename", ", const char *" "source_path", ", const mpq_file_options_s *" "options");"
+.sp
+.BI "int32_t libmpq__patch_remove(mpq_patch_s *" "patch", ", const char *" "filename");"
+.sp
+.BI "int32_t libmpq__patch_finish(mpq_patch_s *" "patch");"
+.sp
+.BI "int32_t libmpq__patch_abort(mpq_patch_s *" "patch");"
+.sp
 .BI "int32_t libmpq__archive_clone("
 .BI "        mpq_archive_s **" "clone",
 .BI "        mpq_archive_s  *" "source"

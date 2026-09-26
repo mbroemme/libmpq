@@ -269,18 +269,33 @@ maps available `(attributes)` rows to resulting file entries by MPQ hash
 identity. Existing PATCH_BIT values, including true values from input
 metadata, remain readable; the patch view does not create new true values.
 A content change invalidates the base archive's signatures, so the temporary
-view omits stale weak and strong signatures. Public patch creation remains
-out of scope.
+view omits stale weak and strong signatures. Patch-view composition remains
+private.
 
-## Private patch writer foundation
+## Patch archive creation
 
-The private `mpq-patch-writer` module creates libmpq-compatible MPQ v1/v2
-replacement patch archives for round-trip tests with the private
-patch reader. It operates separately from update transactions and stages a
-same-directory temporary archive. It writes named replacements as PTCH BSD0
+The public patch handle creates a new MPQ v1/v2 patch artifact without modifying
+the base archive:
+
+```c
+mpq_patch_s *patch = NULL;
+
+libmpq__patch_begin(&patch, "base.mpq", "changes.mpq");
+libmpq__patch_replace_data(patch, "file.txt", data, data_size, NULL);
+libmpq__patch_remove(patch, "obsolete.txt");
+libmpq__patch_finish(patch);
+```
+
+Replacement options control storage of the patch member inside the patch
+archive, not storage of the resulting file in the patched view.
+
+The private `mpq-patch-writer` module stages a same-directory temporary archive.
+It writes named replacements as PTCH BSD0
 members when a deterministic binary delta is smaller than PTCH COPY, and uses
 COPY otherwise. Deletions are delete markers. It publishes only on finish;
-abort discards the temporary output.
+abort discards the temporary output. Finish and abort consume the handle even
+when they report an error; the pointer must not be reused. Patch creation
+does not add or rename members. MPQE and embedded base archives are unsupported.
 The BSD0 splice candidate uses the existing libmpq decoder's control tuples:
 literal extra-block copies for unchanged prefix and suffix bytes, and base-byte
 differences plus optional inserted literals for the changed middle. Every BSD0
@@ -297,14 +312,14 @@ not emit a Blizzard `(patch_metadata)` structure; the private patch reader
 identifies these archives from patch-file and delete-marker flags. Full
 Blizzard patch metadata compatibility is deferred. Patch-file block sizes
 describe the resulting logical file, while the patch prefix describes the PTCH
-data size. The attributes MD5 records the resulting file; CRC32 retains the
-writer's stored-payload behavior. FILETIME is omitted, allowing the patched
-view to retain the base member's timestamp.
+data size. The attributes MD5 records the resulting file; CRC32 covers the
+plaintext patch prefix and decoded PTCH body. FILETIME is omitted,
+allowing the patched view to retain the base member's timestamp.
 Ordinary archive creation still rejects true PATCH_BIT values. The
 patch-writer tests generate temporary archives and apply them through the
-private patch view; no repository fixture needs to change. This foundation
-does not generate optimized BSD0 deltas, sign patches, or write MPQE/embedded
-patch containers, and it exposes no public patch API.
+private patch view; no repository fixture needs to change. Patch creation does
+not sign patches or write MPQE/embedded patch containers. The public patch API
+supports replacement and removal, but not addition or rename.
 
 ## Optional attributes
 

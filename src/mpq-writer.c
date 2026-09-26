@@ -251,6 +251,7 @@ stream_finish(mpq_writer_s *writer)
     uint32_t hash3;
     uint32_t i;
     uint64_t total;
+    uint64_t block_offset;
     size_t table_size;
     uint8_t *table;
     int32_t result;
@@ -289,6 +290,10 @@ stream_finish(mpq_writer_s *writer)
     /* Restore the append position after rewriting the table at the file start. */
     if (libmpq__file_seek(archive->fp, (writer->payload_offset + total), SEEK_SET) < 0)
         return LIBMPQ_ERROR_SEEK;
+    if (writer->payload_offset < writer->prefix_size ||
+        (writer->prefix_size != 0 && total > UINT32_MAX - writer->prefix_size))
+        return LIBMPQ_ERROR_SIZE;
+    block_offset = writer->payload_offset - writer->prefix_size;
     if (writer->payload_offset > UINT32_MAX || total > UINT32_MAX || writer->expected > UINT32_MAX)
         return archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE
                    ? LIBMPQ_ERROR_SIZE
@@ -297,13 +302,15 @@ stream_finish(mpq_writer_s *writer)
     /* Reserve the next block slot only after payload and offset sizes validate. */
     index = archive->write_next_block;
     libmpq__file_hash(writer->name, &hash1, &hash2, &hash3);
-    archive->mpq_block[index].offset = (uint32_t)writer->payload_offset;
-    archive->mpq_block[index].packed_size = (uint32_t)total;
-    archive->mpq_block[index].unpacked_size = (uint32_t)writer->expected;
-    archive->mpq_block[index].flags = LIBMPQ_FLAG_EXISTS | writer->options.flags;
+    archive->mpq_block[index].offset = (uint32_t)block_offset;
+    archive->mpq_block[index].packed_size = (uint32_t)total + writer->prefix_size;
+    archive->mpq_block[index].unpacked_size =
+        writer->patch_file ? writer->patch_result_size : (uint32_t)writer->expected;
+    archive->mpq_block[index].flags = LIBMPQ_FLAG_EXISTS | writer->options.flags |
+                                      (writer->patch_file ? LIBMPQ_FILE_FLAG_PATCH_FILE : 0);
     if (writer->options.flags & LIBMPQ_FILE_FLAG_COMPRESS)
         archive->mpq_block[index].flags |= LIBMPQ_FLAG_COMPRESS_MULTI;
-    archive->mpq_block_ex[index].offset_high = (uint16_t)(writer->payload_offset >> 32);
+    archive->mpq_block_ex[index].offset_high = (uint16_t)(block_offset >> 32);
     archive->write_names[index] = writer->name;
     archive->write_locales[index] = writer->options.locale;
     archive->write_platforms[index] = writer->options.platform;
@@ -862,19 +869,21 @@ libmpq__writer_archive_create_mpqe(
 }
 
 /*
- * Begin streaming one file into the archive using the requested options.
- * It validates flags and duplicate names, allocates one sector of input space,
- * and reserves an offset table when compressed multi-sector storage requires it.
+ * Begin one file, optionally reserving a plaintext patch prefix before its
+ * normally encoded body. Option and duplicate-name validation precedes the
+ * prefix write; the eventual block entry remains unpublished until finish.
  */
-int32_t
-libmpq__writer_file_begin(
+static int32_t
+writer_file_begin(
     mpq_archive_s *a, const char *name, libmpq__off_t size, const mpq_file_options_s *options,
-    mpq_writer_s **out
+    const uint8_t *prefix, uint32_t prefix_size, libmpq__off_t result_size, mpq_writer_s **out
 )
 {
     mpq_file_options_s defaults = { 0, 0, 0, 0, 0 };
     mpq_writer_s *w;
-    if (!a || !a->write_mode || !name || !out || size < 0 || a->write_current)
+    if (!a || !a->write_mode || !name || !out || size < 0 || a->write_current ||
+        (prefix_size != 0 && (!a->write_patch_mode || prefix == NULL || result_size < 0 ||
+                              (uint64_t)result_size > UINT32_MAX)))
         return LIBMPQ_ERROR_FORMAT;
     if (a->write_signature) {
         uint32_t h1;
@@ -977,6 +986,9 @@ libmpq__writer_file_begin(
     w->archive = a;
     w->expected = size;
     w->options = *options;
+    w->prefix_size = prefix_size;
+    w->patch_file = prefix_size != 0;
+    w->patch_result_size = (uint32_t)result_size;
     if (size == 0 || (w->options.flags & LIBMPQ_FILE_FLAG_SINGLE) != 0 ||
         (w->options.flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE)) == 0)
         w->options.flags &= ~LIBMPQ_FILE_FLAG_SECTOR_CRC;
@@ -1002,11 +1014,22 @@ libmpq__writer_file_begin(
     if (w->block_count == 0)
         w->block_count = 1;
     w->payload_offset = (uint64_t)libmpq__file_tell(a->fp);
-    if (w->payload_offset > INT64_MAX) {
+    if (w->payload_offset > (uint64_t)INT64_MAX - prefix_size) {
         free(w->data);
         free(w->name);
         free(w);
         return LIBMPQ_ERROR_SEEK;
+    }
+    if (prefix_size != 0) {
+        int32_t result = write_at(a->fp, w->payload_offset, prefix, prefix_size);
+
+        if (result != LIBMPQ_SUCCESS) {
+            free(w->data);
+            free(w->name);
+            free(w);
+            return result;
+        }
+        w->payload_offset += prefix_size;
     }
 
     /* Reserve offset-table space before the first packed sector is written. */
@@ -1044,10 +1067,27 @@ libmpq__writer_file_begin(
     }
     a->write_current = w;
     w->attributes.flags = libmpq__attributes_write_flags(a);
+
+    /* Include the plaintext patch prefix before normal body writes extend CRC32. */
+    if (prefix_size != 0 && (w->attributes.flags & LIBMPQ_ATTRIBUTE_CRC32) != 0)
+        w->attributes.crc32 = (uint32_t)crc32(w->attributes.crc32, prefix, prefix_size);
     if (w->attributes.flags & LIBMPQ_ATTRIBUTE_MD5)
         libmpq__md5_init(&w->md5);
     *out = w;
     return LIBMPQ_SUCCESS;
+}
+
+/*
+ * Begin an ordinary streamed member with no plaintext prefix or patch flags.
+ * This wrapper preserves the public file-writer path unchanged.
+ */
+int32_t
+libmpq__writer_file_begin(
+    mpq_archive_s *archive, const char *name, libmpq__off_t size, const mpq_file_options_s *options,
+    mpq_writer_s **out
+)
+{
+    return writer_file_begin(archive, name, size, options, NULL, 0, 0, out);
 }
 
 /*
@@ -1165,6 +1205,44 @@ libmpq__writer_file_add(
         return result;
     }
     return libmpq__writer_file_finish(w);
+}
+
+/*
+ * Store one patch member with a plaintext patch prefix followed by a
+ * normally encoded PTCH body. The writer state owns the composite block
+ * offset, packed size, flags, and final reconstructed size from the outset.
+ */
+int32_t
+libmpq__writer_patch_file_add(
+    mpq_archive_s *archive, const char *name, const uint8_t *prefix, uint32_t prefix_size,
+    const uint8_t *body, libmpq__off_t body_size, libmpq__off_t result_size,
+    const mpq_file_options_s *options
+)
+{
+    mpq_writer_s *writer;
+    int32_t result;
+
+    if (archive == NULL || !archive->write_patch_mode || name == NULL || prefix == NULL ||
+        (body == NULL && body_size != 0))
+        return LIBMPQ_ERROR_EXIST;
+    if (body_size < 0 || result_size < 0 || (uint64_t)body_size > UINT32_MAX ||
+        (uint64_t)result_size > UINT32_MAX)
+        return LIBMPQ_ERROR_SIZE;
+    if (prefix_size < LIBMPQ_PATCH_INFO_SIZE || libmpq__load_le32(prefix) != prefix_size ||
+        libmpq__load_le32(prefix + 8) != (uint32_t)body_size ||
+        (libmpq__load_le32(prefix + 4) & 0x80000000u) == 0)
+        return LIBMPQ_ERROR_FORMAT;
+    result = writer_file_begin(
+        archive, name, body_size, options, prefix, prefix_size, result_size, &writer
+    );
+    if (result != LIBMPQ_SUCCESS)
+        return result;
+    result = libmpq__writer_file_write(writer, body, body_size);
+    if (result != LIBMPQ_SUCCESS) {
+        libmpq__writer_file_abort(writer);
+        return result;
+    }
+    return libmpq__writer_file_finish(writer);
 }
 
 /* Supply marker storage flags at begin, before its block and hash entries exist. */

@@ -83,6 +83,7 @@ typedef struct mpq_stream mpq_stream_s;
  */
 typedef struct mpq_writer mpq_writer_s;
 typedef struct mpq_update mpq_update_s;
+typedef struct mpq_patch mpq_patch_s;
 
 /*
  * Archive format selectors accepted by mpq_archive_create_options_s.version.
@@ -232,10 +233,10 @@ typedef struct
 } mpq_archive_create_options_s;
 
 /*
- * Options controlling how one archive member is stored by writer, add, and
- * replacement operations. Compression masks select the first-sector and
- * later-sector pipelines, while flags select raw, compressed, encrypted,
- * imploded, or single-unit storage.
+ * Options controlling how one archive member is stored by writer, add,
+ * replacement, and patch-creation operations. Compression masks select the
+ * first-sector and later-sector pipelines, while flags select raw,
+ * compressed, encrypted, imploded, or single-unit storage.
  * LIBMPQ_COMPRESSION_LZMA is an exclusive MPQ v2+ selector rather than a
  * chainable pipeline mask. Locale and platform participate in duplicate
  * detection and hash lookup; replacement requires them to match the existing
@@ -521,6 +522,40 @@ libmpq__update_rename(mpq_update_s *update, const char *old_filename, const char
  */
 extern LIBMPQ_API int32_t libmpq__update_commit(mpq_update_s *update);
 extern LIBMPQ_API int32_t libmpq__update_abort(mpq_update_s *update);
+
+/*
+ * Stage a new patch archive without changing the base archive. The output
+ * path is published only when finish succeeds; abort discards it. MPQE and
+ * embedded base archives are not supported by this patch writer.
+ */
+extern LIBMPQ_API int32_t
+libmpq__patch_begin(mpq_patch_s **patch, const char *base_archive, const char *output_patch);
+
+/*
+ * Replace an existing named base member in the staged patch artifact.
+ * NULL options select patch-writer defaults. Explicit options select the
+ * patch member's storage, not the final patched file's representation, and
+ * must match the base locale and platform.
+ */
+extern LIBMPQ_API int32_t libmpq__patch_replace_data(
+    mpq_patch_s *patch, const char *filename, const uint8_t *data, libmpq__off_t size,
+    const mpq_file_options_s *options
+);
+extern LIBMPQ_API int32_t libmpq__patch_replace_path(
+    mpq_patch_s *patch, const char *filename, const char *source_path,
+    const mpq_file_options_s *options
+);
+
+/* Stage a delete marker for an existing named base member. */
+extern LIBMPQ_API int32_t libmpq__patch_remove(mpq_patch_s *patch, const char *filename);
+
+/*
+ * Finish and abort consume the patch handle even when they return an error.
+ * Callers must not reuse the pointer afterward. Neither action changes the
+ * base archive; only finish publishes the new patch artifact.
+ */
+extern LIBMPQ_API int32_t libmpq__patch_finish(mpq_patch_s *patch);
+extern LIBMPQ_API int32_t libmpq__patch_abort(mpq_patch_s *patch);
 
 /*
  * Begin writing a file in a writer archive and reserve its declared size.

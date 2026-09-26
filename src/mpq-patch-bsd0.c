@@ -52,7 +52,7 @@ patch_bsd0_rle(const uint8_t *raw, size_t size, uint8_t *output)
     return used;
 }
 
-/* Keep raw BSDIFF40 data when the reader's RLE wrapper cannot reduce it. */
+/* Successful BSD0 output always uses the reader's RLE wrapper. */
 static int32_t
 patch_bsd0_pack(uint8_t *raw, size_t raw_size, uint8_t **encoded, size_t *encoded_size)
 {
@@ -60,26 +60,20 @@ patch_bsd0_pack(uint8_t *raw, size_t raw_size, uint8_t **encoded, size_t *encode
     size_t rle_size;
     uint8_t *rle;
 
-    if (raw_size > SIZE_MAX - 4 - (raw_size / 128 + 1)) {
+    if (raw_size > (SIZE_MAX - 4) / 2) {
         free(raw);
         return LIBMPQ_ERROR_SIZE;
     }
-    rle_capacity = raw_size + 4 + (raw_size / 128 + 1);
+    rle_capacity = raw_size * 2 + 4;
     rle = malloc(rle_capacity);
     if (rle == NULL) {
         free(raw);
         return LIBMPQ_ERROR_MALLOC;
     }
     rle_size = patch_bsd0_rle(raw, raw_size, rle);
-    if (rle_size < raw_size) {
-        free(raw);
-        *encoded = rle;
-        *encoded_size = rle_size;
-    } else {
-        free(rle);
-        *encoded = raw;
-        *encoded_size = raw_size;
-    }
+    free(raw);
+    *encoded = rle;
+    *encoded_size = rle_size;
     return LIBMPQ_SUCCESS;
 }
 

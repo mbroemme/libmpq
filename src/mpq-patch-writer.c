@@ -35,7 +35,7 @@
 #define LIBMPQ_PATCH_COPY_HEADER_SIZE 68u
 #define LIBMPQ_PATCH_WRITER_CAPACITY 1024u
 
-struct mpq_patch_writer
+struct mpq_patch
 {
     mpq_archive_s *base;
     mpq_archive_s *archive;
@@ -401,7 +401,8 @@ fail:
 /* Stage a named replacement, falling back to COPY unless BSD0 is smaller. */
 int32_t
 libmpq__patch_writer_replace(
-    mpq_patch_writer_s *state, const char *name, const uint8_t *data, libmpq__off_t size
+    mpq_patch_writer_s *state, const char *name, const uint8_t *data, libmpq__off_t size,
+    const mpq_file_options_s *options
 )
 {
     mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
@@ -411,6 +412,8 @@ libmpq__patch_writer_replace(
     size_t payload_size = 0;
     uint32_t number;
     uint32_t block;
+    uint16_t locale;
+    uint16_t platform;
     int32_t result;
 
     if (state == NULL || (data == NULL && size != 0))
@@ -419,31 +422,86 @@ libmpq__patch_writer_replace(
         (uint64_t)size > UINT32_MAX - LIBMPQ_PATCH_INFO_SIZE - LIBMPQ_PATCH_COPY_HEADER_SIZE ||
         (uint64_t)size > SIZE_MAX - LIBMPQ_PATCH_INFO_SIZE - LIBMPQ_PATCH_COPY_HEADER_SIZE)
         return LIBMPQ_ERROR_SIZE;
-    result = patch_writer_member(state, name, &number, &storage.locale, &storage.platform);
+    result = patch_writer_member(state, name, &number, &locale, &platform);
     if (result != LIBMPQ_SUCCESS)
         return result;
+    if (options != NULL) {
+        if (options->locale != locale || options->platform != platform ||
+            (options->flags &
+             ~(LIBMPQ_FILE_FLAG_IMPLODE | LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
+               LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_SECTOR_CRC)) != 0)
+            return LIBMPQ_ERROR_FORMAT;
+        storage = *options;
+    } else {
+        storage.locale = locale;
+        storage.platform = platform;
+    }
     result = patch_writer_read_base(state, name, number, &before, &before_size);
     if (result == LIBMPQ_SUCCESS)
         result =
             patch_writer_payload(before, before_size, data, (size_t)size, &payload, &payload_size);
-    if (result == LIBMPQ_SUCCESS && payload_size > state->archive->write_sector_size)
+    if (result == LIBMPQ_SUCCESS && options == NULL &&
+        payload_size > state->archive->write_sector_size)
         storage.flags = 0;
+
     if (result == LIBMPQ_SUCCESS)
-        result = libmpq__writer_file_add(
-            state->archive, name, payload, (libmpq__off_t)payload_size, &storage
+        result = libmpq__writer_patch_file_add(
+            state->archive, name, payload, LIBMPQ_PATCH_INFO_SIZE, payload + LIBMPQ_PATCH_INFO_SIZE,
+            (libmpq__off_t)(payload_size - LIBMPQ_PATCH_INFO_SIZE), size, &storage
         );
     if (result == LIBMPQ_SUCCESS) {
         mpq_md5_s md5;
 
         block = state->archive->write_next_block - 1;
-        state->archive->mpq_block[block].flags |= LIBMPQ_FILE_FLAG_PATCH_FILE;
-        state->archive->mpq_block[block].unpacked_size = (uint32_t)size;
         libmpq__md5_init(&md5);
         libmpq__md5_update(&md5, data, (size_t)size);
         libmpq__md5_final(&md5, state->archive->write_attributes[block].md5);
     }
     free(payload);
     free(before);
+    return result;
+}
+
+/* Read one filesystem replacement and reuse the same staged data path. */
+int32_t
+libmpq__patch_writer_replace_path(
+    mpq_patch_writer_s *state, const char *name, const char *source_path,
+    const mpq_file_options_s *options
+)
+{
+    FILE *input;
+    libmpq__off_t size;
+    uint8_t *data = NULL;
+    int32_t result;
+
+    if (state == NULL || source_path == NULL || source_path[0] == '\0')
+        return LIBMPQ_ERROR_EXIST;
+    input = libmpq__file_open(source_path, "rb");
+    if (input == NULL)
+        return LIBMPQ_ERROR_OPEN;
+    result = libmpq__file_seek(input, 0, SEEK_END);
+    if (result == LIBMPQ_SUCCESS) {
+        size = libmpq__file_tell(input);
+        if (size < 0 ||
+            (uint64_t)size > UINT32_MAX - LIBMPQ_PATCH_INFO_SIZE - LIBMPQ_PATCH_COPY_HEADER_SIZE ||
+            (uint64_t)size > SIZE_MAX)
+            result = LIBMPQ_ERROR_SIZE;
+    }
+    if (result == LIBMPQ_SUCCESS)
+        result = libmpq__file_seek(input, 0, SEEK_SET);
+    if (result == LIBMPQ_SUCCESS) {
+        data = malloc(size == 0 ? 1 : (size_t)size);
+        if (data == NULL)
+            result = LIBMPQ_ERROR_MALLOC;
+    }
+    if (result == LIBMPQ_SUCCESS && size != 0 &&
+        fread(data, 1, (size_t)size, input) != (size_t)size)
+        result = LIBMPQ_ERROR_READ;
+    if (fclose(input) != 0 && result == LIBMPQ_SUCCESS)
+        result = LIBMPQ_ERROR_CLOSE;
+    if (result == LIBMPQ_SUCCESS)
+        result = libmpq__patch_writer_replace(state, name, data, size, options);
+    free(data);
     return result;
 }
 

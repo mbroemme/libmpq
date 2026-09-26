@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <zlib.h>
 
 static const uint8_t old_data[] = "old payload";
 static const uint8_t new_data[] = "new complete replacement";
@@ -139,6 +140,8 @@ check_patch_archive(const char *path, uint8_t replace, uint8_t remove_member)
         TEST_CHECK(libmpq__patch_info_parse(stored, stored_size, &info) == LIBMPQ_SUCCESS);
         TEST_CHECK(info.length == LIBMPQ_PATCH_INFO_SIZE);
         TEST_CHECK(stored_size == info.length + info.data_size);
+        TEST_CHECK((attributes.flags & LIBMPQ_ATTRIBUTE_CRC32) != 0);
+        TEST_CHECK(attributes.crc32 == (uint32_t)crc32(0, stored, stored_size));
         TEST_CHECK(memcmp(stored + info.length, "PTCH", 4) == 0);
         TEST_CHECK(memcmp(stored + info.length + 40, digest, sizeof(digest)) == 0);
         libmpq__md5_init(&md5);
@@ -175,7 +178,7 @@ check_patch_archive(const char *path, uint8_t replace, uint8_t remove_member)
     return 0;
 }
 
-/* The on-disk block describes the result, while TPatchInfo describes PTCH data. */
+/* The on-disk block describes the result, while the patch prefix describes PTCH data. */
 static int
 test_patch_block_size(const char *path)
 {
@@ -226,8 +229,9 @@ round_trip(uint32_t version, uint8_t replace, uint8_t remove_member)
     TEST_CHECK(writer != NULL);
     if (replace)
         TEST_CHECK(
-            libmpq__patch_writer_replace(writer, "replace.txt", new_data, sizeof(new_data) - 1) ==
-            LIBMPQ_SUCCESS
+            libmpq__patch_writer_replace(
+                writer, "replace.txt", new_data, sizeof(new_data) - 1, NULL
+            ) == LIBMPQ_SUCCESS
         );
     if (remove_member)
         TEST_CHECK(libmpq__patch_writer_remove(writer, "remove.txt") == LIBMPQ_SUCCESS);
@@ -295,7 +299,7 @@ test_encrypted_base(void)
     );
     TEST_CHECK(
         libmpq__patch_writer_replace(
-            writer, "encrypted-compress.txt", new_data, sizeof(new_data) - 1
+            writer, "encrypted-compress.txt", new_data, sizeof(new_data) - 1, NULL
         ) == LIBMPQ_SUCCESS
     );
     TEST_CHECK(libmpq__patch_writer_finish(writer) == LIBMPQ_SUCCESS);
@@ -342,7 +346,7 @@ test_unlisted_base_member(void)
     TEST_CHECK(libmpq__archive_close(base) == LIBMPQ_SUCCESS);
     TEST_CHECK(libmpq__patch_writer_begin(&writer, base_path, patch_path) == LIBMPQ_SUCCESS);
     TEST_CHECK(
-        libmpq__patch_writer_replace(writer, "replace.txt", new_data, sizeof(new_data) - 1) ==
+        libmpq__patch_writer_replace(writer, "replace.txt", new_data, sizeof(new_data) - 1, NULL) ==
         LIBMPQ_SUCCESS
     );
     TEST_CHECK(libmpq__patch_writer_finish(writer) == LIBMPQ_SUCCESS);
@@ -374,11 +378,11 @@ test_abort(void)
     TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
     TEST_CHECK(libmpq__patch_writer_begin(&writer, base_path, patch_path) == LIBMPQ_SUCCESS);
     TEST_CHECK(
-        libmpq__patch_writer_replace(writer, "missing.txt", new_data, sizeof(new_data) - 1) ==
+        libmpq__patch_writer_replace(writer, "missing.txt", new_data, sizeof(new_data) - 1, NULL) ==
         LIBMPQ_ERROR_EXIST
     );
     TEST_CHECK(
-        libmpq__patch_writer_replace(writer, "replace.txt", new_data, sizeof(new_data) - 1) ==
+        libmpq__patch_writer_replace(writer, "replace.txt", new_data, sizeof(new_data) - 1, NULL) ==
         LIBMPQ_SUCCESS
     );
     TEST_CHECK(libmpq__patch_writer_abort(writer) == LIBMPQ_SUCCESS);
@@ -528,7 +532,7 @@ test_delta_selection(uint8_t kind)
     TEST_CHECK(libmpq__archive_close(base) == LIBMPQ_SUCCESS);
     TEST_CHECK(libmpq__patch_writer_begin(&writer, base_path, patch_path) == LIBMPQ_SUCCESS);
     TEST_CHECK(
-        libmpq__patch_writer_replace(writer, "delta.bin", after, after_size) == LIBMPQ_SUCCESS
+        libmpq__patch_writer_replace(writer, "delta.bin", after, after_size, NULL) == LIBMPQ_SUCCESS
     );
     TEST_CHECK(libmpq__patch_writer_finish(writer) == LIBMPQ_SUCCESS);
     TEST_CHECK(libmpq__archive_open(&patch, patch_path, 0) == LIBMPQ_SUCCESS);
@@ -670,6 +674,202 @@ done:
     return status;
 }
 
+/* Exercise public staging, option identity, publication, and patch application. */
+static int
+test_public_patch_data(void)
+{
+    char base_path[1024];
+    char patch_path[1024];
+    const char *layers[] = { patch_path };
+    uint8_t replacement[10000];
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SECTOR_CRC,
+                                   LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_BZIP2, 0, 0 };
+    mpq_patch_s *patch = NULL;
+    mpq_patch_view_s *view = NULL;
+    mpq_archive_s *base = NULL;
+    uint32_t number;
+
+    for (size_t i = 0; i < sizeof(replacement); i++)
+        replacement[i] = (uint8_t)(i * 37u + i / 11u);
+    TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "patch-api-base") == 0);
+    TEST_CHECK(test_temp_path(patch_path, sizeof(patch_path), "patch-api-output") == 0);
+    TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
+    TEST_CHECK(libmpq__patch_begin(NULL, base_path, patch_path) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__patch_begin(&patch, base_path, patch_path) == LIBMPQ_SUCCESS);
+    TEST_CHECK(patch != NULL);
+    TEST_CHECK(
+        libmpq__patch_replace_data(
+            patch, "replace.txt", replacement, sizeof(replacement), &options
+        ) == LIBMPQ_ERROR_FORMAT
+    );
+    options.locale = 0x409;
+    options.platform = 1;
+    TEST_CHECK(
+        libmpq__patch_replace_data(
+            patch, "replace.txt", replacement, sizeof(replacement), &options
+        ) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(libmpq__patch_remove(patch, "remove.txt") == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_finish(patch) == LIBMPQ_SUCCESS);
+    patch = NULL;
+    TEST_CHECK(libmpq__patch_finish(patch) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__archive_open(&base, base_path, 0) == LIBMPQ_SUCCESS);
+    TEST_CHECK(check_file(base, "replace.txt", old_data, sizeof(old_data) - 1) == 0);
+    TEST_CHECK(libmpq__archive_close(base) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_open(&view, base_path, layers, 1) == LIBMPQ_SUCCESS);
+    TEST_CHECK(
+        check_file(
+            libmpq__patch_view_archive(view), "replace.txt", replacement, sizeof(replacement)
+        ) == 0
+    );
+    TEST_CHECK(
+        libmpq__file_number(libmpq__patch_view_archive(view), "remove.txt", &number) ==
+        LIBMPQ_ERROR_EXIST
+    );
+    TEST_CHECK(
+        check_file(
+            libmpq__patch_view_archive(view), "keep.txt", retained_data, sizeof(retained_data) - 1
+        ) == 0
+    );
+    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(remove(patch_path) == 0);
+    TEST_CHECK(remove(base_path) == 0);
+    return 0;
+}
+
+/* Path replacement shares data options; an aborted artifact never appears. */
+static int
+test_public_patch_path_abort(void)
+{
+    char base_path[1024];
+    char patch_path[1024];
+    char source_path[1024];
+    const char *layers[] = { patch_path };
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED,
+                                   LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_BZIP2, 0x409, 1 };
+    mpq_patch_s *patch = NULL;
+    mpq_patch_view_s *view = NULL;
+    uint8_t replacement[10000];
+    FILE *source;
+
+    for (size_t i = 0; i < sizeof(replacement); i++)
+        replacement[i] = (uint8_t)(i * 43u + i / 13u);
+    TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "patch-path-base") == 0);
+    TEST_CHECK(test_temp_path(patch_path, sizeof(patch_path), "patch-path-output") == 0);
+    TEST_CHECK(test_temp_path(source_path, sizeof(source_path), "patch-path-source") == 0);
+    TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
+    source = fopen(source_path, "wb");
+    TEST_CHECK(source != NULL);
+    TEST_CHECK(fwrite(replacement, 1, sizeof(replacement), source) == sizeof(replacement));
+    TEST_CHECK(fclose(source) == 0);
+    TEST_CHECK(libmpq__patch_begin(&patch, base_path, patch_path) == LIBMPQ_SUCCESS);
+    options.locale = 0;
+    TEST_CHECK(
+        libmpq__patch_replace_path(patch, "replace.txt", source_path, &options) ==
+        LIBMPQ_ERROR_FORMAT
+    );
+    options.locale = 0x409;
+    TEST_CHECK(
+        libmpq__patch_replace_path(patch, "replace.txt", source_path, &options) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(libmpq__patch_abort(patch) == LIBMPQ_SUCCESS);
+    patch = NULL;
+    TEST_CHECK(libmpq__patch_abort(patch) == LIBMPQ_ERROR_EXIST);
+    source = fopen(patch_path, "rb");
+    TEST_CHECK(source == NULL);
+    TEST_CHECK(libmpq__patch_begin(&patch, base_path, patch_path) == LIBMPQ_SUCCESS);
+    TEST_CHECK(
+        libmpq__patch_replace_path(patch, "replace.txt", source_path, &options) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(libmpq__patch_finish(patch) == LIBMPQ_SUCCESS);
+    patch = NULL;
+    TEST_CHECK(libmpq__patch_view_open(&view, base_path, layers, 1) == LIBMPQ_SUCCESS);
+    TEST_CHECK(
+        check_file(
+            libmpq__patch_view_archive(view), "replace.txt", replacement, sizeof(replacement)
+        ) == 0
+    );
+    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(remove(source_path) == 0);
+    TEST_CHECK(remove(patch_path) == 0);
+    TEST_CHECK(remove(base_path) == 0);
+    return 0;
+}
+
+/* Public storage options must survive normal MPQ decoding before PTCH parsing. */
+static int
+test_public_patch_storage(uint32_t flags)
+{
+    char base_path[1024];
+    char patch_path[1024];
+    const char *layers[] = { patch_path };
+    mpq_file_options_s options = { flags, 0, 0, 0x409, 1 };
+    mpq_patch_s *patch = NULL;
+    mpq_patch_view_s *view = NULL;
+    mpq_archive_s *stored = NULL;
+    mpq_patch_info_s info;
+    uint8_t prefix[LIBMPQ_PATCH_INFO_SIZE];
+    uint8_t body_tag[4];
+    uint8_t replacement[10000];
+    uint64_t offset;
+    uint32_t block;
+    uint32_t number;
+    uint32_t stored_flags;
+
+    if ((flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0) {
+        options.compression_first = LIBMPQ_COMPRESSION_ZLIB;
+        options.compression_next = LIBMPQ_COMPRESSION_BZIP2;
+    }
+    for (size_t i = 0; i < sizeof(replacement); i++)
+        replacement[i] = (uint8_t)(i * 19u + i / 31u);
+    TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "patch-storage-base") == 0);
+    TEST_CHECK(test_temp_path(patch_path, sizeof(patch_path), "patch-storage-output") == 0);
+    TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
+    TEST_CHECK(libmpq__patch_begin(&patch, base_path, patch_path) == LIBMPQ_SUCCESS);
+    TEST_CHECK(
+        libmpq__patch_replace_data(
+            patch, "replace.txt", replacement, sizeof(replacement), &options
+        ) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(libmpq__patch_finish(patch) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_open(&stored, patch_path, 0) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__file_number(stored, "replace.txt", &number) == LIBMPQ_SUCCESS);
+    block = stored->mpq_map[number].block_table_indices;
+    offset = (uint64_t)stored->archive_offset + stored->mpq_block[block].offset +
+             ((uint64_t)stored->mpq_block_ex[block].offset_high << 32);
+    TEST_CHECK(stored->mpq_block[block].unpacked_size == sizeof(replacement));
+    TEST_CHECK(stored->mpq_block[block].packed_size >= sizeof(prefix) + sizeof(body_tag));
+    TEST_CHECK(offset <= stored->file_size);
+    TEST_CHECK(stored->mpq_block[block].packed_size <= stored->file_size - offset);
+    TEST_CHECK(
+        libmpq__source_read_at(stored->source, offset, prefix, sizeof(prefix)) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(libmpq__patch_info_parse(prefix, sizeof(prefix), &info) == LIBMPQ_SUCCESS);
+    TEST_CHECK(info.length == sizeof(prefix));
+    TEST_CHECK(
+        libmpq__source_read_at(stored->source, offset + info.length, body_tag, sizeof(body_tag)) ==
+        LIBMPQ_SUCCESS
+    );
+    if ((flags & LIBMPQ_FILE_FLAG_ENCRYPTED) != 0)
+        TEST_CHECK(memcmp(body_tag, "PTCH", sizeof(body_tag)) != 0);
+    else if ((flags & LIBMPQ_FILE_FLAG_COMPRESS) == 0)
+        TEST_CHECK(memcmp(body_tag, "PTCH", sizeof(body_tag)) == 0);
+    TEST_CHECK(libmpq__file_flags(stored, number, &stored_flags) == LIBMPQ_SUCCESS);
+    TEST_CHECK((stored_flags & LIBMPQ_FILE_FLAG_PATCH_FILE) != 0);
+    TEST_CHECK((stored_flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED)) == flags);
+    TEST_CHECK(libmpq__archive_close(stored) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_open(&view, base_path, layers, 1) == LIBMPQ_SUCCESS);
+    TEST_CHECK(
+        check_file(
+            libmpq__patch_view_archive(view), "replace.txt", replacement, sizeof(replacement)
+        ) == 0
+    );
+    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(remove(patch_path) == 0);
+    TEST_CHECK(remove(base_path) == 0);
+    return 0;
+}
+
 int
 main(void)
 {
@@ -683,6 +883,14 @@ main(void)
     TEST_CHECK(test_delta_selection(2) == 0);
     TEST_CHECK(test_splice_candidate() == 0);
     TEST_CHECK(test_delta_selection(0) == 0);
+    TEST_CHECK(test_public_patch_data() == 0);
+    TEST_CHECK(test_public_patch_path_abort() == 0);
+    TEST_CHECK(test_public_patch_storage(0) == 0);
+    TEST_CHECK(test_public_patch_storage(LIBMPQ_FILE_FLAG_COMPRESS) == 0);
+    TEST_CHECK(test_public_patch_storage(LIBMPQ_FILE_FLAG_ENCRYPTED) == 0);
+    TEST_CHECK(
+        test_public_patch_storage(LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED) == 0
+    );
     TEST_CHECK(test_abort() == 0);
     TEST_CHECK(test_unsupported_base() == 0);
     return 0;

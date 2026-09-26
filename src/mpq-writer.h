@@ -69,6 +69,13 @@ int32_t libmpq__writer_file_add(
     const mpq_file_options_s *options
 );
 
+/* Store a plaintext patch prefix and encoded body as one patch member. */
+int32_t libmpq__writer_patch_file_add(
+    mpq_archive_s *archive, const char *name, const uint8_t *prefix, uint32_t prefix_size,
+    const uint8_t *body, libmpq__off_t body_size, libmpq__off_t result_size,
+    const mpq_file_options_s *options
+);
+
 /* Write a zero-byte delete marker only for a private patch-mode archive. */
 int32_t libmpq__writer_patch_delete_marker(
     mpq_archive_s *archive, const char *name, uint16_t locale, uint16_t platform

@@ -449,7 +449,11 @@ patch_read_named(mpq_archive_s *archive, const char *name, uint8_t **data, size_
     return patch_read_adjusted(archive, name, number, data, size);
 }
 
-/* Remove the on-disk patch prefix in a private clone before normal decoding. */
+/*
+ * Parse the plaintext patch prefix before using its body size, then
+ * decode the stored body through normal MPQ reader semantics. Patch-file
+ * blocks describe the resulting file size rather than the decoded body size.
+ */
 static int32_t
 patch_read_incremental(
     mpq_archive_s *archive, const char *name, uint32_t number, uint8_t **data, size_t *size
@@ -459,10 +463,13 @@ patch_read_incremental(
     mpq_block_s *block;
     uint8_t fixed[LIBMPQ_PATCH_INFO_SIZE];
     uint8_t *prefix = NULL;
+    uint8_t *body = NULL;
     mpq_patch_info_s info;
     uint64_t offset;
     uint64_t shifted;
+    uint32_t prefix_size;
     uint32_t physical;
+    size_t body_size = 0;
     int32_t status;
 
     *data = NULL;
@@ -476,16 +483,16 @@ patch_read_incremental(
     status = libmpq__source_read_at(archive->source, offset, fixed, sizeof(fixed));
     if (status != LIBMPQ_SUCCESS)
         return status;
-    if (libmpq__load_le32(fixed) < LIBMPQ_PATCH_INFO_SIZE ||
-        libmpq__load_le32(fixed) > block->packed_size)
+    prefix_size = libmpq__load_le32(fixed);
+    if (prefix_size < LIBMPQ_PATCH_INFO_SIZE || prefix_size > block->packed_size)
         return LIBMPQ_ERROR_FORMAT;
-    prefix = malloc(libmpq__load_le32(fixed));
+    prefix = malloc(prefix_size);
     if (prefix == NULL)
         return LIBMPQ_ERROR_MALLOC;
-    status = libmpq__source_read_at(archive->source, offset, prefix, libmpq__load_le32(fixed));
+    status = libmpq__source_read_at(archive->source, offset, prefix, prefix_size);
     if (status != LIBMPQ_SUCCESS)
         goto done;
-    status = libmpq__patch_info_parse(prefix, libmpq__load_le32(fixed), &info);
+    status = libmpq__patch_info_parse(prefix, prefix_size, &info);
     if (status != LIBMPQ_SUCCESS)
         goto done;
     status = libmpq__archive_clone(&clone, archive);
@@ -493,24 +500,29 @@ patch_read_incremental(
         goto done;
     block = &clone->mpq_block[physical];
     shifted = (uint64_t)block->offset +
-              ((uint64_t)clone->mpq_block_ex[physical].offset_high << 32) + info.length;
+              ((uint64_t)clone->mpq_block_ex[physical].offset_high << 32) + prefix_size;
     if (shifted > UINT32_MAX && clone->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE) {
         status = LIBMPQ_ERROR_FORMAT;
         goto done;
     }
     block->offset = (uint32_t)shifted;
     clone->mpq_block_ex[physical].offset_high = (uint16_t)(shifted >> 32);
-    block->packed_size -= info.length;
+    block->packed_size -= prefix_size;
     block->unpacked_size = info.data_size;
     block->flags &= ~LIBMPQ_FILE_FLAG_PATCH_FILE;
     clone->attributes_error = LIBMPQ_ERROR_EXIST;
-    status = patch_read_adjusted(clone, name, number, data, size);
-    if (status == LIBMPQ_SUCCESS)
-        status = patch_check_md5(*data, *size, info.md5);
-    if (status != LIBMPQ_SUCCESS) {
-        free(*data);
-        *data = NULL;
-        *size = 0;
+    status = patch_read_adjusted(clone, name, number, &body, &body_size);
+    if (status != LIBMPQ_SUCCESS)
+        goto done;
+    if (body_size != info.data_size) {
+        status = LIBMPQ_ERROR_FORMAT;
+        goto done;
+    }
+    status = patch_check_md5(body, body_size, info.md5);
+    if (status == LIBMPQ_SUCCESS) {
+        *data = body;
+        *size = body_size;
+        body = NULL;
     }
 
 done:
@@ -520,6 +532,12 @@ done:
         if (status == LIBMPQ_SUCCESS)
             status = close_status;
     }
+    if (status != LIBMPQ_SUCCESS) {
+        free(*data);
+        *data = NULL;
+        *size = 0;
+    }
+    free(body);
     free(prefix);
     return status;
 }

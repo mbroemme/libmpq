@@ -1,0 +1,51 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__PATCH_BEGIN 3 2026-09-28 "The MoPaQ archive library"
+.SH NAME
+libmpq__patch_begin \- begin creating a new MPQ patch archive
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__patch_begin(mpq_patch_s **patch, const char *base_archive, const char *output_patch);"
+.fi
+.SH DESCRIPTION
+Creates a staged patch artifact at \fIoutput_patch\fP using an existing filesystem MPQ at \fIbase_archive\fP. The base is read-only and is never modified. On failure, a valid \fIpatch\fP output is set to NULL. Finish publishes the artifact; abort discards it. Embedded and MPQE base archives are unsupported. Full Blizzard patch-metadata compatibility and signing are not provided.
+.SH RETURN VALUE
+Returns \fBLIBMPQ_SUCCESS\fP or a negative libmpq error.
+.SH ERRORS
+Invalid arguments return LIBMPQ_ERROR_EXIST; unsupported archive formats return LIBMPQ_ERROR_FORMAT. Opening, allocation, and I/O errors may also propagate.
+.SH SEE ALSO
+.BR libmpq__patch_replace_data (3),
+.BR libmpq__patch_remove (3),
+.BR libmpq__patch_finish (3),
+.BR libmpq__patch_abort (3)
+.SH AUTHOR
+The libmpq project is maintained by Maik Broemme.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.
