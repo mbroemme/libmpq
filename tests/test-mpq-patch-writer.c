@@ -37,6 +37,10 @@ static const uint8_t new_data[] = "new complete replacement";
 static const uint8_t removed_data[] = "remove this member";
 static const uint8_t retained_data[] = "keep this member";
 static const uint64_t original_filetime = 132537600000000000ULL;
+static const uint8_t patch_tag[4] = { 'P', 'T', 'C', 'H' };
+static const uint8_t md5_tag[4] = { 'M', 'D', '5', '_' };
+static const uint8_t transform_tag[4] = { 'X', 'F', 'R', 'M' };
+static const uint8_t bsd0_tag[4] = { 'B', 'S', 'D', '0' };
 
 /* Create a deterministic ordinary base with three independently named files. */
 static int
@@ -641,11 +645,11 @@ test_splice_candidate(void)
     SPLICE_CHECK(check_splice_layout(encoded, encoded_size, patch_stream_size, before, after) == 0);
     patch = calloc(1, 68 + encoded_size);
     SPLICE_CHECK(patch != NULL);
-    memcpy(patch, "PTCH", 4);
+    memcpy(patch, patch_tag, sizeof(patch_tag));
     libmpq__store_le32(patch + 4, (uint32_t)(68 + patch_stream_size));
     libmpq__store_le32(patch + 8, sizeof(before));
     libmpq__store_le32(patch + 12, sizeof(after));
-    memcpy(patch + 16, "MD5_", 4);
+    memcpy(patch + 16, md5_tag, sizeof(md5_tag));
     libmpq__store_le32(patch + 20, 40);
     libmpq__md5_init(&md5);
     libmpq__md5_update(&md5, before, sizeof(before));
@@ -653,9 +657,9 @@ test_splice_candidate(void)
     libmpq__md5_init(&md5);
     libmpq__md5_update(&md5, after, sizeof(after));
     libmpq__md5_final(&md5, patch + 40);
-    memcpy(patch + 56, "XFRM", 4);
+    memcpy(patch + 56, transform_tag, sizeof(transform_tag));
     libmpq__store_le32(patch + 60, (uint32_t)(encoded_size + 12));
-    memcpy(patch + 64, "BSD0", 4);
+    memcpy(patch + 64, bsd0_tag, sizeof(bsd0_tag));
     memcpy(patch + 68, encoded, encoded_size);
     SPLICE_CHECK(
         libmpq__patch_apply(
