@@ -54,6 +54,9 @@ fixture_copy_patch(
     size_t *stored_size
 )
 {
+    static const uint8_t md5_tag[4] = { 'M', 'D', '5', '_' };
+    static const uint8_t transform_tag[4] = { 'X', 'F', 'R', 'M' };
+    static const uint8_t copy_tag[4] = { 'C', 'O', 'P', 'Y' };
     size_t payload_size = 68 + after_size;
     uint8_t *stored = calloc(1, 28 + payload_size);
     uint8_t *patch;
@@ -70,13 +73,13 @@ fixture_copy_patch(
     libmpq__store_le32(patch + 4, (uint32_t)payload_size);
     libmpq__store_le32(patch + 8, (uint32_t)before_size);
     libmpq__store_le32(patch + 12, (uint32_t)after_size);
-    memcpy(patch + 16, "MD5_", 4);
+    memcpy(patch + 16, md5_tag, sizeof(md5_tag));
     libmpq__store_le32(patch + 20, 40);
     fixture_md5(before, before_size, patch + 24);
     fixture_md5(after, after_size, patch + 40);
-    memcpy(patch + 56, "XFRM", 4);
+    memcpy(patch + 56, transform_tag, sizeof(transform_tag));
     libmpq__store_le32(patch + 60, (uint32_t)after_size + 12);
-    memcpy(patch + 64, "COPY", 4);
+    memcpy(patch + 64, copy_tag, sizeof(copy_tag));
     memcpy(patch + 68, after, after_size);
     fixture_md5(patch, payload_size, stored + 12);
     *stored_size = 28 + payload_size;
@@ -199,6 +202,7 @@ check_view(mpq_patch_view_s *view, const uint8_t *expected, size_t expected_size
 {
     mpq_archive_s *archive = libmpq__patch_view_archive(view);
     mpq_stream_s *stream = NULL;
+    uint8_t stream_data[128];
     uint8_t *data = NULL;
     size_t size = 0;
     libmpq__off_t transferred = 0;
@@ -209,14 +213,14 @@ check_view(mpq_patch_view_s *view, const uint8_t *expected, size_t expected_size
     TEST_CHECK(test_archive_read(archive, number, &data, &size) == 0);
     TEST_CHECK(size == expected_size && memcmp(data, expected, size) == 0);
     free(data);
-    data = malloc(expected_size);
-    TEST_CHECK(data != NULL);
+    TEST_CHECK(expected_size <= sizeof(stream_data));
     TEST_CHECK(libmpq__stream_open_name(archive, "overview.txt", &stream) == 0);
-    TEST_CHECK(libmpq__stream_read(stream, data, (libmpq__off_t)expected_size, &transferred) == 0);
+    TEST_CHECK(
+        libmpq__stream_read(stream, stream_data, (libmpq__off_t)expected_size, &transferred) == 0
+    );
     TEST_CHECK(transferred == (libmpq__off_t)expected_size);
-    TEST_CHECK(memcmp(data, expected, expected_size) == 0);
+    TEST_CHECK(memcmp(stream_data, expected, expected_size) == 0);
     TEST_CHECK(libmpq__stream_close(stream) == 0);
-    free(data);
     TEST_CHECK(libmpq__file_number(archive, "patch-only.txt", &number) == 0);
     TEST_CHECK(test_archive_read(archive, number, &data, &size) == 0);
     TEST_CHECK(size == sizeof(new_text) - 1 && memcmp(data, new_text, size) == 0);
@@ -225,15 +229,19 @@ check_view(mpq_patch_view_s *view, const uint8_t *expected, size_t expected_size
     TEST_CHECK(test_archive_read(archive, number, &data, &size) == 0);
     TEST_CHECK(size != 0);
     {
-        char *text = malloc(size + 1);
+        static const uint8_t needle[] = "patch-only.txt";
+        uint8_t found = 0;
 
-        TEST_CHECK(text != NULL);
-        memcpy(text, data, size);
-        text[size] = '\0';
-        TEST_CHECK(strstr(text, "patch-only.txt") != NULL);
-        free(text);
+        if (size >= sizeof(needle) - 1)
+            for (size_t i = 0; i <= size - (sizeof(needle) - 1); i++)
+                if (memcmp(data + i, needle, sizeof(needle) - 1) == 0) {
+                    found = 1;
+                    break;
+                }
+        free(data);
+        data = NULL;
+        TEST_CHECK(found);
     }
-    free(data);
     TEST_CHECK(libmpq__file_number(archive, "(patch_metadata)", &number) == LIBMPQ_ERROR_EXIST);
     return 0;
 }
@@ -532,6 +540,73 @@ test_missing_listfile(void)
     }
     free(stored);
     free(before);
+    return 0;
+}
+
+/* Rewriting a final listfile line without a newline must reserve its terminator. */
+static int
+test_listfile_without_final_newline(void)
+{
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_ONE, 8, 4096, 0, 0 };
+    mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
+    static const uint8_t before[] = "Original member";
+    static const uint8_t listing[] = "overview.txt";
+    static const uint8_t expected[] = "overview.txt\n";
+    mpq_archive_s *writer = NULL;
+    mpq_patch_view_s *view = NULL;
+    uint8_t *stored = NULL;
+    uint8_t *actual = NULL;
+    size_t stored_size = 0;
+    size_t actual_size = 0;
+    uint32_t number;
+    char base_path[1024];
+    char patch_path[1024];
+    const char *patches[] = { patch_path };
+
+    TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "patch-listfile-base") == 0);
+    TEST_CHECK(test_temp_path(patch_path, sizeof(patch_path), "patch-listfile-layer") == 0);
+    TEST_CHECK(libmpq__archive_create(&writer, base_path, &options) == LIBMPQ_SUCCESS);
+    TEST_CHECK(
+        libmpq__archive_add_data(writer, "overview.txt", before, sizeof(before) - 1, &storage) ==
+        LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(
+        libmpq__archive_add_data(writer, "(listfile)", listing, sizeof(listing) - 1, &storage) ==
+        LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(libmpq__archive_close(writer) == LIBMPQ_SUCCESS);
+    stored = fixture_copy_patch(
+        before, sizeof(before) - 1, first_text, sizeof(first_text) - 1, &stored_size
+    );
+    TEST_CHECK(stored != NULL);
+    TEST_CHECK(libmpq__archive_create(&writer, patch_path, &options) == LIBMPQ_SUCCESS);
+    TEST_CHECK(
+        libmpq__archive_add_data(
+            writer, "(patch_metadata)", (const uint8_t *)"test", 4, &storage
+        ) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(
+        libmpq__archive_add_data(
+            writer, "overview.txt", stored, (libmpq__off_t)stored_size, &storage
+        ) == LIBMPQ_SUCCESS
+    );
+    writer->mpq_block[writer->write_next_block - 1].flags |= LIBMPQ_FILE_FLAG_PATCH_FILE;
+    TEST_CHECK(libmpq__archive_close(writer) == LIBMPQ_SUCCESS);
+    free(stored);
+    TEST_CHECK(libmpq__patch_view_open(&view, base_path, patches, 1) == LIBMPQ_SUCCESS);
+    TEST_CHECK(
+        libmpq__file_number(libmpq__patch_view_archive(view), "(listfile)", &number) ==
+        LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(
+        test_archive_read(libmpq__patch_view_archive(view), number, &actual, &actual_size) == 0
+    );
+    TEST_CHECK(actual_size == sizeof(expected) - 1);
+    TEST_CHECK(memcmp(actual, expected, actual_size) == 0);
+    free(actual);
+    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(remove(patch_path) == 0);
+    TEST_CHECK(remove(base_path) == 0);
     return 0;
 }
 
@@ -1036,6 +1111,7 @@ main(int argc, char **argv)
     TEST_CHECK(test_unsupported_layers() == 0);
     TEST_CHECK(test_unlisted_patch_member() == 0);
     TEST_CHECK(test_missing_listfile() == 0);
+    TEST_CHECK(test_listfile_without_final_newline() == 0);
     TEST_CHECK(test_shared_base_block() == 0);
     TEST_CHECK(test_patch_payload_validation() == 0);
     TEST_CHECK(test_unknown_base_name() == 0);

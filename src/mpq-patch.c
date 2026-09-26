@@ -657,6 +657,9 @@ patch_entries(mpq_archive_s *patch, mpq_patch_entry_s **entries)
     size_t position = 0;
     int32_t status;
 
+    *entries = NULL;
+    if (patch->mpq_header.hash_table_count == 0)
+        return LIBMPQ_ERROR_FORMAT;
     *entries = calloc(patch->mpq_header.hash_table_count, sizeof(**entries));
     if (*entries == NULL)
         return LIBMPQ_ERROR_MALLOC;
@@ -888,7 +891,13 @@ patch_rewrite_listfile(
     status = patch_read_named(lower, LIBMPQ_LISTFILE_NAME, &original, &original_size);
     if (status != LIBMPQ_SUCCESS)
         return status;
-    capacity = original_size;
+    if (original_size == SIZE_MAX) {
+        status = LIBMPQ_ERROR_SIZE;
+        goto done;
+    }
+
+    /* A final line without a newline gains one byte when rewritten. */
+    capacity = original_size + 1;
     if (add_attributes_name) {
         if (capacity > SIZE_MAX - sizeof(LIBMPQ_ATTRIBUTES_NAME)) {
             status = LIBMPQ_ERROR_SIZE;
@@ -961,11 +970,11 @@ patch_rewrite_listfile(
         updated[used++] = '\n';
     }
     if (add_attributes_name && !patch_list_contains(updated, used, LIBMPQ_ATTRIBUTES_NAME)) {
-        size_t length = strlen(LIBMPQ_ATTRIBUTES_NAME);
+        static const uint8_t attributes_line[] = LIBMPQ_ATTRIBUTES_NAME "\n";
+        size_t length = sizeof(attributes_line) - 1;
 
-        memcpy(updated + used, LIBMPQ_ATTRIBUTES_NAME, length);
+        memcpy(updated + used, attributes_line, length);
         used += length;
-        updated[used++] = '\n';
     }
     {
         uint32_t block;
