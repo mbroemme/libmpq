@@ -21,9 +21,8 @@
 #include "mpq-endian.h"
 #include "mpq-internal.h"
 #include "mpq-md5.h"
-#include "mpq-patch-bsd0.h"
+#include "mpq-patch-reader.h"
 #include "mpq-patch-writer.h"
-#include "mpq-patch.h"
 #include "mpq-source.h"
 #include "test-mpq-helper.h"
 

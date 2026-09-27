@@ -27,7 +27,7 @@
 #include "mpq-file.h"
 #include "mpq-internal.h"
 #include "mpq-mpqe.h"
-#include "mpq-patch.h"
+#include "mpq-patch-reader.h"
 #include "mpq-pkware.h"
 #include "mpq-signature.h"
 #include "mpq-wave.h"

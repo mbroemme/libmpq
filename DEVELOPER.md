@@ -245,7 +245,7 @@ that cannot fit the 32-bit MPQ archive-size field.
 
 ## Private patch views
 
-The private `mpq-patch` layer composes a filesystem-backed base MPQ with ordered
+The private `mpq-patch-reader` layer composes a filesystem-backed base MPQ with ordered
 patch MPQs. It materializes a temporary read-only archive view; later layers
 override earlier ones, delete markers hide lower-layer names, and `PTCH` COPY
 or BSD0 payloads are checked against their before/after MD5 values. Existing

@@ -1,5 +1,5 @@
 /*
- *  mpq-patch.h -- private MPQ patch archive and payload interfaces.
+ *  mpq-patch-reader.h -- private MPQ patch archive and payload interfaces.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -17,8 +17,8 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef LIBMPQ_MPQ_PATCH_H
-#define LIBMPQ_MPQ_PATCH_H
+#ifndef LIBMPQ_MPQ_PATCH_READER_H
+#define LIBMPQ_MPQ_PATCH_READER_H
 
 #include <libmpq/mpq.h>
 #include <stddef.h>
@@ -55,4 +55,4 @@ int32_t libmpq__patch_apply(
     uint8_t **output, size_t *output_size
 );
 
-#endif /* LIBMPQ_MPQ_PATCH_H */
+#endif /* LIBMPQ_MPQ_PATCH_READER_H */

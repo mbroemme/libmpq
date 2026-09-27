@@ -24,6 +24,12 @@
 
 typedef mpq_patch_s mpq_patch_writer_s;
 
+/* Retain direct splice-tuple regression access without exporting a public API. */
+int32_t libmpq__patch_bsd0_encode(
+    const uint8_t *before, size_t before_size, const uint8_t *after, size_t after_size,
+    uint8_t splice, uint8_t **encoded, size_t *encoded_size, size_t *patch_stream_size
+);
+
 /* Begin a private libmpq-compatible whole-file patch for a path-backed MPQ. */
 int32_t libmpq__patch_writer_begin(
     mpq_patch_writer_s **patch_writer, const char *base_path, const char *patch_path

@@ -1,5 +1,5 @@
 /*
- *  mpq-patch.c -- private MPQ incremental patch decoding.
+ *  mpq-patch-reader.c -- private MPQ incremental patch decoding.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -17,7 +17,7 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "mpq-patch.h"
+#include "mpq-patch-reader.h"
 #include "mpq-attributes.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"

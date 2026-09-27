@@ -1,5 +1,5 @@
 /*
- *  test-mpq-patch.c -- deterministic private MPQ patch-view regressions.
+ *  test-mpq-patch-reader.c -- deterministic private MPQ patch-view regressions.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -22,7 +22,7 @@
 #include "mpq-endian.h"
 #include "mpq-internal.h"
 #include "mpq-md5.h"
-#include "mpq-patch.h"
+#include "mpq-patch-reader.h"
 #include "mpq-source.h"
 #include "test-mpq-helper.h"
 
