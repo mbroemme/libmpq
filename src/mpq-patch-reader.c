@@ -27,6 +27,7 @@
 #include "mpq-signature.h"
 #include "mpq-source.h"
 
+#include <ctype.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,11 +58,15 @@ typedef struct
 {
     uint32_t hash_a;
     uint32_t hash_b;
+    uint32_t physical_hash_a;
+    uint32_t physical_hash_b;
     uint16_t locale;
     uint16_t platform;
     uint32_t block_index;
     char *name;
+    char *physical_name;
     uint8_t live;
+    uint8_t internal;
 } mpq_patch_entry_s;
 
 /* Compare one buffer with a serialized MD5 digest. */
@@ -648,7 +653,7 @@ patch_delete_hash(mpq_hash_s *hash)
 
 /* Build authoritative entries from live hashes and optionally enrich their names. */
 static int32_t
-patch_entries(mpq_archive_s *patch, mpq_patch_entry_s **entries)
+patch_entries(mpq_archive_s *patch, mpq_patch_entry_s **entries, uint32_t *entry_count)
 {
     uint8_t *list = NULL;
     size_t size = 0;
@@ -656,12 +661,13 @@ patch_entries(mpq_archive_s *patch, mpq_patch_entry_s **entries)
     int32_t status;
 
     *entries = NULL;
-    if (patch->mpq_header.hash_table_count == 0)
+    *entry_count = patch->mpq_header.hash_table_count;
+    if (*entry_count == 0)
         return LIBMPQ_ERROR_FORMAT;
-    *entries = calloc(patch->mpq_header.hash_table_count, sizeof(**entries));
+    *entries = calloc(*entry_count, sizeof(**entries));
     if (*entries == NULL)
         return LIBMPQ_ERROR_MALLOC;
-    for (uint32_t i = 0; i < patch->mpq_header.hash_table_count; i++) {
+    for (uint32_t i = 0; i < *entry_count; i++) {
         const mpq_hash_s *hash = &patch->mpq_hash[i];
         mpq_patch_entry_s *entry = &(*entries)[i];
 
@@ -669,6 +675,8 @@ patch_entries(mpq_archive_s *patch, mpq_patch_entry_s **entries)
             continue;
         entry->hash_a = hash->hash_a;
         entry->hash_b = hash->hash_b;
+        entry->physical_hash_a = hash->hash_a;
+        entry->physical_hash_b = hash->hash_b;
         entry->locale = hash->locale;
         entry->platform = hash->platform;
         entry->block_index = hash->block_table_index;
@@ -707,7 +715,7 @@ patch_entries(mpq_archive_s *patch, mpq_patch_entry_s **entries)
             name[length] = '\0';
             first = libmpq__crypto_hash_string(name, 0x100);
             second = libmpq__crypto_hash_string(name, 0x200);
-            for (uint32_t i = 0; i < patch->mpq_header.hash_table_count; i++) {
+            for (uint32_t i = 0; i < *entry_count; i++) {
                 mpq_patch_entry_s *entry = &(*entries)[i];
 
                 if (!entry->live || entry->hash_a != first || entry->hash_b != second ||
@@ -726,6 +734,184 @@ patch_entries(mpq_archive_s *patch, mpq_patch_entry_s **entries)
         }
     }
     free(list);
+    return status;
+}
+
+/* Compare names using the same byte-wise uppercase folding as MPQ hashing. */
+static uint8_t
+patch_name_equal(const char *left, const char *right, size_t length)
+{
+    for (size_t i = 0; i < length; i++)
+        if (toupper((unsigned char)left[i]) != toupper((unsigned char)right[i]))
+            return 0;
+    return 1;
+}
+
+/* Identify only a complete metadata path component, not a similar basename. */
+static uint8_t
+patch_metadata_path(const char *name, size_t *prefix_length)
+{
+    const char *separator = strrchr(name, '\\');
+    const char *basename = separator == NULL ? name : separator + 1;
+    static const char marker[] = "(patch_metadata)";
+
+    if (strlen(basename) != sizeof(marker) - 1 ||
+        !patch_name_equal(basename, marker, sizeof(marker) - 1))
+        return 0;
+    *prefix_length = separator == NULL ? 0 : (size_t)(separator - name) + 1;
+    return 1;
+}
+
+/* Normalize an explicit prefix to either empty or one trailing backslash. */
+static int32_t
+patch_normalize_prefix(const char *input, char **result)
+{
+    size_t length = strlen(input);
+
+    while (length != 0 && input[length - 1] == '\\')
+        length--;
+    if (length > SIZE_MAX - 2)
+        return LIBMPQ_ERROR_SIZE;
+    *result = malloc(length + (length != 0) + 1);
+    if (*result == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    memcpy(*result, input, length);
+    if (length != 0)
+        (*result)[length++] = '\\';
+    (*result)[length] = '\0';
+    return LIBMPQ_SUCCESS;
+}
+
+/* Keep physical member lookup separate from logical lower-layer identity. */
+static int32_t
+patch_prepare_entries(
+    mpq_archive_s *patch, mpq_patch_entry_s *entries, uint32_t entry_count,
+    const mpq_patch_source_s *source, uint8_t *detected
+)
+{
+    char *discovered = NULL;
+    char *explicit_prefix = NULL;
+    char *marker_name = NULL;
+    const char *prefix;
+    size_t prefix_length;
+    int32_t status = LIBMPQ_SUCCESS;
+
+    if (source->prefix != NULL) {
+        status = patch_normalize_prefix(source->prefix, &explicit_prefix);
+        if (status != LIBMPQ_SUCCESS)
+            goto done;
+    }
+    for (uint32_t i = 0; i < entry_count; i++) {
+        mpq_patch_entry_s *entry = &entries[i];
+        size_t length;
+
+        if (!entry->live || entry->name == NULL || !patch_metadata_path(entry->name, &length))
+            continue;
+        *detected = 1;
+        if (length > SIZE_MAX - 1) {
+            status = LIBMPQ_ERROR_SIZE;
+            goto done;
+        }
+        if (discovered == NULL) {
+            discovered = malloc(length + 1);
+            if (discovered == NULL) {
+                status = LIBMPQ_ERROR_MALLOC;
+                goto done;
+            }
+            memcpy(discovered, entry->name, length);
+            discovered[length] = '\0';
+        } else if (strlen(discovered) != length ||
+                   !patch_name_equal(discovered, entry->name, length)) {
+            status = LIBMPQ_ERROR_FORMAT;
+            goto done;
+        }
+        {
+            uint32_t number = patch_number_for_block(patch, entry->block_index);
+            libmpq__off_t size;
+
+            if (number == UINT32_MAX ||
+                libmpq__file_size_unpacked(patch, number, &size) != LIBMPQ_SUCCESS || size <= 0 ||
+                size >= 64) {
+                status = LIBMPQ_ERROR_FORMAT;
+                goto done;
+            }
+        }
+    }
+    if (explicit_prefix != NULL && discovered != NULL &&
+        (strlen(explicit_prefix) != strlen(discovered) ||
+         !patch_name_equal(explicit_prefix, discovered, strlen(discovered)))) {
+        status = LIBMPQ_ERROR_FORMAT;
+        goto done;
+    }
+    prefix = explicit_prefix != NULL ? explicit_prefix : discovered;
+    if (prefix == NULL)
+        prefix = "";
+    prefix_length = strlen(prefix);
+    if (prefix_length != 0) {
+        static const char marker[] = "(patch_metadata)";
+
+        if (prefix_length > SIZE_MAX - sizeof(marker)) {
+            status = LIBMPQ_ERROR_SIZE;
+            goto done;
+        }
+        marker_name = malloc(prefix_length + sizeof(marker));
+        if (marker_name == NULL) {
+            status = LIBMPQ_ERROR_MALLOC;
+            goto done;
+        }
+        memcpy(marker_name, prefix, prefix_length);
+        memcpy(marker_name + prefix_length, marker, sizeof(marker));
+    }
+    for (uint32_t i = 0; i < entry_count; i++) {
+        mpq_patch_entry_s *entry = &entries[i];
+        size_t ignored;
+
+        if (!entry->live)
+            continue;
+        if (patch_known_internal(entry->physical_hash_a, entry->physical_hash_b) ||
+            (marker_name != NULL &&
+             entry->physical_hash_a == libmpq__crypto_hash_string(marker_name, 0x100) &&
+             entry->physical_hash_b == libmpq__crypto_hash_string(marker_name, 0x200)) ||
+            (entry->name != NULL && patch_metadata_path(entry->name, &ignored))) {
+            entry->internal = 1;
+            continue;
+        }
+        if (prefix_length == 0)
+            continue;
+        if (entry->name == NULL) {
+            status = LIBMPQ_ERROR_FORMAT;
+            goto done;
+        }
+        if (strlen(entry->name) < prefix_length ||
+            !patch_name_equal(entry->name, prefix, prefix_length)) {
+            entry->live = 0;
+            continue;
+        }
+        if (entry->name[prefix_length] == '\0') {
+            status = LIBMPQ_ERROR_FORMAT;
+            goto done;
+        }
+        entry->physical_name = entry->name;
+        {
+            const char *logical = entry->physical_name + prefix_length;
+            size_t length = strlen(logical);
+
+            entry->name = malloc(length + 1);
+            if (entry->name != NULL)
+                memcpy(entry->name, logical, length + 1);
+        }
+        if (entry->name == NULL) {
+            status = LIBMPQ_ERROR_MALLOC;
+            goto done;
+        }
+        entry->hash_a = libmpq__crypto_hash_string(entry->name, 0x100);
+        entry->hash_b = libmpq__crypto_hash_string(entry->name, 0x200);
+    }
+
+done:
+    free(marker_name);
+    free(explicit_prefix);
+    free(discovered);
     return status;
 }
 
@@ -948,6 +1134,11 @@ patch_rewrite_listfile(
                 target, libmpq__crypto_hash_string(name, 0x100),
                 libmpq__crypto_hash_string(name, 0x200)
             )) {
+            if (used > capacity || length >= capacity - used) {
+                free(name);
+                status = LIBMPQ_ERROR_SIZE;
+                goto done;
+            }
             memcpy(updated + used, name, length);
             used += length;
             updated[used++] = '\n';
@@ -957,12 +1148,16 @@ patch_rewrite_listfile(
     for (uint32_t i = 0; i < entry_count; i++) {
         size_t length;
 
-        if (!entries[i].live || entries[i].name == NULL ||
+        if (!entries[i].live || entries[i].internal || entries[i].name == NULL ||
             patch_known_internal(entries[i].hash_a, entries[i].hash_b) ||
             !patch_hash_present(target, entries[i].hash_a, entries[i].hash_b) ||
             patch_list_contains(updated, used, entries[i].name))
             continue;
         length = strlen(entries[i].name);
+        if (used > capacity || length >= capacity - used) {
+            status = LIBMPQ_ERROR_SIZE;
+            goto done;
+        }
         memcpy(updated + used, entries[i].name, length);
         used += length;
         updated[used++] = '\n';
@@ -971,6 +1166,10 @@ patch_rewrite_listfile(
         static const uint8_t attributes_line[] = LIBMPQ_ATTRIBUTES_NAME "\n";
         size_t length = sizeof(attributes_line) - 1;
 
+        if (used > capacity || length > capacity - used) {
+            status = LIBMPQ_ERROR_SIZE;
+            goto done;
+        }
         memcpy(updated + used, attributes_line, length);
         used += length;
     }
@@ -1224,9 +1423,15 @@ patch_stage_hash(
     if (slot == UINT32_MAX && entry->name == NULL)
         return LIBMPQ_ERROR_FORMAT;
     if ((flags & LIBMPQ_FILE_FLAG_PATCH_FILE) != 0)
-        status = patch_read_incremental(patch, entry->name, patch_number, &payload, &payload_size);
+        status = patch_read_incremental(
+            patch, entry->physical_name == NULL ? entry->name : entry->physical_name, patch_number,
+            &payload, &payload_size
+        );
     else
-        status = patch_read_adjusted(patch, entry->name, patch_number, &payload, &payload_size);
+        status = patch_read_adjusted(
+            patch, entry->physical_name == NULL ? entry->name : entry->physical_name, patch_number,
+            &payload, &payload_size
+        );
     if (status != LIBMPQ_SUCCESS)
         goto done;
     if ((flags & LIBMPQ_FILE_FLAG_PATCH_FILE) != 0) {
@@ -1261,7 +1466,8 @@ patch_stage_hash(
         }
         if (patch->attributes != NULL) {
             status = patch_attribute_for_identity(
-                patch, entry->hash_a, entry->hash_b, entry->locale, entry->platform, &patch_row
+                patch, entry->physical_hash_a, entry->physical_hash_b, entry->locale,
+                entry->platform, &patch_row
             );
             if (status != LIBMPQ_SUCCESS)
                 goto done;
@@ -1323,6 +1529,7 @@ patch_apply_layer(mpq_patch_view_s *view, const mpq_patch_source_s *source)
     uint8_t *changed = NULL;
     uint32_t attribute_flags = 0;
     uint32_t metadata_number;
+    uint32_t entry_count = 0;
     uint8_t detected = 0;
     uint8_t mutated = 0;
     uint8_t has_attributes = 0;
@@ -1348,13 +1555,16 @@ patch_apply_layer(mpq_patch_view_s *view, const mpq_patch_source_s *source)
             (patch->mpq_block[patch->mpq_hash[i].block_table_index].flags &
              (LIBMPQ_FILE_FLAG_PATCH_FILE | LIBMPQ_FILE_FLAG_DELETE_MARKER)) != 0)
             detected = 1;
+    status = patch_entries(patch, &entries, &entry_count);
+    if (status != LIBMPQ_SUCCESS)
+        goto done;
+    status = patch_prepare_entries(patch, entries, entry_count, source, &detected);
+    if (status != LIBMPQ_SUCCESS)
+        goto done;
     if (!detected) {
         status = LIBMPQ_ERROR_FORMAT;
         goto done;
     }
-    status = patch_entries(patch, &entries);
-    if (status != LIBMPQ_SUCCESS)
-        goto done;
     status = libmpq__archive_open(&lower, view->path, view->archive_offset);
     if (status != LIBMPQ_SUCCESS)
         goto done;
@@ -1380,8 +1590,8 @@ patch_apply_layer(mpq_patch_view_s *view, const mpq_patch_source_s *source)
         goto done;
     }
     if (has_attributes) {
-        changed_rows = calloc(patch->mpq_header.hash_table_count, sizeof(*changed_rows));
-        changed = calloc(patch->mpq_header.hash_table_count, 1);
+        changed_rows = calloc(entry_count, sizeof(*changed_rows));
+        changed = calloc(entry_count, 1);
         if (changed_rows == NULL || changed == NULL) {
             status = LIBMPQ_ERROR_MALLOC;
             goto done;
@@ -1408,10 +1618,10 @@ patch_apply_layer(mpq_patch_view_s *view, const mpq_patch_source_s *source)
     }
     if (status != LIBMPQ_SUCCESS)
         goto done;
-    for (uint32_t i = 0; i < patch->mpq_header.hash_table_count; i++) {
+    for (uint32_t i = 0; i < entry_count; i++) {
         const mpq_patch_entry_s *entry = &entries[i];
 
-        if (!entry->live || patch_known_internal(entry->hash_a, entry->hash_b))
+        if (!entry->live || entry->internal)
             continue;
         if ((patch->mpq_block[entry->block_index].flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) != 0 &&
             patch_matching_hash(target, entry) == UINT32_MAX)
@@ -1440,8 +1650,8 @@ patch_apply_layer(mpq_patch_view_s *view, const mpq_patch_source_s *source)
             patch_delete_hash(hash);
     }
     status = patch_rewrite_listfile(
-        lower, target, entries, patch->mpq_header.hash_table_count, output,
-        has_attributes ? &list_row : NULL, attribute_flags,
+        lower, target, entries, entry_count, output, has_attributes ? &list_row : NULL,
+        attribute_flags,
         (uint8_t)(has_attributes &&
                   patch_internal_slot(target, LIBMPQ_ATTRIBUTES_NAME) == UINT32_MAX)
     );
@@ -1460,7 +1670,7 @@ patch_apply_layer(mpq_patch_view_s *view, const mpq_patch_source_s *source)
             goto done;
         }
         status = patch_remap_attributes(
-            lower, target, entries, changed_rows, changed, patch->mpq_header.hash_table_count,
+            lower, target, entries, changed_rows, changed, entry_count,
             patch_internal_slot(target, LIBMPQ_LISTFILE_NAME) == UINT32_MAX ? NULL : &list_row,
             attributes
         );
@@ -1540,8 +1750,10 @@ done:
     if (temporary != NULL)
         (void)libmpq__directory_remove(view->directory, temporary);
     if (entries != NULL) {
-        for (uint32_t i = 0; i < patch->mpq_header.hash_table_count; i++)
+        for (uint32_t i = 0; i < entry_count; i++) {
             free(entries[i].name);
+            free(entries[i].physical_name);
+        }
     }
     free(entries);
     free(attributes);
@@ -1706,7 +1918,7 @@ libmpq__patch_view_open(
     size_t patch_count
 )
 {
-    mpq_patch_source_s base_source = { base_path, NULL, 0 };
+    mpq_patch_source_s base_source = { base_path, NULL, 0, NULL };
 
     return patch_view_open_paths(view, &base_source, patch_paths, patch_count);
 }
@@ -1718,7 +1930,7 @@ libmpq__patch_view_open_mpqe_base(
     const char *const *patch_paths, size_t patch_count
 )
 {
-    mpq_patch_source_s base_source = { base_path, auth_code, auth_code_size };
+    mpq_patch_source_s base_source = { base_path, auth_code, auth_code_size, NULL };
 
     if (auth_code == NULL) {
         if (view != NULL)

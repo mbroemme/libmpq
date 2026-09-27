@@ -996,9 +996,9 @@ test_public_mpqe_patch(void)
     TEST_CHECK((flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) != 0);
     TEST_CHECK(libmpq__archive_close(stored) == LIBMPQ_SUCCESS);
 
-    base_source = (mpq_patch_source_s){ base_path, NULL, 0 };
-    patch_source =
-        (mpq_patch_source_s){ patch_path, mpqe_patch_auth_code, sizeof(mpqe_patch_auth_code) - 1 };
+    base_source = (mpq_patch_source_s){ base_path, NULL, 0, NULL };
+    patch_source = (mpq_patch_source_s){ patch_path, mpqe_patch_auth_code,
+                                         sizeof(mpqe_patch_auth_code) - 1, NULL };
     TEST_CHECK(libmpq__patch_view_open_sources(&view, &base_source, &patch_source, 1) == 0);
     TEST_CHECK(
         check_file(
@@ -1043,7 +1043,7 @@ test_public_mpqe_patch_chain(void)
     mpq_patch_s *patch = NULL;
     mpq_patch_view_s *view = NULL;
     mpq_patch_source_s base = { FIXTURE_DIR "/mpq-v1-features.mpqe", mpqe_base_auth_code,
-                                sizeof(mpqe_base_auth_code) - 1 };
+                                sizeof(mpqe_base_auth_code) - 1, NULL };
     mpq_patch_source_s layers[2];
     uint32_t number;
 
@@ -1061,9 +1061,9 @@ test_public_mpqe_patch_chain(void)
     );
     TEST_CHECK(libmpq__patch_remove(patch, "pkware.txt") == LIBMPQ_SUCCESS);
     TEST_CHECK(libmpq__patch_finish(patch) == LIBMPQ_SUCCESS);
-    layers[0] =
-        (mpq_patch_source_s){ patch_path, mpqe_patch_auth_code, sizeof(mpqe_patch_auth_code) - 1 };
-    layers[1] = (mpq_patch_source_s){ FIXTURE_DIR "/mpq-v1-features-patch.w3x", NULL, 0 };
+    layers[0] = (mpq_patch_source_s){ patch_path, mpqe_patch_auth_code,
+                                      sizeof(mpqe_patch_auth_code) - 1, NULL };
+    layers[1] = (mpq_patch_source_s){ FIXTURE_DIR "/mpq-v1-features-patch.w3x", NULL, 0, NULL };
     TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 2) == LIBMPQ_SUCCESS);
     TEST_CHECK(
         check_file(

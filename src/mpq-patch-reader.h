@@ -38,12 +38,13 @@ typedef struct
 
 typedef struct mpq_patch_view mpq_patch_view_s;
 
-/* Credentials are borrowed only while each source is opened. */
+/* Credentials and optional patch namespace are borrowed during composition. */
 typedef struct
 {
     const char *path;
     const uint8_t *auth_code;
     size_t auth_code_size;
+    const char *prefix;
 } mpq_patch_source_s;
 
 /* Compose independently authenticated base and patch sources. */

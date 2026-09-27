@@ -356,8 +356,11 @@ headers, tables, encryption, sectors, and compression, see the
   Cleanup is best effort, so a crash can leave the plaintext temporary behind.
 * Transactional modification does not support MPQE or embedded MPQs. Mutations
   remove existing weak and strong signatures because no signing key is supplied.
-* Patch signing, full Blizzard patch metadata, and StormLib-specific key modes
-  are not supported. Automatic file-level
+* Patch signing, game-specific patch-prefix autodetection heuristics, and
+  StormLib-specific key modes are not supported. Namespace discovery uses
+  `(patch_metadata)` names in `(listfile)`; game-specific Blizzard prefix
+  autodetection heuristics are not supported.
+  Automatic file-level
   CRC32/MD5 comparison is skipped for lossy ADPCM data because the decoded
   output is not byte-identical to the original input.
 

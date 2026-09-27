@@ -266,7 +266,15 @@ credentials are independent and are not retained by the view. A `.w3x` input is 
 container; its prefix and unrelated trailing bytes are retained while a
 stale external strong-signature trailer is removed after a content change.
 This layer does not perform HM3W map-header hashing.
-Prefix-mapped patch namespaces are not resolved yet.
+Each patch layer may supply an independent namespace prefix. Physical names
+such as `Base\\Foo` are read from the patch using their original names, while
+the prefix-stripped logical name `Foo` identifies the lower-layer member and
+the materialized result. A single `(patch_metadata)` path in `(listfile)`
+deterministically discovers the prefix; conflicting paths are rejected.
+An explicit private prefix takes precedence, but must agree with discovered
+metadata. Unnamed entries requiring prefix removal are rejected because their
+logical identity cannot be recovered. Game-specific prefix discovery
+heuristics remain unsupported.
 The view retains usable `(listfile)` names, merges known patch-only names, and
 maps available `(attributes)` rows to resulting file entries by MPQ hash
 identity. Existing PATCH_BIT values, including true values from input
