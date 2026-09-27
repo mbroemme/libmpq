@@ -245,12 +245,13 @@ that cannot fit the 32-bit MPQ archive-size field.
 
 ## Private patch views
 
-The private `mpq-patch-reader` layer composes a filesystem-backed MPQ or
-authenticated MPQE base with ordered ordinary MPQ patch layers. It materializes
-a temporary read-only archive view; later layers
-override earlier ones, delete markers hide lower-layer names, and `PTCH` COPY
-or BSD0 payloads are checked against their before/after MD5 values. Existing
-archive and logical stream read APIs operate on the resulting private view.
+The private `mpq-patch-reader` layer composes filesystem-backed ordinary MPQ
+and authenticated MPQE sources for both base and ordered patch layers. Each
+MPQE source requires its own explicit authentication code. It materializes a
+temporary read-only archive view; later layers override earlier ones, delete
+markers hide lower-layer names, and `PTCH` COPY or BSD0 payloads are checked
+against their before/after MD5 values. Existing archive and logical stream
+read APIs operate on the resulting private view.
 No public patch-composition API is exposed yet.
 
 Patch matching primarily uses each entry's MPQ hash identity, including locale
@@ -260,10 +261,10 @@ when its payload can be decoded without a name-derived key. A new patch-only
 member requires a recoverable plaintext name so its hash-table probe position
 can be computed. Otherwise that entry is rejected rather than
 silently omitted. Unnamed base members and their packed data remain intact.
-An MPQE base requires an explicit authentication code and uses the existing
-MPQE source decoder before patch composition. MPQE patch layers and MPQE patch
-creation remain unsupported. A `.w3x` input is treated only as an
-MPQ container; its prefix and unrelated trailing bytes are retained while a
+MPQE inputs use the existing source decoder before patch composition; their
+credentials are independent and are not retained by the view. MPQE patch
+creation remains unsupported. A `.w3x` input is treated only as an MPQ
+container; its prefix and unrelated trailing bytes are retained while a
 stale external strong-signature trailer is removed after a content change.
 This layer does not perform HM3W map-header hashing.
 Prefix-mapped patch namespaces are not resolved yet.

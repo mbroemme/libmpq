@@ -22,6 +22,7 @@
 #include "mpq-endian.h"
 #include "mpq-internal.h"
 #include "mpq-md5.h"
+#include "mpq-mpqe.h"
 #include "mpq-patch-reader.h"
 #include "mpq-source.h"
 #include "test-mpq-helper.h"
@@ -36,6 +37,8 @@ static const uint8_t second_text[] = "Patch layer two\n";
 static const uint8_t v2_text[] = "Version two patch\n";
 static const uint8_t new_text[] = "Patch-only member\n";
 static const uint8_t mpqe_auth_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+static const uint8_t first_patch_auth_code[] = "LIBMPQ-MPQE-PATCH-AUTH-CODE-00002";
+static const uint8_t second_patch_auth_code[] = "LIBMPQ-MPQE-PATCH-AUTH-CODE-00003";
 
 /* Calculate a fixture digest using the library's private MD5 implementation. */
 static void
@@ -160,6 +163,38 @@ fixture_container(const char *source, const char *destination)
     TEST_CHECK(fwrite(archive, 1, size, output) == size);
     TEST_CHECK(fclose(output) == 0);
     free(archive);
+    return 0;
+}
+
+/* Wrap synthetic MPQ patch bytes in an MPQE source with test-only credentials. */
+static int
+fixture_mpqe_patch(
+    const char *source, const char *destination, const uint8_t *auth_code, size_t auth_size
+)
+{
+    uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE];
+    uint8_t chunk[LIBMPQ_MPQE_CHUNK_SIZE];
+    uint8_t *data = NULL;
+    size_t size = 0;
+    FILE *output;
+
+    TEST_CHECK(test_read_path(source, &data, &size) == 0);
+    TEST_CHECK(libmpq__mpqe_key(key, auth_code, auth_size) == LIBMPQ_SUCCESS);
+    for (size_t offset = 0; offset < size; offset += sizeof(chunk)) {
+        size_t count = size - offset < sizeof(chunk) ? size - offset : sizeof(chunk);
+
+        memset(chunk, 0, sizeof(chunk));
+        memcpy(chunk, data + offset, count);
+        libmpq__mpqe_transform_chunk(chunk, key, offset);
+        memcpy(data + offset, chunk, count);
+    }
+    libmpq__mpqe_clear(chunk, sizeof(chunk));
+    libmpq__mpqe_clear(key, sizeof(key));
+    output = fopen(destination, "wb");
+    TEST_CHECK(output != NULL);
+    TEST_CHECK(fwrite(data, 1, size, output) == size);
+    TEST_CHECK(fclose(output) == 0);
+    free(data);
     return 0;
 }
 
@@ -414,6 +449,118 @@ test_mpqe_base_views(void)
     );
     TEST_CHECK(libmpq__file_number(base, "overview.txt", &number) == LIBMPQ_SUCCESS);
     TEST_CHECK(libmpq__archive_close(base) == LIBMPQ_SUCCESS);
+    return 0;
+}
+
+/* Authenticate each mixed patch layer independently, including failed attempts. */
+static int
+test_mpqe_patch_layers(void)
+{
+    const char *plain_base_path = FIXTURE_DIR "/mpq-v1-features.mpq";
+    const char *mpqe_base_path = FIXTURE_DIR "/mpq-v1-features.mpqe";
+    const char *plain_first_path = FIXTURE_DIR "/mpq-v1-features-patch.mpq";
+    const char *plain_second_path = FIXTURE_DIR "/mpq-v1-features-patch.w3x";
+    char first_path[1024];
+    char second_path[1024];
+    uint8_t wrong_patch_auth[sizeof(first_patch_auth_code) - 1];
+    uint8_t wrong_base_auth[sizeof(mpqe_auth_code) - 1];
+    uint8_t *base_before = NULL;
+    uint8_t *base_after = NULL;
+    size_t before_size = 0;
+    size_t after_size = 0;
+    mpq_patch_source_s plain_base = { plain_base_path, NULL, 0 };
+    mpq_patch_source_s mpqe_base = { mpqe_base_path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1 };
+    mpq_patch_source_s plain_first = { plain_first_path, NULL, 0 };
+    mpq_patch_source_s plain_second = { plain_second_path, NULL, 0 };
+    mpq_patch_source_s first_secure;
+    mpq_patch_source_s second_secure;
+    mpq_patch_source_s layers[2];
+    mpq_patch_view_s *view = NULL;
+
+    TEST_CHECK(test_temp_path(first_path, sizeof(first_path), "patch-mpqe-first") == 0);
+    TEST_CHECK(test_temp_path(second_path, sizeof(second_path), "patch-mpqe-second") == 0);
+    TEST_CHECK(
+        fixture_mpqe_patch(
+            plain_first_path, first_path, first_patch_auth_code, sizeof(first_patch_auth_code) - 1
+        ) == 0
+    );
+    TEST_CHECK(
+        fixture_mpqe_patch(
+            plain_second_path, second_path, second_patch_auth_code,
+            sizeof(second_patch_auth_code) - 1
+        ) == 0
+    );
+    first_secure = (mpq_patch_source_s){ first_path, first_patch_auth_code,
+                                         sizeof(first_patch_auth_code) - 1 };
+    second_secure = (mpq_patch_source_s){ second_path, second_patch_auth_code,
+                                          sizeof(second_patch_auth_code) - 1 };
+    TEST_CHECK(test_read_path(mpqe_base_path, &base_before, &before_size) == 0);
+
+    layers[0] = first_secure;
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &plain_base, layers, 1) == 0);
+    TEST_CHECK(check_view(view, first_text, sizeof(first_text) - 1) == 0);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &mpqe_base, layers, 1) == 0);
+    TEST_CHECK(check_view(view, first_text, sizeof(first_text) - 1) == 0);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
+
+    layers[0] = plain_first;
+    layers[1] = second_secure;
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &plain_base, layers, 2) == 0);
+    TEST_CHECK(check_view(view, second_text, sizeof(second_text) - 1) == 0);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &mpqe_base, layers, 2) == 0);
+    TEST_CHECK(check_view(view, second_text, sizeof(second_text) - 1) == 0);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
+
+    layers[0] = first_secure;
+    layers[1] = plain_second;
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &plain_base, layers, 2) == 0);
+    TEST_CHECK(check_view(view, second_text, sizeof(second_text) - 1) == 0);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &mpqe_base, layers, 2) == 0);
+    TEST_CHECK(check_view(view, second_text, sizeof(second_text) - 1) == 0);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
+
+    layers[1] = second_secure;
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &mpqe_base, layers, 2) == 0);
+    TEST_CHECK(check_view(view, second_text, sizeof(second_text) - 1) == 0);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
+
+    memcpy(wrong_patch_auth, first_patch_auth_code, sizeof(wrong_patch_auth));
+    wrong_patch_auth[0] ^= 1u;
+    layers[0] = first_secure;
+    layers[0].auth_code = wrong_patch_auth;
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &plain_base, layers, 1) != 0);
+    TEST_CHECK(view == NULL);
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &mpqe_base, layers, 1) != 0);
+    TEST_CHECK(view == NULL);
+    layers[0] = first_secure;
+    layers[0].auth_code = NULL;
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &plain_base, layers, 1) != 0);
+    TEST_CHECK(view == NULL);
+    layers[0] = plain_first;
+    layers[1] = second_secure;
+    layers[1].auth_code = wrong_patch_auth;
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &plain_base, layers, 2) != 0);
+    TEST_CHECK(view == NULL);
+    layers[1] = second_secure;
+    memcpy(wrong_base_auth, mpqe_auth_code, sizeof(wrong_base_auth));
+    wrong_base_auth[0] ^= 1u;
+    mpqe_base.auth_code = wrong_base_auth;
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &mpqe_base, layers, 2) != 0);
+    TEST_CHECK(view == NULL);
+    mpqe_base.auth_code = mpqe_auth_code;
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &mpqe_base, layers, 2) == 0);
+    TEST_CHECK(check_view(view, second_text, sizeof(second_text) - 1) == 0);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
+
+    TEST_CHECK(test_read_path(mpqe_base_path, &base_after, &after_size) == 0);
+    TEST_CHECK(after_size == before_size && memcmp(base_before, base_after, before_size) == 0);
+    free(base_before);
+    free(base_after);
+    TEST_CHECK(remove(first_path) == 0);
+    TEST_CHECK(remove(second_path) == 0);
     return 0;
 }
 
@@ -1544,6 +1691,7 @@ main(int argc, char **argv)
     TEST_CHECK(argc == 1);
     TEST_CHECK(test_views() == 0);
     TEST_CHECK(test_mpqe_base_views() == 0);
+    TEST_CHECK(test_mpqe_patch_layers() == 0);
     TEST_CHECK(test_chain_edges() == 0);
     TEST_CHECK(test_container_bytes() == 0);
     TEST_CHECK(test_noop_signature() == 0);

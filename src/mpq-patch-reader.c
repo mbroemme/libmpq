@@ -1289,9 +1289,25 @@ done:
     return status;
 }
 
+/* Open an ordinary MPQ or authenticate an MPQE source through the existing reader. */
+static int32_t
+patch_source_open(mpq_archive_s **archive, const mpq_patch_source_s *source)
+{
+    if (archive == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *archive = NULL;
+    if (source == NULL || source->path == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    return source->auth_code == NULL
+               ? libmpq__archive_open(archive, source->path, -1)
+               : libmpq__archive_open_mpqe(
+                     archive, source->path, -1, source->auth_code, source->auth_code_size
+                 );
+}
+
 /* Apply a complete layer in a separate private materialization, never via updates. */
 static int32_t
-patch_apply_layer(mpq_patch_view_s *view, const char *path)
+patch_apply_layer(mpq_patch_view_s *view, const mpq_patch_source_s *source)
 {
     mpq_archive_s *patch = NULL;
     mpq_archive_s *lower = NULL;
@@ -1312,13 +1328,9 @@ patch_apply_layer(mpq_patch_view_s *view, const char *path)
     uint8_t has_attributes = 0;
     int32_t status;
 
-    status = libmpq__archive_open(&patch, path, -1);
+    status = patch_source_open(&patch, source);
     if (status != LIBMPQ_SUCCESS)
         return status;
-    if (libmpq__source_is_mpqe(patch->source)) {
-        status = LIBMPQ_ERROR_FORMAT;
-        goto done;
-    }
     if (libmpq__file_number(patch, "(patch_metadata)", &metadata_number) == LIBMPQ_SUCCESS) {
         libmpq__off_t metadata_size = 0;
 
@@ -1573,11 +1585,11 @@ libmpq__patch_view_archive(mpq_patch_view_s *view)
     return view == NULL ? NULL : view->archive;
 }
 
-/* Materialize a decoded base with ordinary patch layers without changing inputs. */
-static int32_t
-patch_view_open_base(
-    mpq_patch_view_s **view, const char *base_path, const uint8_t *auth_code, size_t auth_code_size,
-    uint8_t authenticated, const char *const *patch_paths, size_t patch_count
+/* Materialize independently opened sources without changing any input archive. */
+int32_t
+libmpq__patch_view_open_sources(
+    mpq_patch_view_s **view, const mpq_patch_source_s *base_source,
+    const mpq_patch_source_s *patch_sources, size_t patch_count
 )
 {
     mpq_patch_view_s *state = NULL;
@@ -1590,14 +1602,13 @@ patch_view_open_base(
     if (view == NULL)
         return LIBMPQ_ERROR_EXIST;
     *view = NULL;
-    if (base_path == NULL || patch_paths == NULL || patch_count == 0)
+    if (base_source == NULL || base_source->path == NULL || patch_sources == NULL ||
+        patch_count == 0)
         return LIBMPQ_ERROR_EXIST;
     state = calloc(1, sizeof(*state));
     if (state == NULL)
         return LIBMPQ_ERROR_MALLOC;
-    status = authenticated
-                 ? libmpq__archive_open_mpqe(&base, base_path, -1, auth_code, auth_code_size)
-                 : libmpq__archive_open(&base, base_path, -1);
+    status = patch_source_open(&base, base_source);
     if (status != LIBMPQ_SUCCESS)
         goto error;
     absolute = patch_temporary_anchor();
@@ -1634,11 +1645,11 @@ patch_view_open_base(
     if (status != LIBMPQ_SUCCESS)
         goto error;
     for (size_t i = 0; i < patch_count; i++) {
-        if (patch_paths[i] == NULL) {
+        if (patch_sources[i].path == NULL) {
             status = LIBMPQ_ERROR_EXIST;
             goto error;
         }
-        status = patch_apply_layer(state, patch_paths[i]);
+        status = patch_apply_layer(state, &patch_sources[i]);
         if (status != LIBMPQ_SUCCESS)
             goto error;
     }
@@ -1661,6 +1672,33 @@ error:
     return status;
 }
 
+/* Adapt path-only patch callers to independent ordinary source descriptors. */
+static int32_t
+patch_view_open_paths(
+    mpq_patch_view_s **view, const mpq_patch_source_s *base_source, const char *const *patch_paths,
+    size_t patch_count
+)
+{
+    mpq_patch_source_s *sources;
+    int32_t status;
+
+    if (view == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *view = NULL;
+    if (patch_paths == NULL || patch_count == 0)
+        return LIBMPQ_ERROR_EXIST;
+    if (patch_count > SIZE_MAX / sizeof(*sources))
+        return LIBMPQ_ERROR_SIZE;
+    sources = calloc(patch_count, sizeof(*sources));
+    if (sources == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    for (size_t i = 0; i < patch_count; i++)
+        sources[i].path = patch_paths[i];
+    status = libmpq__patch_view_open_sources(view, base_source, sources, patch_count);
+    free(sources);
+    return status;
+}
+
 /* Build a private view from an ordinary MPQ base. */
 int32_t
 libmpq__patch_view_open(
@@ -1668,7 +1706,9 @@ libmpq__patch_view_open(
     size_t patch_count
 )
 {
-    return patch_view_open_base(view, base_path, NULL, 0, 0, patch_paths, patch_count);
+    mpq_patch_source_s base_source = { base_path, NULL, 0 };
+
+    return patch_view_open_paths(view, &base_source, patch_paths, patch_count);
 }
 
 /* Decode an authenticated MPQE base before composing ordinary MPQ patches. */
@@ -1678,7 +1718,12 @@ libmpq__patch_view_open_mpqe_base(
     const char *const *patch_paths, size_t patch_count
 )
 {
-    return patch_view_open_base(
-        view, base_path, auth_code, auth_code_size, 1, patch_paths, patch_count
-    );
+    mpq_patch_source_s base_source = { base_path, auth_code, auth_code_size };
+
+    if (auth_code == NULL) {
+        if (view != NULL)
+            *view = NULL;
+        return view == NULL ? LIBMPQ_ERROR_EXIST : LIBMPQ_ERROR_DECRYPT;
+    }
+    return patch_view_open_paths(view, &base_source, patch_paths, patch_count);
 }

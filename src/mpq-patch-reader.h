@@ -38,13 +38,27 @@ typedef struct
 
 typedef struct mpq_patch_view mpq_patch_view_s;
 
+/* Credentials are borrowed only while each source is opened. */
+typedef struct
+{
+    const char *path;
+    const uint8_t *auth_code;
+    size_t auth_code_size;
+} mpq_patch_source_s;
+
+/* Compose independently authenticated base and patch sources. */
+int32_t libmpq__patch_view_open_sources(
+    mpq_patch_view_s **view, const mpq_patch_source_s *base, const mpq_patch_source_s *patches,
+    size_t patch_count
+);
+
 /* Compose path-backed MPQ layers into a private, read-only archive view. */
 int32_t libmpq__patch_view_open(
     mpq_patch_view_s **view, const char *base_path, const char *const *patch_paths,
     size_t patch_count
 );
 
-/* Authenticate only the base container; patch layers remain ordinary MPQs. */
+/* Authenticate the base container while keeping patch paths ordinary MPQs. */
 int32_t libmpq__patch_view_open_mpqe_base(
     mpq_patch_view_s **view, const char *base_path, const uint8_t *auth_code, size_t auth_code_size,
     const char *const *patch_paths, size_t patch_count
