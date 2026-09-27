@@ -29,6 +29,16 @@ final class Patch {
         return new Patch(result);
     }
 
+    /** Begin an MPQE-wrapped patch using borrowed authentication bytes. */
+    static Patch beginMpqe(string baseArchive, string outputPatch,
+                           const(ubyte)[] authCode) {
+        mpq_patch_s* result;
+        checkStatus(libmpq__patch_begin_mpqe(&result, toStringz(baseArchive),
+                    toStringz(outputPatch), authCode.length == 0 ? null : authCode.ptr,
+                    authCode.length), "libmpq__patch_begin_mpqe");
+        return new Patch(result);
+    }
+
     /** Stage replacement using native patch storage defaults. */
     void replaceData(string name, const(ubyte)[] data) {
         replaceDataImpl(name, data, null);

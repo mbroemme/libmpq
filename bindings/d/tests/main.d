@@ -612,6 +612,72 @@ private void testPatchCreation() {
     rmdir(output);
 }
 
+private void testMpqePatchCreation() {
+    auto base = temporaryArchive("mpqe-patch-base");
+    auto output = temporaryArchive("mpqe-patch-output");
+    immutable ubyte[] authCode =
+        cast(immutable(ubyte)[])"LIBMPQ-MPQE-PATCH-AUTH-CODE-00002";
+    scope(exit) {
+        remove(base);
+        if (exists(output)) remove(output);
+    }
+    auto archive = Archive.create(base, ArchiveCreateOptions.v1());
+    archive.add("replace", cast(const(ubyte)[])"old");
+    archive.add("remove", cast(const(ubyte)[])"old");
+    archive.close();
+
+    bool invalid;
+    try { Patch.beginMpqe(base, output, null); }
+    catch (MPQException error) { invalid = error.code == ERROR_DECRYPT; }
+    assert(invalid);
+    invalid = false;
+    try { Patch.beginMpqe(base, output, authCode[0 .. 31]); }
+    catch (MPQException error) { invalid = error.code == ERROR_DECRYPT; }
+    assert(invalid && !exists(output));
+
+    auto patch = Patch.beginMpqe(base, output, authCode);
+    patch.replaceData("replace", cast(const(ubyte)[])"new");
+    patch.remove("remove");
+    assert(!exists(output));
+    patch.finish();
+    assert(exists(output));
+    bool consumed;
+    try { patch.abort(); } catch (MPQException error) {
+        consumed = error.code == ERROR_NOT_INITIALIZED;
+    }
+    assert(consumed);
+    bool ordinaryOpened;
+    try { auto ordinary = Archive.open(output); ordinaryOpened = true; ordinary.close(); }
+    catch (MPQException) { }
+    assert(!ordinaryOpened);
+    ubyte[] wrong = authCode.dup;
+    wrong[0] ^= 1;
+    bool wrongOpened;
+    try { auto incorrect = Archive.openMpqe(output, wrong, 0);
+          wrongOpened = true; incorrect.close(); }
+    catch (MPQException) { }
+    assert(!wrongOpened);
+    auto stored = Archive.openMpqe(output, authCode, 0);
+    assert(stored.file("replace").no() >= 0);
+    assert(stored.file("remove").no() >= 0);
+    stored.close();
+
+    remove(output);
+    patch = Patch.beginMpqe(base, output, authCode);
+    patch.replaceData("replace", cast(const(ubyte)[])"discarded");
+    destroy(patch);
+    assert(!exists(output));
+    patch = Patch.beginMpqe(base, output, authCode);
+    patch.remove("remove");
+    patch.abort();
+    assert(!exists(output));
+    consumed = false;
+    try { patch.finish(); } catch (MPQException error) {
+        consumed = error.code == ERROR_NOT_INITIALIZED;
+    }
+    assert(consumed);
+}
+
 void main() {
     testVersionAndErrors();
     testCreateReadAndMetadata(ARCHIVE_VERSION_ONE);
@@ -626,5 +692,6 @@ void main() {
     testUpdate();
     testUpdateLocalizedDefaults();
     testPatchCreation();
+    testMpqePatchCreation();
     testFailures();
 }

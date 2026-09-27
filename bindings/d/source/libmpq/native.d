@@ -303,6 +303,9 @@ extern(C) {
     /** Begin and stage a patch artifact without modifying the base archive. */
     int libmpq__patch_begin(mpq_patch_s** patch, const(char)* base_archive,
                             const(char)* output_patch);
+    int libmpq__patch_begin_mpqe(mpq_patch_s** patch, const(char)* base_archive,
+                                 const(char)* output_patch, const(ubyte)* auth_code,
+                                 size_t auth_code_size);
     int libmpq__patch_replace_data(mpq_patch_s* patch, const(char)* filename,
                                    const(ubyte)* data, off_t size,
                                    const(mpq_file_options_s)* options);

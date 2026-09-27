@@ -10,6 +10,19 @@ patch.remove("old.txt");
 patch.finish();
 ```
 
+`Patch.begin` creates an ordinary MPQ patch. Use `Patch.beginMpqe` to create
+an MPQE-wrapped patch with a caller-supplied authentication code:
+
+```d
+auto patch = Patch.beginMpqe("base.mpq", "changes.mpqe", authCode);
+scope(exit) patch.close();
+patch.replaceData("foo.txt", cast(const(ubyte)[])"new contents");
+patch.finish();
+```
+
+The same `Patch` owns either output type. Authentication bytes are borrowed
+only during begin; an unfinished patch is aborted rather than published.
+
 `replacePath` is also available. `finish()` publishes the patch; `abort()`
 discards it, and destruction of an unfinished patch aborts automatically.
 Omitting `FileOptions` passes native NULL and uses native patch defaults;
