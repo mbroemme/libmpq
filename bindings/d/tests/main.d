@@ -10,7 +10,7 @@
 /** End-to-end D binding tests using deterministic native archives. */
 module libmpq.d_tests;
 
-import std.file : read, remove, rename, write;
+import std.file : exists, mkdir, read, remove, rename, rmdir, write;
 import std.path : buildPath;
 import std.process : environment;
 import libmpq.mpq;
@@ -530,6 +530,88 @@ private void testUpdateLocalizedDefaults() {
     update.abort();
 }
 
+private void testPatchCreation() {
+    auto base = temporaryArchive("patch-base");
+    auto output = temporaryArchive("patch-output");
+    auto source = base ~ ".source";
+    scope(exit) {
+        remove(base);
+        remove(source);
+        if (exists(output)) remove(output);
+    }
+    write(source, cast(const(ubyte)[])"from path");
+    auto identity = FileOptions.raw();
+    identity.locale = 0x409;
+    identity.platform = 1;
+    auto archive = Archive.create(base, ArchiveCreateOptions.v1());
+    archive.add("data", cast(const(ubyte)[])"original", identity);
+    archive.add("path", cast(const(ubyte)[])"old path", identity);
+    archive.add("remove", cast(const(ubyte)[])"remove me");
+    archive.close();
+
+    auto patch = Patch.begin(base, output);
+    bool mismatch;
+    try { patch.replaceData("data", cast(const(ubyte)[])"wrong", FileOptions.raw()); }
+    catch (MPQException error) { mismatch = error.code == ERROR_FORMAT; }
+    assert(mismatch);
+    mismatch = false;
+    try { patch.replacePath("path", source, FileOptions.raw()); }
+    catch (MPQException error) { mismatch = error.code == ERROR_FORMAT; }
+    assert(mismatch);
+    bool missing;
+    try { patch.remove("missing"); } catch (MPQException) { missing = true; }
+    assert(missing);
+    patch.replaceData("data", cast(const(ubyte)[])"replacement");
+    patch.replacePath("path", source, identity);
+    patch.remove("remove");
+    assert(!exists(output));
+    patch.finish();
+    assert(exists(output));
+    archive = Archive.open(base);
+    assert(archive.file("data").read() == cast(const(ubyte)[])"original");
+    archive.close();
+    auto generated = Archive.open(output);
+    assert(generated.file("data").no() >= 0);
+    assert(generated.file("path").no() >= 0);
+    assert(generated.file("remove").no() >= 0);
+    generated.close();
+    bool consumed;
+    try { patch.abort(); } catch (MPQException error) {
+        consumed = error.code == ERROR_NOT_INITIALIZED;
+    }
+    assert(consumed);
+
+    remove(output);
+    patch = Patch.begin(base, output);
+    patch.replacePath("path", source);
+    patch.close();
+    assert(!exists(output));
+    patch = Patch.begin(base, output);
+    patch.replaceData("data", cast(const(ubyte)[])"explicit abort");
+    patch.abort();
+    assert(!exists(output));
+    consumed = false;
+    try { patch.finish(); } catch (MPQException error) {
+        consumed = error.code == ERROR_NOT_INITIALIZED;
+    }
+    assert(consumed);
+    patch = Patch.begin(base, output);
+    patch.replaceData("data", cast(const(ubyte)[])"aborted");
+    destroy(patch);
+    assert(!exists(output));
+    patch = Patch.begin(base, output);
+    mkdir(output);
+    bool failed;
+    try { patch.finish(); } catch (MPQException) { failed = true; }
+    assert(failed);
+    consumed = false;
+    try { patch.remove("data"); } catch (MPQException error) {
+        consumed = error.code == ERROR_NOT_INITIALIZED;
+    }
+    assert(consumed);
+    rmdir(output);
+}
+
 void main() {
     testVersionAndErrors();
     testCreateReadAndMetadata(ARCHIVE_VERSION_ONE);
@@ -543,5 +625,6 @@ void main() {
     testMpqeCreate();
     testUpdate();
     testUpdateLocalizedDefaults();
+    testPatchCreation();
     testFailures();
 }

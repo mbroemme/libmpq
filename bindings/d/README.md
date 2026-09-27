@@ -1,5 +1,21 @@
 # libmpq D bindings
 
+Create a patch without changing its base archive:
+
+```d
+auto patch = Patch.begin("base.mpq", "changes.mpq");
+scope(exit) patch.close();
+patch.replaceData("foo.txt", cast(const(ubyte)[])"new contents");
+patch.remove("old.txt");
+patch.finish();
+```
+
+`replacePath` is also available. `finish()` publishes the patch; `abort()`
+discards it, and destruction of an unfinished patch aborts automatically.
+Omitting `FileOptions` passes native NULL and uses native patch defaults;
+the explicit-options overload configures patch-member storage. Patch add and
+rename are not supported; explicit locale/platform must match the base member.
+
 Transactional updates stage edits until commit. `Update` aborts any active
 transaction when it is destroyed or closed:
 
