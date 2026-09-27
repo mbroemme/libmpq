@@ -14,5 +14,6 @@ EXTRA_DIST = \
 	src/main/java/org/libmpq/FileAttributes.java \
 	src/main/java/org/libmpq/MpqFileWriter.java \
 	src/main/java/org/libmpq/MpqUpdate.java \
+	src/main/java/org/libmpq/MpqPatch.java \
 	src/main/java/org/libmpq/ffi/LibmpqNative.java \
 	src/test/java/org/libmpq/LibmpqTest.java

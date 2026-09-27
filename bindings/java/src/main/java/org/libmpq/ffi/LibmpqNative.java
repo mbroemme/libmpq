@@ -93,6 +93,12 @@ public final class LibmpqNative {
     private static final MethodHandle UPDATE_RENAME;
     private static final MethodHandle UPDATE_COMMIT;
     private static final MethodHandle UPDATE_ABORT;
+    private static final MethodHandle PATCH_BEGIN;
+    private static final MethodHandle PATCH_REPLACE_DATA;
+    private static final MethodHandle PATCH_REPLACE_PATH;
+    private static final MethodHandle PATCH_REMOVE;
+    private static final MethodHandle PATCH_FINISH;
+    private static final MethodHandle PATCH_ABORT;
     private static final MethodHandle ARCHIVE_SIZE_PACKED;
     private static final MethodHandle ARCHIVE_SIZE_UNPACKED;
     private static final MethodHandle ARCHIVE_OFFSET;
@@ -210,6 +216,21 @@ public final class LibmpqNative {
         UPDATE_COMMIT = function(linker, lookup, "libmpq__update_commit",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
         UPDATE_ABORT = function(linker, lookup, "libmpq__update_abort",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
+        PATCH_BEGIN = function(linker, lookup, "libmpq__patch_begin",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS));
+        PATCH_REPLACE_DATA = function(linker, lookup, "libmpq__patch_replace_data",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS));
+        PATCH_REPLACE_PATH = function(linker, lookup, "libmpq__patch_replace_path",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+        PATCH_REMOVE = function(linker, lookup, "libmpq__patch_remove",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+        PATCH_FINISH = function(linker, lookup, "libmpq__patch_finish",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
+        PATCH_ABORT = function(linker, lookup, "libmpq__patch_abort",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
         ARCHIVE_SIZE_PACKED = metadata(linker, lookup, "libmpq__archive_size_packed");
         ARCHIVE_SIZE_UNPACKED = metadata(linker, lookup, "libmpq__archive_size_unpacked");
@@ -508,6 +529,22 @@ public final class LibmpqNative {
     }
     public static int updateCommit(MemorySegment update) { return callInt(UPDATE_COMMIT, update); }
     public static int updateAbort(MemorySegment update) { return callInt(UPDATE_ABORT, update); }
+    public static int patchBegin(MemorySegment out, MemorySegment base, MemorySegment output) {
+        return callInt(PATCH_BEGIN, out, base, output);
+    }
+    public static int patchReplaceData(MemorySegment patch, MemorySegment name,
+                                       MemorySegment data, long size, MemorySegment options) {
+        return callInt(PATCH_REPLACE_DATA, patch, name, data, size, options);
+    }
+    public static int patchReplacePath(MemorySegment patch, MemorySegment name,
+                                       MemorySegment path, MemorySegment options) {
+        return callInt(PATCH_REPLACE_PATH, patch, name, path, options);
+    }
+    public static int patchRemove(MemorySegment patch, MemorySegment name) {
+        return callInt(PATCH_REMOVE, patch, name);
+    }
+    public static int patchFinish(MemorySegment patch) { return callInt(PATCH_FINISH, patch); }
+    public static int patchAbort(MemorySegment patch) { return callInt(PATCH_ABORT, patch); }
     /** Queries either packed or unpacked archive size through an int64 output. */
     public static int archiveLong(MemorySegment archive, MemorySegment output, boolean unpacked) {
         return callInt(unpacked ? ARCHIVE_SIZE_UNPACKED : ARCHIVE_SIZE_PACKED, archive, output);

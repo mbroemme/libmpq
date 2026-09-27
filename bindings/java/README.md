@@ -1,5 +1,21 @@
 # libmpq Java bindings
 
+Create a patch artifact while leaving its base archive unchanged:
+
+```java
+try (MpqPatch patch = MpqPatch.begin(Path.of("base.mpq"), Path.of("changes.mpq"))) {
+    patch.replaceData("foo.txt", "new contents".getBytes());
+    patch.remove("old.txt");
+    patch.finish();
+}
+```
+
+`replacePath` is also available. `finish()` publishes the patch; `abort()`
+discards it, and closing an unfinished patch aborts automatically. Omitted
+`FileOptions` pass native NULL and use native patch defaults; explicit options
+configure patch-member storage. Patch add and rename are not supported.
+Explicit locale/platform must match the base member.
+
 Updates are separate transactions. Closing without commit aborts staged edits:
 
 ```java
