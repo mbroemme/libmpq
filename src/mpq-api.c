@@ -345,6 +345,17 @@ libmpq__patch_begin(mpq_patch_s **patch, const char *base_archive, const char *o
 }
 
 int32_t
+libmpq__patch_begin_mpqe(
+    mpq_patch_s **patch, const char *base_archive, const char *output_patch,
+    const uint8_t *auth_code, size_t auth_code_size
+)
+{
+    return libmpq__patch_writer_begin_mpqe(
+        patch, base_archive, output_patch, auth_code, auth_code_size
+    );
+}
+
+int32_t
 libmpq__patch_replace_data(
     mpq_patch_s *patch, const char *filename, const uint8_t *data, libmpq__off_t size,
     const mpq_file_options_s *options

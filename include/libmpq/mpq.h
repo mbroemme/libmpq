@@ -532,6 +532,16 @@ extern LIBMPQ_API int32_t
 libmpq__patch_begin(mpq_patch_s **patch, const char *base_archive, const char *output_patch);
 
 /*
+ * Stage an MPQE-wrapped patch artifact using a caller-supplied authentication
+ * code. The code is borrowed only during begin; finish publishes the encrypted
+ * patch and abort discards it. The base remains an ordinary filesystem MPQ.
+ */
+extern LIBMPQ_API int32_t libmpq__patch_begin_mpqe(
+    mpq_patch_s **patch, const char *base_archive, const char *output_patch,
+    const uint8_t *auth_code, size_t auth_code_size
+);
+
+/*
  * Replace an existing named base member in the staged patch artifact.
  * NULL options select patch-writer defaults. Explicit options select the
  * patch member's storage, not the final patched file's representation, and

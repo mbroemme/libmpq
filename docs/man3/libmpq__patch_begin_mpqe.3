@@ -12,24 +12,23 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
-.TH LIBMPQ__PATCH_BEGIN 3 2026-09-28 "The MoPaQ archive library"
+.TH LIBMPQ__PATCH_BEGIN_MPQE 3 2026-09-28 "The MoPaQ archive library"
 .SH NAME
-libmpq__patch_begin \- begin creating a new MPQ patch archive
+libmpq__patch_begin_mpqe \- begin creating an MPQE-wrapped patch archive
 .SH SYNOPSIS
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__patch_begin(mpq_patch_s **patch, const char *base_archive, const char *output_patch);"
+.BI "int32_t libmpq__patch_begin_mpqe(mpq_patch_s **patch, const char *base_archive, const char *output_patch, const uint8_t *auth_code, size_t auth_code_size);"
 .fi
 .SH DESCRIPTION
-Creates a staged patch artifact at \fIoutput_patch\fP using an existing filesystem MPQ at \fIbase_archive\fP. The base is read-only and is never modified. On failure, a valid \fIpatch\fP output is set to NULL. Finish publishes the artifact; abort discards it. Embedded and MPQE base archives are unsupported. Full Blizzard patch-metadata compatibility and signing are not provided.
-This entry point creates an ordinary MPQ patch. Use libmpq__patch_begin_mpqe(3) to create an MPQE-wrapped patch instead.
+Creates a staged MPQE-wrapped patch artifact using an ordinary filesystem MPQ at \fIbase_archive\fP. The base remains unchanged. The caller supplies the authentication code used by the existing MPQE container writer; the code need only remain valid during this call. A matching code is required to read or apply the finished patch. Patch members retain the ordinary PTCH/COPY/BSD0 semantics. Finish publishes the encrypted artifact; abort discards it. Both operations consume the patch handle, even on error. On failure, a valid \fIpatch\fP output is set to NULL. This operation does not sign the patch or provide full Blizzard patch-metadata compatibility. Embedded and MPQE base archives are unsupported for patch creation.
 .SH RETURN VALUE
 Returns \fBLIBMPQ_SUCCESS\fP or a negative libmpq error.
 .SH ERRORS
-Invalid arguments return LIBMPQ_ERROR_EXIST; unsupported archive formats return LIBMPQ_ERROR_FORMAT. Opening, allocation, and I/O errors may also propagate.
+Invalid arguments, authentication-code errors, unsupported base formats, allocation failures, and I/O errors may propagate.
 .SH SEE ALSO
-.BR libmpq__patch_begin_mpqe (3),
+.BR libmpq__patch_begin (3),
 .BR libmpq__patch_replace_data (3),
 .BR libmpq__patch_remove (3),
 .BR libmpq__patch_finish (3),

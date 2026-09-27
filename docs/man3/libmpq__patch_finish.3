@@ -22,13 +22,14 @@ libmpq__patch_finish \- finalize and publish a staged patch archive
 .BI "int32_t libmpq__patch_finish(mpq_patch_s *patch);"
 .fi
 .SH DESCRIPTION
-Finalizes the staged patch archive and atomically publishes it at the output path supplied to libmpq__patch_begin(3). The base archive remains unchanged. This call consumes \fIpatch\fP whether it succeeds or fails; callers must not reuse the pointer. On a handled failure before publication, the temporary output is discarded.
+Finalizes the staged patch archive and atomically publishes it at the output path supplied to libmpq__patch_begin(3) or libmpq__patch_begin_mpqe(3). The base archive remains unchanged. This call consumes \fIpatch\fP whether it succeeds or fails; callers must not reuse the pointer. On a handled failure before publication, the temporary output is discarded.
 .SH RETURN VALUE
 Returns \fBLIBMPQ_SUCCESS\fP or a negative libmpq error.
 .SH ERRORS
 A NULL handle returns LIBMPQ_ERROR_EXIST. Finalization, close, and publication errors may also propagate.
 .SH SEE ALSO
 .BR libmpq__patch_begin (3),
+.BR libmpq__patch_begin_mpqe (3),
 .BR libmpq__patch_abort (3),
 .BR libmpq__patch_replace_data (3)
 .SH AUTHOR

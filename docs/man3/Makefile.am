@@ -38,6 +38,7 @@ man_MANS = \
 	libmpq__update_commit.3 \
 	libmpq__update_abort.3 \
 	libmpq__patch_begin.3 \
+	libmpq__patch_begin_mpqe.3 \
 	libmpq__patch_replace_data.3 \
 	libmpq__patch_replace_path.3 \
 	libmpq__patch_remove.3 \

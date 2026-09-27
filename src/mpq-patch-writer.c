@@ -505,16 +505,48 @@ patch_writer_check_destination(mpq_patch_writer_s *state)
     return result;
 }
 
-/* Create a same-directory temporary patch archive without touching its target. */
-int32_t
-libmpq__patch_writer_begin(
-    mpq_patch_writer_s **patch_writer, const char *base_path, const char *patch_path
+/* Resolve the sibling temporary path for the existing MPQE archive writer. */
+static char *
+patch_writer_staged_path(const char *absolute, const char *temporary)
+{
+    const char *slash = strrchr(absolute, '/');
+    size_t directory_size;
+    size_t name_size = strlen(temporary);
+    char *path;
+
+#ifdef _WIN32
+    {
+        const char *backslash = strrchr(absolute, '\\');
+
+        if (backslash != NULL && (slash == NULL || backslash > slash))
+            slash = backslash;
+    }
+#endif
+    if (slash == NULL)
+        return NULL;
+    directory_size = (size_t)(slash - absolute) + 1;
+    if (directory_size > SIZE_MAX - name_size - 1)
+        return NULL;
+    path = malloc(directory_size + name_size + 1);
+    if (path != NULL) {
+        memcpy(path, absolute, directory_size);
+        memcpy(path + directory_size, temporary, name_size + 1);
+    }
+    return path;
+}
+
+/* Stage a same-directory patch; MPQE output delegates to the existing writer. */
+static int32_t
+patch_writer_begin_internal(
+    mpq_patch_writer_s **patch_writer, const char *base_path, const char *patch_path,
+    const uint8_t *auth_code, size_t auth_code_size, uint8_t mpqe
 )
 {
     mpq_patch_writer_s *state = NULL;
     mpq_archive_create_options_s options;
     FILE *temporary_file = NULL;
     char *absolute = NULL;
+    char *staged_path = NULL;
     int32_t result;
 
     if (patch_writer == NULL)
@@ -539,8 +571,6 @@ libmpq__patch_writer_begin(
         goto fail;
     }
     result = libmpq__directory_open(absolute, &state->directory, &state->destination);
-    free(absolute);
-    absolute = NULL;
     if (result != LIBMPQ_SUCCESS)
         goto fail;
     result = patch_writer_check_destination(state);
@@ -557,17 +587,37 @@ libmpq__patch_writer_begin(
     options.sector_size = state->base->block_size;
     options.flags = LIBMPQ_ARCHIVE_CREATE_LISTFILE;
     options.attributes = LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 | LIBMPQ_ATTRIBUTE_PATCH_BIT;
-    result = libmpq__writer_archive_create_file(
-        &state->archive, state->temporary, temporary_file, &options
-    );
-    temporary_file = NULL;
+    if (mpqe) {
+        if (fclose(temporary_file) != 0) {
+            temporary_file = NULL;
+            result = LIBMPQ_ERROR_CLOSE;
+            goto fail;
+        }
+        temporary_file = NULL;
+        staged_path = patch_writer_staged_path(absolute, state->temporary);
+        if (staged_path == NULL) {
+            result = LIBMPQ_ERROR_MALLOC;
+            goto fail;
+        }
+        result = libmpq__writer_archive_create_mpqe(
+            &state->archive, staged_path, auth_code, auth_code_size, &options
+        );
+    } else {
+        result = libmpq__writer_archive_create_file(
+            &state->archive, state->temporary, temporary_file, &options
+        );
+        temporary_file = NULL;
+    }
     if (result != LIBMPQ_SUCCESS)
         goto fail;
     state->archive->write_patch_mode = 1;
+    free(staged_path);
+    free(absolute);
     *patch_writer = state;
     return LIBMPQ_SUCCESS;
 
 fail:
+    free(staged_path);
     free(absolute);
     if (temporary_file != NULL)
         (void)fclose(temporary_file);
@@ -582,6 +632,27 @@ fail:
         free(state);
     }
     return result;
+}
+
+/* Preserve ordinary MPQ patch creation and its existing lifecycle. */
+int32_t
+libmpq__patch_writer_begin(
+    mpq_patch_writer_s **patch_writer, const char *base_path, const char *patch_path
+)
+{
+    return patch_writer_begin_internal(patch_writer, base_path, patch_path, NULL, 0, 0);
+}
+
+/* Stage an MPQE patch using the archive writer's authentication and encryption. */
+int32_t
+libmpq__patch_writer_begin_mpqe(
+    mpq_patch_writer_s **patch_writer, const char *base_path, const char *patch_path,
+    const uint8_t *auth_code, size_t auth_code_size
+)
+{
+    return patch_writer_begin_internal(
+        patch_writer, base_path, patch_path, auth_code, auth_code_size, 1
+    );
 }
 
 /* Stage a named replacement, falling back to COPY unless BSD0 is smaller. */

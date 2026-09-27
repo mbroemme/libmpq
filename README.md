@@ -47,7 +47,8 @@ MPQ v2+ LZMA method.
   memory-buffer, and filesystem-path APIs.
 * Modify existing filesystem MPQ archives transactionally with named-file
   replace, remove, and rename operations.
-* Create replacement and deletion patch archives without changing the base MPQ.
+* Create MPQ or MPQE-wrapped replacement and deletion patch archives without
+  changing the base MPQ.
 * Read and create MPQE-wrapped MPQ archives using a caller-supplied
   authentication code.
 * Read and write PKWARE implode, Huffman, zlib, bzip2, SPARSE, and mono or
@@ -355,8 +356,8 @@ headers, tables, encryption, sectors, and compression, see the
   Cleanup is best effort, so a crash can leave the plaintext temporary behind.
 * Transactional modification does not support MPQE or embedded MPQs. Mutations
   remove existing weak and strong signatures because no signing key is supplied.
-* Patch creation/application and StormLib-specific key modes are not supported.
-  FILETIME and PATCH_BIT are exposed as metadata only. Automatic file-level
+* Patch signing, full Blizzard patch metadata, and StormLib-specific key modes
+  are not supported. Automatic file-level
   CRC32/MD5 comparison is skipped for lossy ADPCM data because the decoded
   output is not byte-identical to the original input.
 

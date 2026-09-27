@@ -262,8 +262,7 @@ member requires a recoverable plaintext name so its hash-table probe position
 can be computed. Otherwise that entry is rejected rather than
 silently omitted. Unnamed base members and their packed data remain intact.
 MPQE inputs use the existing source decoder before patch composition; their
-credentials are independent and are not retained by the view. MPQE patch
-creation remains unsupported. A `.w3x` input is treated only as an MPQ
+credentials are independent and are not retained by the view. A `.w3x` input is treated only as an MPQ
 container; its prefix and unrelated trailing bytes are retained while a
 stale external strong-signature trailer is removed after a content change.
 This layer does not perform HM3W map-header hashing.
@@ -289,6 +288,12 @@ libmpq__patch_replace_data(patch, "file.txt", data, data_size, NULL);
 libmpq__patch_remove(patch, "obsolete.txt");
 libmpq__patch_finish(patch);
 ```
+
+`libmpq__patch_begin()` creates an ordinary MPQ patch. To create an
+MPQE-wrapped patch instead, call `libmpq__patch_begin_mpqe()` with a
+caller-supplied authentication code; replacement, removal, finish, and abort
+then follow the same lifecycle. Authenticated patch readers can consume the
+result using that patch layer's own code. Neither entry point signs patches.
 
 Replacement options control storage of the patch member inside the patch
 archive, not storage of the resulting file in the patched view.
@@ -326,7 +331,7 @@ their lower-layer bit instead of inheriting the patch artifact's marker.
 Ordinary archive creation still rejects true PATCH_BIT values. The
 patch-writer tests generate temporary archives and apply them through the
 private patch view; no repository fixture needs to change. Patch creation does
-not sign patches or write MPQE/embedded patch containers. The public patch API
+not sign patches or write embedded patch containers. The public patch API
 supports replacement and removal, but not addition or rename.
 
 ## Optional attributes
