@@ -43,6 +43,12 @@ int32_t libmpq__patch_view_open(
     mpq_patch_view_s **view, const char *base_path, const char *const *patch_paths,
     size_t patch_count
 );
+
+/* Authenticate only the base container; patch layers remain ordinary MPQs. */
+int32_t libmpq__patch_view_open_mpqe_base(
+    mpq_patch_view_s **view, const char *base_path, const uint8_t *auth_code, size_t auth_code_size,
+    const char *const *patch_paths, size_t patch_count
+);
 mpq_archive_s *libmpq__patch_view_archive(mpq_patch_view_s *view);
 int32_t libmpq__patch_view_close(mpq_patch_view_s *view);
 

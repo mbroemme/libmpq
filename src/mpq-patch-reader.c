@@ -1573,11 +1573,11 @@ libmpq__patch_view_archive(mpq_patch_view_s *view)
     return view == NULL ? NULL : view->archive;
 }
 
-/* Build a virtual view without changing any input archive on disk. */
-int32_t
-libmpq__patch_view_open(
-    mpq_patch_view_s **view, const char *base_path, const char *const *patch_paths,
-    size_t patch_count
+/* Materialize a decoded base with ordinary patch layers without changing inputs. */
+static int32_t
+patch_view_open_base(
+    mpq_patch_view_s **view, const char *base_path, const uint8_t *auth_code, size_t auth_code_size,
+    uint8_t authenticated, const char *const *patch_paths, size_t patch_count
 )
 {
     mpq_patch_view_s *state = NULL;
@@ -1595,13 +1595,11 @@ libmpq__patch_view_open(
     state = calloc(1, sizeof(*state));
     if (state == NULL)
         return LIBMPQ_ERROR_MALLOC;
-    status = libmpq__archive_open(&base, base_path, -1);
+    status = authenticated
+                 ? libmpq__archive_open_mpqe(&base, base_path, -1, auth_code, auth_code_size)
+                 : libmpq__archive_open(&base, base_path, -1);
     if (status != LIBMPQ_SUCCESS)
         goto error;
-    if (libmpq__source_is_mpqe(base->source)) {
-        status = LIBMPQ_ERROR_FORMAT;
-        goto error;
-    }
     absolute = patch_temporary_anchor();
     if (absolute == NULL) {
         status = LIBMPQ_ERROR_MALLOC;
@@ -1661,4 +1659,26 @@ error:
     free(absolute);
     (void)libmpq__patch_view_close(state);
     return status;
+}
+
+/* Build a private view from an ordinary MPQ base. */
+int32_t
+libmpq__patch_view_open(
+    mpq_patch_view_s **view, const char *base_path, const char *const *patch_paths,
+    size_t patch_count
+)
+{
+    return patch_view_open_base(view, base_path, NULL, 0, 0, patch_paths, patch_count);
+}
+
+/* Decode an authenticated MPQE base before composing ordinary MPQ patches. */
+int32_t
+libmpq__patch_view_open_mpqe_base(
+    mpq_patch_view_s **view, const char *base_path, const uint8_t *auth_code, size_t auth_code_size,
+    const char *const *patch_paths, size_t patch_count
+)
+{
+    return patch_view_open_base(
+        view, base_path, auth_code, auth_code_size, 1, patch_paths, patch_count
+    );
 }
