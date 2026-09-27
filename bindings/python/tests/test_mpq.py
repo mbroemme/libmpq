@@ -194,6 +194,72 @@ def test_update_localized_member_defaults(tmp_path):
         update.abort()
 
 
+def test_patch_creation_binding(tmp_path):
+    """Patch creation stages replacements and deletion without changing the base."""
+    base = tmp_path / "base.mpq"
+    output = tmp_path / "changes.mpq"
+    source = tmp_path / "replacement.bin"
+    source.write_bytes(b"from path")
+    identity = mpq.FileCreateOptions.raw()
+    identity.locale, identity.platform = 0x409, 1
+    with mpq.Writer(base, max_files=8, flags=mpq.ARCHIVE_CREATE_LISTFILE) as writer:
+        writer.add("data", b"original", identity)
+        writer.add("path", b"old path", identity)
+        writer.add("remove", b"remove me")
+
+    options = mpq.FileCreateOptions.compressed(mpq.COMPRESSION_ZLIB,
+                                                mpq.COMPRESSION_BZIP2)
+    options.locale, options.platform = identity.locale, identity.platform
+    with mpq.Patch.begin(base, output) as patch:
+        with pytest.raises(mpq.LibmpqFormatError):
+            patch.replace_data("data", b"wrong", mpq.FileCreateOptions.raw())
+        with pytest.raises(mpq.LibmpqFormatError):
+            patch.replace_path("path", source, mpq.FileCreateOptions.raw())
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            patch.remove("missing")
+        patch.replace_data("data", memoryview(b"replacement"))
+        patch.replace_path("path", source, options)
+        patch.remove("remove")
+        assert not output.exists()
+        patch.finish()
+    assert output.is_file()
+    with mpq.Archive(base) as archive:
+        assert archive["data"].read() == b"original"
+        assert archive["path"].read() == b"old path"
+        assert archive["remove"].read() == b"remove me"
+    with mpq.Archive(output) as archive:
+        assert "data" in archive and "path" in archive and "remove" in archive
+    with pytest.raises(mpq.LibmpqStateError):
+        patch.replace_data("data", b"again")
+    with pytest.raises(mpq.LibmpqStateError):
+        patch.abort()
+
+    output.unlink()
+    with mpq.Patch.begin(base, output) as patch:
+        patch.replace_path("path", source)
+    assert not output.exists()
+    patch = mpq.Patch.begin(base, output)
+    patch.replace_data("data", b"aborted")
+    patch.abort()
+    patch.close()
+    assert not output.exists()
+    with pytest.raises(mpq.LibmpqStateError):
+        patch.finish()
+
+    patch = mpq.Patch.begin(base, output)
+    patch.replace_data("data", b"garbage collected")
+    del patch
+    gc.collect()
+    assert not output.exists()
+
+    patch = mpq.Patch.begin(base, output)
+    output.mkdir()
+    with pytest.raises(mpq.LibmpqError):
+        patch.finish()
+    with pytest.raises(mpq.LibmpqStateError):
+        patch.remove("data")
+
+
 def test_logical_stream_encrypted_numeric_and_mpqe_lifetime():
     """Name-derived keys, numeric opens, and MPQE clones cross the binding boundary."""
     with mpq.Archive(FIXTURES / "mpq-v1-features.mpq") as archive:

@@ -1,5 +1,21 @@
 # libmpq Python bindings
 
+Create a separate patch artifact without modifying its base archive:
+
+```python
+with mpq.Patch.begin("base.mpq", "changes.mpq") as patch:
+    patch.replace_data("foo.txt", b"new contents")
+    patch.remove("old.txt")
+    patch.finish()
+```
+
+`replace_path` accepts a filesystem source. `finish()` publishes the patch;
+`abort()` discards it, and leaving the context unfinished aborts automatically.
+Omitting replacement options passes native NULL and uses native patch defaults;
+pass `FileCreateOptions` explicitly to configure patch-member storage. Patch
+options must match the base member's locale/platform identity. Patch add and
+rename are not supported.
+
 Transactional updates use a separate handle. Edits stay private until commit;
 leaving the context without committing aborts them automatically:
 

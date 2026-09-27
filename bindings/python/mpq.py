@@ -251,6 +251,12 @@ _configure("libmpq__update_remove", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p)
 _configure("libmpq__update_rename", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p)
 _configure("libmpq__update_commit", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__update_abort", ctypes.c_int32, _VOID_PTR)
+_configure("libmpq__patch_begin", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, ctypes.c_char_p)
+_configure("libmpq__patch_replace_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE_PTR, _OFF_T, _VOID_PTR)
+_configure("libmpq__patch_replace_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
+_configure("libmpq__patch_remove", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p)
+_configure("libmpq__patch_finish", ctypes.c_int32, _VOID_PTR)
+_configure("libmpq__patch_abort", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__archive_attributes", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__archive_signatures", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__archive_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR,
@@ -426,6 +432,91 @@ class Update:
     def close(self):
         """Abort an active update; repeated closes are harmless."""
         if self._update:
+            self.abort()
+
+    def __enter__(self):
+        self._ensure_open()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is not None:
+            try:
+                self.close()
+            except BaseException:
+                pass
+        else:
+            self.close()
+
+    def __del__(self):
+        try:
+            self.close()
+        except BaseException:
+            pass
+
+
+class Patch:
+    """Staged patch artifact; unfinished work is aborted on cleanup."""
+
+    def __init__(self, base_archive, output_patch):
+        self._patch = _VOID_PTR()
+        libmpq.libmpq__patch_begin(
+            ctypes.byref(self._patch), _as_bytes(base_archive), _as_bytes(output_patch)
+        )
+
+    @classmethod
+    def begin(cls, base_archive, output_patch):
+        """Begin creating a patch without modifying the base archive."""
+        return cls(base_archive, output_patch)
+
+    def _ensure_open(self):
+        if not self._patch:
+            raise LibmpqStateError(ERROR_NOT_INITIALIZED, "patch is closed")
+
+    def replace_data(self, name, data, options=None):
+        """Stage bytes-like replacement; None passes native NULL options."""
+        self._ensure_open()
+        native_options = Update._options(options)
+        view = memoryview(data)
+        try:
+            view = view.cast("B")
+            if view.readonly:
+                buffer = (ctypes.c_uint8 * len(view)).from_buffer_copy(view)
+            else:
+                buffer = (ctypes.c_uint8 * len(view)).from_buffer(view)
+            libmpq.libmpq__patch_replace_data(
+                self._patch, _as_bytes(name), buffer if len(view) else None,
+                len(view), native_options
+            )
+        finally:
+            view.release()
+
+    def replace_path(self, name, source_path, options=None):
+        """Stage path replacement; None passes native NULL options."""
+        self._ensure_open()
+        libmpq.libmpq__patch_replace_path(
+            self._patch, _as_bytes(name), _as_bytes(source_path), Update._options(options)
+        )
+
+    def remove(self, name):
+        """Stage a delete marker for an existing member."""
+        self._ensure_open()
+        libmpq.libmpq__patch_remove(self._patch, _as_bytes(name))
+
+    def finish(self):
+        """Publish the patch and consume this handle, even on native error."""
+        self._ensure_open()
+        handle, self._patch = self._patch, _VOID_PTR()
+        libmpq.libmpq__patch_finish(handle)
+
+    def abort(self):
+        """Discard the patch and consume this handle, even on native error."""
+        self._ensure_open()
+        handle, self._patch = self._patch, _VOID_PTR()
+        libmpq.libmpq__patch_abort(handle)
+
+    def close(self):
+        """Abort an active patch; repeated closes are harmless."""
+        if self._patch:
             self.abort()
 
     def __enter__(self):
