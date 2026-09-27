@@ -94,6 +94,7 @@ public final class LibmpqNative {
     private static final MethodHandle UPDATE_COMMIT;
     private static final MethodHandle UPDATE_ABORT;
     private static final MethodHandle PATCH_BEGIN;
+    private static final MethodHandle PATCH_BEGIN_MPQE;
     private static final MethodHandle PATCH_REPLACE_DATA;
     private static final MethodHandle PATCH_REPLACE_PATH;
     private static final MethodHandle PATCH_REMOVE;
@@ -220,6 +221,9 @@ public final class LibmpqNative {
         PATCH_BEGIN = function(linker, lookup, "libmpq__patch_begin",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                       ValueLayout.ADDRESS));
+        PATCH_BEGIN_MPQE = function(linker, lookup, "libmpq__patch_begin_mpqe",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS, ValueLayout.ADDRESS, C_SIZE_T));
         PATCH_REPLACE_DATA = function(linker, lookup, "libmpq__patch_replace_data",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                       ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS));
@@ -531,6 +535,10 @@ public final class LibmpqNative {
     public static int updateAbort(MemorySegment update) { return callInt(UPDATE_ABORT, update); }
     public static int patchBegin(MemorySegment out, MemorySegment base, MemorySegment output) {
         return callInt(PATCH_BEGIN, out, base, output);
+    }
+    public static int patchBeginMpqe(MemorySegment out, MemorySegment base, MemorySegment output,
+                                     MemorySegment authCode, long authCodeSize) {
+        return callInt(PATCH_BEGIN_MPQE, out, base, output, authCode, nativeSizeT(authCodeSize));
     }
     public static int patchReplaceData(MemorySegment patch, MemorySegment name,
                                        MemorySegment data, long size, MemorySegment options) {

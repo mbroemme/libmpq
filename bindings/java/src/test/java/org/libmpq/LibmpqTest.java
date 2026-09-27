@@ -90,6 +90,53 @@ class LibmpqTest {
     }
 
     @Test
+    void mpqePatchCreation(@TempDir Path directory) throws Exception {
+        Path base = directory.resolve("base.mpq");
+        Path output = directory.resolve("changes.mpqe");
+        byte[] code = "LIBMPQ-MPQE-PATCH-AUTH-CODE-00002".getBytes(StandardCharsets.US_ASCII);
+        try (Archive archive = Archive.create(base, ArchiveCreateOptions.v1())) {
+            archive.add("replace", "old".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+            archive.add("remove", "old".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+        }
+        assertEquals(Mpq.ERROR_DECRYPT, assertThrows(LibmpqException.class,
+                () -> MpqPatch.beginMpqe(base, output, new byte[0])).code());
+        assertEquals(Mpq.ERROR_DECRYPT, assertThrows(LibmpqException.class,
+                () -> MpqPatch.beginMpqe(base, output,
+                        java.util.Arrays.copyOf(code, 31))).code());
+        assertThrows(NullPointerException.class, () -> MpqPatch.beginMpqe(base, output, null));
+        assertFalse(Files.exists(output));
+
+        try (MpqPatch patch = MpqPatch.beginMpqe(base, output, code)) {
+            patch.replaceData("replace", "new".getBytes(StandardCharsets.UTF_8));
+            patch.remove("remove");
+            assertFalse(Files.exists(output));
+            patch.finish();
+            assertThrows(IllegalStateException.class, patch::abort);
+        }
+        assertTrue(Files.isRegularFile(output));
+        assertThrows(LibmpqException.class, () -> Archive.open(output));
+        byte[] wrong = code.clone();
+        wrong[0] ^= 1;
+        assertThrows(LibmpqException.class, () -> Archive.openMpqe(output, wrong));
+        try (Archive archive = Archive.openMpqe(output, code)) {
+            archive.fileNumber("replace");
+            archive.fileNumber("remove");
+        }
+
+        Files.delete(output);
+        try (MpqPatch patch = MpqPatch.beginMpqe(base, output, code)) {
+            patch.replaceData("replace", "discarded".getBytes(StandardCharsets.UTF_8));
+        }
+        assertFalse(Files.exists(output));
+        try (MpqPatch patch = MpqPatch.beginMpqe(base, output, code)) {
+            patch.remove("remove");
+            patch.abort();
+            assertThrows(IllegalStateException.class, patch::finish);
+        }
+        assertFalse(Files.exists(output));
+    }
+
+    @Test
     void localizedUpdateDefaults(@TempDir Path directory) throws Exception {
         Path path = directory.resolve("localized.mpq");
         Path source = directory.resolve("source.bin");

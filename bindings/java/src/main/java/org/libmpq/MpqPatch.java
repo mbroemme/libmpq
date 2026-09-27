@@ -36,6 +36,22 @@ public final class MpqPatch implements AutoCloseable {
         }
     }
 
+    /** Begin an MPQE-wrapped patch using caller-supplied authentication bytes. */
+    public static MpqPatch beginMpqe(Path baseArchive, Path outputPatch, byte[] authCode)
+            throws LibmpqException {
+        Objects.requireNonNull(baseArchive, "baseArchive");
+        Objects.requireNonNull(outputPatch, "outputPatch");
+        Objects.requireNonNull(authCode, "authCode");
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
+            Support.check(LibmpqNative.patchBeginMpqe(output,
+                    Support.text(arena, baseArchive.toString()),
+                    Support.text(arena, outputPatch.toString()),
+                    Support.bytes(arena, authCode), authCode.length));
+            return new MpqPatch(LibmpqNative.getAddress(output));
+        }
+    }
+
     /** Stage bytes using native patch storage defaults. */
     public void replaceData(String name, byte[] data) throws LibmpqException {
         replaceData(name, data, null);

@@ -10,6 +10,20 @@ try (MpqPatch patch = MpqPatch.begin(Path.of("base.mpq"), Path.of("changes.mpq")
 }
 ```
 
+`MpqPatch.begin` creates an ordinary MPQ patch. Use `beginMpqe` and an
+explicit caller-supplied authentication code for MPQE output:
+
+```java
+try (MpqPatch patch = MpqPatch.beginMpqe(
+        Path.of("base.mpq"), Path.of("changes.mpqe"), authCode)) {
+    patch.replaceData("foo.txt", "new contents".getBytes());
+    patch.finish();
+}
+```
+
+The same `MpqPatch` handles either output. Authentication bytes are needed
+only during begin; closing without finish aborts instead of publishing.
+
 `replacePath` is also available. `finish()` publishes the patch; `abort()`
 discards it, and closing an unfinished patch aborts automatically. Omitted
 `FileOptions` pass native NULL and use native patch defaults; explicit options
