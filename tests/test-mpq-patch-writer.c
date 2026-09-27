@@ -269,7 +269,7 @@ round_trip(uint32_t version, uint8_t replace, uint8_t remove_member)
         TEST_CHECK(libmpq__file_number(result, "replace.txt", &number) == LIBMPQ_SUCCESS);
         TEST_CHECK(libmpq__file_attributes(result, number, &attributes) == LIBMPQ_SUCCESS);
         TEST_CHECK((attributes.flags & LIBMPQ_ATTRIBUTE_PATCH_BIT) != 0);
-        TEST_CHECK(attributes.patch_bit == 1);
+        TEST_CHECK(attributes.patch_bit == 0);
         TEST_CHECK(attributes.filetime == original_filetime);
         TEST_CHECK(libmpq__stream_open_name(result, "replace.txt", &stream) == LIBMPQ_SUCCESS);
         TEST_CHECK(
@@ -805,15 +805,21 @@ test_public_patch_storage(uint32_t flags)
 {
     char base_path[1024];
     char patch_path[1024];
+    char corrupt_path[1024];
     const char *layers[] = { patch_path };
     mpq_file_options_s options = { flags, 0, 0, 0x409, 1 };
     mpq_patch_s *patch = NULL;
     mpq_patch_view_s *view = NULL;
     mpq_archive_s *stored = NULL;
+    mpq_archive_s *base_check = NULL;
+    mpq_file_attributes_s attributes;
     mpq_patch_info_s info;
     uint8_t prefix[LIBMPQ_PATCH_INFO_SIZE];
     uint8_t body_tag[4];
     uint8_t replacement[10000];
+    uint8_t *image = NULL;
+    uint8_t *corrupt = NULL;
+    size_t image_size = 0;
     uint64_t offset;
     uint32_t block;
     uint32_t number;
@@ -861,13 +867,54 @@ test_public_patch_storage(uint32_t flags)
     TEST_CHECK((stored_flags & LIBMPQ_FILE_FLAG_PATCH_FILE) != 0);
     TEST_CHECK((stored_flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED)) == flags);
     TEST_CHECK(libmpq__archive_close(stored) == LIBMPQ_SUCCESS);
+    TEST_CHECK(test_read_path(patch_path, &image, &image_size) == 0);
+    TEST_CHECK(offset <= image_size && sizeof(prefix) + sizeof(body_tag) <= image_size - offset);
+    corrupt = malloc(image_size);
+    TEST_CHECK(corrupt != NULL);
+    TEST_CHECK(test_temp_path(corrupt_path, sizeof(corrupt_path), "patch-storage-corrupt") == 0);
+    for (uint32_t mode = 0; mode < 4; mode++) {
+        FILE *file;
+
+        memcpy(corrupt, image, image_size);
+        if (mode == 0)
+            libmpq__store_le32(corrupt + offset, UINT32_MAX);
+        else if (mode == 1)
+            libmpq__store_le32(corrupt + offset, LIBMPQ_PATCH_INFO_SIZE - 1);
+        else if (mode == 2)
+            libmpq__store_le32(corrupt + offset + 8, info.data_size + 1);
+        else
+            corrupt[offset + sizeof(prefix)] ^= 0x5au;
+        file = fopen(corrupt_path, "wb");
+        TEST_CHECK(file != NULL);
+        TEST_CHECK(fwrite(corrupt, 1, image_size, file) == image_size);
+        TEST_CHECK(fclose(file) == 0);
+        layers[0] = corrupt_path;
+        TEST_CHECK(libmpq__patch_view_open(&view, base_path, layers, 1) != LIBMPQ_SUCCESS);
+        TEST_CHECK(view == NULL);
+    }
+    TEST_CHECK(remove(corrupt_path) == 0);
+    free(corrupt);
+    free(image);
+    layers[0] = patch_path;
     TEST_CHECK(libmpq__patch_view_open(&view, base_path, layers, 1) == LIBMPQ_SUCCESS);
+    TEST_CHECK(
+        libmpq__file_number(libmpq__patch_view_archive(view), "replace.txt", &number) ==
+        LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(
+        libmpq__file_attributes(libmpq__patch_view_archive(view), number, &attributes) ==
+        LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(attributes.patch_bit == 0);
     TEST_CHECK(
         check_file(
             libmpq__patch_view_archive(view), "replace.txt", replacement, sizeof(replacement)
         ) == 0
     );
     TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_open(&base_check, base_path, 0) == LIBMPQ_SUCCESS);
+    TEST_CHECK(check_file(base_check, "replace.txt", old_data, sizeof(old_data) - 1) == 0);
+    TEST_CHECK(libmpq__archive_close(base_check) == LIBMPQ_SUCCESS);
     TEST_CHECK(remove(patch_path) == 0);
     TEST_CHECK(remove(base_path) == 0);
     return 0;

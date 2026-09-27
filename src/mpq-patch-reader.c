@@ -77,23 +77,31 @@ patch_check_md5(const uint8_t *data, size_t size, const uint8_t expected[16])
     return memcmp(actual, expected, sizeof(actual)) == 0 ? LIBMPQ_SUCCESS : LIBMPQ_ERROR_FORMAT;
 }
 
-/* Parse a patch-member prefix without trusting its variable length. */
-int32_t
-libmpq__patch_info_parse(const uint8_t *data, size_t size, mpq_patch_info_s *info)
+/* Only the fixed header has fields; extension bytes need not be allocated. */
+static int32_t
+patch_info_parse_header(
+    const uint8_t *data, size_t header_size, size_t available_size, mpq_patch_info_s *info
+)
 {
     if (info == NULL)
         return LIBMPQ_ERROR_EXIST;
     memset(info, 0, sizeof(*info));
-    if (data == NULL || size < LIBMPQ_PATCH_INFO_SIZE)
+    if (data == NULL || header_size < LIBMPQ_PATCH_INFO_SIZE)
         return LIBMPQ_ERROR_FORMAT;
     info->length = libmpq__load_le32(data);
     info->flags = libmpq__load_le32(data + 4);
     info->data_size = libmpq__load_le32(data + 8);
     memcpy(info->md5, data + 12, sizeof(info->md5));
-    if (info->length < LIBMPQ_PATCH_INFO_SIZE || info->length > size ||
+    if (info->length < LIBMPQ_PATCH_INFO_SIZE || info->length > available_size ||
         (info->flags & 0x80000000u) == 0)
         return LIBMPQ_ERROR_FORMAT;
     return LIBMPQ_SUCCESS;
+}
+
+int32_t
+libmpq__patch_info_parse(const uint8_t *data, size_t size, mpq_patch_info_s *info)
+{
+    return patch_info_parse_header(data, size, size, info);
 }
 
 /* Expand Blizzard's zero-skipping RLE wrapper around a BSD0 transform. */
@@ -462,7 +470,6 @@ patch_read_incremental(
     mpq_archive_s *clone = NULL;
     mpq_block_s *block;
     uint8_t fixed[LIBMPQ_PATCH_INFO_SIZE];
-    uint8_t *prefix = NULL;
     uint8_t *body = NULL;
     mpq_patch_info_s info;
     uint64_t offset;
@@ -483,18 +490,10 @@ patch_read_incremental(
     status = libmpq__source_read_at(archive->source, offset, fixed, sizeof(fixed));
     if (status != LIBMPQ_SUCCESS)
         return status;
-    prefix_size = libmpq__load_le32(fixed);
-    if (prefix_size < LIBMPQ_PATCH_INFO_SIZE || prefix_size > block->packed_size)
-        return LIBMPQ_ERROR_FORMAT;
-    prefix = malloc(prefix_size);
-    if (prefix == NULL)
-        return LIBMPQ_ERROR_MALLOC;
-    status = libmpq__source_read_at(archive->source, offset, prefix, prefix_size);
+    status = patch_info_parse_header(fixed, sizeof(fixed), block->packed_size, &info);
     if (status != LIBMPQ_SUCCESS)
-        goto done;
-    status = libmpq__patch_info_parse(prefix, prefix_size, &info);
-    if (status != LIBMPQ_SUCCESS)
-        goto done;
+        return status;
+    prefix_size = info.length;
     status = libmpq__archive_clone(&clone, archive);
     if (status != LIBMPQ_SUCCESS)
         goto done;
@@ -538,7 +537,6 @@ done:
         *size = 0;
     }
     free(body);
-    free(prefix);
     return status;
 }
 
@@ -1267,8 +1265,6 @@ patch_stage_hash(
             );
             if (status != LIBMPQ_SUCCESS)
                 goto done;
-            if ((patch_row.flags & LIBMPQ_ATTRIBUTE_PATCH_BIT) != 0)
-                inherited.patch_bit = patch_row.patch_bit;
             if ((patch_row.flags & LIBMPQ_ATTRIBUTE_FILETIME) != 0)
                 inherited.filetime = patch_row.filetime;
         }

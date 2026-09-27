@@ -47,6 +47,19 @@ fixture_md5(const uint8_t *data, size_t size, uint8_t digest[16])
     libmpq__md5_final(&state, digest);
 }
 
+/* Every rejected payload must leave the caller's output in the empty state. */
+static int
+expect_bad_patch(const uint8_t *base, size_t base_size, const uint8_t *patch, size_t patch_size)
+{
+    uint8_t *output = (uint8_t *)patch;
+    size_t output_size = 123;
+    int32_t status = libmpq__patch_apply(base, base_size, patch, patch_size, &output, &output_size);
+
+    TEST_CHECK(status != LIBMPQ_SUCCESS);
+    TEST_CHECK(output == NULL && output_size == 0);
+    return 0;
+}
+
 /* Serialize a minimal valid COPY patch with its MPQ patch-info prefix. */
 static uint8_t *
 fixture_copy_patch(
@@ -284,6 +297,149 @@ test_views(void)
     TEST_CHECK(libmpq__patch_view_open(&view, FIXTURE_DIR "/mpq-v2-features.mpq", v2, 1) == 0);
     TEST_CHECK(check_view(view, v2_text, sizeof(v2_text) - 1) == 0);
     TEST_CHECK(libmpq__patch_view_close(view) == 0);
+    return 0;
+}
+
+/* Compose replacement, deletion, restoration, and patch-only member chains. */
+static int
+test_chain_edges(void)
+{
+    static const uint8_t first[] = "first";
+    static const uint8_t second[] = "second";
+    static const uint8_t keep[] = "untouched";
+    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_TWO, 16, 4096,
+                                            LIBMPQ_ARCHIVE_CREATE_LISTFILE,
+                                            LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 |
+                                                LIBMPQ_ATTRIBUTE_FILETIME |
+                                                LIBMPQ_ATTRIBUTE_PATCH_BIT };
+    mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
+    mpq_archive_s *writer = NULL;
+    mpq_archive_s *base = NULL;
+    mpq_patch_view_s *view = NULL;
+    mpq_file_attributes_s attributes;
+    mpq_file_attributes_s original_keep;
+    uint8_t digest[16];
+    uint8_t *actual = NULL;
+    size_t actual_size = 0;
+    uint32_t number;
+    uint32_t original_chain_block;
+    char base_path[1024];
+    char layer_a[1024];
+    char layer_b[1024];
+    const char *layers[] = { layer_a, layer_b };
+
+    TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "patch-chain-base") == 0);
+    TEST_CHECK(test_temp_path(layer_a, sizeof(layer_a), "patch-chain-a") == 0);
+    TEST_CHECK(test_temp_path(layer_b, sizeof(layer_b), "patch-chain-b") == 0);
+    TEST_CHECK(libmpq__archive_create(&writer, base_path, &create) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(writer, "chain.txt", first, sizeof(first) - 1, &storage) == 0
+    );
+    TEST_CHECK(libmpq__archive_add_data(writer, "keep.txt", keep, sizeof(keep) - 1, &storage) == 0);
+    TEST_CHECK(libmpq__archive_close(writer) == 0);
+    TEST_CHECK(libmpq__archive_open(&base, base_path, 0) == 0);
+    TEST_CHECK(libmpq__file_number(base, "chain.txt", &number) == 0);
+    original_chain_block = base->mpq_map[number].block_table_indices;
+    TEST_CHECK(libmpq__file_number(base, "keep.txt", &number) == 0);
+    TEST_CHECK(libmpq__file_attributes(base, number, &original_keep) == 0);
+    TEST_CHECK(libmpq__archive_close(base) == 0);
+    for (uint32_t scenario = 0; scenario < 5; scenario++) {
+        const char *name = scenario >= 3 ? "patch-only.txt" : "chain.txt";
+        uint8_t delete_first = scenario == 2;
+        uint8_t delete_second = scenario == 1 || scenario == 4;
+        const uint8_t *expected = scenario == 0 || scenario == 2 || scenario == 3 ? second : NULL;
+
+        TEST_CHECK(libmpq__archive_create(&writer, layer_a, &create) == 0);
+        TEST_CHECK(
+            libmpq__archive_add_data(
+                writer, "(patch_metadata)", (const uint8_t *)"test", 4, &storage
+            ) == 0
+        );
+        TEST_CHECK(
+            libmpq__archive_add_data(
+                writer, name, delete_first ? NULL : first,
+                delete_first ? 0 : (libmpq__off_t)sizeof(first) - 1, &storage
+            ) == 0
+        );
+        if (delete_first)
+            writer->mpq_block[writer->write_next_block - 1].flags |= LIBMPQ_FILE_FLAG_DELETE_MARKER;
+        TEST_CHECK(libmpq__archive_close(writer) == 0);
+        TEST_CHECK(libmpq__archive_create(&writer, layer_b, &create) == 0);
+        TEST_CHECK(
+            libmpq__archive_add_data(
+                writer, "(patch_metadata)", (const uint8_t *)"test", 4, &storage
+            ) == 0
+        );
+        TEST_CHECK(
+            libmpq__archive_add_data(
+                writer, name, delete_second ? NULL : second,
+                delete_second ? 0 : (libmpq__off_t)sizeof(second) - 1, &storage
+            ) == 0
+        );
+        if (delete_second)
+            writer->mpq_block[writer->write_next_block - 1].flags |= LIBMPQ_FILE_FLAG_DELETE_MARKER;
+        TEST_CHECK(libmpq__archive_close(writer) == 0);
+        TEST_CHECK(libmpq__patch_view_open(&view, base_path, layers, 2) == 0);
+        TEST_CHECK(
+            libmpq__file_number(libmpq__patch_view_archive(view), name, &number) ==
+            (expected == NULL ? LIBMPQ_ERROR_EXIST : LIBMPQ_SUCCESS)
+        );
+        if (expected != NULL) {
+            if (scenario < 3)
+                TEST_CHECK(
+                    libmpq__patch_view_archive(view)->mpq_map[number].block_table_indices !=
+                    original_chain_block
+                );
+            TEST_CHECK(
+                test_archive_read(
+                    libmpq__patch_view_archive(view), number, &actual, &actual_size
+                ) == 0
+            );
+            TEST_CHECK(
+                actual_size == sizeof(second) - 1 && memcmp(actual, expected, actual_size) == 0
+            );
+            free(actual);
+            actual = NULL;
+            TEST_CHECK(
+                libmpq__file_attributes(libmpq__patch_view_archive(view), number, &attributes) == 0
+            );
+            fixture_md5(expected, sizeof(second) - 1, digest);
+            TEST_CHECK(attributes.crc32 == crc32(0, expected, sizeof(second) - 1));
+            TEST_CHECK(memcmp(attributes.md5, digest, sizeof(digest)) == 0);
+            TEST_CHECK(attributes.patch_bit == 0);
+        }
+        TEST_CHECK(libmpq__file_number(libmpq__patch_view_archive(view), "keep.txt", &number) == 0);
+        TEST_CHECK(
+            test_archive_read(libmpq__patch_view_archive(view), number, &actual, &actual_size) == 0
+        );
+        TEST_CHECK(actual_size == sizeof(keep) - 1 && memcmp(actual, keep, actual_size) == 0);
+        free(actual);
+        actual = NULL;
+        TEST_CHECK(
+            libmpq__file_attributes(libmpq__patch_view_archive(view), number, &attributes) == 0
+        );
+        fixture_md5(keep, sizeof(keep) - 1, digest);
+        TEST_CHECK(attributes.crc32 == crc32(0, keep, sizeof(keep) - 1));
+        TEST_CHECK(memcmp(attributes.md5, digest, sizeof(digest)) == 0);
+        TEST_CHECK(attributes.filetime == original_keep.filetime);
+        if (scenario == 1) {
+            mpq_file_attributes_s removed_row;
+            mpq_archive_s *result = libmpq__patch_view_archive(view);
+            static const uint8_t zero_md5[16] = { 0 };
+
+            TEST_CHECK(libmpq__attributes_load(result) == 0);
+            libmpq__attributes_get(result->attributes, original_chain_block, &removed_row);
+            TEST_CHECK(
+                removed_row.crc32 == 0 && removed_row.filetime == 0 && removed_row.patch_bit == 0
+            );
+            TEST_CHECK(memcmp(removed_row.md5, zero_md5, sizeof(zero_md5)) == 0);
+        }
+        TEST_CHECK(libmpq__patch_view_close(view) == 0);
+        view = NULL;
+        TEST_CHECK(remove(layer_a) == 0);
+        TEST_CHECK(remove(layer_b) == 0);
+    }
+    TEST_CHECK(remove(base_path) == 0);
     return 0;
 }
 
@@ -894,6 +1050,7 @@ test_patch_payload_validation(void)
     uint8_t prefix[28] = { 0 };
     uint8_t *result = NULL;
     size_t result_size = 0;
+    size_t rle_size = 0;
     mpq_patch_info_s info;
 
     memcpy(patch, "PTCH", 4);
@@ -920,6 +1077,26 @@ test_patch_payload_validation(void)
     TEST_CHECK(result_size == sizeof(after) && memcmp(result, after, sizeof(after)) == 0);
     free(result);
     result = NULL;
+    {
+        uint8_t trailing[sizeof(patch) + 12] = { 0 };
+
+        memcpy(trailing, patch, 68 + 31);
+        libmpq__store_le32(trailing + 4, 68 + 31);
+        libmpq__store_le32(trailing + 60, 68 + 31 - 56);
+        TEST_CHECK(expect_bad_patch(before, sizeof(before), trailing, 68 + 31) == 0);
+        memcpy(trailing, patch, sizeof(patch));
+        libmpq__store_le32(trailing + 4, sizeof(patch) + 1);
+        libmpq__store_le32(trailing + 60, sizeof(patch) + 1 - 56);
+        TEST_CHECK(expect_bad_patch(before, sizeof(before), trailing, sizeof(patch) + 1) == 0);
+        libmpq__store_le64(trailing + 84, 4);
+        TEST_CHECK(expect_bad_patch(before, sizeof(before), trailing, sizeof(patch) + 1) == 0);
+        memcpy(trailing, patch, 112);
+        memcpy(trailing + 124, patch + 112, sizeof(patch) - 112);
+        libmpq__store_le32(trailing + 4, sizeof(trailing));
+        libmpq__store_le32(trailing + 60, sizeof(trailing) - 56);
+        libmpq__store_le64(trailing + 76, 24);
+        TEST_CHECK(expect_bad_patch(before, sizeof(before), trailing, sizeof(trailing)) == 0);
+    }
     patch[114] = 2;
     TEST_CHECK(
         libmpq__patch_apply(before, sizeof(before), patch, sizeof(patch), &result, &result_size) ==
@@ -945,6 +1122,7 @@ test_patch_payload_validation(void)
             }
         }
         TEST_CHECK(output - 68 < sizeof(patch) - 68);
+        rle_size = output;
         libmpq__store_le32(rle + 60, (uint32_t)(output - 56));
         TEST_CHECK(
             libmpq__patch_apply(before, sizeof(before), rle, output, &result, &result_size) == 0
@@ -953,6 +1131,14 @@ test_patch_payload_validation(void)
     TEST_CHECK(result_size == sizeof(after) && memcmp(result, after, sizeof(after)) == 0);
     free(result);
     result = NULL;
+    libmpq__store_le32(rle + 60, (uint32_t)(rle_size - 1 - 56));
+    TEST_CHECK(expect_bad_patch(before, sizeof(before), rle, rle_size - 1) == 0);
+    libmpq__store_le32(rle + 60, (uint32_t)(rle_size - 56));
+    rle[72] = 0xff;
+    TEST_CHECK(expect_bad_patch(before, sizeof(before), rle, rle_size) == 0);
+    rle[72] = 0x8f;
+    libmpq__store_le32(rle + 60, 73 - 56);
+    TEST_CHECK(expect_bad_patch(before, sizeof(before), rle, 73) == 0);
     memcpy(moving, "PTCH", 4);
     libmpq__store_le32(moving + 4, sizeof(moving));
     libmpq__store_le32(moving + 8, sizeof(before));
@@ -980,11 +1166,146 @@ test_patch_payload_validation(void)
     TEST_CHECK(result_size == 2 && memcmp(result, "ba", 2) == 0);
     free(result);
     result = NULL;
+    TEST_CHECK(expect_bad_patch(before, sizeof(before), patch, sizeof(patch) - 1) == 0);
+    patch[68] = 'X';
+    TEST_CHECK(expect_bad_patch(before, sizeof(before), patch, sizeof(patch)) == 0);
+    patch[68] = 'B';
+    libmpq__store_le64(patch + 76, UINT64_MAX);
+    TEST_CHECK(expect_bad_patch(before, sizeof(before), patch, sizeof(patch)) == 0);
+    libmpq__store_le64(patch + 76, 12);
+    libmpq__store_le64(patch + 84, UINT64_MAX);
+    TEST_CHECK(expect_bad_patch(before, sizeof(before), patch, sizeof(patch)) == 0);
+    libmpq__store_le64(patch + 84, 3);
+    libmpq__store_le32(patch + 100, 0);
+    TEST_CHECK(expect_bad_patch(before, sizeof(before), patch, sizeof(patch)) == 0);
+    libmpq__store_le32(patch + 100, 4);
+    TEST_CHECK(expect_bad_patch(before, sizeof(before), patch, sizeof(patch)) == 0);
+    libmpq__store_le32(patch + 100, 3);
+    libmpq__store_le64(patch + 76, 0);
+    TEST_CHECK(expect_bad_patch(before, sizeof(before), patch, sizeof(patch)) == 0);
+    libmpq__store_le64(patch + 76, 12);
+    patch[112] = 1;
+    TEST_CHECK(expect_bad_patch(before, sizeof(before), patch, sizeof(patch)) == 0);
+    patch[112] = 0;
+    moving[108] = 0xff;
+    moving[109] = 0xff;
+    moving[110] = 0xff;
+    moving[111] = 0xff;
+    TEST_CHECK(expect_bad_patch(before, sizeof(before), moving, sizeof(moving)) == 0);
+    libmpq__store_le32(moving + 108, 0x7fffffffu);
+    TEST_CHECK(expect_bad_patch(before, sizeof(before), moving, sizeof(moving)) == 0);
     libmpq__store_le32(prefix, sizeof(prefix));
     libmpq__store_le32(prefix + 4, 0x80000000u);
     TEST_CHECK(libmpq__patch_info_parse(prefix, sizeof(prefix), &info) == 0);
     libmpq__store_le32(prefix, sizeof(prefix) + 1);
     TEST_CHECK(libmpq__patch_info_parse(prefix, sizeof(prefix), &info) == LIBMPQ_ERROR_FORMAT);
+    return 0;
+}
+
+/* Exercise prefix limits without letting untrusted sizes reach a reader allocation. */
+static int
+test_patch_prefix_boundaries(void)
+{
+    uint8_t prefix[LIBMPQ_PATCH_INFO_SIZE + 8] = { 0 };
+    mpq_patch_info_s info;
+
+    libmpq__store_le32(prefix, LIBMPQ_PATCH_INFO_SIZE);
+    libmpq__store_le32(prefix + 4, 0x80000000u);
+    TEST_CHECK(libmpq__patch_info_parse(NULL, 0, &info) == LIBMPQ_ERROR_FORMAT);
+    for (size_t size = 0; size < LIBMPQ_PATCH_INFO_SIZE; size++)
+        TEST_CHECK(libmpq__patch_info_parse(prefix, size, &info) == LIBMPQ_ERROR_FORMAT);
+    TEST_CHECK(libmpq__patch_info_parse(prefix, sizeof(prefix), NULL) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__patch_info_parse(prefix, LIBMPQ_PATCH_INFO_SIZE, &info) == 0);
+    TEST_CHECK(info.length == LIBMPQ_PATCH_INFO_SIZE && info.data_size == 0);
+    libmpq__store_le32(prefix, LIBMPQ_PATCH_INFO_SIZE - 1);
+    TEST_CHECK(libmpq__patch_info_parse(prefix, sizeof(prefix), &info) == LIBMPQ_ERROR_FORMAT);
+    libmpq__store_le32(prefix, sizeof(prefix) + 1);
+    TEST_CHECK(libmpq__patch_info_parse(prefix, sizeof(prefix), &info) == LIBMPQ_ERROR_FORMAT);
+    libmpq__store_le32(prefix, sizeof(prefix));
+    libmpq__store_le32(prefix + 4, 0);
+    TEST_CHECK(libmpq__patch_info_parse(prefix, sizeof(prefix), &info) == LIBMPQ_ERROR_FORMAT);
+    libmpq__store_le32(prefix + 4, 0x80000000u);
+    libmpq__store_le32(prefix + 8, UINT32_MAX);
+    TEST_CHECK(libmpq__patch_info_parse(prefix, sizeof(prefix), &info) == 0);
+    TEST_CHECK(info.length == sizeof(prefix) && info.data_size == UINT32_MAX);
+    return 0;
+}
+
+/* Corrupt one field at a time, including sizes, transforms, and both digests. */
+static int
+test_copy_payload_boundaries(void)
+{
+    static const uint8_t before[] = "old";
+    static const uint8_t after[] = "new contents";
+    static const uint8_t empty_bytes[] = { 0 };
+    uint8_t *stored;
+    uint8_t *patch;
+    uint8_t *output = NULL;
+    size_t stored_size = 0;
+    size_t patch_size;
+    size_t output_size = 0;
+    uint8_t *empty;
+    size_t empty_size = 0;
+
+    empty = fixture_copy_patch(empty_bytes, 0, empty_bytes, 0, &empty_size);
+    TEST_CHECK(empty != NULL);
+    TEST_CHECK(
+        libmpq__patch_apply(
+            NULL, 0, empty + LIBMPQ_PATCH_INFO_SIZE, empty_size - LIBMPQ_PATCH_INFO_SIZE, &output,
+            &output_size
+        ) == 0
+    );
+    TEST_CHECK(output != NULL && output_size == 0);
+    free(output);
+    output = NULL;
+    free(empty);
+
+    stored = fixture_copy_patch(before, sizeof(before) - 1, after, sizeof(after) - 1, &stored_size);
+    TEST_CHECK(stored != NULL);
+    patch = stored + LIBMPQ_PATCH_INFO_SIZE;
+    patch_size = stored_size - LIBMPQ_PATCH_INFO_SIZE;
+    TEST_CHECK(libmpq__patch_apply(before, 3, patch, patch_size, &output, &output_size) == 0);
+    TEST_CHECK(output_size == sizeof(after) - 1);
+    free(output);
+    TEST_CHECK(expect_bad_patch(before, 3, NULL, patch_size) == 0);
+    TEST_CHECK(expect_bad_patch(NULL, 3, patch, patch_size) == 0);
+    for (size_t size = 0; size < 68; size++)
+        TEST_CHECK(expect_bad_patch(before, 3, patch, size) == 0);
+    patch[0] = 'X';
+    TEST_CHECK(expect_bad_patch(before, 3, patch, patch_size) == 0);
+    patch[0] = 'P';
+    libmpq__store_le32(patch + 4, (uint32_t)patch_size - 1);
+    TEST_CHECK(expect_bad_patch(before, 3, patch, patch_size) == 0);
+    libmpq__store_le32(patch + 4, (uint32_t)patch_size);
+    libmpq__store_le32(patch + 8, 4);
+    TEST_CHECK(expect_bad_patch(before, 3, patch, patch_size) == 0);
+    libmpq__store_le32(patch + 8, 3);
+    patch[16] = 'X';
+    TEST_CHECK(expect_bad_patch(before, 3, patch, patch_size) == 0);
+    patch[16] = 'M';
+    libmpq__store_le32(patch + 20, 39);
+    TEST_CHECK(expect_bad_patch(before, 3, patch, patch_size) == 0);
+    libmpq__store_le32(patch + 20, 40);
+    patch[24] ^= 1;
+    TEST_CHECK(expect_bad_patch(before, 3, patch, patch_size) == 0);
+    patch[24] ^= 1;
+    patch[40] ^= 1;
+    TEST_CHECK(expect_bad_patch(before, 3, patch, patch_size) == 0);
+    patch[40] ^= 1;
+    patch[56] = 'Y';
+    TEST_CHECK(expect_bad_patch(before, 3, patch, patch_size) == 0);
+    patch[56] = 'X';
+    libmpq__store_le32(patch + 60, 11);
+    TEST_CHECK(expect_bad_patch(before, 3, patch, patch_size) == 0);
+    libmpq__store_le32(patch + 60, (uint32_t)patch_size - 55);
+    TEST_CHECK(expect_bad_patch(before, 3, patch, patch_size) == 0);
+    libmpq__store_le32(patch + 60, (uint32_t)patch_size - 56);
+    patch[64] = 'X';
+    TEST_CHECK(expect_bad_patch(before, 3, patch, patch_size) == 0);
+    patch[64] = 'C';
+    libmpq__store_le32(patch + 12, (uint32_t)sizeof(after));
+    TEST_CHECK(expect_bad_patch(before, 3, patch, patch_size) == 0);
+    free(stored);
     return 0;
 }
 
@@ -1105,6 +1426,7 @@ main(int argc, char **argv)
         return refresh_fixtures();
     TEST_CHECK(argc == 1);
     TEST_CHECK(test_views() == 0);
+    TEST_CHECK(test_chain_edges() == 0);
     TEST_CHECK(test_container_bytes() == 0);
     TEST_CHECK(test_noop_signature() == 0);
     TEST_CHECK(test_patch_bit() == 0);
@@ -1114,6 +1436,8 @@ main(int argc, char **argv)
     TEST_CHECK(test_listfile_without_final_newline() == 0);
     TEST_CHECK(test_shared_base_block() == 0);
     TEST_CHECK(test_patch_payload_validation() == 0);
+    TEST_CHECK(test_patch_prefix_boundaries() == 0);
+    TEST_CHECK(test_copy_payload_boundaries() == 0);
     TEST_CHECK(test_unknown_base_name() == 0);
     TEST_CHECK(test_patch_only_growth() == 0);
     return 0;

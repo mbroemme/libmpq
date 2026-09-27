@@ -17,6 +17,7 @@ Run bounded campaigns for the archive, API, and codec targets:
 ```bash
 fuzz/fuzz-archive-open -max_total_time=60 /tmp/libmpq-fuzz-corpus/archive-open
 fuzz/fuzz-attributes -max_total_time=60 /tmp/libmpq-fuzz-corpus/attributes
+fuzz/fuzz-patch-apply -max_total_time=60 /tmp/libmpq-fuzz-corpus/patch-apply
 fuzz/fuzz-mpqe-open -max_total_time=60 /tmp/libmpq-fuzz-corpus/mpqe-open
 fuzz/fuzz-file-read -max_total_time=60 /tmp/libmpq-fuzz-corpus/file-read
 fuzz/fuzz-writer-roundtrip -max_total_time=60 /tmp/libmpq-fuzz-corpus/writer-roundtrip
@@ -38,6 +39,11 @@ valid generated archive and mutates filename and file-index read paths.
 `fuzz-writer-roundtrip` creates a bounded v1/v2 archive from fuzzed content,
 then reopens and verifies it. `fuzz-encrypted-archive` mutates a valid archive
 with encrypted files, hash/block tables, and known-key reads.
+
+`fuzz-patch-apply` uses a bounded two-byte frame split into base and patch
+bytes, and exercises private patch-prefix parsing and PTCH/COPY/BSD0
+application. It caps declared output and decoded-stream sizes before patch
+application.
 
 `fuzz-sector-decode` remains the multi-codec integration target. The focused
 PKWARE, Huffman, zlib, bzip2, SPARSE, and ADPCM WAVE targets use a little-endian

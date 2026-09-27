@@ -312,9 +312,13 @@ not emit a Blizzard `(patch_metadata)` structure; the private patch reader
 identifies these archives from patch-file and delete-marker flags. Full
 Blizzard patch metadata compatibility is deferred. Patch-file block sizes
 describe the resulting logical file, while the patch prefix describes the PTCH
-data size. The attributes MD5 records the resulting file; CRC32 covers the
-plaintext patch prefix and decoded PTCH body. FILETIME is omitted,
-allowing the patched view to retain the base member's timestamp.
+data size. The reader validates the fixed patch prefix against the stored member
+extent before using its declared body size; optional prefix extensions do not
+require a separate allocation. The attributes MD5 records the resulting file;
+CRC32 covers the plaintext patch prefix and decoded PTCH body. FILETIME is
+omitted, allowing the patched view to retain the base member's timestamp.
+PATCH_BIT marks stored patch entries; materialized ordinary members retain
+their lower-layer bit instead of inheriting the patch artifact's marker.
 Ordinary archive creation still rejects true PATCH_BIT values. The
 patch-writer tests generate temporary archives and apply them through the
 private patch view; no repository fixture needs to change. Patch creation does

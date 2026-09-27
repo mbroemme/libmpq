@@ -18,6 +18,7 @@ readonly project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly output_root="$1"
 readonly archive_output="${output_root}/archive-open"
 readonly attributes_output="${output_root}/attributes"
+readonly patch_output="${output_root}/patch-apply"
 readonly mpqe_output="${output_root}/mpqe-open"
 readonly encrypted_output="${output_root}/encrypted-archive"
 readonly file_read_output="${output_root}/file-read"
@@ -37,6 +38,7 @@ fi
 
 mkdir -p \
 	"${attributes_output}" \
+	"${patch_output}" \
 	"${archive_output}" \
 	"${mpqe_output}" \
 	"${encrypted_output}" \
@@ -58,6 +60,20 @@ cp "${project_root}/tests/fixtures/mpq-v2-features.mpq" "${archive_output}/fixtu
 printf '\x00\x00\x64\x00\x00\x00\x00\x00\x00\x00' > "${attributes_output}/empty"
 printf '\x00\x00\x64\x00\x00\x00\x08\x00\x00\x00' > "${attributes_output}/omitted-self-bit"
 printf '\x01\x01\x64\x00\x00\x00\x01\x00\x00\x00\x78\x56\x34\x12\x00\x00\x00\x00' > "${attributes_output}/crc32"
+
+# Frame two bytes as a zero-length base, followed by an empty COPY patch.
+{
+	printf '\x00\x00PTCH\x44\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+	printf 'MD5_\x28\x00\x00\x00'
+	printf '\xd4\x1d\x8c\xd9\x8f\x00\xb2\x04\xe9\x80\x09\x98\xec\xf8\x42\x7e'
+	printf '\xd4\x1d\x8c\xd9\x8f\x00\xb2\x04\xe9\x80\x09\x98\xec\xf8\x42\x7e'
+	printf 'XFRM\x0c\x00\x00\x00COPY'
+} > "${patch_output}/empty-copy"
+{
+	printf '\x1c\x00\x00\x00\x00\x00\x00\x80\x00\x00\x00\x00'
+	printf '\x00%.0s' {1..16}
+} > "${patch_output}/valid-prefix-header"
+printf '\x00\x00PTCH' > "${patch_output}/truncated-ptch"
 
 write_v1_header()
 {
