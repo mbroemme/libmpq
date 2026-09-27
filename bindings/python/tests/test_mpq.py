@@ -260,6 +260,50 @@ def test_patch_creation_binding(tmp_path):
         patch.remove("data")
 
 
+def test_mpqe_patch_creation_binding(tmp_path):
+    """The MPQE factory retains the ordinary Patch lifecycle and borrows auth bytes."""
+    base = tmp_path / "base.mpq"
+    output = tmp_path / "changes.mpqe"
+    code = b"LIBMPQ-MPQE-PATCH-AUTH-CODE-00002"
+    with mpq.Writer(base, max_files=8) as writer:
+        writer.add("replace", b"old")
+        writer.add("remove", b"old")
+
+    with pytest.raises(mpq.LibmpqDecryptError):
+        mpq.Patch.begin_mpqe(base, output, b"")
+    with pytest.raises(mpq.LibmpqDecryptError):
+        mpq.Patch.begin_mpqe(base, output, code[:31])
+    with pytest.raises(TypeError):
+        mpq.Patch.begin_mpqe(base, output, None)
+    assert not output.exists()
+
+    with mpq.Patch.begin_mpqe(base, output, code) as patch:
+        patch.replace_data("replace", b"new")
+        patch.remove("remove")
+        assert not output.exists()
+        patch.finish()
+    assert output.is_file()
+    with pytest.raises(mpq.LibmpqFormatError):
+        mpq.Archive(output)
+    with pytest.raises(mpq.LibmpqError):
+        mpq.Archive.open_mpqe(output, b"X" + code[1:])
+    with mpq.Archive.open_mpqe(output, code) as archive:
+        assert "replace" in archive and "remove" in archive
+    with pytest.raises(mpq.LibmpqStateError):
+        patch.abort()
+
+    output.unlink()
+    with mpq.Patch.begin_mpqe(base, output, code) as patch:
+        patch.replace_data("replace", b"discarded")
+    assert not output.exists()
+    patch = mpq.Patch.begin_mpqe(base, output, code)
+    patch.remove("remove")
+    patch.abort()
+    assert not output.exists()
+    with pytest.raises(mpq.LibmpqStateError):
+        patch.finish()
+
+
 def test_logical_stream_encrypted_numeric_and_mpqe_lifetime():
     """Name-derived keys, numeric opens, and MPQE clones cross the binding boundary."""
     with mpq.Archive(FIXTURES / "mpq-v1-features.mpq") as archive:

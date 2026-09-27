@@ -252,6 +252,8 @@ _configure("libmpq__update_rename", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, 
 _configure("libmpq__update_commit", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__update_abort", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__patch_begin", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, ctypes.c_char_p)
+_configure("libmpq__patch_begin_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p,
+           ctypes.c_char_p, _BYTE_PTR, ctypes.c_size_t)
 _configure("libmpq__patch_replace_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE_PTR, _OFF_T, _VOID_PTR)
 _configure("libmpq__patch_replace_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__patch_remove", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p)
@@ -467,6 +469,19 @@ class Patch:
     def begin(cls, base_archive, output_patch):
         """Begin creating a patch without modifying the base archive."""
         return cls(base_archive, output_patch)
+
+    @classmethod
+    def begin_mpqe(cls, base_archive, output_patch, auth_code):
+        """Begin creating an MPQE-wrapped patch with caller-supplied authentication."""
+        code = _auth_code_bytes(auth_code)
+        pointer = (ctypes.c_uint8 * len(code)).from_buffer_copy(code) if code else None
+        patch = cls.__new__(cls)
+        patch._patch = _VOID_PTR()
+        libmpq.libmpq__patch_begin_mpqe(
+            ctypes.byref(patch._patch), _as_bytes(base_archive), _as_bytes(output_patch),
+            pointer, len(code)
+        )
+        return patch
 
     def _ensure_open(self):
         if not self._patch:

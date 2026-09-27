@@ -9,6 +9,19 @@ with mpq.Patch.begin("base.mpq", "changes.mpq") as patch:
     patch.finish()
 ```
 
+`Patch.begin()` creates an ordinary MPQ patch. For an MPQE-wrapped patch, use
+the same `Patch` wrapper with an explicit caller-supplied authentication code:
+
+```python
+with mpq.Patch.begin_mpqe("base.mpq", "changes.mpqe", auth_code) as patch:
+    patch.replace_data("foo.txt", b"new contents")
+    patch.finish()
+```
+
+The auth bytes are needed only during begin. Authenticated readers need the
+same code to open the result; unfinished patches are aborted on cleanup, not
+published.
+
 `replace_path` accepts a filesystem source. `finish()` publishes the patch;
 `abort()` discards it, and leaving the context unfinished aborts automatically.
 Omitting replacement options passes native NULL and uses native patch defaults;
