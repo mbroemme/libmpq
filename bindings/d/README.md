@@ -45,15 +45,24 @@ update.rename("old.txt", "new.txt");
 update.commit();
 ```
 
+Use the same `Update` methods for authenticated MPQE transactions:
+
+```d
+auto update = Update.beginMpqe("archive.mpqe", authCode);
+scope(exit) update.close();
+update.replaceData("foo.txt", cast(const(ubyte)[])"new contents");
+update.commit();
+```
+
 `replacePath`, `remove`, and `abort` are also available. Commit and abort
 consume the handle even on error. The no-options overload passes a native
 NULL options pointer, so libmpq uses defaults and preserves the member's
 locale/platform identity. Supply explicit `FileOptions` for custom storage,
 for example `update.replaceData("foo.txt", data, options);`. These options
 can select distinct first/later compression masks, but locale/platform must
-match the existing member. Embedded MPQ containers retain their prefix and
-unrelated trailing bytes. This binding does not yet expose the native
-authenticated MPQE update entry point.
+match the existing member. Ordinary MPQs and embedded W3X/W3M containers use
+`Update.begin`; MPQE uses `Update.beginMpqe` with explicit authentication bytes
+borrowed only during begin. Both paths abort automatically without commit.
 
 Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
 Strong verification uses a 512-byte raw public key: a 256-byte unsigned
@@ -236,9 +245,8 @@ archive.add("hello.txt", cast(const(ubyte)[])"hello\n");
 
 `Archive.createMpqe` creates a new encrypted MPQE stream from borrowed
 authentication bytes. It finalizes a private plaintext temporary file before
-atomically replacing the destination. The D wrapper does not yet expose
-authenticated MPQE updates, though the native C API supports
-transactional updates. Crash cleanup is best effort.
+atomically replacing the destination. Use `Update.beginMpqe` for changes to
+an existing MPQE archive. Crash cleanup is best effort.
 
 All arrays passed to the writer are borrowed for the duration of the call.
 Arrays returned by `read` and `readBlock` are owned by the caller. Always close

@@ -33,6 +33,19 @@ public final class MpqUpdate implements AutoCloseable {
         }
     }
 
+    /** Begin an authenticated MPQE update with temporary native authentication bytes. */
+    public static MpqUpdate beginMpqe(Path path, byte[] authCode) throws LibmpqException {
+        Objects.requireNonNull(path, "path");
+        Objects.requireNonNull(authCode, "authCode");
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
+            Support.check(LibmpqNative.updateBeginMpqe(output,
+                    Support.text(arena, path.toString()), Support.bytes(arena, authCode),
+                    authCode.length));
+            return new MpqUpdate(LibmpqNative.getAddress(output));
+        }
+    }
+
     /** Stage replacement from bytes; null options use native defaults. */
     public void replaceData(String name, byte[] data, FileOptions options) throws LibmpqException {
         checkOpen();

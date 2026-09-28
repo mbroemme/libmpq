@@ -494,6 +494,73 @@ private void testUpdate() {
     assert(closed);
 }
 
+private void testMpqeUpdate() {
+    auto path = temporaryArchive("update.mpqe");
+    auto source = path ~ ".source";
+    scope(exit) { remove(path); remove(source); }
+    immutable ubyte[] authCode =
+        cast(immutable(ubyte)[])"LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+    write(source, cast(const(ubyte)[])"from path");
+    auto archive = Archive.createMpqe(path, authCode, ArchiveCreateOptions.v1());
+    archive.add("data", cast(const(ubyte)[])"original");
+    archive.add("path", cast(const(ubyte)[])"old path");
+    archive.add("remove", cast(const(ubyte)[])"remove me");
+    archive.add("secret", cast(const(ubyte)[])"encrypted payload",
+                FileOptions.raw().encrypted());
+    archive.close();
+    auto original = read(path);
+
+    bool rejected;
+    try { auto unused = Update.begin(path); } catch (MPQException) { rejected = true; }
+    assert(rejected);
+    foreach (code; [cast(const(ubyte)[])null, authCode[0 .. 31],
+                    cast(const(ubyte)[])"XIBMPQ-MPQE-TEST-AUTH-CODE-00001"]) {
+        rejected = false;
+        try { auto unused = Update.beginMpqe(path, code); }
+        catch (MPQException) { rejected = true; }
+        assert(rejected);
+    }
+    assert(read(path) == original);
+
+    auto update = Update.beginMpqe(path, authCode);
+    update.replaceData("data", cast(const(ubyte)[])"rollback");
+    update.close();
+    assert(read(path) == original);
+    update = Update.beginMpqe(path, authCode);
+    update.remove("path");
+    destroy(update);
+    assert(read(path) == original);
+
+    ubyte[] borrowed = authCode.dup;
+    update = Update.beginMpqe(path, borrowed);
+    borrowed[] = 0;
+    update.replaceData("data", cast(const(ubyte)[])"new data");
+    update.replacePath("path", source);
+    update.remove("remove");
+    update.rename("secret", "secret-new");
+    auto before = Archive.openMpqe(path, authCode, 0);
+    assert(before.file("data").read() == cast(const(ubyte)[])"original");
+    before.close();
+    update.commit();
+    bool consumed;
+    try { update.abort(); } catch (MPQException error) {
+        consumed = error.code == ERROR_NOT_INITIALIZED;
+    }
+    assert(consumed);
+    auto after = Archive.openMpqe(path, authCode, 0);
+    assert(after.file("data").read() == cast(const(ubyte)[])"new data");
+    assert(after.file("path").read() == cast(const(ubyte)[])"from path");
+    auto secret = after.openStream("secret-new");
+    ubyte[] secretBytes = new ubyte[](17);
+    assert(secret.read(secretBytes) == secretBytes.length);
+    assert(secretBytes == cast(const(ubyte)[])"encrypted payload");
+    secret.close();
+    bool missing;
+    try { after.file("remove"); } catch (MPQException) { missing = true; }
+    assert(missing);
+    after.close();
+}
+
 private void testUpdateLocalizedDefaults() {
     auto path = temporaryArchive("localized");
     auto source = path ~ ".source";
@@ -764,6 +831,7 @@ void main() {
     testSparseFixtures();
     testMpqeCreate();
     testUpdate();
+    testMpqeUpdate();
     testUpdateLocalizedDefaults();
     testPatchCreation();
     testMpqePatchCreation();

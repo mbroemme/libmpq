@@ -45,14 +45,24 @@ try (MpqUpdate update = MpqUpdate.begin(Path.of("archive.mpq"))) {
 }
 ```
 
+The same `MpqUpdate` methods work for authenticated MPQE updates:
+
+```java
+try (MpqUpdate update = MpqUpdate.beginMpqe(Path.of("archive.mpqe"), authCode)) {
+    update.replaceData("foo.txt", "new contents".getBytes(), null);
+    update.commit();
+}
+```
+
 `replacePath`, `remove`, and explicit `abort` are also available. Commit and
 abort consume the handle even on error. Java uses `null` for no replacement
 options: it passes a native NULL pointer, so libmpq uses defaults and
 preserves the member's locale/platform identity. Pass explicit `FileOptions`
 for custom storage, including distinct first/later compression masks; their
 locale/platform must match the existing member. Embedded MPQ containers retain
-their prefix and unrelated trailing bytes. This binding does not yet expose
-the native authenticated MPQE update entry point.
+their prefix and unrelated trailing bytes. Ordinary MPQs and embedded W3X/W3M
+containers use `MpqUpdate.begin`; MPQE uses `beginMpqe` with an explicit code
+needed only during begin. Closing either active update aborts it.
 
 Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
 Strong verification uses a 512-byte raw public key: a 256-byte unsigned
@@ -128,8 +138,8 @@ only the packaged runtime JAR and tests both native-library loading modes.
 The high-level API uses `Archive.open`, `Archive.openMpqe`, `Archive.create`,
 `Archive.createMpqe`, and `MpqFileWriter`. MPQE creation uses a private
 plaintext temporary file before atomically replacing the destination; the Java
-wrapper does not yet expose native authenticated MPQE updates. Crash cleanup is
-best effort. All
+wrapper uses `MpqUpdate.beginMpqe` for authenticated changes to existing MPQE
+archives. Crash cleanup is best effort. All
 negative libmpq return codes are reported as `LibmpqException` values
 containing the original code and diagnostic text.
 

@@ -196,6 +196,64 @@ def test_update_localized_member_defaults(tmp_path):
         update.abort()
 
 
+def test_authenticated_mpqe_update(tmp_path):
+    """MPQE uses the ordinary Update operations and consuming lifecycle."""
+    path = tmp_path / "update.mpqe"
+    source = tmp_path / "replacement.bin"
+    source.write_bytes(b"from path")
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    with mpq.Writer.create_mpqe(path, code, max_files=16) as writer:
+        writer.add("data", b"original")
+        writer.add("path", b"old path")
+        writer.add("remove", b"remove me")
+        writer.add("secret", b"encrypted payload",
+                   mpq.FileCreateOptions.raw().encrypted())
+    original = path.read_bytes()
+    with pytest.raises(mpq.LibmpqError):
+        mpq.Update.begin(path)
+    for invalid in (None, b"", code[:31], b"X" + code[1:]):
+        with pytest.raises((TypeError, mpq.LibmpqError)):
+            mpq.Update.begin_mpqe(path, invalid)
+    assert path.read_bytes() == original
+
+    with mpq.Update.begin_mpqe(path, code) as update:
+        update.replace_data("data", b"rollback")
+        update.remove("path")
+    assert path.read_bytes() == original
+    update = mpq.Update.begin_mpqe(path, code)
+    update.rename("secret", "unused")
+    update.abort()
+    assert path.read_bytes() == original
+    with pytest.raises(mpq.LibmpqStateError):
+        update.commit()
+
+    borrowed = bytearray(code)
+    with mpq.Update.begin_mpqe(path, borrowed) as update:
+        borrowed[:] = b"\0" * len(borrowed)
+        update.replace_data("data", b"new data")
+        update.replace_path("path", source)
+        update.remove("remove")
+        update.rename("secret", "secret-new")
+        with mpq.Archive.open_mpqe(path, code) as archive:
+            assert archive["data"].read() == b"original"
+        update.commit()
+    with pytest.raises(mpq.LibmpqStateError):
+        update.remove("data")
+    with mpq.Archive.open_mpqe(path, code) as archive:
+        assert archive["data"].read() == b"new data"
+        assert archive["path"].read() == b"from path"
+        assert "remove" not in archive and "secret" not in archive
+        with archive.open_stream("secret-new") as stream:
+            assert stream.read() == b"encrypted payload"
+
+    committed = path.read_bytes()
+    with mpq.Update.begin_mpqe(path, code) as update:
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            update.remove("missing")
+        update.abort()
+    assert path.read_bytes() == committed
+
+
 def test_patch_creation_binding(tmp_path):
     """Patch creation stages replacements and deletion without changing the base."""
     base = tmp_path / "base.mpq"

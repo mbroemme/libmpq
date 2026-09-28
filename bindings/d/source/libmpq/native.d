@@ -287,6 +287,8 @@ extern(C) {
 
     /** Begin and stage filesystem archive updates. */
     int libmpq__update_begin(mpq_update_s** update, const(char)* path);
+    int libmpq__update_begin_mpqe(mpq_update_s** update, const(char)* path,
+                                  const(ubyte)* auth_code, size_t auth_code_size);
     int libmpq__update_replace_data(mpq_update_s* update, const(char)* filename,
                                     const(ubyte)* data, off_t size,
                                     const(mpq_file_options_s)* options);

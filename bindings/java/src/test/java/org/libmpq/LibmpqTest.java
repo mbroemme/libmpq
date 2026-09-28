@@ -325,6 +325,70 @@ class LibmpqTest {
         }
     }
 
+    @Test
+    void authenticatedMpqeUpdate(@TempDir Path directory) throws Exception {
+        Path path = directory.resolve("update.mpqe");
+        Path source = directory.resolve("replacement.bin");
+        Files.write(source, "from path".getBytes(StandardCharsets.UTF_8));
+        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
+        try (Archive archive = Archive.createMpqe(path, code, ArchiveCreateOptions.v1())) {
+            archive.add("data", "original".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+            archive.add("path", "old path".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+            archive.add("remove", "remove me".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+            archive.add("secret", "encrypted payload".getBytes(StandardCharsets.UTF_8),
+                        FileOptions.raw().encrypted());
+        }
+        byte[] original = Files.readAllBytes(path);
+        assertThrows(LibmpqException.class, () -> MpqUpdate.begin(path));
+        assertThrows(NullPointerException.class, () -> MpqUpdate.beginMpqe(path, null));
+        assertEquals(Mpq.ERROR_DECRYPT, assertThrows(LibmpqException.class,
+                () -> MpqUpdate.beginMpqe(path, new byte[0])).code());
+        assertEquals(Mpq.ERROR_DECRYPT, assertThrows(LibmpqException.class,
+                () -> MpqUpdate.beginMpqe(path, java.util.Arrays.copyOf(code, 31))).code());
+        byte[] wrong = code.clone();
+        wrong[0] ^= 1;
+        assertThrows(LibmpqException.class, () -> MpqUpdate.beginMpqe(path, wrong));
+        assertArrayEquals(original, Files.readAllBytes(path));
+
+        try (MpqUpdate update = MpqUpdate.beginMpqe(path, code)) {
+            update.replaceData("data", "rollback".getBytes(StandardCharsets.UTF_8), null);
+        }
+        assertArrayEquals(original, Files.readAllBytes(path));
+        MpqUpdate aborted = MpqUpdate.beginMpqe(path, code);
+        aborted.remove("path");
+        aborted.abort();
+        assertThrows(IllegalStateException.class, aborted::commit);
+        assertArrayEquals(original, Files.readAllBytes(path));
+
+        byte[] borrowed = code.clone();
+        try (MpqUpdate update = MpqUpdate.beginMpqe(path, borrowed)) {
+            java.util.Arrays.fill(borrowed, (byte) 0);
+            update.replaceData("data", "new data".getBytes(StandardCharsets.UTF_8), null);
+            update.replacePath("path", source, null);
+            update.remove("remove");
+            update.rename("secret", "secret-new");
+            try (Archive before = Archive.openMpqe(path, code)) {
+                assertArrayEquals("original".getBytes(StandardCharsets.UTF_8),
+                                  before.readFile(before.fileNumber("data")));
+            }
+            update.commit();
+            assertThrows(IllegalStateException.class, () -> update.remove("data"));
+        }
+        try (Archive after = Archive.openMpqe(path, code)) {
+            assertArrayEquals("new data".getBytes(StandardCharsets.UTF_8),
+                              after.readFile(after.fileNumber("data")));
+            assertArrayEquals("from path".getBytes(StandardCharsets.UTF_8),
+                              after.readFile(after.fileNumber("path")));
+            try (MpqStream stream = after.openStream("secret-new")) {
+                byte[] secret = new byte[17];
+                assertEquals(secret.length, stream.read(secret));
+                assertArrayEquals("encrypted payload".getBytes(StandardCharsets.UTF_8), secret);
+            }
+            assertThrows(LibmpqException.class, () -> after.fileNumber("remove"));
+            assertThrows(LibmpqException.class, () -> after.fileNumber("secret"));
+        }
+    }
+
     /** Skips integration tests when no native library path was configured. */
     @BeforeAll
     static void requireNativeLibrary() {

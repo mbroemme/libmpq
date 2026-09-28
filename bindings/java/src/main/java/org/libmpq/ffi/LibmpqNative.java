@@ -87,6 +87,7 @@ public final class LibmpqNative {
     private static final MethodHandle ARCHIVE_CLONE;
     private static final MethodHandle ARCHIVE_CLOSE;
     private static final MethodHandle UPDATE_BEGIN;
+    private static final MethodHandle UPDATE_BEGIN_MPQE;
     private static final MethodHandle UPDATE_REPLACE_DATA;
     private static final MethodHandle UPDATE_REPLACE_PATH;
     private static final MethodHandle UPDATE_REMOVE;
@@ -204,6 +205,9 @@ public final class LibmpqNative {
                                  FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
         UPDATE_BEGIN = function(linker, lookup, "libmpq__update_begin",
                                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+        UPDATE_BEGIN_MPQE = function(linker, lookup, "libmpq__update_begin_mpqe",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS, C_SIZE_T));
         UPDATE_REPLACE_DATA = function(linker, lookup, "libmpq__update_replace_data",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                       ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS));
@@ -519,6 +523,10 @@ public final class LibmpqNative {
     public static int archiveClose(MemorySegment archive) { return callInt(ARCHIVE_CLOSE, archive); }
     public static int updateBegin(MemorySegment out, MemorySegment path) {
         return callInt(UPDATE_BEGIN, out, path);
+    }
+    public static int updateBeginMpqe(MemorySegment out, MemorySegment path,
+                                      MemorySegment authCode, long authCodeSize) {
+        return callInt(UPDATE_BEGIN_MPQE, out, path, authCode, nativeSizeT(authCodeSize));
     }
     public static int updateReplaceData(MemorySegment update, MemorySegment name,
                                         MemorySegment data, long size, MemorySegment options) {

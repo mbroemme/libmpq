@@ -44,14 +44,22 @@ with mpq.Update.begin("archive.mpq") as update:
     update.commit()
 ```
 
+Use the same `Update` methods for MPQE after an authenticated begin:
+
+```python
+with mpq.Update.begin_mpqe("archive.mpqe", auth_code) as update:
+    update.replace_data("foo.txt", b"new contents")
+    update.commit()
+```
+
 `replace_path`, `remove`, and explicit `abort` are also available. Commit and
 abort consume the update handle even on error. Omitting replacement options
 passes a native NULL options pointer, so libmpq uses defaults and preserves
 the member's locale/platform identity. Supply `FileCreateOptions` as the
 optional third argument for custom storage; its locale/platform must match
-the existing member. Embedded MPQ containers are supported and retain their
-prefix and unrelated trailing bytes. This binding does not yet expose the
-native authenticated MPQE update entry point.
+the existing member. Ordinary MPQs and embedded W3X/W3M containers use
+`Update.begin`; MPQE uses `Update.begin_mpqe` with an explicit code. The code
+is needed only during begin. Both paths abort automatically without commit.
 
 Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
 Strong verification uses a 512-byte raw public key: a 256-byte unsigned
@@ -188,11 +196,10 @@ with mpq.Writer.create_mpqe(
 ```
 
 MPQE creation writes a private plaintext temporary file before atomically
-replacing the destination with the encrypted archive. It cannot modify an
-existing MPQE archive through the Python wrapper yet; the native C API offers
-authenticated transactional updates. Cleanup is best effort if the process crashes. The
-example authentication code is illustrative and non-secret; real callers must
-provide their own authentication code of at least 32 bytes.
+replacing the destination with the encrypted archive. Use `Update.begin_mpqe`
+to modify an existing MPQE archive. Cleanup is best effort if the process
+crashes. The example authentication code is illustrative and non-secret; real
+callers must provide their own authentication code of at least 32 bytes.
 
 Native failures raise `LibmpqError` subclasses with `.code` and `.message`
 attributes. I/O and missing-file subclasses remain compatible with the

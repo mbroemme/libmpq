@@ -28,6 +28,15 @@ final class Update {
         return new Update(result);
     }
 
+    /** Begin an authenticated MPQE update using borrowed authentication bytes. */
+    static Update beginMpqe(string path, const(ubyte)[] authCode) {
+        mpq_update_s* result;
+        checkStatus(libmpq__update_begin_mpqe(&result, toStringz(path),
+                    authCode.length == 0 ? null : authCode.ptr, authCode.length),
+                    "libmpq__update_begin_mpqe");
+        return new Update(result);
+    }
+
     /** Stage replacement using native defaults and preserving member identity. */
     void replaceData(string name, const(ubyte)[] data) {
         replaceDataImpl(name, data, null);

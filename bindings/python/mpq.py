@@ -245,6 +245,8 @@ _configure("libmpq__archive_add_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_
 _configure("libmpq__archive_clone", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), _VOID_PTR)
 _configure("libmpq__archive_close", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__update_begin", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p)
+_configure("libmpq__update_begin_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p,
+           _BYTE_PTR, ctypes.c_size_t)
 _configure("libmpq__update_replace_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE_PTR, _OFF_T, _VOID_PTR)
 _configure("libmpq__update_replace_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__update_remove", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p)
@@ -379,6 +381,18 @@ class Update:
     def begin(cls, path):
         """Begin an isolated update for an existing filesystem archive."""
         return cls(path)
+
+    @classmethod
+    def begin_mpqe(cls, path, auth_code):
+        """Begin an authenticated MPQE update using the same transaction API."""
+        code = _auth_code_bytes(auth_code)
+        pointer = (ctypes.c_uint8 * len(code)).from_buffer_copy(code) if code else None
+        update = cls.__new__(cls)
+        update._update = _VOID_PTR()
+        libmpq.libmpq__update_begin_mpqe(
+            ctypes.byref(update._update), _as_bytes(path), pointer, len(code)
+        )
+        return update
 
     def _ensure_open(self):
         if not self._update:
