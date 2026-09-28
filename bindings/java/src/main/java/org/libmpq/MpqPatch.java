@@ -93,6 +93,25 @@ public final class MpqPatch implements AutoCloseable {
         }
     }
 
+    /** Configure weak signing with the existing raw private-key convention. */
+    public void sign(byte[] privateKey) throws LibmpqException {
+        sign(Mpq.SIGNATURE_WEAK, privateKey);
+    }
+
+    /** Configure weak or strong signing without consuming the patch. */
+    public void sign(int signatureType, byte[] privateKey) throws LibmpqException {
+        checkOpen();
+        Objects.requireNonNull(privateKey, "privateKey");
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment key = arena.allocateFrom(ValueLayout.JAVA_BYTE, privateKey);
+            try {
+                Support.check(LibmpqNative.patchSign(handle, signatureType, key, privateKey.length));
+            } finally {
+                key.fill((byte) 0);
+            }
+        }
+    }
+
     /** Publish the patch; the handle is consumed even on native error. */
     public void finish() throws LibmpqException {
         MemorySegment current = take();

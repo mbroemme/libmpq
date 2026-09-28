@@ -6,6 +6,7 @@ Create a patch artifact while leaving its base archive unchanged:
 try (MpqPatch patch = MpqPatch.begin(Path.of("base.mpq"), Path.of("changes.mpq"))) {
     patch.replaceData("foo.txt", "new contents".getBytes());
     patch.remove("old.txt");
+    patch.sign(weakPrivateKey); // or patch.sign(Mpq.SIGNATURE_STRONG, strongPrivateKey)
     patch.finish();
 }
 ```
@@ -29,6 +30,10 @@ discards it, and closing an unfinished patch aborts automatically. Omitted
 `FileOptions` pass native NULL and use native patch defaults; explicit options
 configure patch-member storage. Patch add and rename are not supported.
 Explicit locale/platform must match the base member.
+Signing configures the active patch without consuming it; an ordinary MPQ
+patch may configure weak and strong signatures separately. MPQE patches allow
+weak signing only. After `finish()`, use `Archive.signatures()` and
+`Archive.verify()` on the finished artifact.
 
 Updates are separate transactions. Closing without commit aborts staged edits:
 

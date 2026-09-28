@@ -137,6 +137,65 @@ class LibmpqTest {
     }
 
     @Test
+    void patchSigning(@TempDir Path directory) throws Exception {
+        Path base = directory.resolve("base.mpq");
+        Path output = directory.resolve("signed-patch.mpq");
+        byte[] weakPrivate = weakPrivateKey();
+        byte[] strongPrivate = strongPrivateKey();
+        try (Archive archive = Archive.create(base, ArchiveCreateOptions.v1())) {
+            archive.add("data", "original".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+        }
+        for (int types : new int[] {Mpq.SIGNATURE_WEAK, Mpq.SIGNATURE_STRONG,
+                                    Mpq.SIGNATURE_WEAK | Mpq.SIGNATURE_STRONG}) {
+            try (MpqPatch patch = MpqPatch.begin(base, output)) {
+                assertEquals(Mpq.ERROR_FORMAT, assertThrows(LibmpqException.class,
+                        () -> patch.sign(new byte[1])).code());
+                if ((types & Mpq.SIGNATURE_WEAK) != 0) {
+                    patch.sign(weakPrivate);
+                    assertEquals(Mpq.ERROR_FORMAT, assertThrows(LibmpqException.class,
+                            () -> patch.sign(weakPrivate)).code());
+                }
+                if ((types & Mpq.SIGNATURE_STRONG) != 0) {
+                    patch.sign(Mpq.SIGNATURE_STRONG, strongPrivate);
+                }
+                patch.replaceData("data", "replacement".getBytes(StandardCharsets.UTF_8));
+                assertFalse(Files.exists(output));
+                patch.finish();
+                assertThrows(IllegalStateException.class, () -> patch.sign(weakPrivate));
+            }
+            try (Archive archive = Archive.open(output)) {
+                assertEquals(types, archive.signatures());
+                if ((types & Mpq.SIGNATURE_WEAK) != 0) {
+                    assertEquals(0, archive.verify(weakPublicKey()));
+                }
+                if ((types & Mpq.SIGNATURE_STRONG) != 0) {
+                    assertEquals(0, archive.verify(Mpq.SIGNATURE_STRONG, strongPublicKey()));
+                }
+            }
+            Files.delete(output);
+        }
+
+        byte[] code = "LIBMPQ-MPQE-PATCH-AUTH-CODE-00002".getBytes(StandardCharsets.US_ASCII);
+        try (MpqPatch patch = MpqPatch.beginMpqe(base, output, code)) {
+            assertEquals(Mpq.ERROR_FORMAT, assertThrows(LibmpqException.class,
+                    () -> patch.sign(Mpq.SIGNATURE_STRONG, strongPrivate)).code());
+            patch.sign(weakPrivate);
+            patch.replaceData("data", "replacement".getBytes(StandardCharsets.UTF_8));
+            patch.finish();
+        }
+        try (Archive archive = Archive.openMpqe(output, code)) {
+            assertEquals(Mpq.SIGNATURE_WEAK, archive.signatures());
+            assertEquals(0, archive.verify(weakPublicKey()));
+        }
+        Files.delete(output);
+        try (MpqPatch patch = MpqPatch.begin(base, output)) {
+            patch.sign(weakPrivate);
+            patch.abort();
+        }
+        assertFalse(Files.exists(output));
+    }
+
+    @Test
     void localizedUpdateDefaults(@TempDir Path directory) throws Exception {
         Path path = directory.resolve("localized.mpq");
         Path source = directory.resolve("source.bin");
@@ -285,8 +344,8 @@ class LibmpqTest {
 
     @Test
     void weakSignatureRoundTrip() throws Exception {
-        byte[] publicKey = java.util.HexFormat.of().parseHex("a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001");
-        byte[] privateKey = java.util.HexFormat.of().parseHex("a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a748315364c0c92a1a284b2ae77d5d49adea3bad7bafa639710661d443c0ad882f6c8d6787affd7f68145217cde42cf4dc2acb0ca2aeca535baf894084e590d719");
+        byte[] publicKey = weakPublicKey();
+        byte[] privateKey = weakPrivateKey();
         Path path = java.nio.file.Files.createTempFile("libmpq-signature", ".mpq");
         try {
             try (Archive archive = Archive.create(path, ArchiveCreateOptions.v1())) {
@@ -317,6 +376,28 @@ class LibmpqTest {
     @Test
     void strongSignatureRoundTrip(@TempDir Path directory) throws Exception {
         byte[] publicKey = strongPublicKey();
+        byte[] privateKey = strongPrivateKey();
+        Path path = directory.resolve("strong.mpq");
+        try (Archive archive = Archive.create(path, ArchiveCreateOptions.v2())) {
+            archive.sign(Mpq.SIGNATURE_STRONG, privateKey);
+            archive.add("payload", "Java strong signing".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+        }
+        try (Archive archive = Archive.open(path)) {
+            assertEquals(Mpq.SIGNATURE_STRONG, archive.signatures());
+            assertEquals(0, archive.verify(Mpq.SIGNATURE_STRONG, publicKey));
+        }
+    }
+
+    private static byte[] weakPublicKey() {
+        return java.util.HexFormat.of().parseHex("a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001");
+    }
+
+    private static byte[] weakPrivateKey() {
+        return java.util.HexFormat.of().parseHex("a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a748315364c0c92a1a284b2ae77d5d49adea3bad7bafa639710661d443c0ad882f6c8d6787affd7f68145217cde42cf4dc2acb0ca2aeca535baf894084e590d719");
+    }
+
+    private static byte[] strongPrivateKey() {
+        byte[] publicKey = strongPublicKey();
         byte[] privateKey = java.util.Arrays.copyOf(publicKey, 512);
         byte[] exponent = HexFormat.of().parseHex(
             "14c9759f7c1ba1f24ab0de0bd253bac7b470e7fbf911088844783bea5a62da15"
@@ -328,15 +409,7 @@ class LibmpqTest {
             + "b7042e52531163d089209df6412098613ef59664ed70884e33f3e3056ccfb911"
             + "bcc04d2c73142996946d88be0daa29aafa1bab3d10ff4d52295880c8fad6d641");
         System.arraycopy(exponent, 0, privateKey, 256, 256);
-        Path path = directory.resolve("strong.mpq");
-        try (Archive archive = Archive.create(path, ArchiveCreateOptions.v2())) {
-            archive.sign(Mpq.SIGNATURE_STRONG, privateKey);
-            archive.add("payload", "Java strong signing".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
-        }
-        try (Archive archive = Archive.open(path)) {
-            assertEquals(Mpq.SIGNATURE_STRONG, archive.signatures());
-            assertEquals(0, archive.verify(Mpq.SIGNATURE_STRONG, publicKey));
-        }
+        return privateKey;
     }
 
     private static byte[] strongPublicKey() {
