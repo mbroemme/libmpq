@@ -59,9 +59,17 @@ private class MemorySource : MpqSource {
     }
 }
 
+private const(ubyte)[] weakPublicKey() {
+    return cast(const(ubyte)[]) x"a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001";
+}
+
+private const(ubyte)[] weakPrivateKey() {
+    return cast(const(ubyte)[]) x"a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a748315364c0c92a1a284b2ae77d5d49adea3bad7bafa639710661d443c0ad882f6c8d6787affd7f68145217cde42cf4dc2acb0ca2aeca535baf894084e590d719";
+}
+
 private void testVersionAndErrors() {
-    const(ubyte)[] publicKey = cast(const(ubyte)[]) x"a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001";
-    const(ubyte)[] privateKey = cast(const(ubyte)[]) x"a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a748315364c0c92a1a284b2ae77d5d49adea3bad7bafa639710661d443c0ad882f6c8d6787affd7f68145217cde42cf4dc2acb0ca2aeca535baf894084e590d719";
+    auto publicKey = weakPublicKey();
+    auto privateKey = weakPrivateKey();
     auto signaturePath = temporaryArchive("signature");
     scope(exit) remove(signaturePath);
     auto signedArchive = Archive.create(signaturePath, ArchiveCreateOptions.v1());
@@ -678,6 +686,72 @@ private void testMpqePatchCreation() {
     assert(consumed);
 }
 
+private void testPatchSigning() {
+    auto base = temporaryArchive("signed-patch-base");
+    auto output = temporaryArchive("signed-patch-output");
+    immutable ubyte[] authCode =
+        cast(immutable(ubyte)[])"LIBMPQ-MPQE-PATCH-AUTH-CODE-00002";
+    scope(exit) {
+        remove(base);
+        if (exists(output)) remove(output);
+    }
+    auto archive = Archive.create(base, ArchiveCreateOptions.v1());
+    archive.add("data", cast(const(ubyte)[])"original");
+    archive.close();
+
+    foreach (types; [SIGNATURE_WEAK, SIGNATURE_STRONG,
+                     SIGNATURE_WEAK | SIGNATURE_STRONG]) {
+        auto patch = Patch.begin(base, output);
+        bool invalid;
+        try { patch.sign(cast(const(ubyte)[])"invalid"); }
+        catch (MPQException error) { invalid = error.code == ERROR_FORMAT; }
+        assert(invalid);
+        if (types & SIGNATURE_WEAK) {
+            patch.sign(weakPrivateKey());
+            bool duplicate;
+            try { patch.sign(weakPrivateKey()); }
+            catch (MPQException error) { duplicate = error.code == ERROR_FORMAT; }
+            assert(duplicate);
+        }
+        if (types & SIGNATURE_STRONG)
+            patch.sign(strongPrivateKey(), SIGNATURE_STRONG);
+        patch.replaceData("data", cast(const(ubyte)[])"replacement");
+        assert(!exists(output));
+        patch.finish();
+        auto stored = Archive.open(output);
+        assert(stored.signatures() == types);
+        if (types & SIGNATURE_WEAK)
+            assert(stored.verify(weakPublicKey()) == 0);
+        if (types & SIGNATURE_STRONG)
+            assert(stored.verify(strongPublicKey(), SIGNATURE_STRONG) == 0);
+        stored.close();
+        bool consumed;
+        try { patch.sign(weakPrivateKey()); }
+        catch (MPQException error) { consumed = error.code == ERROR_NOT_INITIALIZED; }
+        assert(consumed);
+        remove(output);
+    }
+
+    auto patch = Patch.beginMpqe(base, output, authCode);
+    bool rejected;
+    try { patch.sign(strongPrivateKey(), SIGNATURE_STRONG); }
+    catch (MPQException error) { rejected = error.code == ERROR_FORMAT; }
+    assert(rejected);
+    patch.sign(weakPrivateKey());
+    patch.replaceData("data", cast(const(ubyte)[])"replacement");
+    patch.finish();
+    auto stored = Archive.openMpqe(output, authCode, 0);
+    assert(stored.signatures() == SIGNATURE_WEAK);
+    assert(stored.verify(weakPublicKey()) == 0);
+    stored.close();
+    remove(output);
+
+    patch = Patch.begin(base, output);
+    patch.sign(weakPrivateKey());
+    patch.abort();
+    assert(!exists(output));
+}
+
 void main() {
     testVersionAndErrors();
     testCreateReadAndMetadata(ARCHIVE_VERSION_ONE);
@@ -693,5 +767,6 @@ void main() {
     testUpdateLocalizedDefaults();
     testPatchCreation();
     testMpqePatchCreation();
+    testPatchSigning();
     testFailures();
 }

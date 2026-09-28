@@ -86,6 +86,18 @@ final class Patch {
                     "libmpq__patch_remove");
     }
 
+    /** Configure weak signing with the existing raw private-key convention. */
+    void sign(const(ubyte)[] privateKey) {
+        sign(privateKey, SIGNATURE_WEAK);
+    }
+
+    /** Configure weak or strong signing without consuming the patch. */
+    void sign(const(ubyte)[] privateKey, uint signatureType) {
+        ensureOpen();
+        checkStatus(libmpq__patch_sign(handle, signatureType, privateKey.ptr,
+                    privateKey.length), "libmpq__patch_sign");
+    }
+
     /** Publish this patch; the handle is consumed even on native error. */
     void finish() {
         auto current = take();

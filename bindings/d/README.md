@@ -7,6 +7,7 @@ auto patch = Patch.begin("base.mpq", "changes.mpq");
 scope(exit) patch.close();
 patch.replaceData("foo.txt", cast(const(ubyte)[])"new contents");
 patch.remove("old.txt");
+patch.sign(privateKey); // or patch.sign(strongKey, SIGNATURE_STRONG)
 patch.finish();
 ```
 
@@ -28,6 +29,10 @@ discards it, and destruction of an unfinished patch aborts automatically.
 Omitting `FileOptions` passes native NULL and uses native patch defaults;
 the explicit-options overload configures patch-member storage. Patch add and
 rename are not supported; explicit locale/platform must match the base member.
+Signing configures the active patch without consuming it; an ordinary MPQ
+patch may configure weak and strong signatures separately. MPQE patches allow
+weak signing only. After `finish()`, use `Archive.signatures()` and
+`Archive.verify()` on the finished artifact.
 
 Transactional updates stage edits until commit. `Update` aborts any active
 transaction when it is destroyed or closed:
