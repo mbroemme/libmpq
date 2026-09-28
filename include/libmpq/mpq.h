@@ -541,6 +541,11 @@ extern LIBMPQ_API int32_t libmpq__patch_begin_mpqe(
     const uint8_t *auth_code, size_t auth_code_size
 );
 
+/* Configure ordinary archive signing for the staged patch; finish signs it. */
+extern LIBMPQ_API int32_t libmpq__patch_sign(
+    mpq_patch_s *patch, uint32_t signature_type, const uint8_t *private_key, size_t private_key_size
+);
+
 /*
  * Replace an existing named base member in the staged patch artifact.
  * NULL options select patch-writer defaults. Explicit options select the

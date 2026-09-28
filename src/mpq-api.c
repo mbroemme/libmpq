@@ -356,6 +356,14 @@ libmpq__patch_begin_mpqe(
 }
 
 int32_t
+libmpq__patch_sign(
+    mpq_patch_s *patch, uint32_t signature_type, const uint8_t *private_key, size_t private_key_size
+)
+{
+    return libmpq__patch_writer_sign(patch, signature_type, private_key, private_key_size);
+}
+
+int32_t
 libmpq__patch_replace_data(
     mpq_patch_s *patch, const char *filename, const uint8_t *data, libmpq__off_t size,
     const mpq_file_options_s *options

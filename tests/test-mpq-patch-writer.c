@@ -745,6 +745,207 @@ test_public_patch_data(void)
     return 0;
 }
 
+/* Reopen a signed patch with the ordinary archive signature APIs. */
+static int
+check_patch_signatures(const char *path, uint32_t expected, uint8_t mpqe)
+{
+    mpq_archive_s *archive = NULL;
+    uint32_t signatures;
+    uint32_t mismatches;
+    int32_t result;
+
+    if (mpqe)
+        result = libmpq__archive_open_mpqe(
+            &archive, path, 0, mpqe_patch_auth_code, sizeof(mpqe_patch_auth_code) - 1
+        );
+    else
+        result = libmpq__archive_open(&archive, path, 0);
+    TEST_CHECK(result == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_signatures(archive, &signatures) == LIBMPQ_SUCCESS);
+    TEST_CHECK(signatures == expected);
+    if ((expected & LIBMPQ_SIGNATURE_WEAK) != 0) {
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, LIBMPQ_SIGNATURE_WEAK, test_signature_public_key,
+                sizeof(test_signature_public_key), &mismatches
+            ) == LIBMPQ_SUCCESS
+        );
+        TEST_CHECK(mismatches == 0);
+    }
+    if ((expected & LIBMPQ_SIGNATURE_STRONG) != 0) {
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
+                sizeof(test_strong_signature_public_key), &mismatches
+            ) == LIBMPQ_SUCCESS
+        );
+        TEST_CHECK(mismatches == 0);
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == LIBMPQ_SUCCESS);
+    return 0;
+}
+
+/* Signing configuration remains staged until the patch archive closes. */
+static int
+test_public_patch_signing(void)
+{
+    char base_path[1024];
+    char patch_path[1024];
+    const char *layers[] = { patch_path };
+    uint8_t strong_private[512];
+    uint8_t invalid_strong[512];
+    uint8_t invalid_weak[sizeof(test_signature_private_key)];
+    mpq_patch_s *patch = NULL;
+    mpq_patch_view_s *view = NULL;
+    uint32_t number;
+    FILE *published;
+
+    TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "patch-sign-base") == 0);
+    TEST_CHECK(test_temp_path(patch_path, sizeof(patch_path), "patch-sign-output") == 0);
+    TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
+    test_strong_signature_private_key(strong_private);
+    memcpy(invalid_weak, test_signature_private_key, sizeof(invalid_weak));
+    invalid_weak[63] &= 0xfe;
+    memcpy(invalid_strong, strong_private, sizeof(invalid_strong));
+    invalid_strong[LIBMPQ_RSA_STRONG_SIZE - 1u] &= 0xfe;
+    TEST_CHECK(
+        libmpq__patch_sign(
+            NULL, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+            sizeof(test_signature_private_key)
+        ) == LIBMPQ_ERROR_EXIST
+    );
+    for (uint32_t types = LIBMPQ_SIGNATURE_WEAK;
+         types <= (LIBMPQ_SIGNATURE_WEAK | LIBMPQ_SIGNATURE_STRONG); types++) {
+        TEST_CHECK(libmpq__patch_begin(&patch, base_path, patch_path) == LIBMPQ_SUCCESS);
+        TEST_CHECK(
+            libmpq__patch_sign(
+                patch, 0, test_signature_private_key, sizeof(test_signature_private_key)
+            ) == LIBMPQ_ERROR_FORMAT
+        );
+        TEST_CHECK(
+            libmpq__patch_sign(
+                patch, LIBMPQ_SIGNATURE_WEAK | LIBMPQ_SIGNATURE_STRONG, strong_private,
+                sizeof(strong_private)
+            ) == LIBMPQ_ERROR_FORMAT
+        );
+        TEST_CHECK(
+            libmpq__patch_sign(
+                patch, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+                sizeof(test_signature_private_key) - 1
+            ) == LIBMPQ_ERROR_FORMAT
+        );
+        TEST_CHECK(
+            libmpq__patch_sign(
+                patch, LIBMPQ_SIGNATURE_STRONG, strong_private, sizeof(strong_private) - 1
+            ) == LIBMPQ_ERROR_FORMAT
+        );
+        TEST_CHECK(
+            libmpq__patch_sign(patch, LIBMPQ_SIGNATURE_WEAK, invalid_weak, sizeof(invalid_weak)) ==
+            LIBMPQ_ERROR_FORMAT
+        );
+        TEST_CHECK(
+            libmpq__patch_sign(
+                patch, LIBMPQ_SIGNATURE_STRONG, invalid_strong, sizeof(invalid_strong)
+            ) == LIBMPQ_ERROR_FORMAT
+        );
+        if ((types & LIBMPQ_SIGNATURE_WEAK) != 0) {
+            TEST_CHECK(
+                libmpq__patch_sign(
+                    patch, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+                    sizeof(test_signature_private_key)
+                ) == LIBMPQ_SUCCESS
+            );
+            TEST_CHECK(
+                libmpq__patch_sign(
+                    patch, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+                    sizeof(test_signature_private_key)
+                ) == LIBMPQ_ERROR_FORMAT
+            );
+        }
+        if ((types & LIBMPQ_SIGNATURE_STRONG) != 0) {
+            TEST_CHECK(
+                libmpq__patch_sign(
+                    patch, LIBMPQ_SIGNATURE_STRONG, strong_private, sizeof(strong_private)
+                ) == LIBMPQ_SUCCESS
+            );
+            TEST_CHECK(
+                libmpq__patch_sign(
+                    patch, LIBMPQ_SIGNATURE_STRONG, strong_private, sizeof(strong_private)
+                ) == LIBMPQ_ERROR_FORMAT
+            );
+        }
+        TEST_CHECK(
+            libmpq__patch_replace_data(
+                patch, "replace.txt", new_data, sizeof(new_data) - 1, NULL
+            ) == LIBMPQ_SUCCESS
+        );
+        TEST_CHECK(libmpq__patch_remove(patch, "remove.txt") == LIBMPQ_SUCCESS);
+        TEST_CHECK(libmpq__patch_finish(patch) == LIBMPQ_SUCCESS);
+        patch = NULL;
+        TEST_CHECK(check_patch_signatures(patch_path, types, 0) == 0);
+        TEST_CHECK(libmpq__patch_view_open(&view, base_path, layers, 1) == LIBMPQ_SUCCESS);
+        TEST_CHECK(
+            check_file(
+                libmpq__patch_view_archive(view), "replace.txt", new_data, sizeof(new_data) - 1
+            ) == 0
+        );
+        TEST_CHECK(
+            libmpq__file_number(libmpq__patch_view_archive(view), "remove.txt", &number) ==
+            LIBMPQ_ERROR_EXIST
+        );
+        TEST_CHECK(
+            libmpq__file_number(libmpq__patch_view_archive(view), "(signature)", &number) ==
+            LIBMPQ_ERROR_EXIST
+        );
+        TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+        view = NULL;
+        TEST_CHECK(remove(patch_path) == 0);
+    }
+
+    TEST_CHECK(libmpq__patch_begin(&patch, base_path, patch_path) == LIBMPQ_SUCCESS);
+    TEST_CHECK(
+        libmpq__patch_sign(
+            patch, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+            sizeof(test_signature_private_key)
+        ) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(libmpq__patch_abort(patch) == LIBMPQ_SUCCESS);
+    patch = NULL;
+    published = fopen(patch_path, "rb");
+    if (published != NULL) {
+        fclose(published);
+        TEST_CHECK(0);
+    }
+
+    TEST_CHECK(
+        libmpq__patch_begin_mpqe(
+            &patch, base_path, patch_path, mpqe_patch_auth_code, sizeof(mpqe_patch_auth_code) - 1
+        ) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(
+        libmpq__patch_sign(
+            patch, LIBMPQ_SIGNATURE_STRONG, strong_private, sizeof(strong_private)
+        ) == LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(
+        libmpq__patch_sign(
+            patch, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+            sizeof(test_signature_private_key)
+        ) == LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(
+        libmpq__patch_replace_data(patch, "replace.txt", new_data, sizeof(new_data) - 1, NULL) ==
+        LIBMPQ_SUCCESS
+    );
+    TEST_CHECK(libmpq__patch_finish(patch) == LIBMPQ_SUCCESS);
+    patch = NULL;
+    TEST_CHECK(check_patch_signatures(patch_path, LIBMPQ_SIGNATURE_WEAK, 1) == 0);
+    TEST_CHECK(remove(patch_path) == 0);
+    TEST_CHECK(remove(base_path) == 0);
+    memset(strong_private, 0, sizeof(strong_private));
+    return 0;
+}
+
 /* Path replacement shares data options; an aborted artifact never appears. */
 static int
 test_public_patch_path_abort(void)
@@ -1097,6 +1298,7 @@ main(void)
     TEST_CHECK(test_splice_candidate() == 0);
     TEST_CHECK(test_delta_selection(0) == 0);
     TEST_CHECK(test_public_patch_data() == 0);
+    TEST_CHECK(test_public_patch_signing() == 0);
     TEST_CHECK(test_public_mpqe_patch() == 0);
     TEST_CHECK(test_public_mpqe_patch_chain() == 0);
     TEST_CHECK(test_public_patch_path_abort() == 0);

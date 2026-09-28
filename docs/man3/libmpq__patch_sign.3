@@ -12,28 +12,44 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public
 .\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
-.TH LIBMPQ__PATCH_BEGIN_MPQE 3 2026-09-28 "The MoPaQ archive library"
+.TH LIBMPQ__PATCH_SIGN 3 2026-09-29 "The MoPaQ archive library"
 .SH NAME
-libmpq__patch_begin_mpqe \- begin creating an MPQE-wrapped patch archive
+libmpq__patch_sign \- configure signing for a staged patch archive
 .SH SYNOPSIS
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__patch_begin_mpqe(mpq_patch_s **patch, const char *base_archive, const char *output_patch, const uint8_t *auth_code, size_t auth_code_size);"
+.BI "int32_t libmpq__patch_sign(mpq_patch_s *patch, uint32_t signature_type, const uint8_t *private_key, size_t private_key_size);"
 .fi
 .SH DESCRIPTION
-Creates a staged MPQE-wrapped patch artifact using an ordinary filesystem MPQ at \fIbase_archive\fP. The base remains unchanged. The caller supplies the authentication code used by the existing MPQE container writer; the code need only remain valid during this call. A matching code is required to read or apply the finished patch. Patch members retain the ordinary PTCH/COPY/BSD0 semantics. Finish publishes the encrypted artifact; abort discards it. Both operations consume the patch handle, even on error. On failure, a valid \fIpatch\fP output is set to NULL. Weak signing can be configured with libmpq__patch_sign(3); external strong signatures are unsupported for MPQE. Game-specific Blizzard patch-prefix autodetection heuristics are not supported. Embedded and MPQE base archives are unsupported for patch creation.
+Configures \fBLIBMPQ_SIGNATURE_WEAK\fP or \fBLIBMPQ_SIGNATURE_STRONG\fP
+signing on an active patch writer. The operation delegates to the ordinary
+archive signing implementation. Configure each type at most once before
+libmpq__patch_finish(3); ordinary MPQ patches may configure both types.
+The existing archive writer generates signatures during finalization.
+.PP
+MPQE-wrapped patches support weak signatures but reject external strong
+signatures with \fBLIBMPQ_ERROR_FORMAT\fP, matching archive signing behavior.
+This call does not consume the patch handle, including when configuration
+fails. It does not modify the base archive.
+.PP
+After finish, open the patch with the ordinary MPQ or authenticated MPQE
+reader. Use libmpq__archive_signatures(3) and libmpq__archive_verify(3)
+to inspect and verify its signatures. No separate patch verification API exists.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP or a negative libmpq error.
+Returns \fBLIBMPQ_SUCCESS\fP or an existing negative libmpq error.
 .SH ERRORS
-Invalid arguments, authentication-code errors, unsupported base formats, allocation failures, and I/O errors may propagate.
+A NULL patch returns \fBLIBMPQ_ERROR_EXIST\fP. Invalid types, keys, duplicate
+configuration, and unsupported MPQE strong signing return
+\fBLIBMPQ_ERROR_FORMAT\fP. Writer lifecycle and capacity errors may propagate
+from libmpq__archive_sign(3).
 .SH SEE ALSO
 .BR libmpq__patch_begin (3),
-.BR libmpq__patch_sign (3),
-.BR libmpq__patch_replace_data (3),
-.BR libmpq__patch_remove (3),
+.BR libmpq__patch_begin_mpqe (3),
 .BR libmpq__patch_finish (3),
-.BR libmpq__patch_abort (3)
+.BR libmpq__archive_sign (3),
+.BR libmpq__archive_signatures (3),
+.BR libmpq__archive_verify (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.
 .SH REPORTING BUGS

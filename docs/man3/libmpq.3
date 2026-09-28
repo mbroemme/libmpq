@@ -82,6 +82,8 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .sp
 .BI "int32_t libmpq__patch_begin_mpqe(mpq_patch_s **" "patch", ", const char *" "base_archive", ", const char *" "output_patch", ", const uint8_t *" "auth_code", ", size_t " "auth_code_size");"
 .sp
+.BI "int32_t libmpq__patch_sign(mpq_patch_s *" "patch", ", uint32_t " "signature_type", ", const uint8_t *" "private_key", ", size_t " "private_key_size");"
+.sp
 .BI "int32_t libmpq__patch_replace_data(mpq_patch_s *" "patch", ", const char *" "filename", ", const uint8_t *" "data", ", libmpq__off_t " "size", ", const mpq_file_options_s *" "options");"
 .sp
 .BI "int32_t libmpq__patch_replace_path(mpq_patch_s *" "patch", ", const char *" "filename", ", const char *" "source_path", ", const mpq_file_options_s *" "options");"
@@ -469,6 +471,7 @@ clones are created or used.
 .BR libmpq__archive_signatures (3),
 .BR libmpq__archive_verify (3),
 .BR libmpq__archive_sign (3),
+.BR libmpq__patch_sign (3),
 .BR libmpq__archive_attributes (3),
 .BR libmpq__archive_compression_allowed (3)
 .PP

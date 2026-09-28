@@ -41,6 +41,12 @@ int32_t libmpq__patch_writer_begin_mpqe(
     const uint8_t *auth_code, size_t auth_code_size
 );
 
+/* Delegate signing configuration to the owned archive writer. */
+int32_t libmpq__patch_writer_sign(
+    mpq_patch_writer_s *patch_writer, uint32_t signature_type, const uint8_t *private_key,
+    size_t private_key_size
+);
+
 /* Add a PTCH replacement, selecting BSD0 only when smaller than COPY. */
 int32_t libmpq__patch_writer_replace(
     mpq_patch_writer_s *patch_writer, const char *name, const uint8_t *data, libmpq__off_t size,

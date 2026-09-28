@@ -655,6 +655,18 @@ libmpq__patch_writer_begin_mpqe(
     );
 }
 
+/* Let archive finalization generate the configured weak or strong signature. */
+int32_t
+libmpq__patch_writer_sign(
+    mpq_patch_writer_s *state, uint32_t signature_type, const uint8_t *private_key,
+    size_t private_key_size
+)
+{
+    if (state == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    return libmpq__archive_sign(state->archive, signature_type, private_key, private_key_size);
+}
+
 /* Stage a named replacement, falling back to COPY unless BSD0 is smaller. */
 int32_t
 libmpq__patch_writer_replace(

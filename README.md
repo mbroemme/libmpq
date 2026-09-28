@@ -48,7 +48,7 @@ MPQ v2+ LZMA method.
 * Modify existing filesystem MPQ archives transactionally with named-file
   replace, remove, and rename operations.
 * Create MPQ or MPQE-wrapped replacement and deletion patch archives without
-  changing the base MPQ.
+  changing the base MPQ; optionally sign patches with caller-supplied keys.
 * Read and create MPQE-wrapped MPQ archives using a caller-supplied
   authentication code.
 * Read and write PKWARE implode, Huffman, zlib, bzip2, SPARSE, and mono or
@@ -356,11 +356,10 @@ headers, tables, encryption, sectors, and compression, see the
   Cleanup is best effort, so a crash can leave the plaintext temporary behind.
 * Transactional modification does not support MPQE or embedded MPQs. Mutations
   remove existing weak and strong signatures because no signing key is supplied.
-* Patch signing, game-specific patch-prefix autodetection heuristics, and
-  StormLib-specific key modes are not supported. Namespace discovery uses
-  `(patch_metadata)` names in `(listfile)`; game-specific Blizzard prefix
-  autodetection heuristics are not supported.
-  Automatic file-level
+* MPQE patches support weak signing, but not external strong signatures.
+  Game-specific Blizzard patch-prefix autodetection heuristics and
+  StormLib-specific key modes are unsupported. Namespace discovery uses
+  `(patch_metadata)` names in `(listfile)`. Automatic file-level
   CRC32/MD5 comparison is skipped for lossy ADPCM data because the decoded
   output is not byte-identical to the original input.
 

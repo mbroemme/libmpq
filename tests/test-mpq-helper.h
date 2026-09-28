@@ -103,4 +103,7 @@ int test_archive_read(mpq_archive_s *archive, uint32_t number, uint8_t **data, s
 int test_archive_offsets(mpq_archive_s *archive, uint32_t number, uint32_t **offsets);
 int test_add_archive(mpq_archive_s **archive, const char *path, uint32_t version, uint32_t flags);
 
+/* Build the disposable strong-signature private key matching the shared public key. */
+void test_strong_signature_private_key(uint8_t key[512]);
+
 #endif

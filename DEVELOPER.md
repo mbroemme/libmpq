@@ -294,6 +294,7 @@ mpq_patch_s *patch = NULL;
 libmpq__patch_begin(&patch, "base.mpq", "changes.mpq");
 libmpq__patch_replace_data(patch, "file.txt", data, data_size, NULL);
 libmpq__patch_remove(patch, "obsolete.txt");
+libmpq__patch_sign(patch, LIBMPQ_SIGNATURE_WEAK, private_key, key_size);
 libmpq__patch_finish(patch);
 ```
 
@@ -301,7 +302,11 @@ libmpq__patch_finish(patch);
 MPQE-wrapped patch instead, call `libmpq__patch_begin_mpqe()` with a
 caller-supplied authentication code; replacement, removal, finish, and abort
 then follow the same lifecycle. Authenticated patch readers can consume the
-result using that patch layer's own code. Neither entry point signs patches.
+result using that patch layer's own code. Signing is optional and configured
+with `libmpq__patch_sign()` before finish. It delegates to the existing archive
+writer: ordinary patches may use weak, strong, or both signatures; MPQE patches
+support weak signatures only. A finished patch is inspected and verified with
+`libmpq__archive_signatures()` and `libmpq__archive_verify()`.
 
 Replacement options control storage of the patch member inside the patch
 archive, not storage of the resulting file in the patched view.
@@ -325,22 +330,24 @@ members can supply their filename-derived keys.
 
 The patch writer emits a generated `(listfile)` and `(attributes)` with
 PATCH_BIT=true only for patch-file replacements, not delete markers. It does
-not emit a Blizzard `(patch_metadata)` structure; the private patch reader
-identifies these archives from patch-file and delete-marker flags. Full
-Blizzard patch metadata compatibility is deferred. Patch-file block sizes
-describe the resulting logical file, while the patch prefix describes the PTCH
-data size. The reader validates the fixed patch prefix against the stored member
-extent before using its declared body size; optional prefix extensions do not
-require a separate allocation. The attributes MD5 records the resulting file;
-CRC32 covers the plaintext patch prefix and decoded PTCH body. FILETIME is
+not emit a Blizzard `(patch_metadata)` marker; the private patch reader
+identifies these archives from patch-file and delete-marker flags.
+Game-specific Blizzard patch-prefix autodetection heuristics are not supported.
+Patch-file block sizes describe the resulting logical file, while the patch
+prefix describes the PTCH data size. The reader validates the fixed patch
+prefix against the stored member extent before using its declared body size;
+optional prefix extensions do not require a separate allocation. The
+attributes MD5 records the resulting file; CRC32 covers the plaintext patch
+prefix and decoded PTCH body. FILETIME is
 omitted, allowing the patched view to retain the base member's timestamp.
 PATCH_BIT marks stored patch entries; materialized ordinary members retain
 their lower-layer bit instead of inheriting the patch artifact's marker.
 Ordinary archive creation still rejects true PATCH_BIT values. The
 patch-writer tests generate temporary archives and apply them through the
-private patch view; no repository fixture needs to change. Patch creation does
-not sign patches or write embedded patch containers. The public patch API
-supports replacement and removal, but not addition or rename.
+private patch view; no repository fixture needs to change. Patch creation can
+use the existing archive signer but does not write embedded patch containers.
+The public patch API supports replacement and removal, but not addition or
+rename.
 
 ## Optional attributes
 
