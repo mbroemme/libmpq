@@ -522,31 +522,42 @@ finalize_archive(mpq_archive_s *a)
 }
 
 /* Transform the finalized raw archive with bounded sequential MPQE I/O. */
-static int32_t
-transform_mpqe(mpq_archive_s *a)
+int32_t
+libmpq__writer_mpqe_transform_file(
+    FILE *input, FILE *output, const uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE]
+)
 {
     uint8_t chunk[LIBMPQ_MPQE_CHUNK_SIZE];
     uint64_t offset = 0;
     size_t read;
 
-    if (fflush(a->fp) != 0)
+    if (input == NULL || output == NULL || key == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (fflush(input) != 0)
         return LIBMPQ_ERROR_WRITE;
-    if (libmpq__file_seek(a->fp, 0, SEEK_SET) < 0)
+    if (libmpq__file_seek(input, 0, SEEK_SET) < 0)
         return LIBMPQ_ERROR_SEEK;
-    while ((read = fread(chunk, 1, sizeof(chunk), a->fp)) != 0) {
+    while ((read = fread(chunk, 1, sizeof(chunk), input)) != 0) {
         if (read < sizeof(chunk))
             memset(chunk + read, 0, sizeof(chunk) - read);
-        libmpq__mpqe_transform_chunk(chunk, a->write_mpqe_key, offset);
-        if (fwrite(chunk, 1, read, a->write_mpqe_output) != read) {
+        libmpq__mpqe_transform_chunk(chunk, key, offset);
+        if (fwrite(chunk, 1, read, output) != read) {
             libmpq__mpqe_clear(chunk, sizeof(chunk));
             return LIBMPQ_ERROR_WRITE;
         }
         offset += read;
     }
     libmpq__mpqe_clear(chunk, sizeof(chunk));
-    if (ferror(a->fp) || fflush(a->write_mpqe_output) != 0)
+    if (ferror(input) || fflush(output) != 0)
         return LIBMPQ_ERROR_WRITE;
     return LIBMPQ_SUCCESS;
+}
+
+/* Keep the archive-writer finalizer on the shared MPQE transform path. */
+static int32_t
+transform_mpqe(mpq_archive_s *a)
+{
+    return libmpq__writer_mpqe_transform_file(a->fp, a->write_mpqe_output, a->write_mpqe_key);
 }
 
 /* Production MPQE finalization operations used by every newly created MPQE archive. */

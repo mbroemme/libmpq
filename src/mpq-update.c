@@ -26,6 +26,7 @@
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
 #include "mpq-internal.h"
+#include "mpq-mpqe.h"
 #include "mpq-reader.h"
 #include "mpq-signature.h"
 #include "mpq-source.h"
@@ -59,6 +60,9 @@ struct mpq_update
     uint64_t device;
     uint64_t inode;
     const mpq_update_ops_s *ops;
+    uint8_t mpqe_auth[LIBMPQ_MPQE_AUTH_CODE_MINIMUM];
+    uint8_t mpqe;
+    uint8_t dirty;
 #ifndef _WIN32
     uint32_t mode;
 #endif
@@ -165,10 +169,14 @@ update_cleanup(mpq_update_s *update, uint8_t remove_temporary)
     free(update->working_path);
     free(update->temporary);
     free(update->destination);
+    libmpq__mpqe_clear(update->mpqe_auth, sizeof(update->mpqe_auth));
     libmpq__directory_close(update->directory);
     free(update);
     return result;
 }
+
+static int32_t
+update_copy_range(mpq_archive_s *archive, FILE *output, uint64_t offset, uint64_t size);
 
 int32_t
 libmpq__update_transaction_begin(mpq_update_s **update, const char *path)
@@ -251,6 +259,101 @@ fail:
     return result;
 }
 
+/* Decode an authenticated MPQE copy into a private plaintext working file. */
+int32_t
+libmpq__update_transaction_begin_mpqe(
+    mpq_update_s **update, const char *path, const uint8_t *auth_code, size_t auth_code_size
+)
+{
+    mpq_archive_s *source = NULL;
+    mpq_archive_s *check = NULL;
+    mpq_update_s *state;
+    FILE *plaintext = NULL;
+    char *temporary = NULL;
+    char *plaintext_path = NULL;
+    uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE];
+    int32_t result;
+
+    if (update != NULL)
+        *update = NULL;
+    if (update == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    result = libmpq__mpqe_key(key, auth_code, auth_code_size);
+    if (result != LIBMPQ_SUCCESS)
+        return result;
+    libmpq__mpqe_clear(key, sizeof(key));
+    result = libmpq__update_transaction_begin(update, path);
+    if (result != LIBMPQ_SUCCESS)
+        return result;
+    state = *update;
+    result = libmpq__reader_archive_open_mpqe(
+        &source, state->working_path, -1, auth_code, auth_code_size
+    );
+    if (result != LIBMPQ_SUCCESS)
+        goto fail;
+    result = libmpq__directory_temporary_reopenable(
+        state->directory, ".libmpq-update-plain-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", 1, &temporary,
+        &plaintext
+    );
+    if (result != LIBMPQ_SUCCESS)
+        goto fail;
+    plaintext_path = update_working_path(state->working_path, temporary);
+    if (plaintext_path == NULL) {
+        result = LIBMPQ_ERROR_MALLOC;
+        goto fail;
+    }
+    result = update_copy_range(source, plaintext, 0, source->file_size);
+    if (result != LIBMPQ_SUCCESS)
+        goto fail;
+    if (fflush(plaintext) != 0) {
+        result = LIBMPQ_ERROR_WRITE;
+        goto fail;
+    }
+    result = libmpq__reader_archive_open_path(&check, plaintext_path, -1);
+    if (result != LIBMPQ_SUCCESS)
+        goto fail;
+    result = libmpq__archive_close(check);
+    check = NULL;
+    if (result != LIBMPQ_SUCCESS)
+        goto fail;
+    result = libmpq__archive_close(source);
+    source = NULL;
+    if (result != LIBMPQ_SUCCESS)
+        goto fail;
+    if (fclose(state->working) != 0) {
+        state->working = NULL;
+        result = LIBMPQ_ERROR_CLOSE;
+        goto fail;
+    }
+    state->working = NULL;
+    result = libmpq__directory_remove(state->directory, state->temporary);
+    if (result != LIBMPQ_SUCCESS)
+        goto fail;
+    free(state->temporary);
+    free(state->working_path);
+    state->temporary = temporary;
+    state->working_path = plaintext_path;
+    state->working = plaintext;
+    state->mpqe = 1;
+    memcpy(state->mpqe_auth, auth_code, sizeof(state->mpqe_auth));
+    return LIBMPQ_SUCCESS;
+
+fail:
+    if (check != NULL)
+        (void)libmpq__archive_close(check);
+    if (source != NULL)
+        (void)libmpq__archive_close(source);
+    if (plaintext != NULL)
+        (void)fclose(plaintext);
+    if (temporary != NULL)
+        (void)libmpq__directory_remove(state->directory, temporary);
+    free(temporary);
+    free(plaintext_path);
+    (void)update_cleanup(state, 1);
+    *update = NULL;
+    return result;
+}
+
 const char *
 libmpq__update_path(const mpq_update_s *update)
 {
@@ -271,6 +374,111 @@ libmpq__update_set_ops(mpq_update_s *update, const mpq_update_ops_s *ops)
         update->ops = ops;
 }
 
+/* Rewrap a staged plaintext MPQ before publishing the encrypted sibling file. */
+static int32_t
+update_commit_mpqe(mpq_update_s *update)
+{
+    mpq_archive_s *check = NULL;
+    FILE *encrypted = NULL;
+    char *encrypted_name = NULL;
+    char *encrypted_path = NULL;
+    uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE];
+    uint8_t plaintext_removed = 0;
+    uint8_t published = 0;
+    int32_t result;
+
+    if (update->working == NULL)
+        result = LIBMPQ_ERROR_EXIST;
+    else if (update->ops->flush(update->working) != 0)
+        result = LIBMPQ_ERROR_WRITE;
+    else
+        result = LIBMPQ_SUCCESS;
+    if (result != LIBMPQ_SUCCESS)
+        goto done;
+    if (!update->dirty) {
+        if (update->ops->close(update->working) != 0)
+            result = LIBMPQ_ERROR_CLOSE;
+        update->working = NULL;
+        if (result == LIBMPQ_SUCCESS)
+            result = update_identity(update);
+        goto done;
+    }
+    result = libmpq__mpqe_key(key, update->mpqe_auth, sizeof(update->mpqe_auth));
+    if (result != LIBMPQ_SUCCESS)
+        goto done;
+    result = libmpq__directory_temporary_reopenable(
+        update->directory, ".libmpq-update-mpqe-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", 1,
+        &encrypted_name, &encrypted
+    );
+    if (result != LIBMPQ_SUCCESS)
+        goto clear_key;
+    encrypted_path = update_working_path(update->working_path, encrypted_name);
+    if (encrypted_path == NULL) {
+        result = LIBMPQ_ERROR_MALLOC;
+        goto clear_key;
+    }
+    result = libmpq__writer_mpqe_transform_file(update->working, encrypted, key);
+    libmpq__mpqe_clear(key, sizeof(key));
+    if (result != LIBMPQ_SUCCESS)
+        goto done;
+    result = libmpq__reader_archive_open_mpqe(
+        &check, encrypted_path, -1, update->mpqe_auth, sizeof(update->mpqe_auth)
+    );
+    if (result != LIBMPQ_SUCCESS)
+        goto done;
+    result = libmpq__archive_close(check);
+    check = NULL;
+    if (result != LIBMPQ_SUCCESS)
+        goto done;
+#ifndef _WIN32
+    if (fchmod(fileno(encrypted), (mode_t)update->mode) != 0) {
+        result = LIBMPQ_ERROR_WRITE;
+        goto done;
+    }
+#else
+    result =
+        libmpq__directory_copy_security(update->directory, update->destination, encrypted_name);
+    if (result != LIBMPQ_SUCCESS)
+        goto done;
+#endif
+    if (fclose(encrypted) != 0) {
+        encrypted = NULL;
+        result = LIBMPQ_ERROR_CLOSE;
+        goto done;
+    }
+    encrypted = NULL;
+    if (update->ops->close(update->working) != 0) {
+        update->working = NULL;
+        result = LIBMPQ_ERROR_CLOSE;
+        goto done;
+    }
+    update->working = NULL;
+    result = libmpq__directory_remove(update->directory, update->temporary);
+    if (result != LIBMPQ_SUCCESS)
+        goto done;
+    plaintext_removed = 1;
+    result = update_identity(update);
+    if (result == LIBMPQ_SUCCESS) {
+        result = update->ops->publish(update->directory, encrypted_name, update->destination);
+        published = result == LIBMPQ_SUCCESS;
+    }
+    goto done;
+
+clear_key:
+    libmpq__mpqe_clear(key, sizeof(key));
+done:
+    if (check != NULL)
+        (void)libmpq__archive_close(check);
+    if (encrypted != NULL && fclose(encrypted) != 0)
+        update_result(&result, LIBMPQ_ERROR_CLOSE);
+    if (encrypted_name != NULL && !published)
+        update_result(&result, libmpq__directory_remove(update->directory, encrypted_name));
+    free(encrypted_name);
+    free(encrypted_path);
+    update_result(&result, update_cleanup(update, (uint8_t)!plaintext_removed));
+    return result;
+}
+
 int32_t
 libmpq__update_transaction_commit(mpq_update_s *update)
 {
@@ -280,6 +488,8 @@ libmpq__update_transaction_commit(mpq_update_s *update)
 
     if (update == NULL)
         return LIBMPQ_ERROR_EXIST;
+    if (update->mpqe)
+        return update_commit_mpqe(update);
     if (update->working == NULL) {
         result = LIBMPQ_ERROR_EXIST;
     } else if (update->ops->flush(update->working) != 0) {
@@ -1286,6 +1496,7 @@ update_apply(
         (void)libmpq__directory_remove(update->directory, previous_temporary);
         free(previous_temporary);
         free(previous_path);
+        update->dirty = 1;
     }
 
 done:

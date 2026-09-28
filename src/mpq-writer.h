@@ -21,6 +21,7 @@
 #define LIBMPQ_WRITER_H
 
 #include "mpq-file.h"
+#include "mpq-mpqe.h"
 #include <libmpq/mpq.h>
 #include <stdio.h>
 
@@ -89,6 +90,9 @@ int32_t libmpq__writer_file_add_path(
 /* Write final tables, optional listfile, and the completed archive header. */
 int32_t libmpq__writer_finalize(mpq_archive_s *archive);
 int32_t libmpq__writer_finalize_mpqe(mpq_archive_s *archive);
+int32_t libmpq__writer_mpqe_transform_file(
+    FILE *input, FILE *output, const uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE]
+);
 void libmpq__writer_mpqe_cleanup(mpq_archive_s *archive);
 
 #endif /* LIBMPQ_WRITER_H */

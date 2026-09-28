@@ -22,13 +22,14 @@ libmpq__update_begin \- begin a filesystem MPQ update transaction
 .BI "int32_t libmpq__update_begin(mpq_update_s **update, const char *path);"
 .fi
 .SH DESCRIPTION
-Creates a same-directory private working copy of an existing regular MPQ or container with an embedded MPQ at \fIpath\fP. The original file is unchanged until commit. Embedded container prefixes and unrelated trailing bytes are preserved; stale weak and strong signatures are removed on modification. On failure, \fI*update\fP is NULL. MPQE archives are not accepted. The handle is consumed by commit or abort.
+Creates a same-directory private working copy of an existing regular MPQ or container with an embedded MPQ at \fIpath\fP. The original file is unchanged until commit. Embedded container prefixes and unrelated trailing bytes are preserved; stale weak and strong signatures are removed on modification. On failure, \fI*update\fP is NULL. MPQE archives require \fBlibmpq__update_begin_mpqe\fP(3). The handle is consumed by commit or abort.
 .SH RETURN VALUE
 Returns \fBLIBMPQ_SUCCESS\fP on success, or a negative libmpq error.
 .SH ERRORS
 Invalid paths, unsupported formats, allocation, and backing I/O errors are returned as negative LIBMPQ_ERROR_* values.
 .SH SEE ALSO
 .BR libmpq__update_commit (3),
+.BR libmpq__update_begin_mpqe (3),
 .BR libmpq__update_abort (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.

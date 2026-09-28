@@ -31,6 +31,7 @@ man_MANS = \
 	libmpq__stream_size.3 \
 	libmpq__stream_close.3 \
 	libmpq__update_begin.3 \
+	libmpq__update_begin_mpqe.3 \
 	libmpq__update_replace_data.3 \
 	libmpq__update_replace_path.3 \
 	libmpq__update_remove.3 \

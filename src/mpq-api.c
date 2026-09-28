@@ -276,6 +276,15 @@ libmpq__update_begin(mpq_update_s **update, const char *path)
     return result;
 }
 
+/* Begin an MPQE transaction with explicit caller authentication. */
+int32_t
+libmpq__update_begin_mpqe(
+    mpq_update_s **update, const char *path, const uint8_t *auth_code, size_t auth_code_size
+)
+{
+    return libmpq__update_transaction_begin_mpqe(update, path, auth_code, auth_code_size);
+}
+
 int32_t
 libmpq__update_replace_data(
     mpq_update_s *update, const char *filename, const uint8_t *data, libmpq__off_t size,

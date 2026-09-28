@@ -478,10 +478,9 @@ extern LIBMPQ_API int32_t libmpq__archive_create(
  * succeeds. auth_code is borrowed only during this call; at least
  * 32 bytes are required and invalid input returns LIBMPQ_ERROR_DECRYPT.
  *
- * Existing MPQE streams cannot be modified. Creation requires temporary
- * plaintext storage in the destination directory; that temporary file is
- * owner-only, while the completed MPQE output uses the caller's normal umask
- * permissions. Cleanup is best effort, so a process crash can leave an
+ * Creation requires temporary plaintext storage in the destination directory;
+ * that file is owner-only, while the completed MPQE output uses the caller's
+ * normal umask permissions. Cleanup is best effort, so a process crash can leave an
  * owner-only temporary plaintext file behind.
  */
 extern LIBMPQ_API int32_t libmpq__archive_create_mpqe(
@@ -494,9 +493,19 @@ extern LIBMPQ_API int32_t libmpq__archive_create_mpqe(
  * Changes reach the original only when commit atomically publishes that copy.
  * Embedded MPQs retain their container prefix and unrelated trailing bytes.
  * Stale weak and strong signatures are removed on modification. MPQE archives
- * are not accepted by this update interface.
+ * require the explicit authenticated update_begin_mpqe() entry point.
  */
 extern LIBMPQ_API int32_t libmpq__update_begin(mpq_update_s **update, const char *path);
+
+/*
+ * Begin an authenticated MPQE update using a private plaintext working copy.
+ * The caller's authentication code is borrowed only during this call; at
+ * least 32 bytes are required. Commit re-encrypts and atomically publishes
+ * the updated archive. A crash can leave a private plaintext temporary file.
+ */
+extern LIBMPQ_API int32_t libmpq__update_begin_mpqe(
+    mpq_update_s **update, const char *archive_path, const uint8_t *auth_code, size_t auth_code_size
+);
 
 /*
  * Replace an existing named member using normal writer file options.

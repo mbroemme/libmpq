@@ -66,6 +66,8 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .sp
 .BI "int32_t libmpq__update_begin(mpq_update_s **" "update", ", const char *" "path");"
 .sp
+.BI "int32_t libmpq__update_begin_mpqe(mpq_update_s **" "update", ", const char *" "path", ", const uint8_t *" "auth_code", ", size_t " "auth_code_size");"
+.sp
 .BI "int32_t libmpq__update_replace_data(mpq_update_s *" "update", ", const char *" "filename", ", const uint8_t *" "data", ", libmpq__off_t " "size", ", const mpq_file_options_s *" "options");"
 .sp
 .BI "int32_t libmpq__update_replace_path(mpq_update_s *" "update", ", const char *" "filename", ", const char *" "source_path", ", const mpq_file_options_s *" "options");"
@@ -344,8 +346,12 @@ sectors; \fBlibmpq__block_compression\fP() distinguishes them.
 The update API stages replace, remove, and rename operations on existing
 filesystem MPQs in a separate transaction handle. Commit validates and
 atomically publishes the working copy; abort discards it. Embedded MPQ
-containers retain their prefix and unrelated trailing bytes; stale signatures
-are removed on modification. MPQE archives are not modified through this API.
+containers retain their prefix and unrelated trailing bytes. MPQE archives
+use \fBlibmpq__update_begin_mpqe\fP() with an explicit authentication code;
+the same staging operations then apply to a private decoded working copy.
+Modified archives lose stale signatures. MPQE commit re-encrypts and validates
+the output before atomic publication. A crash can leave private plaintext
+staging data behind.
 Creation options select the archive version, sector size, fixed file-table
 capacity, and optional generated (listfile) and (attributes) entries.
 .PP
@@ -365,8 +371,9 @@ finalization or stream close reports an error.
 a private temporary plaintext MPQ in the destination directory. The
 plaintext temporary file is owner-only; final MPQE permissions follow the
 caller's umask. Cleanup is best effort, and abrupt termination can leave
-plaintext temporary files behind. Existing MPQE archives cannot be modified
-in place; encrypted random-access writing is not implemented.
+plaintext temporary files behind. To modify an existing filesystem MPQE
+archive transactionally, use \fBlibmpq__update_begin_mpqe\fP() with explicit
+authentication.
 .SS "Compression Selection and Compatibility"
 File options select raw, compressed, imploded, encrypted, or single-unit
 storage. Compression selections may differ for the first and later sectors.

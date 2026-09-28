@@ -52,7 +52,8 @@ locale/platform identity. Supply explicit `FileOptions` for custom storage,
 for example `update.replaceData("foo.txt", data, options);`. These options
 can select distinct first/later compression masks, but locale/platform must
 match the existing member. Embedded MPQ containers retain their prefix and
-unrelated trailing bytes. MPQE modification remains unsupported.
+unrelated trailing bytes. This binding does not yet expose the native
+authenticated MPQE update entry point.
 
 Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
 Strong verification uses a 512-byte raw public key: a 256-byte unsigned
@@ -235,8 +236,9 @@ archive.add("hello.txt", cast(const(ubyte)[])"hello\n");
 
 `Archive.createMpqe` creates a new encrypted MPQE stream from borrowed
 authentication bytes. It finalizes a private plaintext temporary file before
-atomically replacing the destination; existing MPQE streams cannot be modified
-and crash cleanup is best effort.
+atomically replacing the destination. The D wrapper does not yet expose
+authenticated MPQE updates, though the native C API supports
+transactional updates. Crash cleanup is best effort.
 
 All arrays passed to the writer are borrowed for the duration of the call.
 Arrays returned by `read` and `readBlock` are owned by the caller. Always close

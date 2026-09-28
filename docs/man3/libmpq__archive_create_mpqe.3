@@ -57,7 +57,8 @@ destination directory, then encrypts it for publication. The plaintext
 temporary file is owner-only; the completed MPQE archive uses normal output
 permissions determined by the caller's umask.
 .PP
-Existing MPQE archives cannot be modified. Cleanup is best effort, so a
+Existing MPQE archives can be modified transactionally with
+\fBlibmpq__update_begin_mpqe\fP(3). Cleanup is best effort, so a
 crash can leave an owner-only plaintext temporary file behind.
 .SH RETURN VALUE
 Returns zero on success or a negative LIBMPQ_ERROR_* code. Missing or short

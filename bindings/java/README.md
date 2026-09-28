@@ -51,7 +51,8 @@ options: it passes a native NULL pointer, so libmpq uses defaults and
 preserves the member's locale/platform identity. Pass explicit `FileOptions`
 for custom storage, including distinct first/later compression masks; their
 locale/platform must match the existing member. Embedded MPQ containers retain
-their prefix and unrelated trailing bytes. MPQE modification remains unsupported.
+their prefix and unrelated trailing bytes. This binding does not yet expose
+the native authenticated MPQE update entry point.
 
 Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
 Strong verification uses a 512-byte raw public key: a 256-byte unsigned
@@ -126,8 +127,9 @@ only the packaged runtime JAR and tests both native-library loading modes.
 
 The high-level API uses `Archive.open`, `Archive.openMpqe`, `Archive.create`,
 `Archive.createMpqe`, and `MpqFileWriter`. MPQE creation uses a private
-plaintext temporary file before atomically replacing the destination; it
-cannot modify an existing MPQE archive and crash cleanup is best effort. All
+plaintext temporary file before atomically replacing the destination; the Java
+wrapper does not yet expose native authenticated MPQE updates. Crash cleanup is
+best effort. All
 negative libmpq return codes are reported as `LibmpqException` values
 containing the original code and diagnostic text.
 

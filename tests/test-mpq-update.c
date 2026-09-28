@@ -23,6 +23,7 @@
 #include "mpq-endian.h"
 #include "mpq-file.h"
 #include "mpq-internal.h"
+#include "mpq-mpqe.h"
 #include "mpq-signature.h"
 #include "mpq-source.h"
 #include "mpq-update.h"
@@ -298,6 +299,38 @@ create_edit_archive(const char *path, uint32_t options_flags)
             libmpq__archive_add_data(archive, "secret", secret, sizeof(secret) - 1u, &encrypted);
     if (result == LIBMPQ_SUCCESS)
         result = libmpq__archive_add_data(archive, "unknown", unknown, sizeof(unknown) - 1u, NULL);
+    if (archive != NULL) {
+        int32_t closed = libmpq__archive_close(archive);
+
+        if (result == LIBMPQ_SUCCESS)
+            result = closed;
+    }
+    return result == LIBMPQ_SUCCESS ? 0 : -1;
+}
+
+/* Build a normal MPQ inside MPQE for authenticated update coverage. */
+static int
+create_mpqe_edit_archive(const char *path)
+{
+    mpq_archive_s *archive = NULL;
+    mpq_archive_create_options_s options = { 0, 16, 512, LIBMPQ_ARCHIVE_CREATE_LISTFILE,
+                                             LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 };
+    mpq_file_options_s encrypted = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SINGLE |
+                                         LIBMPQ_FILE_FLAG_ENCRYPTED,
+                                     LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
+    static const uint8_t plain[] = "ordinary file";
+    static const uint8_t secret[] = "secret compressed and encrypted payload";
+    static const uint8_t removed[] = "remove this member";
+    int32_t result =
+        libmpq__archive_create_mpqe(&archive, path, auth_code, sizeof(auth_code) - 1u, &options);
+
+    if (result == LIBMPQ_SUCCESS)
+        result = libmpq__archive_add_data(archive, "plain", plain, sizeof(plain) - 1u, NULL);
+    if (result == LIBMPQ_SUCCESS)
+        result =
+            libmpq__archive_add_data(archive, "secret", secret, sizeof(secret) - 1u, &encrypted);
+    if (result == LIBMPQ_SUCCESS)
+        result = libmpq__archive_add_data(archive, "removed", removed, sizeof(removed) - 1u, NULL);
     if (archive != NULL) {
         int32_t closed = libmpq__archive_close(archive);
 
@@ -1349,6 +1382,199 @@ test_mpqe_noop(void)
     return 0;
 }
 
+static int
+test_public_mpqe_updates(void)
+{
+    static const char *paths[] = { "update-mpqe-data.mpqe", "update-mpqe-path.mpqe",
+                                   "update-mpqe-remove.mpqe", "update-mpqe-rename.mpqe",
+                                   "update-mpqe-multiple.mpqe" };
+    static const uint8_t replacement[] = "authenticated replacement contents";
+    static const uint8_t secret[] = "secret compressed and encrypted payload";
+    uint8_t borrowed_code[LIBMPQ_MPQE_AUTH_CODE_MINIMUM];
+    uint8_t wrong_code[LIBMPQ_MPQE_AUTH_CODE_MINIMUM] = { 0 };
+    mpq_update_s *update = NULL;
+    mpq_archive_s *archive = NULL;
+    FILE *working = NULL;
+    uint32_t number;
+    uint32_t signatures;
+    uint32_t i;
+#ifndef _WIN32
+    struct stat mode_status;
+#endif
+
+    UPDATE_CHECK(write_bytes("update-mpqe-input.bin", replacement, sizeof(replacement) - 1u) == 0);
+    memcpy(borrowed_code, auth_code, sizeof(borrowed_code));
+    for (i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
+        UPDATE_CHECK(create_mpqe_edit_archive(paths[i]) == 0);
+#ifndef _WIN32
+        if (i == 0)
+            UPDATE_CHECK(chmod(paths[i], 0640) == 0);
+#endif
+        UPDATE_CHECK(
+            libmpq__update_begin_mpqe(
+                &update, paths[i], i == 0 ? borrowed_code : auth_code,
+                i == 0 ? sizeof(borrowed_code) : sizeof(auth_code) - 1u
+            ) == LIBMPQ_SUCCESS
+        );
+        if (i == 0)
+            memset(borrowed_code, 0, sizeof(borrowed_code));
+        if (i == 0 || i == 4)
+            UPDATE_CHECK(
+                libmpq__update_replace_data(
+                    update, "plain", replacement, sizeof(replacement) - 1u, NULL
+                ) == LIBMPQ_SUCCESS
+            );
+        if (i == 1)
+            UPDATE_CHECK(
+                libmpq__update_replace_path(update, "plain", "update-mpqe-input.bin", NULL) ==
+                LIBMPQ_SUCCESS
+            );
+        if (i == 2 || i == 4)
+            UPDATE_CHECK(libmpq__update_remove(update, "removed") == LIBMPQ_SUCCESS);
+        if (i == 3 || i == 4)
+            UPDATE_CHECK(
+                libmpq__update_rename(update, "secret", "renamed-secret") == LIBMPQ_SUCCESS
+            );
+        UPDATE_CHECK(libmpq__update_commit(update) == LIBMPQ_SUCCESS);
+        update = NULL;
+#ifndef _WIN32
+        if (i == 0) {
+            UPDATE_CHECK(stat(paths[i], &mode_status) == 0);
+            UPDATE_CHECK((mode_status.st_mode & 0777) == 0640);
+        }
+#endif
+        UPDATE_CHECK(
+            libmpq__archive_open_mpqe(&archive, paths[i], -1, auth_code, sizeof(auth_code) - 1u) ==
+            LIBMPQ_SUCCESS
+        );
+        if (i == 0 || i == 1 || i == 4)
+            UPDATE_CHECK(check_named(archive, "plain", replacement, sizeof(replacement) - 1u) == 0);
+        if (i == 2 || i == 4)
+            UPDATE_CHECK(libmpq__file_number(archive, "removed", &number) == LIBMPQ_ERROR_EXIST);
+        if (i == 3 || i == 4) {
+            UPDATE_CHECK(libmpq__file_number(archive, "secret", &number) == LIBMPQ_ERROR_EXIST);
+            UPDATE_CHECK(check_named(archive, "renamed-secret", secret, sizeof(secret) - 1u) == 0);
+        }
+        UPDATE_CHECK(libmpq__archive_close(archive) == LIBMPQ_SUCCESS);
+        archive = NULL;
+    }
+    UPDATE_CHECK(create_mpqe_edit_archive("update-mpqe-rollback.mpqe") == 0);
+    UPDATE_CHECK(copy_file("update-mpqe-rollback.mpqe", "update-mpqe-rollback-before.bin") == 0);
+    UPDATE_CHECK(libmpq__update_begin(&update, "update-mpqe-rollback.mpqe") != LIBMPQ_SUCCESS);
+    UPDATE_CHECK(update == NULL);
+    UPDATE_CHECK(
+        libmpq__update_begin_mpqe(&update, "update-mpqe-rollback.mpqe", NULL, 0) ==
+        LIBMPQ_ERROR_DECRYPT
+    );
+    UPDATE_CHECK(update == NULL);
+    UPDATE_CHECK(
+        libmpq__update_begin_mpqe(
+            &update, "update-mpqe-rollback.mpqe", auth_code, LIBMPQ_MPQE_AUTH_CODE_MINIMUM - 1u
+        ) == LIBMPQ_ERROR_DECRYPT
+    );
+    UPDATE_CHECK(update == NULL);
+    UPDATE_CHECK(
+        libmpq__update_begin_mpqe(
+            &update, "update-mpqe-rollback.mpqe", wrong_code, sizeof(wrong_code)
+        ) != LIBMPQ_SUCCESS
+    );
+    UPDATE_CHECK(update == NULL);
+    UPDATE_CHECK(create_archive("update-not-mpqe.mpq") == 0);
+    UPDATE_CHECK(
+        libmpq__update_begin_mpqe(
+            &update, "update-not-mpqe.mpq", auth_code, sizeof(auth_code) - 1u
+        ) != LIBMPQ_SUCCESS
+    );
+    UPDATE_CHECK(update == NULL);
+    UPDATE_CHECK(
+        libmpq__update_begin_mpqe(
+            &update, "update-mpqe-rollback.mpqe", auth_code, sizeof(auth_code) - 1u
+        ) == LIBMPQ_SUCCESS
+    );
+    UPDATE_CHECK(libmpq__update_commit(update) == LIBMPQ_SUCCESS);
+    update = NULL;
+    UPDATE_CHECK(same_file("update-mpqe-rollback.mpqe", "update-mpqe-rollback-before.bin"));
+    UPDATE_CHECK(
+        libmpq__update_begin_mpqe(
+            &update, "update-mpqe-rollback.mpqe", auth_code, sizeof(auth_code) - 1u
+        ) == LIBMPQ_SUCCESS
+    );
+    UPDATE_CHECK(
+        libmpq__update_replace_data(update, "plain", replacement, sizeof(replacement) - 1u, NULL) ==
+        LIBMPQ_SUCCESS
+    );
+    UPDATE_CHECK(libmpq__update_abort(update) == LIBMPQ_SUCCESS);
+    update = NULL;
+    UPDATE_CHECK(same_file("update-mpqe-rollback.mpqe", "update-mpqe-rollback-before.bin"));
+    UPDATE_CHECK(
+        libmpq__update_begin_mpqe(
+            &update, "update-mpqe-rollback.mpqe", auth_code, sizeof(auth_code) - 1u
+        ) == LIBMPQ_SUCCESS
+    );
+    UPDATE_CHECK(libmpq__update_remove(update, "missing") == LIBMPQ_ERROR_EXIST);
+    UPDATE_CHECK(libmpq__update_abort(update) == LIBMPQ_SUCCESS);
+    update = NULL;
+    UPDATE_CHECK(same_file("update-mpqe-rollback.mpqe", "update-mpqe-rollback-before.bin"));
+    UPDATE_CHECK(
+        libmpq__update_begin_mpqe(
+            &update, "update-mpqe-rollback.mpqe", auth_code, sizeof(auth_code) - 1u
+        ) == LIBMPQ_SUCCESS
+    );
+    UPDATE_CHECK(
+        libmpq__update_replace_data(update, "plain", replacement, sizeof(replacement) - 1u, NULL) ==
+        LIBMPQ_SUCCESS
+    );
+    working = fopen(libmpq__update_path(update), "wb");
+    UPDATE_CHECK(working != NULL);
+    UPDATE_CHECK(fwrite("X", 1, 1, working) == 1);
+    UPDATE_CHECK(fclose(working) == 0);
+    working = NULL;
+    UPDATE_CHECK(libmpq__update_commit(update) != LIBMPQ_SUCCESS);
+    update = NULL;
+    UPDATE_CHECK(same_file("update-mpqe-rollback.mpqe", "update-mpqe-rollback-before.bin"));
+    UPDATE_CHECK(copy_file(FIXTURE_DIR "/mpq-v1-features.mpqe", "update-mpqe-signed.mpqe") == 0);
+    UPDATE_CHECK(
+        libmpq__archive_open_mpqe(
+            &archive, "update-mpqe-signed.mpqe", -1, auth_code, sizeof(auth_code) - 1u
+        ) == LIBMPQ_SUCCESS
+    );
+    UPDATE_CHECK(libmpq__archive_signatures(archive, &signatures) == LIBMPQ_SUCCESS);
+    UPDATE_CHECK((signatures & LIBMPQ_SIGNATURE_WEAK) != 0);
+    UPDATE_CHECK(libmpq__archive_close(archive) == LIBMPQ_SUCCESS);
+    archive = NULL;
+    UPDATE_CHECK(
+        libmpq__update_begin_mpqe(
+            &update, "update-mpqe-signed.mpqe", auth_code, sizeof(auth_code) - 1u
+        ) == LIBMPQ_SUCCESS
+    );
+    UPDATE_CHECK(
+        libmpq__update_replace_data(
+            update, "overview.txt", replacement, sizeof(replacement) - 1u, NULL
+        ) == LIBMPQ_SUCCESS
+    );
+    UPDATE_CHECK(libmpq__update_commit(update) == LIBMPQ_SUCCESS);
+    update = NULL;
+    UPDATE_CHECK(
+        libmpq__archive_open_mpqe(
+            &archive, "update-mpqe-signed.mpqe", -1, auth_code, sizeof(auth_code) - 1u
+        ) == LIBMPQ_SUCCESS
+    );
+    UPDATE_CHECK(check_named(archive, "overview.txt", replacement, sizeof(replacement) - 1u) == 0);
+    UPDATE_CHECK(libmpq__archive_signatures(archive, &signatures) == LIBMPQ_SUCCESS);
+    UPDATE_CHECK(signatures == 0);
+    UPDATE_CHECK(libmpq__archive_close(archive) == LIBMPQ_SUCCESS);
+    return 0;
+
+fail:
+    if (working != NULL)
+        (void)fclose(working);
+    if (archive != NULL)
+        (void)libmpq__archive_close(archive);
+    if (update != NULL)
+        (void)libmpq__update_abort(update);
+    return 1;
+}
+
 int
 main(void)
 {
@@ -1389,5 +1615,6 @@ main(void)
     TEST_CHECK(test_permissions("update-permissions.bin") == 0);
 #endif
     TEST_CHECK(test_mpqe_noop() == 0);
+    TEST_CHECK(test_public_mpqe_updates() == 0);
     return 0;
 }

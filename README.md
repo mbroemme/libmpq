@@ -349,14 +349,15 @@ headers, tables, encryption, sectors, and compression, see the
 
 * Archive creation is currently limited to seekable MPQ v1 and v2 archives.
   MPQ v3/v4, HET/BET tables, and related format extensions are not supported.
-* MPQE supports reading and creation of new archives with a caller-supplied
-  authentication code. Existing MPQE archives cannot be modified and encrypted
-  random-access writing is unsupported. Creation uses an owner-only plaintext
-  temporary file; completed POSIX archives use normal caller-umask permissions.
-  Cleanup is best effort, so a crash can leave the plaintext temporary behind.
-* Transactional modification does not support MPQE archives. Embedded MPQ
-  updates preserve container prefixes and unrelated trailing bytes; mutations
-  remove stale weak and strong signatures because no signing key is supplied.
+* MPQE reading, creation, and transactional modification require an explicit
+  caller-supplied authentication code. Encrypted random-access writing remains
+  unsupported. Creation and updates use owner-only plaintext temporary files;
+  completed POSIX archives retain normal destination permission semantics.
+  Cleanup is best effort, so a crash can leave plaintext temporary data behind.
+* Ordinary and embedded MPQs use `libmpq__update_begin()`; MPQE archives use
+  `libmpq__update_begin_mpqe()`. Embedded updates preserve container prefixes
+  and unrelated trailing bytes. Mutations remove stale signatures because no
+  signing key is supplied.
 * MPQE patches support weak signing, but not external strong signatures.
   Game-specific Blizzard patch-prefix autodetection heuristics and
   StormLib-specific key modes are unsupported. Namespace discovery uses

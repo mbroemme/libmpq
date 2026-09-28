@@ -50,7 +50,8 @@ passes a native NULL options pointer, so libmpq uses defaults and preserves
 the member's locale/platform identity. Supply `FileCreateOptions` as the
 optional third argument for custom storage; its locale/platform must match
 the existing member. Embedded MPQ containers are supported and retain their
-prefix and unrelated trailing bytes. MPQE modification remains unsupported.
+prefix and unrelated trailing bytes. This binding does not yet expose the
+native authenticated MPQE update entry point.
 
 Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
 Strong verification uses a 512-byte raw public key: a 256-byte unsigned
@@ -188,7 +189,8 @@ with mpq.Writer.create_mpqe(
 
 MPQE creation writes a private plaintext temporary file before atomically
 replacing the destination with the encrypted archive. It cannot modify an
-existing MPQE archive; cleanup is best effort if the process crashes. The
+existing MPQE archive through the Python wrapper yet; the native C API offers
+authenticated transactional updates. Cleanup is best effort if the process crashes. The
 example authentication code is illustrative and non-secret; real callers must
 provide their own authentication code of at least 32 bytes.
 

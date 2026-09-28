@@ -215,7 +215,13 @@ if (libmpq__update_begin(&update, "data.mpq") == LIBMPQ_SUCCESS) {
 Embedded HM3W-style containers use the same scanner and update operations,
 regardless of `.w3x` or `.w3m` extension. Rebuilding retains the prefix and
 unrelated trailing bytes; stale weak and external strong signatures are
-removed. MPQE modification remains unsupported.
+removed. For an MPQE archive, use `libmpq__update_begin_mpqe()` with an explicit
+authentication code. It decodes into a private same-directory working MPQ;
+ordinary update operations apply unchanged. Commit re-encrypts and validates
+an encrypted sibling before atomic publication. No-op commit leaves the MPQE
+container byte-identical. Only the first 32 authentication bytes needed for
+the existing MPQE key derivation are copied into private state, then cleared
+on every consuming path. A crash may leave owner-only plaintext staging data.
 
 `libmpq__update_replace_path()` reads replacement data from a filesystem
 path. `libmpq__update_remove()` and `libmpq__update_rename()` affect

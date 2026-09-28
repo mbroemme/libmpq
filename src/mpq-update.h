@@ -31,6 +31,9 @@ typedef struct mpq_update_ops
 } mpq_update_ops_s;
 
 int32_t libmpq__update_transaction_begin(mpq_update_s **update, const char *path);
+int32_t libmpq__update_transaction_begin_mpqe(
+    mpq_update_s **update, const char *path, const uint8_t *auth_code, size_t auth_code_size
+);
 const char *libmpq__update_path(const mpq_update_s *update);
 int32_t libmpq__update_transaction_commit(mpq_update_s *update);
 int32_t libmpq__update_transaction_abort(mpq_update_s *update);
