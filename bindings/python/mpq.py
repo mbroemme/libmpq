@@ -254,6 +254,8 @@ _configure("libmpq__update_abort", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__patch_begin", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, ctypes.c_char_p)
 _configure("libmpq__patch_begin_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p,
            ctypes.c_char_p, _BYTE_PTR, ctypes.c_size_t)
+_configure("libmpq__patch_sign", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR,
+           ctypes.c_size_t)
 _configure("libmpq__patch_replace_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE_PTR, _OFF_T, _VOID_PTR)
 _configure("libmpq__patch_replace_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__patch_remove", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p)
@@ -293,6 +295,16 @@ _configure("libmpq__block_size_unpacked", ctypes.c_int32, _VOID_PTR, ctypes.c_ui
 _configure("libmpq__block_size_packed", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(_OFF_T))
 _configure("libmpq__block_compression", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__block_read", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, _BYTE_PTR, _OFF_T, ctypes.POINTER(_OFF_T))
+
+
+def _sign_with_key(native_function, handle, signature_type, private_key):
+    """Pass a temporary raw key to the existing archive or patch signer."""
+    key = bytes(private_key)
+    pointer = (ctypes.c_uint8 * len(key)).from_buffer_copy(key)
+    try:
+        native_function(handle, signature_type, pointer, len(key))
+    finally:
+        ctypes.memset(pointer, 0, len(key))
 
 
 def archive_compression_allowed(archive_version, compression_mask, policy=COMPRESSION_POLICY_STANDARD):
@@ -517,6 +529,11 @@ class Patch:
         self._ensure_open()
         libmpq.libmpq__patch_remove(self._patch, _as_bytes(name))
 
+    def sign(self, private_key, signature_type=SIGNATURE_WEAK):
+        """Configure weak or strong signing without consuming the patch."""
+        self._ensure_open()
+        _sign_with_key(libmpq.libmpq__patch_sign, self._patch, signature_type, private_key)
+
     def finish(self):
         """Publish the patch and consume this handle, even on native error."""
         self._ensure_open()
@@ -688,12 +705,7 @@ class Writer:
     def sign(self, private_key, signature_type=SIGNATURE_WEAK):
         """Configure weak or plain strong signing at close using a raw private key."""
         self._ensure_open()
-        key = bytes(private_key)
-        pointer = (ctypes.c_uint8 * len(key)).from_buffer_copy(key)
-        try:
-            libmpq.libmpq__archive_sign(self._mpq, signature_type, pointer, len(key))
-        finally:
-            ctypes.memset(pointer, 0, len(key))
+        _sign_with_key(libmpq.libmpq__archive_sign, self._mpq, signature_type, private_key)
 
     def begin(self, name, size, options=None):
         """Begin a fixed-size streaming entry."""

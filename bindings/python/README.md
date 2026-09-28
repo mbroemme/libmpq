@@ -6,6 +6,7 @@ Create a separate patch artifact without modifying its base archive:
 with mpq.Patch.begin("base.mpq", "changes.mpq") as patch:
     patch.replace_data("foo.txt", b"new contents")
     patch.remove("old.txt")
+    patch.sign(private_key)  # or patch.sign(strong_key, mpq.SIGNATURE_STRONG)
     patch.finish()
 ```
 
@@ -28,6 +29,10 @@ Omitting replacement options passes native NULL and uses native patch defaults;
 pass `FileCreateOptions` explicitly to configure patch-member storage. Patch
 options must match the base member's locale/platform identity. Patch add and
 rename are not supported.
+Signing configures the active patch without consuming it; an ordinary MPQ
+patch may configure weak and strong signatures separately. MPQE patches allow
+weak signing only. After `finish()`, use `Archive.signatures()` and
+`Archive.verify()` on the finished artifact, as for any other archive.
 
 Transactional updates use a separate handle. Edits stay private until commit;
 leaving the context without committing aborts them automatically:

@@ -30,6 +30,8 @@ if not FIXTURES.is_dir():
 
 SPARSE_TEXT = "This text uses SPARSE compression and decompression.\n" * 16
 SPARSE_BYTES = b"\xff\xfe\x00\x00" + SPARSE_TEXT.encode("utf-32-le")
+WEAK_PUBLIC_KEY = bytes.fromhex("a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001")
+WEAK_PRIVATE_KEY = bytes.fromhex("a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a748315364c0c92a1a284b2ae77d5d49adea3bad7bafa639710661d443c0ad882f6c8d6787affd7f68145217cde42cf4dc2acb0ca2aeca535baf894084e590d719")
 STRONG_PUBLIC_KEY = (
     bytes.fromhex("b76f7dc7cdd3a083b2e52f39a5b7d58f181ab7bc03c1eaa0931744f0218bf74397b68481776a3f49f7b9a7ea08abf1c3a9802b54ee75661190e521453f6e125cdaca5d4b5cb52c84a158f1bb1b51bb9138acc55b45a083d3dde6e9e9cc4cb03adf4dda27a4a673993ebddfefd06e7c8c976387df92ba92d6392b9baf1a40f7b39d3c0ad1a4e2d685b46caea30863c9055d8e0a151d2e5adf5b79c69cc849c8b879ecc53be1207334d60b4194583b44129f272fe4790570ba530df485e2188932d79abb5b3b8713fd2d16de821048328e9ae93da8de983519033806fbd55591ebf5542641af669ad73e7c0f01b2dea45040f6658d2c6ca0f55f8d91c482f81617")
     + bytes(253)
@@ -304,6 +306,60 @@ def test_mpqe_patch_creation_binding(tmp_path):
         patch.finish()
 
 
+@pytest.mark.parametrize("signature_types", [mpq.SIGNATURE_WEAK, mpq.SIGNATURE_STRONG,
+                                            mpq.SIGNATURE_WEAK | mpq.SIGNATURE_STRONG])
+def test_patch_signing(tmp_path, signature_types):
+    """Patch signing shares the archive key convention and verifies after finish."""
+    base = tmp_path / "base.mpq"
+    output = tmp_path / "signed-patch.mpq"
+    with mpq.Writer(base, max_files=8) as writer:
+        writer.add("data", b"original")
+    with mpq.Patch.begin(base, output) as patch:
+        with pytest.raises(mpq.LibmpqFormatError):
+            patch.sign(b"invalid")
+        if signature_types & mpq.SIGNATURE_WEAK:
+            patch.sign(WEAK_PRIVATE_KEY)
+            with pytest.raises(mpq.LibmpqFormatError):
+                patch.sign(WEAK_PRIVATE_KEY)
+        if signature_types & mpq.SIGNATURE_STRONG:
+            patch.sign(STRONG_PRIVATE_KEY, mpq.SIGNATURE_STRONG)
+        patch.replace_data("data", b"replacement")
+        assert not output.exists()
+        patch.finish()
+    with mpq.Archive(output) as archive:
+        assert archive.signatures() == signature_types
+        if signature_types & mpq.SIGNATURE_WEAK:
+            assert archive.verify(WEAK_PUBLIC_KEY) == 0
+        if signature_types & mpq.SIGNATURE_STRONG:
+            assert archive.verify(STRONG_PUBLIC_KEY,
+                                  signature_type=mpq.SIGNATURE_STRONG) == 0
+    with pytest.raises(mpq.LibmpqStateError):
+        patch.sign(WEAK_PRIVATE_KEY)
+
+
+def test_mpqe_patch_signing(tmp_path):
+    """Rejected strong signing leaves the MPQE patch active for weak signing."""
+    base = tmp_path / "base.mpq"
+    output = tmp_path / "signed-patch.mpqe"
+    code = b"LIBMPQ-MPQE-PATCH-AUTH-CODE-00002"
+    with mpq.Writer(base, max_files=8) as writer:
+        writer.add("data", b"original")
+    with mpq.Patch.begin_mpqe(base, output, code) as patch:
+        with pytest.raises(mpq.LibmpqFormatError):
+            patch.sign(STRONG_PRIVATE_KEY, mpq.SIGNATURE_STRONG)
+        patch.sign(WEAK_PRIVATE_KEY)
+        patch.replace_data("data", b"replacement")
+        patch.finish()
+    with mpq.Archive.open_mpqe(output, code) as archive:
+        assert archive.signatures() == mpq.SIGNATURE_WEAK
+        assert archive.verify(WEAK_PUBLIC_KEY) == 0
+    output.unlink()
+    with mpq.Patch.begin_mpqe(base, output, code) as patch:
+        patch.sign(WEAK_PRIVATE_KEY)
+        patch.abort()
+    assert not output.exists()
+
+
 def test_logical_stream_encrypted_numeric_and_mpqe_lifetime():
     """Name-derived keys, numeric opens, and MPQE clones cross the binding boundary."""
     with mpq.Archive(FIXTURES / "mpq-v1-features.mpq") as archive:
@@ -396,8 +452,8 @@ def test_custom_io_source_is_released_after_last_derived_handle():
 
 def test_weak_signature(tmp_path):
     """Test-only RSA key, round trip, and independent integer verification."""
-    public = bytes.fromhex("a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001")
-    private = bytes.fromhex("a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a748315364c0c92a1a284b2ae77d5d49adea3bad7bafa639710661d443c0ad882f6c8d6787affd7f68145217cde42cf4dc2acb0ca2aeca535baf894084e590d719")
+    public = WEAK_PUBLIC_KEY
+    private = WEAK_PRIVATE_KEY
     path = tmp_path / "signed.mpq"
     with mpq.Writer(path, max_files=8, flags=mpq.ARCHIVE_CREATE_LISTFILE,
                     attributes=mpq.ATTRIBUTE_MD5 | mpq.ATTRIBUTE_CRC32) as writer:
