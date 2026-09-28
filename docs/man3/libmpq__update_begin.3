@@ -22,7 +22,7 @@ libmpq__update_begin \- begin a filesystem MPQ update transaction
 .BI "int32_t libmpq__update_begin(mpq_update_s **update, const char *path);"
 .fi
 .SH DESCRIPTION
-Creates a same-directory private working copy of an existing regular MPQ at \fIpath\fP. The original file is unchanged until commit. On failure, \fI*update\fP is NULL. MPQE and embedded MPQs are not accepted. The handle is consumed by commit or abort.
+Creates a same-directory private working copy of an existing regular MPQ or container with an embedded MPQ at \fIpath\fP. The original file is unchanged until commit. Embedded container prefixes and unrelated trailing bytes are preserved; stale weak and strong signatures are removed on modification. On failure, \fI*update\fP is NULL. MPQE archives are not accepted. The handle is consumed by commit or abort.
 .SH RETURN VALUE
 Returns \fBLIBMPQ_SUCCESS\fP on success, or a negative libmpq error.
 .SH ERRORS

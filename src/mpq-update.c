@@ -737,7 +737,11 @@ update_encode(
         result = LIBMPQ_ERROR_SEEK;
         goto done;
     }
-    position = (uint64_t)measured;
+    if ((uint64_t)measured < (uint64_t)archive->archive_offset) {
+        result = LIBMPQ_ERROR_FORMAT;
+        goto done;
+    }
+    position = (uint64_t)measured - (uint64_t)archive->archive_offset;
     if (position > UINT32_MAX && archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE) {
         result = LIBMPQ_ERROR_SIZE;
         goto done;
@@ -780,10 +784,15 @@ update_write_tables(mpq_archive_s *archive, FILE *output, uint64_t *extent)
     uint64_t block_offset;
     uint64_t block_ex_offset = 0;
     uint64_t end;
+    uint64_t archive_offset = (uint64_t)archive->archive_offset;
+    libmpq__off_t measured;
     size_t bytes;
     uint32_t i;
 
-    end = (uint64_t)libmpq__file_tell(output);
+    measured = libmpq__file_tell(output);
+    if (measured < 0 || (uint64_t)measured < archive_offset)
+        return LIBMPQ_ERROR_SEEK;
+    end = (uint64_t)measured - archive_offset;
     if (end > UINT32_MAX)
         return LIBMPQ_ERROR_SIZE;
     hash_offset = end;
@@ -809,7 +818,10 @@ update_write_tables(mpq_archive_s *archive, FILE *output, uint64_t *extent)
         return LIBMPQ_ERROR_WRITE;
     }
     free(raw);
-    block_offset = (uint64_t)libmpq__file_tell(output);
+    measured = libmpq__file_tell(output);
+    if (measured < 0 || (uint64_t)measured < archive_offset)
+        return LIBMPQ_ERROR_SEEK;
+    block_offset = (uint64_t)measured - archive_offset;
     bytes = (size_t)archive->mpq_header.block_table_count * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE;
     raw = malloc(bytes == 0 ? 1u : bytes);
     if (raw == NULL)
@@ -832,7 +844,10 @@ update_write_tables(mpq_archive_s *archive, FILE *output, uint64_t *extent)
     }
     free(raw);
     if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO) {
-        block_ex_offset = (uint64_t)libmpq__file_tell(output);
+        measured = libmpq__file_tell(output);
+        if (measured < 0 || (uint64_t)measured < archive_offset)
+            return LIBMPQ_ERROR_SEEK;
+        block_ex_offset = (uint64_t)measured - archive_offset;
         for (i = 0; i < archive->mpq_header.block_table_count; i++) {
             uint8_t word[2];
 
@@ -841,7 +856,10 @@ update_write_tables(mpq_archive_s *archive, FILE *output, uint64_t *extent)
                 return LIBMPQ_ERROR_WRITE;
         }
     }
-    end = (uint64_t)libmpq__file_tell(output);
+    measured = libmpq__file_tell(output);
+    if (measured < 0 || (uint64_t)measured < archive_offset)
+        return LIBMPQ_ERROR_SEEK;
+    end = (uint64_t)measured - archive_offset;
     if (end > UINT32_MAX)
         return LIBMPQ_ERROR_SIZE;
     libmpq__store_le32(header, LIBMPQ_HEADER);
@@ -858,10 +876,10 @@ update_write_tables(mpq_archive_s *archive, FILE *output, uint64_t *extent)
         libmpq__store_le16(header + 40u, (uint16_t)(hash_offset >> 32));
         libmpq__store_le16(header + 42u, (uint16_t)(block_offset >> 32));
     }
-    if (libmpq__file_seek(output, 0, SEEK_SET) != LIBMPQ_SUCCESS ||
+    if (libmpq__file_seek(output, archive_offset, SEEK_SET) != LIBMPQ_SUCCESS ||
         fwrite(header, 1, archive->mpq_header.header_size, output) !=
             archive->mpq_header.header_size ||
-        libmpq__file_seek(output, end, SEEK_SET) != LIBMPQ_SUCCESS)
+        libmpq__file_seek(output, archive_offset + end, SEEK_SET) != LIBMPQ_SUCCESS)
         return LIBMPQ_ERROR_WRITE;
     *extent = end;
     return LIBMPQ_SUCCESS;
@@ -972,13 +990,9 @@ update_apply(
         return LIBMPQ_ERROR_FORMAT;
     if (fflush(update->working) != 0)
         return LIBMPQ_ERROR_WRITE;
-    result = libmpq__archive_open(&archive, update->working_path, 0);
+    result = libmpq__archive_open(&archive, update->working_path, -1);
     if (result != LIBMPQ_SUCCESS)
         return result;
-    if (archive->archive_offset != 0) {
-        result = LIBMPQ_ERROR_FORMAT;
-        goto done;
-    }
     result = libmpq__file_number(archive, old_name, &number);
     if (result != LIBMPQ_SUCCESS)
         goto done;
@@ -1016,11 +1030,15 @@ update_apply(
     result = libmpq__archive_signature_extent(archive, &extent);
     if (result != LIBMPQ_SUCCESS)
         goto done;
-    suffix = extent;
-    if (extent <= archive->file_size && archive->file_size - extent >= LIBMPQ_STRONG_TRAILER_SIZE) {
+    if ((uint64_t)archive->archive_offset > UINT64_MAX - extent) {
+        result = LIBMPQ_ERROR_SIZE;
+        goto done;
+    }
+    suffix = (uint64_t)archive->archive_offset + extent;
+    if (suffix <= archive->file_size && archive->file_size - suffix >= LIBMPQ_STRONG_TRAILER_SIZE) {
         uint8_t actual[4];
 
-        result = libmpq__source_read_at(archive->source, extent, actual, sizeof(actual));
+        result = libmpq__source_read_at(archive->source, suffix, actual, sizeof(actual));
         if (result != LIBMPQ_SUCCESS)
             goto done;
         if (memcmp(actual, marker, sizeof(marker)) == 0)
@@ -1099,7 +1117,7 @@ update_apply(
         result = LIBMPQ_ERROR_MALLOC;
         goto done;
     }
-    result = update_copy_range(archive, rebuilt, 0, extent);
+    result = update_copy_range(archive, rebuilt, 0, (uint64_t)archive->archive_offset + extent);
     if (result != LIBMPQ_SUCCESS)
         goto done;
     if (action == LIBMPQ_UPDATE_REMOVE) {
@@ -1215,10 +1233,11 @@ update_apply(
         result = LIBMPQ_ERROR_WRITE;
         goto done;
     }
-    result = libmpq__archive_open(&check, rebuilt_path, 0);
+    result = libmpq__archive_open(&check, rebuilt_path, -1);
     if (result != LIBMPQ_SUCCESS)
         goto done;
-    if (check->archive_offset != 0 || check->mpq_header.archive_size != rebuilt_extent) {
+    if (check->archive_offset != archive->archive_offset ||
+        check->mpq_header.archive_size != rebuilt_extent) {
         result = LIBMPQ_ERROR_FORMAT;
         goto done;
     }

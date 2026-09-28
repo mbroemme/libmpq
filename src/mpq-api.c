@@ -262,9 +262,7 @@ libmpq__update_begin(mpq_update_s **update, const char *path)
 
     if (result != LIBMPQ_SUCCESS)
         return result;
-    result = libmpq__archive_open(&archive, libmpq__update_path(*update), 0);
-    if (result == LIBMPQ_SUCCESS && archive->archive_offset != 0)
-        result = LIBMPQ_ERROR_FORMAT;
+    result = libmpq__archive_open(&archive, libmpq__update_path(*update), -1);
     if (archive != NULL) {
         int32_t close_result = libmpq__archive_close(archive);
 
@@ -316,9 +314,7 @@ libmpq__update_commit(mpq_update_s *update)
 
     if (update == NULL)
         return LIBMPQ_ERROR_EXIST;
-    result = libmpq__archive_open(&archive, libmpq__update_path(update), 0);
-    if (result == LIBMPQ_SUCCESS && archive->archive_offset != 0)
-        result = LIBMPQ_ERROR_FORMAT;
+    result = libmpq__archive_open(&archive, libmpq__update_path(update), -1);
     if (archive != NULL) {
         int32_t close_result = libmpq__archive_close(archive);
 

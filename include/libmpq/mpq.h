@@ -492,7 +492,9 @@ extern LIBMPQ_API int32_t libmpq__archive_create_mpqe(
 /*
  * Stage changes to an existing filesystem MPQ in a private working copy.
  * Changes reach the original only when commit atomically publishes that copy.
- * MPQE and embedded archives are not accepted by this update interface.
+ * Embedded MPQs retain their container prefix and unrelated trailing bytes.
+ * Stale weak and strong signatures are removed on modification. MPQE archives
+ * are not accepted by this update interface.
  */
 extern LIBMPQ_API int32_t libmpq__update_begin(mpq_update_s **update, const char *path);
 

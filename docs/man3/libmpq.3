@@ -343,8 +343,9 @@ sectors; \fBlibmpq__block_compression\fP() distinguishes them.
 .PP
 The update API stages replace, remove, and rename operations on existing
 filesystem MPQs in a separate transaction handle. Commit validates and
-atomically publishes the working copy; abort discards it. MPQE and embedded
-MPQs are not modified through this API.
+atomically publishes the working copy; abort discards it. Embedded MPQ
+containers retain their prefix and unrelated trailing bytes; stale signatures
+are removed on modification. MPQE archives are not modified through this API.
 Creation options select the archive version, sector size, fixed file-table
 capacity, and optional generated (listfile) and (attributes) entries.
 .PP

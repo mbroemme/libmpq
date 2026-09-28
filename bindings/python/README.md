@@ -49,8 +49,8 @@ abort consume the update handle even on error. Omitting replacement options
 passes a native NULL options pointer, so libmpq uses defaults and preserves
 the member's locale/platform identity. Supply `FileCreateOptions` as the
 optional third argument for custom storage; its locale/platform must match
-the existing member. MPQE and embedded archive modification remain
-unsupported.
+the existing member. Embedded MPQ containers are supported and retain their
+prefix and unrelated trailing bytes. MPQE modification remains unsupported.
 
 Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
 Strong verification uses a 512-byte raw public key: a 256-byte unsigned

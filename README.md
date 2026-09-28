@@ -354,8 +354,9 @@ headers, tables, encryption, sectors, and compression, see the
   random-access writing is unsupported. Creation uses an owner-only plaintext
   temporary file; completed POSIX archives use normal caller-umask permissions.
   Cleanup is best effort, so a crash can leave the plaintext temporary behind.
-* Transactional modification does not support MPQE or embedded MPQs. Mutations
-  remove existing weak and strong signatures because no signing key is supplied.
+* Transactional modification does not support MPQE archives. Embedded MPQ
+  updates preserve container prefixes and unrelated trailing bytes; mutations
+  remove stale weak and strong signatures because no signing key is supplied.
 * MPQE patches support weak signing, but not external strong signatures.
   Game-specific Blizzard patch-prefix autodetection heuristics and
   StormLib-specific key modes are unsupported. Namespace discovery uses

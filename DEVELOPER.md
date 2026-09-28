@@ -212,6 +212,11 @@ if (libmpq__update_begin(&update, "data.mpq") == LIBMPQ_SUCCESS) {
 }
 ```
 
+Embedded HM3W-style containers use the same scanner and update operations,
+regardless of `.w3x` or `.w3m` extension. Rebuilding retains the prefix and
+unrelated trailing bytes; stale weak and external strong signatures are
+removed. MPQE modification remains unsupported.
+
 `libmpq__update_replace_path()` reads replacement data from a filesystem
 path. `libmpq__update_remove()` and `libmpq__update_rename()` affect
 existing named entries only; rename rejects an existing destination name.

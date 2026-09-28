@@ -23,6 +23,7 @@
 #include "mpq-endian.h"
 #include "mpq-file.h"
 #include "mpq-internal.h"
+#include "mpq-signature.h"
 #include "mpq-source.h"
 #include "mpq-update.h"
 #include "test-mpq-helper.h"
@@ -778,8 +779,8 @@ test_public_limits(void)
     TEST_CHECK(libmpq__update_begin(&update, "update-mpqe.mpqe") != LIBMPQ_SUCCESS);
     TEST_CHECK(update == NULL);
     TEST_CHECK(copy_file(FIXTURE_DIR "/mpq-v1-features.w3x", "update-embedded.w3x") == 0);
-    TEST_CHECK(libmpq__update_begin(&update, "update-embedded.w3x") != LIBMPQ_SUCCESS);
-    TEST_CHECK(update == NULL);
+    TEST_CHECK(libmpq__update_begin(&update, "update-embedded.w3x") == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__update_abort(update) == LIBMPQ_SUCCESS);
     TEST_CHECK(create_edit_archive("update-collision.mpq", 0) == 0);
     TEST_CHECK(libmpq__update_begin(&update, "update-collision.mpq") == LIBMPQ_SUCCESS);
     TEST_CHECK(libmpq__update_rename(update, "plain", "secret") == LIBMPQ_ERROR_EXIST);
@@ -1068,6 +1069,194 @@ fail:
     return 1;
 }
 
+/* Wrap an ordinary archive in an aligned HM3W-style container with a suffix. */
+static int
+create_embedded_update_container(const char *source, const char *path, uint8_t strong)
+{
+    static const uint8_t suffix[] = "unrelated trailing container bytes";
+    static const uint8_t marker[4] = { 'N', 'G', 'I', 'S' };
+    uint8_t *archive_bytes = NULL;
+    uint8_t *container = NULL;
+    size_t archive_size;
+    size_t trailer_size = strong ? LIBMPQ_STRONG_TRAILER_SIZE : 0;
+    size_t container_size;
+    int result = -1;
+
+    if (read_bytes(source, &archive_bytes, &archive_size) != 0 ||
+        archive_size > SIZE_MAX - 512u - trailer_size - sizeof(suffix) + 1u)
+        goto done;
+    container_size = 512u + archive_size + trailer_size + sizeof(suffix) - 1u;
+    container = calloc(container_size, 1);
+    if (container == NULL)
+        goto done;
+    memcpy(container, "HM3W", 4);
+    memcpy(container + 512u, archive_bytes, archive_size);
+    if (strong)
+        memcpy(container + 512u + archive_size, marker, sizeof(marker));
+    memcpy(container + 512u + archive_size + trailer_size, suffix, sizeof(suffix) - 1u);
+    result = write_bytes(path, container, container_size);
+
+done:
+    free(container);
+    free(archive_bytes);
+    return result;
+}
+
+static int
+test_public_embedded_updates(void)
+{
+    static const char *paths[] = { "update-embedded-data.w3x", "update-embedded-path.w3m",
+                                   "update-embedded-remove.bin", "update-embedded-rename.bin" };
+    static const uint8_t replacement[] = "replacement large enough to move the suffix";
+    static const uint8_t secret[] = "secret compressed and encrypted payload";
+    static const uint8_t suffix[] = "unrelated trailing container bytes";
+    mpq_update_s *update = NULL;
+    mpq_archive_s *archive = NULL;
+    uint8_t *before = NULL;
+    uint8_t *after = NULL;
+    size_t before_size = 0;
+    size_t after_size = 0;
+    uint32_t number;
+    uint32_t signatures;
+    uint32_t i;
+    FILE *working = NULL;
+
+    UPDATE_CHECK(
+        create_edit_archive("update-embedded-source.mpq", LIBMPQ_ARCHIVE_CREATE_LISTFILE) == 0
+    );
+    UPDATE_CHECK(
+        write_bytes("update-embedded-input.bin", replacement, sizeof(replacement) - 1u) == 0
+    );
+    for (i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
+        UPDATE_CHECK(
+            create_embedded_update_container("update-embedded-source.mpq", paths[i], i == 0) == 0
+        );
+        UPDATE_CHECK(read_bytes(paths[i], &before, &before_size) == 0);
+        if (i == 0) {
+            UPDATE_CHECK(libmpq__archive_open(&archive, paths[i], -1) == LIBMPQ_SUCCESS);
+            UPDATE_CHECK(libmpq__archive_signatures(archive, &signatures) == LIBMPQ_SUCCESS);
+            UPDATE_CHECK((signatures & LIBMPQ_SIGNATURE_STRONG) != 0);
+            UPDATE_CHECK(libmpq__archive_close(archive) == LIBMPQ_SUCCESS);
+            archive = NULL;
+        }
+        UPDATE_CHECK(libmpq__update_begin(&update, paths[i]) == LIBMPQ_SUCCESS);
+        if (i == 0)
+            UPDATE_CHECK(
+                libmpq__update_replace_data(
+                    update, "plain", replacement, sizeof(replacement) - 1u, NULL
+                ) == LIBMPQ_SUCCESS
+            );
+        else if (i == 1)
+            UPDATE_CHECK(
+                libmpq__update_replace_path(update, "plain", "update-embedded-input.bin", NULL) ==
+                LIBMPQ_SUCCESS
+            );
+        else if (i == 2)
+            UPDATE_CHECK(libmpq__update_remove(update, "plain") == LIBMPQ_SUCCESS);
+        else
+            UPDATE_CHECK(
+                libmpq__update_rename(update, "secret", "renamed-secret") == LIBMPQ_SUCCESS
+            );
+        UPDATE_CHECK(read_bytes(paths[i], &after, &after_size) == 0);
+        UPDATE_CHECK(before_size == after_size && memcmp(before, after, before_size) == 0);
+        free(after);
+        after = NULL;
+        UPDATE_CHECK(libmpq__update_commit(update) == LIBMPQ_SUCCESS);
+        update = NULL;
+        UPDATE_CHECK(libmpq__archive_open(&archive, paths[i], -1) == LIBMPQ_SUCCESS);
+        UPDATE_CHECK(archive->archive_offset == 512);
+        if (i < 2)
+            UPDATE_CHECK(check_named(archive, "plain", replacement, sizeof(replacement) - 1u) == 0);
+        else if (i == 2)
+            UPDATE_CHECK(libmpq__file_number(archive, "plain", &number) == LIBMPQ_ERROR_EXIST);
+        else {
+            UPDATE_CHECK(libmpq__file_number(archive, "secret", &number) == LIBMPQ_ERROR_EXIST);
+            UPDATE_CHECK(check_named(archive, "renamed-secret", secret, sizeof(secret) - 1u) == 0);
+        }
+        UPDATE_CHECK(libmpq__archive_signatures(archive, &signatures) == LIBMPQ_SUCCESS);
+        UPDATE_CHECK(signatures == 0);
+        UPDATE_CHECK(libmpq__archive_close(archive) == LIBMPQ_SUCCESS);
+        archive = NULL;
+        UPDATE_CHECK(read_bytes(paths[i], &after, &after_size) == 0);
+        UPDATE_CHECK(after_size >= 512u + sizeof(suffix) - 1u);
+        UPDATE_CHECK(memcmp(before, after, 512u) == 0);
+        UPDATE_CHECK(
+            memcmp(after + after_size - sizeof(suffix) + 1u, suffix, sizeof(suffix) - 1u) == 0
+        );
+        if (i == 0)
+            UPDATE_CHECK(after_size != before_size);
+        free(before);
+        free(after);
+        before = NULL;
+        after = NULL;
+    }
+    UPDATE_CHECK(
+        create_embedded_update_container(
+            "update-embedded-source.mpq", "update-embedded-abort.w3x", 0
+        ) == 0
+    );
+    UPDATE_CHECK(copy_file("update-embedded-abort.w3x", "update-embedded-before.bin") == 0);
+    UPDATE_CHECK(libmpq__update_begin(&update, "update-embedded-abort.w3x") == LIBMPQ_SUCCESS);
+    UPDATE_CHECK(
+        libmpq__update_replace_data(update, "plain", replacement, sizeof(replacement) - 1u, NULL) ==
+        LIBMPQ_SUCCESS
+    );
+    UPDATE_CHECK(libmpq__update_abort(update) == LIBMPQ_SUCCESS);
+    update = NULL;
+    UPDATE_CHECK(same_file("update-embedded-abort.w3x", "update-embedded-before.bin"));
+    UPDATE_CHECK(libmpq__update_begin(&update, "update-embedded-abort.w3x") == LIBMPQ_SUCCESS);
+    UPDATE_CHECK(libmpq__update_remove(update, "missing") == LIBMPQ_ERROR_EXIST);
+    UPDATE_CHECK(libmpq__update_abort(update) == LIBMPQ_SUCCESS);
+    update = NULL;
+    UPDATE_CHECK(same_file("update-embedded-abort.w3x", "update-embedded-before.bin"));
+    UPDATE_CHECK(libmpq__update_begin(&update, "update-embedded-abort.w3x") == LIBMPQ_SUCCESS);
+    UPDATE_CHECK(
+        libmpq__update_replace_data(update, "plain", replacement, sizeof(replacement) - 1u, NULL) ==
+        LIBMPQ_SUCCESS
+    );
+    working = fopen(libmpq__update_path(update), "wb");
+    UPDATE_CHECK(working != NULL);
+    UPDATE_CHECK(fwrite("X", 1, 1, working) == 1);
+    UPDATE_CHECK(fclose(working) == 0);
+    working = NULL;
+    UPDATE_CHECK(libmpq__update_commit(update) != LIBMPQ_SUCCESS);
+    update = NULL;
+    UPDATE_CHECK(same_file("update-embedded-abort.w3x", "update-embedded-before.bin"));
+    UPDATE_CHECK(copy_file(FIXTURE_DIR "/mpq-v1-features.w3x", "update-fixture.w3x") == 0);
+    UPDATE_CHECK(libmpq__archive_open(&archive, "update-fixture.w3x", -1) == LIBMPQ_SUCCESS);
+    UPDATE_CHECK(libmpq__archive_signatures(archive, &signatures) == LIBMPQ_SUCCESS);
+    UPDATE_CHECK(signatures == (LIBMPQ_SIGNATURE_WEAK | LIBMPQ_SIGNATURE_STRONG));
+    UPDATE_CHECK(libmpq__archive_close(archive) == LIBMPQ_SUCCESS);
+    archive = NULL;
+    UPDATE_CHECK(libmpq__update_begin(&update, "update-fixture.w3x") == LIBMPQ_SUCCESS);
+    UPDATE_CHECK(
+        libmpq__update_replace_data(
+            update, "overview.txt", replacement, sizeof(replacement) - 1u, NULL
+        ) == LIBMPQ_SUCCESS
+    );
+    UPDATE_CHECK(libmpq__update_commit(update) == LIBMPQ_SUCCESS);
+    update = NULL;
+    UPDATE_CHECK(libmpq__archive_open(&archive, "update-fixture.w3x", -1) == LIBMPQ_SUCCESS);
+    UPDATE_CHECK(archive->archive_offset > 0);
+    UPDATE_CHECK(check_named(archive, "overview.txt", replacement, sizeof(replacement) - 1u) == 0);
+    UPDATE_CHECK(libmpq__archive_signatures(archive, &signatures) == LIBMPQ_SUCCESS);
+    UPDATE_CHECK(signatures == 0);
+    UPDATE_CHECK(libmpq__archive_close(archive) == LIBMPQ_SUCCESS);
+    archive = NULL;
+    return 0;
+
+fail:
+    if (working != NULL)
+        (void)fclose(working);
+    if (archive != NULL)
+        (void)libmpq__archive_close(archive);
+    if (update != NULL)
+        (void)libmpq__update_abort(update);
+    free(before);
+    free(after);
+    return 1;
+}
+
 #ifndef _WIN32
 static int
 test_identity_mismatch(const char *path)
@@ -1192,6 +1381,7 @@ main(void)
     TEST_CHECK(test_failure_cleanup("update-close.bin", UPDATE_FAULT_CLOSE) == 0);
     TEST_CHECK(test_failure_cleanup("update-publish.bin", UPDATE_FAULT_PUBLISH) == 0);
     TEST_CHECK(test_embedded_preservation(archive_path, "update-embedded.bin") == 0);
+    TEST_CHECK(test_public_embedded_updates() == 0);
 #ifndef _WIN32
     TEST_CHECK(test_stable_working_path() == 0);
     TEST_CHECK(test_identity_mismatch("update-identity.bin") == 0);
