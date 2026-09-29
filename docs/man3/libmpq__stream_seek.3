@@ -18,7 +18,10 @@ libmpq__stream_seek \- seek in a logical MPQ member stream.
 .SH SYNOPSIS
 .nf
 .B #include <libmpq/mpq.h>
-.BI "int32_t libmpq__stream_seek(mpq_stream_s *" stream ", libmpq__off_t " offset ", int32_t " origin ");"
+.B "int32_t libmpq__stream_seek("
+.B "        mpq_stream_s *stream, libmpq__off_t offset,"
+.B "        int32_t origin"
+.B ");"
 .fi
 .SH DESCRIPTION
 Seek relative to \fBLIBMPQ_SEEK_SET\fP, \fBLIBMPQ_SEEK_CUR\fP, or

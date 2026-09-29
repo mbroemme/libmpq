@@ -19,10 +19,13 @@ libmpq__patch_begin \- begin creating a new MPQ patch archive
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__patch_begin(mpq_patch_s **patch, const char *base_archive, const char *output_patch);"
+.B "int32_t libmpq__patch_begin("
+.B "        mpq_patch_s **patch, const char *base_archive,"
+.B "        const char *output_patch"
+.B ");"
 .fi
 .SH DESCRIPTION
-Creates a staged patch artifact at \fIoutput_patch\fP using an existing filesystem MPQ at \fIbase_archive\fP. The base is read-only and is never modified. On failure, a valid \fIpatch\fP output is set to NULL. Finish publishes the artifact; abort discards it. Embedded and MPQE base archives are unsupported. Game-specific Blizzard patch-prefix autodetection heuristics are not supported. Signing can be configured with libmpq__patch_sign(3) before finish.
+Creates a staged patch artifact at \fIoutput_patch\fP using an existing ordinary filesystem MPQ at \fIbase_archive\fP. The base is read-only and is never modified. On failure, a valid \fIpatch\fP output is set to NULL. Finish publishes the artifact; abort discards it. This creation API does not accept embedded or MPQE base archives. Signing can be configured with libmpq__patch_sign(3) before finish.
 This entry point creates an ordinary MPQ patch. Use libmpq__patch_begin_mpqe(3) to create an MPQE-wrapped patch instead.
 .SH RETURN VALUE
 Returns \fBLIBMPQ_SUCCESS\fP or a negative libmpq error.

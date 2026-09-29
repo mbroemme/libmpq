@@ -19,12 +19,15 @@ libmpq__update_begin_mpqe \- begin an authenticated MPQE update transaction
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__update_begin_mpqe(mpq_update_s **update, const char *archive_path, const uint8_t *auth_code, size_t auth_code_size);"
+.B "int32_t libmpq__update_begin_mpqe("
+.B "        mpq_update_s **update, const char *archive_path,"
+.B "        const uint8_t *auth_code, size_t auth_code_size"
+.B ");"
 .fi
 .SH DESCRIPTION
 Opens an existing filesystem MPQE archive with the explicit caller-supplied authentication code. At least 32 bytes are required. The code is borrowed only during this call; libmpq keeps the minimal private authentication data needed to re-encrypt on commit and clears it when the transaction is consumed.
 .PP
-The decoded MPQ is staged in a same-directory, owner-only plaintext temporary file. Replace, remove, and rename use the ordinary update operations. Commit re-encrypts the working archive into a private sibling, verifies that it opens with the supplied code, and atomically replaces the original. Abort discards staged data. Both operations consume the handle even on error. A no-op commit leaves the MPQE file byte-identical. Modifications remove stale weak signatures; external strong signatures are not supported for MPQE.
+The decoded MPQ is staged in a same-directory, owner-only plaintext temporary file. Replace, remove, and rename use the ordinary update operations. Commit re-encrypts the working archive into a private sibling, verifies that it opens with the supplied code, and atomically replaces the original. Abort discards staged data. Both operations consume the handle even on error. A no-op commit leaves the MPQE file byte-identical. Modifications remove stale weak signatures; no external strong-signature representation is defined for MPQE transport.
 .PP
 The original remains unchanged on handled pre-publication failures. Cleanup is best effort: an abnormal process or system termination can leave plaintext temporary data behind. The destination identity is rechecked immediately before publication on a best-effort basis; this is not a lock or conditional replacement.
 .SH RETURN VALUE

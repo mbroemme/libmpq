@@ -19,7 +19,10 @@ libmpq__update_rename \- rename a named member in a staged MPQ update
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__update_rename(mpq_update_s *update, const char *old_filename, const char *new_filename);"
+.B "int32_t libmpq__update_rename("
+.B "        mpq_update_s *update, const char *old_filename,"
+.B "        const char *new_filename"
+.B ");"
 .fi
 .SH DESCRIPTION
 Renames an existing member in the private working copy. The new name must not already exist. Encrypted members are decoded under the old name and re-encoded under the new name so filename-derived keys remain correct. The original archive remains unchanged until commit.

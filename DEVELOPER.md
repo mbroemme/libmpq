@@ -249,9 +249,10 @@ name and re-encodes using the new name. Existing `(listfile)` and valid
 writer default of zero; rename retains the existing FILETIME. Weak
 `(signature)` entries and external
 `NGIS` trailers are removed after mutation because this API takes no signing
-key. A no-op transaction preserves all original bytes. Embedded MPQs and MPQE
-are not accepted by the public update API. PATCH_BIT=true writing and archive
-patch creation remain unsupported. The current rebuild rejects an archive extent
+key. A no-op transaction preserves all original bytes. Embedded MPQs use the
+ordinary update entry point; MPQE uses the authenticated entry point described
+above. Ordinary updates do not write PATCH_BIT=true; the separate patch writer
+sets it for patch-file entries. The current rebuild rejects an archive extent
 that cannot fit the 32-bit MPQ archive-size field.
 
 ## Private patch views
@@ -285,7 +286,7 @@ deterministically discovers the prefix; conflicting paths are rejected.
 An explicit private prefix takes precedence, but must agree with discovered
 metadata. Unnamed entries requiring prefix removal are rejected because their
 logical identity cannot be recovered. Game-specific prefix discovery
-heuristics remain unsupported.
+heuristics are deliberately outside the game-neutral core.
 The view retains usable `(listfile)` names, merges known patch-only names, and
 maps available `(attributes)` rows to resulting file entries by MPQ hash
 identity. Existing PATCH_BIT values, including true values from input
@@ -328,7 +329,9 @@ members when a deterministic binary delta is smaller than PTCH COPY, and uses
 COPY otherwise. Deletions are delete markers. It publishes only on finish;
 abort discards the temporary output. Finish and abort consume the handle even
 when they report an error; the pointer must not be reused. Patch creation
-does not add or rename members. MPQE and embedded base archives are unsupported.
+does not add or rename members. Public patch creation currently requires an
+ordinary filesystem MPQ base; this restriction does not apply to private patch
+view composition, which accepts authenticated MPQE sources.
 The BSD0 splice candidate uses the existing libmpq decoder's control tuples:
 literal extra-block copies for unchanged prefix and suffix bytes, and base-byte
 differences plus optional inserted literals for the changed middle. Every BSD0
@@ -343,7 +346,8 @@ The patch writer emits a generated `(listfile)` and `(attributes)` with
 PATCH_BIT=true only for patch-file replacements, not delete markers. It does
 not emit a Blizzard `(patch_metadata)` marker; the private patch reader
 identifies these archives from patch-file and delete-marker flags.
-Game-specific Blizzard patch-prefix autodetection heuristics are not supported.
+Game-specific Blizzard patch-prefix autodetection heuristics are deliberately
+outside the game-neutral core.
 Patch-file block sizes describe the resulting logical file, while the patch
 prefix describes the PTCH data size. The reader validates the fixed patch
 prefix against the stored member extent before using its declared body size;
@@ -359,6 +363,24 @@ private patch view; no repository fixture needs to change. Patch creation can
 use the existing archive signer but does not write embedded patch containers.
 The public patch API supports replacement and removal, but not addition or
 rename.
+
+## Game-neutral authentication and namespace policy
+
+libmpq does not embed product-specific Blizzard MPQE keys. Callers provide
+authentication material explicitly for each MPQE source or output; the existing
+decoder and writer derive the working key without retaining caller-owned data.
+The library also avoids StormLib-specific known-key or key-selection modes and
+WoW/SC2/game-installation-specific patch-prefix heuristics. It uses
+deterministic format-derived names, such as a recoverable `(patch_metadata)`
+path, or an explicit private per-layer prefix instead of game-specific
+assumptions. This keeps the core game-neutral, avoids embedding proprietary or
+product-specific secrets and semantics, and reduces legal/distribution risk.
+
+libmpq does not embed or distribute Blizzard- or product-specific signature
+key material, including public verification keys or private signing keys. All
+signature keys are supplied explicitly by the caller. This leaves trust
+decisions with applications, avoids maintaining a product-specific key database,
+and reduces legal/distribution risk from bundling product-specific material.
 
 ## Optional attributes
 
@@ -427,8 +449,10 @@ prove that hashes were present. Complete file reads automatically verify usable
 sector Adler-32 values and, for lossless data, available CRC32/MD5 attributes.
 `libmpq__file_verify()` remains available when callers need selected checks and
 mismatch bits. `libmpq__block_read()` is partial and does not implicitly verify
-its stored sector checksum. Lossy ADPCM output can differ from the writer's
-source-byte checksums, so automatic file-level CRC32/MD5 comparison is skipped.
+its stored sector checksum. Lossy ADPCM decoding cannot reproduce the writer's
+source bytes byte-for-byte, so automatic file-level CRC32/MD5 comparison is
+intentionally skipped. Explicit `libmpq__file_verify()` requests still compare
+the decoded output and may report a mismatch; sector checks are unaffected.
 
 ## Writer compression policy
 

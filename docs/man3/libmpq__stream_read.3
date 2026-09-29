@@ -18,7 +18,10 @@ libmpq__stream_read \- read decoded logical MPQ member bytes.
 .SH SYNOPSIS
 .nf
 .B #include <libmpq/mpq.h>
-.BI "int32_t libmpq__stream_read(mpq_stream_s *" stream ", uint8_t *" buffer ", libmpq__off_t " size ", libmpq__off_t *" transferred ");"
+.B "int32_t libmpq__stream_read("
+.B "        mpq_stream_s *stream, uint8_t *buffer,"
+.B "        libmpq__off_t size, libmpq__off_t *transferred"
+.B ");"
 .fi
 .SH DESCRIPTION
 Read up to \fIsize\fP decoded logical bytes, crossing sectors as needed. The

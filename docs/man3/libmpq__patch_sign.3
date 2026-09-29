@@ -19,7 +19,10 @@ libmpq__patch_sign \- configure signing for a staged patch archive
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__patch_sign(mpq_patch_s *patch, uint32_t signature_type, const uint8_t *private_key, size_t private_key_size);"
+.B "int32_t libmpq__patch_sign("
+.B "        mpq_patch_s *patch, uint32_t signature_type,"
+.B "        const uint8_t *private_key, size_t private_key_size"
+.B ");"
 .fi
 .SH DESCRIPTION
 Configures \fBLIBMPQ_SIGNATURE_WEAK\fP or \fBLIBMPQ_SIGNATURE_STRONG\fP
@@ -27,9 +30,12 @@ signing on an active patch writer. The operation delegates to the ordinary
 archive signing implementation. Configure each type at most once before
 libmpq__patch_finish(3); ordinary MPQ patches may configure both types.
 The existing archive writer generates signatures during finalization.
+All signing keys are caller-supplied; no default or product-specific keys are
+built in.
 .PP
-MPQE-wrapped patches support weak signatures but reject external strong
-signatures with \fBLIBMPQ_ERROR_FORMAT\fP, matching archive signing behavior.
+MPQE-wrapped patches support internal weak signatures. No external strong
+signature representation is defined for MPQE transport, so requesting one
+returns \fBLIBMPQ_ERROR_FORMAT\fP, matching archive signing behavior.
 This call does not consume the patch handle, including when configuration
 fails. It does not modify the base archive.
 .PP

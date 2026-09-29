@@ -19,7 +19,10 @@ libmpq__patch_replace_path \- stage a named replacement from a filesystem path
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__patch_replace_path(mpq_patch_s *patch, const char *filename, const char *source_path, const mpq_file_options_s *options);"
+.B "int32_t libmpq__patch_replace_path("
+.B "        mpq_patch_s *patch, const char *filename,"
+.B "        const char *source_path, const mpq_file_options_s *options"
+.B ");"
 .fi
 .SH DESCRIPTION
 Reads the complete file at \fIsource_path\fP and stages it as a replacement for an existing named base member. It does not modify the base archive or publish the patch. NULL \fIoptions\fP selects patch-writer defaults. Explicit options control storage of the patch member, not the final patched file; locale and platform must match the base member.

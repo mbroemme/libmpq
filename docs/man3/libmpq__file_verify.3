@@ -41,8 +41,11 @@ rejected. A zero request is a no-op after validating the reader and file number.
 .SS "File CRC32 and MD5"
 Available values from (attributes) are compared against the complete logical
 uncompressed file contents, not compressed or encrypted storage.
-Lossless files match the writer's source-byte checksums. Lossy ADPCM can
-produce different bytes and therefore legitimately report mismatches.
+Lossless files match the writer's source-byte checksums. Lossy ADPCM decoding
+cannot reproduce the original source bytes byte-for-byte. Automatic complete
+reads therefore skip file-level CRC32/MD5 comparison for such members; this
+explicit interface still performs requested comparisons and may legitimately
+report mismatches.
 Empty files use the standard empty CRC32 and MD5 values.
 .PP
 The implementation reads one logical block at a time; a single-unit file

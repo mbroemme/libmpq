@@ -33,6 +33,16 @@ buffer is rejected as a decryption error. MPQE has no authentication check, so
 a well-formed but incorrect code is parsed as ordinary invalid MPQ data and
 can produce a format or another parser error.
 
+## Patch namespace paths
+
+A patch layer can store a physical member such as `Base\Foo` below a `Base\`
+prefix. Removing that prefix gives the logical identity `Foo` used to match
+the base archive and other layers. A `(patch_metadata)` path is a namespace
+marker, not a rich metadata structure: if its plaintext path is available,
+typically through `(listfile)`, the directory portion can identify the prefix.
+When only irreversible MPQ filename hashes are available, a prefix cannot be
+inferred generically from them.
+
 ## Header versions
 
 The common 32-byte prefix is:
@@ -230,10 +240,11 @@ CRC32 and MD5 cover source bytes before compression, including lossy ADPCM,
 not stored ciphertext. FILETIME defaults to zero and is set explicitly on a
 file writer; filesystem timestamps are never imported. Finalization adds the
 listfile, then attributes, then serializes the final tables. Unused rows and
-the attributes entry itself are zero. Patch-bit creation emits zeros only and
-does not create or apply patches. Checksums are metadata, not cryptographic
-authentication. Complete lossless file reads automatically compare available
-CRC32 and MD5 values against decoded contents; FILETIME and PATCH_BIT remain
+the attributes entry itself are zero. Ordinary archive creation emits zero
+patch bits; the patch writer sets them for patch-file entries. Checksums are
+metadata, not cryptographic authentication. Complete lossless file reads
+automatically compare available CRC32 and MD5 values against decoded contents;
+FILETIME and PATCH_BIT remain
 metadata only. Lossy ADPCM decoded bytes can differ from source-byte metadata,
 so those members are not automatically compared. Complete file reads also
 verify available sector Adler-32 values over decrypted packed sectors before
@@ -301,9 +312,11 @@ currently emits only the plain SHA-1 archive-range variant; basename and
 `ARCHIVE` variants are accepted during verification only. Both are legacy
 compatibility mechanisms, not modern cryptographic trust primitives.
 
-External strong `NGIS` signatures are not detected or verified for MPQE
-transport streams because MPQE encrypts the complete transport and no external
-strong-trailer representation is defined.
+Weak signatures are internal `(signature)` MPQ members and remain available
+inside MPQE-wrapped MPQs. Strong signatures are external `NGIS`/RSA trailers
+outside the MPQ extent. libmpq defines no external strong-trailer
+representation for the encrypted MPQE transport, so MPQE weak signing and
+verification are supported but external strong MPQE signatures are not.
 
 Weak public and private keys are exactly 128 bytes: a 64-byte unsigned big-endian
 modulus followed by a 64-byte zero-padded unsigned big-endian exponent value.
@@ -313,6 +326,8 @@ odd; the exponent must be odd, at least 3, and less than the modulus. These
 checks validate representation,
 not the mathematical validity of the caller's RSA key pair. No PEM,
 certificates, ASN.1 parser, default public key, or private key is built in.
+libmpq does not ship Blizzard- or product-specific verification or signing
+keys; all signature key material is caller-supplied.
 
 Strong public and private keys are exactly 512 bytes: a 256-byte unsigned
 big-endian modulus followed by a 256-byte zero-padded unsigned big-endian

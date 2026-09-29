@@ -25,28 +25,24 @@ libmpq-config \- print compiler and linker flags for libmpq.
 \fIlibmpq-config\fP prints the compiler and linker flags required to build programs that use \fIlibmpq\fP.
 .SH OPTIONS
 \fIlibmpq-config\fP accepts the following options:
-.TP 8
-.B  \-\-version
-.ti 15
+.TP
+.B \-\-version
 Print the currently installed version of \fIlibmpq\fP on the standard output.
-.TP 8
-.B  \-\-libs
-.ti 15
+.TP
+.B \-\-libs
 Print the linker flags that are necessary to link \fIlibmpq\fP to a program.
-.B  \-\-cflags
-.ti 15
+.TP
+.B \-\-cflags
 Print the compiler flags required to compile a program that uses
 \fIlibmpq\fP.
-.TP 8
-.B  \-\-prefix=PREFIX
-.ti 15
+.TP
+.B \-\-prefix=PREFIX
 If specified, use PREFIX instead of the installation prefix when computing
 output for the \-\-cflags and \-\-libs options. PREFIX is also used as the
 exec prefix unless \-\-exec\-prefix is specified. This option must precede
 \-\-libs and \-\-cflags.
-.TP 8
-.B  \-\-exec\-prefix=PREFIX
-.ti 15
+.TP
+.B \-\-exec\-prefix=PREFIX
 If specified, use PREFIX instead of the installation exec prefix when
 computing output for the \-\-cflags and \-\-libs options. This option must
 precede \-\-libs and \-\-cflags.

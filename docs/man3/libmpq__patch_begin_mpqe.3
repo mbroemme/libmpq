@@ -19,10 +19,14 @@ libmpq__patch_begin_mpqe \- begin creating an MPQE-wrapped patch archive
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__patch_begin_mpqe(mpq_patch_s **patch, const char *base_archive, const char *output_patch, const uint8_t *auth_code, size_t auth_code_size);"
+.B "int32_t libmpq__patch_begin_mpqe("
+.B "        mpq_patch_s **patch, const char *base_archive,"
+.B "        const char *output_patch, const uint8_t *auth_code,"
+.B "        size_t auth_code_size"
+.B ");"
 .fi
 .SH DESCRIPTION
-Creates a staged MPQE-wrapped patch artifact using an ordinary filesystem MPQ at \fIbase_archive\fP. The base remains unchanged. The caller supplies the authentication code used by the existing MPQE container writer; the code need only remain valid during this call. A matching code is required to read or apply the finished patch. Patch members retain the ordinary PTCH/COPY/BSD0 semantics. Finish publishes the encrypted artifact; abort discards it. Both operations consume the patch handle, even on error. On failure, a valid \fIpatch\fP output is set to NULL. Weak signing can be configured with libmpq__patch_sign(3); external strong signatures are unsupported for MPQE. Game-specific Blizzard patch-prefix autodetection heuristics are not supported. Embedded and MPQE base archives are unsupported for patch creation.
+Creates a staged MPQE-wrapped patch artifact using an ordinary filesystem MPQ at \fIbase_archive\fP. The base remains unchanged. The caller supplies the authentication code used by the existing MPQE container writer; the code need only remain valid during this call. A matching code is required to read or apply the finished patch. Patch members retain the ordinary PTCH/COPY/BSD0 semantics. Finish publishes the encrypted artifact; abort discards it. Both operations consume the patch handle, even on error. On failure, a valid \fIpatch\fP output is set to NULL. Weak signing can be configured with libmpq__patch_sign(3); no external strong-signature representation is defined for MPQE transport. This creation API does not accept embedded or MPQE base archives.
 .SH RETURN VALUE
 Returns \fBLIBMPQ_SUCCESS\fP or a negative libmpq error.
 .SH ERRORS

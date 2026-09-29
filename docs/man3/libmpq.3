@@ -64,37 +64,67 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        const mpq_archive_create_options_s *" "options"
 .BI ");"
 .sp
-.BI "int32_t libmpq__update_begin(mpq_update_s **" "update", ", const char *" "path");"
+.B "int32_t libmpq__update_begin(mpq_update_s **update, const char *path);"
 .sp
-.BI "int32_t libmpq__update_begin_mpqe(mpq_update_s **" "update", ", const char *" "path", ", const uint8_t *" "auth_code", ", size_t " "auth_code_size");"
+.B "int32_t libmpq__update_begin_mpqe("
+.B "        mpq_update_s **update, const char *archive_path,"
+.B "        const uint8_t *auth_code, size_t auth_code_size"
+.B ");"
 .sp
-.BI "int32_t libmpq__update_replace_data(mpq_update_s *" "update", ", const char *" "filename", ", const uint8_t *" "data", ", libmpq__off_t " "size", ", const mpq_file_options_s *" "options");"
+.B "int32_t libmpq__update_replace_data("
+.B "        mpq_update_s *update, const char *filename,"
+.B "        const uint8_t *data, libmpq__off_t size,"
+.B "        const mpq_file_options_s *options"
+.B ");"
 .sp
-.BI "int32_t libmpq__update_replace_path(mpq_update_s *" "update", ", const char *" "filename", ", const char *" "source_path", ", const mpq_file_options_s *" "options");"
+.B "int32_t libmpq__update_replace_path("
+.B "        mpq_update_s *update, const char *filename,"
+.B "        const char *source_path, const mpq_file_options_s *options"
+.B ");"
 .sp
-.BI "int32_t libmpq__update_remove(mpq_update_s *" "update", ", const char *" "filename");"
+.B "int32_t libmpq__update_remove(mpq_update_s *update, const char *filename);"
 .sp
-.BI "int32_t libmpq__update_rename(mpq_update_s *" "update", ", const char *" "old_filename", ", const char *" "new_filename");"
+.B "int32_t libmpq__update_rename("
+.B "        mpq_update_s *update, const char *old_filename,"
+.B "        const char *new_filename"
+.B ");"
 .sp
-.BI "int32_t libmpq__update_commit(mpq_update_s *" "update");"
+.B "int32_t libmpq__update_commit(mpq_update_s *update);"
 .sp
-.BI "int32_t libmpq__update_abort(mpq_update_s *" "update");"
+.B "int32_t libmpq__update_abort(mpq_update_s *update);"
 .sp
-.BI "int32_t libmpq__patch_begin(mpq_patch_s **" "patch", ", const char *" "base_archive", ", const char *" "output_patch");"
+.B "int32_t libmpq__patch_begin("
+.B "        mpq_patch_s **patch, const char *base_archive,"
+.B "        const char *output_patch"
+.B ");"
 .sp
-.BI "int32_t libmpq__patch_begin_mpqe(mpq_patch_s **" "patch", ", const char *" "base_archive", ", const char *" "output_patch", ", const uint8_t *" "auth_code", ", size_t " "auth_code_size");"
+.B "int32_t libmpq__patch_begin_mpqe("
+.B "        mpq_patch_s **patch, const char *base_archive,"
+.B "        const char *output_patch, const uint8_t *auth_code,"
+.B "        size_t auth_code_size"
+.B ");"
 .sp
-.BI "int32_t libmpq__patch_sign(mpq_patch_s *" "patch", ", uint32_t " "signature_type", ", const uint8_t *" "private_key", ", size_t " "private_key_size");"
+.B "int32_t libmpq__patch_sign("
+.B "        mpq_patch_s *patch, uint32_t signature_type,"
+.B "        const uint8_t *private_key, size_t private_key_size"
+.B ");"
 .sp
-.BI "int32_t libmpq__patch_replace_data(mpq_patch_s *" "patch", ", const char *" "filename", ", const uint8_t *" "data", ", libmpq__off_t " "size", ", const mpq_file_options_s *" "options");"
+.B "int32_t libmpq__patch_replace_data("
+.B "        mpq_patch_s *patch, const char *filename,"
+.B "        const uint8_t *data, libmpq__off_t size,"
+.B "        const mpq_file_options_s *options"
+.B ");"
 .sp
-.BI "int32_t libmpq__patch_replace_path(mpq_patch_s *" "patch", ", const char *" "filename", ", const char *" "source_path", ", const mpq_file_options_s *" "options");"
+.B "int32_t libmpq__patch_replace_path("
+.B "        mpq_patch_s *patch, const char *filename,"
+.B "        const char *source_path, const mpq_file_options_s *options"
+.B ");"
 .sp
-.BI "int32_t libmpq__patch_remove(mpq_patch_s *" "patch", ", const char *" "filename");"
+.B "int32_t libmpq__patch_remove(mpq_patch_s *patch, const char *filename);"
 .sp
-.BI "int32_t libmpq__patch_finish(mpq_patch_s *" "patch");"
+.B "int32_t libmpq__patch_finish(mpq_patch_s *patch);"
 .sp
-.BI "int32_t libmpq__patch_abort(mpq_patch_s *" "patch");"
+.B "int32_t libmpq__patch_abort(mpq_patch_s *patch);"
 .sp
 .BI "int32_t libmpq__archive_clone("
 .BI "        mpq_archive_s **" "clone",
@@ -418,9 +448,10 @@ Generated CRC32 and MD5 values cover source bytes before compression; lossy
 ADPCM output may differ and is not automatically compared. FILETIME defaults
 to zero and can be set explicitly through
 \fBlibmpq__writer_timestamp\fP() before file completion.
-Path addition does not import filesystem timestamps. Generated patch bits
-are zero; patch creation and application remain unsupported. Unused rows
-and the attributes entry itself have zero values.
+Path addition does not import filesystem timestamps. Ordinary archive creation
+generates zero patch bits; patch-file entries created by the separate patch
+writer carry true patch bits. Unused rows and the attributes entry itself have
+zero values.
 .SS "Checksum Verification"
 Complete lossless \fBlibmpq__file_read\fP() calls automatically compare
 available file CRC32 and MD5 values after decoding the full logical member.

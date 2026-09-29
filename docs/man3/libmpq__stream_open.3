@@ -19,7 +19,10 @@ libmpq__stream_open \- open a logical MPQ member stream by number.
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__stream_open(mpq_archive_s *" archive ", uint32_t " file_number ", mpq_stream_s **" stream ");"
+.B "int32_t libmpq__stream_open("
+.B "        mpq_archive_s *archive, uint32_t file_number,"
+.B "        mpq_stream_s **stream"
+.B ");"
 .fi
 .SH DESCRIPTION
 Open file number \fIfile_number\fP as a decoded logical member stream. The output

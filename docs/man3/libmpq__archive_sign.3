@@ -31,15 +31,17 @@ Weak raw keys are exactly 128 bytes: a 64-byte unsigned big-endian modulus
 followed by a zero-padded 64-byte big-endian exponent value. Use a public key
 to verify a signature and a private key to create one. The modulus must be
 full-width and odd; the exponent
-must be odd, at least 3, and less than the modulus. No keys or PEM parser are
-built in. These checks do not establish mathematical key-pair validity.
+must be odd, at least 3, and less than the modulus. No default or
+product-specific keys or PEM parser are built in. These checks do not
+establish mathematical key-pair validity.
 .PP
 Strong public verification keys contain a 256-byte unsigned big-endian
 modulus and a 256-byte zero-padded unsigned big-endian public exponent,
 512 bytes total. Strong private signing keys use the same 512-byte layout
 with a zero-padded unsigned big-endian private exponent. Strong signing emits
-only the plain SHA-1 archive-range variant. External strong NGIS
-trailers are not detected or verified for MPQE transport streams.
+only the plain SHA-1 archive-range variant. Internal weak signatures remain
+available inside MPQE-wrapped MPQs. No external strong NGIS representation is
+defined for MPQE transport streams.
 .PP
 Strong verification additionally accepts uppercase-basename and ARCHIVE
 digest variants, but the writer does not emit them.

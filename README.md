@@ -45,8 +45,8 @@ MPQ v2+ LZMA method.
   tables, and encrypted file payloads.
 * Add raw, single-unit, sectorized, and multi-sector files through streaming,
   memory-buffer, and filesystem-path APIs.
-* Modify existing filesystem MPQ archives transactionally with named-file
-  replace, remove, and rename operations.
+* Modify filesystem MPQs, embedded MPQ containers, and authenticated MPQE
+  archives transactionally with named-file replace, remove, and rename operations.
 * Create MPQ or MPQE-wrapped replacement and deletion patch archives without
   changing the base MPQ; optionally sign patches with caller-supplied keys.
 * Read and create MPQE-wrapped MPQ archives using a caller-supplied
@@ -59,7 +59,7 @@ MPQ v2+ LZMA method.
 * Inspect archive, file, and block metadata, including names, sizes, flags,
   packed block sizes, compression methods, and stored attributes.
 * Read and create version-100 `(attributes)` metadata with CRC32, explicit
-  FILETIME, MD5, and read-only patch-bit information.
+  FILETIME, MD5, and PATCH_BIT information.
 * Generate and explicitly verify sector Adler-32 checksums and file-level
   CRC32/MD5 attributes. Complete reads automatically verify available sector
   checksums and, for lossless data, available CRC32/MD5 attributes.
@@ -75,6 +75,10 @@ MPQ v2+ LZMA method.
 
 See the [developer guide](DEVELOPER.md) for API examples, optional metadata,
 checksum verification, archive signatures, and writer compression policies.
+
+For lossy WAVE ADPCM members, automatic file-level `(attributes)` CRC32/MD5
+comparison is intentionally skipped: decoded PCM cannot reproduce the original
+source bytes byte-for-byte. Packed-sector integrity checks remain available.
 
 ## Requirements
 
@@ -349,21 +353,13 @@ headers, tables, encryption, sectors, and compression, see the
 
 * Archive creation is currently limited to seekable MPQ v1 and v2 archives.
   MPQ v3/v4, HET/BET tables, and related format extensions are not supported.
-* MPQE reading, creation, and transactional modification require an explicit
-  caller-supplied authentication code. Encrypted random-access writing remains
-  unsupported. Creation and updates use owner-only plaintext temporary files;
-  completed POSIX archives retain normal destination permission semantics.
-  Cleanup is best effort, so a crash can leave plaintext temporary data behind.
-* Ordinary and embedded MPQs use `libmpq__update_begin()`; MPQE archives use
-  `libmpq__update_begin_mpqe()`. Embedded updates preserve container prefixes
-  and unrelated trailing bytes. Mutations remove stale signatures because no
-  signing key is supplied.
-* MPQE patches support weak signing, but not external strong signatures.
-  Game-specific Blizzard patch-prefix autodetection heuristics and
-  StormLib-specific key modes are unsupported. Namespace discovery uses
-  `(patch_metadata)` names in `(listfile)`. Automatic file-level
-  CRC32/MD5 comparison is skipped for lossy ADPCM data because the decoded
-  output is not byte-identical to the original input.
+* Encrypted random-access writing is not supported. MPQE modification uses
+  transactional decoding and re-encryption instead.
+* MPQE creation and updates use private plaintext staging files. Cleanup is
+  best effort, so abnormal process or system termination may leave one behind.
+
+See [MPQ.md](MPQ.md) for MPQE signatures and patch namespace format behavior,
+and [DEVELOPER.md](DEVELOPER.md) for authentication and prefix-discovery policy.
 
 ## Contributing
 
