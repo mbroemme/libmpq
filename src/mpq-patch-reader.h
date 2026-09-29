@@ -64,6 +64,12 @@ int32_t libmpq__patch_view_open_mpqe_base(
     mpq_patch_view_s **view, const char *base_path, const uint8_t *auth_code, size_t auth_code_size,
     const char *const *patch_paths, size_t patch_count
 );
+
+/*
+ * Return the borrowed archive backing the materialized patch view.
+ * The archive remains owned by the view and must not be closed separately.
+ * The returned pointer is valid only until libmpq__patch_view_close().
+ */
 mpq_archive_s *libmpq__patch_view_archive(mpq_patch_view_s *view);
 int32_t libmpq__patch_view_close(mpq_patch_view_s *view);
 
