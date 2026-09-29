@@ -32,6 +32,66 @@ check_PROGRAMS = \
 	test-writer
 TESTS = $(check_PROGRAMS)
 
+# The update regression creates working archives in the build directory.
+# Remove them during clean so source-release distcheck leaves no artifacts.
+CLEANFILES = \
+	update-abort-reference.mpq \
+	update-abort.mpq \
+	update-close.bin \
+	update-collision.mpq \
+	update-container.bin \
+	update-edit.mpq \
+	update-embedded-abort.w3x \
+	update-embedded-before.bin \
+	update-embedded-data.w3x \
+	update-embedded-input.bin \
+	update-embedded-path.w3m \
+	update-embedded-reference.bin \
+	update-embedded-remove.bin \
+	update-embedded-rename.bin \
+	update-embedded-source.mpq \
+	update-embedded.bin \
+	update-embedded.w3x \
+	update-fixture.w3x \
+	update-flush.bin \
+	update-identity.bin \
+	update-mpqe-data.mpqe \
+	update-mpqe-input.bin \
+	update-mpqe-multiple.mpqe \
+	update-mpqe-path.mpqe \
+	update-mpqe-remove.mpqe \
+	update-mpqe-rename.mpqe \
+	update-mpqe-rollback-before.bin \
+	update-mpqe-rollback.mpqe \
+	update-mpqe-signed.mpqe \
+	update-mpqe.mpqe \
+	update-noop.mpq \
+	update-normal-rename.mpq \
+	update-not-mpqe.mpq \
+	update-options-data.mpq \
+	update-options-path.mpq \
+	update-options.bin \
+	update-permissions.bin \
+	update-public.mpq \
+	update-publish.bin \
+	update-reference.mpq \
+	update-shared-attributes.mpq \
+	update-shared-encrypted.mpq \
+	update-shared-list.mpq \
+	update-shared-metadata-before.mpq \
+	update-shared-remove.mpq \
+	update-shared-rename.mpq \
+	update-shared-replace.mpq \
+	update-shared-signature.mpq \
+	update-shared-staged.mpq \
+	update-signatures.mpq \
+	update-trailing.mpq \
+	update-unknown.mpq \
+	update-v2.mpq \
+	update.mpq \
+	update.mpqe \
+	update.mpqe.reference
+
 # Verify the generated build-tree helper honors configured installation paths.
 check-local:
 	test "$$($(top_builddir)/libmpq-config --cflags)" = "-I$(includedir)"
