@@ -17,6 +17,8 @@ public import libmpq.archive;
 public import libmpq.errors;
 public import libmpq.native;
 public import libmpq.options;
+public import libmpq.patch;
+public import libmpq.update;
 
 /** Convenience entry point for constants and stateless MPQ operations. */
 final class Mpq {

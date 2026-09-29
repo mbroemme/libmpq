@@ -10,30 +10,31 @@
 .\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 .\" GNU Lesser General Public License for more details.
 .\"
-.\" You should have received a copy of the GNU Lesser General Public
-.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
 .TH LIBMPQ__ARCHIVE_CREATE_MPQE 3 2026-09-04 "The MoPaQ archive library"
 .SH NAME
 libmpq__archive_create_mpqe \- create an MPQE-wrapped MPQ archive
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__archive_create_mpqe("
-.BI "        mpq_archive_s **" "archive,"
-.BI "        const char     *" "path,"
-.BI "        const uint8_t  *" "auth_code,"
-.BI "        size_t          " "auth_code_size,"
+.BI "        mpq_archive_s **" "mpq_archive,"
+.BI "        const char *" "mpqe_filename,"
+.BI "        const uint8_t *" "auth_code,"
+.BI "        size_t " "auth_code_size,"
 .BI "        const mpq_archive_create_options_s *" "options"
 .BI ");"
 .fi
 .SH DESCRIPTION
-Creates a new MPQE stream containing an MPQ v1 or v2 archive. The caller
+Creates a new MPQE stream at \fImpqe_filename\fP containing an MPQ v1 or v2
+archive. On success, \fI*mpq_archive\fP is a caller-owned writer handle. The caller
 supplies at least 32 authentication-code bytes. Add members using the
 ordinary writer APIs; \fBlibmpq__archive_close\fP() finalizes the archive,
 encrypts it, and atomically publishes the result on success.
 .SS "Creation Options"
+NULL \fIoptions\fP uses the built-in archive-creation defaults.
 Compression defaults to STANDARD. Add
 LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED to options.flags to select
 EXTENDED. The policy affects writer validation only, not decoding.
@@ -57,16 +58,47 @@ destination directory, then encrypts it for publication. The plaintext
 temporary file is owner-only; the completed MPQE archive uses normal output
 permissions determined by the caller's umask.
 .PP
-Existing MPQE archives cannot be modified. Cleanup is best effort, so a
+Existing MPQE archives can be modified transactionally with
+\fBlibmpq__update_begin_mpqe\fP(3). Cleanup is best effort, so a
 crash can leave an owner-only plaintext temporary file behind.
 .SH RETURN VALUE
-Returns zero on success or a negative LIBMPQ_ERROR_* code. Missing or short
-authentication data returns LIBMPQ_ERROR_DECRYPT.
+Returns \fBLIBMPQ_SUCCESS\fP with a writer handle on success. A valid
+\fI*mpq_archive\fP is NULL on failure, which returns a negative libmpq error.
+.SH ERRORS
+NULL output pointers return \fBLIBMPQ_ERROR_EXIST\fP; missing or short
+authentication data returns \fBLIBMPQ_ERROR_DECRYPT\fP. Invalid options
+return \fBLIBMPQ_ERROR_FORMAT\fP. Temporary-file, allocation, and writer
+errors may also propagate.
 .SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__archive_create (3),
+.BR libmpq__archive_add_data (3),
+.BR libmpq__archive_add_path (3),
+.BR libmpq__writer_begin (3),
+.BR libmpq__writer_write (3),
+.BR libmpq__writer_timestamp (3),
+.BR libmpq__writer_finish (3),
 .BR libmpq__archive_attributes (3),
 .BR libmpq__file_attributes (3),
-.BR libmpq__writer_timestamp (3),
 .BR libmpq__archive_compression_allowed (3),
-.BR libmpq__archive_create (3),
 .BR libmpq__archive_open_mpqe (3),
+.BR libmpq__update_begin_mpqe (3),
 .BR libmpq__archive_close (3)
+.SH AUTHOR
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

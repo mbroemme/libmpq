@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+# Copyright (c) 2026-2026 Maik Broemme <mbroemme@libmpq.org>
 #
 # This file is free software; you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License as published
-# by the Free Software Foundation; either version 2.1 of the License, or
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation; either version 2.1 of the License, or
 # (at your option) any later version.
+#
+# This file is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this file; if not, see <https://www.gnu.org/licenses/>.
 
 # Exercise packaging policy with text import lists, not pretend PE binaries.
 # The Windows jobs still inspect real imports and execute installed consumers.
@@ -13,6 +21,12 @@
 # shellcheck disable=SC2016
 set -euo pipefail
 project="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+version="$(sed -nE 's/^AC_INIT\(\[libmpq\],[[:space:]]*\[([^]]+)\].*/\1/p' "${project}/configure.ac")"
+if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+	printf 'Cannot determine release version from configure.ac: %s\n' "${version}" >&2
+	exit 1
+fi
+mismatched_version="${version%.*}.$((10#${version##*.} + 1))"
 temporary="$(mktemp -d)"
 trap 'rm -rf "${temporary}"' EXIT
 root="${temporary}/paths with spaces"
@@ -109,10 +123,10 @@ for combination in msvc:x64 msvc:arm64 mingw:x86_64 mingw:aarch64; do
 	else
 		suffix="mingw-${architecture}"; library=libmpq.dll.a
 	fi
-	stage="${root}/libmpq-0.7.1-windows-${suffix}"
+	stage="${root}/libmpq-${version}-windows-${suffix}"
 	output="${root}/dist/${stage##*/}.zip"
 	options=(--toolchain "${toolchain}" --architecture "${architecture}" --stage "${stage}" --runtime "${TEST_RUNTIME}" \
-		--source "${project}" --output "${output}" --version 0.7.1)
+		--source "${project}" --output "${output}" --version "${version}")
 	reset_stage
 	expect_failure bash "${project}/scripts/package-windows.sh" prepare "${options[@]}" --architecture unsupported
 	grep -q 'Unsupported Windows toolchain/architecture' "${temporary}/failure.log"
@@ -128,7 +142,7 @@ for combination in msvc:x64 msvc:arm64 mingw:x86_64 mingw:aarch64; do
 	grep -q 'PE architecture mismatch' "${temporary}/failure.log"
 	reset_stage
 	bash "${project}/scripts/package-windows.sh" prepare "${options[@]}"
-	for document in README.md DEVELOPER.md MPQ.md; do
+	for document in README.md DEVELOPER.md RELEASING.md MPQ.md; do
 		cmp "${project}/${document}" "${stage}/${document}"
 	done
 	[[ -f "${stage}/bin/Codec.DLL" && -f "${stage}/bin/helper.dll" ]]
@@ -144,7 +158,7 @@ for combination in msvc:x64 msvc:arm64 mingw:x86_64 mingw:aarch64; do
 	grep -q 'PE architecture mismatch' "${temporary}/failure.log"
 	bash "${project}/scripts/package-windows.sh" archive "${options[@]}" > "${temporary}/zip.log"
 	unzip -t "${output}" > /dev/null
-	for document in README.md DEVELOPER.md MPQ.md; do
+	for document in README.md DEVELOPER.md RELEASING.md MPQ.md; do
 		unzip -p "${output}" "${stage##*/}/${document}" | cmp "${project}/${document}" -
 	done
 	expect_failure bash "${project}/scripts/package-windows.sh" archive "${options[@]}"
@@ -176,17 +190,17 @@ for combination in msvc:x64 msvc:arm64 mingw:x86_64 mingw:aarch64; do
 done
 
 cd "${root}/project"
-printf 'AC_INIT([libmpq],[0.7.1],[mail],[libmpq])\n' > configure.ac
-printf 'project(libmpq VERSION 0.7.1 LANGUAGES C)\n' > CMakeLists.txt
-export GITHUB_REF=refs/tags/v0.7.1 GITHUB_REF_NAME=v0.7.1 GITHUB_OUTPUT="${temporary}/output"
+printf 'AC_INIT([libmpq],[%s],[mail],[libmpq])\n' "${version}" > configure.ac
+printf 'project(libmpq VERSION %s LANGUAGES C)\n' "${version}" > CMakeLists.txt
+export GITHUB_REF="refs/tags/v${version}" GITHUB_REF_NAME="v${version}" GITHUB_OUTPUT="${temporary}/output"
 bash "${project}/scripts/validate-release.sh"
-grep -Fx 'version=0.7.1' "${GITHUB_OUTPUT}"
-expect_failure env GITHUB_REF=refs/heads/v0.7.1 bash "${project}/scripts/validate-release.sh"
-for tag in v0.7.2 v0.7.1-rc1 'v0.7.1;false'; do
+grep -Fx "version=${version}" "${GITHUB_OUTPUT}"
+expect_failure env GITHUB_REF="refs/heads/v${version}" bash "${project}/scripts/validate-release.sh"
+for tag in "v${mismatched_version}" "v${version}-rc1" "v${version};false"; do
 	expect_failure env GITHUB_REF="refs/tags/${tag}" GITHUB_REF_NAME="${tag}" \
 		bash "${project}/scripts/validate-release.sh"
 done
-printf 'project(libmpq VERSION 0.7.2 LANGUAGES C)\n' > CMakeLists.txt
+printf 'project(libmpq VERSION %s LANGUAGES C)\n' "${mismatched_version}" > CMakeLists.txt
 expect_failure bash "${project}/scripts/validate-release.sh"
 
 # Exercise sorted checksum generation on the four test ZIPs, not release assets.

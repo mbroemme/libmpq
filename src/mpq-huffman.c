@@ -215,9 +215,11 @@ static const uint8_t huffman_initial_weights[] = {
 #define HUFFMAN_INITIAL_WEIGHT_TYPES                                                               \
     (sizeof(huffman_initial_weights) / HUFFMAN_INITIAL_WEIGHT_BLOCK_SIZE)
 
-/* Append one least-significant-bit-first bit to the Huffman output stream.
+/*
+ * Append one least-significant-bit-first bit to the Huffman output stream.
  * The bit accumulator is flushed only after a complete byte is available,
- * and capacity failures are reported before writing beyond the destination. */
+ * and capacity failures are reported before writing beyond the destination.
+ */
 static int32_t
 huffman_write_bit(struct huffman_output_stream_s *os, uint32_t bit)
 {
@@ -232,9 +234,11 @@ huffman_write_bit(struct huffman_output_stream_s *os, uint32_t bit)
     return LIBMPQ_SUCCESS;
 }
 
-/* Append a little-endian run of bits to the Huffman output stream.
+/*
+ * Append a little-endian run of bits to the Huffman output stream.
  * Bits are emitted from the least significant end because that is the order
- * used by the MPQ adaptive Huffman wire format. */
+ * used by the MPQ adaptive Huffman wire format.
+ */
 static int32_t
 huffman_write_bits(struct huffman_output_stream_s *os, uint32_t value, uint32_t count)
 {
@@ -247,9 +251,11 @@ huffman_write_bits(struct huffman_output_stream_s *os, uint32_t value, uint32_t 
     return LIBMPQ_SUCCESS;
 }
 
-/* Emit the adaptive-tree path for one Huffman symbol.
+/*
+ * Emit the adaptive-tree path for one Huffman symbol.
  * The path is reconstructed from the leaf toward the root and reversed by
- * the bit writer so decoder traversal reaches the same symbol. */
+ * the bit writer so decoder traversal reaches the same symbol.
+ */
 static int32_t
 huffman_encode_symbol(struct huffman_output_stream_s *os, struct huffman_tree_item_s *item)
 {
@@ -265,9 +271,11 @@ huffman_encode_symbol(struct huffman_output_stream_s *os, struct huffman_tree_it
     return huffman_write_bits(os, bits, count);
 }
 
-/* Replace the NYT node with an escape branch and the newly seen literal.
+/*
+ * Replace the NYT node with an escape branch and the newly seen literal.
  * Newly introduced bytes are encoded through the escape symbol before they
- * receive a normal adaptive-tree entry and weight update. */
+ * receive a normal adaptive-tree entry and weight update.
+ */
 static int32_t
 huffman_insert_literal(struct huffman_tree_s *ht, uint32_t value)
 {
@@ -295,9 +303,11 @@ huffman_insert_literal(struct huffman_tree_s *ht, uint32_t value)
     return LIBMPQ_SUCCESS;
 }
 
-/* Insert a Huffman tree item before another item in the adaptive list.
+/*
+ * Insert a Huffman tree item before another item in the adaptive list.
  * The list uses encoded relative links inherited from the StormLib layout,
- * so each insertion preserves both ordinary and sentinel-linked neighbors. */
+ * so each insertion preserves both ordinary and sentinel-linked neighbors.
+ */
 void
 libmpq__huffman_insert_item(
     struct huffman_tree_s *ht, struct huffman_tree_item_s *item, uint32_t where,
@@ -372,9 +382,11 @@ libmpq__huffman_insert_item(
     }
 }
 
-/* Remove a Huffman item from the adaptive linked list.
+/*
+ * Remove a Huffman item from the adaptive linked list.
  * Sentinel references and relative previous pointers are resolved before the
- * item is detached, leaving it available for later tree-item reuse. */
+ * item is detached, leaving it available for later tree-item reuse.
+ */
 void
 libmpq__huffman_remove_item(struct huffman_tree_s *ht, struct huffman_tree_item_s *hi)
 {
@@ -404,9 +416,11 @@ libmpq__huffman_remove_item(struct huffman_tree_s *ht, struct huffman_tree_item_
     }
 }
 
-/* Resolve the previous Huffman tree item, including encoded relative pointers.
+/*
+ * Resolve the previous Huffman tree item, including encoded relative pointers.
  * A negative link is a direct encoded reference, while a non-negative value
- * is interpreted relative to the neighboring item and supplied offset. */
+ * is interpreted relative to the neighboring item and supplied offset.
+ */
 struct huffman_tree_item_s *
 libmpq__huffman_previous_item(struct huffman_tree_item_s *hi, intptr_t value)
 {
@@ -427,9 +441,11 @@ libmpq__huffman_previous_item(struct huffman_tree_item_s *hi, intptr_t value)
     return hi->prev + value;
 }
 
-/* Refill the bit accumulator with complete input bytes until it contains the
+/*
+ * Refill the bit accumulator with complete input bytes until it contains the
  * requested number of bits. The final byte is handled without a word-sized
- * lookahead, so a valid stream tail cannot read beyond its input buffer. */
+ * lookahead, so a valid stream tail cannot read beyond its input buffer.
+ */
 static int
 huffman_refill(struct huffman_input_stream_s *is, uint32_t required_bits)
 {
@@ -463,9 +479,11 @@ libmpq__huffman_read_bit(struct huffman_input_stream_s *is)
     return bit;
 }
 
-/* Peek at the next seven Huffman bits without consuming them.
+/*
+ * Peek at the next seven Huffman bits without consuming them.
  * The seven-bit prefix feeds the adaptive decoder's quick lookup cache, so
- * refilling never changes the logical input position. */
+ * refilling never changes the logical input position.
+ */
 uint32_t
 libmpq__huffman_peek_seven_bits(struct huffman_input_stream_s *is)
 {
@@ -478,8 +496,10 @@ libmpq__huffman_peek_seven_bits(struct huffman_input_stream_s *is)
     return (is->bit_buf & 0x7F);
 }
 
-/* Read one byte from the bounded Huffman input stream, refilling only from
- * bytes that remain inside the compressed input range. */
+/*
+ * Read one byte from the bounded Huffman input stream, refilling only from
+ * bytes that remain inside the compressed input range.
+ */
 uint32_t
 libmpq__huffman_read_byte(struct huffman_input_stream_s *is)
 {
@@ -499,9 +519,11 @@ libmpq__huffman_read_byte(struct huffman_input_stream_s *is)
     return one_byte;
 }
 
-/* Allocate or recycle a Huffman tree item and move it to the front list.
+/*
+ * Allocate or recycle a Huffman tree item and move it to the front list.
  * Reuse keeps the fixed tree pool bounded while preserving the linked-list
- * ordering required by adaptive weight updates. */
+ * ordering required by adaptive weight updates.
+ */
 static int
 huffman_item_reference_valid(
     const struct huffman_tree_s *ht, const struct huffman_tree_item_s *item
@@ -588,9 +610,11 @@ libmpq__huffman_acquire_item(struct huffman_tree_s *ht)
     return p_item2;
 }
 
-/* Increase adaptive Huffman weights and reorder items to keep the tree sorted.
+/*
+ * Increase adaptive Huffman weights and reorder items to keep the tree sorted.
  * Every ancestor is updated, and nodes are moved when their new weight would
- * violate the monotonic ordering used by the encoder and decoder. */
+ * violate the monotonic ordering used by the encoder and decoder.
+ */
 void
 libmpq__huffman_update_weights(struct huffman_tree_s *ht, struct huffman_tree_item_s *p_item)
 {
@@ -670,9 +694,11 @@ libmpq__huffman_update_weights(struct huffman_tree_s *ht, struct huffman_tree_it
     }
 }
 
-/* Initialize the adaptive Huffman tree with fresh sentinels and lookup cache state.
+/*
+ * Initialize the adaptive Huffman tree with fresh sentinels and lookup cache state.
  * This resets the fixed node pool, encoded-link sentinels, reusable-item cursor,
- * and decoder cache so no adaptive state leaks between MPQ blocks. */
+ * and decoder cache so no adaptive state leaks between MPQ blocks.
+ */
 void
 libmpq__huffman_tree_init(struct huffman_tree_s *ht, uint32_t cmp)
 {
@@ -705,9 +731,11 @@ libmpq__huffman_tree_init(struct huffman_tree_s *ht, uint32_t cmp)
     }
 }
 
-/* Build the adaptive Huffman tree using the first byte already loaded from the stream.
+/*
+ * Build the adaptive Huffman tree using the first byte already loaded from the stream.
  * The compression type selects the initial weight table, after which symbols
- * and internal nodes are inserted in the canonical adaptive-list order. */
+ * and internal nodes are inserted in the canonical adaptive-list order.
+ */
 void
 libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
 {
@@ -914,9 +942,11 @@ libmpq__huffman_tree_build(struct huffman_tree_s *ht, uint32_t cmp_type)
     ht->tree_update_generation = 1;
 }
 
-/* Decode the Huffman bitstream into the output buffer.
+/*
+ * Decode the Huffman bitstream into the output buffer.
  * It combines cached prefix traversal with adaptive tree walking, handles
- * literal-introduction and end markers, and stops at the requested output size. */
+ * literal-introduction and end markers, and stops at the requested output size.
+ */
 int32_t
 libmpq__huffman_decode(
     struct huffman_tree_s *ht, struct huffman_input_stream_s *is, uint8_t *out_buf,
@@ -1049,8 +1079,10 @@ libmpq__huffman_decode(
             dcmp_byte = p_item1->dcmp_byte;
         }
 
-        /* Escape symbols carry a literal byte not yet present in the tree and
-         * split the current escape node into an old branch and a new literal. */
+        /*
+         * Escape symbols carry a literal byte not yet present in the tree and
+         * split the current escape node into an old branch and a new literal.
+         */
         if (dcmp_byte == 0x101) {
             n8bits = libmpq__huffman_read_byte(is);
             if (is->failed) {
@@ -1105,9 +1137,11 @@ libmpq__huffman_decode(
     return (out_pos - out_buf);
 }
 
-/* Encode a byte stream using the MPQ adaptive Huffman wire format.
+/*
+ * Encode a byte stream using the MPQ adaptive Huffman wire format.
  * The encoder emits the initial type byte, introduces unseen literals through
- * the escape node, writes the end marker, and pads the stream to MPQ alignment. */
+ * the escape node, writes the end marker, and pads the stream to MPQ alignment.
+ */
 int32_t
 libmpq__huffman_encode(
     struct huffman_tree_s *ht, struct huffman_output_stream_s *os, const uint8_t *in_buf,
@@ -1138,8 +1172,10 @@ libmpq__huffman_encode(
             if (huffman_insert_literal(ht, value) < 0)
                 return LIBMPQ_ERROR_FORMAT;
 
-            /* The decoder updates a newly introduced literal once while
-             * splitting the escape node and once again after emitting it. */
+            /*
+             * The decoder updates a newly introduced literal once while
+             * splitting the escape node and once again after emitting it.
+             */
             libmpq__huffman_update_weights(ht, ht->symbol_nodes[value]);
         } else if (huffman_encode_symbol(os, item) < 0) {
             return LIBMPQ_ERROR_SIZE;

@@ -27,6 +27,7 @@
 
 #include "mpq-file.h"
 #include "mpq-mpqe.h"
+#include "mpq-rsa.h"
 
 /* Common success return code used by libmpq functions. */
 #define LIBMPQ_SUCCESS 0
@@ -134,8 +135,10 @@ typedef struct
 /*
  * Native representation of the metadata for one stored file payload. The offset and
  * packed size identify the bytes on disk, while the unpacked size describes
- * the result after decryption and decompression. Flags select the storage,
- * encryption, and compression rules needed to interpret that payload.
+ * the result after decryption and decompression. Patch-file blocks instead
+ * record the reconstructed result size; their plaintext prefix supplies the
+ * decoded PTCH-body size. Flags select the storage, encryption, and
+ * compression rules needed to interpret that payload.
  */
 typedef struct
 {
@@ -186,7 +189,7 @@ struct mpq_writer_mpqe_ops;
 
 /*
  * Runtime handle for an opened or newly created MPQ archive. It owns the
- * backing stream, decoded header and tables, file mappings, and per-file
+ * backing source, decoded header and tables, file mappings, and per-file
  * caches used during extraction. In write mode it additionally owns the
  * reserved table capacity and file-name metadata needed to finalize the
  * archive; reader handles leave those writer-only fields empty.
@@ -194,8 +197,8 @@ struct mpq_writer_mpqe_ops;
 struct mpq_archive
 {
     FILE *fp;                     /* Backing file handle used only by writers. */
-    struct mpq_stream *stream;    /* Read-only random-access stream provider for readers. */
-    char *filename;               /* Original path used to reopen this archive. */
+    struct mpq_source *source;    /* Read-only random-access source provider for readers. */
+    char *filename;               /* Path or optional logical name retained by the archive. */
     uint64_t file_device;         /* Device or Windows volume identity. */
     uint64_t file_inode;          /* Inode or Windows file identity. */
     uint8_t file_identity_valid;  /* Whether the path identity is reliable. */
@@ -217,10 +220,16 @@ struct mpq_archive
     mpq_file_attributes_s *write_attributes; /* Records indexed by physical block slot. */
     uint32_t write_attributes_flags;         /* Selected LIBMPQ_ATTRIBUTE_* arrays. */
     uint8_t write_internal;                  /* Finalization is adding generated internal files. */
+    uint8_t write_patch_mode; /* Private patch writer may serialize true patch bits. */
 
     /* Writer-only state. Reader handles leave these fields zeroed. */
-    uint8_t write_mode;           /* Whether this handle was opened for creation. */
-    uint8_t write_finalized;      /* Whether the final header and tables were written. */
+    uint8_t write_mode;             /* Whether this handle was opened for creation. */
+    uint8_t write_finalized;        /* Whether the final header and tables were written. */
+    uint8_t write_signature;        /* Caller requested weak signing. */
+    uint8_t write_strong_signature; /* Caller requested plain strong signing. */
+    uint64_t write_signature_offset;
+    uint8_t write_signature_key[LIBMPQ_RSA_KEY_SIZE];               /* Cleared on every close. */
+    uint8_t write_strong_signature_key[LIBMPQ_RSA_STRONG_KEY_SIZE]; /* Cleared on close. */
     uint32_t write_capacity;      /* Reserved number of block-table entries. */
     uint32_t write_hash_capacity; /* Reserved number of hash-table entries. */
     uint32_t write_sector_size;   /* Sector size used while buffering and packing files. */
@@ -258,6 +267,9 @@ struct mpq_writer
     uint32_t sector_index;            /* Index of the next sector to flush. */
     uint32_t block_count;             /* Number of sectors expected for this file. */
     uint64_t payload_offset;          /* Archive offset where this file's payload begins. */
+    uint32_t prefix_size;             /* Plaintext patch prefix before stored member data. */
+    uint32_t patch_result_size;       /* Reconstructed size recorded for a patch-file block. */
+    uint8_t patch_file;               /* This writer emits a private patch-file entry. */
     uint64_t packed_total;            /* Bytes written for packed sectors, excluding the table. */
     uint32_t *offsets;                /* Relative sector offsets for compressed files. */
     uint32_t *checksums;              /* Optional slice owned by the offsets allocation. */

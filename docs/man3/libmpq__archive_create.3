@@ -10,29 +10,30 @@
 .\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 .\" GNU Lesser General Public License for more details.
 .\"
-.\" You should have received a copy of the GNU Lesser General Public
-.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
 .TH LIBMPQ__ARCHIVE_CREATE 3 2026-08-18 "The MoPaQ archive library"
 .SH NAME
 libmpq__archive_create \- create a seekable MPQ archive
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__archive_create("
-.BI "        mpq_archive_s **" "archive,"
-.BI "        const char     *" "path,"
+.BI "        mpq_archive_s **" "mpq_archive,"
+.BI "        const char *" "mpq_filename,"
 .BI "        const mpq_archive_create_options_s *" "options"
 .BI ");"
 .fi
 .SH DESCRIPTION
-Creates an MPQ v1 or v2 archive at \fIpath\fP. Add members using the
+Creates an MPQ v1 or v2 archive at \fImpq_filename\fP. On success,
+\fI*mpq_archive\fP is a caller-owned writer handle. Add members using the
 streaming writer or archive-add convenience functions, then finalize the
 archive with \fBlibmpq__archive_close\fP().
 .SS "Creation Options"
 The options select a fixed entry capacity, sector size, archive version,
-and optional generated (listfile).
+and optional generated (listfile). NULL \fIoptions\fP uses the built-in
+archive-creation defaults.
 .PP
 Compression defaults to STANDARD. Add
 LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED to options.flags to select
@@ -51,13 +52,41 @@ then the completed tables. Checksums cover source bytes before compression.
 FILETIME defaults to zero and patch bits are zero. Use
 \fBlibmpq__writer_timestamp\fP() on an active writer for an explicit
 timestamp. Path addition never imports filesystem timestamps.
+.SH RETURN VALUE
+Returns \fBLIBMPQ_SUCCESS\fP with a writer handle on success. A valid
+\fI*mpq_archive\fP is NULL on failure, which returns a negative libmpq error.
+.SH ERRORS
+NULL required arguments return \fBLIBMPQ_ERROR_EXIST\fP; invalid creation
+options return \fBLIBMPQ_ERROR_FORMAT\fP. Allocation, open, seek, and write
+errors may also propagate.
 .SH SEE ALSO
-.BR libmpq__archive_attributes (3),
-.BR libmpq__file_attributes (3),
-.BR libmpq__writer_timestamp (3),
-.BR libmpq__archive_compression_allowed (3),
+.BR libmpq (3),
 .BR libmpq__archive_create_mpqe (3),
-.BR libmpq__archive_close (3),
 .BR libmpq__archive_add_data (3),
 .BR libmpq__archive_add_path (3),
-.BR libmpq__writer_begin (3)
+.BR libmpq__writer_begin (3),
+.BR libmpq__writer_write (3),
+.BR libmpq__writer_timestamp (3),
+.BR libmpq__writer_finish (3),
+.BR libmpq__archive_attributes (3),
+.BR libmpq__file_attributes (3),
+.BR libmpq__archive_compression_allowed (3),
+.BR libmpq__archive_close (3)
+.SH AUTHOR
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

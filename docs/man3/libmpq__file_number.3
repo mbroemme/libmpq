@@ -10,20 +10,19 @@
 .\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 .\" GNU Lesser General Public License for more details.
 .\"
-.\" You should have received a copy of the GNU Lesser General Public
-.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
 .TH LIBMPQ__FILE_NUMBER 3 2026-08-12 "The MoPaQ archive library"
 .SH NAME
 libmpq__file_number \- resolve an MPQ filename to its file number.
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__file_number("
-.BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        const char     *" "filename",
-.BI "        uint32_t       *" "number"
+.BI "        mpq_archive_s *" "mpq_archive,"
+.BI "        const char *" "filename,"
+.BI "        uint32_t *" "number"
 .BI ");"
 .fi
 .SH DESCRIPTION
@@ -37,10 +36,12 @@ stores its file number in \fInumber\fP.
 .SH RETURN VALUE
 On success, zero is returned and the file number is stored in \fInumber\fP.
 On error, one of the following constants is returned.
+.SH ERRORS
 .TP
 .B LIBMPQ_ERROR_EXIST
 The file does not exist in the archive.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__archive_open (3),
 .BR libmpq__file_number_from_hash (3)
 .SH AUTHOR

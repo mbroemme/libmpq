@@ -10,27 +10,28 @@
 .\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 .\" GNU Lesser General Public License for more details.
 .\"
-.\" You should have received a copy of the GNU Lesser General Public
-.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
 .TH LIBMPQ__WRITER_BEGIN 3 2026-08-18 "The MoPaQ archive library"
 .SH NAME
 libmpq__writer_begin \- begin an MPQ streaming file writer
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__writer_begin("
-.BI "        mpq_archive_s  *" "archive,"
-.BI "        const char     *" "name,"
-.BI "        libmpq__off_t   " "size,"
+.BI "        mpq_archive_s *" "mpq_archive,"
+.BI "        const char *" "filename,"
+.BI "        libmpq__off_t " "unpacked_size,"
 .BI "        const mpq_file_options_s *" "options,"
-.BI "        mpq_writer_s  **" "writer"
+.BI "        mpq_writer_s **" "writer"
 .BI ");"
 .fi
 .SH DESCRIPTION
-Begins a file whose final unpacked size is known. Supply bytes with
-libmpq__writer_write(3), then call libmpq__writer_finish(3).
+Begins \fIfilename\fP with declared \fIunpacked_size\fP and returns an
+active, caller-owned \fI*writer\fP. NULL \fIoptions\fP selects writer
+defaults. Supply bytes with libmpq__writer_write(3), then call
+libmpq__writer_finish(3). Only one writer may be active per archive.
 .PP
 Add LIBMPQ_FILE_FLAG_SECTOR_CRC to options.flags to generate sector Adler-32
 checksums for sectorized COMPRESS or IMPLODE files. Checksums cover packed
@@ -38,9 +39,38 @@ bytes before encryption. The checksum table follows the data and is not
 encrypted; it uses zlib compression only when smaller than raw storage.
 The flag is ignored for empty, raw, and single-unit files. Generation is
 opt-in and does not enable implicit verification during extraction.
+.SH RETURN VALUE
+Returns \fBLIBMPQ_SUCCESS\fP with an active writer on success, or a
+negative libmpq error. No file entry is published before finish succeeds.
+.SH ERRORS
+Invalid writer state or storage options return \fBLIBMPQ_ERROR_FORMAT\fP;
+duplicate names return \fBLIBMPQ_ERROR_EXIST\fP; invalid sizes or exhausted
+capacity return \fBLIBMPQ_ERROR_SIZE\fP. Allocation and I/O errors may
+also propagate.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__archive_create (3),
-.BR libmpq__writer_write (3),
-.BR libmpq__writer_finish (3),
+.BR libmpq__archive_create_mpqe (3),
 .BR libmpq__archive_add_data (3),
-.BR libmpq__archive_add_path (3)
+.BR libmpq__archive_add_path (3),
+.BR libmpq__writer_write (3),
+.BR libmpq__writer_timestamp (3),
+.BR libmpq__writer_finish (3)
+.SH AUTHOR
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

@@ -23,6 +23,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define LIBMPQ_MD5_SIZE 16u
+
 typedef struct
 {
     uint32_t state[4];
@@ -32,6 +34,6 @@ typedef struct
 
 void libmpq__md5_init(mpq_md5_s *context);
 void libmpq__md5_update(mpq_md5_s *context, const uint8_t *data, size_t size);
-void libmpq__md5_final(mpq_md5_s *context, uint8_t digest[16]);
+void libmpq__md5_final(mpq_md5_s *context, uint8_t digest[LIBMPQ_MD5_SIZE]);
 
 #endif /* LIBMPQ_MD5_H */

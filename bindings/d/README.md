@@ -5,11 +5,87 @@ module. The high-level `Archive`, `File`, and `MpqFileWriter` classes translate
 negative C status values into `MPQException` while retaining the low-level
 `extern(C)` declarations for applications that need direct ABI access.
 
+## Requirements and installation
+
+The native libmpq library and its zlib, bzip2, and lzma dependencies must be
+installed or available to the linker.
+
+The source/DUB package does not load a private copy of the native library.
+`libs "mpq"` uses the platform linker, so source-package consumers should
+install libmpq or provide the equivalent library and runtime search path.
+
+The repository root contains the DUB manifest so the binding can be consumed
+as the `libmpq` package from a source checkout or a tagged repository release.
+The canonical release installation path is
+[code.dlang.org](https://code.dlang.org/packages/libmpq):
+
+```sdl
+dependency "libmpq" version="~>0.8.0"
+```
+
+code.dlang.org discovers versions from Git tags such as `v0.8.0`; registration
+and registry credentials are intentionally kept out of the build and release
+workflows. See the [DUB publishing guide](https://dub.pm/dub-guide/publishing/).
+
+## Basic archive usage
+
+```d
+import libmpq.mpq;
+
+auto archive = Archive.open("example.mpq");
+scope(exit) archive.close();
+auto entry = archive.file("(listfile)");
+auto data = entry.read();
+```
+
+All arrays passed to the writer are borrowed for the duration of the call.
+Arrays returned by `read` and `readBlock` are owned by the caller. Always close
+archives explicitly; a destructor performs only best-effort cleanup because D
+destructors cannot report native close errors.
+
 Low-level calls use `libmpq__*` names. Use `Mpq.version_()` for the version
 string and the high-level wrappers for checked calls. Metadata is available
 through `packedSize()`, `unpackedSize()`, `fileCount()`, `blockCount()`, and
 `no()`. Archives provide `clone()`, `nativeHandle()`, and `fileList()` for
 independent readers, native access, and filename discovery.
+
+### Logical member streams
+
+Archive.openStream(name) returns an incremental seekable MpqStream. It owns an
+independent native archive clone, so it remains usable after the originating
+archive closes. Its reads validate available sector Adler-32 checksums; use
+File.verify() when whole-file CRC32/MD5 verification is required.
+
+    auto stream = archive.openStream("data/file.bin");
+    ubyte[] buffer = new ubyte[4096];
+    auto count = stream.read(buffer);
+    stream.seek(0, SeekOrigin.set);
+    stream.close();
+
+### Custom random-access I/O
+
+Implement `MpqSource` to open a caller-owned random-access source. Archives
+and derived streams retain the source object while needed but never own an
+external resource represented by it.
+
+    auto archive = Archive.openSource(new MemorySource(data), "data.mpq");
+
+## Archive creation
+
+Creation uses typed options and supports both archive versions:
+
+```d
+auto archive = Archive.create("new.mpq", ArchiveCreateOptions.v2());
+scope(exit) archive.close();
+archive.add("hello.txt", cast(const(ubyte)[])"hello\n");
+```
+
+`Archive.createMpqe` creates a new encrypted MPQE stream from borrowed
+authentication bytes. It finalizes a private plaintext temporary file before
+atomically replacing the destination. Use `Update.beginMpqe` for changes to
+an existing MPQE archive. Crash cleanup is best effort.
+
+### Compression policy
 
 Creation defaults to `COMPRESSION_POLICY_STANDARD`. Set
 `ARCHIVE_CREATE_COMPRESSION_EXTENDED` in `ArchiveCreateOptions.flags` for
@@ -28,11 +104,161 @@ combinations. Neither policy allows SPARSE with WAVE ADPCM. The shared
 `sparse*.txt` fixtures use UTF-32LE with a BOM; extraction returns those
 bytes without transcoding.
 
-## Requirements
+### Optional attributes and integrity
 
-The native libmpq library and its zlib, bzip2, and lzma dependencies must be
-installed or available to the linker. From a libmpq checkout, build the native
-library first:
+Set `FILE_FLAG_SECTOR_CRC` in file options alongside COMPRESS or IMPLODE
+to generate sector Adler-32 tables, including for encrypted files. Empty,
+raw, and single-unit files ignore this flag. Generation is opt-in and
+complete reads automatically verify usable sector entries.
+
+`archive.file("file.txt").verify()` explicitly compares sector Adler-32 and
+file CRC32/MD5. For one sector,
+`archive.file("file.txt").verifyBlock(blockNumber)` returns
+`BlockVerification` with `checksum` (stored Adler-32) and `mismatches` (zero
+or `VERIFY_SECTOR_CRC`). Unavailable checksums throw `ERROR_EXIST`.
+
+Use `VERIFY_SECTOR_CRC`, `VERIFY_FILE_CRC32`, or `VERIFY_FILE_MD5` to select
+checks. Sector checks cover decrypted packed bytes; file hashes cover
+extracted bytes. Missing values/tables are skipped. File checksum requests
+require attributes; sector-only requests do not. `VERIFY_ALL` selects all
+checks. The returned mismatch mask uses the same `VERIFY_*` bits and is a
+subset of the request. Set bits mean available checksums mismatched; clear
+bits mean matched or unavailable/skipped. Operation errors throw existing
+exceptions. Zero does not prove availability. Complete lossless reads
+automatically compare available CRC32/MD5 values; lossy ADPCM is not compared
+because decoded bytes may differ from source hashes.
+
+`file.flags()` returns the stored block-table flags. Inspect `FILE_FLAG_*`
+bits; metadata convenience booleans are derived from these flags.
+
+`file.blockCompression(block)` returns the stored method byte, or zero for
+raw storage/fallback, without decoding. LZMA is `0x12`, not the writer selector.
+
+`file.blockSizePacked(blockNumber)` returns stored data bytes, excluding
+offset and checksum tables, without decoding the sector.
+
+`Archive.attributes()` returns `Nullable!uint`; absence is null.
+`MpqFile.attributes()` returns an owned `FileAttributes` value. Call
+`MpqFileWriter.timestamp(filetime)` before finishing a streaming file.
+Supply Windows FILETIME, not Unix time.
+
+Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
+`ATTRIBUTE_MD5`, and `ATTRIBUTE_PATCH_BIT` in the `attributes` field of
+`ArchiveCreateOptions`. Zero disables generation; any nonzero combination
+creates one `(attributes)` file and consumes one reserved slot. Unknown bits
+are rejected. Creation flags remain separate. These options work for both MPQ
+v1 and v2, including MPQE creation. Payload version 100 is independent of the
+archive format version.
+
+Per-file flags distinguish unavailable fields from zero. Complete lossless
+reads automatically verify available CRC32 and MD5 metadata against decoded
+bytes; malformed optional metadata is skipped during extraction but still
+raises the existing format exception when queried. CRC32 and MD5 cover source
+bytes before compression, so lossy ADPCM is not automatically compared.
+FILETIME defaults to zero, never filesystem mtime, and PATCH_BIT remains
+metadata only. Complete reads verify usable sector Adler-32 values over
+decrypted packed sectors before decoding, including lossy ADPCM. Malformed
+optional sector tables are skipped during extraction; lossy ADPCM skips only
+file-level CRC32/MD5 comparison.
+
+## Transactional updates
+
+Transactional updates stage edits until commit. `Update` aborts any active
+transaction when it is destroyed or closed:
+
+```d
+auto update = Update.begin("archive.mpq");
+scope(exit) update.close();
+update.replaceData("foo.txt", cast(const(ubyte)[])"new contents");
+update.rename("old.txt", "new.txt");
+update.commit();
+```
+
+Use the same `Update` methods for authenticated MPQE transactions:
+
+```d
+auto update = Update.beginMpqe("archive.mpqe", authCode);
+scope(exit) update.close();
+update.replaceData("foo.txt", cast(const(ubyte)[])"new contents");
+update.commit();
+```
+
+`replacePath`, `remove`, and `abort` are also available. Commit and abort
+consume the handle even on error. The no-options overload passes a native
+NULL options pointer, so libmpq uses defaults and preserves the member's
+locale/platform identity. Supply explicit `FileOptions` for custom storage,
+for example `update.replaceData("foo.txt", data, options);`. These options
+can select distinct first/later compression masks, but locale/platform must
+match the existing member. Ordinary MPQs and embedded W3X/W3M containers use
+`Update.begin`; MPQE uses `Update.beginMpqe` with explicit authentication bytes
+borrowed only during begin. Both paths abort automatically without commit.
+
+## Patch creation
+
+Create a patch without changing its base archive:
+
+```d
+auto patch = Patch.begin("base.mpq", "changes.mpq");
+scope(exit) patch.close();
+patch.replaceData("foo.txt", cast(const(ubyte)[])"new contents");
+patch.remove("old.txt");
+patch.sign(privateKey); // or patch.sign(strongKey, SIGNATURE_STRONG)
+patch.finish();
+```
+
+`Patch.begin` creates an ordinary MPQ patch. Use `Patch.beginMpqe` to create
+an MPQE-wrapped patch with a caller-supplied authentication code:
+
+```d
+auto patch = Patch.beginMpqe("base.mpq", "changes.mpqe", authCode);
+scope(exit) patch.close();
+patch.replaceData("foo.txt", cast(const(ubyte)[])"new contents");
+patch.finish();
+```
+
+The same `Patch` owns either output type. Authentication bytes are borrowed
+only during begin; an unfinished patch is aborted rather than published.
+
+`replacePath` is also available. `finish()` publishes the patch; `abort()`
+discards it, and destruction of an unfinished patch aborts automatically.
+Omitting `FileOptions` passes native NULL and uses native patch defaults;
+the explicit-options overload configures patch-member storage. Patch add and
+rename are not supported; explicit locale/platform must match the base member.
+Signing configures the active patch without consuming it; an ordinary MPQ
+patch may configure weak and strong signatures separately. MPQE-wrapped
+patches support weak signing; external strong signatures are not defined for
+MPQE transport streams. After `finish()`, use `Archive.signatures()` and
+`Archive.verify()` on the finished artifact.
+
+## Signatures
+
+Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
+Strong verification uses a 512-byte raw public key: a 256-byte unsigned
+big-endian modulus followed by a 256-byte zero-padded unsigned big-endian
+public exponent. Strong signing uses the same layout with the private exponent
+and emits only the plain SHA-1 archive-range variant. Weak signatures are
+supported inside MPQE-wrapped MPQs. External strong signatures are not defined
+for MPQE transport streams.
+Use `Archive.sign(privateKey)` for weak signing or
+`Archive.sign(privateKey, SIGNATURE_STRONG)` for strong signing before writer close, and
+`Archive.signatures()` / `Archive.verify(publicKey)` on reopened archives.
+Verification returns mismatch bits; malformed keys/archives raise normal binding
+errors. Weak keys are exactly 128 bytes: 64-byte big-endian modulus followed by a
+64-byte big-endian exponent. Signing supports v1 and v2. libmpq does not
+ship Blizzard- or product-specific public verification keys or private signing
+keys; all signature key material is supplied explicitly by the caller.
+MD5/RSA-512 is legacy compatibility, not modern authenticity protection.
+See [the format guide](../../MPQ.md) for details.
+
+`Archive.signatures()` reports weak MD5/RSA-512 internal signatures and strong
+SHA-1/RSA-2048 external `NGIS` trailers. `Archive.verify` accepts a signature
+type and a caller public key. Strong signatures are legacy compatibility data.
+`Archive.sign(key, SIGNATURE_STRONG)` creates the plain
+SHA-1 archive-range strong variant from a 512-byte raw private key.
+
+## Development and testing
+
+From a libmpq checkout, build the native library first:
 
 ```sh
 sh autogen.sh
@@ -49,9 +275,7 @@ LIBRARY_PATH="$PWD/src/.libs" LD_LIBRARY_PATH="$PWD/src/.libs" \
     dub run --config=tests --compiler=ldc2
 ```
 
-The source/DUB package does not load a private copy of the native library.
-`libs "mpq"` uses the platform linker, so source-package consumers should
-install libmpq or provide the equivalent library and runtime search path.
+## Distribution packages
 
 Release downloads also provide compiler-specific binary packages. They contain
 the D interface files, a precompiled static D archive, and the native shared
@@ -128,50 +352,6 @@ checks validate the native shared library, every D archive member, and the
 extracted consumer. macOS consumers execute with the requested native
 architecture and verify that the extracted dylib is loaded.
 
-## Example
-
-```d
-import libmpq.mpq;
-
-auto archive = Archive.open("example.mpq");
-scope(exit) archive.close();
-auto entry = archive.file("(listfile)");
-auto data = entry.read();
-```
-
-Creation uses typed options and supports both archive versions:
-
-```d
-auto archive = Archive.create("new.mpq", ArchiveCreateOptions.v2());
-scope(exit) archive.close();
-archive.add("hello.txt", cast(const(ubyte)[])"hello\n");
-```
-
-`Archive.createMpqe` creates a new encrypted MPQE stream from borrowed
-authentication bytes. It finalizes a private plaintext temporary file before
-atomically replacing the destination; existing MPQE streams cannot be modified
-and crash cleanup is best effort.
-
-All arrays passed to the writer are borrowed for the duration of the call.
-Arrays returned by `read` and `readBlock` are owned by the caller. Always close
-archives explicitly; a destructor performs only best-effort cleanup because D
-destructors cannot report native close errors.
-
-## DUB distribution
-
-The repository root contains the DUB manifest so the binding can be consumed
-as the `libmpq` package from a source checkout or a tagged repository release.
-The canonical release installation path is
-[code.dlang.org](https://code.dlang.org/packages/libmpq):
-
-```sdl
-dependency "libmpq" version="~>0.7.1"
-```
-
-code.dlang.org discovers versions from Git tags such as `v0.7.1`; registration
-and registry credentials are intentionally kept out of the build and release
-workflows. See the [DUB publishing guide](https://dub.pm/dub-guide/publishing/).
-
 Autotools includes the D sources in libmpq source archives but does not install
 the D package. DUB and code.dlang.org own D package installation and
 publication. The repository/source package contains the D source files and
@@ -181,54 +361,4 @@ compiler-specific static archives, and the native shared-library files needed
 at runtime. The outer D release ZIP also contains the source package so
 consumers can rebuild when a precompiled package is not suitable.
 
-## Optional attributes
-
-Set `FILE_FLAG_SECTOR_CRC` in file options alongside COMPRESS or IMPLODE
-to generate sector Adler-32 tables, including for encrypted files. Empty,
-raw, and single-unit files ignore this flag. Generation is opt-in and
-verification remains explicit.
-
-`archive.file("file.txt").verify()` explicitly compares sector Adler-32 and
-file CRC32/MD5. For one sector,
-`archive.file("file.txt").verifyBlock(blockNumber)` returns
-`BlockVerification` with `checksum` (stored Adler-32) and `mismatches` (zero
-or `VERIFY_SECTOR_CRC`). Unavailable checksums throw `ERROR_EXIST`.
-
-Use `VERIFY_SECTOR_CRC`, `VERIFY_FILE_CRC32`, or `VERIFY_FILE_MD5` to select
-checks. Sector checks cover decrypted packed bytes; file hashes cover
-extracted bytes. Missing values/tables are skipped. File checksum requests
-require attributes; sector-only requests do not. `VERIFY_ALL` selects all
-checks. The returned mismatch mask uses the same `VERIFY_*` bits and is a
-subset of the request. Set bits mean available checksums mismatched; clear
-bits mean matched or unavailable/skipped. Operation errors throw existing
-exceptions. Zero does not prove availability. Normal extraction is unchanged;
-lossy ADPCM may differ from source hashes.
-
-`file.flags()` returns the stored block-table flags. Inspect `FILE_FLAG_*`
-bits; metadata convenience booleans are derived from these flags.
-
-`file.blockCompression(block)` returns the stored method byte, or zero for
-raw storage/fallback, without decoding. LZMA is `0x12`, not the writer selector.
-
-`file.blockSizePacked(blockNumber)` returns stored data bytes, excluding
-offset and checksum tables, without decoding the sector.
-
-`Archive.attributes()` returns `Nullable!uint`; absence is null.
-`MpqFile.attributes()` returns an owned `FileAttributes` value. Call
-`MpqFileWriter.timestamp(filetime)` before finishing a streaming file.
-Supply Windows FILETIME, not Unix time.
-
-Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
-`ATTRIBUTE_MD5`, and `ATTRIBUTE_PATCH_BIT` in the `attributes` field of
-`ArchiveCreateOptions`. Zero disables generation; any nonzero combination
-creates one `(attributes)` file and consumes one reserved slot. Unknown bits
-are rejected. Creation flags remain separate. These options work for both MPQ
-v1 and v2, including MPQE creation. Payload version 100 is independent of the
-archive format version.
-
-Per-file flags distinguish unavailable fields from zero. Malformed optional
-metadata raises the existing format exception only when queried, not during
-ordinary extraction. CRC32 and MD5 cover source bytes before compression,
-so lossy ADPCM output may differ; they are not authentication and are not
-automatically verified. FILETIME defaults to zero, never filesystem mtime.
-PATCH_BIT is read as metadata; creation writes zeros and does not make patches.
+See [RELEASING.md](../../RELEASING.md) for maintainer release procedures.

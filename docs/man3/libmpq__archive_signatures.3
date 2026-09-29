@@ -1,0 +1,59 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__ARCHIVE_SIGNATURES 3 2026-09-18 "The MoPaQ archive library"
+.SH NAME
+libmpq__archive_signatures \- detect weak and strong archive signatures
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__archive_signatures("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        uint32_t *" "signatures"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Detects structurally valid signatures on the reader \fIarchive\fP and writes
+a bitmask to \fI*signatures\fP. The mask may contain
+\fBLIBMPQ_SIGNATURE_WEAK\fP for an internal \fB(signature)\fP member and
+\fBLIBMPQ_SIGNATURE_STRONG\fP for an external NGIS trailer. Zero means
+neither is present. Internal weak signatures are also available in
+MPQE-wrapped MPQs; no external strong-signature transport is defined for
+MPQE.
+.PP
+This call checks storage structure, not cryptographic authenticity.
+Use \fBlibmpq__archive_verify\fP(3) with a caller-supplied public key to
+verify one detected signature.
+.SH RETURN VALUE
+Returns \fBLIBMPQ_SUCCESS\fP and sets \fI*signatures\fP on success,
+including when the mask is zero. A non-NULL output is initialized to zero
+before validation. On failure it returns a negative libmpq error; callers
+must not use the partial mask.
+.SH ERRORS
+NULL required arguments return \fBLIBMPQ_ERROR_EXIST\fP; writer handles
+return \fBLIBMPQ_ERROR_NOT_INITIALIZED\fP. Malformed signature storage
+returns \fBLIBMPQ_ERROR_FORMAT\fP; reader or I/O errors may propagate.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__archive_verify (3),
+.BR libmpq__archive_sign (3),
+.BR libmpq__patch_sign (3)
+.SH AUTHOR
+Maik Broemme <mbroemme@libmpq.org>
+.SH REPORTING BUGS
+https://github.com/mbroemme/libmpq/issues
+.SH COPYRIGHT
+Copyright (c) 2003-2026 Maik Broemme.
+Licensed under the GNU Lesser General Public License, version 2.1 or later.

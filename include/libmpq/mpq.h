@@ -43,6 +43,8 @@ extern "C" {
 #endif
 #endif
 
+/* Public error codes. */
+
 /*
  * API return codes shared by archive, file, and block operations.
  * Successful calls return zero; failures return one of these negative values
@@ -64,12 +66,27 @@ extern "C" {
 #define LIBMPQ_ERROR_DECRYPT (-11)        /* Decryption seed is unknown. */
 #define LIBMPQ_ERROR_UNPACK (-12)         /* File unpacking failed. */
 
+/* Public types and opaque handles. */
+
+/*
+ * Signed public type used for archive offsets, logical positions, and sizes.
+ * The signed representation also permits negative relative offsets for
+ * libmpq__stream_seek().
+ */
+typedef int64_t libmpq__off_t;
+
+/* Fixed-width archive-writer compression policy; reading needs no policy. */
+typedef int32_t libmpq_compression_policy_t;
+
 /*
  * Opaque archive handle owned by libmpq. Callers obtain it from an open or
  * create operation and must release it with libmpq__archive_close. The
  * structure layout is private so applications must not allocate or inspect it.
  */
 typedef struct mpq_archive mpq_archive_s;
+
+/* Opaque incremental stream for one logical archive member. */
+typedef struct mpq_stream mpq_stream_s;
 
 /*
  * Opaque state for one file currently being written to an archive. A writer
@@ -79,6 +96,23 @@ typedef struct mpq_archive mpq_archive_s;
  * by libmpq__writer_finish(), regardless of its result.
  */
 typedef struct mpq_writer mpq_writer_s;
+
+/* Opaque staged archive-update transaction; commit or abort consumes it. */
+typedef struct mpq_update mpq_update_s;
+
+/* Opaque staged patch-artifact writer; finish or abort consumes it. */
+typedef struct mpq_patch mpq_patch_s;
+
+/*
+ * Read exactly size bytes at an absolute offset in a caller-owned source.
+ * Success requires a zero result and a fully populated buffer. Negative
+ * LIBMPQ_ERROR_* results report failure; callbacks must not retain buffer.
+ */
+typedef int32_t (*libmpq_read_at_fn)(
+    void *context, libmpq__off_t offset, uint8_t *buffer, size_t size
+);
+
+/* Archive format and creation constants. */
 
 /*
  * Archive format selectors accepted by mpq_archive_create_options_s.version.
@@ -102,31 +136,7 @@ typedef struct mpq_writer mpq_writer_s;
 /* Opt into EXTENDED writer compression; absence selects STANDARD. */
 #define LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED 0x00000002u
 
-/* Array-presence flags in the independent version-100 attributes payload.
- * Also accepted by mpq_archive_create_options_s.attributes in every supported
- * MPQ version. Any nonzero combination creates one `(attributes)` file and
- * consumes one reserved file slot, regardless of the number of selected arrays. */
-#define LIBMPQ_ATTRIBUTE_CRC32 0x01u
-#define LIBMPQ_ATTRIBUTE_FILETIME 0x02u
-#define LIBMPQ_ATTRIBUTE_MD5 0x04u
-#define LIBMPQ_ATTRIBUTE_PATCH_BIT 0x08u
-
-/* Shared bits for requested checks and reported mismatches, not attributes. */
-#define LIBMPQ_VERIFY_SECTOR_CRC 0x00000001u
-#define LIBMPQ_VERIFY_FILE_CRC32 0x00000002u
-#define LIBMPQ_VERIFY_FILE_MD5 0x00000004u
-#define LIBMPQ_VERIFY_ALL                                                                          \
-    (LIBMPQ_VERIFY_SECTOR_CRC | LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5)
-
-/* Fixed-width writer policy; readers never require a policy selection. */
-typedef int32_t libmpq_compression_policy_t;
-
-/* Writer interoperability policy values. */
-enum
-{
-    LIBMPQ_COMPRESSION_POLICY_STANDARD = 0,
-    LIBMPQ_COMPRESSION_POLICY_EXTENDED = 1
-};
+/* File storage and compression constants. */
 
 /*
  * File-storage flags accepted by mpq_file_options_s.flags.
@@ -142,10 +152,19 @@ enum
 #define LIBMPQ_FILE_FLAG_ENCRYPTED 0x00010000u
 #define LIBMPQ_FILE_FLAG_SINGLE 0x01000000u
 
-/* Generate sector Adler-32 checksums for sectorized compressed/imploded files.
- * Ignored for empty, raw, or single-unit files. */
+/*
+ * Generate sector Adler-32 checksums for sectorized compressed/imploded files.
+ * Ignored for empty, raw, or single-unit files.
+ */
 #define LIBMPQ_FILE_FLAG_SECTOR_CRC 0x04000000u
 #define LIBMPQ_FILE_FLAG_LOCALE 0x00000000u
+
+/* Writer interoperability policy values. */
+enum
+{
+    LIBMPQ_COMPRESSION_POLICY_STANDARD = 0,
+    LIBMPQ_COMPRESSION_POLICY_EXTENDED = 1
+};
 
 /*
  * Compression-stage bits accepted by mpq_file_options_s.compression_first and
@@ -203,6 +222,45 @@ enum
 #define LIBMPQ_COMPRESSION_SPARSE 0x20u
 #endif
 
+/* Integrity and signature constants. */
+
+/*
+ * Array-presence flags in the independent version-100 attributes payload.
+ * Also accepted by mpq_archive_create_options_s.attributes in every supported
+ * MPQ version. Any nonzero combination creates one `(attributes)` file and
+ * consumes one reserved file slot, regardless of the number of selected arrays.
+ */
+#define LIBMPQ_ATTRIBUTE_CRC32 0x01u
+#define LIBMPQ_ATTRIBUTE_FILETIME 0x02u
+#define LIBMPQ_ATTRIBUTE_MD5 0x04u
+#define LIBMPQ_ATTRIBUTE_PATCH_BIT 0x08u
+
+/* Shared bits for requested checks and reported mismatches, not attributes. */
+#define LIBMPQ_VERIFY_SECTOR_CRC 0x00000001u
+#define LIBMPQ_VERIFY_FILE_CRC32 0x00000002u
+#define LIBMPQ_VERIFY_FILE_MD5 0x00000004u
+#define LIBMPQ_VERIFY_ALL                                                                          \
+    (LIBMPQ_VERIFY_SECTOR_CRC | LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5)
+
+/*
+ * Signature type bits returned by libmpq__archive_signatures() and accepted
+ * by signing and verification APIs.
+ */
+#define LIBMPQ_SIGNATURE_WEAK 0x00000001u
+#define LIBMPQ_SIGNATURE_STRONG 0x00000002u
+
+/* Stream seek constants. */
+
+/*
+ * Seek origins accepted by libmpq__stream_seek(): SET begins at zero,
+ * CUR uses the current position, and END uses the logical member end.
+ */
+#define LIBMPQ_SEEK_SET 0
+#define LIBMPQ_SEEK_CUR 1
+#define LIBMPQ_SEEK_END 2
+
+/* Public option and metadata structures. */
+
 /*
  * Options controlling creation of a new MPQ archive. Zero values select the
  * writer defaults, while explicit values make archive layout and capacity
@@ -220,13 +278,14 @@ typedef struct
 } mpq_archive_create_options_s;
 
 /*
- * Options controlling how one file is stored in a newly created archive.
- * Compression masks select the first-sector and later-sector pipelines, while
- * flags select raw, compressed, encrypted, imploded, or single-unit storage.
+ * Options controlling how one archive member is stored by writer, add,
+ * replacement, and patch-creation operations. Compression masks select the
+ * first-sector and later-sector pipelines, while flags select raw,
+ * compressed, encrypted, imploded, or single-unit storage.
  * LIBMPQ_COMPRESSION_LZMA is an exclusive MPQ v2+ selector rather than a
- * chainable pipeline mask. The locale and platform fields participate in
- * duplicate detection and hash lookup; the structure is copied when a file
- * writer is started.
+ * chainable pipeline mask. Locale and platform participate in duplicate
+ * detection and hash lookup; replacement requires them to match the existing
+ * member. The structure is copied when a file writer is started.
  */
 typedef struct mpq_file_options
 {
@@ -237,70 +296,25 @@ typedef struct mpq_file_options
     uint16_t platform;          /* MPQ platform identifier used for lookup and duplicates. */
 } mpq_file_options_s;
 
-/* Stored per-file metadata, not automatically verified during extraction.
- * flags identifies available fields; unavailable fields are zero. FILETIME
+/*
+ * Stored per-file metadata. Complete lossless reads verify available CRC32/MD5
+ * values; flags identifies available fields; unavailable fields are zero. FILETIME
  * is an unsigned Windows timestamp, MD5 is sixteen bytes, and patch_bit is
  * zero or one. The native ABI is 40 bytes with FILETIME at offset 8 and
  * four explicit reserved bytes at offset 36, always returned as zero.
- * Natural alignment is retained; this is not the serialized attributes layout. */
+ * Natural alignment is retained; this is not the serialized attributes layout.
+ */
 typedef struct
 {
-    uint32_t flags;
-    uint32_t crc32;
-    uint64_t filetime;
-    uint8_t md5[16];
-    int32_t patch_bit;
+    uint32_t flags;      /* LIBMPQ_ATTRIBUTE_* bits identifying available values. */
+    uint32_t crc32;      /* Source-byte CRC32 when the corresponding flag is set. */
+    uint64_t filetime;   /* Windows FILETIME when the corresponding flag is set. */
+    uint8_t md5[16];     /* Source-byte MD5 when the corresponding flag is set. */
+    int32_t patch_bit;   /* Patch marker value, zero or one, when available. */
     uint8_t reserved[4]; /* Explicit ABI padding; not serialized attribute data. */
 } mpq_file_attributes_s;
 
-/* Query the optional internal file on a reader. Returns EXIST if absent,
- * FORMAT for invalid metadata, and stores its header flags in *flags on
- * success. Ordinary archive opening and extraction do not depend on
- * attributes validity. */
-extern LIBMPQ_API int32_t libmpq__archive_attributes(mpq_archive_s *mpq_archive, uint32_t *flags);
-
-/* Return available stored attributes for a public file number on a reader.
- * Legacy missing entries return zero flags, not invented checksum values.
- * PATCH_BIT is metadata only and does not enable patch application. */
-extern LIBMPQ_API int32_t libmpq__file_attributes(
-    mpq_archive_s *mpq_archive, uint32_t file_number, mpq_file_attributes_s *attributes
-);
-
-/* Verify requested available sector Adler-32 and file CRC32/MD5 checksums.
- * Sector checks use decrypted packed bytes; file checks use extracted bytes.
- * Returns success with mismatch bits in *mismatches, or a negative operation error.
- * The output is a subset of verify_flags: set bits denote available mismatches;
- * clear bits denote matching or unavailable/skipped checksums.
- * File checks require attributes (EXIST if absent); sector checks do not.
- * Missing individual values or sector tables are skipped.
- * A zero request is a no-op on a valid reader/file. Unknown bits return FORMAT.
- * *mismatches is zero on errors. Zero bits do not imply values were present.
- * Lossy ADPCM output can differ from the writer's source-byte checksums. */
-extern LIBMPQ_API int32_t libmpq__file_verify(
-    mpq_archive_s *archive, uint32_t file_number, uint32_t verify_flags, uint32_t *mismatches
-);
-
-/* Verify one sector's stored Adler-32 over packed bytes after decryption.
- * Success returns the stored checksum and either zero or VERIFY_SECTOR_CRC
- * in mismatches. Unavailable checksums (including zero/all-ones entries) return
- * ERROR_EXIST. Both non-NULL outputs are zeroed before validation and remain
- * zero on any error. Normal reads do not implicitly verify checksums. */
-extern LIBMPQ_API int32_t libmpq__block_verify(
-    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint32_t *checksum,
-    uint32_t *mismatches
-);
-
-/* Set Windows FILETIME, not Unix time, on an active file writer. Generation of
- * FILETIME must be enabled or FORMAT is returned. The default is zero;
- * neither this API nor path-based addition imports filesystem metadata. */
-extern LIBMPQ_API int32_t libmpq__writer_timestamp(mpq_writer_s *writer, uint64_t filetime);
-
-/*
- * Signed public offset type used for archive positions and file sizes. A
- * negative value is reserved for error reporting and is never a valid size or
- * offset. The type keeps the public ABI consistent across supported systems.
- */
-typedef int64_t libmpq__off_t;
+/* Utility functions. */
 
 /*
  * Return the library package version as a static, NUL-terminated string.
@@ -312,8 +326,8 @@ extern LIBMPQ_API const char *libmpq__version(void);
 /*
  * Translate a libmpq return code into a static diagnostic string.
  * The returned pointer is owned by the library and is safe to retain, but its
- * contents must not be modified or freed. Unknown codes produce a generic
- * diagnostic rather than causing an allocation or other side effect.
+ * contents must not be modified or freed. Unknown or unsupported codes
+ * return NULL without allocation or other side effects.
  */
 extern LIBMPQ_API const char *libmpq__strerror(int32_t return_code);
 
@@ -331,15 +345,30 @@ extern LIBMPQ_API int32_t libmpq__archive_compression_allowed(
     uint32_t archive_version, uint32_t compression_mask, libmpq_compression_policy_t policy
 );
 
+/* Archive lifecycle. */
+
 /*
  * Open an MPQ archive from a path and return a newly allocated read handle.
  * A negative archive_offset requests embedded-header scanning; a nonnegative
- * value restricts parsing to that absolute archive-relative location. On
+ * value restricts parsing to that absolute byte offset in the backing source. On
  * success the caller owns the handle and must close it. On failure the output
  * handle is set to NULL and the function returns a negative LIBMPQ_ERROR_* code.
  */
 extern LIBMPQ_API int32_t libmpq__archive_open(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset
+);
+
+/*
+ * Open an MPQ from a caller-owned exact random-access byte source. The source
+ * is borrowed: context, including NULL for stateless callbacks, and callback
+ * state must remain valid through archive close and any derived clones.
+ * Negative archive_offset enables header scan. source_name is optional and is
+ * copied into archive-owned storage as the logical archive name. Its basename
+ * is used for legacy strong-signature verification; omit it when unavailable.
+ */
+extern LIBMPQ_API int32_t libmpq__archive_open_io(
+    mpq_archive_s **mpq_archive, void *context, libmpq_read_at_fn read_at,
+    libmpq__off_t source_size, libmpq__off_t archive_offset, const char *source_name
 );
 
 /*
@@ -363,6 +392,17 @@ extern LIBMPQ_API int32_t libmpq__archive_open_mpqe(
 );
 
 /*
+ * Open an MPQE-wrapped MPQ through a caller-owned exact random-access source.
+ * The source ownership and lifetime rules, including optional copied source_name,
+ * match libmpq__archive_open_io().
+ */
+extern LIBMPQ_API int32_t libmpq__archive_open_mpqe_io(
+    mpq_archive_s **mpq_archive, void *context, libmpq_read_at_fn read_at,
+    libmpq__off_t source_size, libmpq__off_t archive_offset, const uint8_t *auth_code,
+    size_t auth_code_size, const char *source_name
+);
+
+/*
  * Create a seekable MPQ v1 or v2 archive at mpq_filename.
  * The options determine the format, reserved table capacity, sector size, and
  * optional internal files; zero options select documented writer defaults.
@@ -381,10 +421,9 @@ extern LIBMPQ_API int32_t libmpq__archive_create(
  * succeeds. auth_code is borrowed only during this call; at least
  * 32 bytes are required and invalid input returns LIBMPQ_ERROR_DECRYPT.
  *
- * Existing MPQE streams cannot be modified. Creation requires temporary
- * plaintext storage in the destination directory; that temporary file is
- * owner-only, while the completed MPQE output uses the caller's normal umask
- * permissions. Cleanup is best effort, so a process crash can leave an
+ * Creation requires temporary plaintext storage in the destination directory;
+ * that file is owner-only, while the completed MPQE output uses the caller's
+ * normal umask permissions. Cleanup is best effort, so a process crash can leave an
  * owner-only temporary plaintext file behind.
  */
 extern LIBMPQ_API int32_t libmpq__archive_create_mpqe(
@@ -393,85 +432,37 @@ extern LIBMPQ_API int32_t libmpq__archive_create_mpqe(
 );
 
 /*
- * Begin a file stream in a writer archive and reserve its declared size.
- * The returned writer accepts only the number of bytes specified by
- * unpacked_size and applies the copied file options sector by sector.
- * Only one writer may be active per archive; finish it or abandon it before
- * beginning another file.
- */
-extern LIBMPQ_API int32_t libmpq__writer_begin(
-    mpq_archive_s *mpq_archive, const char *filename, libmpq__off_t unpacked_size,
-    const mpq_file_options_s *options, mpq_writer_s **writer
-);
-
-/*
- * Append source bytes to an active file writer.
- * The writer buffers at most one sector and flushes complete sectors through
- * the selected compression and encryption pipeline. The call fails if the
- * input would exceed the size declared by libmpq__writer_begin.
- */
-extern LIBMPQ_API int32_t
-libmpq__writer_write(mpq_writer_s *writer, const uint8_t *buffer, libmpq__off_t size);
-
-/*
- * Finish an active file writer and publish its block and hash-table entries.
- * Any final partial sector is flushed before metadata is committed, and the
- * writer handle becomes invalid after this call regardless of its result.
- */
-extern LIBMPQ_API int32_t libmpq__writer_finish(mpq_writer_s *writer);
-
-/*
- * Add a complete in-memory file to a writer archive.
- * This convenience operation performs begin, write, and finish using the same
- * validation and per-sector pipeline as the streaming API. The input buffer
- * remains owned by the caller and may be released after the call returns.
- */
-extern LIBMPQ_API int32_t libmpq__archive_add_data(
-    mpq_archive_s *mpq_archive, const char *filename, const uint8_t *buffer, libmpq__off_t size,
-    const mpq_file_options_s *options
-);
-
-/*
- * Add a filesystem file to a writer archive without requiring the whole source
- * file in memory. The source is read in bounded chunks, while the archive
- * entry uses the supplied name and storage options. The source file is read
- * only; it is never modified by this operation.
- */
-extern LIBMPQ_API int32_t libmpq__archive_add_path(
-    mpq_archive_s *mpq_archive, const char *filename, const char *source_path,
-    const mpq_file_options_s *options
-);
-
-/*
  * Clone an opened archive into an independent read handle.
- * The clone reopens and reparses the source so file positions, decoded tables,
- * and cached state are not shared with the original handle. Both handles are
- * independently closable, but the source must remain valid while cloning.
+ * The clone reopens a filesystem source or clones the custom source backend
+ * and reparses its tables, so decoded metadata and caches are independent.
+ * Custom-I/O callback context remains caller-owned. Both handles are
+ * independently closable; the backing source must remain valid.
  */
 extern LIBMPQ_API int32_t libmpq__archive_clone(mpq_archive_s **clone, mpq_archive_s *source);
 
 /*
  * Close an archive handle and release all decoded tables, caches, and streams.
  * For writer handles this also finalizes the archive header and encrypted
- * metadata tables. A reader close failure leaves the handle intact so the
- * caller may retry; otherwise the handle must not be used again after this call.
+ * metadata tables. The archive handle is invalid after this call regardless
+ * of the returned status.
  */
 extern LIBMPQ_API int32_t libmpq__archive_close(mpq_archive_s *mpq_archive);
 
+/* Archive information and signatures. */
+
 /*
- * Calculate the total stored size of all extractable file entries.
- * The result includes packed payload bytes as represented by the block table,
- * but excludes archive headers and table storage. The output pointer must be
- * valid and the handle must refer to an opened archive.
+ * Add the stored sizes of all extractable entries to *packed_size.
+ * The sizes include packed payload bytes but exclude headers and tables.
+ * Pass a valid opened archive and output pointer, initialized to zero when
+ * the total alone is required.
  */
 extern LIBMPQ_API int32_t
 libmpq__archive_size_packed(mpq_archive_s *mpq_archive, libmpq__off_t *packed_size);
 
 /*
- * Calculate the total logical size of all extractable file entries.
- * Sizes are summed after decompression and before any caller buffer limits are
- * applied. The function writes the result to unpacked_size and returns a
- * negative error for an invalid handle or output pointer.
+ * Add the logical sizes of all extractable entries to *unpacked_size.
+ * Pass a valid opened archive and output pointer, initialized to zero when
+ * the total alone is required.
  */
 extern LIBMPQ_API int32_t
 libmpq__archive_size_unpacked(mpq_archive_s *mpq_archive, libmpq__off_t *unpacked_size);
@@ -487,8 +478,7 @@ extern LIBMPQ_API int32_t libmpq__archive_offset(mpq_archive_s *mpq_archive, lib
 /*
  * Return the public MPQ format version of an opened archive.
  * The result identifies the supported v1 or v2 layout rather than the raw
- * on-disk version field. The output pointer must be valid and is unchanged on
- * failure.
+ * on-disk version field. Pass a valid opened archive and output pointer.
  */
 extern LIBMPQ_API int32_t libmpq__archive_version(mpq_archive_s *mpq_archive, uint32_t *version);
 
@@ -498,6 +488,66 @@ extern LIBMPQ_API int32_t libmpq__archive_version(mpq_archive_s *mpq_archive, ui
  * functions, not the reserved block-table capacity or raw hash-table count.
  */
 extern LIBMPQ_API int32_t libmpq__archive_files(mpq_archive_s *mpq_archive, uint32_t *files);
+
+/*
+ * Query the optional internal file on a reader. Returns EXIST if absent,
+ * FORMAT for invalid metadata, and stores its header flags in *flags on
+ * success. Ordinary archive opening and extraction do not depend on
+ * attributes validity.
+ */
+extern LIBMPQ_API int32_t libmpq__archive_attributes(mpq_archive_s *mpq_archive, uint32_t *flags);
+
+/* Detect structurally present weak and strong signatures; this does not verify them. */
+extern LIBMPQ_API int32_t libmpq__archive_signatures(mpq_archive_s *archive, uint32_t *signatures);
+
+/*
+ * Verify exactly one requested signature using a caller-owned public key.
+ * Store a cryptographic mismatch in *mismatches; the archive is not consumed.
+ */
+extern LIBMPQ_API int32_t libmpq__archive_verify(
+    mpq_archive_s *archive, uint32_t verify_flags, const uint8_t *public_key,
+    size_t public_key_size, uint32_t *mismatches
+);
+
+/*
+ * Configure weak or strong signing on a writable archive using a copied key.
+ * Signing occurs during archive close; this call does not consume the handle.
+ * MPQE-wrapped archives support weak, but not external strong, signatures.
+ */
+extern LIBMPQ_API int32_t libmpq__archive_sign(
+    mpq_archive_s *archive, uint32_t signature_type, const uint8_t *private_key,
+    size_t private_key_size
+);
+
+/* File access and verification. */
+
+/*
+ * Resolve a plaintext MPQ filename to its public file number.
+ * The name is hashed using the library's Storm-compatible rules and matched
+ * against locale and platform variants in the archive. The returned number
+ * is suitable for the size, property, block, and read APIs.
+ */
+extern LIBMPQ_API int32_t
+libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *number);
+
+/*
+ * Calculate the three Storm-compatible hashes used to identify an MPQ name.
+ * The outputs are deterministic for a given byte string and are written to
+ * hash1, hash2, and hash3; this helper performs no archive lookup and cannot
+ * report an allocation or I/O error.
+ */
+extern LIBMPQ_API void
+libmpq__file_hash(const char *filename, uint32_t *hash1, uint32_t *hash2, uint32_t *hash3);
+
+/*
+ * Resolve precomputed Storm filename hashes to a public file number.
+ * This avoids recalculating the hashes when a caller already has them, but it
+ * otherwise follows the same collision probing and table validation as name
+ * lookup. The caller must supply all three hashes from the same filename.
+ */
+extern LIBMPQ_API int32_t libmpq__file_number_from_hash(
+    mpq_archive_s *mpq_archive, uint32_t hash1, uint32_t hash2, uint32_t hash3, uint32_t *number
+);
 
 /*
  * Return the stored size of one public file entry.
@@ -542,42 +592,95 @@ extern LIBMPQ_API int32_t
 libmpq__file_flags(mpq_archive_s *archive, uint32_t file_number, uint32_t *flags);
 
 /*
- * Resolve a plaintext MPQ filename to its public file number.
- * The name is hashed using the library's Storm-compatible rules and matched
- * against locale and platform variants in the archive. The returned number
- * is suitable for the size, property, block, and read APIs.
+ * Return available stored attributes for a public file number on a reader.
+ * Legacy missing entries return zero flags, not invented checksum values.
+ * PATCH_BIT is metadata only and does not enable patch application.
  */
-extern LIBMPQ_API int32_t
-libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *number);
+extern LIBMPQ_API int32_t libmpq__file_attributes(
+    mpq_archive_s *mpq_archive, uint32_t file_number, mpq_file_attributes_s *attributes
+);
 
 /*
- * Calculate the three Storm-compatible hashes used to identify an MPQ name.
- * The outputs are deterministic for a given byte string and are written to
- * hash1, hash2, and hash3; this helper performs no archive lookup and cannot
- * report an allocation or I/O error.
+ * Verify requested available sector Adler-32 and file CRC32/MD5 checksums.
+ * Sector checks use decrypted packed bytes; file checks use extracted bytes.
+ * Returns success with mismatch bits in *mismatches, or a negative operation error.
+ * The output is a subset of verify_flags: set bits denote available mismatches;
+ * clear bits denote matching or unavailable/skipped checksums.
+ * File checks require attributes (EXIST if absent); sector checks do not.
+ * Missing individual values or sector tables are skipped.
+ * A zero request is a no-op on a valid reader/file. Unknown bits return FORMAT.
+ * *mismatches is zero on errors. Zero bits do not imply values were present.
+ * Lossy ADPCM output can differ from the writer's source-byte checksums.
  */
-extern LIBMPQ_API void
-libmpq__file_hash(const char *filename, uint32_t *hash1, uint32_t *hash2, uint32_t *hash3);
-
-/*
- * Resolve precomputed Storm filename hashes to a public file number.
- * This avoids recalculating the hashes when a caller already has them, but it
- * otherwise follows the same collision probing and table validation as name
- * lookup. The caller must supply all three hashes from the same filename.
- */
-extern LIBMPQ_API int32_t libmpq__file_number_from_hash(
-    mpq_archive_s *mpq_archive, uint32_t hash1, uint32_t hash2, uint32_t hash3, uint32_t *number
+extern LIBMPQ_API int32_t libmpq__file_verify(
+    mpq_archive_s *archive, uint32_t file_number, uint32_t verify_flags, uint32_t *mismatches
 );
 
 /*
  * Read a complete logical file into a caller-provided output buffer.
  * The library decrypts and decompresses sectors as necessary and reports the
- * number of bytes copied through transferred. out_size must be large enough
- * for the unpacked file or the operation returns LIBMPQ_ERROR_SIZE.
+ * number of bytes copied through transferred. When available, stored CRC32
+ * and MD5 values are checked after decoding a complete lossless logical file;
+ * usable sector Adler-32 values are checked over decrypted packed data before
+ * decoding. A mismatch returns LIBMPQ_ERROR_READ. Malformed optional metadata
+ * is skipped during extraction, and lossy ADPCM skips only file CRC32/MD5.
+ * out_size must be large enough for the unpacked file or the operation returns
+ * LIBMPQ_ERROR_SIZE.
  */
 extern LIBMPQ_API int32_t libmpq__file_read(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint8_t *out_buf, libmpq__off_t out_size,
     libmpq__off_t *transferred
+);
+
+/* Logical member streams. */
+
+/*
+ * Open an independent stream for a logical archive member. The stream owns a
+ * private archive clone and remains usable after archive closes.
+ * Open by name when the plaintext filename is needed for encrypted members.
+ */
+extern LIBMPQ_API int32_t
+libmpq__stream_open(mpq_archive_s *archive, uint32_t file_number, mpq_stream_s **stream);
+
+/* Open an independent incremental stream after resolving a plaintext filename. */
+extern LIBMPQ_API int32_t
+libmpq__stream_open_name(mpq_archive_s *archive, const char *filename, mpq_stream_s **stream);
+
+/*
+ * Read up to size logical bytes and advance the stream position. Reads at EOF
+ * succeed with zero transferred bytes. Available sector Adler-32 values are
+ * checked as sectors load; file-level CRC32/MD5 attributes are not implicit.
+ */
+extern LIBMPQ_API int32_t libmpq__stream_read(
+    mpq_stream_s *stream, uint8_t *buffer, libmpq__off_t size, libmpq__off_t *transferred
+);
+
+/*
+ * Set the logical position relative to LIBMPQ_SEEK_SET, LIBMPQ_SEEK_CUR, or
+ * LIBMPQ_SEEK_END. Only positions from zero through the logical size are valid.
+ */
+extern LIBMPQ_API int32_t
+libmpq__stream_seek(mpq_stream_s *stream, libmpq__off_t offset, int32_t origin);
+
+/* Return the current logical read position without performing archive I/O. */
+extern LIBMPQ_API int32_t libmpq__stream_tell(mpq_stream_s *stream, libmpq__off_t *position);
+
+/* Return the immutable logical unpacked member size without performing archive I/O. */
+extern LIBMPQ_API int32_t libmpq__stream_size(mpq_stream_s *stream, libmpq__off_t *size);
+
+/* Close and consume a logical stream, releasing its cache and private clone. */
+extern LIBMPQ_API int32_t libmpq__stream_close(mpq_stream_s *stream);
+
+/* Block access and verification. */
+
+/*
+ * Return one block's stored byte size, excluding offset/checksum tables.
+ * Compressed sector offsets are loaded internally; raw and single-unit sizes
+ * come from archive metadata. Encryption does not change the size. A non-NULL
+ * packed_size output is initialized to zero and remains zero on any failure.
+ */
+extern LIBMPQ_API int32_t libmpq__block_size_packed(
+    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, libmpq__off_t *packed_size
 );
 
 /*
@@ -590,21 +693,28 @@ extern LIBMPQ_API int32_t libmpq__block_size_unpacked(
     libmpq__off_t *unpacked_size
 );
 
-/* Return one block's stored byte size, excluding offset/checksum tables.
- * Compressed sector offsets are loaded internally; raw and single-unit sizes
- * come from archive metadata. Encryption does not change the size. A non-NULL
- * packed_size output is initialized to zero and remains zero on any failure. */
-extern LIBMPQ_API int32_t libmpq__block_size_packed(
-    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, libmpq__off_t *packed_size
-);
-
-/* Return the stored method byte, zero for raw storage (including fallback),
+/*
+ * Return the stored method byte, zero for raw storage (including fallback),
  * or LIBMPQ_COMPRESSION_PKZIP for a legacy imploded block. Method 0x12 is the
  * legacy bzip2/zlib chain in v1 and LZMA in v2; this is not the writer's LZMA
  * selector. No decompression or checksum verification is performed. A non-NULL
- * compression output is initialized to zero and remains zero on failure. */
+ * compression output is initialized to zero and remains zero on failure.
+ */
 extern LIBMPQ_API int32_t libmpq__block_compression(
     mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint32_t *compression
+);
+
+/*
+ * Verify one sector's stored Adler-32 over packed bytes after decryption.
+ * Success returns the stored checksum and either zero or VERIFY_SECTOR_CRC
+ * in mismatches. Unavailable checksums (including zero/all-ones entries) return
+ * ERROR_EXIST. Both non-NULL outputs are zeroed before validation and remain
+ * zero on any error. libmpq__block_read() does not implicitly verify the
+ * stored sector checksum.
+ */
+extern LIBMPQ_API int32_t libmpq__block_verify(
+    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint32_t *checksum,
+    uint32_t *mismatches
 );
 
 /*
@@ -619,6 +729,186 @@ extern LIBMPQ_API int32_t libmpq__block_read(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number, uint8_t *out_buf,
     libmpq__off_t out_size, libmpq__off_t *transferred
 );
+
+/* Archive writing. */
+
+/*
+ * Begin writing a file in a writer archive and reserve its declared size.
+ * The returned writer accepts only the number of bytes specified by
+ * unpacked_size and applies the copied file options sector by sector.
+ * Only one writer may be active per archive; finish it or abandon it before
+ * beginning another file.
+ */
+extern LIBMPQ_API int32_t libmpq__writer_begin(
+    mpq_archive_s *mpq_archive, const char *filename, libmpq__off_t unpacked_size,
+    const mpq_file_options_s *options, mpq_writer_s **writer
+);
+
+/*
+ * Set Windows FILETIME, not Unix time, on an active file writer. Generation of
+ * FILETIME must be enabled or FORMAT is returned. The default is zero;
+ * neither this API nor path-based addition imports filesystem metadata.
+ */
+extern LIBMPQ_API int32_t libmpq__writer_timestamp(mpq_writer_s *writer, uint64_t filetime);
+
+/*
+ * Append source bytes to an active file writer.
+ * The writer buffers at most one sector and flushes complete sectors through
+ * the selected compression and encryption pipeline. The call fails if the
+ * input would exceed the size declared by libmpq__writer_begin.
+ */
+extern LIBMPQ_API int32_t
+libmpq__writer_write(mpq_writer_s *writer, const uint8_t *buffer, libmpq__off_t size);
+
+/*
+ * Finish an active file writer and publish its block and hash-table entries.
+ * Any final partial sector is flushed before metadata is committed, and the
+ * writer handle becomes invalid after this call regardless of its result.
+ */
+extern LIBMPQ_API int32_t libmpq__writer_finish(mpq_writer_s *writer);
+
+/*
+ * Add a complete in-memory file to a writer archive.
+ * This convenience operation performs begin, write, and finish using the same
+ * validation and per-sector pipeline as the streaming API. The input buffer
+ * remains owned by the caller and may be released after the call returns.
+ */
+extern LIBMPQ_API int32_t libmpq__archive_add_data(
+    mpq_archive_s *mpq_archive, const char *filename, const uint8_t *buffer, libmpq__off_t size,
+    const mpq_file_options_s *options
+);
+
+/*
+ * Add a filesystem file to a writer archive without requiring the whole source
+ * file in memory. The source is read in bounded chunks, while the archive
+ * entry uses the supplied name and storage options. The source file is read
+ * only; it is never modified by this operation.
+ */
+extern LIBMPQ_API int32_t libmpq__archive_add_path(
+    mpq_archive_s *mpq_archive, const char *filename, const char *source_path,
+    const mpq_file_options_s *options
+);
+
+/* Transactional archive updates. */
+
+/*
+ * Stage changes to an existing filesystem MPQ in a private working copy.
+ * Changes reach the original only when commit atomically publishes that copy.
+ * Embedded MPQs retain their container prefix and unrelated trailing bytes.
+ * Stale weak and strong signatures are removed on modification. MPQE archives
+ * require the explicit authenticated update_begin_mpqe() entry point.
+ */
+extern LIBMPQ_API int32_t libmpq__update_begin(mpq_update_s **update, const char *path);
+
+/*
+ * Begin an authenticated MPQE update using a private plaintext working copy.
+ * The caller's authentication code is borrowed only during this call; at
+ * least 32 bytes are required. Commit re-encrypts and atomically publishes
+ * the updated archive. A crash can leave a private plaintext temporary file.
+ */
+extern LIBMPQ_API int32_t libmpq__update_begin_mpqe(
+    mpq_update_s **update, const char *archive_path, const uint8_t *auth_code, size_t auth_code_size
+);
+
+/*
+ * Stage replacement of an existing named member from caller-owned bytes.
+ * NULL options select native defaults and preserve locale/platform identity.
+ */
+extern LIBMPQ_API int32_t libmpq__update_replace_data(
+    mpq_update_s *update, const char *filename, const uint8_t *data, libmpq__off_t size,
+    const mpq_file_options_s *options
+);
+
+/*
+ * Stage replacement from a filesystem path; the source remains caller-owned.
+ * NULL options select native defaults and preserve locale/platform identity.
+ */
+extern LIBMPQ_API int32_t libmpq__update_replace_path(
+    mpq_update_s *update, const char *filename, const char *source_path,
+    const mpq_file_options_s *options
+);
+
+/* Stage removal of one named member without consuming the update handle. */
+extern LIBMPQ_API int32_t libmpq__update_remove(mpq_update_s *update, const char *filename);
+
+/* Stage a named-member rename without consuming the update handle. */
+extern LIBMPQ_API int32_t
+libmpq__update_rename(mpq_update_s *update, const char *old_filename, const char *new_filename);
+
+/*
+ * Validate and atomically publish staged changes. This consumes the update
+ * handle even if publication fails; callers must not use it afterward.
+ */
+extern LIBMPQ_API int32_t libmpq__update_commit(mpq_update_s *update);
+
+/*
+ * Discard staged changes and leave the original archive untouched.
+ * This consumes the update handle even when cleanup reports an error.
+ */
+extern LIBMPQ_API int32_t libmpq__update_abort(mpq_update_s *update);
+
+/* Patch archive creation. */
+
+/*
+ * Stage a new patch archive without changing the base archive. The output
+ * path is published only when finish succeeds; abort discards it. MPQE and
+ * embedded base archives are not supported by this patch writer.
+ */
+extern LIBMPQ_API int32_t
+libmpq__patch_begin(mpq_patch_s **patch, const char *base_archive, const char *output_patch);
+
+/*
+ * Stage an MPQE-wrapped patch artifact using a caller-supplied authentication
+ * code. The code is borrowed only during begin; finish publishes the encrypted
+ * patch and abort discards it. The base remains an ordinary filesystem MPQ.
+ */
+extern LIBMPQ_API int32_t libmpq__patch_begin_mpqe(
+    mpq_patch_s **patch, const char *base_archive, const char *output_patch,
+    const uint8_t *auth_code, size_t auth_code_size
+);
+
+/*
+ * Configure signing on an active patch writer using the archive signing API.
+ * The call is non-consuming; actual signing occurs during finish.
+ */
+extern LIBMPQ_API int32_t libmpq__patch_sign(
+    mpq_patch_s *patch, uint32_t signature_type, const uint8_t *private_key, size_t private_key_size
+);
+
+/*
+ * Stage replacement of an existing base member from caller-owned bytes.
+ * NULL options select patch defaults; explicit options store the patch member
+ * and must match the base member's locale and platform.
+ */
+extern LIBMPQ_API int32_t libmpq__patch_replace_data(
+    mpq_patch_s *patch, const char *filename, const uint8_t *data, libmpq__off_t size,
+    const mpq_file_options_s *options
+);
+
+/*
+ * Stage replacement from a filesystem path without changing the base archive.
+ * NULL options select patch defaults; explicit options must match the base
+ * member's locale and platform.
+ */
+extern LIBMPQ_API int32_t libmpq__patch_replace_path(
+    mpq_patch_s *patch, const char *filename, const char *source_path,
+    const mpq_file_options_s *options
+);
+
+/* Stage a delete marker for an existing named base member. */
+extern LIBMPQ_API int32_t libmpq__patch_remove(mpq_patch_s *patch, const char *filename);
+
+/*
+ * Finalize and publish the patch artifact without changing the base archive.
+ * This consumes the patch handle even if finalization fails.
+ */
+extern LIBMPQ_API int32_t libmpq__patch_finish(mpq_patch_s *patch);
+
+/*
+ * Discard the staged patch artifact without changing the base archive.
+ * This consumes the patch handle even when cleanup reports an error.
+ */
+extern LIBMPQ_API int32_t libmpq__patch_abort(mpq_patch_s *patch);
 
 #ifdef __cplusplus
 }

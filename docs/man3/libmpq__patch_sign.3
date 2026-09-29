@@ -1,0 +1,82 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__PATCH_SIGN 3 2026-09-29 "The MoPaQ archive library"
+.SH NAME
+libmpq__patch_sign \- configure signing for a staged patch archive
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__patch_sign("
+.BI "        mpq_patch_s *" "patch,"
+.BI "        uint32_t " "signature_type,"
+.BI "        const uint8_t *" "private_key,"
+.BI "        size_t " "private_key_size"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Configures \fBLIBMPQ_SIGNATURE_WEAK\fP or \fBLIBMPQ_SIGNATURE_STRONG\fP
+signing on an active patch writer. The operation delegates to the ordinary
+archive signing implementation. Configure each type at most once before
+libmpq__patch_finish(3); ordinary MPQ patches may configure both types.
+The existing archive writer generates signatures during finalization.
+All signing keys are caller-supplied; no default or product-specific keys are
+built in.
+.PP
+MPQE-wrapped patches support internal weak signatures. No external strong
+signature representation is defined for MPQE transport, so requesting one
+returns \fBLIBMPQ_ERROR_FORMAT\fP, matching archive signing behavior.
+This call does not consume the patch handle, including when configuration
+fails. It does not modify the base archive.
+.PP
+After finish, open the patch with the ordinary MPQ or authenticated MPQE
+reader. Use libmpq__archive_signatures(3) and libmpq__archive_verify(3)
+to inspect and verify its signatures. No separate patch verification API exists.
+.SH RETURN VALUE
+Returns \fBLIBMPQ_SUCCESS\fP or an existing negative libmpq error.
+.SH ERRORS
+A NULL patch returns \fBLIBMPQ_ERROR_EXIST\fP. Invalid types, keys, duplicate
+configuration, and unsupported MPQE strong signing return
+\fBLIBMPQ_ERROR_FORMAT\fP. Writer lifecycle and capacity errors may propagate
+from libmpq__archive_sign(3).
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__patch_begin (3),
+.BR libmpq__patch_begin_mpqe (3),
+.BR libmpq__patch_replace_data (3),
+.BR libmpq__patch_replace_path (3),
+.BR libmpq__patch_remove (3),
+.BR libmpq__patch_finish (3),
+.BR libmpq__patch_abort (3),
+.BR libmpq__archive_sign (3),
+.BR libmpq__archive_signatures (3),
+.BR libmpq__archive_verify (3)
+.SH AUTHOR
+The libmpq project is maintained by Maik Broemme.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

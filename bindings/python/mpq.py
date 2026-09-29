@@ -14,6 +14,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import os
+import threading
 from dataclasses import dataclass
 
 ERROR_OPEN = -1
@@ -43,6 +44,8 @@ VERIFY_SECTOR_CRC = 0x01
 VERIFY_FILE_CRC32 = 0x02
 VERIFY_FILE_MD5 = 0x04
 VERIFY_ALL = VERIFY_SECTOR_CRC | VERIFY_FILE_CRC32 | VERIFY_FILE_MD5
+SIGNATURE_WEAK = 0x01
+SIGNATURE_STRONG = 0x02
 COMPRESSION_POLICY_STANDARD = 0
 COMPRESSION_POLICY_EXTENDED = 1
 FILE_FLAG_IMPLODE = 0x00000100
@@ -64,6 +67,9 @@ COMPRESSION_LZMA = 0x00000100
 _OFF_T = ctypes.c_int64
 _BYTE_PTR = ctypes.POINTER(ctypes.c_uint8)
 _VOID_PTR = ctypes.c_void_p
+_READ_AT_FN = ctypes.CFUNCTYPE(
+    ctypes.c_int32, _VOID_PTR, _OFF_T, _BYTE_PTR, ctypes.c_size_t
+)
 
 
 class _FileAttributes(ctypes.Structure):
@@ -225,6 +231,10 @@ _configure("libmpq__strerror", ctypes.c_char_p, ctypes.c_int32)
 _configure("libmpq__archive_compression_allowed", ctypes.c_int32, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_int32)
 _configure("libmpq__archive_open", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _OFF_T)
 _configure("libmpq__archive_open_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _OFF_T, _BYTE_PTR, ctypes.c_size_t)
+_configure("libmpq__archive_open_io", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), _VOID_PTR,
+           _READ_AT_FN, _OFF_T, _OFF_T, ctypes.c_char_p)
+_configure("libmpq__archive_open_mpqe_io", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), _VOID_PTR,
+           _READ_AT_FN, _OFF_T, _OFF_T, _BYTE_PTR, ctypes.c_size_t, ctypes.c_char_p)
 _configure("libmpq__archive_create", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__archive_create_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _BYTE_PTR, ctypes.c_size_t, _VOID_PTR)
 _configure("libmpq__writer_begin", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _OFF_T, _VOID_PTR, ctypes.POINTER(_VOID_PTR))
@@ -234,7 +244,30 @@ _configure("libmpq__archive_add_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_
 _configure("libmpq__archive_add_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__archive_clone", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), _VOID_PTR)
 _configure("libmpq__archive_close", ctypes.c_int32, _VOID_PTR)
+_configure("libmpq__update_begin", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p)
+_configure("libmpq__update_begin_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p,
+           _BYTE_PTR, ctypes.c_size_t)
+_configure("libmpq__update_replace_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE_PTR, _OFF_T, _VOID_PTR)
+_configure("libmpq__update_replace_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
+_configure("libmpq__update_remove", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p)
+_configure("libmpq__update_rename", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p)
+_configure("libmpq__update_commit", ctypes.c_int32, _VOID_PTR)
+_configure("libmpq__update_abort", ctypes.c_int32, _VOID_PTR)
+_configure("libmpq__patch_begin", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, ctypes.c_char_p)
+_configure("libmpq__patch_begin_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p,
+           ctypes.c_char_p, _BYTE_PTR, ctypes.c_size_t)
+_configure("libmpq__patch_sign", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR,
+           ctypes.c_size_t)
+_configure("libmpq__patch_replace_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE_PTR, _OFF_T, _VOID_PTR)
+_configure("libmpq__patch_replace_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
+_configure("libmpq__patch_remove", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p)
+_configure("libmpq__patch_finish", ctypes.c_int32, _VOID_PTR)
+_configure("libmpq__patch_abort", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__archive_attributes", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
+_configure("libmpq__archive_signatures", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
+_configure("libmpq__archive_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR,
+           ctypes.c_size_t, ctypes.POINTER(ctypes.c_uint32))
+_configure("libmpq__archive_sign", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR, ctypes.c_size_t)
 _configure("libmpq__file_attributes", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_FileAttributes))
 _configure("libmpq__file_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__block_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32))
@@ -253,10 +286,27 @@ _configure("libmpq__file_number", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ct
 _configure("libmpq__file_hash", None, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_number_from_hash", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_read", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR, _OFF_T, ctypes.POINTER(_OFF_T))
+_configure("libmpq__stream_open", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_VOID_PTR))
+_configure("libmpq__stream_open_name", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.POINTER(_VOID_PTR))
+_configure("libmpq__stream_read", ctypes.c_int32, _VOID_PTR, _BYTE_PTR, _OFF_T, ctypes.POINTER(_OFF_T))
+_configure("libmpq__stream_seek", ctypes.c_int32, _VOID_PTR, _OFF_T, ctypes.c_int32)
+_configure("libmpq__stream_tell", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(_OFF_T))
+_configure("libmpq__stream_size", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(_OFF_T))
+_configure("libmpq__stream_close", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__block_size_unpacked", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(_OFF_T))
 _configure("libmpq__block_size_packed", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(_OFF_T))
 _configure("libmpq__block_compression", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__block_read", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, _BYTE_PTR, _OFF_T, ctypes.POINTER(_OFF_T))
+
+
+def _sign_with_key(native_function, handle, signature_type, private_key):
+    """Pass a temporary raw key to the existing archive or patch signer."""
+    key = bytes(private_key)
+    pointer = (ctypes.c_uint8 * len(key)).from_buffer_copy(key)
+    try:
+        native_function(handle, signature_type, pointer, len(key))
+    finally:
+        ctypes.memset(pointer, 0, len(key))
 
 
 def archive_compression_allowed(archive_version, compression_mask, policy=COMPRESSION_POLICY_STANDARD):
@@ -318,6 +368,221 @@ class FileCreateOptions(ctypes.Structure):
     def encrypted(self):
         """Return a copy of these options with encryption enabled."""
         return type(self)(self.flags | FILE_FLAG_ENCRYPTED, self.compression_first, self.compression_next, self.locale, self.platform)
+
+
+class Update:
+    """Transactional edits to one filesystem MPQ; uncommitted changes abort."""
+
+    def __init__(self, path):
+        self._update = _VOID_PTR()
+        libmpq.libmpq__update_begin(ctypes.byref(self._update), _as_bytes(path))
+
+    @classmethod
+    def begin(cls, path):
+        """Begin an isolated update for an existing filesystem archive."""
+        return cls(path)
+
+    @classmethod
+    def begin_mpqe(cls, path, auth_code):
+        """Begin an authenticated MPQE update using the same transaction API."""
+        code = _auth_code_bytes(auth_code)
+        pointer = (ctypes.c_uint8 * len(code)).from_buffer_copy(code) if code else None
+        update = cls.__new__(cls)
+        update._update = _VOID_PTR()
+        libmpq.libmpq__update_begin_mpqe(
+            ctypes.byref(update._update), _as_bytes(path), pointer, len(code)
+        )
+        return update
+
+    def _ensure_open(self):
+        if not self._update:
+            raise LibmpqStateError(ERROR_NOT_INITIALIZED, "update is closed")
+
+    @staticmethod
+    def _options(options):
+        if options is None:
+            return None
+        if not isinstance(options, FileCreateOptions):
+            raise TypeError("options must be FileCreateOptions")
+        return ctypes.byref(options)
+
+    def replace_data(self, name, data, options=None):
+        """Stage bytes-like replacement; None uses native storage defaults."""
+        self._ensure_open()
+        native_options = self._options(options)
+        view = memoryview(data)
+        try:
+            view = view.cast("B")
+            if view.readonly:
+                buffer = (ctypes.c_uint8 * len(view)).from_buffer_copy(view)
+            else:
+                buffer = (ctypes.c_uint8 * len(view)).from_buffer(view)
+            libmpq.libmpq__update_replace_data(
+                self._update, _as_bytes(name), buffer if len(view) else None,
+                len(view), native_options
+            )
+        finally:
+            view.release()
+
+    def replace_path(self, name, source_path, options=None):
+        """Stage path replacement; None uses native storage defaults."""
+        self._ensure_open()
+        native_options = self._options(options)
+        libmpq.libmpq__update_replace_path(
+            self._update, _as_bytes(name), _as_bytes(source_path),
+            native_options
+        )
+
+    def remove(self, name):
+        """Stage removal of an existing member."""
+        self._ensure_open()
+        libmpq.libmpq__update_remove(self._update, _as_bytes(name))
+
+    def rename(self, old_name, new_name):
+        """Stage a member rename."""
+        self._ensure_open()
+        libmpq.libmpq__update_rename(
+            self._update, _as_bytes(old_name), _as_bytes(new_name)
+        )
+
+    def commit(self):
+        """Publish staged changes and consume this handle, even on error."""
+        self._ensure_open()
+        handle, self._update = self._update, _VOID_PTR()
+        libmpq.libmpq__update_commit(handle)
+
+    def abort(self):
+        """Discard staged changes and consume this handle, even on error."""
+        self._ensure_open()
+        handle, self._update = self._update, _VOID_PTR()
+        libmpq.libmpq__update_abort(handle)
+
+    def close(self):
+        """Abort an active update; repeated closes are harmless."""
+        if self._update:
+            self.abort()
+
+    def __enter__(self):
+        self._ensure_open()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is not None:
+            try:
+                self.close()
+            except BaseException:
+                pass
+        else:
+            self.close()
+
+    def __del__(self):
+        try:
+            self.close()
+        except BaseException:
+            pass
+
+
+class Patch:
+    """Staged patch artifact; unfinished work is aborted on cleanup."""
+
+    def __init__(self, base_archive, output_patch):
+        self._patch = _VOID_PTR()
+        libmpq.libmpq__patch_begin(
+            ctypes.byref(self._patch), _as_bytes(base_archive), _as_bytes(output_patch)
+        )
+
+    @classmethod
+    def begin(cls, base_archive, output_patch):
+        """Begin creating a patch without modifying the base archive."""
+        return cls(base_archive, output_patch)
+
+    @classmethod
+    def begin_mpqe(cls, base_archive, output_patch, auth_code):
+        """Begin creating an MPQE-wrapped patch with caller-supplied authentication."""
+        code = _auth_code_bytes(auth_code)
+        pointer = (ctypes.c_uint8 * len(code)).from_buffer_copy(code) if code else None
+        patch = cls.__new__(cls)
+        patch._patch = _VOID_PTR()
+        libmpq.libmpq__patch_begin_mpqe(
+            ctypes.byref(patch._patch), _as_bytes(base_archive), _as_bytes(output_patch),
+            pointer, len(code)
+        )
+        return patch
+
+    def _ensure_open(self):
+        if not self._patch:
+            raise LibmpqStateError(ERROR_NOT_INITIALIZED, "patch is closed")
+
+    def replace_data(self, name, data, options=None):
+        """Stage bytes-like replacement; None passes native NULL options."""
+        self._ensure_open()
+        native_options = Update._options(options)
+        view = memoryview(data)
+        try:
+            view = view.cast("B")
+            if view.readonly:
+                buffer = (ctypes.c_uint8 * len(view)).from_buffer_copy(view)
+            else:
+                buffer = (ctypes.c_uint8 * len(view)).from_buffer(view)
+            libmpq.libmpq__patch_replace_data(
+                self._patch, _as_bytes(name), buffer if len(view) else None,
+                len(view), native_options
+            )
+        finally:
+            view.release()
+
+    def replace_path(self, name, source_path, options=None):
+        """Stage path replacement; None passes native NULL options."""
+        self._ensure_open()
+        libmpq.libmpq__patch_replace_path(
+            self._patch, _as_bytes(name), _as_bytes(source_path), Update._options(options)
+        )
+
+    def remove(self, name):
+        """Stage a delete marker for an existing member."""
+        self._ensure_open()
+        libmpq.libmpq__patch_remove(self._patch, _as_bytes(name))
+
+    def sign(self, private_key, signature_type=SIGNATURE_WEAK):
+        """Configure weak or strong signing without consuming the patch."""
+        self._ensure_open()
+        _sign_with_key(libmpq.libmpq__patch_sign, self._patch, signature_type, private_key)
+
+    def finish(self):
+        """Publish the patch and consume this handle, even on native error."""
+        self._ensure_open()
+        handle, self._patch = self._patch, _VOID_PTR()
+        libmpq.libmpq__patch_finish(handle)
+
+    def abort(self):
+        """Discard the patch and consume this handle, even on native error."""
+        self._ensure_open()
+        handle, self._patch = self._patch, _VOID_PTR()
+        libmpq.libmpq__patch_abort(handle)
+
+    def close(self):
+        """Abort an active patch; repeated closes are harmless."""
+        if self._patch:
+            self.abort()
+
+    def __enter__(self):
+        self._ensure_open()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is not None:
+            try:
+                self.close()
+            except BaseException:
+                pass
+        else:
+            self.close()
+
+    def __del__(self):
+        try:
+            self.close()
+        except BaseException:
+            pass
 
 
 @dataclass(frozen=True)
@@ -450,6 +715,11 @@ class Writer:
         options, data = options or FileCreateOptions.raw(), bytes(data)
         pointer = None if not data else (ctypes.c_uint8 * len(data)).from_buffer_copy(data)
         return libmpq.libmpq__archive_add_data(self._mpq, _as_bytes(name), pointer, len(data), ctypes.byref(options))
+
+    def sign(self, private_key, signature_type=SIGNATURE_WEAK):
+        """Configure weak or plain strong signing at close using a raw private key."""
+        self._ensure_open()
+        _sign_with_key(libmpq.libmpq__archive_sign, self._mpq, signature_type, private_key)
 
     def begin(self, name, size, options=None):
         """Begin a fixed-size streaming entry."""
@@ -603,6 +873,136 @@ class Reader:
             pass
 
 
+class _SourceState:
+    """Keep a borrowed seek/read source and its native callback alive."""
+
+    def __init__(self, source, size):
+        if not isinstance(size, int) or size < 0 or size > 0x7fffffffffffffff:
+            raise ValueError("source size must be a nonnegative signed 64-bit integer")
+        if not callable(getattr(source, "seek", None)) or not callable(getattr(source, "read", None)):
+            raise TypeError("source must provide seek(offset) and read(size)")
+        self.source = source
+        self.size = size
+        self._references = 0
+        self._lock = threading.RLock()
+        self._context = ctypes.py_object(self)
+        self._callback = _READ_AT_FN(self._read_at)
+
+    @property
+    def context(self):
+        return ctypes.cast(ctypes.pointer(self._context), _VOID_PTR)
+
+    def acquire(self):
+        self._references += 1
+        return self
+
+    def release(self):
+        self._references -= 1
+        if self._references == 0:
+            self.source = None
+            self._callback = None
+
+    @staticmethod
+    def _read_at(context, offset, buffer, size):
+        """Satisfy one exact native random-access read without leaking exceptions."""
+        try:
+            state = ctypes.cast(context, ctypes.POINTER(ctypes.py_object)).contents.value
+            if offset < 0 or size > state.size - offset:
+                return ERROR_READ
+            source = state.source
+            if source is None:
+                return ERROR_READ
+            with state._lock:
+                position = source.tell() if callable(getattr(source, "tell", None)) else None
+                try:
+                    source.seek(offset)
+                    data = source.read(size)
+                finally:
+                    if position is not None:
+                        source.seek(position)
+            data = memoryview(data).tobytes()
+            if len(data) != size:
+                return ERROR_READ
+            if size:
+                ctypes.memmove(buffer, data, size)
+            return 0
+        except BaseException:
+            return ERROR_READ
+
+
+class MpqStream:
+    """Closeable incremental decoded stream backed by a private native clone."""
+
+    def __init__(self, native, source_state=None):
+        self._stream = native
+        self._source_state = source_state.acquire() if source_state is not None else None
+
+    def _ensure_open(self):
+        if not self._stream:
+            raise LibmpqStateError(ERROR_NOT_INITIALIZED, "stream is closed")
+
+    @property
+    def size(self):
+        """Return the immutable logical member size."""
+        self._ensure_open()
+        return _read_value(libmpq.libmpq__stream_size, _OFF_T, self._stream)
+
+    def tell(self):
+        """Return the current logical stream position."""
+        self._ensure_open()
+        return _read_value(libmpq.libmpq__stream_tell, _OFF_T, self._stream)
+
+    def seek(self, offset, whence=os.SEEK_SET):
+        """Seek within the logical member; positions outside it are rejected."""
+        self._ensure_open()
+        if whence not in (os.SEEK_SET, os.SEEK_CUR, os.SEEK_END):
+            raise ValueError("invalid whence")
+        libmpq.libmpq__stream_seek(self._stream, int(offset), int(whence))
+        return self.tell()
+
+    def read(self, size=-1):
+        """Read decoded bytes; an omitted or negative size reads through EOF."""
+        self._ensure_open()
+        if size is None:
+            size = -1
+        if not isinstance(size, int):
+            raise TypeError("size must be an integer")
+        if size < 0:
+            size = self.size - self.tell()
+        if size == 0:
+            return b""
+        buffer = _native_buffer(size)
+        transferred = _OFF_T()
+        libmpq.libmpq__stream_read(
+            self._stream, buffer, size, ctypes.byref(transferred)
+        )
+        return bytes(buffer[:transferred.value])
+
+    def close(self):
+        """Consume the native handle once; repeated Python closes are harmless."""
+        if self._stream:
+            stream, self._stream = self._stream, _VOID_PTR()
+            try:
+                libmpq.libmpq__stream_close(stream)
+            finally:
+                if self._source_state is not None:
+                    self._source_state.release()
+                    self._source_state = None
+
+    def __enter__(self):
+        self._ensure_open()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
 class File:
     """Metadata and complete/block access wrapper for one MPQ entry."""
 
@@ -610,7 +1010,8 @@ class File:
         """Return (stored Adler-32, mismatches), with zero or VERIFY_SECTOR_CRC bits.
 
         Unavailable/unused checksums raise LibmpqNotFoundError. Other native
-        errors also raise; normal reads never verify implicitly.
+        errors also raise. Complete lossless reads automatically verify available
+        stored CRC32 and MD5 metadata.
         """
         self._archive._ensure_open()
         if not isinstance(block, int) or not 0 <= block <= 0xffffffff:
@@ -727,6 +1128,7 @@ class Archive:
         else:
             self.filename = os.fspath(source)
         self._mpq = _VOID_PTR()
+        self._source_state = None
         libmpq.libmpq__archive_open(ctypes.byref(self._mpq), _as_bytes(self.filename), offset)
         self._opened = True
         self._load_metadata()
@@ -744,6 +1146,7 @@ class Archive:
         archive._source = path
         archive.filename = os.fspath(path)
         archive._mpq = _VOID_PTR()
+        archive._source_state = None
         buffer = None if not code else (ctypes.c_uint8 * len(code)).from_buffer_copy(code)
         pointer = None if buffer is None else ctypes.cast(buffer, _BYTE_PTR)
         libmpq.libmpq__archive_open_mpqe(
@@ -753,6 +1156,51 @@ class Archive:
         archive._load_metadata()
         return archive
 
+    @classmethod
+    def open_io(cls, source, size, offset=-1, source_name=None):
+        """Open a borrowed seekable source using exact random-access callbacks."""
+        state = _SourceState(source, size)
+        archive = object.__new__(cls)
+        archive._source = source_name if source_name is not None else "<custom source>"
+        archive.filename, archive._mpq = source_name, _VOID_PTR()
+        archive._source_state = state.acquire()
+        try:
+            libmpq.libmpq__archive_open_io(
+                ctypes.byref(archive._mpq), state.context, state._callback, state.size,
+                offset, None if source_name is None else _as_bytes(source_name)
+            )
+            archive._opened = True
+            archive._load_metadata()
+            return archive
+        except Exception:
+            archive._source_state.release()
+            archive._source_state = None
+            raise
+
+    @classmethod
+    def open_mpqe_io(cls, source, size, auth_code, offset=-1, source_name=None):
+        """Open a borrowed seekable MPQE source using an exact-read callback."""
+        code = _auth_code_bytes(auth_code)
+        state = _SourceState(source, size)
+        archive = object.__new__(cls)
+        archive._source = source_name if source_name is not None else "<custom source>"
+        archive.filename, archive._mpq = source_name, _VOID_PTR()
+        archive._source_state = state.acquire()
+        buffer = None if not code else (ctypes.c_uint8 * len(code)).from_buffer_copy(code)
+        try:
+            libmpq.libmpq__archive_open_mpqe_io(
+                ctypes.byref(archive._mpq), state.context, state._callback, state.size, offset,
+                None if buffer is None else ctypes.cast(buffer, _BYTE_PTR), len(code),
+                None if source_name is None else _as_bytes(source_name)
+            )
+            archive._opened = True
+            archive._load_metadata()
+            return archive
+        except Exception:
+            archive._source_state.release()
+            archive._source_state = None
+            raise
+
     def attributes(self):
         """Return stored flags, or None if absent; malformed metadata raises."""
         self._ensure_open()
@@ -760,6 +1208,33 @@ class Archive:
             return _read_value(libmpq.libmpq__archive_attributes, ctypes.c_uint32, self._mpq)
         except LibmpqNotFoundError:
             return None
+
+    def signatures(self):
+        """Return signature type bits; malformed internal files raise."""
+        self._ensure_open()
+        return _read_value(libmpq.libmpq__archive_signatures, ctypes.c_uint32, self._mpq)
+
+    def open_stream(self, member):
+        """Open an independent incremental member stream by name or number."""
+        self._ensure_open()
+        stream = _VOID_PTR()
+        if isinstance(member, int):
+            if not 0 <= member <= 0xffffffff:
+                raise IndexError("file number is out of range")
+            libmpq.libmpq__stream_open(self._mpq, member, ctypes.byref(stream))
+        else:
+            libmpq.libmpq__stream_open_name(
+                self._mpq, _as_bytes(member), ctypes.byref(stream)
+            )
+        return MpqStream(stream, self._source_state)
+
+    def verify(self, public_key, signature_type=SIGNATURE_WEAK):
+        """Return mismatch bits using a weak 128-byte or strong 512-byte public key."""
+        self._ensure_open()
+        key = bytes(public_key)
+        pointer = (ctypes.c_uint8 * len(key)).from_buffer_copy(key)
+        return _read_value(libmpq.libmpq__archive_verify, ctypes.c_uint32,
+                           self._mpq, signature_type, pointer, len(key))
 
     def _load_metadata(self):
         """Populate archive metadata from native queries."""
@@ -783,6 +1258,8 @@ class Archive:
         clone = object.__new__(type(self))
         clone._source, clone.filename, clone._mpq = self._source, self.filename, _VOID_PTR()
         libmpq.libmpq__archive_clone(ctypes.byref(clone._mpq), self._mpq)
+        clone._source_state = (self._source_state.acquire()
+                               if self._source_state is not None else None)
         clone._opened = True
         clone._load_metadata()
         return clone
@@ -791,7 +1268,12 @@ class Archive:
         """Close the native archive handle; repeated calls are harmless."""
         if self._opened:
             archive, self._mpq, self._opened = self._mpq, _VOID_PTR(), False
-            libmpq.libmpq__archive_close(archive)
+            try:
+                libmpq.libmpq__archive_close(archive)
+            finally:
+                if self._source_state is not None:
+                    self._source_state.release()
+                    self._source_state = None
 
     def _ensure_open(self):
         """Reject operations after archive close."""

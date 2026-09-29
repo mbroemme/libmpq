@@ -1,15 +1,24 @@
 /*
  *  mpq-sparse.c -- Bounded MPQ zero-run compression and decompression.
  *
- *  Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+ *  Copyright (c) 2026-2026 Maik Broemme <mbroemme@libmpq.org>
  *
  *  This file is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
  *  the Free Software Foundation; either version 2.1 of the License, or
  *  (at your option) any later version.
+ *
+ *  This file is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU Lesser General Public License for more details.
+ *
+ *  You should have received a copy of the GNU Lesser General Public License
+ *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "mpq-sparse.h"
+#include "mpq-endian.h"
 #include <libmpq/mpq.h>
 
 #include <string.h>
@@ -27,10 +36,7 @@ libmpq__sparse_compress(
         return LIBMPQ_ERROR_UNPACK;
     if (out_size > INT32_MAX)
         out_size = INT32_MAX;
-    out_buf[0] = (uint8_t)(in_size >> 24);
-    out_buf[1] = (uint8_t)(in_size >> 16);
-    out_buf[2] = (uint8_t)(in_size >> 8);
-    out_buf[3] = (uint8_t)in_size;
+    libmpq__store_be32(out_buf, in_size);
     while (input < in_size) {
         uint32_t count = 0;
         uint32_t start = input;
@@ -75,17 +81,18 @@ libmpq__sparse_decompress(
 
     if (in_buf == NULL || out_buf == NULL || in_size < 5)
         return LIBMPQ_ERROR_UNPACK;
-    length = ((uint32_t)in_buf[0] << 24) | ((uint32_t)in_buf[1] << 16) |
-             ((uint32_t)in_buf[2] << 8) | (uint32_t)in_buf[3];
+    length = libmpq__load_be32(in_buf);
     if (length == 0 || length > out_size || length > INT32_MAX)
         return LIBMPQ_ERROR_UNPACK;
     while (input < in_size && output < length) {
         uint8_t token = in_buf[input++];
         uint32_t count = (uint32_t)(token & 0x7fU) + ((token & 0x80U) ? 1U : 3U);
 
-        /* Accept the short terminal literal form emitted by Storm-style compressors,
+        /*
+         * Accept the short terminal literal form emitted by Storm-style compressors,
          * even when the token nominally describes more bytes than remain in the
-         * declared output. The required literal bytes must be physically present. */
+         * declared output. The required literal bytes must be physically present.
+         */
         if (count > length - output)
             count = length - output;
         if (token & 0x80U) {

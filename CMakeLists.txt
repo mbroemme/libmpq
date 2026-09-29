@@ -2,7 +2,7 @@
 # Keep the release version synchronized with AC_INIT in configure.ac;
 # it is independent of the Libtool ABI version.
 cmake_minimum_required(VERSION 3.21)
-project(libmpq VERSION 0.7.1 LANGUAGES C)
+project(libmpq VERSION 0.8.0 LANGUAGES C)
 
 # Native MSVC frontend; Autotools remains the canonical Unix/cross build.
 option(BUILD_SHARED_LIBS "Build the shared library" ON)
@@ -96,6 +96,12 @@ install(FILES include/libmpq/mpq.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/libmpq
 )
 
+# Keep CMake installs aligned with the section-3 API manuals shipped by Autotools.
+file(GLOB man3_pages CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/docs/man3/*.3")
+install(FILES ${man3_pages}
+    DESTINATION ${CMAKE_INSTALL_MANDIR}/man3
+)
+
 # Release builds may provide debugging symbols without requiring them to exist.
 if(MSVC AND BUILD_SHARED_LIBS)
     install(FILES "$<TARGET_PDB_FILE:mpq>"
@@ -113,6 +119,7 @@ if(BUILD_TESTING)
         verify
         attributes
         md5
+        signature
         compression
         lzma
         sparse
@@ -125,6 +132,9 @@ if(BUILD_TESTING)
         api
         pkware
         reader
+        patch-reader
+        patch-writer
+        update
         wave
         writer
     )

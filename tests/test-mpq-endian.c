@@ -1,3 +1,22 @@
+/*
+ *  test-mpq-endian.c -- libmpq regression tests.
+ *
+ *  Copyright (c) 2026-2026 Maik Broemme <mbroemme@libmpq.org>
+ *
+ *  This file is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU Lesser General Public License as published by
+ *  the Free Software Foundation; either version 2.1 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This file is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU Lesser General Public License for more details.
+ *
+ *  You should have received a copy of the GNU Lesser General Public License
+ *  along with this file; if not, see <https://www.gnu.org/licenses/>.
+ */
+
 /* Exercise the compiled little-endian serialization module. */
 #include "test-mpq-helper.h"
 
@@ -116,7 +135,7 @@ test_header_extension_size(void)
     return 0;
 }
 
-/* Verify unaligned-safe little-endian loads and stores for all widths. */
+/* Verify unaligned-safe little- and big-endian loads and stores for all widths. */
 int
 main(void)
 {
@@ -138,6 +157,7 @@ main(void)
     );
     TEST_CHECK(libmpq__load_le16(NULL) == 0 && libmpq__load_le32(NULL) == 0);
     TEST_CHECK(libmpq__load_le64(NULL) == 0);
+    TEST_CHECK(libmpq__load_be32((const uint8_t[]){ 0x12, 0x34, 0x56, 0x78 }) == 0x12345678);
     libmpq__store_le16(raw, 0x5678);
     libmpq__store_le32(raw + 2, 0x12345678);
     libmpq__store_le64(raw + 6, UINT64_C(0x1122334455667788));
@@ -145,6 +165,9 @@ main(void)
         raw[0] == 0x78 && raw[1] == 0x56 && raw[2] == 0x78 && raw[5] == 0x12 && raw[6] == 0x88 &&
         raw[13] == 0x11
     );
+    libmpq__store_be32(raw + 1, 0x12345678);
+    TEST_CHECK(libmpq__load_be32(raw + 1) == 0x12345678);
+    TEST_CHECK(raw[1] == 0x12 && raw[2] == 0x34 && raw[3] == 0x56 && raw[4] == 0x78);
     TEST_CHECK(test_serialized_vectors() == 0);
     return 0;
 }

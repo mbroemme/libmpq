@@ -33,6 +33,16 @@ buffer is rejected as a decryption error. MPQE has no authentication check, so
 a well-formed but incorrect code is parsed as ordinary invalid MPQ data and
 can produce a format or another parser error.
 
+## Patch namespace paths
+
+A patch layer can store a physical member such as `Base\Foo` below a `Base\`
+prefix. Removing that prefix gives the logical identity `Foo` used to match
+the base archive and other layers. A `(patch_metadata)` path is a namespace
+marker, not a rich metadata structure: if its plaintext path is available,
+typically through `(listfile)`, the directory portion can identify the prefix.
+When only irreversible MPQ filename hashes are available, a prefix cannot be
+inferred generically from them.
+
 ## Header versions
 
 The common 32-byte prefix is:
@@ -207,8 +217,9 @@ not the public compact file numbering. Patch bits are most-significant-bit
 first within each byte.
 
 libmpq loads this optional file lazily through normal file decoding. Absence
-returns EXIST; malformed metadata returns FORMAT without preventing ordinary
-extraction. The reader accepts full arrays and recognized legacy layouts:
+returns EXIST; malformed metadata returns FORMAT when explicitly queried, while
+ordinary extraction skips unusable optional metadata. The reader accepts full
+arrays and recognized legacy layouts:
 one-entry-short arrays, omitted self patch bits, missing patch arrays, and
 all-zero legacy DWORD patch regions. Unavailable rows/patch values have their
 availability flags cleared rather than inventing checksum values. Unknown
@@ -229,16 +240,25 @@ CRC32 and MD5 cover source bytes before compression, including lossy ADPCM,
 not stored ciphertext. FILETIME defaults to zero and is set explicitly on a
 file writer; filesystem timestamps are never imported. Finalization adds the
 listfile, then attributes, then serializes the final tables. Unused rows and
-the attributes entry itself are zero. Patch-bit creation emits zeros only and
-does not create or apply patches. Checksums are metadata, not cryptographic
-authentication, and extraction does not automatically verify them.
+the attributes entry itself are zero. Ordinary archive creation emits zero
+patch bits; the patch writer sets them for patch-file entries. Checksums are
+metadata, not cryptographic authentication. Complete lossless file reads
+automatically compare available CRC32 and MD5 values against decoded contents;
+FILETIME and PATCH_BIT remain
+metadata only. Lossy ADPCM decoded bytes can differ from source-byte metadata,
+so those members are not automatically compared. Complete file reads also
+verify available sector Adler-32 values over decrypted packed sectors before
+decoding, including ADPCM. Unusable optional sector tables are skipped during
+ordinary extraction.
 
 `libmpq__file_verify()` explicitly compares sector checksums and file CRC32/MD5.
 MPQ sector CRCs are Adler-32 checksums over decrypted packed sectors, before
 decompression. Their optional table follows the sectors, may be compressed,
 and is not encrypted. Zero and all-ones entries are unavailable and skipped;
 single-unit files have no sector checksum table. `LIBMPQ_VERIFY_SECTOR_CRC`
-requests only this check and does not require `(attributes)`.
+requests only this check and does not require `(attributes)`. Complete reads
+automatically check usable entries, while explicit verification continues to
+report table errors and per-check mismatches.
 
 The writer generates these tables when `LIBMPQ_FILE_FLAG_SECTOR_CRC` is
 requested for sectorized COMPRESS or IMPLODE files. It checksums packed bytes
@@ -262,10 +282,72 @@ and hash table. This avoids StormLib's malformed-map heuristic, which skips
 attributes when a table begins exactly at the end of the v1 header. Writers
 without attributes retain their existing layout.
 
-Older archives can contain an internal weak `(signature)` file; a strong
-signature can follow the archive as `NGIS` plus a 2048-bit RSA signature. Use
-a maintained cryptographic library for signature verification and never treat
-a valid signature as a substitute for range validation.
+Weak `(signature)` files contain exactly 72 uncompressed, unencrypted bytes:
+eight zero bytes followed by a little-endian RSA-512 signature integer.
+libmpq hashes from the archive offset through the v1 declared archive size or
+the v2 metadata-derived required extent, treating all 72 signature bytes as
+zero, and checks the complete PKCS#1 v1.5 MD5 DigestInfo encoding. Bytes before
+or after that MPQ range are not hashed. For archives physically beginning with
+`HM3W`, weak and strong signature hashing starts at physical offset zero and
+ends at the logical MPQ end; weak hashing still excludes the internal
+`(signature)` file.
+
+For MPQ v2 archives, libmpq derives the weak-signature extent from the parsed
+64-bit archive structures rather than using the deprecated 32-bit
+`dwArchiveSize` field as the authoritative archive boundary.
+
+`libmpq__archive_signatures` returns `LIBMPQ_SIGNATURE_WEAK` for an internal
+weak signature and `LIBMPQ_SIGNATURE_STRONG` for an external strong trailer.
+It reports structure, not cryptographic validity. Strong trailers are `NGIS`
+followed by a 256-byte RSA-2048 value immediately after the logical MPQ range.
+`libmpq__archive_verify` accepts one signature type at a time because weak and
+strong public keys have different sizes. Strong verification accepts SHA-1 of
+the archive range, the range plus uppercase archive basename, or the range plus
+`ARCHIVE`. For an `HM3W` wrapper, both signature hashes start at physical
+offset zero and still end at the logical MPQ end.
+
+Weak signatures use MD5/RSA-512 and support creation and verification. Strong
+signatures use SHA-1/RSA-2048 and support creation and verification. The writer
+currently emits only the plain SHA-1 archive-range variant; basename and
+`ARCHIVE` variants are accepted during verification only. Both are legacy
+compatibility mechanisms, not modern cryptographic trust primitives.
+
+Weak signatures are internal `(signature)` MPQ members and remain available
+inside MPQE-wrapped MPQs. Strong signatures are external `NGIS`/RSA trailers
+outside the MPQ extent. libmpq defines no external strong-trailer
+representation for the encrypted MPQE transport, so MPQE weak signing and
+verification are supported but external strong MPQE signatures are not.
+
+Weak public and private keys are exactly 128 bytes: a 64-byte unsigned big-endian
+modulus followed by a 64-byte zero-padded unsigned big-endian exponent value.
+Use a public key to verify a
+signature and a private key to create one. The modulus must be full-width and
+odd; the exponent must be odd, at least 3, and less than the modulus. These
+checks validate representation,
+not the mathematical validity of the caller's RSA key pair. No PEM,
+certificates, ASN.1 parser, default public key, or private key is built in.
+libmpq does not ship Blizzard- or product-specific verification or signing
+keys; all signature key material is caller-supplied.
+
+Strong public and private keys are exactly 512 bytes: a 256-byte unsigned
+big-endian modulus followed by a 256-byte zero-padded unsigned big-endian
+exponent. Use the public exponent for verification and the private exponent
+for creation. The writer emits only the plain SHA-1 archive-range variant.
+
+On a new v1 or v2 writer, call `libmpq__archive_sign` once for each requested
+signature type before closing, with no active file writer. It copies the private
+key. Weak signing reserves one file-table slot and a zero signature payload
+immediately. Close finalizes listfile, attributes, tables, and header before
+hashing, overwriting the weak signature bytes, then appending any strong trailer.
+The signature entry's generated attribute values remain zero; retained keys are
+cleared on close, including error paths. Other files may be added after
+configuring signing. Readers do not impose the writer's version restriction.
+
+MD5 and RSA-512 are obsolete and unsuitable for modern authentication. The
+private fixed-width RSA code is deliberately limited to this legacy format,
+not a general-purpose hardened cryptographic service. Strong verification
+also uses historical cryptography. Never treat a matching signature as
+a substitute for range validation.
 
 ## Implementation order
 

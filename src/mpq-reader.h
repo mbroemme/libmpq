@@ -37,20 +37,29 @@ int32_t libmpq__reader_file_read(
     libmpq__off_t *transferred
 );
 
-/* Internal scoped cache references shared by file reads, attributes and verify.
- * A name supplies the known internal file key. Every success needs a release. */
+/*
+ * Internal scoped cache references shared by file reads, attributes and verify.
+ * A name supplies the known internal file key. Every success needs a release.
+ */
 int32_t libmpq__reader_offsets_acquire(mpq_archive_s *archive, uint32_t number, const char *name);
 int32_t libmpq__reader_offsets_release(mpq_archive_s *archive, uint32_t number);
 
-/* Share block I/O; only explicit verification supplies a checksum and result. */
+/* Share block I/O; callers can supply one checksum and mismatch result. */
 int32_t libmpq__reader_block_read(
     mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint8_t *out_buf,
     libmpq__off_t out_size, libmpq__off_t *transferred, const uint32_t *checksum,
-    uint32_t *mismatches
+    uint32_t *mismatches, int *lossy
+);
+int32_t libmpq__reader_block_read_acquired(
+    mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint8_t *out_buf,
+    libmpq__off_t out_size, libmpq__off_t *transferred, const uint32_t *checksum,
+    uint32_t *mismatches, int *lossy
 );
 
-/* Load optional checksums with an internally scoped sector-offset reference.
- * A successful NULL result means this file has no checksum table. */
+/*
+ * Load optional checksums with an internally scoped sector-offset reference.
+ * A successful NULL result means this file has no checksum table.
+ */
 int32_t
 libmpq__reader_sector_checksums(mpq_archive_s *archive, uint32_t file_number, uint32_t **checksums);
 int32_t libmpq__reader_validate_payload_range(
@@ -60,7 +69,7 @@ int32_t libmpq__reader_validate_payload_range(
 /*
  * Open and parse an archive at archive_offset. A negative offset enables the
  * embedded-archive scan; otherwise the offset is interpreted as an absolute
- * file position. On success the returned archive owns its input stream and metadata.
+ * file position. On success the returned archive owns its input source and metadata.
  */
 int32_t libmpq__reader_archive_open_path(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset
@@ -68,6 +77,15 @@ int32_t libmpq__reader_archive_open_path(
 int32_t libmpq__reader_archive_open_mpqe(
     mpq_archive_s **mpq_archive, const char *mpq_filename, libmpq__off_t archive_offset,
     const uint8_t *auth_code, size_t auth_code_size
+);
+int32_t libmpq__reader_archive_open_io(
+    mpq_archive_s **mpq_archive, void *context, libmpq_read_at_fn read_at,
+    libmpq__off_t source_size, libmpq__off_t archive_offset, const char *source_name
+);
+int32_t libmpq__reader_archive_open_mpqe_io(
+    mpq_archive_s **mpq_archive, void *context, libmpq_read_at_fn read_at,
+    libmpq__off_t source_size, libmpq__off_t archive_offset, const uint8_t *auth_code,
+    size_t auth_code_size, const char *source_name
 );
 int32_t libmpq__reader_archive_clone(mpq_archive_s **clone, const mpq_archive_s *source);
 
@@ -89,5 +107,18 @@ int32_t libmpq__reader_validate_block_number(
 int32_t libmpq__reader_get_block_seed(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t block_number, uint32_t *seed
 );
+
+/*
+ * Return the checked minimum archive-relative extent required by parsed v1/v2
+ * serialized ranges. This does not include valid v1 trailing padding.
+ */
+int32_t libmpq__archive_required_extent(const mpq_archive_s *archive, uint64_t *size);
+
+/*
+ * Return the archive-relative extent weak signatures must cover. v1 uses its
+ * declared archive size after validating it contains the required extent;
+ * v2 uses the full 64-bit required extent.
+ */
+int32_t libmpq__archive_signature_extent(const mpq_archive_s *archive, uint64_t *size);
 
 #endif /* LIBMPQ_READER_H */

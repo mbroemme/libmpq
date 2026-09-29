@@ -1,9 +1,29 @@
-/* Verify read-only MPQE stream-provider opening with public fixtures. */
+/*
+ *  test-mpq-mpqe.c -- libmpq regression tests.
+ *
+ *  Copyright (c) 2026-2026 Maik Broemme <mbroemme@libmpq.org>
+ *
+ *  This file is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU Lesser General Public License as published by
+ *  the Free Software Foundation; either version 2.1 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This file is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU Lesser General Public License for more details.
+ *
+ *  You should have received a copy of the GNU Lesser General Public License
+ *  along with this file; if not, see <https://www.gnu.org/licenses/>.
+ */
+
+/* Verify read-only MPQE source opening with public fixtures. */
 #include "test-mpq-helper.h"
 
 #include "mpq-internal.h"
 #include "mpq-mpqe.h"
-#include "mpq-stream.h"
+#include "mpq-signature.h"
+#include "mpq-source.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -11,6 +31,24 @@
 #include <string.h>
 
 static const uint8_t auth_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+
+typedef struct
+{
+    const uint8_t *data;
+    size_t size;
+} memory_source_s;
+
+static int32_t
+memory_read_at(void *context, libmpq__off_t offset, uint8_t *buffer, size_t size)
+{
+    const memory_source_s *source = context;
+
+    if (source == NULL || offset < 0 || (uint64_t)offset > source->size ||
+        size > source->size - (size_t)offset)
+        return LIBMPQ_ERROR_READ;
+    memcpy(buffer, source->data + (size_t)offset, size);
+    return LIBMPQ_SUCCESS;
+}
 
 /* Verify MPQE key derivation using a synthetic known-answer vector. */
 static int
@@ -80,7 +118,7 @@ transform_chunk(uint8_t chunk[LIBMPQ_MPQE_CHUNK_SIZE], uint64_t offset)
     return result;
 }
 
-/* The raw and MPQE fixtures are paired archive streams with matching bytes. */
+/* The raw and MPQE fixtures are paired archive sources with matching bytes. */
 typedef struct
 {
     const char *raw_name;
@@ -113,6 +151,7 @@ test_fixture_members(mpq_archive_s *archive, const char *raw_path, uint32_t vers
         "pkware.txt",       "bzip2.txt",       "chain.txt",   "encrypted-compress.txt",
         "wave-mono.wav",    "wave-stereo.wav", "sparse.txt",  "sparse-zlib.txt",
         "sparse-bzip2.txt", "lzma.txt",        "(listfile)",  "(attributes)",
+        "(signature)",
     };
     mpq_archive_s *raw_archive = NULL;
     uint8_t *raw_data = NULL;
@@ -133,6 +172,11 @@ test_fixture_members(mpq_archive_s *archive, const char *raw_path, uint32_t vers
             continue;
         TEST_CHECK(libmpq__file_number(raw_archive, names[i], &raw_number) == 0);
         TEST_CHECK(libmpq__file_number(archive, names[i], &mpqe_number) == 0);
+        if (strcmp(names[i], "(signature)") == 0) {
+            uint32_t flags;
+            TEST_CHECK(libmpq__file_flags(archive, mpqe_number, &flags) == 0);
+            TEST_CHECK(flags == LIBMPQ_FLAG_EXISTS);
+        }
         TEST_CHECK(libmpq__file_blocks(archive, mpqe_number, &blocks) == 0);
         for (block = 0; block < blocks; ++block) {
             uint32_t raw_method = UINT32_MAX;
@@ -149,7 +193,8 @@ test_fixture_members(mpq_archive_s *archive, const char *raw_path, uint32_t vers
             libmpq__file_verify(archive, mpqe_number, LIBMPQ_VERIFY_SECTOR_CRC, &verification) == 0
         );
         TEST_CHECK(verification == 0);
-        if (strstr(names[i], ".wav") == NULL && strcmp(names[i], "(attributes)") != 0) {
+        if (strstr(names[i], ".wav") == NULL && strcmp(names[i], "(attributes)") != 0 &&
+            strcmp(names[i], "(signature)") != 0) {
             verification = UINT32_MAX;
             TEST_CHECK(
                 libmpq__file_verify(archive, mpqe_number, LIBMPQ_VERIFY_ALL, &verification) == 0
@@ -170,36 +215,101 @@ test_fixture_members(mpq_archive_s *archive, const char *raw_path, uint32_t vers
 
 /* Compare random-access MPQE reads with the corresponding raw MPQ fixture. */
 static int
-test_stream_reads(const char *raw_path, const char *mpqe_path)
+test_source_reads(const char *raw_path, const char *mpqe_path)
 {
-    mpq_stream_s *stream = NULL;
+    mpq_source_s *source = NULL;
     uint8_t *raw_data = NULL;
     uint8_t cross_chunk[96];
     uint8_t trailing[64];
     size_t raw_size;
+    size_t raw_extent;
     size_t trailing_size;
 
     TEST_CHECK(test_read_path(raw_path, &raw_data, &raw_size) == 0);
-    TEST_CHECK(raw_size > sizeof(cross_chunk) && raw_size % 64U != 0U);
+    raw_extent = raw_size;
+    if (raw_extent >= LIBMPQ_STRONG_TRAILER_SIZE &&
+        memcmp(raw_data + raw_extent - LIBMPQ_STRONG_TRAILER_SIZE, "NGIS", 4) == 0)
+        raw_extent -= LIBMPQ_STRONG_TRAILER_SIZE;
+    TEST_CHECK(raw_extent > sizeof(cross_chunk) && raw_extent % 64U != 0U);
     TEST_CHECK(
-        libmpq__stream_open_mpqe(&stream, mpqe_path, auth_code, sizeof(auth_code) - 1U) == 0
+        libmpq__source_open_mpqe(&source, mpqe_path, auth_code, sizeof(auth_code) - 1U) == 0
     );
-    TEST_CHECK(libmpq__stream_size(stream) == raw_size);
-    TEST_CHECK(libmpq__stream_read_at(stream, 32, cross_chunk, sizeof(cross_chunk)) == 0);
+    TEST_CHECK(libmpq__source_size(source) == raw_extent);
+    TEST_CHECK(libmpq__source_read_at(source, 32, cross_chunk, sizeof(cross_chunk)) == 0);
     TEST_CHECK(memcmp(cross_chunk, raw_data + 32, sizeof(cross_chunk)) == 0);
-    trailing_size = raw_size % 64U;
+    trailing_size = raw_extent % 64U;
     TEST_CHECK(
-        libmpq__stream_read_at(stream, raw_size - trailing_size, trailing, trailing_size) == 0
+        libmpq__source_read_at(source, raw_extent - trailing_size, trailing, trailing_size) == 0
     );
-    TEST_CHECK(memcmp(trailing, raw_data + raw_size - trailing_size, trailing_size) == 0);
-    TEST_CHECK(libmpq__stream_close(stream) == 0);
+    TEST_CHECK(memcmp(trailing, raw_data + raw_extent - trailing_size, trailing_size) == 0);
+    TEST_CHECK(libmpq__source_close(source) == 0);
     free(raw_data);
+    return 0;
+}
+
+static int
+test_custom_io(const char *mpqe_path, libmpq__off_t archive_offset)
+{
+    uint8_t wrong_code[sizeof(auth_code) - 1U];
+    memory_source_s source = { 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_archive_s *clone = NULL;
+    mpq_stream_s *stream = NULL;
+    uint8_t *data = NULL;
+    uint8_t byte;
+    libmpq__off_t transferred;
+    size_t size = 0;
+    uint32_t number;
+
+    TEST_CHECK(test_read_path(mpqe_path, &data, &size) == 0);
+    source.data = data;
+    source.size = size;
+    TEST_CHECK(
+        libmpq__archive_open_mpqe_io(
+            &archive, &source, memory_read_at, (libmpq__off_t)source.size, archive_offset,
+            auth_code, sizeof(auth_code) - 1U, NULL
+        ) == 0
+    );
+    TEST_CHECK(libmpq__file_number(archive, "overview.txt", &number) == 0);
+    TEST_CHECK(libmpq__stream_open_name(archive, "overview.txt", &stream) == 0);
+    TEST_CHECK(libmpq__archive_clone(&clone, archive) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+    TEST_CHECK(libmpq__stream_read(stream, &byte, 1, &transferred) == 0);
+    TEST_CHECK(transferred == 1);
+    TEST_CHECK(libmpq__stream_close(stream) == 0);
+    stream = NULL;
+    TEST_CHECK(libmpq__file_number(clone, "overview.txt", &number) == 0);
+    TEST_CHECK(libmpq__archive_close(clone) == 0);
+    clone = NULL;
+    TEST_CHECK(
+        libmpq__archive_open_mpqe_io(
+            &archive, &source, memory_read_at, (libmpq__off_t)source.size, archive_offset,
+            auth_code, sizeof(auth_code) - 1U, NULL
+        ) == 0
+    );
+    TEST_CHECK(libmpq__archive_clone(&clone, archive) == 0);
+    TEST_CHECK(libmpq__archive_close(clone) == 0);
+    clone = NULL;
+    TEST_CHECK(libmpq__file_number(archive, "overview.txt", &number) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+    memcpy(wrong_code, auth_code, sizeof(wrong_code));
+    wrong_code[0] ^= 1U;
+    TEST_CHECK(
+        libmpq__archive_open_mpqe_io(
+            &archive, &source, memory_read_at, (libmpq__off_t)source.size, archive_offset,
+            wrong_code, sizeof(wrong_code), NULL
+        ) == LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(archive == NULL);
+    free(data);
     return 0;
 }
 
 /* Build a temporary MPQE stream to cover an unaligned read through two batches. */
 static int
-test_stream_cross_batch(void)
+test_source_cross_batch(void)
 {
     enum
     {
@@ -209,7 +319,7 @@ test_stream_cross_batch(void)
     };
     char path[512];
     FILE *file;
-    mpq_stream_s *stream = NULL;
+    mpq_source_s *source = NULL;
     uint8_t plain[plain_size];
     uint8_t encrypted[plain_size];
     uint8_t read_data[read_size];
@@ -232,10 +342,10 @@ test_stream_cross_batch(void)
     TEST_CHECK(file != NULL);
     TEST_CHECK(fwrite(encrypted, 1, sizeof(encrypted), file) == sizeof(encrypted));
     TEST_CHECK(fclose(file) == 0);
-    TEST_CHECK(libmpq__stream_open_mpqe(&stream, path, auth_code, sizeof(auth_code) - 1U) == 0);
-    TEST_CHECK(libmpq__stream_read_at(stream, read_offset, read_data, sizeof(read_data)) == 0);
+    TEST_CHECK(libmpq__source_open_mpqe(&source, path, auth_code, sizeof(auth_code) - 1U) == 0);
+    TEST_CHECK(libmpq__source_read_at(source, read_offset, read_data, sizeof(read_data)) == 0);
     TEST_CHECK(memcmp(read_data, plain + read_offset, sizeof(read_data)) == 0);
-    TEST_CHECK(libmpq__stream_close(stream) == 0);
+    TEST_CHECK(libmpq__source_close(source) == 0);
     TEST_CHECK(remove(path) == 0);
     return 0;
 }
@@ -285,8 +395,21 @@ test_fixture(const mpqe_fixture_s *fixture, size_t index)
         ) == 0
     );
     TEST_CHECK(libmpq__archive_version(archive, &version) == 0 && version == fixture->version);
+    {
+        uint32_t signatures = 0;
+        uint32_t mismatches = UINT32_MAX;
+        TEST_CHECK(libmpq__archive_signatures(archive, &signatures) == 0);
+        TEST_CHECK(signatures == LIBMPQ_SIGNATURE_WEAK);
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, signatures, test_signature_public_key, sizeof(test_signature_public_key),
+                &mismatches
+            ) == 0
+        );
+        TEST_CHECK(mismatches == 0);
+    }
     TEST_CHECK(
-        libmpq__archive_files(archive, &files) == 0 && files == (fixture->version == 2 ? 16 : 15)
+        libmpq__archive_files(archive, &files) == 0 && files == (fixture->version == 2 ? 17 : 16)
     );
     TEST_CHECK(libmpq__file_number(archive, "overview.txt", &number) == 0);
     TEST_CHECK(test_archive_read(archive, number, &data, &size) == 0);
@@ -304,7 +427,8 @@ test_fixture(const mpqe_fixture_s *fixture, size_t index)
     TEST_CHECK(strcmp(hash, fixture->overview_hash) == 0);
     free(data);
     TEST_CHECK(libmpq__archive_close(clone) == 0);
-    return test_stream_reads(raw_path, mpqe_path);
+    TEST_CHECK(test_custom_io(mpqe_path, index == 0 ? 0 : -1) == 0);
+    return test_source_reads(raw_path, mpqe_path);
 }
 
 /* Open failures must clear caller output pointers before stream allocation. */
@@ -352,6 +476,6 @@ main(void)
     for (i = 0; i < sizeof(fixtures) / sizeof(fixtures[0]); ++i)
         TEST_CHECK(test_fixture(&fixtures[i], i) == 0);
     TEST_CHECK(test_open_failure_output() == 0);
-    TEST_CHECK(test_stream_cross_batch() == 0);
+    TEST_CHECK(test_source_cross_batch() == 0);
     return 0;
 }

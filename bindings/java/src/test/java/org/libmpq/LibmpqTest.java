@@ -15,8 +15,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.ByteBuffer;
+import java.nio.channels.SeekableByteChannel;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HexFormat;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -29,6 +33,362 @@ import org.libmpq.ffi.LibmpqNative;
  * creation or fixture reading rather than mocking the FFM calls.
  */
 class LibmpqTest {
+    @Test
+    void patchCreation(@TempDir Path directory) throws Exception {
+        Path base = directory.resolve("base.mpq");
+        Path output = directory.resolve("changes.mpq");
+        Path source = directory.resolve("replacement.bin");
+        Files.write(source, "from path".getBytes(StandardCharsets.UTF_8));
+        FileOptions identity = new FileOptions(0, 0, 0, 0x409, 1);
+        try (Archive archive = Archive.create(base, ArchiveCreateOptions.v1())) {
+            archive.add("data", "original".getBytes(StandardCharsets.UTF_8), identity);
+            archive.add("path", "old path".getBytes(StandardCharsets.UTF_8), identity);
+            archive.add("remove", "remove me".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+        }
+
+        try (MpqPatch patch = MpqPatch.begin(base, output)) {
+            assertEquals(Mpq.ERROR_FORMAT, assertThrows(LibmpqException.class,
+                    () -> patch.replaceData("data", "wrong".getBytes(StandardCharsets.UTF_8),
+                                            FileOptions.raw())).code());
+            assertEquals(Mpq.ERROR_FORMAT, assertThrows(LibmpqException.class,
+                    () -> patch.replacePath("path", source, FileOptions.raw())).code());
+            assertThrows(LibmpqException.class, () -> patch.remove("missing"));
+            patch.replaceData("data", "replacement".getBytes(StandardCharsets.UTF_8));
+            patch.replacePath("path", source, identity);
+            patch.remove("remove");
+            assertFalse(Files.exists(output));
+            patch.finish();
+            assertThrows(IllegalStateException.class, () -> patch.remove("data"));
+            assertThrows(IllegalStateException.class, patch::abort);
+        }
+        assertTrue(Files.isRegularFile(output));
+        try (Archive archive = Archive.open(base)) {
+            assertArrayEquals("original".getBytes(StandardCharsets.UTF_8),
+                              archive.readFile(archive.fileNumber("data")));
+        }
+        try (Archive archive = Archive.open(output)) {
+            archive.fileNumber("data");
+            archive.fileNumber("path");
+            archive.fileNumber("remove");
+        }
+        Files.delete(output);
+        try (MpqPatch patch = MpqPatch.begin(base, output)) {
+            patch.replacePath("path", source);
+        }
+        assertFalse(Files.exists(output));
+        try (MpqPatch patch = MpqPatch.begin(base, output)) {
+            patch.replaceData("data", "aborted".getBytes(StandardCharsets.UTF_8));
+            patch.abort();
+            assertThrows(IllegalStateException.class, patch::finish);
+        }
+        assertFalse(Files.exists(output));
+
+        MpqPatch failed = MpqPatch.begin(base, output);
+        Files.createDirectory(output);
+        assertThrows(LibmpqException.class, failed::finish);
+        assertThrows(IllegalStateException.class, () -> failed.remove("data"));
+    }
+
+    @Test
+    void mpqePatchCreation(@TempDir Path directory) throws Exception {
+        Path base = directory.resolve("base.mpq");
+        Path output = directory.resolve("changes.mpqe");
+        byte[] code = "LIBMPQ-MPQE-PATCH-AUTH-CODE-00002".getBytes(StandardCharsets.US_ASCII);
+        try (Archive archive = Archive.create(base, ArchiveCreateOptions.v1())) {
+            archive.add("replace", "old".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+            archive.add("remove", "old".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+        }
+        assertEquals(Mpq.ERROR_DECRYPT, assertThrows(LibmpqException.class,
+                () -> MpqPatch.beginMpqe(base, output, new byte[0])).code());
+        assertEquals(Mpq.ERROR_DECRYPT, assertThrows(LibmpqException.class,
+                () -> MpqPatch.beginMpqe(base, output,
+                        java.util.Arrays.copyOf(code, 31))).code());
+        assertThrows(NullPointerException.class, () -> MpqPatch.beginMpqe(base, output, null));
+        assertFalse(Files.exists(output));
+
+        try (MpqPatch patch = MpqPatch.beginMpqe(base, output, code)) {
+            patch.replaceData("replace", "new".getBytes(StandardCharsets.UTF_8));
+            patch.remove("remove");
+            assertFalse(Files.exists(output));
+            patch.finish();
+            assertThrows(IllegalStateException.class, patch::abort);
+        }
+        assertTrue(Files.isRegularFile(output));
+        assertThrows(LibmpqException.class, () -> Archive.open(output));
+        byte[] wrong = code.clone();
+        wrong[0] ^= 1;
+        assertThrows(LibmpqException.class, () -> Archive.openMpqe(output, wrong));
+        try (Archive archive = Archive.openMpqe(output, code)) {
+            archive.fileNumber("replace");
+            archive.fileNumber("remove");
+        }
+
+        Files.delete(output);
+        try (MpqPatch patch = MpqPatch.beginMpqe(base, output, code)) {
+            patch.replaceData("replace", "discarded".getBytes(StandardCharsets.UTF_8));
+        }
+        assertFalse(Files.exists(output));
+        try (MpqPatch patch = MpqPatch.beginMpqe(base, output, code)) {
+            patch.remove("remove");
+            patch.abort();
+            assertThrows(IllegalStateException.class, patch::finish);
+        }
+        assertFalse(Files.exists(output));
+    }
+
+    @Test
+    void patchSigning(@TempDir Path directory) throws Exception {
+        Path base = directory.resolve("base.mpq");
+        Path output = directory.resolve("signed-patch.mpq");
+        byte[] weakPrivate = weakPrivateKey();
+        byte[] strongPrivate = strongPrivateKey();
+        try (Archive archive = Archive.create(base, ArchiveCreateOptions.v1())) {
+            archive.add("data", "original".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+        }
+        for (int types : new int[] {Mpq.SIGNATURE_WEAK, Mpq.SIGNATURE_STRONG,
+                                    Mpq.SIGNATURE_WEAK | Mpq.SIGNATURE_STRONG}) {
+            try (MpqPatch patch = MpqPatch.begin(base, output)) {
+                assertEquals(Mpq.ERROR_FORMAT, assertThrows(LibmpqException.class,
+                        () -> patch.sign(new byte[1])).code());
+                if ((types & Mpq.SIGNATURE_WEAK) != 0) {
+                    patch.sign(weakPrivate);
+                    assertEquals(Mpq.ERROR_FORMAT, assertThrows(LibmpqException.class,
+                            () -> patch.sign(weakPrivate)).code());
+                }
+                if ((types & Mpq.SIGNATURE_STRONG) != 0) {
+                    patch.sign(Mpq.SIGNATURE_STRONG, strongPrivate);
+                }
+                patch.replaceData("data", "replacement".getBytes(StandardCharsets.UTF_8));
+                assertFalse(Files.exists(output));
+                patch.finish();
+                assertThrows(IllegalStateException.class, () -> patch.sign(weakPrivate));
+            }
+            try (Archive archive = Archive.open(output)) {
+                assertEquals(types, archive.signatures());
+                if ((types & Mpq.SIGNATURE_WEAK) != 0) {
+                    assertEquals(0, archive.verify(weakPublicKey()));
+                }
+                if ((types & Mpq.SIGNATURE_STRONG) != 0) {
+                    assertEquals(0, archive.verify(Mpq.SIGNATURE_STRONG, strongPublicKey()));
+                }
+            }
+            Files.delete(output);
+        }
+
+        byte[] code = "LIBMPQ-MPQE-PATCH-AUTH-CODE-00002".getBytes(StandardCharsets.US_ASCII);
+        try (MpqPatch patch = MpqPatch.beginMpqe(base, output, code)) {
+            assertEquals(Mpq.ERROR_FORMAT, assertThrows(LibmpqException.class,
+                    () -> patch.sign(Mpq.SIGNATURE_STRONG, strongPrivate)).code());
+            patch.sign(weakPrivate);
+            patch.replaceData("data", "replacement".getBytes(StandardCharsets.UTF_8));
+            patch.finish();
+        }
+        try (Archive archive = Archive.openMpqe(output, code)) {
+            assertEquals(Mpq.SIGNATURE_WEAK, archive.signatures());
+            assertEquals(0, archive.verify(weakPublicKey()));
+        }
+        Files.delete(output);
+        try (MpqPatch patch = MpqPatch.begin(base, output)) {
+            patch.sign(weakPrivate);
+            patch.abort();
+        }
+        assertFalse(Files.exists(output));
+    }
+
+    @Test
+    void localizedUpdateDefaults(@TempDir Path directory) throws Exception {
+        Path path = directory.resolve("localized.mpq");
+        Path source = directory.resolve("source.bin");
+        Files.write(source, "from path".getBytes(StandardCharsets.UTF_8));
+        FileOptions identity = new FileOptions(0, 0, 0, 0x409, 1);
+        ArchiveCreateOptions creation = new ArchiveCreateOptions(
+                Mpq.ARCHIVE_VERSION_ONE, 8, 0, 0, 0);
+        try (Archive archive = Archive.create(path, creation)) {
+            archive.add("localized", "original".getBytes(StandardCharsets.UTF_8), identity);
+        }
+
+        try (MpqUpdate update = MpqUpdate.begin(path)) {
+            update.replaceData("localized", "new data".getBytes(StandardCharsets.UTF_8), null);
+            update.commit();
+        }
+        try (Archive archive = Archive.open(path)) {
+            assertArrayEquals("new data".getBytes(StandardCharsets.UTF_8),
+                              archive.readFile(archive.fileNumber("localized")));
+        }
+
+        try (MpqUpdate update = MpqUpdate.begin(path)) {
+            LibmpqException dataError = assertThrows(LibmpqException.class,
+                () -> update.replaceData("localized", "wrong".getBytes(StandardCharsets.UTF_8),
+                                         FileOptions.raw()));
+            assertEquals(Mpq.ERROR_FORMAT, dataError.code());
+            LibmpqException pathError = assertThrows(LibmpqException.class,
+                () -> update.replacePath("localized", source, FileOptions.raw()));
+            assertEquals(Mpq.ERROR_FORMAT, pathError.code());
+            update.replaceData("localized", "matching".getBytes(StandardCharsets.UTF_8), identity);
+            update.commit();
+        }
+
+        try (MpqUpdate update = MpqUpdate.begin(path)) {
+            update.replacePath("localized", source, null);
+            update.commit();
+        }
+        try (Archive archive = Archive.open(path)) {
+            assertArrayEquals("from path".getBytes(StandardCharsets.UTF_8),
+                              archive.readFile(archive.fileNumber("localized")));
+        }
+        try (MpqUpdate update = MpqUpdate.begin(path)) {
+            update.replacePath("localized", source, identity);
+            update.abort();
+        }
+    }
+
+    @Test
+    void transactionalUpdate(@TempDir Path directory) throws Exception {
+        Path path = directory.resolve("update.mpq");
+        Path source = directory.resolve("source.bin");
+        Files.write(source, "from path".getBytes(StandardCharsets.UTF_8));
+        try (Archive archive = Archive.create(path, ArchiveCreateOptions.v1())) {
+            archive.add("data", "original".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+            archive.add("path", "old path".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+            archive.add("remove", "remove me".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+            archive.add("rename", "rename me".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+            archive.add("secret", "encrypted payload".getBytes(StandardCharsets.UTF_8),
+                        FileOptions.raw().encrypted());
+        }
+        byte[] replacement = new byte[9000];
+        java.util.Arrays.fill(replacement, (byte) 'R');
+        try (MpqUpdate update = MpqUpdate.begin(path)) {
+            update.replaceData("data", replacement,
+                    FileOptions.compressed(Mpq.COMPRESSION_ZLIB, Mpq.COMPRESSION_BZIP2));
+            update.replacePath("path", source, FileOptions.raw().encrypted());
+            update.remove("remove");
+            update.rename("rename", "renamed");
+            update.rename("secret", "secret-new");
+            try (Archive original = Archive.open(path)) {
+                assertArrayEquals("original".getBytes(StandardCharsets.UTF_8),
+                                  original.readFile(original.fileNumber("data")));
+            }
+            update.commit();
+            assertThrows(IllegalStateException.class, () -> update.remove("data"));
+        }
+        try (Archive archive = Archive.open(path)) {
+            assertArrayEquals(replacement,
+                              archive.readFile(archive.fileNumber("data")));
+            assertEquals(Mpq.COMPRESSION_ZLIB,
+                         archive.blockCompression(archive.fileNumber("data"), 0));
+            assertEquals(Mpq.COMPRESSION_BZIP2,
+                         archive.blockCompression(archive.fileNumber("data"), 1));
+            try (MpqStream stream = archive.openStream("path")) {
+                byte[] pathBytes = new byte["from path".length()];
+                assertEquals(pathBytes.length, stream.read(pathBytes));
+                assertArrayEquals("from path".getBytes(StandardCharsets.UTF_8), pathBytes);
+            }
+            assertArrayEquals("rename me".getBytes(StandardCharsets.UTF_8),
+                              archive.readFile(archive.fileNumber("renamed")));
+            assertThrows(LibmpqException.class, () -> archive.fileNumber("remove"));
+            try (MpqStream stream = archive.openStream("secret-new")) {
+                byte[] secret = new byte[17];
+                assertEquals(secret.length, stream.read(secret));
+                assertArrayEquals("encrypted payload".getBytes(StandardCharsets.UTF_8), secret);
+            }
+        }
+        try (MpqUpdate update = MpqUpdate.begin(path)) {
+            update.replaceData("data", "rollback".getBytes(StandardCharsets.UTF_8), null);
+            update.remove("path");
+            update.rename("renamed", "rollback-name");
+        }
+        try (Archive archive = Archive.open(path)) {
+            assertArrayEquals(replacement,
+                              archive.readFile(archive.fileNumber("data")));
+            try (MpqStream stream = archive.openStream("path")) {
+                byte[] pathBytes = new byte["from path".length()];
+                assertEquals(pathBytes.length, stream.read(pathBytes));
+                assertArrayEquals("from path".getBytes(StandardCharsets.UTF_8), pathBytes);
+            }
+            assertArrayEquals("rename me".getBytes(StandardCharsets.UTF_8),
+                              archive.readFile(archive.fileNumber("renamed")));
+        }
+        try (MpqUpdate update = MpqUpdate.begin(path)) {
+            assertThrows(LibmpqException.class, () -> update.remove("missing"));
+            FileOptions mismatch = new FileOptions(0, 0, 0, 1, 0);
+            assertThrows(LibmpqException.class, () -> update.replaceData("data",
+                "invalid".getBytes(StandardCharsets.UTF_8), mismatch));
+            update.abort();
+            assertThrows(IllegalStateException.class, update::commit);
+        }
+        try (MpqUpdate update = MpqUpdate.begin(path)) {
+            Path external = directory.resolve("external.mpq");
+            Files.copy(path, external);
+            Files.move(external, path, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            assertThrows(LibmpqException.class, update::commit);
+            assertThrows(IllegalStateException.class, update::abort);
+        }
+    }
+
+    @Test
+    void authenticatedMpqeUpdate(@TempDir Path directory) throws Exception {
+        Path path = directory.resolve("update.mpqe");
+        Path source = directory.resolve("replacement.bin");
+        Files.write(source, "from path".getBytes(StandardCharsets.UTF_8));
+        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
+        try (Archive archive = Archive.createMpqe(path, code, ArchiveCreateOptions.v1())) {
+            archive.add("data", "original".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+            archive.add("path", "old path".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+            archive.add("remove", "remove me".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+            archive.add("secret", "encrypted payload".getBytes(StandardCharsets.UTF_8),
+                        FileOptions.raw().encrypted());
+        }
+        byte[] original = Files.readAllBytes(path);
+        assertThrows(LibmpqException.class, () -> MpqUpdate.begin(path));
+        assertThrows(NullPointerException.class, () -> MpqUpdate.beginMpqe(path, null));
+        assertEquals(Mpq.ERROR_DECRYPT, assertThrows(LibmpqException.class,
+                () -> MpqUpdate.beginMpqe(path, new byte[0])).code());
+        assertEquals(Mpq.ERROR_DECRYPT, assertThrows(LibmpqException.class,
+                () -> MpqUpdate.beginMpqe(path, java.util.Arrays.copyOf(code, 31))).code());
+        byte[] wrong = code.clone();
+        wrong[0] ^= 1;
+        assertThrows(LibmpqException.class, () -> MpqUpdate.beginMpqe(path, wrong));
+        assertArrayEquals(original, Files.readAllBytes(path));
+
+        try (MpqUpdate update = MpqUpdate.beginMpqe(path, code)) {
+            update.replaceData("data", "rollback".getBytes(StandardCharsets.UTF_8), null);
+        }
+        assertArrayEquals(original, Files.readAllBytes(path));
+        MpqUpdate aborted = MpqUpdate.beginMpqe(path, code);
+        aborted.remove("path");
+        aborted.abort();
+        assertThrows(IllegalStateException.class, aborted::commit);
+        assertArrayEquals(original, Files.readAllBytes(path));
+
+        byte[] borrowed = code.clone();
+        try (MpqUpdate update = MpqUpdate.beginMpqe(path, borrowed)) {
+            java.util.Arrays.fill(borrowed, (byte) 0);
+            update.replaceData("data", "new data".getBytes(StandardCharsets.UTF_8), null);
+            update.replacePath("path", source, null);
+            update.remove("remove");
+            update.rename("secret", "secret-new");
+            try (Archive before = Archive.openMpqe(path, code)) {
+                assertArrayEquals("original".getBytes(StandardCharsets.UTF_8),
+                                  before.readFile(before.fileNumber("data")));
+            }
+            update.commit();
+            assertThrows(IllegalStateException.class, () -> update.remove("data"));
+        }
+        try (Archive after = Archive.openMpqe(path, code)) {
+            assertArrayEquals("new data".getBytes(StandardCharsets.UTF_8),
+                              after.readFile(after.fileNumber("data")));
+            assertArrayEquals("from path".getBytes(StandardCharsets.UTF_8),
+                              after.readFile(after.fileNumber("path")));
+            try (MpqStream stream = after.openStream("secret-new")) {
+                byte[] secret = new byte[17];
+                assertEquals(secret.length, stream.read(secret));
+                assertArrayEquals("encrypted payload".getBytes(StandardCharsets.UTF_8), secret);
+            }
+            assertThrows(LibmpqException.class, () -> after.fileNumber("remove"));
+            assertThrows(LibmpqException.class, () -> after.fileNumber("secret"));
+        }
+    }
+
     /** Skips integration tests when no native library path was configured. */
     @BeforeAll
     static void requireNativeLibrary() {
@@ -44,6 +404,89 @@ class LibmpqTest {
     void exposesVersionAndErrorText() {
         assertTrue(!Mpq.version().isBlank());
         assertTrue(Mpq.strerror(Mpq.ERROR_FORMAT).contains("format"));
+    }
+
+    @Test
+    void weakSignatureRoundTrip() throws Exception {
+        byte[] publicKey = weakPublicKey();
+        byte[] privateKey = weakPrivateKey();
+        Path path = java.nio.file.Files.createTempFile("libmpq-signature", ".mpq");
+        try {
+            try (Archive archive = Archive.create(path, ArchiveCreateOptions.v1())) {
+                archive.sign(privateKey);
+            }
+            try (Archive archive = Archive.open(path)) {
+                assertEquals(Mpq.SIGNATURE_WEAK, archive.signatures());
+                assertEquals(0, archive.verify(publicKey));
+            }
+        } finally {
+            java.nio.file.Files.deleteIfExists(path);
+        }
+    }
+
+    /** Verifies independently signed data through the existing native entry point. */
+    @Test
+    void strongSignatureFixture() throws Exception {
+        Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
+        byte[] publicKey = HexFormat.of().parseHex(
+            "b76f7dc7cdd3a083b2e52f39a5b7d58f181ab7bc03c1eaa0931744f0218bf74397b68481776a3f49f7b9a7ea08abf1c3a9802b54ee75661190e521453f6e125cdaca5d4b5cb52c84a158f1bb1b51bb9138acc55b45a083d3dde6e9e9cc4cb03adf4dda27a4a673993ebddfefd06e7c8c976387df92ba92d6392b9baf1a40f7b39d3c0ad1a4e2d685b46caea30863c9055d8e0a151d2e5adf5b79c69cc849c8b879ecc53be1207334d60b4194583b44129f272fe4790570ba530df485e2188932d79abb5b3b8713fd2d16de821048328e9ae93da8de983519033806fbd55591ebf5542641af669ad73e7c0f01b2dea45040f6658d2c6ca0f55f8d91c482f81617" + "00".repeat(253) + "010001");
+        assertEquals(512, publicKey.length);
+        try (Archive archive = Archive.open(root.resolve("mpq-v1-features.mpq"))) {
+            assertEquals(Mpq.SIGNATURE_WEAK | Mpq.SIGNATURE_STRONG, archive.signatures());
+            assertEquals(0, archive.verify(Mpq.SIGNATURE_STRONG, publicKey));
+        }
+    }
+
+    @Test
+    void strongSignatureRoundTrip(@TempDir Path directory) throws Exception {
+        byte[] publicKey = strongPublicKey();
+        byte[] privateKey = strongPrivateKey();
+        Path path = directory.resolve("strong.mpq");
+        try (Archive archive = Archive.create(path, ArchiveCreateOptions.v2())) {
+            archive.sign(Mpq.SIGNATURE_STRONG, privateKey);
+            archive.add("payload", "Java strong signing".getBytes(StandardCharsets.UTF_8), FileOptions.raw());
+        }
+        try (Archive archive = Archive.open(path)) {
+            assertEquals(Mpq.SIGNATURE_STRONG, archive.signatures());
+            assertEquals(0, archive.verify(Mpq.SIGNATURE_STRONG, publicKey));
+        }
+    }
+
+    private static byte[] weakPublicKey() {
+        return java.util.HexFormat.of().parseHex("a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001");
+    }
+
+    private static byte[] weakPrivateKey() {
+        return java.util.HexFormat.of().parseHex("a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a748315364c0c92a1a284b2ae77d5d49adea3bad7bafa639710661d443c0ad882f6c8d6787affd7f68145217cde42cf4dc2acb0ca2aeca535baf894084e590d719");
+    }
+
+    private static byte[] strongPrivateKey() {
+        byte[] publicKey = strongPublicKey();
+        byte[] privateKey = java.util.Arrays.copyOf(publicKey, 512);
+        byte[] exponent = HexFormat.of().parseHex(
+            "14c9759f7c1ba1f24ab0de0bd253bac7b470e7fbf911088844783bea5a62da15"
+            + "0c24356fd670712b98a9aea03ecb52b7b18597637b2cf7f16afcb6d5cf67a727"
+            + "b9437abf078a75b907450fb4fc56396dd8d650a71484d4163641eca554997c29"
+            + "afbf201c4df444354c29882ef797b85580f259260f77efc686eeacd31da3d9c3"
+            + "37897433f8ef833890a04d55cbfc53f2dd8f96bd9b93e28fc6f022786b36e51d"
+            + "e38ec0d5d41aba3eed9647831fb16fcbc3b16eaca91e60894aa772b02b22a3ff"
+            + "b7042e52531163d089209df6412098613ef59664ed70884e33f3e3056ccfb911"
+            + "bcc04d2c73142996946d88be0daa29aafa1bab3d10ff4d52295880c8fad6d641");
+        System.arraycopy(exponent, 0, privateKey, 256, 256);
+        return privateKey;
+    }
+
+    private static byte[] strongPublicKey() {
+        return HexFormat.of().parseHex(
+            "b76f7dc7cdd3a083b2e52f39a5b7d58f181ab7bc03c1eaa0931744f0218bf743"
+            + "97b68481776a3f49f7b9a7ea08abf1c3a9802b54ee75661190e521453f6e125c"
+            + "daca5d4b5cb52c84a158f1bb1b51bb9138acc55b45a083d3dde6e9e9cc4cb03a"
+            + "df4dda27a4a673993ebddfefd06e7c8c976387df92ba92d6392b9baf1a40f7b3"
+            + "9d3c0ad1a4e2d685b46caea30863c9055d8e0a151d2e5adf5b79c69cc849c8b8"
+            + "79ecc53be1207334d60b4194583b44129f272fe4790570ba530df485e2188932"
+            + "d79abb5b3b8713fd2d16de821048328e9ae93da8de983519033806fbd55591eb"
+            + "f5542641af669ad73e7c0f01b2dea45040f6658d2c6ca0f55f8d91c482f81617"
+            + "00".repeat(253) + "010001");
     }
 
     /** Ensures Java's native struct layouts match the C ABI sizes. */
@@ -166,6 +609,108 @@ class LibmpqTest {
             assertTrue(new String(data, StandardCharsets.UTF_8).contains("libmpq"));
             assertTrue(archive.fileCount() > 0);
         }
+    }
+
+    /** Logical streams retain their private native clone after archive close. */
+    @Test
+    void streamsFixtureIncrementally() throws Exception {
+        Path fixture = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures",
+                               "mpq-v1-features.mpq");
+        Archive archive = Archive.open(fixture);
+        byte[] expected = archive.readFile(archive.fileNumber("overview.txt"));
+        try (MpqStream stream = archive.openStream("overview.txt")) {
+            assertEquals(expected.length, stream.size());
+            byte[] first = new byte[2];
+            assertEquals(2, stream.read(first));
+            assertArrayEquals(java.util.Arrays.copyOf(expected, 2), first);
+            stream.seek(-1, Mpq.SEEK_CUR);
+            stream.seek(0, Mpq.SEEK_SET);
+            archive.close();
+            byte[] all = new byte[expected.length];
+            assertEquals(expected.length, stream.read(all));
+            assertArrayEquals(expected, all);
+            assertEquals(-1, stream.read(new byte[1]));
+        }
+    }
+
+    /** Name-derived encrypted keys, numeric opens, and MPQE lifetime reach streams. */
+    @Test
+    void streamsEncryptedAndMpqeFixtures() throws Exception {
+        Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
+        try (Archive archive = Archive.open(root.resolve("mpq-v1-features.mpq"))) {
+            byte[] expected = archive.readFile(archive.fileNumber("encrypted-compress.txt"));
+            try (MpqStream stream = archive.openStream("encrypted-compress.txt")) {
+                byte[] actual = new byte[expected.length];
+                assertEquals(expected.length, stream.read(actual));
+                assertArrayEquals(expected, actual);
+            }
+            try (MpqStream stream = archive.openStream(archive.fileNumber("overview.txt"))) {
+                assertTrue(stream.read(new byte[8]) > 0);
+            }
+        }
+        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
+        Archive archive = Archive.openMpqe(root.resolve("mpq-v1-features.mpqe"), code, 0);
+        byte[] expected = archive.readFile(archive.fileNumber("overview.txt"));
+        try (MpqStream stream = archive.openStream("overview.txt")) {
+            archive.close();
+            byte[] actual = new byte[expected.length];
+            assertEquals(expected.length, stream.read(actual));
+            assertArrayEquals(expected, actual);
+        }
+    }
+
+    /** Borrowed seekable channels remain usable for archive-owned native clones. */
+    @Test
+    void opensCustomSourcesAndRetainsThemForStreams() throws Exception {
+        Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
+        try (SeekableByteChannel channel = Files.newByteChannel(root.resolve("mpq-v1-features.mpq"))) {
+            channel.position(3);
+            Archive archive = Archive.openSource(channel, "fixture.mpq");
+            assertEquals(3, channel.position());
+            byte[] expected = archive.readFile(archive.fileNumber("overview.txt"));
+            assertEquals(3, channel.position());
+            try (MpqStream stream = archive.openStream("overview.txt")) {
+                archive.close();
+                byte[] actual = new byte[expected.length];
+                assertEquals(expected.length, stream.read(actual));
+                assertArrayEquals(expected, actual);
+            }
+            assertTrue(channel.isOpen());
+        }
+        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
+        try (SeekableByteChannel channel = Files.newByteChannel(root.resolve("mpq-v1-features.mpqe"))) {
+            Archive archive = Archive.openMpqeSource(channel, code, "fixture.mpqe", 0);
+            MpqStream stream = archive.openStream("overview.txt");
+            archive.close();
+            assertTrue(stream.read(new byte[8]) > 0);
+            stream.close();
+            assertTrue(channel.isOpen());
+        }
+        try (SeekableByteChannel channel = new FailingChannel(
+                 Files.newByteChannel(root.resolve("mpq-v1-features.mpq")))) {
+            assertThrows(LibmpqException.class, () -> Archive.openSource(channel, null));
+        }
+    }
+
+    /** Channel wrapper that proves Java read failures do not escape the FFM upcall. */
+    private static final class FailingChannel implements SeekableByteChannel {
+        private final SeekableByteChannel delegate;
+
+        FailingChannel(SeekableByteChannel delegate) { this.delegate = delegate; }
+        @Override public int read(ByteBuffer target) throws IOException { throw new IOException("failure"); }
+        @Override public int write(ByteBuffer source) throws IOException { return delegate.write(source); }
+        @Override public long position() throws IOException { return delegate.position(); }
+        @Override public SeekableByteChannel position(long value) throws IOException {
+            delegate.position(value);
+            return this;
+        }
+        @Override public long size() throws IOException { return delegate.size(); }
+        @Override public SeekableByteChannel truncate(long size) throws IOException {
+            delegate.truncate(size);
+            return this;
+        }
+        @Override public boolean isOpen() { return delegate.isOpen(); }
+        @Override public void close() throws IOException { delegate.close(); }
     }
 
     /** Exercises MPQE v1/v2 opening, credential validation, and independent cloning. */

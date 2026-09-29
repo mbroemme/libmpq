@@ -1,0 +1,82 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__UPDATE_BEGIN_MPQE 3 2026-09-29 "The MoPaQ archive library"
+.SH NAME
+libmpq__update_begin_mpqe \- begin an authenticated MPQE update transaction
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__update_begin_mpqe("
+.BI "        mpq_update_s **" "update,"
+.BI "        const char *" "archive_path,"
+.BI "        const uint8_t *" "auth_code,"
+.BI "        size_t " "auth_code_size"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Opens an existing filesystem MPQE archive with the explicit caller-supplied
+authentication code. At least 32 bytes are required. The code is borrowed only
+during this call; libmpq keeps the minimal private authentication data needed
+to re-encrypt on commit and clears it when the transaction is consumed.
+.PP
+The decoded MPQ is staged in a same-directory, owner-only plaintext temporary
+file. Replace, remove, and rename use the ordinary update operations. Commit
+re-encrypts the working archive into a private sibling, verifies that it opens
+with the supplied code, and atomically replaces the original. Abort discards
+staged data. Both operations consume the handle even on error. A no-op commit
+leaves the MPQE file byte-identical. Modifications remove stale weak
+signatures; no external strong-signature representation is defined for MPQE
+transport.
+.PP
+The original remains unchanged on handled pre-publication failures. Cleanup is
+best effort: an abnormal process or system termination can leave plaintext
+temporary data behind. The destination identity is rechecked immediately
+before publication on a best-effort basis; this is not a lock or conditional
+replacement.
+.SH RETURN VALUE
+Returns \fBLIBMPQ_SUCCESS\fP on success, or a negative libmpq error. On
+failure, \fI*update\fP is NULL.
+.SH ERRORS
+Missing or short authentication data returns \fBLIBMPQ_ERROR_DECRYPT\fP. Wrong
+credentials, invalid archives, allocation, and backing I/O failures return
+existing negative libmpq errors.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__update_begin (3),
+.BR libmpq__update_replace_data (3),
+.BR libmpq__update_replace_path (3),
+.BR libmpq__update_remove (3),
+.BR libmpq__update_rename (3),
+.BR libmpq__update_commit (3),
+.BR libmpq__update_abort (3),
+.BR libmpq__archive_open_mpqe (3)
+.SH AUTHOR
+The libmpq project is maintained by Maik Broemme.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

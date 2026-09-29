@@ -1,0 +1,73 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__ARCHIVE_SIGN 3 2026-09-18 "The MoPaQ archive library"
+.SH NAME
+libmpq__archive_sign \- configure weak signing before writer close
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__archive_sign("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        uint32_t " "signature_type,"
+.BI "        const uint8_t *" "private_key,"
+.BI "        size_t " "private_key_size"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Configures \fIarchive\fP, an active MPQ v1 or v2 writer, to generate one
+\fIsignature_type\fP: \fBLIBMPQ_SIGNATURE_WEAK\fP or
+\fBLIBMPQ_SIGNATURE_STRONG\fP. A file writer must not be active. Each
+type may be configured once; ordinary MPQ archives may use both.
+Configuration is non-consuming and copies the caller's
+\fIprivate_key\fP. Final signing occurs when
+\fBlibmpq__archive_close\fP(3) finalizes the archive; reopen it to
+inspect or verify the result.
+.PP
+Weak private keys are exactly 128 raw bytes: a 64-byte unsigned
+big-endian modulus and a zero-padded 64-byte private exponent. Strong
+private keys have the same layout with 256-byte fields, 512 bytes total.
+The modulus must be full-width and odd; the exponent must be odd, at
+least 3, and less than the modulus. The checks validate representation,
+not mathematical key-pair validity. No PEM parser or default or
+product-specific keys are built in.
+.PP
+Weak signing creates an internal \fB(signature)\fP member and consumes a
+file slot. Strong signing appends an external NGIS trailer using the plain
+SHA-1 archive-range variant. MPQE writers support internal weak signing
+but reject external strong signing because no MPQE transport
+representation is defined for it. Both algorithms are legacy
+compatibility mechanisms, not modern trust primitives.
+.SH RETURN VALUE
+Returns \fBLIBMPQ_SUCCESS\fP after configuration, or a negative libmpq
+error. A failed request does not consume the writer handle.
+.SH ERRORS
+NULL archive handles return \fBLIBMPQ_ERROR_EXIST\fP; invalid type,
+key, duplicate configuration, or MPQE strong signing return
+\fBLIBMPQ_ERROR_FORMAT\fP. Wrong writer state returns
+\fBLIBMPQ_ERROR_NOT_INITIALIZED\fP. Allocation and capacity errors may
+also propagate.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__archive_signatures (3),
+.BR libmpq__archive_verify (3),
+.BR libmpq__patch_sign (3)
+.SH AUTHOR
+Maik Broemme <mbroemme@libmpq.org>
+.SH REPORTING BUGS
+https://github.com/mbroemme/libmpq/issues
+.SH COPYRIGHT
+Copyright (c) 2003-2026 Maik Broemme.
+Licensed under the GNU Lesser General Public License, version 2.1 or later.

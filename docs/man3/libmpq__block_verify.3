@@ -10,8 +10,8 @@
 .\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 .\" GNU Lesser General Public License for more details.
 .\"
-.\" You should have received a copy of the GNU Lesser General Public
-.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
 .TH LIBMPQ__BLOCK_VERIFY 3 2026-09-11 "The MoPaQ archive library"
 .SH NAME
 libmpq__block_verify \- verify one sector and return its stored Adler-32
@@ -20,11 +20,11 @@ libmpq__block_verify \- verify one sector and return its stored Adler-32
 .B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__block_verify("
-.BI "        mpq_archive_s *" "archive",
-.BI "        uint32_t       " "file_number",
-.BI "        uint32_t       " "block_number",
-.BI "        uint32_t      *" "checksum",
-.BI "        uint32_t      *" "mismatches"
+.BI "        mpq_archive_s *" "archive,"
+.BI "        uint32_t " "file_number,"
+.BI "        uint32_t " "block_number,"
+.BI "        uint32_t *" "checksum,"
+.BI "        uint32_t *" "mismatches"
 .BI ");"
 .fi
 .SH DESCRIPTION
@@ -37,25 +37,46 @@ including encrypted sectors and MPQE archives.
 The existing reader loads the table, reads and decrypts the selected sector,
 compares its checksum, and decodes the sector. No other sector payload is
 verified. This does not require (attributes) and does not check file CRC32
-or MD5. Normal opening, reading and extraction remain unchanged.
+or MD5. Complete file reads automatically check usable sector Adler-32 values;
+complete lossless file reads also check available CRC32/MD5 attributes.
+\fBlibmpq__block_read\fP() does not implicitly verify its stored sector
+checksum or perform file-level attribute verification.
 .SH RETURN VALUE
 LIBMPQ_SUCCESS means the operation completed. *checksum receives the stored
 Adler-32, not the calculated value. *mismatches is zero for a match or
 LIBMPQ_VERIFY_SECTOR_CRC for a mismatch. Checksums are not authentication.
 .PP
+Both non-NULL output pointers are initialized to zero before validation.
+Outputs are published only after the complete operation succeeds and remain
+zero on any failure, even if a mismatch was detected before a decoding error.
+Use separate storage for checksum and mismatches.
+.SH ERRORS
 LIBMPQ_ERROR_EXIST means a NULL required argument, invalid file/block number,
 or no usable sector checksum: absent table, missing sector-CRC flag,
 single-unit or non-codec storage, or a zero/all-ones checksum entry.
 LIBMPQ_ERROR_NOT_INITIALIZED means a writer archive was supplied.
 Malformed metadata, read, seek, decryption, decoding, size and allocation
 failures retain the normal negative libmpq errors.
-.PP
-Both non-NULL output pointers are initialized to zero before validation.
-Outputs are published only after the complete operation succeeds and remain
-zero on any failure, even if a mismatch was detected before a decoding error.
-Use separate storage for checksum and mismatches.
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__block_read (3),
 .BR libmpq__file_blocks (3),
 .BR libmpq__file_verify (3)
+.SH AUTHOR
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

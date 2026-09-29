@@ -18,6 +18,7 @@
  */
 
 #include "mpq-verify.h"
+#include "mpq-attributes.h"
 #include "mpq-internal.h"
 #include "mpq-md5.h"
 #include "mpq-reader.h"
@@ -27,8 +28,10 @@
 #include <string.h>
 #include <zlib.h>
 
-/* Reuse the same table loader and packed/decrypted checksum check as file
- * verification. Do not publish outputs until reading and decoding succeed. */
+/*
+ * Reuse the same table loader and packed/decrypted checksum check as file
+ * verification. Do not publish outputs until reading and decoding succeed.
+ */
 int32_t
 libmpq__verify_block(
     mpq_archive_s *archive, uint32_t file_number, uint32_t block_number, uint32_t *checksum,
@@ -84,7 +87,8 @@ libmpq__verify_block(
         goto cleanup;
     }
     status = libmpq__reader_block_read(
-        archive, file_number, block_number, buffer, size, &transferred, &stored, &mismatch_mask
+        archive, file_number, block_number, buffer, size, &transferred, &stored, &mismatch_mask,
+        NULL
     );
     if (status == LIBMPQ_SUCCESS && transferred != size)
         status = LIBMPQ_ERROR_READ;
@@ -103,8 +107,10 @@ cleanup:
     return status;
 }
 
-/* Hash logical blocks through the existing reader without changing extraction.
- * Publish mismatch bits only after the entire verification operation succeeds. */
+/*
+ * Hash logical blocks through the existing reader without changing extraction.
+ * Publish mismatch bits only after the entire verification operation succeeds.
+ */
 int32_t
 libmpq__verify_file(
     mpq_archive_s *archive, uint32_t file_number, uint32_t verify_flags, uint32_t *mismatches
@@ -189,7 +195,7 @@ libmpq__verify_file(
         }
         status = libmpq__reader_block_read(
             archive, file_number, i, buffer, size, &transferred,
-            checksums != NULL ? checksums + i : NULL, &mismatch_mask
+            checksums != NULL ? checksums + i : NULL, &mismatch_mask, NULL
         );
         if (status < 0)
             goto cleanup;
@@ -209,13 +215,10 @@ libmpq__verify_file(
         status = LIBMPQ_ERROR_READ;
         goto cleanup;
     }
-    if ((verify_flags & LIBMPQ_VERIFY_FILE_CRC32) != 0 && crc != attributes.crc32)
-        mismatch_mask |= LIBMPQ_VERIFY_FILE_CRC32;
     if ((verify_flags & LIBMPQ_VERIFY_FILE_MD5) != 0) {
         libmpq__md5_final(&md5, digest);
-        if (memcmp(digest, attributes.md5, sizeof(digest)) != 0)
-            mismatch_mask |= LIBMPQ_VERIFY_FILE_MD5;
     }
+    libmpq__attributes_compare_file(&attributes, verify_flags, crc, digest, &mismatch_mask);
 cleanup:
     free(checksums);
     free(buffer);

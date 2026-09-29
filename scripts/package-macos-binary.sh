@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+# Copyright (c) 2026-2026 Maik Broemme <mbroemme@libmpq.org>
 #
 # This file is free software; you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License as published
-# by the Free Software Foundation; either version 2.1 of the License, or
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation; either version 2.1 of the License, or
 # (at your option) any later version.
+#
+# This file is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this file; if not, see <https://www.gnu.org/licenses/>.
 
 set -euo pipefail
 
@@ -59,7 +67,7 @@ for directory in bin include lib share; do
 		cp -a "${installed_usr}/${directory}" "${package_dir}/"
 	fi
 done
-cp README.md DEVELOPER.md MPQ.md COPYING COPYING.LESSER "${package_dir}/"
+cp README.md DEVELOPER.md RELEASING.md MPQ.md COPYING COPYING.LESSER "${package_dir}/"
 
 readonly package_config="${package_dir}/bin/libmpq-config"
 if [[ ! -f "${package_config}" ]]; then

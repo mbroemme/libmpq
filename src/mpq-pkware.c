@@ -62,9 +62,11 @@ static const uint8_t pkzip_slen_bits[] = { 0x03, 0x02, 0x03, 0x03, 0x04, 0x04, 0
 static const uint8_t pkzip_len_code[] = { 0x05, 0x03, 0x01, 0x06, 0x0A, 0x02, 0x0C, 0x14,
                                           0x04, 0x18, 0x08, 0x30, 0x10, 0x20, 0x40, 0x00 };
 
-/* Append a low-bit-first PKWARE code to the output bitstream.
+/*
+ * Append a low-bit-first PKWARE code to the output bitstream.
  * The caller provides a zeroed output buffer and a bit cursor, and this helper
- * sets only the bits represented by the requested code. */
+ * sets only the bits represented by the requested code.
+ */
 static void
 pkzip_put_bits(uint8_t *out, size_t *bit_pos, uint32_t value, unsigned bits)
 {
@@ -120,9 +122,11 @@ static const uint16_t pkzip_code_asc[] = {
     0x1800, 0x0800, 0x1000, 0x0000
 };
 
-/* Consume bits from the PKWARE input accumulator.
+/*
+ * Consume bits from the PKWARE input accumulator.
  * It refills the eight-bit staging window through the configured callback and
- * returns a nonzero value when the compressed input ends prematurely. */
+ * returns a nonzero value when the compressed input ends prematurely.
+ */
 static int32_t
 skip_bit(pkzip_cmp_s *mpq_pkzip, uint32_t bits)
 {
@@ -151,9 +155,11 @@ skip_bit(pkzip_cmp_s *mpq_pkzip, uint32_t bits)
     return 0;
 }
 
-/* Build a decode lookup table from PKWARE canonical bit codes.
+/*
+ * Build a decode lookup table from PKWARE canonical bit codes.
  * Each short code is expanded across all matching low-byte prefixes so the
- * decoder can resolve literals and lengths without walking a tree at runtime. */
+ * decoder can resolve literals and lengths without walking a tree at runtime.
+ */
 static void
 generate_tables_decode(int32_t count, uint8_t *bits, const uint8_t *code, uint8_t *buf2)
 {
@@ -174,9 +180,11 @@ generate_tables_decode(int32_t count, uint8_t *bits, const uint8_t *code, uint8_
     }
 }
 
-/* Build the ASCII literal lookup tables used by the PKWARE decoder.
+/*
+ * Build the ASCII literal lookup tables used by the PKWARE decoder.
  * The static canonical tables are expanded into prefix tables that support
- * the variable-length ASCII mode used by DCL streams. */
+ * the variable-length ASCII mode used by DCL streams.
+ */
 static void
 generate_tables_ascii(pkzip_cmp_s *mpq_pkzip)
 {
@@ -235,9 +243,11 @@ generate_tables_ascii(pkzip_cmp_s *mpq_pkzip)
     }
 }
 
-/* Decode one PKWARE literal or copy marker.
+/*
+ * Decode one PKWARE literal or copy marker.
  * The low control bit distinguishes a length/distance match from a literal,
- * and the selected mode determines whether literals are binary or ASCII-coded. */
+ * and the selected mode determines whether literals are binary or ASCII-coded.
+ */
 static uint32_t
 decode_literal(pkzip_cmp_s *mpq_pkzip)
 {
@@ -321,9 +331,11 @@ decode_literal(pkzip_cmp_s *mpq_pkzip)
     return skip_bit(mpq_pkzip, mpq_pkzip->bits_asc[value]) ? 0x306 : value;
 }
 
-/* Decode the backward distance for a PKWARE copy operation.
+/*
+ * Decode the backward distance for a PKWARE copy operation.
  * Two-byte matches use a fixed suffix width, while longer matches use the
- * dictionary-size-dependent distance width configured in the stream header. */
+ * dictionary-size-dependent distance width configured in the stream header.
+ */
 static uint32_t
 decode_distance(pkzip_cmp_s *mpq_pkzip, uint32_t length)
 {
@@ -355,9 +367,11 @@ decode_distance(pkzip_cmp_s *mpq_pkzip, uint32_t length)
     return pos + 1;
 }
 
-/* Supply compressed bytes to the PKWARE decoder callback.
+/*
+ * Supply compressed bytes to the PKWARE decoder callback.
  * The callback clamps each request to the remaining input and advances the
- * wrapper-owned cursor so the codec never reads beyond the MPQ block. */
+ * wrapper-owned cursor so the codec never reads beyond the MPQ block.
+ */
 static uint32_t
 data_read_input(char *buf, uint32_t *size, void *param)
 {
@@ -377,9 +391,11 @@ data_read_input(char *buf, uint32_t *size, void *param)
     return to_read;
 }
 
-/* Receive expanded bytes from the PKWARE decoder callback.
+/*
+ * Receive expanded bytes from the PKWARE decoder callback.
  * Output is clamped to the caller's capacity and the accepted byte count is
- * recorded for the extraction wrapper after each decoder flush. */
+ * recorded for the extraction wrapper after each decoder flush.
+ */
 static void
 data_write_output(char *buf, uint32_t *size, void *param)
 {
@@ -397,9 +413,11 @@ data_write_output(char *buf, uint32_t *size, void *param)
     info->out_pos += to_write;
 }
 
-/* Expand one complete PKWARE stream using its configured callbacks.
+/*
+ * Expand one complete PKWARE stream using its configured callbacks.
  * The sliding 4 KiB window supplies LZ history while completed upper-half
- * data is flushed incrementally through the output callback. */
+ * data is flushed incrementally through the output callback.
+ */
 static uint32_t
 expand(pkzip_cmp_s *mpq_pkzip)
 {
@@ -602,9 +620,11 @@ char pkware_copyright[] = "PKWARE Data Compression Library for Win32\r\n"
                           "PKWARE Data Compression Library Reg. U.S. Pat. and Tm. Off.\r\n"
                           "Version 1.11\r\n";
 
-/* Initialize PKWARE decoder state and explode the compressed data stream.
+/*
+ * Initialize PKWARE decoder state and explode the compressed data stream.
  * The caller owns the work buffer and callback parameter; this routine fills
- * the codec state, validates the stream header, and delegates expansion. */
+ * the codec state, validates the stream header, and delegates expansion.
+ */
 uint32_t
 libmpq__pkzip_decompress(uint8_t *work_buf, void *param)
 {

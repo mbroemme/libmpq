@@ -10,22 +10,21 @@
 .\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 .\" GNU Lesser General Public License for more details.
 .\"
-.\" You should have received a copy of the GNU Lesser General Public
-.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
 .TH LIBMPQ__FILE_READ 3 2026-08-12 "The MoPaQ archive library"
 .SH NAME
 libmpq__file_read \- read, decrypt, and decompress one file.
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__file_read("
-.BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        uint32_t        " "file_number",
-.BI "        uint8_t        *" "out_buf",
-.BI "        libmpq__off_t   " "out_size",
-.BI "        libmpq__off_t  *" "transferred"
+.BI "        mpq_archive_s *" "mpq_archive,"
+.BI "        uint32_t " "file_number,"
+.BI "        uint8_t *" "out_buf,"
+.BI "        libmpq__off_t " "out_size,"
+.BI "        libmpq__off_t *" "transferred"
 .BI ");"
 .fi
 .SH DESCRIPTION
@@ -33,6 +32,14 @@ libmpq__file_read \- read, decrypt, and decompress one file.
 Call \fBlibmpq__file_read\fP() to read one file into the caller's buffer.
 Encrypted files are decrypted and compressed files are decompressed before
 they are returned.
+.PP
+When a valid (attributes) member supplies CRC32 and/or MD5 for the selected
+lossless file, a complete read compares decoded bytes before reporting success.
+A mismatch returns LIBMPQ_ERROR_READ. Malformed optional metadata and lossy
+ADPCM members skip automatic file CRC32/MD5 comparison. Usable sector
+Adler-32 entries are automatically compared over decrypted packed data before
+decompression, including ADPCM. Malformed optional sector tables are skipped
+during extraction. FILETIME and PATCH_BIT remain metadata.
 .LP
 The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The \fIfile_number\fP argument selects the
@@ -42,6 +49,7 @@ function stores the number of bytes written in \fItransferred\fP.
 Offset-table caching is managed internally; no explicit open or close is needed.
 .SH RETURN VALUE
 On success, a zero is returned and on error one of the following constants.
+.SH ERRORS
 .TP
 .B LIBMPQ_ERROR_EXIST
 File does not exist in archive.
@@ -64,6 +72,7 @@ Decrypting file failed.
 .B LIBMPQ_ERROR_UNPACK
 Unpacking file failed.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__block_read (3)
 .SH AUTHOR
 The libmpq project is maintained by

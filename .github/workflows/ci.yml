@@ -62,11 +62,17 @@ jobs:
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
       - name: Configure
         shell: pwsh
-        run: cmake -S . -B build -A ${{ matrix.cmake_platform }} -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} -DBUILD_SHARED_LIBS=${{ matrix.shared }} "-DCMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        run: cmake -S . -B build -A ${{ matrix.cmake_platform }} -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} -DBUILD_SHARED_LIBS=${{ matrix.shared }} -DVCPKG_APPLOCAL_DEPS=OFF "-DCMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Test
-        run: ctest --test-dir build -C Release --output-on-failure
+        shell: pwsh
+        run: |
+          # Parallel app-local DLL copying can race between test targets.
+          # Resolve vcpkg DLLs from PATH instead of deploying them at build time.
+          ${env:PATH} = "${env:VCPKG_INSTALLATION_ROOT}/installed/${{ matrix.vcpkg_triplet }}/bin;${env:PATH}"
+          ctest --test-dir build -C Release --output-on-failure
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
       - name: Install and test MSVC consumer
         shell: pwsh
         run: |

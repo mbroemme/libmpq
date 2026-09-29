@@ -21,6 +21,7 @@
 #define LIBMPQ_WRITER_H
 
 #include "mpq-file.h"
+#include "mpq-mpqe.h"
 #include <libmpq/mpq.h>
 #include <stdio.h>
 
@@ -39,6 +40,9 @@ typedef struct mpq_writer_mpqe_ops
 /* Create a seekable archive and initialize its writer metadata from options. */
 int32_t libmpq__writer_archive_create(
     mpq_archive_s **out, const char *path, const mpq_archive_create_options_s *options
+);
+int32_t libmpq__writer_archive_create_file(
+    mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options
 );
 int32_t libmpq__writer_archive_create_mpqe(
     mpq_archive_s **out, const char *path, const uint8_t *auth_code, size_t auth_code_size,
@@ -66,6 +70,18 @@ int32_t libmpq__writer_file_add(
     const mpq_file_options_s *options
 );
 
+/* Store a plaintext patch prefix and encoded body as one patch member. */
+int32_t libmpq__writer_patch_file_add(
+    mpq_archive_s *archive, const char *name, const uint8_t *prefix, uint32_t prefix_size,
+    const uint8_t *body, libmpq__off_t body_size, libmpq__off_t result_size,
+    const mpq_file_options_s *options
+);
+
+/* Write a zero-byte delete marker only for a private patch-mode archive. */
+int32_t libmpq__writer_patch_delete_marker(
+    mpq_archive_s *archive, const char *name, uint16_t locale, uint16_t platform
+);
+
 /* Read source from disk and add it as a named archive file. */
 int32_t libmpq__writer_file_add_path(
     mpq_archive_s *archive, const char *name, const char *source, const mpq_file_options_s *options
@@ -74,6 +90,9 @@ int32_t libmpq__writer_file_add_path(
 /* Write final tables, optional listfile, and the completed archive header. */
 int32_t libmpq__writer_finalize(mpq_archive_s *archive);
 int32_t libmpq__writer_finalize_mpqe(mpq_archive_s *archive);
+int32_t libmpq__writer_mpqe_transform_file(
+    FILE *input, FILE *output, const uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE]
+);
 void libmpq__writer_mpqe_cleanup(mpq_archive_s *archive);
 
 #endif /* LIBMPQ_WRITER_H */

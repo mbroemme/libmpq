@@ -12,6 +12,7 @@ check_PROGRAMS = \
 	test-verify \
 	test-attributes \
 	test-md5 \
+	test-signature \
 	test-compression \
 	test-lzma \
 	test-sparse \
@@ -24,6 +25,9 @@ check_PROGRAMS = \
 	test-mpq \
 	test-pkware \
 	test-reader \
+	test-patch-reader \
+	test-patch-writer \
+	test-update \
 	test-wave \
 	test-writer
 TESTS = $(check_PROGRAMS)
@@ -36,11 +40,14 @@ check-local:
 # Compile shared assertions and deterministic-data helpers into every test.
 COMMON_SOURCES = test-mpq-helper.c test-mpq-helper.h
 test_file_SOURCES = test-mpq-file.c $(COMMON_SOURCES)
+test_file_LDADD = $(top_builddir)/src/mpq-source.lo $(PRIVATE_MPQE_LDADD) $(LDADD)
 test_verify_SOURCES = test-mpq-verify.c $(COMMON_SOURCES)
-test_verify_LDADD = $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-stream.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
+test_verify_LDADD = $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-source.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
 test_attributes_SOURCES = test-mpq-attributes.c $(COMMON_SOURCES)
-test_attributes_LDADD = $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-stream.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
+test_attributes_LDADD = $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-source.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
 test_md5_SOURCES = test-mpq-md5.c $(COMMON_SOURCES)
+test_signature_SOURCES = test-mpq-signature.c $(COMMON_SOURCES)
+test_signature_LDADD = $(top_builddir)/src/mpq-rsa.lo $(top_builddir)/src/mpq-sha1.lo $(test_attributes_LDADD)
 test_md5_LDADD = $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-endian.lo $(LDADD)
 test_compression_SOURCES = test-mpq-compression.c $(COMMON_SOURCES)
 test_lzma_SOURCES = test-mpq-lzma.c $(COMMON_SOURCES)
@@ -51,6 +58,7 @@ test_malformed_SOURCES = test-mpq-malformed.c $(COMMON_SOURCES)
 test_mpqe_SOURCES = test-mpq-mpqe.c $(COMMON_SOURCES)
 test_endian_SOURCES = test-mpq-endian.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_fixtures_SOURCES = test-mpq-fixtures.c $(COMMON_SOURCES)
+test_fixtures_LDADD = $(test_attributes_LDADD)
 test_mpq_SOURCES = test-mpq-api.c $(COMMON_SOURCES)
 test_pkware_SOURCES = test-mpq-pkware.c \
 	../src/mpq-compression.c \
@@ -60,12 +68,33 @@ test_pkware_SOURCES = test-mpq-pkware.c \
 	../src/mpq-endian.c \
 	$(COMMON_SOURCES)
 test_reader_SOURCES = test-mpq-reader.c $(COMMON_SOURCES)
+test_patch_reader_SOURCES = test-mpq-patch-reader.c $(COMMON_SOURCES)
+test_patch_reader_LDADD = $(top_builddir)/src/mpq-patch-reader.lo $(test_attributes_LDADD)
+test_patch_writer_SOURCES = test-mpq-patch-writer.c $(COMMON_SOURCES)
+test_patch_writer_LDADD = \
+	$(top_builddir)/src/mpq-patch-writer.lo \
+	$(top_builddir)/src/mpq-patch-reader.lo \
+	$(top_builddir)/src/mpq-writer.lo \
+	$(top_builddir)/src/mpq-stream.lo \
+	$(top_builddir)/src/mpq-signature.lo \
+	$(top_builddir)/src/mpq-rsa.lo \
+	$(top_builddir)/src/mpq-sha1.lo \
+	$(test_attributes_LDADD)
+test_update_SOURCES = test-mpq-update.c $(COMMON_SOURCES)
+test_update_LDADD = \
+	$(top_builddir)/src/mpq-update.lo \
+	$(top_builddir)/src/mpq-writer.lo \
+	$(top_builddir)/src/mpq-stream.lo \
+	$(top_builddir)/src/mpq-signature.lo \
+	$(top_builddir)/src/mpq-rsa.lo \
+	$(top_builddir)/src/mpq-sha1.lo \
+	$(test_attributes_LDADD)
 test_wave_SOURCES = test-mpq-wave.c ../src/mpq-wave.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_writer_SOURCES = test-mpq-writer.c $(COMMON_SOURCES)
 
 # Reuse the library's already-built hidden MPQE helper objects for private checks.
 PRIVATE_MPQE_LDADD = $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-endian.lo
-test_mpqe_LDADD = $(top_builddir)/src/mpq-stream.lo $(PRIVATE_MPQE_LDADD) $(LDADD)
+test_mpqe_LDADD = $(top_builddir)/src/mpq-source.lo $(PRIVATE_MPQE_LDADD) $(LDADD)
 
 # Reuse production codec objects for direct malformed-codec regressions.
 PRIVATE_COMPRESSION_LDADD = \
@@ -91,6 +120,10 @@ test_fixtures_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixt
 test_mpqe_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_pkware_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_reader_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_patch_reader_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_patch_writer_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_signature_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_update_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_wave_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 
 # Ship the deterministic fixture corpus and all module-mapped test sources.
@@ -109,11 +142,18 @@ EXTRA_DIST = \
 	test-mpq-api.c \
 	test-mpq-pkware.c \
 	test-mpq-reader.c \
+	test-mpq-patch-reader.c \
+	test-mpq-patch-writer.c \
+	test-mpq-update.c \
 	test-mpq-wave.c \
 	test-mpq-writer.c \
 	test-mpq-fixtures.c \
 	fixtures/README.md \
 	fixtures/mpq-v1-features.mpq \
-	fixtures/mpq-v2-features.mpq \
+	fixtures/mpq-v1-features-patch.mpq \
+	fixtures/mpq-v1-features-patch.w3x \
 	fixtures/mpq-v1-features.mpqe \
+	fixtures/mpq-v1-features.w3x \
+	fixtures/mpq-v2-features.mpq \
+	fixtures/mpq-v2-features-patch.mpq \
 	fixtures/mpq-v2-features.mpqe

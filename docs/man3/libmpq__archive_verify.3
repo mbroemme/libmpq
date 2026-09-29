@@ -1,0 +1,72 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__ARCHIVE_VERIFY 3 2026-09-18 "The MoPaQ archive library"
+.SH NAME
+libmpq__archive_verify \- verify a weak or strong archive signature
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__archive_verify("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        uint32_t " "verify_flags,"
+.BI "        const uint8_t *" "public_key,"
+.BI "        size_t " "public_key_size,"
+.BI "        uint32_t *" "mismatches"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Verifies exactly one signature type selected by \fIverify_flags\fP:
+\fBLIBMPQ_SIGNATURE_WEAK\fP or \fBLIBMPQ_SIGNATURE_STRONG\fP. The
+caller supplies the matching \fIpublic_key\fP. A cryptographic mismatch
+is reported through \fI*mismatches\fP, not as a negative operation error.
+A non-NULL mismatch output is zeroed before validation.
+.PP
+Weak public keys are exactly 128 raw bytes: a 64-byte unsigned
+big-endian modulus followed by a zero-padded 64-byte public exponent.
+Strong public keys use the same layout with 256-byte fields, 512 bytes
+total. The modulus must be full-width and odd; the exponent must be odd,
+at least 3, and less than the modulus. No PEM parser or default or
+product-specific keys are built in.
+.PP
+Weak verification uses legacy MD5/RSA-512. Strong verification accepts
+the plain SHA-1 archive-range digest as well as the uppercase-basename
+and ARCHIVE variants. Internal weak signatures can be verified in
+MPQE-wrapped MPQs; no external strong-signature transport is defined for
+MPQE. These legacy signatures should not be treated as modern trust
+primitives.
+.SH RETURN VALUE
+Returns \fBLIBMPQ_SUCCESS\fP after verification. The requested bit is
+set in \fI*mismatches\fP if the signature does not match; it is clear
+when it matches. On failure the function returns a negative libmpq error
+and leaves a non-NULL mismatch output zero.
+.SH ERRORS
+An absent requested signature or NULL required argument returns
+\fBLIBMPQ_ERROR_EXIST\fP. Invalid flags, key representation, or
+signature storage return \fBLIBMPQ_ERROR_FORMAT\fP. Writer handles return
+\fBLIBMPQ_ERROR_NOT_INITIALIZED\fP. Read, allocation, and other
+lower-level errors may also propagate.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__archive_signatures (3),
+.BR libmpq__archive_sign (3),
+.BR libmpq__patch_sign (3)
+.SH AUTHOR
+Maik Broemme <mbroemme@libmpq.org>
+.SH REPORTING BUGS
+https://github.com/mbroemme/libmpq/issues
+.SH COPYRIGHT
+Copyright (c) 2003-2026 Maik Broemme.
+Licensed under the GNU Lesser General Public License, version 2.1 or later.

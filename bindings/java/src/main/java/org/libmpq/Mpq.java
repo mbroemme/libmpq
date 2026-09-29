@@ -19,6 +19,12 @@ import org.libmpq.ffi.LibmpqNative;
  * private codec or archive-layout implementation details.
  */
 public final class Mpq {
+    /** Seek from the logical member start. */
+    public static final int SEEK_SET = 0;
+    /** Seek from the current logical member position. */
+    public static final int SEEK_CUR = 1;
+    /** Seek from the logical member end. */
+    public static final int SEEK_END = 2;
     /** Attributes CRC32 array presence. */
     public static final int ATTRIBUTE_CRC32 = 0x1;
     /** Attributes FILETIME array presence. */
@@ -36,6 +42,8 @@ public final class Mpq {
     public static final int VERIFY_FILE_MD5 = 0x4;
     /** Request all implemented file checksum comparisons. */
     public static final int VERIFY_ALL = VERIFY_SECTOR_CRC | VERIFY_FILE_CRC32 | VERIFY_FILE_MD5;
+    public static final int SIGNATURE_WEAK = 0x00000001;
+    public static final int SIGNATURE_STRONG = 0x00000002;
     /** Native failure while opening or creating a file. */
     public static final int ERROR_OPEN = -1;
     /** Native failure while closing a file or archive. */

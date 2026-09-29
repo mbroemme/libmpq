@@ -1,3 +1,22 @@
+/*
+ *  test-mpq-reader.c -- libmpq regression tests.
+ *
+ *  Copyright (c) 2026-2026 Maik Broemme <mbroemme@libmpq.org>
+ *
+ *  This file is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU Lesser General Public License as published by
+ *  the Free Software Foundation; either version 2.1 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This file is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU Lesser General Public License for more details.
+ *
+ *  You should have received a copy of the GNU Lesser General Public License
+ *  along with this file; if not, see <https://www.gnu.org/licenses/>.
+ */
+
 /* Exercise fixture opening, file maps, sector offsets, and block reads. */
 #include "test-mpq-helper.h"
 
@@ -38,8 +57,10 @@ main(void)
     TEST_CHECK(transferred == block_size);
     TEST_CHECK(memcmp(block_data, data, (size_t)block_size) == 0);
 
-    /* Raw unencrypted reads share input/output storage and must skip self-copy.
-     * Their logical size remains independent of the caller buffer capacity. */
+    /*
+     * Raw unencrypted reads share input/output storage and must skip self-copy.
+     * Their logical size remains independent of the caller buffer capacity.
+     */
     TEST_CHECK(libmpq__file_flags(archive, number, &flags) == 0);
     TEST_CHECK(
         (flags &

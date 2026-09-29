@@ -16,7 +16,7 @@ import libmpq.native;
 import libmpq.options : ArchiveCreateOptions, FileOptions;
 import std.typecons : Nullable, nullable;
 
-/** Owned stored metadata; hashes are not automatically verified on extraction. */
+/** Owned stored metadata; complete lossless reads verify available CRC32/MD5 hashes. */
 struct FileAttributes {
     uint flags;
     uint crc32;
@@ -51,6 +51,38 @@ struct FileMetadata {
     /** Non-zero when the entry uses PKWARE implode. */ uint imploded;
 }
 
+/** Caller-owned exact random-access source for Archive.openSource. */
+interface MpqSource {
+    ulong size();
+    void readAt(ulong offset, ubyte[] buffer);
+}
+
+/* Shared GC-owned state retained by archives and streams using one source. */
+private class SourceState {
+    MpqSource source;
+    ulong size;
+
+    this(MpqSource source, ulong size) {
+        this.source = source;
+        this.size = size;
+    }
+}
+
+private extern(C) int
+sourceReadAt(void* context, off_t offset, ubyte* buffer, size_t size)
+{
+    try {
+        auto state = cast(SourceState) context;
+        if (state is null || offset < 0 || cast(ulong)offset > state.size ||
+            size > state.size - cast(ulong)offset)
+            return ERROR_READ;
+        state.source.readAt(cast(ulong)offset, buffer[0 .. size]);
+        return 0;
+    } catch (Throwable) {
+        return ERROR_READ;
+    }
+}
+
 /**
  * An opened or newly created MPQ archive.
  *
@@ -59,6 +91,36 @@ struct FileMetadata {
  * errors. A closed archive must not be used again.
  */
 class Archive {
+    /** Detect structurally valid weak and strong signatures; absence returns zero. */
+    uint signatures() {
+        uint result;
+        checkStatus(libmpq__archive_signatures(nativeHandle(), &result), "libmpq__archive_signatures");
+        return result;
+    }
+
+    /** Verify a weak signature and return mismatch bits. */
+    uint verify(const(ubyte)[] publicKey) {
+        return verify(publicKey, SIGNATURE_WEAK);
+    }
+
+    /** Verify the selected signature type and return mismatch bits. */
+    uint verify(const(ubyte)[] publicKey, uint signatureType) {
+        uint result;
+        checkStatus(libmpq__archive_verify(nativeHandle(), signatureType,
+                    publicKey.ptr, publicKey.length, &result), "libmpq__archive_verify");
+        return result;
+    }
+
+    /** Configure weak signing using a 128-byte key: 64-byte big-endian n then d. */
+    void sign(const(ubyte)[] privateKey) {
+        sign(privateKey, SIGNATURE_WEAK);
+    }
+
+    /** Configure weak or plain strong signing using the selected raw private key. */
+    void sign(const(ubyte)[] privateKey, uint signatureType) {
+        checkStatus(libmpq__archive_sign(nativeHandle(), signatureType,
+                    privateKey.ptr, privateKey.length), "libmpq__archive_sign");
+    }
     /** Return flags, or a null value when absent; malformed metadata still throws. */
     Nullable!uint attributes() {
         uint flags;
@@ -69,6 +131,7 @@ class Archive {
     }
     private mpq_archive_s* handle;
     private bool closed;
+    private SourceState sourceState;
 
     /** Open an archive, optionally at a specific embedded offset. */
     this(string path, off_t offset = -1) {
@@ -92,6 +155,42 @@ class Archive {
                                                authCode.length),
                     "libmpq__archive_open_mpqe");
         return new Archive(result);
+    }
+
+    /** Open a borrowed typed random-access source; the source remains caller-owned. */
+    static Archive openSource(MpqSource source, string sourceName = null,
+                              off_t offset = -1) {
+        auto sourceSize = source is null ? ulong.max : source.size();
+        if (source is null || sourceSize > cast(ulong)long.max)
+            throw new MPQException("Archive.openSource", ERROR_SIZE);
+        auto state = new SourceState(source, sourceSize);
+        mpq_archive_s* result;
+        auto name = sourceName is null ? null : toStringz(sourceName);
+        checkStatus(libmpq__archive_open_io(&result, cast(void*)state, &sourceReadAt,
+                                             cast(off_t)state.size, offset, name),
+                    "libmpq__archive_open_io");
+        auto archive = new Archive(result);
+        archive.sourceState = state;
+        return archive;
+    }
+
+    /** Open a borrowed typed MPQE source; the source remains caller-owned. */
+    static Archive openMpqeSource(MpqSource source, const(ubyte)[] authCode,
+                                  string sourceName = null, off_t offset = -1) {
+        auto sourceSize = source is null ? ulong.max : source.size();
+        if (source is null || sourceSize > cast(ulong)long.max)
+            throw new MPQException("Archive.openMpqeSource", ERROR_SIZE);
+        auto state = new SourceState(source, sourceSize);
+        mpq_archive_s* result;
+        auto name = sourceName is null ? null : toStringz(sourceName);
+        auto authPointer = authCode.length == 0 ? null : authCode.ptr;
+        checkStatus(libmpq__archive_open_mpqe_io(&result, cast(void*)state, &sourceReadAt,
+                                                  cast(off_t)state.size, offset, authPointer,
+                                                  authCode.length, name),
+                    "libmpq__archive_open_mpqe_io");
+        auto archive = new Archive(result);
+        archive.sourceState = state;
+        return archive;
     }
 
     /** Create an archive using explicit v1/v2 and storage options. */
@@ -123,7 +222,9 @@ class Archive {
         mpq_archive_s* result;
         checkStatus(libmpq__archive_clone(&result, handle),
                     "libmpq__archive_clone");
-        return new Archive(result);
+        auto clone = new Archive(result);
+        clone.sourceState = sourceState;
+        return clone;
     }
 
     /** Close the native handle; repeated calls are harmless. */
@@ -132,6 +233,7 @@ class Archive {
         auto status = libmpq__archive_close(handle);
         closed = true;
         handle = null;
+        sourceState = null;
         checkStatus(status, "libmpq__archive_close");
     }
 
@@ -194,6 +296,23 @@ class Archive {
         return file(cast(uint) number);
     }
 
+    /** Open an independent seekable logical-member stream by file number. */
+    MpqStream openStream(uint number) {
+        ensureOpen();
+        mpq_stream_s* result;
+        checkStatus(libmpq__stream_open(handle, number, &result), "libmpq__stream_open");
+        return new MpqStream(result, sourceState);
+    }
+
+    /** Open an independent seekable logical-member stream by plaintext name. */
+    MpqStream openStream(string name) {
+        ensureOpen();
+        mpq_stream_s* result;
+        checkStatus(libmpq__stream_open_name(handle, toStringz(name), &result),
+                    "libmpq__stream_open_name");
+        return new MpqStream(result, sourceState);
+    }
+
     /** Add a complete in-memory file to a writer archive. */
     void add(string name, const(ubyte)[] data, FileOptions options = FileOptions.raw()) {
         ensureOpen(); auto nativeOptions = options.nativeOptions();
@@ -234,6 +353,86 @@ class Archive {
     private void ensureOpen() {
         if (closed || handle is null)
             throw new MPQException("Archive", ERROR_NOT_INITIALIZED);
+    }
+}
+
+/** Seek origins accepted by MpqStream.seek. */
+enum SeekOrigin : int {
+    set = LIBMPQ_SEEK_SET,
+    current = LIBMPQ_SEEK_CUR,
+    end = LIBMPQ_SEEK_END
+}
+
+/**
+ * Incremental, seekable decoded member stream.
+ *
+ * The native stream owns a private archive clone, so it remains usable after
+ * its originating Archive is closed.
+ */
+class MpqStream {
+    private mpq_stream_s* handle;
+    private bool closed;
+    private SourceState sourceState;
+
+    private this(mpq_stream_s* handle, SourceState sourceState = null) {
+        this.handle = handle;
+        this.sourceState = sourceState;
+    }
+
+    /** Read up to the supplied buffer length and return the copied byte count. */
+    size_t read(ubyte[] buffer) {
+        ensureOpen();
+        off_t transferred;
+        auto pointer = buffer.length == 0 ? null : buffer.ptr;
+        checkStatus(libmpq__stream_read(handle, pointer, cast(off_t) buffer.length, &transferred),
+                    "libmpq__stream_read");
+        if (transferred < 0 || cast(ulong) transferred > buffer.length)
+            throw new MPQException("MpqStream.read", ERROR_SIZE);
+        return cast(size_t) transferred;
+    }
+
+    /** Seek to a position from the selected origin. */
+    void seek(off_t offset, SeekOrigin origin = SeekOrigin.set) {
+        ensureOpen();
+        checkStatus(libmpq__stream_seek(handle, offset, cast(int) origin),
+                    "libmpq__stream_seek");
+    }
+
+    /** Return the current logical position without archive I/O. */
+    off_t tell() {
+        ensureOpen();
+        off_t result;
+        checkStatus(libmpq__stream_tell(handle, &result), "libmpq__stream_tell");
+        return result;
+    }
+
+    /** Return the immutable unpacked member size without archive I/O. */
+    off_t size() {
+        ensureOpen();
+        off_t result;
+        checkStatus(libmpq__stream_size(handle, &result), "libmpq__stream_size");
+        return result;
+    }
+
+    /** Consume the native stream; repeated calls are harmless. */
+    void close() {
+        if (closed) return;
+        auto current = handle;
+        handle = null;
+        closed = true;
+        auto status = libmpq__stream_close(current);
+        sourceState = null;
+        checkStatus(status, "libmpq__stream_close");
+    }
+
+    /** Best-effort cleanup because D destructors cannot report errors. */
+    ~this() {
+        if (!closed && handle !is null) libmpq__stream_close(handle);
+    }
+
+    private void ensureOpen() {
+        if (closed || handle is null)
+            throw new MPQException("MpqStream", ERROR_NOT_INITIALIZED);
     }
 }
 

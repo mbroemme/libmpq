@@ -1,0 +1,72 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__PATCH_BEGIN_MPQE 3 2026-09-28 "The MoPaQ archive library"
+.SH NAME
+libmpq__patch_begin_mpqe \- begin creating an MPQE-wrapped patch archive
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__patch_begin_mpqe("
+.BI "        mpq_patch_s **" "patch,"
+.BI "        const char *" "base_archive,"
+.BI "        const char *" "output_patch,"
+.BI "        const uint8_t *" "auth_code,"
+.BI "        size_t " "auth_code_size"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Creates a staged MPQE-wrapped patch artifact using an ordinary filesystem MPQ
+at \fIbase_archive\fP. The base remains unchanged. The caller supplies the
+authentication code used by the existing MPQE container writer; the code need
+only remain valid during this call. A matching code is required to read or
+apply the finished patch. Patch members retain the ordinary PTCH/COPY/BSD0
+semantics. Finish publishes the encrypted artifact; abort discards it. Both
+operations consume the patch handle, even on error. On failure, a valid
+\fIpatch\fP output is set to NULL. Weak signing can be configured with
+libmpq__patch_sign(3); no external strong-signature representation is defined
+for MPQE transport. This creation API does not accept embedded or MPQE base
+archives.
+.SH RETURN VALUE
+Returns \fBLIBMPQ_SUCCESS\fP or a negative libmpq error.
+.SH ERRORS
+Invalid arguments, authentication-code errors, unsupported base formats,
+allocation failures, and I/O errors may propagate.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__patch_begin (3),
+.BR libmpq__patch_sign (3),
+.BR libmpq__patch_replace_data (3),
+.BR libmpq__patch_replace_path (3),
+.BR libmpq__patch_remove (3),
+.BR libmpq__patch_finish (3),
+.BR libmpq__patch_abort (3)
+.SH AUTHOR
+The libmpq project is maintained by Maik Broemme.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

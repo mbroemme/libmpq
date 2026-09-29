@@ -1,244 +1,330 @@
 /*
- *  mpq-stream.c -- private random-access archive stream implementations.
+ *  mpq-stream.c -- incremental logical MPQ member stream.
  *
- *  Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+ *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
  *  This file is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
  *  the Free Software Foundation; either version 2.1 of the License, or
  *  (at your option) any later version.
+ *
+ *  This file is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU Lesser General Public License for more details.
+ *
+ *  You should have received a copy of the GNU Lesser General Public License
+ *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
-
-#include "mpq-file.h"
-#include "mpq-internal.h"
-#include "mpq-mpqe.h"
 #include "mpq-stream.h"
+#include "mpq-internal.h"
+#include "mpq-reader.h"
 
-#include <errno.h>
-#include <stdio.h>
+#include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
 
-#define LIBMPQ_MPQE_READ_BUFFER_SIZE (LIBMPQ_MPQE_CHUNK_SIZE * 64U)
-
-static int32_t read_at(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size);
-
-/* Seek through the project offset type without narrowing large file positions. */
-static int32_t
-libmpq__stream_file_seek(mpq_stream_s *stream, uint64_t offset)
+struct mpq_stream
 {
-    return libmpq__file_seek(stream->file, offset, SEEK_SET);
-}
+    mpq_archive_s *archive;
+    uint32_t file_number;
+    uint32_t blocks;
+    uint32_t cached_block;
+    uint32_t *checksums;
+    uint8_t *buffer;
+    uint8_t offsets_acquired;
+    uint8_t block_valid;
+    libmpq__off_t size;
+    libmpq__off_t position;
+    libmpq__off_t buffer_size;
+    libmpq__off_t block_size;
+};
 
-/* Read an exact physical byte range from the underlying ordinary file. */
 static int32_t
-libmpq__stream_file_read_at(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size)
+stream_load_block(mpq_stream_s *stream, uint32_t block)
 {
-    if (offset > stream->size || size > stream->size - offset)
-        return LIBMPQ_ERROR_READ;
-    if (size == 0)
+    libmpq__off_t size = 0;
+    libmpq__off_t transferred = 0;
+    uint32_t mismatches = 0;
+    int32_t result;
+
+    if (stream->block_valid && stream->cached_block == block)
         return LIBMPQ_SUCCESS;
-    if (libmpq__stream_file_seek(stream, offset) != LIBMPQ_SUCCESS)
-        return LIBMPQ_ERROR_SEEK;
-    if (fread(buffer, 1, size, stream->file) != size)
+    result = libmpq__block_size_unpacked(stream->archive, stream->file_number, block, &size);
+    if (result != LIBMPQ_SUCCESS)
+        return result;
+    if (size < 0 || (uint64_t)size > SIZE_MAX)
+        return LIBMPQ_ERROR_SIZE;
+    if (size > stream->buffer_size) {
+        uint8_t *buffer = realloc(stream->buffer, (size_t)size);
+        if (buffer == NULL && size != 0)
+            return LIBMPQ_ERROR_MALLOC;
+        stream->buffer = buffer;
+        stream->buffer_size = size;
+    }
+    result = libmpq__reader_block_read_acquired(
+        stream->archive, stream->file_number, block, stream->buffer, stream->buffer_size,
+        &transferred, stream->checksums != NULL ? stream->checksums + block : NULL, &mismatches,
+        NULL
+    );
+    if (mismatches != 0)
         return LIBMPQ_ERROR_READ;
+    if (result != LIBMPQ_SUCCESS)
+        return result;
+    stream->cached_block = block;
+    stream->block_size = transferred;
+    stream->block_valid = 1;
     return LIBMPQ_SUCCESS;
 }
 
-/* Open a backing file and capture its immutable size for range validation. */
+/* Take ownership of a private archive clone and initialize one logical stream. */
 static int32_t
-libmpq__stream_open_common(mpq_stream_s **stream, const char *path)
+stream_adopt(mpq_archive_s *archive, uint32_t file_number, const char *name, mpq_stream_s **stream)
 {
-    libmpq__off_t end;
+    mpq_stream_s *result = NULL;
+    uint32_t *checksums = NULL;
+    int32_t status;
+
+    if (stream == NULL) {
+        if (archive != NULL)
+            (void)libmpq__archive_close(archive);
+        return LIBMPQ_ERROR_EXIST;
+    }
+    *stream = NULL;
+    if (archive == NULL || archive->write_mode ||
+        libmpq__reader_validate_file_number(archive, file_number) != LIBMPQ_SUCCESS) {
+        if (archive != NULL)
+            (void)libmpq__archive_close(archive);
+        return LIBMPQ_ERROR_EXIST;
+    }
+    result = calloc(1, sizeof(*result));
+    if (result == NULL) {
+        (void)libmpq__archive_close(archive);
+        return LIBMPQ_ERROR_MALLOC;
+    }
+    result->archive = archive;
+    result->file_number = file_number;
+    status = libmpq__reader_offsets_acquire(result->archive, file_number, name);
+    if (status != LIBMPQ_SUCCESS)
+        goto error;
+    result->offsets_acquired = 1;
+    status = libmpq__file_size_unpacked(result->archive, file_number, &result->size);
+    if (status != LIBMPQ_SUCCESS)
+        goto error;
+    status = libmpq__file_blocks(result->archive, file_number, &result->blocks);
+    if (status != LIBMPQ_SUCCESS)
+        goto error;
+    if (result->blocks != 0) {
+        mpq_file_s *file;
+        uint32_t flags;
+        uint32_t start;
+        uint32_t end;
+
+        status = libmpq__file_flags(result->archive, file_number, &flags);
+        if (status != LIBMPQ_SUCCESS)
+            goto error;
+        if ((flags & LIBMPQ_FILE_FLAG_ENCRYPTED) != 0) {
+            file = result->archive->mpq_file[file_number];
+            if (file == NULL || file->packed_offset == NULL || file->packed_offset_count < 2) {
+                status = LIBMPQ_ERROR_FORMAT;
+                goto error;
+            }
+            start = file->packed_offset[0];
+            end = file->packed_offset[1];
+            if (end < start) {
+                status = LIBMPQ_ERROR_FORMAT;
+                goto error;
+            }
+            if (end - start >= sizeof(uint32_t)) {
+                uint32_t seed;
+
+                status = libmpq__reader_get_block_seed(result->archive, file_number, 0, &seed);
+                if (status != LIBMPQ_SUCCESS)
+                    goto error;
+            }
+        }
+    }
+    if (libmpq__reader_sector_checksums(result->archive, file_number, &checksums) == LIBMPQ_SUCCESS)
+        result->checksums = checksums;
+    result->cached_block = UINT32_MAX;
+    *stream = result;
+    return LIBMPQ_SUCCESS;
+
+error:
+    free(checksums);
+    if (result->offsets_acquired)
+        (void)libmpq__reader_offsets_release(result->archive, file_number);
+    if (result->archive != NULL)
+        (void)libmpq__archive_close(result->archive);
+    free(result);
+    return status;
+}
+
+int32_t
+libmpq__reader_stream_open(mpq_archive_s *archive, uint32_t file_number, mpq_stream_s **stream)
+{
+    mpq_archive_s *clone = NULL;
+    int32_t result;
 
     if (stream == NULL)
         return LIBMPQ_ERROR_EXIST;
     *stream = NULL;
-    if (path == NULL)
+    if (archive == NULL || archive->write_mode ||
+        libmpq__reader_validate_file_number(archive, file_number) != LIBMPQ_SUCCESS)
         return LIBMPQ_ERROR_EXIST;
-    *stream = calloc(1, sizeof(**stream));
-    if (*stream == NULL)
-        return LIBMPQ_ERROR_MALLOC;
-    (*stream)->file = libmpq__file_open(path, "rb");
-    if ((*stream)->file == NULL) {
-        free(*stream);
-        *stream = NULL;
-        return errno == ENOENT ? LIBMPQ_ERROR_EXIST : LIBMPQ_ERROR_OPEN;
-    }
-    if (libmpq__file_seek((*stream)->file, (libmpq__off_t)0, SEEK_END) < 0 ||
-        (end = (libmpq__off_t)libmpq__file_tell((*stream)->file)) < 0) {
-        fclose((*stream)->file);
-        free(*stream);
-        *stream = NULL;
-        return LIBMPQ_ERROR_SEEK;
-    }
-    (*stream)->size = (uint64_t)end;
-    (*stream)->read_at = read_at;
-    return LIBMPQ_SUCCESS;
+    result = libmpq__archive_clone(&clone, archive);
+    if (result != LIBMPQ_SUCCESS)
+        return result;
+    return stream_adopt(clone, file_number, NULL, stream);
 }
 
 int32_t
-libmpq__stream_open_file(mpq_stream_s **stream, const char *path)
+libmpq__reader_stream_open_name(mpq_archive_s *archive, const char *filename, mpq_stream_s **stream)
 {
-    int32_t result = libmpq__stream_open_common(stream, path);
+    mpq_archive_s *clone = NULL;
+    uint32_t file_number;
+    int32_t result;
 
-    if (result == LIBMPQ_SUCCESS)
-        (*stream)->provider = LIBMPQ_STREAM_FILE;
-    return result;
+    if (stream == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *stream = NULL;
+    if (archive == NULL || filename == NULL || archive->write_mode)
+        return LIBMPQ_ERROR_EXIST;
+    result = libmpq__archive_clone(&clone, archive);
+    if (result != LIBMPQ_SUCCESS)
+        return result;
+    result = libmpq__file_number(clone, filename, &file_number);
+    if (result != LIBMPQ_SUCCESS) {
+        (void)libmpq__archive_close(clone);
+        return result;
+    }
+    return stream_adopt(clone, file_number, filename, stream);
 }
 
 int32_t
-libmpq__stream_open_mpqe(
-    mpq_stream_s **stream, const char *path, const uint8_t *auth_code, size_t auth_code_size
+libmpq__reader_stream_read(
+    mpq_stream_s *stream, uint8_t *buffer, libmpq__off_t size, libmpq__off_t *transferred
 )
 {
-    uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE];
-    int32_t result;
+    libmpq__off_t total = 0;
 
-    if (stream == NULL)
-        return LIBMPQ_ERROR_EXIST;
-    *stream = NULL;
-    result = libmpq__mpqe_key(key, auth_code, auth_code_size);
-    if (result != LIBMPQ_SUCCESS)
-        return result;
-    result = libmpq__stream_open_common(stream, path);
-    if (result != LIBMPQ_SUCCESS) {
-        libmpq__mpqe_clear(key, sizeof(key));
-        return result;
-    }
-    (*stream)->provider = LIBMPQ_STREAM_MPQE;
-    memcpy((*stream)->key, key, sizeof(key));
-    libmpq__mpqe_clear(key, sizeof(key));
-    return LIBMPQ_SUCCESS;
-}
-
-int32_t
-libmpq__stream_clone(mpq_stream_s **stream, const mpq_stream_s *source, const char *path)
-{
-    int32_t result;
-
-    if (stream == NULL)
-        return LIBMPQ_ERROR_EXIST;
-    *stream = NULL;
-    if (source == NULL)
-        return LIBMPQ_ERROR_EXIST;
-    result = libmpq__stream_open_common(stream, path);
-
-    if (result != LIBMPQ_SUCCESS)
-        return result;
-    (*stream)->provider = source->provider;
-    if (source->provider == LIBMPQ_STREAM_MPQE)
-        memcpy((*stream)->key, source->key, sizeof((*stream)->key));
-    return LIBMPQ_SUCCESS;
-}
-
-static int32_t
-read_at(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size)
-{
-    size_t copied = 0;
-
+    if (transferred != NULL)
+        *transferred = 0;
+    if (size < 0 || (uint64_t)size > SIZE_MAX)
+        return LIBMPQ_ERROR_SIZE;
     if (stream == NULL || (buffer == NULL && size != 0))
         return LIBMPQ_ERROR_EXIST;
-    if (offset > stream->size || size > stream->size - offset)
-        return LIBMPQ_ERROR_READ;
-    if (stream->provider == LIBMPQ_STREAM_FILE)
-        return libmpq__stream_file_read_at(stream, offset, buffer, size);
-    while (copied < size) {
-        uint64_t request_offset = offset + copied;
-        uint64_t chunk_offset = request_offset & ~(uint64_t)(LIBMPQ_MPQE_CHUNK_SIZE - 1U);
-        uint8_t chunks[LIBMPQ_MPQE_READ_BUFFER_SIZE] = { 0 };
-        uint64_t remaining = stream->size - chunk_offset;
-        uint64_t request_end = offset + size;
-        uint64_t required = request_end - chunk_offset;
-        uint64_t rounded_required;
-        uint64_t physical_u64;
-        size_t physical;
-        size_t decrypt_size;
-        size_t batch_start = (size_t)(request_offset - chunk_offset);
-        size_t available;
-        size_t chunk;
+    while (total < size && stream->position < stream->size) {
+        libmpq__off_t base;
+        libmpq__off_t offset;
+        libmpq__off_t available;
+        libmpq__off_t count;
+        uint32_t block;
         int32_t result;
 
-        if (required > UINT64_MAX - (LIBMPQ_MPQE_CHUNK_SIZE - 1U)) {
-            libmpq__mpqe_clear(chunks, sizeof(chunks));
-            return LIBMPQ_ERROR_SIZE;
-        }
-        rounded_required =
-            (required + (LIBMPQ_MPQE_CHUNK_SIZE - 1U)) & ~(uint64_t)(LIBMPQ_MPQE_CHUNK_SIZE - 1U);
-        if (rounded_required > sizeof(chunks))
-            rounded_required = sizeof(chunks);
-        physical_u64 = remaining < rounded_required ? remaining : rounded_required;
-        if (physical_u64 > sizeof(chunks)) {
-            libmpq__mpqe_clear(chunks, sizeof(chunks));
-            return LIBMPQ_ERROR_SIZE;
-        }
-        physical = (size_t)physical_u64;
-        decrypt_size =
-            (physical + (LIBMPQ_MPQE_CHUNK_SIZE - 1U)) & ~(size_t)(LIBMPQ_MPQE_CHUNK_SIZE - 1U);
-
-        if (chunk_offset >= stream->size || physical <= batch_start) {
-            libmpq__mpqe_clear(chunks, sizeof(chunks));
-            return LIBMPQ_ERROR_READ;
-        }
-        result = libmpq__stream_file_read_at(stream, chunk_offset, chunks, physical);
+        block =
+            stream->blocks == 1 ? 0 : (uint32_t)(stream->position / stream->archive->block_size);
+        base = stream->blocks == 1 ? 0 : (libmpq__off_t)block * stream->archive->block_size;
+        result = stream_load_block(stream, block);
         if (result != LIBMPQ_SUCCESS) {
-            libmpq__mpqe_clear(chunks, sizeof(chunks));
+            if (transferred != NULL)
+                *transferred = total;
             return result;
         }
-        for (chunk = 0; chunk < decrypt_size; chunk += LIBMPQ_MPQE_CHUNK_SIZE) {
-            libmpq__mpqe_transform_chunk(
-                chunks + chunk, stream->key, chunk_offset + (uint64_t)chunk
-            );
+        offset = stream->position - base;
+        if (offset < 0 || offset > stream->block_size) {
+            if (transferred != NULL)
+                *transferred = total;
+            return LIBMPQ_ERROR_READ;
         }
-        available = physical - batch_start;
-        if (available > size - copied)
-            available = size - copied;
-        memcpy(buffer + copied, chunks + batch_start, available);
-        copied += available;
-        libmpq__mpqe_clear(chunks, sizeof(chunks));
+        available = stream->block_size - offset;
+        if (available == 0) {
+            if (transferred != NULL)
+                *transferred = total;
+            return LIBMPQ_ERROR_READ;
+        }
+        count = size - total;
+        if (count > available)
+            count = available;
+        if (count > stream->size - stream->position)
+            count = stream->size - stream->position;
+        memcpy(buffer + total, stream->buffer + offset, (size_t)count);
+        total += count;
+        stream->position += count;
     }
+    if (transferred != NULL)
+        *transferred = total;
     return LIBMPQ_SUCCESS;
 }
 
-/* Dispatch through the private stream operation; no global fault state. */
 int32_t
-libmpq__stream_read_at(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size)
+libmpq__reader_stream_seek(mpq_stream_s *stream, libmpq__off_t offset, int32_t origin)
 {
+    libmpq__off_t base;
+    libmpq__off_t position;
+
     if (stream == NULL)
         return LIBMPQ_ERROR_EXIST;
-    return stream->read_at(stream, offset, buffer, size);
-}
-
-uint64_t
-libmpq__stream_size(const mpq_stream_s *stream)
-{
-    return stream == NULL ? 0 : stream->size;
-}
-
-int32_t
-libmpq__stream_close(mpq_stream_s *stream)
-{
-    if (stream == NULL)
-        return LIBMPQ_ERROR_EXIST;
-    if (stream->file != NULL && fclose(stream->file) != 0)
-        return LIBMPQ_ERROR_CLOSE;
-    libmpq__mpqe_clear(stream->key, sizeof(stream->key));
-    free(stream);
+    if (origin == LIBMPQ_SEEK_SET)
+        base = 0;
+    else if (origin == LIBMPQ_SEEK_CUR)
+        base = stream->position;
+    else if (origin == LIBMPQ_SEEK_END)
+        base = stream->size;
+    else
+        return LIBMPQ_ERROR_SEEK;
+    if ((offset > 0 && base > INT64_MAX - offset) || (offset < 0 && base < INT64_MIN - offset))
+        return LIBMPQ_ERROR_SEEK;
+    position = base + offset;
+    if (position < 0 || position > stream->size)
+        return LIBMPQ_ERROR_SEEK;
+    stream->position = position;
     return LIBMPQ_SUCCESS;
 }
 
-void
-libmpq__stream_discard(mpq_stream_s *stream)
+int32_t
+libmpq__reader_stream_tell(mpq_stream_s *stream, libmpq__off_t *position)
 {
+    if (position != NULL)
+        *position = 0;
+    if (stream == NULL || position == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *position = stream->position;
+    return LIBMPQ_SUCCESS;
+}
+
+int32_t
+libmpq__reader_stream_size(mpq_stream_s *stream, libmpq__off_t *size)
+{
+    if (size != NULL)
+        *size = 0;
+    if (stream == NULL || size == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *size = stream->size;
+    return LIBMPQ_SUCCESS;
+}
+
+int32_t
+libmpq__reader_stream_close(mpq_stream_s *stream)
+{
+    int32_t result = LIBMPQ_SUCCESS;
+
     if (stream == NULL)
-        return;
-    if (stream->file != NULL)
-        (void)fclose(stream->file);
-    libmpq__mpqe_clear(stream->key, sizeof(stream->key));
+        return LIBMPQ_ERROR_EXIST;
+    free(stream->buffer);
+    free(stream->checksums);
+    if (stream->offsets_acquired) {
+        int32_t cleanup = libmpq__reader_offsets_release(stream->archive, stream->file_number);
+        if (cleanup != LIBMPQ_SUCCESS)
+            result = cleanup;
+    }
+    if (stream->archive != NULL) {
+        int32_t cleanup = libmpq__archive_close(stream->archive);
+        if (result == LIBMPQ_SUCCESS && cleanup != LIBMPQ_SUCCESS)
+            result = cleanup;
+    }
     free(stream);
+    return result;
 }

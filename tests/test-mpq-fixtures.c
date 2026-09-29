@@ -1,5 +1,27 @@
+/*
+ *  test-mpq-fixtures.c -- libmpq regression tests.
+ *
+ *  Copyright (c) 2026-2026 Maik Broemme <mbroemme@libmpq.org>
+ *
+ *  This file is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU Lesser General Public License as published by
+ *  the Free Software Foundation; either version 2.1 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This file is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU Lesser General Public License for more details.
+ *
+ *  You should have received a copy of the GNU Lesser General Public License
+ *  along with this file; if not, see <https://www.gnu.org/licenses/>.
+ */
+
 /* Verify every checked-in v1 and v2 fixture archive and extracted payload. */
+#include "mpq-attributes.h"
 #include "mpq-internal.h"
+#include "mpq-reader.h"
+#include "mpq-signature.h"
 #include "test-mpq-helper.h"
 
 #include <stdio.h>
@@ -223,6 +245,7 @@ static const char fixture_listfile_v1[] = "overview.txt\n"
                                           "sparse.txt\n"
                                           "sparse-zlib.txt\n"
                                           "sparse-bzip2.txt\n"
+                                          "(signature)\n"
                                           "(attributes)\n";
 static const char fixture_listfile_v2[] = "overview.txt\n"
                                           "implode.txt\n"
@@ -238,12 +261,56 @@ static const char fixture_listfile_v2[] = "overview.txt\n"
                                           "sparse-zlib.txt\n"
                                           "sparse-bzip2.txt\n"
                                           "lzma.txt\n"
+                                          "(signature)\n"
                                           "(attributes)\n";
 
 /* Archive and extracted-file hashes are the single fixture source of truth. */
 static const char *const fixture_archive_hashes[] = {
-    "c0f1bc7eb454a67d98441e320d1f02b98fb9a5652f54bd4391c318c64b929ccb",
-    "421bb22f73a02afd56892daabcec2db6482b79c7a5c3940a48ab7be5e2071d04",
+    "43bd0c32301f03647688eb84d21031826620cba1ce8617040362345f4e3ac3bc",
+    "5b6c8a1a91fcc21bfe871a770da78724b8aaf247fa0077efedaf4d8cf0ba0ff0",
+};
+
+/*
+ * Independently generated NGIS trailers for the deterministic raw archives.
+ * Python hashlib.sha1 and pow(m, d, n) produced these test-only values.
+ */
+static const uint8_t fixture_v1_strong_trailer[260] = {
+    0x4e, 0x47, 0x49, 0x53, 0x33, 0x7a, 0x69, 0x04, 0xca, 0x62, 0x0d, 0xec, 0x78, 0x84, 0x94, 0x68,
+    0xbf, 0xf5, 0x1e, 0x78, 0xdc, 0xd6, 0xe7, 0x6b, 0x1e, 0x68, 0xc2, 0x7b, 0x08, 0x24, 0xc8, 0x5b,
+    0xb0, 0xa3, 0x7e, 0xbf, 0x91, 0x41, 0x4c, 0xe9, 0xf0, 0x23, 0x8c, 0x3c, 0xa1, 0x4c, 0x1f, 0x3d,
+    0x72, 0xa7, 0x1f, 0xb8, 0xb3, 0xa5, 0x37, 0xd7, 0x60, 0xfd, 0x4c, 0x6e, 0x86, 0x4f, 0x90, 0x14,
+    0x2d, 0xcb, 0xdc, 0x56, 0x19, 0xca, 0xd6, 0x1a, 0xb2, 0x37, 0x76, 0x3a, 0x1c, 0x38, 0x14, 0xe9,
+    0x88, 0x82, 0xda, 0x18, 0x9e, 0xf3, 0xd9, 0x6a, 0x85, 0x2a, 0x11, 0xec, 0xce, 0x9e, 0x51, 0x1e,
+    0xbc, 0xf8, 0x5c, 0x37, 0x2a, 0xfe, 0x4a, 0x9f, 0x31, 0x40, 0x57, 0xa9, 0xd5, 0xc4, 0xf0, 0xc7,
+    0xa6, 0xbe, 0x2a, 0x5d, 0x14, 0x0e, 0x40, 0x25, 0x20, 0xb8, 0x8c, 0x71, 0xf9, 0x68, 0x45, 0x2f,
+    0x4e, 0x61, 0xc2, 0x64, 0x4a, 0xe9, 0x93, 0x73, 0xef, 0x00, 0xb6, 0xc4, 0xbb, 0x64, 0x43, 0x57,
+    0xc6, 0x01, 0x4d, 0x5f, 0xaf, 0x6c, 0x39, 0xea, 0x98, 0xa8, 0xc4, 0xce, 0x28, 0x5d, 0xdd, 0xbf,
+    0xcb, 0x9a, 0x77, 0xb3, 0xab, 0x25, 0x0d, 0xa0, 0xbc, 0x14, 0x72, 0x99, 0x6b, 0x69, 0x30, 0xfc,
+    0x93, 0x96, 0x14, 0x32, 0xe3, 0x7c, 0xd5, 0x96, 0xe6, 0xec, 0x85, 0xb6, 0x5d, 0x6d, 0x1a, 0xdb,
+    0x66, 0x48, 0xf6, 0x29, 0x2a, 0x57, 0x26, 0xdd, 0xb5, 0xc5, 0x91, 0x1c, 0x6e, 0xc1, 0xf2, 0x9e,
+    0x57, 0x78, 0xd4, 0x0a, 0x50, 0x08, 0x82, 0x10, 0x94, 0x7e, 0x5a, 0x24, 0x45, 0x44, 0x03, 0x71,
+    0x2b, 0xe3, 0xd3, 0x23, 0x67, 0x2c, 0x68, 0xfe, 0x63, 0xf6, 0xa9, 0x6c, 0xaa, 0x0f, 0x9d, 0xe2,
+    0x9f, 0x73, 0x22, 0x56, 0xbb, 0xf1, 0x1a, 0xcb, 0xd6, 0xb5, 0xb8, 0x9f, 0x49, 0x27, 0x43, 0x50,
+    0xf5, 0xfb, 0x79, 0x82
+};
+static const uint8_t fixture_v2_strong_trailer[260] = {
+    0x4e, 0x47, 0x49, 0x53, 0x4a, 0x20, 0xb3, 0xb8, 0x7e, 0xe3, 0xbf, 0x37, 0x74, 0x14, 0x59, 0xab,
+    0xa1, 0x68, 0x69, 0x3f, 0x25, 0x6b, 0x1b, 0xe1, 0x10, 0xd8, 0x91, 0x7c, 0x99, 0xa2, 0x02, 0x2b,
+    0x43, 0x31, 0xed, 0x55, 0x6f, 0x43, 0xc7, 0x35, 0x16, 0x9b, 0xac, 0xf2, 0xf3, 0x9c, 0x97, 0xd4,
+    0xf9, 0xe3, 0x48, 0x58, 0xc0, 0x39, 0x3c, 0x87, 0x66, 0xed, 0x85, 0x5c, 0xa6, 0xb6, 0x10, 0xe3,
+    0x3b, 0xae, 0x1a, 0x7f, 0xeb, 0xf0, 0x62, 0xcf, 0xd9, 0x45, 0x7d, 0x89, 0x51, 0x6f, 0x50, 0xf0,
+    0xc2, 0x24, 0xb6, 0x89, 0x24, 0xda, 0x2e, 0x5b, 0x48, 0xf7, 0x72, 0x7b, 0xfb, 0xec, 0xd0, 0xea,
+    0xbe, 0x49, 0x29, 0x79, 0xae, 0xbb, 0x93, 0x0a, 0x56, 0x32, 0x11, 0xa2, 0xf5, 0x7d, 0x7a, 0xee,
+    0xc8, 0x6c, 0x65, 0xb4, 0x14, 0xa4, 0x76, 0x0a, 0x9c, 0xe2, 0xe4, 0xa3, 0x32, 0x76, 0x7c, 0xc5,
+    0x31, 0x4f, 0x96, 0xd2, 0xc3, 0xfd, 0x38, 0xad, 0x3c, 0xc7, 0xc3, 0x5e, 0xae, 0x1a, 0xea, 0x45,
+    0x09, 0x08, 0xc2, 0xc4, 0x6a, 0x87, 0x7e, 0x49, 0x30, 0x57, 0xc5, 0x37, 0x96, 0xef, 0x3b, 0x99,
+    0x5a, 0x85, 0xcf, 0x6f, 0x6e, 0x8c, 0x2f, 0x1e, 0x7b, 0x27, 0xdb, 0xb5, 0x22, 0xbb, 0x57, 0xdd,
+    0x40, 0x01, 0xd8, 0x66, 0x6f, 0xb0, 0xcd, 0x66, 0xd6, 0xe3, 0x64, 0x8e, 0x61, 0x19, 0xf7, 0x2f,
+    0xc5, 0x8f, 0x57, 0xf2, 0xf6, 0x21, 0x76, 0x92, 0xfe, 0xad, 0x8e, 0xb6, 0xe7, 0x5c, 0xe7, 0xd7,
+    0x2a, 0x60, 0x88, 0x6e, 0x3e, 0x14, 0xa6, 0x61, 0xa2, 0xc7, 0xa6, 0x56, 0x26, 0xb4, 0x7b, 0x94,
+    0x27, 0xe7, 0x46, 0x69, 0x80, 0x63, 0x1b, 0xab, 0xb1, 0x96, 0x56, 0x78, 0xa8, 0xdd, 0x3a, 0xeb,
+    0x8d, 0xf9, 0xdb, 0x7a, 0xfe, 0x89, 0x90, 0x4b, 0xf6, 0x0a, 0x95, 0xbd, 0x8c, 0x16, 0x63, 0x38,
+    0x1a, 0x09, 0x31, 0xad
 };
 
 static const char *const fixture_file_hashes[2][15] = {
@@ -261,7 +328,7 @@ static const char *const fixture_file_hashes[2][15] = {
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
-        "d84a86a55ecb32cb95bfb4725ef156e3be8d14bdcb19e84a95c0a4463da0c61f",
+        "1c1c534fce9fe0fdd104a0ee14321741e84b51a7d6ec499de93bf5672bbe784d",
         NULL,
     },
     {
@@ -279,7 +346,7 @@ static const char *const fixture_file_hashes[2][15] = {
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
         "e4249a848cb3ae3cd031a01dcafa0f6f378b2542963035db8440e680f9d84381",
         "da99ea7c15a1e60401f49c86b7d541714437891c4fc4a12d1dcff6674775e976",
-        "23fad524da76451f14ceacbe6acaeb7ff7aaff39e3f8e0aa3963cf1bac3bc396",
+        "5062529fc4cf90c04e97cff8971286d6546edcb22a550766e21b2daa406f5850",
     },
 };
 
@@ -296,6 +363,7 @@ test_fixture(const char *path, uint32_t expected_version, size_t fixture_index)
     uint32_t archive_version;
     uint32_t file_count;
     uint32_t number;
+    uint64_t signature_extent;
     size_t i;
     size_t names_count = sizeof(fixture_names) / sizeof(fixture_names[0]) - (fixture_index == 0);
     const char *fixture_listfile = fixture_index == 0 ? fixture_listfile_v1 : fixture_listfile_v2;
@@ -307,7 +375,47 @@ test_fixture(const char *path, uint32_t expected_version, size_t fixture_index)
     TEST_CHECK(libmpq__archive_version(archive, &archive_version) == 0);
     TEST_CHECK(archive_version == expected_version);
     TEST_CHECK(libmpq__archive_files(archive, &file_count) == 0);
-    TEST_CHECK(file_count == names_count + 2);
+    TEST_CHECK(file_count == names_count + 3);
+    {
+        const uint8_t *trailer =
+            fixture_index == 0 ? fixture_v1_strong_trailer : fixture_v2_strong_trailer;
+        uint32_t signatures = 0;
+        uint32_t mismatches = UINT32_MAX;
+        mpq_file_attributes_s attributes;
+        TEST_CHECK(libmpq__archive_signatures(archive, &signatures) == 0);
+        TEST_CHECK(signatures == (LIBMPQ_SIGNATURE_WEAK | LIBMPQ_SIGNATURE_STRONG));
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, LIBMPQ_SIGNATURE_WEAK, test_signature_public_key,
+                sizeof(test_signature_public_key), &mismatches
+            ) == 0
+        );
+        TEST_CHECK(mismatches == 0);
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
+                sizeof(test_strong_signature_public_key), &mismatches
+            ) == 0
+        );
+        TEST_CHECK(mismatches == 0);
+        TEST_CHECK(libmpq__archive_signature_extent(archive, &signature_extent) == 0);
+        TEST_CHECK(signature_extent <= archive_size);
+        TEST_CHECK(archive_size - (size_t)signature_extent == sizeof(fixture_v1_strong_trailer));
+        TEST_CHECK(
+            memcmp(archive_data + signature_extent, trailer, sizeof(fixture_v1_strong_trailer)) == 0
+        );
+        TEST_CHECK(libmpq__file_number(archive, "(signature)", &number) == 0);
+        TEST_CHECK(libmpq__file_flags(archive, number, &signatures) == 0);
+        TEST_CHECK(signatures == LIBMPQ_FLAG_EXISTS);
+        TEST_CHECK(test_archive_read(archive, number, &file_data, &file_size) == 0);
+        TEST_CHECK(file_size == 72 && memcmp(file_data, "\0\0\0\0\0\0\0\0", 8) == 0);
+        free(file_data);
+        file_data = NULL;
+        TEST_CHECK(libmpq__file_attributes(archive, number, &attributes) == 0);
+        TEST_CHECK(attributes.crc32 == 0 && attributes.filetime == 0 && attributes.patch_bit == 0);
+        for (i = 0; i < sizeof(attributes.md5); ++i)
+            TEST_CHECK(attributes.md5[i] == 0);
+    }
     TEST_CHECK(test_fixture_checksums(archive, archive_data, archive_size, expected_version) == 0);
 
     /* Verify the generated listfile and resolve every name it advertises. */
@@ -353,9 +461,145 @@ test_fixture(const char *path, uint32_t expected_version, size_t fixture_index)
     return 0;
 }
 
+/*
+ * Add independently generated external strong trailers after the public
+ * writer has deterministically finalized each raw MPQ feature fixture.
+ */
+static int
+append_strong_trailer(const char *path, const uint8_t trailer[LIBMPQ_STRONG_TRAILER_SIZE])
+{
+    FILE *file = fopen(path, "ab");
+    TEST_CHECK(file != NULL);
+    TEST_CHECK(fwrite(trailer, 1, LIBMPQ_STRONG_TRAILER_SIZE, file) == LIBMPQ_STRONG_TRAILER_SIZE);
+    TEST_CHECK(fclose(file) == 0);
+    return 0;
+}
+
+/*
+ * Refresh the canonical archives without decoding/re-encoding lossy samples.
+ * Text comes from the canonical corpus; PCM is the original documented formula.
+ * Private attribute serialization preserves this corpus's sector-CRC layout;
+ * signing and MPQE finalization exercise the public writer APIs.
+ */
+static int
+refresh_fixture(const char *path, uint32_t version, size_t fixture_index)
+{
+    static const uint8_t auth[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+    mpq_archive_s *source = NULL;
+    size_t count = sizeof(fixture_names) / sizeof(fixture_names[0]) - (fixture_index == 0);
+    uint8_t *payloads[14] = { NULL };
+    size_t sizes[14];
+    mpq_file_options_s storage[14];
+    char output[512];
+    size_t i;
+    unsigned encrypted;
+    TEST_CHECK(libmpq__archive_open(&source, path, 0) == 0);
+    for (i = 0; i < count; ++i) {
+        uint32_t number;
+        TEST_CHECK(libmpq__file_number(source, fixture_names[i], &number) == 0);
+        TEST_CHECK(test_archive_read(source, number, &payloads[i], &sizes[i]) == 0);
+        memset(&storage[i], 0, sizeof(storage[i]));
+        TEST_CHECK(libmpq__file_flags(source, number, &storage[i].flags) == 0);
+        storage[i].flags &= ~LIBMPQ_FLAG_EXISTS;
+        storage[i].compression_first = i == 7 ? 2 : fixture_methods[i];
+        storage[i].compression_next = storage[i].compression_first;
+        if (i == 13)
+            storage[i].compression_first = storage[i].compression_next = LIBMPQ_COMPRESSION_LZMA;
+        if (i == 8 || i == 9) {
+            size_t frame;
+            size_t channels = i == 8 ? 1 : 2;
+            storage[i].compression_first = LIBMPQ_COMPRESSION_ZLIB;
+            for (frame = 0; frame < 7000; ++frame) {
+                size_t channel;
+                int32_t phase = (int32_t)((frame * 17) % 4096);
+                int32_t base = phase < 2048 ? phase - 1024 : 3072 - phase;
+                for (channel = 0; channel < channels; ++channel) {
+                    uint16_t sample = (uint16_t)(base * 24 + (channel ? 1800 : 0));
+                    size_t offset = 44 + (frame * channels + channel) * 2;
+                    payloads[i][offset] = (uint8_t)sample;
+                    payloads[i][offset + 1] = (uint8_t)(sample >> 8);
+                }
+            }
+        }
+    }
+    TEST_CHECK(libmpq__archive_close(source) == 0);
+    for (encrypted = 0; encrypted < 2; ++encrypted) {
+        mpq_archive_s *writer = NULL;
+        mpq_archive_create_options_s options = { version - 1, 32, 4096,
+                                                 LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED,
+                                                 fixture_index == 0 ? 7 : 15 };
+        mpq_file_options_s list_storage = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
+        mpq_file_options_s attribute_storage = { LIBMPQ_FILE_FLAG_COMPRESS |
+                                                     LIBMPQ_FILE_FLAG_SECTOR_CRC,
+                                                 LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB,
+                                                 0, 0 };
+        const char *list = fixture_index == 0 ? fixture_listfile_v1 : fixture_listfile_v2;
+        uint8_t *attributes = NULL;
+        size_t attribute_size;
+        TEST_CHECK(snprintf(output, sizeof(output), "%s%s", path, encrypted ? "e" : "") > 0);
+        if (encrypted)
+            TEST_CHECK(
+                libmpq__archive_create_mpqe(&writer, output, auth, sizeof(auth) - 1, &options) == 0
+            );
+        else
+            TEST_CHECK(libmpq__archive_create(&writer, output, &options) == 0);
+        for (i = 0; i < count; ++i) {
+            mpq_writer_s *file = NULL;
+            TEST_CHECK(
+                libmpq__writer_begin(
+                    writer, fixture_names[i], (libmpq__off_t)sizes[i], &storage[i], &file
+                ) == 0
+            );
+            TEST_CHECK(libmpq__writer_timestamp(file, fixture_attributes[i].filetime) == 0);
+            TEST_CHECK(libmpq__writer_write(file, payloads[i], (libmpq__off_t)sizes[i]) == 0);
+            TEST_CHECK(libmpq__writer_finish(file) == 0);
+        }
+        TEST_CHECK(
+            libmpq__archive_sign(
+                writer, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+                sizeof(test_signature_private_key)
+            ) == 0
+        );
+        TEST_CHECK(
+            libmpq__archive_add_data(
+                writer, LIBMPQ_LISTFILE_NAME, (const uint8_t *)list, (libmpq__off_t)strlen(list),
+                &list_storage
+            ) == 0
+        );
+        TEST_CHECK(
+            libmpq__attributes_serialize(
+                writer->write_attributes, writer->write_capacity, writer->write_next_block,
+                options.attributes, &attributes, &attribute_size
+            ) == 0
+        );
+
+        /*
+         * Preserve the fixture's explicit checksummed attributes, not the default
+         * generated storage. Its self row and the signature row remain zero.
+         */
+        writer->write_attributes_flags = 0;
+        TEST_CHECK(
+            libmpq__archive_add_data(
+                writer, LIBMPQ_ATTRIBUTES_NAME, attributes, (libmpq__off_t)attribute_size,
+                &attribute_storage
+            ) == 0
+        );
+        free(attributes);
+        TEST_CHECK(libmpq__archive_close(writer) == 0);
+        if (!encrypted) {
+            const uint8_t *trailer =
+                fixture_index == 0 ? fixture_v1_strong_trailer : fixture_v2_strong_trailer;
+            TEST_CHECK(append_strong_trailer(output, trailer) == 0);
+        }
+    }
+    for (i = 0; i < count; ++i)
+        free(payloads[i]);
+    return 0;
+}
+
 /* Verify both deterministic fixture formats against the embedded manifest. */
 int
-main(void)
+main(int argc, char **argv)
 {
     char path[512];
     size_t i;
@@ -364,6 +608,10 @@ main(void)
         TEST_CHECK(
             snprintf(path, sizeof(path), "%s/mpq-v%zu-features.mpq", FIXTURE_DIR, i + 1) > 0
         );
+        if (argc == 2 && strcmp(argv[1], "--refresh") == 0) {
+            TEST_CHECK(refresh_fixture(path, (uint32_t)(i + 1), i) == 0);
+            continue;
+        }
         TEST_CHECK(test_fixture(path, (uint32_t)(i + 1), i) == 0);
     }
     return 0;

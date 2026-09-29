@@ -1,3 +1,22 @@
+/*
+ *  test-mpq-sparse.c -- libmpq regression tests.
+ *
+ *  Copyright (c) 2026-2026 Maik Broemme <mbroemme@libmpq.org>
+ *
+ *  This file is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU Lesser General Public License as published by
+ *  the Free Software Foundation; either version 2.1 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This file is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU Lesser General Public License for more details.
+ *
+ *  You should have received a copy of the GNU Lesser General Public License
+ *  along with this file; if not, see <https://www.gnu.org/licenses/>.
+ */
+
 /* Exercise bounded SPARSE tokens, policy-independent decoding, and writer paths. */
 #include "mpq-compression.h"
 #include "mpq-sparse.h"
@@ -116,8 +135,10 @@ test_sectors(void)
             test_sparse_payload(plain, sizeof(plain));
             if (i >= 3) {
 
-                /* Zero runs shrink first; repeated SPARSE tokens let the second
-                 * Huffman or PKWARE stage win too, without relying on fallback. */
+                /*
+                 * Zero runs shrink first; repeated SPARSE tokens let the second
+                 * Huffman or PKWARE stage win too, without relying on fallback.
+                 */
                 for (length = 0; length < sizeof(plain); ++length)
                     plain[length] = length % 4U == 0 ? 'A' : 0;
             }
@@ -187,8 +208,10 @@ test_archives(void)
             result = libmpq__archive_create(&archive, path, &create);
         TEST_CHECK(result == 0);
 
-        /* Match existing writer coverage: encrypted sectorized or plain single-unit.
-         * Compressed encrypted single units have no reader seed-recovery path. */
+        /*
+         * Match existing writer coverage: encrypted sectorized or plain single-unit.
+         * Compressed encrypted single units have no reader seed-recovery path.
+         */
         for (flags = 0; flags < 3; ++flags) {
             for (i = 0; i < sizeof(lengths) / sizeof(lengths[0]); ++i) {
                 if (lengths[i] == 0 || ((flags & 1U) && lengths[i] < 8U) ||

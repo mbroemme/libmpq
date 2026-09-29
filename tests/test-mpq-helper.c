@@ -1,9 +1,28 @@
+/*
+ *  test-mpq-helper.c -- libmpq regression tests.
+ *
+ *  Copyright (c) 2026-2026 Maik Broemme <mbroemme@libmpq.org>
+ *
+ *  This file is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU Lesser General Public License as published by
+ *  the Free Software Foundation; either version 2.1 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This file is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU Lesser General Public License for more details.
+ *
+ *  You should have received a copy of the GNU Lesser General Public License
+ *  along with this file; if not, see <https://www.gnu.org/licenses/>.
+ */
+
 /* Shared deterministic helpers for the libmpq C regression programs. */
 #define _POSIX_C_SOURCE 200809L
 
 #include "test-mpq-helper.h"
 #include "../src/mpq-internal.h"
-#include "../src/mpq-stream.h"
+#include "../src/mpq-source.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +35,36 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
+
+/* Test-only private exponent matching test_strong_signature_public_key. */
+static const uint8_t test_strong_signature_private_exponent[256] = {
+    0x14, 0xc9, 0x75, 0x9f, 0x7c, 0x1b, 0xa1, 0xf2, 0x4a, 0xb0, 0xde, 0x0b, 0xd2, 0x53, 0xba, 0xc7,
+    0xb4, 0x70, 0xe7, 0xfb, 0xf9, 0x11, 0x08, 0x88, 0x44, 0x78, 0x3b, 0xea, 0x5a, 0x62, 0xda, 0x15,
+    0x0c, 0x24, 0x35, 0x6f, 0xd6, 0x70, 0x71, 0x2b, 0x98, 0xa9, 0xae, 0xa0, 0x3e, 0xcb, 0x52, 0xb7,
+    0xb1, 0x85, 0x97, 0x63, 0x7b, 0x2c, 0xf7, 0xf1, 0x6a, 0xfc, 0xb6, 0xd5, 0xcf, 0x67, 0xa7, 0x27,
+    0xb9, 0x43, 0x7a, 0xbf, 0x07, 0x8a, 0x75, 0xb9, 0x07, 0x45, 0x0f, 0xb4, 0xfc, 0x56, 0x39, 0x6d,
+    0xd8, 0xd6, 0x50, 0xa7, 0x14, 0x84, 0xd4, 0x16, 0x36, 0x41, 0xec, 0xa5, 0x54, 0x99, 0x7c, 0x29,
+    0xaf, 0xbf, 0x20, 0x1c, 0x4d, 0xf4, 0x44, 0x35, 0x4c, 0x29, 0x88, 0x2e, 0xf7, 0x97, 0xb8, 0x55,
+    0x80, 0xf2, 0x59, 0x26, 0x0f, 0x77, 0xef, 0xc6, 0x86, 0xee, 0xac, 0xd3, 0x1d, 0xa3, 0xd9, 0xc3,
+    0x37, 0x89, 0x74, 0x33, 0xf8, 0xef, 0x83, 0x38, 0x90, 0xa0, 0x4d, 0x55, 0xcb, 0xfc, 0x53, 0xf2,
+    0xdd, 0x8f, 0x96, 0xbd, 0x9b, 0x93, 0xe2, 0x8f, 0xc6, 0xf0, 0x22, 0x78, 0x6b, 0x36, 0xe5, 0x1d,
+    0xe3, 0x8e, 0xc0, 0xd5, 0xd4, 0x1a, 0xba, 0x3e, 0xed, 0x96, 0x47, 0x83, 0x1f, 0xb1, 0x6f, 0xcb,
+    0xc3, 0xb1, 0x6e, 0xac, 0xa9, 0x1e, 0x60, 0x89, 0x4a, 0xa7, 0x72, 0xb0, 0x2b, 0x22, 0xa3, 0xff,
+    0xb7, 0x04, 0x2e, 0x52, 0x53, 0x11, 0x63, 0xd0, 0x89, 0x20, 0x9d, 0xf6, 0x41, 0x20, 0x98, 0x61,
+    0x3e, 0xf5, 0x96, 0x64, 0xed, 0x70, 0x88, 0x4e, 0x33, 0xf3, 0xe3, 0x05, 0x6c, 0xcf, 0xb9, 0x11,
+    0xbc, 0xc0, 0x4d, 0x2c, 0x73, 0x14, 0x29, 0x96, 0x94, 0x6d, 0x88, 0xbe, 0x0d, 0xaa, 0x29, 0xaa,
+    0xfa, 0x1b, 0xab, 0x3d, 0x10, 0xff, 0x4d, 0x52, 0x29, 0x58, 0x80, 0xc8, 0xfa, 0xd6, 0xd6, 0x41,
+};
+
+void
+test_strong_signature_private_key(uint8_t key[512])
+{
+    memcpy(key, test_strong_signature_public_key, 256);
+    memcpy(
+        key + 256, test_strong_signature_private_exponent,
+        sizeof(test_strong_signature_private_exponent)
+    );
+}
 
 static int
 test_process_id(void)
@@ -257,20 +306,21 @@ typedef struct
     uint32_t number;
     uint32_t count;
     uint32_t *offsets;
-    mpq_stream_read_at_fn read_at;
+    mpq_io_read_at_fn read_at;
+    void *context;
     int nested;
 } offset_snapshot_s;
 
 static int32_t
-snapshot_read(mpq_stream_s *stream, uint64_t offset, uint8_t *buffer, size_t size)
+snapshot_read(void *context, uint64_t offset, uint8_t *buffer, size_t size)
 {
-    offset_snapshot_s *snapshot = stream->read_context;
+    offset_snapshot_s *snapshot = context;
     mpq_file_s *file = snapshot->archive->mpq_file[snapshot->number];
     if (file != NULL && file->packed_offset != NULL && file->packed_offset[0] != 0) {
         memcpy(snapshot->offsets, file->packed_offset, snapshot->count * sizeof(uint32_t));
         snapshot->nested = file->open_count == 2;
     }
-    return snapshot->read_at(stream, offset, buffer, size);
+    return snapshot->read_at(snapshot->context, offset, buffer, size);
 }
 
 int
@@ -281,7 +331,7 @@ test_archive_offsets(mpq_archive_s *archive, uint32_t number, uint32_t **offsets
     uint8_t *buffer;
     int32_t result;
     offset_snapshot_s snapshot;
-    void *context = archive->stream->read_context;
+    void *context = archive->source->backend.context;
     *offsets = NULL;
     if (libmpq__file_blocks(archive, number, &blocks) != 0 || blocks == 0 ||
         libmpq__file_size_unpacked(archive, number, &size) != 0 || size < 0 ||
@@ -299,13 +349,14 @@ test_archive_offsets(mpq_archive_s *archive, uint32_t number, uint32_t **offsets
     }
     snapshot.archive = archive;
     snapshot.number = number;
-    snapshot.read_at = archive->stream->read_at;
+    snapshot.read_at = archive->source->backend.read_at;
+    snapshot.context = context;
     snapshot.nested = 0;
-    archive->stream->read_context = &snapshot;
-    archive->stream->read_at = snapshot_read;
+    archive->source->backend.context = &snapshot;
+    archive->source->backend.read_at = snapshot_read;
     result = libmpq__file_read(archive, number, buffer, size, NULL);
-    archive->stream->read_at = snapshot.read_at;
-    archive->stream->read_context = context;
+    archive->source->backend.read_at = snapshot.read_at;
+    archive->source->backend.context = context;
     free(buffer);
     if (result < 0 || !snapshot.nested || archive->mpq_file[number] != NULL) {
         free(snapshot.offsets);

@@ -24,42 +24,61 @@ MPQ is a proprietary archive format created by Mike O'Brien in 1996. It is
 used by Blizzard games including Diablo, Diablo II, StarCraft, Warcraft II:
 Battle.net Edition, Warcraft III, and World of Warcraft.
 
-libmpq provides a C API for applications that need to inspect, create, and
-extract MPQ archives. Creation supports seekable v1 and v2 archives, streaming
-or buffer/path file addition, encrypted tables and payloads, optional listfiles,
+libmpq provides a C API for applications that need to inspect, create, modify,
+and extract MPQ archives. Creation supports seekable v1 and v2 archives,
+streaming or buffer/path file addition, encrypted tables and payloads,
+optional listfiles,
 raw and single-unit files, PKWARE implode, multi-compression sectors using
 Huffman, zlib, PKWARE, bzip2, or mono/stereo WAVE ADPCM, and the exclusive
 MPQ v2+ LZMA method.
 
 ## Features
 
-* Read, inspect, and extract MPQ archives, including embedded archives at a
-  file offset.
-* Read, inspect, and extract MPQE-wrapped MPQ archives, and create new MPQE
-  archives with a caller-supplied authentication code.
-* Create seekable MPQ v1 and v2 archives with fixed file-table capacity,
-  optional `(listfile)` generation, and encrypted tables and file payloads.
+* Read, inspect, and extract MPQ archives, including archives embedded at a
+  non-zero file offset.
+* Stream and seek within logical archive members without requiring a complete
+  file buffer.
+* Open MPQ and MPQE archives from filesystem paths or caller-provided
+  random-access I/O callbacks.
+* Create seekable MPQ v1 and v2 archives with configurable file-table capacity,
+  sector size, optional `(listfile)` and `(attributes)` metadata, encrypted
+  tables, and encrypted file payloads.
 * Add raw, single-unit, sectorized, and multi-sector files through streaming,
   memory-buffer, and filesystem-path APIs.
-* Inspect archive, file, and block metadata, including names, sizes, flags,
-  packed block sizes, and effective per-block compression methods.
-* Read and write encrypted hash tables, block tables, sector offsets, and file
-  payloads.
+* Modify filesystem MPQs, embedded MPQ containers, and authenticated MPQE
+  archives transactionally with named-file replace, remove, and rename operations.
+* Create MPQ or MPQE-wrapped replacement and deletion patch archives without
+  changing the base MPQ; optionally sign patches with caller-supplied keys.
+* Read and create MPQE-wrapped MPQ archives using a caller-supplied
+  authentication code.
 * Read and write PKWARE implode, Huffman, zlib, bzip2, SPARSE, and mono or
   stereo WAVE ADPCM compression. MPQ v2+ also supports the exclusive LZMA
-  method; readers accept Blizzard multi-compression payloads.
-* Read and create version-100 `(attributes)` metadata in MPQ v1+: CRC32,
-  explicit FILETIME, MD5, and read-only patch-bit information.
-* Explicitly verify stored sector Adler-32 checksums and available attributes
-  CRC32 or MD5 values without changing normal extraction behavior.
-* Support big-endian hosts through explicit little-endian serialization; CI
-  runs the full test suite on emulated s390x.
+  method, and readers accept Blizzard multi-compression payloads.
+* Provide STANDARD and EXTENDED writer compression policies to balance
+  interoperability with broader implemented compression combinations.
+* Inspect archive, file, and block metadata, including names, sizes, flags,
+  packed block sizes, compression methods, and stored attributes.
+* Read and create version-100 `(attributes)` metadata with CRC32, explicit
+  FILETIME, MD5, and PATCH_BIT information.
+* Generate and explicitly verify sector Adler-32 checksums and file-level
+  CRC32/MD5 attributes. Complete reads automatically verify available sector
+  checksums and, for lossless data, available CRC32/MD5 attributes.
+* Detect, verify, and create weak MD5/RSA-512 internal signatures and strong
+  SHA-1/RSA-2048 external `NGIS` signatures using caller-supplied keys. Both
+  mechanisms are legacy compatibility features, not modern authenticity
+  protection.
+* Support little- and big-endian hosts through explicit little-endian MPQ
+  serialization.
+* Provide a stable C API with installed headers, API manual pages,
+  `pkg-config` metadata, and `libmpq-config`.
 * Provide optional Python 3.11+, D, and Java bindings.
-* Install API manual pages for the library functions and `libmpq-config`.
-* Provide a stable C API with installed headers under `include/libmpq`.
 
 See the [developer guide](DEVELOPER.md) for API examples, optional metadata,
-checksum verification, and writer compression policies.
+checksum verification, archive signatures, and writer compression policies.
+
+For lossy WAVE ADPCM members, automatic file-level `(attributes)` CRC32/MD5
+comparison is intentionally skipped: decoded PCM cannot reproduce the original
+source bytes byte-for-byte. Packed-sector integrity checks remain available.
 
 ## Requirements
 
@@ -266,7 +285,7 @@ For a static-only build use `--disable-shared --enable-static`; the generated
 
 Public filesystem paths are UTF-8 on Windows, converted to UTF-16 for native
 filesystem calls. Both slash styles and absolute or relative paths are
-accepted. Archive streams always use binary mode. Clone identity checks use
+accepted. Archive sources always use binary mode. Clone identity checks use
 the opened file's volume and file ID.
 
 MPQE creation retains the destination directory independently of cwd changes.
@@ -305,7 +324,7 @@ Windows SDK ZIPs bundle the required non-system runtime DLLs under `bin/`;
 choose the MSVC or MinGW-w64 package to match your compiler. No special
 libmpq consumer preprocessor define is required. See the
 [SDK setup instructions](DEVELOPER.md#native-c-sdk-packages) and
-[release package summary](DEVELOPER.md#release-package-summary).
+[release package summary](RELEASING.md#release-package-summary).
 
 ## Bindings
 
@@ -317,7 +336,7 @@ Optional language bindings are distributed through their native ecosystems:
 
 Autotools does not install the bindings. See each binding's README for usage
 and installation, or the [developer guide](DEVELOPER.md#binding-development)
-for local builds, tests, and release packaging.
+for local builds and tests. See the [release guide](RELEASING.md) for packaging.
 
 ## Documentation
 
@@ -325,8 +344,9 @@ The documentation includes manual pages for all available public API
 functions, together with a helper for retrieving the compiler and linker flags
 required to use libmpq.
 
-See the [developer guide](DEVELOPER.md) for API integration and release
-workflows. For an implementation-oriented overview of MPQ v1 through v4
+See the [developer guide](DEVELOPER.md) for API integration and the
+[release guide](RELEASING.md) for release workflows. For an
+implementation-oriented overview of MPQ v1 through v4
 headers, tables, encryption, sectors, and compression, see the
 [MPQ format guide](MPQ.md).
 
@@ -334,13 +354,13 @@ headers, tables, encryption, sectors, and compression, see the
 
 * Archive creation is currently limited to seekable MPQ v1 and v2 archives.
   MPQ v3/v4, HET/BET tables, and related format extensions are not supported.
-* MPQE supports reading and creation of new archives with a caller-supplied
-  authentication code. Existing MPQE archives cannot be modified and encrypted
-  random-access writing is unsupported. Creation uses an owner-only plaintext
-  temporary file; completed POSIX archives use normal caller-umask permissions.
-  Cleanup is best effort, so a crash can leave the plaintext temporary behind.
-* Signature generation, patch creation/application, and StormLib-specific key
-  modes are not supported. Stored attributes are not automatically verified.
+* Encrypted random-access writing is not supported. MPQE modification uses
+  transactional decoding and re-encryption instead.
+* MPQE creation and updates use private plaintext staging files. Cleanup is
+  best effort, so abnormal process or system termination may leave one behind.
+
+See [MPQ.md](MPQ.md) for MPQE signatures and patch namespace format behavior,
+and [DEVELOPER.md](DEVELOPER.md) for authentication and prefix-discovery policy.
 
 ## Contributing
 

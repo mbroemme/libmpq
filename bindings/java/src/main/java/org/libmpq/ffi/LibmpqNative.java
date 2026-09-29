@@ -75,6 +75,8 @@ public final class LibmpqNative {
     private static final MethodHandle ARCHIVE_COMPRESSION_ALLOWED;
     private static final MethodHandle ARCHIVE_OPEN;
     private static final MethodHandle ARCHIVE_OPEN_MPQE;
+    private static final MethodHandle ARCHIVE_OPEN_IO;
+    private static final MethodHandle ARCHIVE_OPEN_MPQE_IO;
     private static final MethodHandle ARCHIVE_CREATE;
     private static final MethodHandle ARCHIVE_CREATE_MPQE;
     private static final MethodHandle WRITER_BEGIN;
@@ -84,6 +86,22 @@ public final class LibmpqNative {
     private static final MethodHandle ARCHIVE_ADD_PATH;
     private static final MethodHandle ARCHIVE_CLONE;
     private static final MethodHandle ARCHIVE_CLOSE;
+    private static final MethodHandle UPDATE_BEGIN;
+    private static final MethodHandle UPDATE_BEGIN_MPQE;
+    private static final MethodHandle UPDATE_REPLACE_DATA;
+    private static final MethodHandle UPDATE_REPLACE_PATH;
+    private static final MethodHandle UPDATE_REMOVE;
+    private static final MethodHandle UPDATE_RENAME;
+    private static final MethodHandle UPDATE_COMMIT;
+    private static final MethodHandle UPDATE_ABORT;
+    private static final MethodHandle PATCH_BEGIN;
+    private static final MethodHandle PATCH_BEGIN_MPQE;
+    private static final MethodHandle PATCH_SIGN;
+    private static final MethodHandle PATCH_REPLACE_DATA;
+    private static final MethodHandle PATCH_REPLACE_PATH;
+    private static final MethodHandle PATCH_REMOVE;
+    private static final MethodHandle PATCH_FINISH;
+    private static final MethodHandle PATCH_ABORT;
     private static final MethodHandle ARCHIVE_SIZE_PACKED;
     private static final MethodHandle ARCHIVE_SIZE_UNPACKED;
     private static final MethodHandle ARCHIVE_OFFSET;
@@ -98,7 +116,17 @@ public final class LibmpqNative {
     private static final MethodHandle FILE_HASH;
     private static final MethodHandle FILE_NUMBER_FROM_HASH;
     private static final MethodHandle FILE_READ;
+    private static final MethodHandle STREAM_OPEN;
+    private static final MethodHandle STREAM_OPEN_NAME;
+    private static final MethodHandle STREAM_READ;
+    private static final MethodHandle STREAM_SEEK;
+    private static final MethodHandle STREAM_TELL;
+    private static final MethodHandle STREAM_SIZE;
+    private static final MethodHandle STREAM_CLOSE;
     private static final MethodHandle FILE_VERIFY;
+    private static final MethodHandle ARCHIVE_SIGNATURES;
+    private static final MethodHandle ARCHIVE_VERIFY;
+    private static final MethodHandle ARCHIVE_SIGN;
     private static final MethodHandle BLOCK_VERIFY;
     private static final MethodHandle BLOCK_SIZE_UNPACKED;
     private static final MethodHandle BLOCK_SIZE_PACKED;
@@ -109,6 +137,12 @@ public final class LibmpqNative {
         SymbolLookup lookup = loadLibrary();
         Linker linker = LINKER;
         ARCHIVE_ATTRIBUTES = uintMetadata(linker, lookup, "libmpq__archive_attributes");
+        ARCHIVE_SIGNATURES = uintMetadata(linker, lookup, "libmpq__archive_signatures");
+        ARCHIVE_VERIFY = function(linker, lookup, "libmpq__archive_verify",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS,
+                                  C_SIZE_T, ValueLayout.ADDRESS));
+        ARCHIVE_SIGN = function(linker, lookup, "libmpq__archive_sign",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS, C_SIZE_T));
         FILE_ATTRIBUTES = function(linker, lookup, "libmpq__file_attributes",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS));
         FILE_VERIFY = function(linker, lookup, "libmpq__file_verify",
@@ -131,6 +165,15 @@ public final class LibmpqNative {
                                      FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                            ValueLayout.ADDRESS, C_LONG,
                                                            ValueLayout.ADDRESS, C_SIZE_T));
+        ARCHIVE_OPEN_IO = function(linker, lookup, "libmpq__archive_open_io",
+                                   FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
+                                                         ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                                         C_LONG, C_LONG, ValueLayout.ADDRESS));
+        ARCHIVE_OPEN_MPQE_IO = function(linker, lookup, "libmpq__archive_open_mpqe_io",
+                                        FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
+                                                              ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                                              C_LONG, C_LONG, ValueLayout.ADDRESS,
+                                                              C_SIZE_T, ValueLayout.ADDRESS));
         ARCHIVE_CREATE = function(linker, lookup, "libmpq__archive_create",
                                   FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                         ValueLayout.ADDRESS, ValueLayout.ADDRESS));
@@ -160,6 +203,47 @@ public final class LibmpqNative {
                                                        ValueLayout.ADDRESS));
         ARCHIVE_CLOSE = function(linker, lookup, "libmpq__archive_close",
                                  FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
+        UPDATE_BEGIN = function(linker, lookup, "libmpq__update_begin",
+                                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+        UPDATE_BEGIN_MPQE = function(linker, lookup, "libmpq__update_begin_mpqe",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS, C_SIZE_T));
+        UPDATE_REPLACE_DATA = function(linker, lookup, "libmpq__update_replace_data",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS));
+        UPDATE_REPLACE_PATH = function(linker, lookup, "libmpq__update_replace_path",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+        UPDATE_REMOVE = function(linker, lookup, "libmpq__update_remove",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+        UPDATE_RENAME = function(linker, lookup, "libmpq__update_rename",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS));
+        UPDATE_COMMIT = function(linker, lookup, "libmpq__update_commit",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
+        UPDATE_ABORT = function(linker, lookup, "libmpq__update_abort",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
+        PATCH_BEGIN = function(linker, lookup, "libmpq__patch_begin",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS));
+        PATCH_BEGIN_MPQE = function(linker, lookup, "libmpq__patch_begin_mpqe",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS, ValueLayout.ADDRESS, C_SIZE_T));
+        PATCH_SIGN = function(linker, lookup, "libmpq__patch_sign",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT,
+                                      ValueLayout.ADDRESS, C_SIZE_T));
+        PATCH_REPLACE_DATA = function(linker, lookup, "libmpq__patch_replace_data",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS));
+        PATCH_REPLACE_PATH = function(linker, lookup, "libmpq__patch_replace_path",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+        PATCH_REMOVE = function(linker, lookup, "libmpq__patch_remove",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+        PATCH_FINISH = function(linker, lookup, "libmpq__patch_finish",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
+        PATCH_ABORT = function(linker, lookup, "libmpq__patch_abort",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
         ARCHIVE_SIZE_PACKED = metadata(linker, lookup, "libmpq__archive_size_packed");
         ARCHIVE_SIZE_UNPACKED = metadata(linker, lookup, "libmpq__archive_size_unpacked");
         ARCHIVE_OFFSET = metadata(linker, lookup, "libmpq__archive_offset");
@@ -184,6 +268,27 @@ public final class LibmpqNative {
                              FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT,
                                                    ValueLayout.ADDRESS, C_LONG,
                                                    ValueLayout.ADDRESS));
+        STREAM_OPEN = function(linker, lookup, "libmpq__stream_open",
+                               FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT,
+                                                     ValueLayout.ADDRESS));
+        STREAM_OPEN_NAME = function(linker, lookup, "libmpq__stream_open_name",
+                                    FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
+                                                          ValueLayout.ADDRESS,
+                                                          ValueLayout.ADDRESS));
+        STREAM_READ = function(linker, lookup, "libmpq__stream_read",
+                               FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
+                                                     ValueLayout.ADDRESS, C_LONG,
+                                                     ValueLayout.ADDRESS));
+        STREAM_SEEK = function(linker, lookup, "libmpq__stream_seek",
+                               FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_LONG, C_INT));
+        STREAM_TELL = function(linker, lookup, "libmpq__stream_tell",
+                               FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
+                                                     ValueLayout.ADDRESS));
+        STREAM_SIZE = function(linker, lookup, "libmpq__stream_size",
+                               FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
+                                                     ValueLayout.ADDRESS));
+        STREAM_CLOSE = function(linker, lookup, "libmpq__stream_close",
+                                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
         BLOCK_SIZE_PACKED = function(linker, lookup, "libmpq__block_size_packed",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, C_INT, ValueLayout.ADDRESS));
         BLOCK_COMPRESSION = function(linker, lookup, "libmpq__block_compression",
@@ -322,6 +427,24 @@ public final class LibmpqNative {
                                       MemorySegment authCode, long authCodeSize) {
         return callInt(ARCHIVE_OPEN_MPQE, out, path, offset, authCode, nativeSizeT(authCodeSize));
     }
+    /** Opens a borrowed exact random-access source through a Java upcall stub. */
+    public static int archiveOpenIo(MemorySegment out, MemorySegment context, MemorySegment readAt,
+                                    long sourceSize, long offset, MemorySegment sourceName) {
+        return callInt(ARCHIVE_OPEN_IO, out, context, readAt, sourceSize, offset, sourceName);
+    }
+    /** Opens a borrowed exact random-access MPQE source through a Java upcall stub. */
+    public static int archiveOpenMpqeIo(MemorySegment out, MemorySegment context, MemorySegment readAt,
+                                        long sourceSize, long offset, MemorySegment authCode,
+                                        long authCodeSize, MemorySegment sourceName) {
+        return callInt(ARCHIVE_OPEN_MPQE_IO, out, context, readAt, sourceSize, offset,
+                       authCode, nativeSizeT(authCodeSize), sourceName);
+    }
+    /** Creates an ABI-correct upcall stub for the public libmpq_read_at_fn type. */
+    public static MemorySegment readAtUpcall(MethodHandle target, Arena arena) {
+        return LINKER.upcallStub(target, FunctionDescriptor.of(
+            C_INT, ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS, C_SIZE_T
+        ), arena);
+    }
     /** Calls {@code libmpq__archive_create} with a native options struct. */
     public static int archiveCreate(MemorySegment out, MemorySegment path, MemorySegment options) {
         return callInt(ARCHIVE_CREATE, out, path, options);
@@ -347,6 +470,19 @@ public final class LibmpqNative {
     /** Query attributes presence flags without treating missing metadata as zero flags. */
     public static int archiveAttributes(MemorySegment archive, MemorySegment flags) {
         return callInt(ARCHIVE_ATTRIBUTES, archive, flags);
+    }
+
+    public static int archiveSignatures(MemorySegment archive, MemorySegment flags) {
+        return callInt(ARCHIVE_SIGNATURES, archive, flags);
+    }
+
+    public static int archiveVerify(MemorySegment archive, int flags, MemorySegment key,
+                                    long size, MemorySegment mismatches) {
+        return callInt(ARCHIVE_VERIFY, archive, flags, key, nativeSizeT(size), mismatches);
+    }
+
+    public static int archiveSign(MemorySegment archive, int flags, MemorySegment key, long size) {
+        return callInt(ARCHIVE_SIGN, archive, flags, key, nativeSizeT(size));
     }
 
     /** Read a native aligned attributes result for one public file number. */
@@ -385,6 +521,54 @@ public final class LibmpqNative {
     }
     /** Closes one native archive handle. */
     public static int archiveClose(MemorySegment archive) { return callInt(ARCHIVE_CLOSE, archive); }
+    public static int updateBegin(MemorySegment out, MemorySegment path) {
+        return callInt(UPDATE_BEGIN, out, path);
+    }
+    public static int updateBeginMpqe(MemorySegment out, MemorySegment path,
+                                      MemorySegment authCode, long authCodeSize) {
+        return callInt(UPDATE_BEGIN_MPQE, out, path, authCode, nativeSizeT(authCodeSize));
+    }
+    public static int updateReplaceData(MemorySegment update, MemorySegment name,
+                                        MemorySegment data, long size, MemorySegment options) {
+        return callInt(UPDATE_REPLACE_DATA, update, name, data, size, options);
+    }
+    public static int updateReplacePath(MemorySegment update, MemorySegment name,
+                                        MemorySegment path, MemorySegment options) {
+        return callInt(UPDATE_REPLACE_PATH, update, name, path, options);
+    }
+    public static int updateRemove(MemorySegment update, MemorySegment name) {
+        return callInt(UPDATE_REMOVE, update, name);
+    }
+    public static int updateRename(MemorySegment update, MemorySegment oldName,
+                                   MemorySegment newName) {
+        return callInt(UPDATE_RENAME, update, oldName, newName);
+    }
+    public static int updateCommit(MemorySegment update) { return callInt(UPDATE_COMMIT, update); }
+    public static int updateAbort(MemorySegment update) { return callInt(UPDATE_ABORT, update); }
+    public static int patchBegin(MemorySegment out, MemorySegment base, MemorySegment output) {
+        return callInt(PATCH_BEGIN, out, base, output);
+    }
+    public static int patchBeginMpqe(MemorySegment out, MemorySegment base, MemorySegment output,
+                                     MemorySegment authCode, long authCodeSize) {
+        return callInt(PATCH_BEGIN_MPQE, out, base, output, authCode, nativeSizeT(authCodeSize));
+    }
+    public static int patchSign(MemorySegment patch, int signatureType, MemorySegment key,
+                                long size) {
+        return callInt(PATCH_SIGN, patch, signatureType, key, nativeSizeT(size));
+    }
+    public static int patchReplaceData(MemorySegment patch, MemorySegment name,
+                                       MemorySegment data, long size, MemorySegment options) {
+        return callInt(PATCH_REPLACE_DATA, patch, name, data, size, options);
+    }
+    public static int patchReplacePath(MemorySegment patch, MemorySegment name,
+                                       MemorySegment path, MemorySegment options) {
+        return callInt(PATCH_REPLACE_PATH, patch, name, path, options);
+    }
+    public static int patchRemove(MemorySegment patch, MemorySegment name) {
+        return callInt(PATCH_REMOVE, patch, name);
+    }
+    public static int patchFinish(MemorySegment patch) { return callInt(PATCH_FINISH, patch); }
+    public static int patchAbort(MemorySegment patch) { return callInt(PATCH_ABORT, patch); }
     /** Queries either packed or unpacked archive size through an int64 output. */
     public static int archiveLong(MemorySegment archive, MemorySegment output, boolean unpacked) {
         return callInt(unpacked ? ARCHIVE_SIZE_UNPACKED : ARCHIVE_SIZE_PACKED, archive, output);
@@ -431,6 +615,26 @@ public final class LibmpqNative {
                                MemorySegment transferred) {
         return callInt(FILE_READ, archive, number, output, size, transferred);
     }
+    public static int streamOpen(MemorySegment archive, int number, MemorySegment output) {
+        return callInt(STREAM_OPEN, archive, number, output);
+    }
+    public static int streamOpenName(MemorySegment archive, MemorySegment name, MemorySegment output) {
+        return callInt(STREAM_OPEN_NAME, archive, name, output);
+    }
+    public static int streamRead(MemorySegment stream, MemorySegment output, long size,
+                                 MemorySegment transferred) {
+        return callInt(STREAM_READ, stream, output, size, transferred);
+    }
+    public static int streamSeek(MemorySegment stream, long offset, int origin) {
+        return callInt(STREAM_SEEK, stream, offset, origin);
+    }
+    public static int streamTell(MemorySegment stream, MemorySegment position) {
+        return callInt(STREAM_TELL, stream, position);
+    }
+    public static int streamSize(MemorySegment stream, MemorySegment size) {
+        return callInt(STREAM_SIZE, stream, size);
+    }
+    public static int streamClose(MemorySegment stream) { return callInt(STREAM_CLOSE, stream); }
     /** Queries one sector's stored size, excluding offset/checksum tables. */
     public static int blockSizePacked(MemorySegment archive, int number, int block, MemorySegment output) {
         return callInt(BLOCK_SIZE_PACKED, archive, number, block, output);

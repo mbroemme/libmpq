@@ -99,6 +99,22 @@ extern(C) struct mpq_archive_s;
 /** Opaque native streaming-writer state owned by libmpq. */
 extern(C) struct mpq_writer_s;
 
+/** Opaque native logical-member stream state owned by libmpq. */
+extern(C) struct mpq_stream_s;
+
+/** Opaque native transactional update state owned by libmpq. */
+extern(C) struct mpq_update_s;
+
+/** Opaque native patch-artifact state owned by libmpq. */
+extern(C) struct mpq_patch_s;
+
+alias libmpq_read_at_fn = extern(C) int function(void* context, off_t offset,
+                                                  ubyte* buffer, size_t size);
+
+enum LIBMPQ_SEEK_SET = 0;
+enum LIBMPQ_SEEK_CUR = 1;
+enum LIBMPQ_SEEK_END = 2;
+
 /** Native layout passed to libmpq__archive_create. */
 extern(C) struct mpq_archive_create_options_s {
     uint version_;
@@ -132,6 +148,10 @@ enum VERIFY_SECTOR_CRC = 0x1u;
 enum VERIFY_FILE_CRC32 = 0x2u;
 enum VERIFY_FILE_MD5 = 0x4u;
 enum VERIFY_ALL = VERIFY_SECTOR_CRC | VERIFY_FILE_CRC32 | VERIFY_FILE_MD5;
+enum SIGNATURE_WEAK = 0x00000001u;
+enum SIGNATURE_STRONG = 0x00000002u;
+alias LIBMPQ_SIGNATURE_WEAK = SIGNATURE_WEAK;
+alias LIBMPQ_SIGNATURE_STRONG = SIGNATURE_STRONG;
 alias LIBMPQ_VERIFY_SECTOR_CRC = VERIFY_SECTOR_CRC;
 alias LIBMPQ_VERIFY_FILE_CRC32 = VERIFY_FILE_CRC32;
 alias LIBMPQ_VERIFY_FILE_MD5 = VERIFY_FILE_MD5;
@@ -190,6 +210,11 @@ extern(C) {
 
     /** Optional metadata queries and explicit writer FILETIME. */
     int libmpq__archive_attributes(mpq_archive_s* archive, uint* flags);
+    int libmpq__archive_signatures(mpq_archive_s* archive, uint* signatures);
+    int libmpq__archive_verify(mpq_archive_s* archive, uint flags,
+                               const(ubyte)* key, size_t keySize, uint* mismatches);
+    int libmpq__archive_sign(mpq_archive_s* archive, uint type,
+                             const(ubyte)* key, size_t keySize);
     int libmpq__file_attributes(mpq_archive_s* archive, uint number, mpq_file_attributes_s* attributes);
     int libmpq__file_verify(mpq_archive_s* archive, uint number, uint flags, uint* mismatches);
     int libmpq__block_verify(mpq_archive_s* archive, uint number, uint block,
@@ -215,6 +240,14 @@ extern(C) {
                                   off_t offset,
                                   const(ubyte)* auth_code,
                                   size_t auth_code_size);
+
+    int libmpq__archive_open_io(mpq_archive_s** archive, void* context,
+                                libmpq_read_at_fn read_at, off_t source_size,
+                                off_t archive_offset, const(char)* source_name);
+    int libmpq__archive_open_mpqe_io(mpq_archive_s** archive, void* context,
+                                     libmpq_read_at_fn read_at, off_t source_size,
+                                     off_t archive_offset, const(ubyte)* auth_code,
+                                     size_t auth_code_size, const(char)* source_name);
 
     /** Create an archive using the supplied native option structure. */
     int libmpq__archive_create(mpq_archive_s** archive, const(char)* path,
@@ -251,6 +284,42 @@ extern(C) {
 
     /** Close an archive and release all native state. */
     int libmpq__archive_close(mpq_archive_s* archive);
+
+    /** Begin and stage filesystem archive updates. */
+    int libmpq__update_begin(mpq_update_s** update, const(char)* path);
+    int libmpq__update_begin_mpqe(mpq_update_s** update, const(char)* path,
+                                  const(ubyte)* auth_code, size_t auth_code_size);
+    int libmpq__update_replace_data(mpq_update_s* update, const(char)* filename,
+                                    const(ubyte)* data, off_t size,
+                                    const(mpq_file_options_s)* options);
+    int libmpq__update_replace_path(mpq_update_s* update, const(char)* filename,
+                                    const(char)* source_path,
+                                    const(mpq_file_options_s)* options);
+    int libmpq__update_remove(mpq_update_s* update, const(char)* filename);
+    int libmpq__update_rename(mpq_update_s* update, const(char)* old_filename,
+                              const(char)* new_filename);
+    /** Both lifecycle calls consume the handle, including on error. */
+    int libmpq__update_commit(mpq_update_s* update);
+    int libmpq__update_abort(mpq_update_s* update);
+
+    /** Begin and stage a patch artifact without modifying the base archive. */
+    int libmpq__patch_begin(mpq_patch_s** patch, const(char)* base_archive,
+                            const(char)* output_patch);
+    int libmpq__patch_begin_mpqe(mpq_patch_s** patch, const(char)* base_archive,
+                                 const(char)* output_patch, const(ubyte)* auth_code,
+                                 size_t auth_code_size);
+    int libmpq__patch_sign(mpq_patch_s* patch, uint signature_type,
+                           const(ubyte)* private_key, size_t private_key_size);
+    int libmpq__patch_replace_data(mpq_patch_s* patch, const(char)* filename,
+                                   const(ubyte)* data, off_t size,
+                                   const(mpq_file_options_s)* options);
+    int libmpq__patch_replace_path(mpq_patch_s* patch, const(char)* filename,
+                                   const(char)* source_path,
+                                   const(mpq_file_options_s)* options);
+    int libmpq__patch_remove(mpq_patch_s* patch, const(char)* filename);
+    /** Both lifecycle calls consume the handle, including on error. */
+    int libmpq__patch_finish(mpq_patch_s* patch);
+    int libmpq__patch_abort(mpq_patch_s* patch);
 
     /** Query aggregate packed archive size. */
     int libmpq__archive_size_packed(mpq_archive_s* archive, off_t* value);
@@ -299,6 +368,16 @@ extern(C) {
     /** Read one complete unpacked file into the caller's buffer. */
     int libmpq__file_read(mpq_archive_s* archive, uint number, ubyte* buffer,
                           off_t size, off_t* transferred);
+
+    int libmpq__stream_open(mpq_archive_s* archive, uint number, mpq_stream_s** stream);
+    int libmpq__stream_open_name(mpq_archive_s* archive, const(char)* filename,
+                                 mpq_stream_s** stream);
+    int libmpq__stream_read(mpq_stream_s* stream, ubyte* buffer, off_t size,
+                            off_t* transferred);
+    int libmpq__stream_seek(mpq_stream_s* stream, off_t offset, int origin);
+    int libmpq__stream_tell(mpq_stream_s* stream, off_t* position);
+    int libmpq__stream_size(mpq_stream_s* stream, off_t* size);
+    int libmpq__stream_close(mpq_stream_s* stream);
 
     /** Query one block's stored size, excluding offset/checksum tables. */
     int libmpq__block_size_packed(mpq_archive_s* archive, uint number,

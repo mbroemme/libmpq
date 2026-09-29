@@ -26,9 +26,11 @@
 #include <ctype.h>
 #include <stdlib.h>
 
-/* Hash an MPQ table name or file name with one of the Storm hash table offsets.
+/*
+ * Hash an MPQ table name or file name with one of the Storm hash table offsets.
  * The caller supplies the table offset that selects the required hash phase,
- * and the returned value is used for MPQ lookup and encryption-key derivation. */
+ * and the returned value is used for MPQ lookup and encryption-key derivation.
+ */
 uint32_t
 libmpq__crypto_hash_string(const char *key, uint32_t offset)
 {
@@ -48,9 +50,11 @@ libmpq__crypto_hash_string(const char *key, uint32_t offset)
     return seed1;
 }
 
-/* Encrypt a block in place using the MPQ block cipher and the supplied seed.
+/*
+ * Encrypt a block in place using the MPQ block cipher and the supplied seed.
  * The routine serializes complete little-endian words and leaves any trailing
- * incomplete bytes untouched because MPQ encryption is word-oriented. */
+ * incomplete bytes untouched because MPQ encryption is word-oriented.
+ */
 int32_t
 libmpq__crypto_encrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
 {
@@ -75,9 +79,11 @@ libmpq__crypto_encrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
     return LIBMPQ_SUCCESS;
 }
 
-/* Decrypt a block in place using the MPQ block cipher and the supplied seed.
+/*
+ * Decrypt a block in place using the MPQ block cipher and the supplied seed.
  * It reverses the word transformation performed by the matching encryptor,
- * so callers can reuse the same buffer without allocating a second copy. */
+ * so callers can reuse the same buffer without allocating a second copy.
+ */
 int32_t
 libmpq__crypto_decrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
 {
@@ -100,9 +106,11 @@ libmpq__crypto_decrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
     return LIBMPQ_SUCCESS;
 }
 
-/* Recover a file seed by matching StormLib's small set of known file signatures.
+/*
+ * Recover a file seed by matching StormLib's small set of known file signatures.
  * The function tests the encrypted prefix against RIFF, executable, XML, and
- * MPQ signatures and writes the unique matching seed to the caller's output. */
+ * MPQ signatures and writes the unique matching seed to the caller's output.
+ */
 int32_t
 libmpq__crypto_detect_file_key(
     const uint8_t *in_buf, uint32_t in_size, uint32_t file_size, uint32_t *key
@@ -158,9 +166,11 @@ libmpq__crypto_detect_file_key(
     return LIBMPQ_ERROR_DECRYPT;
 }
 
-/* Recover the per-file block-table seed from the first encrypted block offsets.
+/*
+ * Recover the per-file block-table seed from the first encrypted block offsets.
  * It checks all possible low-byte cipher candidates and accepts only a seed
- * whose first two decoded offsets describe a plausible sector-table layout. */
+ * whose first two decoded offsets describe a plausible sector-table layout.
+ */
 int32_t
 libmpq__crypto_derive_block_table_seed(
     uint8_t *in_buf, uint32_t in_size, uint32_t block_size, uint32_t *key

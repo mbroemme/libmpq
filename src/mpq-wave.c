@@ -54,9 +54,11 @@ static const uint32_t wave_step_sizes[] = {
     0x00007FFF
 };
 
-/* Quantize one PCM predictor difference into the MPQ ADPCM control byte.
+/*
+ * Quantize one PCM predictor difference into the MPQ ADPCM control byte.
  * The predictor and step index are updated in place so the next sample uses
- * the same adaptive state as the matching decoder. */
+ * the same adaptive state as the matching decoder.
+ */
 static uint8_t
 wave_encode_delta(int32_t difference, int32_t *predictor, int32_t *step_index, uint32_t shift)
 {
@@ -88,9 +90,11 @@ wave_encode_delta(int32_t difference, int32_t *predictor, int32_t *step_index, u
     return (uint8_t)code;
 }
 
-/* Inspect a RIFF/WAVE prefix and validate its PCM16 channel configuration.
+/*
+ * Inspect a RIFF/WAVE prefix and validate its PCM16 channel configuration.
  * Chunk boundaries, padding, channel count, sample width, and complete PCM
- * frames are checked before offsets and sizes are returned to the caller. */
+ * frames are checked before offsets and sizes are returned to the caller.
+ */
 int32_t
 libmpq__wave_probe_pcm16(const uint8_t *data, uint32_t size, libmpq_wave_info_s *info)
 {
@@ -131,9 +135,11 @@ libmpq__wave_probe_pcm16(const uint8_t *data, uint32_t size, libmpq_wave_info_s 
     return LIBMPQ_SUCCESS;
 }
 
-/* Validate a RIFF/WAVE prefix when later PCM bytes are not buffered yet.
+/*
+ * Validate a RIFF/WAVE prefix when later PCM bytes are not buffered yet.
  * The available prefix must contain the format and data chunk headers, while
- * the declared data range must fit within the complete writer file size. */
+ * the declared data range must fit within the complete writer file size.
+ */
 int32_t
 libmpq__wave_probe_pcm16_prefix(
     const uint8_t *data, uint32_t prefix_size, uint64_t file_size, libmpq_wave_info_s *info
@@ -180,9 +186,11 @@ libmpq__wave_probe_pcm16_prefix(
     return LIBMPQ_SUCCESS;
 }
 
-/* Encode one complete PCM sector using the MPQ mono/stereo ADPCM format.
+/*
+ * Encode one complete PCM sector using the MPQ mono/stereo ADPCM format.
  * The first sample of each channel seeds the predictor header, and subsequent
- * interleaved samples are reduced to adaptive six-bit delta codes. */
+ * interleaved samples are reduced to adaptive six-bit delta codes.
+ */
 int32_t
 libmpq__wave_compress(
     const uint8_t *in_buf, uint32_t in_size, uint8_t **out_buf, uint32_t *out_size,
@@ -231,9 +239,11 @@ libmpq__wave_compress(
     return LIBMPQ_SUCCESS;
 }
 
-/* Decompress mono or stereo MPQ WAVE predictor data into PCM bytes.
+/*
+ * Decompress mono or stereo MPQ WAVE predictor data into PCM bytes.
  * It restores channel seed samples first, then applies control and delta
- * bytes until the input or caller-provided output capacity is exhausted. */
+ * bytes until the input or caller-provided output capacity is exhausted.
+ */
 int32_t
 libmpq__wave_decompress(
     uint8_t *out_buf, int32_t out_length, uint8_t *in_buf, int32_t in_length, int32_t channels

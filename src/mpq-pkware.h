@@ -63,8 +63,10 @@
 /* A decoder input/output callback stopped the expansion before completion. */
 #define LIBMPQ_PKZIP_CMP_ABORT 4
 
-/* Native PKWARE explode decoder state. Hex labels describe the original
- * workspace, not the offsets in this naturally aligned structure. */
+/*
+ * Native PKWARE explode decoder state. Hex labels describe the original
+ * workspace, not the offsets in this naturally aligned structure.
+ */
 typedef struct
 {
     uint32_t offs0000;   /* 0000 - compatibility field from the original layout. */

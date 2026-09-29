@@ -10,25 +10,25 @@
 .\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 .\" GNU Lesser General Public License for more details.
 .\"
-.\" You should have received a copy of the GNU Lesser General Public
-.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
 .TH LIBMPQ__STRERROR 3 2026-08-12 "The MoPaQ archive library"
 .SH NAME
 libmpq__strerror \- return a string describing a libmpq error code.
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
-.BI "const char *libmpq__strerror(int32_t return_code);"
+.BI "const char *libmpq__strerror(int32_t " "return_code" ");"
 .fi
 .SH DESCRIPTION
 .PP
 Call \fBlibmpq__strerror\fP() to get a message for a libmpq return code.
 .SH RETURN VALUE
-The function returns a pointer to a read-only string, or NULL if \fIreturn_code\fP is not a libmpq return code.
+The function returns a pointer to a read-only string, or NULL if
+\fIreturn_code\fP is not a libmpq return code.
 .SH SEE ALSO
-.BR libmpq (3), strerror (3)
+.BR libmpq (3)
 .SH AUTHOR
 The libmpq project is maintained by
 .B Maik Broemme <mbroemme@libmpq.org>.

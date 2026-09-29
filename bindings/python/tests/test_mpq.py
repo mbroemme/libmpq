@@ -8,10 +8,14 @@
 """End-to-end tests for the public Python binding and native libmpq ABI."""
 
 import ctypes
+import concurrent.futures
+import gc
 import hashlib
+import io
 import os
 import struct
 import sys
+import weakref
 import zlib
 from pathlib import Path
 
@@ -26,6 +30,523 @@ if not FIXTURES.is_dir():
 
 SPARSE_TEXT = "This text uses SPARSE compression and decompression.\n" * 16
 SPARSE_BYTES = b"\xff\xfe\x00\x00" + SPARSE_TEXT.encode("utf-32-le")
+WEAK_PUBLIC_KEY = bytes.fromhex("a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001")
+WEAK_PRIVATE_KEY = bytes.fromhex("a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a748315364c0c92a1a284b2ae77d5d49adea3bad7bafa639710661d443c0ad882f6c8d6787affd7f68145217cde42cf4dc2acb0ca2aeca535baf894084e590d719")
+STRONG_PUBLIC_KEY = (
+    bytes.fromhex("b76f7dc7cdd3a083b2e52f39a5b7d58f181ab7bc03c1eaa0931744f0218bf74397b68481776a3f49f7b9a7ea08abf1c3a9802b54ee75661190e521453f6e125cdaca5d4b5cb52c84a158f1bb1b51bb9138acc55b45a083d3dde6e9e9cc4cb03adf4dda27a4a673993ebddfefd06e7c8c976387df92ba92d6392b9baf1a40f7b39d3c0ad1a4e2d685b46caea30863c9055d8e0a151d2e5adf5b79c69cc849c8b879ecc53be1207334d60b4194583b44129f272fe4790570ba530df485e2188932d79abb5b3b8713fd2d16de821048328e9ae93da8de983519033806fbd55591ebf5542641af669ad73e7c0f01b2dea45040f6658d2c6ca0f55f8d91c482f81617")
+    + bytes(253)
+    + b"\x01\x00\x01"
+)
+STRONG_PRIVATE_KEY = STRONG_PUBLIC_KEY[:256] + bytes.fromhex(
+    "14c9759f7c1ba1f24ab0de0bd253bac7b470e7fbf911088844783bea5a62da15"
+    "0c24356fd670712b98a9aea03ecb52b7b18597637b2cf7f16afcb6d5cf67a727"
+    "b9437abf078a75b907450fb4fc56396dd8d650a71484d4163641eca554997c29"
+    "afbf201c4df444354c29882ef797b85580f259260f77efc686eeacd31da3d9c3"
+    "37897433f8ef833890a04d55cbfc53f2dd8f96bd9b93e28fc6f022786b36e51d"
+    "e38ec0d5d41aba3eed9647831fb16fcbc3b16eaca91e60894aa772b02b22a3ff"
+    "b7042e52531163d089209df6412098613ef59664ed70884e33f3e3056ccfb911"
+    "bcc04d2c73142996946d88be0daa29aafa1bab3d10ff4d52295880c8fad6d641"
+)
+
+
+def test_strong_signature():
+    """Verify independently signed test data through the public signature selector."""
+    assert len(STRONG_PUBLIC_KEY) == 512
+    with mpq.Archive(FIXTURES / "mpq-v1-features.mpq") as archive:
+        assert archive.signatures() == mpq.SIGNATURE_WEAK | mpq.SIGNATURE_STRONG
+        assert archive.verify(STRONG_PUBLIC_KEY, signature_type=mpq.SIGNATURE_STRONG) == 0
+
+
+def test_logical_stream_lifetime_seek_and_eof():
+    """Native streams remain valid after their originating archive closes."""
+    archive = mpq.Archive(FIXTURES / "mpq-v1-features.mpq")
+    stream = archive.open_stream("overview.txt")
+    expected = archive["overview.txt"].read()
+    assert stream.size == len(expected)
+    assert stream.read(2) == expected[:2]
+    assert stream.tell() == 2
+    stream.seek(-1, os.SEEK_CUR)
+    assert stream.read(3) == expected[1:4]
+    stream.seek(-1, os.SEEK_END)
+    assert stream.read() == expected[-1:]
+    assert stream.read() == b""
+    archive.close()
+    stream.seek(0)
+    assert stream.read() == expected
+    stream.close()
+    stream.close()
+    with pytest.raises(mpq.LibmpqStateError):
+        stream.tell()
+
+
+def test_transactional_update_binding(tmp_path):
+    """All staged operations commit or abort without reusing consumed handles."""
+    path = tmp_path / "update.mpq"
+    source = tmp_path / "replacement.bin"
+    source.write_bytes(b"from path")
+    original = b"A" * 9000
+    with mpq.Writer(path, max_files=16, flags=mpq.ARCHIVE_CREATE_LISTFILE,
+                    attributes=mpq.ATTRIBUTE_CRC32 | mpq.ATTRIBUTE_MD5) as writer:
+        writer.add("data", original)
+        writer.add("path", b"old path")
+        writer.add("remove", b"remove me")
+        writer.add("rename", b"rename me")
+        writer.add("secret", b"encrypted payload",
+                   mpq.FileCreateOptions.raw().encrypted())
+
+    options = mpq.FileCreateOptions.compressed(mpq.COMPRESSION_ZLIB,
+                                                mpq.COMPRESSION_BZIP2)
+    with mpq.Update.begin(path) as update:
+        update.replace_data("data", memoryview(b"B" * 9000), options)
+        update.replace_path("path", source,
+                            mpq.FileCreateOptions.raw().encrypted())
+        update.remove("remove")
+        update.rename("rename", "renamed")
+        update.rename("secret", "secret-new")
+        with mpq.Archive(path) as archive:
+            assert archive["data"].read() == original
+        update.commit()
+    with mpq.Archive(path) as archive:
+        assert archive["data"].read() == b"B" * 9000
+        assert archive["data"].block_compression(0) == mpq.COMPRESSION_ZLIB
+        assert archive["data"].block_compression(1) == mpq.COMPRESSION_BZIP2
+        with archive.open_stream("path") as stream:
+            assert stream.read() == b"from path"
+        assert "remove" not in archive and "rename" not in archive
+        assert archive["renamed"].read() == b"rename me"
+        with archive.open_stream("secret-new") as stream:
+            assert stream.read() == b"encrypted payload"
+    with pytest.raises(mpq.LibmpqStateError):
+        update.remove("path")
+
+    with mpq.Update.begin(path) as update:
+        update.replace_data("data", bytearray(b"rollback"))
+        update.remove("path")
+        update.rename("renamed", "rollback-name")
+    with mpq.Archive(path) as archive:
+        assert archive["data"].read() == b"B" * 9000
+        with archive.open_stream("path") as stream:
+            assert stream.read() == b"from path"
+        assert archive["renamed"].read() == b"rename me"
+
+    with pytest.raises(RuntimeError, match="caller failure"):
+        with mpq.Update.begin(path) as update:
+            update.remove("path")
+            raise RuntimeError("caller failure")
+    with mpq.Archive(path) as archive:
+        with archive.open_stream("path") as stream:
+            assert stream.read() == b"from path"
+
+    update = mpq.Update.begin(path)
+    with pytest.raises(mpq.LibmpqNotFoundError):
+        update.remove("missing")
+    update.abort()
+    update.close()
+    with pytest.raises(mpq.LibmpqStateError):
+        update.commit()
+
+    update = mpq.Update.begin(path)
+    mismatched = mpq.FileCreateOptions.raw()
+    mismatched.locale = 1
+    with pytest.raises(mpq.LibmpqError):
+        update.replace_data("data", b"no", mismatched)
+    update.abort()
+
+    update = mpq.Update.begin(path)
+    replacement = tmp_path / "external.mpq"
+    replacement.write_bytes(path.read_bytes())
+    os.replace(replacement, path)
+    with pytest.raises(mpq.LibmpqError):
+        update.commit()
+    with pytest.raises(mpq.LibmpqStateError):
+        update.abort()
+
+
+def test_update_localized_member_defaults(tmp_path):
+    """Omitted options preserve nonzero locale/platform; explicit raw does not."""
+    path = tmp_path / "localized.mpq"
+    source = tmp_path / "replacement.bin"
+    source.write_bytes(b"from path")
+    identity = mpq.FileCreateOptions.raw()
+    identity.locale, identity.platform = 0x409, 1
+    with mpq.Writer(path, max_files=8) as writer:
+        writer.add("localized", b"original", identity)
+
+    with mpq.Update.begin(path) as update:
+        update.replace_data("localized", b"new data")
+        update.commit()
+    with mpq.Archive(path) as archive:
+        assert archive["localized"].read() == b"new data"
+
+    with mpq.Update.begin(path) as update:
+        with pytest.raises(mpq.LibmpqFormatError):
+            update.replace_data("localized", b"wrong", mpq.FileCreateOptions.raw())
+        with pytest.raises(mpq.LibmpqFormatError):
+            update.replace_path("localized", source, mpq.FileCreateOptions.raw())
+        update.replace_data("localized", b"matching", identity)
+        update.commit()
+
+    with mpq.Update.begin(path) as update:
+        update.replace_path("localized", source)
+        update.commit()
+    with mpq.Archive(path) as archive:
+        assert archive["localized"].read() == b"from path"
+    with mpq.Update.begin(path) as update:
+        update.replace_path("localized", source, identity)
+        update.abort()
+
+
+def test_authenticated_mpqe_update(tmp_path):
+    """MPQE uses the ordinary Update operations and consuming lifecycle."""
+    path = tmp_path / "update.mpqe"
+    source = tmp_path / "replacement.bin"
+    source.write_bytes(b"from path")
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    with mpq.Writer.create_mpqe(path, code, max_files=16) as writer:
+        writer.add("data", b"original")
+        writer.add("path", b"old path")
+        writer.add("remove", b"remove me")
+        writer.add("secret", b"encrypted payload",
+                   mpq.FileCreateOptions.raw().encrypted())
+    original = path.read_bytes()
+    with pytest.raises(mpq.LibmpqError):
+        mpq.Update.begin(path)
+    for invalid in (None, b"", code[:31], b"X" + code[1:]):
+        with pytest.raises((TypeError, mpq.LibmpqError)):
+            mpq.Update.begin_mpqe(path, invalid)
+    assert path.read_bytes() == original
+
+    with mpq.Update.begin_mpqe(path, code) as update:
+        update.replace_data("data", b"rollback")
+        update.remove("path")
+    assert path.read_bytes() == original
+    update = mpq.Update.begin_mpqe(path, code)
+    update.rename("secret", "unused")
+    update.abort()
+    assert path.read_bytes() == original
+    with pytest.raises(mpq.LibmpqStateError):
+        update.commit()
+
+    borrowed = bytearray(code)
+    with mpq.Update.begin_mpqe(path, borrowed) as update:
+        borrowed[:] = b"\0" * len(borrowed)
+        update.replace_data("data", b"new data")
+        update.replace_path("path", source)
+        update.remove("remove")
+        update.rename("secret", "secret-new")
+        with mpq.Archive.open_mpqe(path, code) as archive:
+            assert archive["data"].read() == b"original"
+        update.commit()
+    with pytest.raises(mpq.LibmpqStateError):
+        update.remove("data")
+    with mpq.Archive.open_mpqe(path, code) as archive:
+        assert archive["data"].read() == b"new data"
+        assert archive["path"].read() == b"from path"
+        assert "remove" not in archive and "secret" not in archive
+        with archive.open_stream("secret-new") as stream:
+            assert stream.read() == b"encrypted payload"
+
+    committed = path.read_bytes()
+    with mpq.Update.begin_mpqe(path, code) as update:
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            update.remove("missing")
+        update.abort()
+    assert path.read_bytes() == committed
+
+
+def test_patch_creation_binding(tmp_path):
+    """Patch creation stages replacements and deletion without changing the base."""
+    base = tmp_path / "base.mpq"
+    output = tmp_path / "changes.mpq"
+    source = tmp_path / "replacement.bin"
+    source.write_bytes(b"from path")
+    identity = mpq.FileCreateOptions.raw()
+    identity.locale, identity.platform = 0x409, 1
+    with mpq.Writer(base, max_files=8, flags=mpq.ARCHIVE_CREATE_LISTFILE) as writer:
+        writer.add("data", b"original", identity)
+        writer.add("path", b"old path", identity)
+        writer.add("remove", b"remove me")
+
+    options = mpq.FileCreateOptions.compressed(mpq.COMPRESSION_ZLIB,
+                                                mpq.COMPRESSION_BZIP2)
+    options.locale, options.platform = identity.locale, identity.platform
+    with mpq.Patch.begin(base, output) as patch:
+        with pytest.raises(mpq.LibmpqFormatError):
+            patch.replace_data("data", b"wrong", mpq.FileCreateOptions.raw())
+        with pytest.raises(mpq.LibmpqFormatError):
+            patch.replace_path("path", source, mpq.FileCreateOptions.raw())
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            patch.remove("missing")
+        patch.replace_data("data", memoryview(b"replacement"))
+        patch.replace_path("path", source, options)
+        patch.remove("remove")
+        assert not output.exists()
+        patch.finish()
+    assert output.is_file()
+    with mpq.Archive(base) as archive:
+        assert archive["data"].read() == b"original"
+        assert archive["path"].read() == b"old path"
+        assert archive["remove"].read() == b"remove me"
+    with mpq.Archive(output) as archive:
+        assert "data" in archive and "path" in archive and "remove" in archive
+    with pytest.raises(mpq.LibmpqStateError):
+        patch.replace_data("data", b"again")
+    with pytest.raises(mpq.LibmpqStateError):
+        patch.abort()
+
+    output.unlink()
+    with mpq.Patch.begin(base, output) as patch:
+        patch.replace_path("path", source)
+    assert not output.exists()
+    patch = mpq.Patch.begin(base, output)
+    patch.replace_data("data", b"aborted")
+    patch.abort()
+    patch.close()
+    assert not output.exists()
+    with pytest.raises(mpq.LibmpqStateError):
+        patch.finish()
+
+    patch = mpq.Patch.begin(base, output)
+    patch.replace_data("data", b"garbage collected")
+    del patch
+    gc.collect()
+    assert not output.exists()
+
+    patch = mpq.Patch.begin(base, output)
+    output.mkdir()
+    with pytest.raises(mpq.LibmpqError):
+        patch.finish()
+    with pytest.raises(mpq.LibmpqStateError):
+        patch.remove("data")
+
+
+def test_mpqe_patch_creation_binding(tmp_path):
+    """The MPQE factory retains the ordinary Patch lifecycle and borrows auth bytes."""
+    base = tmp_path / "base.mpq"
+    output = tmp_path / "changes.mpqe"
+    code = b"LIBMPQ-MPQE-PATCH-AUTH-CODE-00002"
+    with mpq.Writer(base, max_files=8) as writer:
+        writer.add("replace", b"old")
+        writer.add("remove", b"old")
+
+    with pytest.raises(mpq.LibmpqDecryptError):
+        mpq.Patch.begin_mpqe(base, output, b"")
+    with pytest.raises(mpq.LibmpqDecryptError):
+        mpq.Patch.begin_mpqe(base, output, code[:31])
+    with pytest.raises(TypeError):
+        mpq.Patch.begin_mpqe(base, output, None)
+    assert not output.exists()
+
+    with mpq.Patch.begin_mpqe(base, output, code) as patch:
+        patch.replace_data("replace", b"new")
+        patch.remove("remove")
+        assert not output.exists()
+        patch.finish()
+    assert output.is_file()
+    with pytest.raises(mpq.LibmpqFormatError):
+        mpq.Archive(output)
+    with pytest.raises(mpq.LibmpqError):
+        mpq.Archive.open_mpqe(output, b"X" + code[1:])
+    with mpq.Archive.open_mpqe(output, code) as archive:
+        assert "replace" in archive and "remove" in archive
+    with pytest.raises(mpq.LibmpqStateError):
+        patch.abort()
+
+    output.unlink()
+    with mpq.Patch.begin_mpqe(base, output, code) as patch:
+        patch.replace_data("replace", b"discarded")
+    assert not output.exists()
+    patch = mpq.Patch.begin_mpqe(base, output, code)
+    patch.remove("remove")
+    patch.abort()
+    assert not output.exists()
+    with pytest.raises(mpq.LibmpqStateError):
+        patch.finish()
+
+
+@pytest.mark.parametrize("signature_types", [mpq.SIGNATURE_WEAK, mpq.SIGNATURE_STRONG,
+                                            mpq.SIGNATURE_WEAK | mpq.SIGNATURE_STRONG])
+def test_patch_signing(tmp_path, signature_types):
+    """Patch signing shares the archive key convention and verifies after finish."""
+    base = tmp_path / "base.mpq"
+    output = tmp_path / "signed-patch.mpq"
+    with mpq.Writer(base, max_files=8) as writer:
+        writer.add("data", b"original")
+    with mpq.Patch.begin(base, output) as patch:
+        with pytest.raises(mpq.LibmpqFormatError):
+            patch.sign(b"invalid")
+        if signature_types & mpq.SIGNATURE_WEAK:
+            patch.sign(WEAK_PRIVATE_KEY)
+            with pytest.raises(mpq.LibmpqFormatError):
+                patch.sign(WEAK_PRIVATE_KEY)
+        if signature_types & mpq.SIGNATURE_STRONG:
+            patch.sign(STRONG_PRIVATE_KEY, mpq.SIGNATURE_STRONG)
+        patch.replace_data("data", b"replacement")
+        assert not output.exists()
+        patch.finish()
+    with mpq.Archive(output) as archive:
+        assert archive.signatures() == signature_types
+        if signature_types & mpq.SIGNATURE_WEAK:
+            assert archive.verify(WEAK_PUBLIC_KEY) == 0
+        if signature_types & mpq.SIGNATURE_STRONG:
+            assert archive.verify(STRONG_PUBLIC_KEY,
+                                  signature_type=mpq.SIGNATURE_STRONG) == 0
+    with pytest.raises(mpq.LibmpqStateError):
+        patch.sign(WEAK_PRIVATE_KEY)
+
+
+def test_mpqe_patch_signing(tmp_path):
+    """Rejected strong signing leaves the MPQE patch active for weak signing."""
+    base = tmp_path / "base.mpq"
+    output = tmp_path / "signed-patch.mpqe"
+    code = b"LIBMPQ-MPQE-PATCH-AUTH-CODE-00002"
+    with mpq.Writer(base, max_files=8) as writer:
+        writer.add("data", b"original")
+    with mpq.Patch.begin_mpqe(base, output, code) as patch:
+        with pytest.raises(mpq.LibmpqFormatError):
+            patch.sign(STRONG_PRIVATE_KEY, mpq.SIGNATURE_STRONG)
+        patch.sign(WEAK_PRIVATE_KEY)
+        patch.replace_data("data", b"replacement")
+        patch.finish()
+    with mpq.Archive.open_mpqe(output, code) as archive:
+        assert archive.signatures() == mpq.SIGNATURE_WEAK
+        assert archive.verify(WEAK_PUBLIC_KEY) == 0
+    output.unlink()
+    with mpq.Patch.begin_mpqe(base, output, code) as patch:
+        patch.sign(WEAK_PRIVATE_KEY)
+        patch.abort()
+    assert not output.exists()
+
+
+def test_logical_stream_encrypted_numeric_and_mpqe_lifetime():
+    """Name-derived keys, numeric opens, and MPQE clones cross the binding boundary."""
+    with mpq.Archive(FIXTURES / "mpq-v1-features.mpq") as archive:
+        expected = archive["encrypted-compress.txt"].read()
+        with archive.open_stream("encrypted-compress.txt") as stream:
+            assert stream.read() == expected
+        with archive.open_stream(archive["overview.txt"].number) as stream:
+            assert stream.read() == archive["overview.txt"].read()
+
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    archive = mpq.Archive.open_mpqe(FIXTURES / "mpq-v1-features.mpqe", code, 0)
+    expected = archive["overview.txt"].read()
+    stream = archive.open_stream("overview.txt")
+    archive.close()
+    try:
+        assert stream.read() == expected
+    finally:
+        stream.close()
+
+
+def test_custom_io_sources_and_stream_lifetime():
+    """Borrowed BytesIO sources stay alive for archive clones owned by streams."""
+    data = (FIXTURES / "mpq-v1-features.mpq").read_bytes()
+    source = io.BytesIO(data)
+    archive = mpq.Archive.open_io(source, len(data), source_name="fixture.mpq")
+    expected = archive["overview.txt"].read()
+    stream = archive.open_stream("overview.txt")
+    archive.close()
+    assert stream.read() == expected
+    stream.close()
+    assert not source.closed
+
+    mpqe_data = (FIXTURES / "mpq-v1-features.mpqe").read_bytes()
+    source = io.BytesIO(mpqe_data)
+    archive = mpq.Archive.open_mpqe_io(
+        source, len(mpqe_data), b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001", source_name="fixture.mpqe"
+    )
+    stream = archive.open_stream("overview.txt")
+    expected = archive["overview.txt"].read()
+    archive.close()
+    assert stream.read() == expected
+    stream.close()
+    assert not source.closed
+
+
+def test_custom_io_short_and_failing_reads():
+    """Short reads and source exceptions become the binding's normal read error."""
+    data = (FIXTURES / "mpq-v1-features.mpq").read_bytes()
+
+    class ShortSource(io.BytesIO):
+        def read(self, size=-1):
+            return super().read(max(0, size - 1))
+
+    class FailingSource(io.BytesIO):
+        def read(self, size=-1):
+            raise OSError("read failure")
+
+    with pytest.raises(mpq.LibmpqIOError):
+        mpq.Archive.open_io(ShortSource(data), len(data))
+    with pytest.raises(mpq.LibmpqIOError):
+        mpq.Archive.open_io(FailingSource(data), len(data))
+
+
+def test_custom_io_shared_source_serializes_positional_reads():
+    """Streams derived from one archive cannot race seek/read/restore operations."""
+    data = (FIXTURES / "mpq-v1-features.mpq").read_bytes()
+    source = io.BytesIO(data)
+    with mpq.Archive.open_io(source, len(data)) as archive:
+        expected = archive["overview.txt"].read()
+        with archive.open_stream("overview.txt") as first, archive.open_stream("overview.txt") as second:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                actual = list(executor.map(lambda stream: stream.read(), (first, second)))
+    assert actual == [expected, expected]
+
+
+def test_custom_io_source_is_released_after_last_derived_handle():
+    """Closed wrappers do not retain a caller source after its final stream closes."""
+    source = io.BytesIO((FIXTURES / "mpq-v1-features.mpq").read_bytes())
+    reference = weakref.ref(source)
+    archive = mpq.Archive.open_io(source, source.getbuffer().nbytes)
+    stream = archive.open_stream("overview.txt")
+    del source
+    archive.close()
+    gc.collect()
+    assert reference() is not None
+    stream.close()
+    gc.collect()
+    assert reference() is None
+
+
+def test_weak_signature(tmp_path):
+    """Test-only RSA key, round trip, and independent integer verification."""
+    public = WEAK_PUBLIC_KEY
+    private = WEAK_PRIVATE_KEY
+    path = tmp_path / "signed.mpq"
+    with mpq.Writer(path, max_files=8, flags=mpq.ARCHIVE_CREATE_LISTFILE,
+                    attributes=mpq.ATTRIBUTE_MD5 | mpq.ATTRIBUTE_CRC32) as writer:
+        writer.sign(private)
+        writer.add("payload", b"signature binding test")
+    with mpq.Archive(path) as archive:
+        assert archive.signatures() == mpq.SIGNATURE_WEAK
+        assert archive.verify(public) == 0
+        with pytest.raises(mpq.LibmpqError):
+            archive.verify(public[:-1])
+        offset = archive["(signature)"].offset
+    data = bytearray(path.read_bytes())
+    signature = int.from_bytes(data[offset + 8:offset + 72], "little")
+    data[offset:offset + 72] = bytes(72)
+    digest = hashlib.md5(data).digest()
+    expected = b"\0\1" + b"\xff" * 27 + b"\0" + bytes.fromhex("3020300c06082a864886f70d020505000410") + digest
+    assert pow(signature, int.from_bytes(public[64:], "big"),
+               int.from_bytes(public[:64], "big")).to_bytes(64, "big") == expected
+    data = bytearray(path.read_bytes())
+    data[offset + 8] ^= 1
+    path.write_bytes(data)
+    with mpq.Archive(path) as archive:
+        assert archive.verify(public) == mpq.SIGNATURE_WEAK
+
+
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO])
+def test_strong_signature_round_trip(tmp_path, version):
+    """Writer strong signing emits a plain NGIS trailer that verifies after reopening."""
+    path = tmp_path / f"strong-v{version}.mpq"
+    with mpq.Writer(path, version=version, max_files=8) as writer:
+        writer.sign(STRONG_PRIVATE_KEY, signature_type=mpq.SIGNATURE_STRONG)
+        writer.add("payload", b"strong signature binding test")
+    with mpq.Archive(path) as archive:
+        assert archive.signatures() == mpq.SIGNATURE_STRONG
+        assert archive.verify(STRONG_PUBLIC_KEY, signature_type=mpq.SIGNATURE_STRONG) == 0
 
 
 @pytest.mark.parametrize("layout,size,fields", [
@@ -285,7 +806,7 @@ def test_creation_streaming_compression_clone_and_blocks(tmp_path):
     mpq.VERIFY_FILE_CRC32 | mpq.VERIFY_FILE_MD5,
 ])
 def test_explicit_verification_mismatches(tmp_path, corrupt):
-    """Mismatches use requested-check bits, not exceptions or implicit read failures."""
+    """Explicit mismatches stay bit-based; complete reads reject bad metadata."""
     path = tmp_path / "verify.mpq"
     payload = b"verification payload\n" * 100
     crc = zlib.crc32(payload) ^ bool(corrupt & mpq.VERIFY_FILE_CRC32)
@@ -302,7 +823,11 @@ def test_explicit_verification_mismatches(tmp_path, corrupt):
             mismatches = entry.verify(request)
             assert mismatches == (request & corrupt)
             assert mismatches & ~request == 0
-        assert entry.read() == payload
+        if corrupt:
+            with pytest.raises(mpq.LibmpqIOError):
+                entry.read()
+        else:
+            assert entry.read() == payload
 
 
 def test_errors_and_lifecycle(tmp_path):

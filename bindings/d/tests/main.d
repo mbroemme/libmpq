@@ -10,7 +10,7 @@
 /** End-to-end D binding tests using deterministic native archives. */
 module libmpq.d_tests;
 
-import std.file : remove, write;
+import std.file : exists, mkdir, read, remove, rename, rmdir, write;
 import std.path : buildPath;
 import std.process : environment;
 import libmpq.mpq;
@@ -41,7 +41,44 @@ private string temporaryArchive(string suffix) {
     return path;
 }
 
+private class MemorySource : MpqSource {
+    private ubyte[] data;
+    private bool fail;
+
+    this(ubyte[] data, bool fail = false) {
+        this.data = data;
+        this.fail = fail;
+    }
+
+    ulong size() { return data.length; }
+
+    void readAt(ulong offset, ubyte[] buffer) {
+        if (fail || offset > data.length || buffer.length > data.length - offset)
+            throw new Exception("source read failure");
+        buffer[] = data[offset .. offset + buffer.length];
+    }
+}
+
+private const(ubyte)[] weakPublicKey() {
+    return cast(const(ubyte)[]) x"a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001";
+}
+
+private const(ubyte)[] weakPrivateKey() {
+    return cast(const(ubyte)[]) x"a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a748315364c0c92a1a284b2ae77d5d49adea3bad7bafa639710661d443c0ad882f6c8d6787affd7f68145217cde42cf4dc2acb0ca2aeca535baf894084e590d719";
+}
+
 private void testVersionAndErrors() {
+    auto publicKey = weakPublicKey();
+    auto privateKey = weakPrivateKey();
+    auto signaturePath = temporaryArchive("signature");
+    scope(exit) remove(signaturePath);
+    auto signedArchive = Archive.create(signaturePath, ArchiveCreateOptions.v1());
+    signedArchive.sign(privateKey);
+    signedArchive.close();
+    auto verifiedArchive = new Archive(signaturePath);
+    scope(exit) verifiedArchive.close();
+    assert(verifiedArchive.signatures() == SIGNATURE_WEAK);
+    assert(verifiedArchive.verify(publicKey) == 0);
     static assert(mpq_archive_create_options_s.sizeof == 20);
     assert(Mpq.version_().length > 0);
     assert(Mpq.strerror(ERROR_OPEN).length > 0);
@@ -141,6 +178,19 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
                               0x58, 0xaa, 0xd8, 0x3c, 0x8c, 0x14, 0x97, 0x8e]);
     assert(!attributes.patchBit);
     assert(reopened.file("compressed.txt").read() == repetitive);
+    auto streamArchive = Archive.open(path);
+    auto memberStream = streamArchive.openStream("hello.txt");
+    assert(memberStream.size() == payload.length);
+    ubyte[4] first;
+    assert(memberStream.read(first[]) == first.length);
+    assert(first[] == payload[0 .. first.length]);
+    memberStream.seek(-1, SeekOrigin.end);
+    assert(memberStream.tell() == payload.length - 1);
+    streamArchive.close();
+    ubyte[1] last;
+    assert(memberStream.read(last[]) == 1 && last[0] == payload[$ - 1]);
+    memberStream.close();
+    memberStream.close();
     if (archiveVersion == ARCHIVE_VERSION_TWO)
         assert(reopened.file("lzma.txt").read() == repetitive);
     assert(reopened.file("source.txt").read() == cast(const(ubyte)[])"path payload");
@@ -170,6 +220,57 @@ private void testFailures() {
     remove(path);
 }
 
+private ubyte[] strongPublicKey() {
+    enum modulus = "b76f7dc7cdd3a083b2e52f39a5b7d58f181ab7bc03c1eaa0931744f0218bf74397b68481776a3f49f7b9a7ea08abf1c3a9802b54ee75661190e521453f6e125cdaca5d4b5cb52c84a158f1bb1b51bb9138acc55b45a083d3dde6e9e9cc4cb03adf4dda27a4a673993ebddfefd06e7c8c976387df92ba92d6392b9baf1a40f7b39d3c0ad1a4e2d685b46caea30863c9055d8e0a151d2e5adf5b79c69cc849c8b879ecc53be1207334d60b4194583b44129f272fe4790570ba530df485e2188932d79abb5b3b8713fd2d16de821048328e9ae93da8de983519033806fbd55591ebf5542641af669ad73e7c0f01b2dea45040f6658d2c6ca0f55f8d91c482f81617";
+    auto result = new ubyte[](512);
+    foreach (i; 0 .. 256) {
+        immutable high = modulus[i * 2] <= '9' ? modulus[i * 2] - '0' : modulus[i * 2] - 'a' + 10;
+        immutable low = modulus[i * 2 + 1] <= '9' ? modulus[i * 2 + 1] - '0' : modulus[i * 2 + 1] - 'a' + 10;
+        result[i] = cast(ubyte)((high << 4) | low);
+    }
+    result[509] = 1;
+    result[510] = 0;
+    result[511] = 1;
+    return result;
+}
+
+private ubyte[] strongPrivateKey() {
+    enum exponent = "14c9759f7c1ba1f24ab0de0bd253bac7b470e7fbf911088844783bea5a62da150c24356fd670712b98a9aea03ecb52b7b18597637b2cf7f16afcb6d5cf67a727b9437abf078a75b907450fb4fc56396dd8d650a71484d4163641eca554997c29afbf201c4df444354c29882ef797b85580f259260f77efc686eeacd31da3d9c337897433f8ef833890a04d55cbfc53f2dd8f96bd9b93e28fc6f022786b36e51de38ec0d5d41aba3eed9647831fb16fcbc3b16eaca91e60894aa772b02b22a3ffb7042e52531163d089209df6412098613ef59664ed70884e33f3e3056ccfb911bcc04d2c73142996946d88be0daa29aafa1bab3d10ff4d52295880c8fad6d641";
+    auto result = strongPublicKey();
+    foreach (i; 0 .. 256) {
+        immutable high = exponent[i * 2] <= '9' ? exponent[i * 2] - '0' : exponent[i * 2] - 'a' + 10;
+        immutable low = exponent[i * 2 + 1] <= '9' ? exponent[i * 2 + 1] - '0' : exponent[i * 2 + 1] - 'a' + 10;
+        result[256 + i] = cast(ubyte)((high << 4) | low);
+    }
+    return result;
+}
+
+/** Exercise the strong selector with the canonical feature fixture and test key. */
+private void testStrongSignature() {
+    auto root = buildPath(environment.get("LIBMPQ_SOURCE_DIR", "."), "tests", "fixtures");
+    auto publicKey = strongPublicKey();
+    assert(publicKey.length == 512);
+    auto archive = Archive.open(buildPath(root, "mpq-v1-features.mpq"));
+    scope(exit) archive.close();
+    assert(archive.signatures() == (SIGNATURE_WEAK | SIGNATURE_STRONG),
+           "canonical strong fixture detection");
+    assert(archive.verify(publicKey, SIGNATURE_STRONG) == 0,
+           "canonical strong fixture verification");
+}
+
+private void testStrongSigning() {
+    auto path = temporaryArchive("strong-writer");
+    scope(exit) remove(path);
+    auto archive = Archive.create(path, ArchiveCreateOptions.v2());
+    archive.sign(strongPrivateKey(), SIGNATURE_STRONG);
+    archive.add("payload", cast(const(ubyte)[])"D strong signing");
+    archive.close();
+    auto reopened = Archive.open(path);
+    scope(exit) reopened.close();
+    assert(reopened.signatures() == SIGNATURE_STRONG);
+    assert(reopened.verify(strongPublicKey(), SIGNATURE_STRONG) == 0);
+}
+
 private void testFixture() {
     auto root = environment.get("LIBMPQ_SOURCE_DIR", ".");
     auto path = buildPath(root, "tests", "fixtures", "mpq-v1-features.mpq");
@@ -181,6 +282,15 @@ private void testFixture() {
     assert(archive.file("(attributes)").verify(VERIFY_FILE_MD5) ==
            VERIFY_FILE_MD5);
     assert(archive.fileNumber(Mpq.fileHash("(listfile)")) == listfile.no());
+    auto encryptedExpected = archive.file("encrypted-compress.txt").read();
+    auto encrypted = archive.openStream("encrypted-compress.txt");
+    ubyte[] encryptedActual = new ubyte[](encryptedExpected.length);
+    assert(encrypted.read(encryptedActual) == encryptedActual.length);
+    assert(encryptedActual == encryptedExpected);
+    encrypted.close();
+    auto numeric = archive.openStream(archive.fileNumber("overview.txt"));
+    assert(numeric.read(new ubyte[](64)) > 0);
+    numeric.close();
 }
 
 private void testMpqeFixture() {
@@ -193,6 +303,12 @@ private void testMpqeFixture() {
     assert(archive.version_() == 1);
     assert(archive.file("overview.txt").read().length > 0);
     assert(archive.file("overview.txt").verify() == 0);
+    auto stream = archive.openStream("overview.txt");
+    auto expected = archive.file("overview.txt").read();
+    archive.close();
+    ubyte[] output = new ubyte[](expected.length);
+    assert(stream.read(output) == output.length && output == expected);
+    stream.close();
 
     bool failed;
     try {
@@ -201,6 +317,39 @@ private void testMpqeFixture() {
         failed = error.code == ERROR_DECRYPT;
     }
     assert(failed);
+}
+
+private void testCustomSources() {
+    auto root = environment.get("LIBMPQ_SOURCE_DIR", ".");
+    auto fixtureRoot = buildPath(root, "tests", "fixtures");
+    auto raw = cast(ubyte[]) read(buildPath(fixtureRoot, "mpq-v1-features.mpq"));
+    auto archive = Archive.openSource(new MemorySource(raw), "fixture.mpq");
+    auto expected = archive.file("overview.txt").read();
+    auto stream = archive.openStream("overview.txt");
+    archive.close();
+    ubyte[] actual = new ubyte[](expected.length);
+    assert(stream.read(actual) == actual.length && actual == expected);
+    stream.close();
+
+    bool failed;
+    try {
+        Archive.openSource(new MemorySource(raw, true));
+    } catch (MPQException error) {
+        failed = error.code == ERROR_READ;
+    }
+    assert(failed);
+
+    auto mpqe = cast(ubyte[]) read(buildPath(fixtureRoot, "mpq-v1-features.mpqe"));
+    auto mpqeArchive = Archive.openMpqeSource(
+        new MemorySource(mpqe), cast(const(ubyte)[])"LIBMPQ-MPQE-TEST-AUTH-CODE-00001",
+        "fixture.mpqe"
+    );
+    auto mpqeExpected = mpqeArchive.file("overview.txt").read();
+    auto mpqeStream = mpqeArchive.openStream("overview.txt");
+    mpqeArchive.close();
+    ubyte[] mpqeActual = new ubyte[](mpqeExpected.length);
+    assert(mpqeStream.read(mpqeActual) == mpqeActual.length && mpqeActual == mpqeExpected);
+    mpqeStream.close();
 }
 
 /** Verify UTF-32LE fixture bytes without using host-native character encoding. */
@@ -252,13 +401,440 @@ private void testMpqeCreate() {
            cast(const(ubyte)[])"D MPQE writer regression\n");
 }
 
+private void testUpdate() {
+    auto path = temporaryArchive("update");
+    auto source = path ~ ".source";
+    scope(exit) { remove(path); remove(source); }
+    write(source, cast(const(ubyte)[])"path replacement");
+    auto archive = Archive.create(path, ArchiveCreateOptions.v1());
+    archive.add("data", cast(const(ubyte)[])"original");
+    archive.add("path", cast(const(ubyte)[])"old path");
+    archive.add("remove", cast(const(ubyte)[])"remove me");
+    archive.add("rename", cast(const(ubyte)[])"rename me");
+    archive.add("secret", cast(const(ubyte)[])"encrypted payload",
+                FileOptions.raw().encrypted());
+    archive.close();
+
+    auto update = Update.begin(path);
+    ubyte[] replacement = new ubyte[](9000);
+    replacement[] = cast(ubyte)'R';
+    update.replaceData("data", replacement,
+                       FileOptions.compressed(COMPRESSION_ZLIB, COMPRESSION_BZIP2));
+    update.replacePath("path", source, FileOptions.raw().encrypted());
+    update.remove("remove");
+    update.rename("rename", "renamed");
+    update.rename("secret", "secret-new");
+    auto before = Archive.open(path);
+    assert(before.file("data").read() == cast(const(ubyte)[])"original");
+    before.close();
+    update.commit();
+    auto after = Archive.open(path);
+    assert(after.file("data").read() == replacement);
+    assert(after.file("data").blockCompression(0) == COMPRESSION_ZLIB);
+    assert(after.file("data").blockCompression(1) == COMPRESSION_BZIP2);
+    auto pathStream = after.openStream("path");
+    ubyte[] pathBytes = new ubyte[](16);
+    assert(pathStream.read(pathBytes) == pathBytes.length);
+    assert(pathBytes == cast(const(ubyte)[])"path replacement");
+    pathStream.close();
+    assert(after.file("renamed").read() == cast(const(ubyte)[])"rename me");
+    auto secret = after.openStream("secret-new");
+    ubyte[] secretBytes = new ubyte[](17);
+    assert(secret.read(secretBytes) == secretBytes.length);
+    assert(secretBytes == cast(const(ubyte)[])"encrypted payload");
+    secret.close();
+    bool missing;
+    try { after.file("remove"); } catch (MPQException) { missing = true; }
+    assert(missing);
+    after.close();
+
+    bool closed;
+    try { update.abort(); } catch (MPQException error) {
+        closed = error.code == ERROR_NOT_INITIALIZED;
+    }
+    assert(closed);
+    update = Update.begin(path);
+    auto mismatched = FileOptions.raw();
+    mismatched.locale = 1;
+    bool rejected;
+    try { update.replaceData("data", cast(const(ubyte)[])"invalid", mismatched); }
+    catch (MPQException) { rejected = true; }
+    assert(rejected);
+    update.abort();
+    update = Update.begin(path);
+    update.replaceData("data", cast(const(ubyte)[])"rollback");
+    update.remove("path");
+    update.rename("renamed", "rollback-name");
+    update.close();
+    after = Archive.open(path);
+    assert(after.file("data").read() == replacement);
+    pathStream = after.openStream("path");
+    assert(pathStream.read(pathBytes) == pathBytes.length);
+    assert(pathBytes == cast(const(ubyte)[])"path replacement");
+    pathStream.close();
+    assert(after.file("renamed").read() == cast(const(ubyte)[])"rename me");
+    after.close();
+    update = Update.begin(path);
+    update.replaceData("data", cast(const(ubyte)[])"destructor rollback");
+    destroy(update);
+    after = Archive.open(path);
+    assert(after.file("data").read() == replacement);
+    after.close();
+    update = Update.begin(path);
+    auto external = path ~ ".external";
+    write(external, read(path));
+    rename(external, path);
+    bool conflict;
+    try { update.commit(); } catch (MPQException) { conflict = true; }
+    assert(conflict);
+    closed = false;
+    try { update.abort(); } catch (MPQException error) {
+        closed = error.code == ERROR_NOT_INITIALIZED;
+    }
+    assert(closed);
+}
+
+private void testMpqeUpdate() {
+    auto path = temporaryArchive("update.mpqe");
+    auto source = path ~ ".source";
+    scope(exit) { remove(path); remove(source); }
+    immutable ubyte[] authCode =
+        cast(immutable(ubyte)[])"LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+    write(source, cast(const(ubyte)[])"from path");
+    auto archive = Archive.createMpqe(path, authCode, ArchiveCreateOptions.v1());
+    archive.add("data", cast(const(ubyte)[])"original");
+    archive.add("path", cast(const(ubyte)[])"old path");
+    archive.add("remove", cast(const(ubyte)[])"remove me");
+    archive.add("secret", cast(const(ubyte)[])"encrypted payload",
+                FileOptions.raw().encrypted());
+    archive.close();
+    auto original = read(path);
+
+    bool rejected;
+    try { auto unused = Update.begin(path); } catch (MPQException) { rejected = true; }
+    assert(rejected);
+    foreach (code; [cast(const(ubyte)[])null, authCode[0 .. 31],
+                    cast(const(ubyte)[])"XIBMPQ-MPQE-TEST-AUTH-CODE-00001"]) {
+        rejected = false;
+        try { auto unused = Update.beginMpqe(path, code); }
+        catch (MPQException) { rejected = true; }
+        assert(rejected);
+    }
+    assert(read(path) == original);
+
+    auto update = Update.beginMpqe(path, authCode);
+    update.replaceData("data", cast(const(ubyte)[])"rollback");
+    update.close();
+    assert(read(path) == original);
+    update = Update.beginMpqe(path, authCode);
+    update.remove("path");
+    destroy(update);
+    assert(read(path) == original);
+
+    ubyte[] borrowed = authCode.dup;
+    update = Update.beginMpqe(path, borrowed);
+    borrowed[] = 0;
+    update.replaceData("data", cast(const(ubyte)[])"new data");
+    update.replacePath("path", source);
+    update.remove("remove");
+    update.rename("secret", "secret-new");
+    auto before = Archive.openMpqe(path, authCode, 0);
+    assert(before.file("data").read() == cast(const(ubyte)[])"original");
+    before.close();
+    update.commit();
+    bool consumed;
+    try { update.abort(); } catch (MPQException error) {
+        consumed = error.code == ERROR_NOT_INITIALIZED;
+    }
+    assert(consumed);
+    auto after = Archive.openMpqe(path, authCode, 0);
+    assert(after.file("data").read() == cast(const(ubyte)[])"new data");
+    assert(after.file("path").read() == cast(const(ubyte)[])"from path");
+    auto secret = after.openStream("secret-new");
+    ubyte[] secretBytes = new ubyte[](17);
+    assert(secret.read(secretBytes) == secretBytes.length);
+    assert(secretBytes == cast(const(ubyte)[])"encrypted payload");
+    secret.close();
+    bool missing;
+    try { after.file("remove"); } catch (MPQException) { missing = true; }
+    assert(missing);
+    after.close();
+}
+
+private void testUpdateLocalizedDefaults() {
+    auto path = temporaryArchive("localized");
+    auto source = path ~ ".source";
+    scope(exit) { remove(path); remove(source); }
+    write(source, cast(const(ubyte)[])"from path");
+    auto createOptions = ArchiveCreateOptions.v1();
+    createOptions.maxFiles = 8;
+    auto identity = FileOptions.raw();
+    identity.locale = 0x409;
+    identity.platform = 1;
+    auto archive = Archive.create(path, createOptions);
+    archive.add("localized", cast(const(ubyte)[])"original", identity);
+    archive.close();
+
+    auto update = Update.begin(path);
+    update.replaceData("localized", cast(const(ubyte)[])"new data");
+    update.commit();
+    archive = Archive.open(path);
+    assert(archive.file("localized").read() == cast(const(ubyte)[])"new data");
+    archive.close();
+
+    update = Update.begin(path);
+    bool mismatch;
+    try { update.replaceData("localized", cast(const(ubyte)[])"wrong", FileOptions.raw()); }
+    catch (MPQException error) { mismatch = error.code == ERROR_FORMAT; }
+    assert(mismatch);
+    mismatch = false;
+    try { update.replacePath("localized", source, FileOptions.raw()); }
+    catch (MPQException error) { mismatch = error.code == ERROR_FORMAT; }
+    assert(mismatch);
+    update.replaceData("localized", cast(const(ubyte)[])"matching", identity);
+    update.commit();
+
+    update = Update.begin(path);
+    update.replacePath("localized", source);
+    update.commit();
+    archive = Archive.open(path);
+    assert(archive.file("localized").read() == cast(const(ubyte)[])"from path");
+    archive.close();
+    update = Update.begin(path);
+    update.replacePath("localized", source, identity);
+    update.abort();
+}
+
+private void testPatchCreation() {
+    auto base = temporaryArchive("patch-base");
+    auto output = temporaryArchive("patch-output");
+    auto source = base ~ ".source";
+    scope(exit) {
+        remove(base);
+        remove(source);
+        if (exists(output)) remove(output);
+    }
+    write(source, cast(const(ubyte)[])"from path");
+    auto identity = FileOptions.raw();
+    identity.locale = 0x409;
+    identity.platform = 1;
+    auto archive = Archive.create(base, ArchiveCreateOptions.v1());
+    archive.add("data", cast(const(ubyte)[])"original", identity);
+    archive.add("path", cast(const(ubyte)[])"old path", identity);
+    archive.add("remove", cast(const(ubyte)[])"remove me");
+    archive.close();
+
+    auto patch = Patch.begin(base, output);
+    bool mismatch;
+    try { patch.replaceData("data", cast(const(ubyte)[])"wrong", FileOptions.raw()); }
+    catch (MPQException error) { mismatch = error.code == ERROR_FORMAT; }
+    assert(mismatch);
+    mismatch = false;
+    try { patch.replacePath("path", source, FileOptions.raw()); }
+    catch (MPQException error) { mismatch = error.code == ERROR_FORMAT; }
+    assert(mismatch);
+    bool missing;
+    try { patch.remove("missing"); } catch (MPQException) { missing = true; }
+    assert(missing);
+    patch.replaceData("data", cast(const(ubyte)[])"replacement");
+    patch.replacePath("path", source, identity);
+    patch.remove("remove");
+    assert(!exists(output));
+    patch.finish();
+    assert(exists(output));
+    archive = Archive.open(base);
+    assert(archive.file("data").read() == cast(const(ubyte)[])"original");
+    archive.close();
+    auto generated = Archive.open(output);
+    assert(generated.file("data").no() >= 0);
+    assert(generated.file("path").no() >= 0);
+    assert(generated.file("remove").no() >= 0);
+    generated.close();
+    bool consumed;
+    try { patch.abort(); } catch (MPQException error) {
+        consumed = error.code == ERROR_NOT_INITIALIZED;
+    }
+    assert(consumed);
+
+    remove(output);
+    patch = Patch.begin(base, output);
+    patch.replacePath("path", source);
+    patch.close();
+    assert(!exists(output));
+    patch = Patch.begin(base, output);
+    patch.replaceData("data", cast(const(ubyte)[])"explicit abort");
+    patch.abort();
+    assert(!exists(output));
+    consumed = false;
+    try { patch.finish(); } catch (MPQException error) {
+        consumed = error.code == ERROR_NOT_INITIALIZED;
+    }
+    assert(consumed);
+    patch = Patch.begin(base, output);
+    patch.replaceData("data", cast(const(ubyte)[])"aborted");
+    destroy(patch);
+    assert(!exists(output));
+    patch = Patch.begin(base, output);
+    mkdir(output);
+    bool failed;
+    try { patch.finish(); } catch (MPQException) { failed = true; }
+    assert(failed);
+    consumed = false;
+    try { patch.remove("data"); } catch (MPQException error) {
+        consumed = error.code == ERROR_NOT_INITIALIZED;
+    }
+    assert(consumed);
+    rmdir(output);
+}
+
+private void testMpqePatchCreation() {
+    auto base = temporaryArchive("mpqe-patch-base");
+    auto output = temporaryArchive("mpqe-patch-output");
+    immutable ubyte[] authCode =
+        cast(immutable(ubyte)[])"LIBMPQ-MPQE-PATCH-AUTH-CODE-00002";
+    scope(exit) {
+        remove(base);
+        if (exists(output)) remove(output);
+    }
+    auto archive = Archive.create(base, ArchiveCreateOptions.v1());
+    archive.add("replace", cast(const(ubyte)[])"old");
+    archive.add("remove", cast(const(ubyte)[])"old");
+    archive.close();
+
+    bool invalid;
+    try { Patch.beginMpqe(base, output, null); }
+    catch (MPQException error) { invalid = error.code == ERROR_DECRYPT; }
+    assert(invalid);
+    invalid = false;
+    try { Patch.beginMpqe(base, output, authCode[0 .. 31]); }
+    catch (MPQException error) { invalid = error.code == ERROR_DECRYPT; }
+    assert(invalid && !exists(output));
+
+    auto patch = Patch.beginMpqe(base, output, authCode);
+    patch.replaceData("replace", cast(const(ubyte)[])"new");
+    patch.remove("remove");
+    assert(!exists(output));
+    patch.finish();
+    assert(exists(output));
+    bool consumed;
+    try { patch.abort(); } catch (MPQException error) {
+        consumed = error.code == ERROR_NOT_INITIALIZED;
+    }
+    assert(consumed);
+    bool ordinaryOpened;
+    try { auto ordinary = Archive.open(output); ordinaryOpened = true; ordinary.close(); }
+    catch (MPQException) { }
+    assert(!ordinaryOpened);
+    ubyte[] wrong = authCode.dup;
+    wrong[0] ^= 1;
+    bool wrongOpened;
+    try { auto incorrect = Archive.openMpqe(output, wrong, 0);
+          wrongOpened = true; incorrect.close(); }
+    catch (MPQException) { }
+    assert(!wrongOpened);
+    auto stored = Archive.openMpqe(output, authCode, 0);
+    assert(stored.file("replace").no() >= 0);
+    assert(stored.file("remove").no() >= 0);
+    stored.close();
+
+    remove(output);
+    patch = Patch.beginMpqe(base, output, authCode);
+    patch.replaceData("replace", cast(const(ubyte)[])"discarded");
+    destroy(patch);
+    assert(!exists(output));
+    patch = Patch.beginMpqe(base, output, authCode);
+    patch.remove("remove");
+    patch.abort();
+    assert(!exists(output));
+    consumed = false;
+    try { patch.finish(); } catch (MPQException error) {
+        consumed = error.code == ERROR_NOT_INITIALIZED;
+    }
+    assert(consumed);
+}
+
+private void testPatchSigning() {
+    auto base = temporaryArchive("signed-patch-base");
+    auto output = temporaryArchive("signed-patch-output");
+    immutable ubyte[] authCode =
+        cast(immutable(ubyte)[])"LIBMPQ-MPQE-PATCH-AUTH-CODE-00002";
+    scope(exit) {
+        remove(base);
+        if (exists(output)) remove(output);
+    }
+    auto archive = Archive.create(base, ArchiveCreateOptions.v1());
+    archive.add("data", cast(const(ubyte)[])"original");
+    archive.close();
+
+    foreach (types; [SIGNATURE_WEAK, SIGNATURE_STRONG,
+                     SIGNATURE_WEAK | SIGNATURE_STRONG]) {
+        auto patch = Patch.begin(base, output);
+        bool invalid;
+        try { patch.sign(cast(const(ubyte)[])"invalid"); }
+        catch (MPQException error) { invalid = error.code == ERROR_FORMAT; }
+        assert(invalid);
+        if (types & SIGNATURE_WEAK) {
+            patch.sign(weakPrivateKey());
+            bool duplicate;
+            try { patch.sign(weakPrivateKey()); }
+            catch (MPQException error) { duplicate = error.code == ERROR_FORMAT; }
+            assert(duplicate);
+        }
+        if (types & SIGNATURE_STRONG)
+            patch.sign(strongPrivateKey(), SIGNATURE_STRONG);
+        patch.replaceData("data", cast(const(ubyte)[])"replacement");
+        assert(!exists(output));
+        patch.finish();
+        auto stored = Archive.open(output);
+        assert(stored.signatures() == types);
+        if (types & SIGNATURE_WEAK)
+            assert(stored.verify(weakPublicKey()) == 0);
+        if (types & SIGNATURE_STRONG)
+            assert(stored.verify(strongPublicKey(), SIGNATURE_STRONG) == 0);
+        stored.close();
+        bool consumed;
+        try { patch.sign(weakPrivateKey()); }
+        catch (MPQException error) { consumed = error.code == ERROR_NOT_INITIALIZED; }
+        assert(consumed);
+        remove(output);
+    }
+
+    auto patch = Patch.beginMpqe(base, output, authCode);
+    bool rejected;
+    try { patch.sign(strongPrivateKey(), SIGNATURE_STRONG); }
+    catch (MPQException error) { rejected = error.code == ERROR_FORMAT; }
+    assert(rejected);
+    patch.sign(weakPrivateKey());
+    patch.replaceData("data", cast(const(ubyte)[])"replacement");
+    patch.finish();
+    auto stored = Archive.openMpqe(output, authCode, 0);
+    assert(stored.signatures() == SIGNATURE_WEAK);
+    assert(stored.verify(weakPublicKey()) == 0);
+    stored.close();
+    remove(output);
+
+    patch = Patch.begin(base, output);
+    patch.sign(weakPrivateKey());
+    patch.abort();
+    assert(!exists(output));
+}
+
 void main() {
     testVersionAndErrors();
     testCreateReadAndMetadata(ARCHIVE_VERSION_ONE);
     testCreateReadAndMetadata(ARCHIVE_VERSION_TWO);
     testFixture();
+    testStrongSignature();
+    testStrongSigning();
     testMpqeFixture();
+    testCustomSources();
     testSparseFixtures();
     testMpqeCreate();
+    testUpdate();
+    testMpqeUpdate();
+    testUpdateLocalizedDefaults();
+    testPatchCreation();
+    testMpqePatchCreation();
+    testPatchSigning();
     testFailures();
 }

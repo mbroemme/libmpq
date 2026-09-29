@@ -10,37 +10,46 @@
 .\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 .\" GNU Lesser General Public License for more details.
 .\"
-.\" You should have received a copy of the GNU Lesser General Public
-.\" License along with this manual; if not, see <https://www.gnu.org/licenses/>.
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
 .TH LIBMPQ__ARCHIVE_CLONE 3 2026-08-18 "The MoPaQ archive library"
 .SH NAME
 libmpq__archive_clone \- clone an MPQ archive for independent reading.
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__archive_clone("
-.BI "        mpq_archive_s **" "clone",
-.BI "        mpq_archive_s  *" "source"
+.BI "        mpq_archive_s **" "clone,"
+.BI "        mpq_archive_s *" "source"
 .BI ");"
 .fi
 .SH DESCRIPTION
-Call \fBlibmpq__archive_clone\fP() to reopen the backing path of an archive
-with an independent file stream, decoded metadata tables, and lazy block
-caches. A source handle may be closed after cloning succeeds, and each
-clone must be closed independently with \fBlibmpq__archive_close\fP().
+Call \fBlibmpq__archive_clone\fP() to create an independently parsed
+reader with separate metadata tables and lazy block caches. A filesystem
+source is reopened; a custom-I/O backend is cloned while its callback
+context remains caller-owned. The original archive handle may be closed
+after cloning, and each clone must be closed independently with
+\fBlibmpq__archive_close\fP().
 .PP
-Cloning is independent-handle support, not snapshot semantics. The original
-path must remain readable and unchanged while clones are created or used.
+Cloning is independent-handle support, not snapshot semantics. The backing
+source must remain readable and unchanged while clones are created or used.
 The source handle itself remains unsafe for concurrent operations; create one
 clone per worker instead.
 .SH RETURN VALUE
 On success, *\fIclone\fP is set to a new handle and zero is returned. On
 failure, *\fIclone\fP is set to NULL and the open, seek, read, format, or
 allocation error is returned.
+.SH ERRORS
+NULL required arguments or a changed source-file identity return
+\fBLIBMPQ_ERROR_EXIST\fP. Source reopening, parsing, seek, read, and
+allocation errors may also propagate.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__archive_open (3),
+.BR libmpq__archive_open_io (3),
+.BR libmpq__archive_open_mpqe (3),
+.BR libmpq__archive_open_mpqe_io (3),
 .BR libmpq__archive_close (3)
 .SH AUTHOR
 The libmpq project is maintained by

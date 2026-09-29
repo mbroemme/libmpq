@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+# Copyright (c) 2026-2026 Maik Broemme <mbroemme@libmpq.org>
 #
 # This file is free software; you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License as published
-# by the Free Software Foundation; either version 2.1 of the License, or
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation; either version 2.1 of the License, or
 # (at your option) any later version.
+#
+# This file is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this file; if not, see <https://www.gnu.org/licenses/>.
 
 set -euo pipefail
 
@@ -25,10 +33,11 @@ search_c_sources()
 
 filter_identifier_exceptions()
 {
+	# enGB is a literal patch namespace in the reader tests, not an identifier.
 	if command -v rg >/dev/null 2>&1; then
-		rg -v 'cFileName|dwVolumeSerialNumber|nFileIndexHigh|nFileIndexLow|lpSecurityDescriptor|uInt|inflateInit|inflateEnd|deflateInit|deflateEnd|LLVMFuzzerInitialize|LLVMFuzzerTestOneInput|MPQ\\x1A'
+		rg -v 'cFileName|dwFileAttributes|dwVolumeSerialNumber|nFileIndexHigh|nFileIndexLow|lpSecurityDescriptor|uInt|inflateInit|inflateEnd|deflateInit|deflateEnd|LLVMFuzzerInitialize|LLVMFuzzerTestOneInput|MPQ\\x1A|"enGB'
 	else
-		grep -E -v 'cFileName|dwVolumeSerialNumber|nFileIndexHigh|nFileIndexLow|lpSecurityDescriptor|uInt|inflateInit|inflateEnd|deflateInit|deflateEnd|LLVMFuzzerInitialize|LLVMFuzzerTestOneInput|MPQ\\x1A'
+		grep -E -v 'cFileName|dwFileAttributes|dwVolumeSerialNumber|nFileIndexHigh|nFileIndexLow|lpSecurityDescriptor|uInt|inflateInit|inflateEnd|deflateInit|deflateEnd|LLVMFuzzerInitialize|LLVMFuzzerTestOneInput|MPQ\\x1A|"enGB'
 	fi
 }
 
