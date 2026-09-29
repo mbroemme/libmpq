@@ -20,9 +20,9 @@ libmpq__block_size_packed \- query the stored size of one data block
 .B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__block_size_packed("
-.BI "        mpq_archive_s *" "archive",
-.BI "        uint32_t       " "file_number",
-.BI "        uint32_t       " "block_number",
+.BI "        mpq_archive_s *" "archive,"
+.BI "        uint32_t " "file_number,"
+.BI "        uint32_t " "block_number,"
 .BI "        libmpq__off_t *" "packed_size"
 .BI ");"
 .fi
@@ -42,8 +42,10 @@ Use the unpacked size when allocating a buffer for libmpq__block_read().
 .SH RETURN VALUE
 Returns LIBMPQ_SUCCESS and stores the size in *packed_size on success.
 A non-NULL packed_size output is initialized to zero before validation and
-remains zero on failure. LIBMPQ_ERROR_EXIST indicates NULL required arguments or an
-invalid file/block index. LIBMPQ_ERROR_NOT_INITIALIZED indicates a writer
+remains zero on failure.
+.SH ERRORS
+LIBMPQ_ERROR_EXIST indicates NULL required arguments or an invalid
+file/block index. LIBMPQ_ERROR_NOT_INITIALIZED indicates a writer
 archive. Malformed offsets, out-of-range payloads, table I/O, decryption and
 allocation failures retain the existing reader's negative error codes.
 .SH SEE ALSO
@@ -53,3 +55,21 @@ allocation failures retain the existing reader's negative error codes.
 .BR libmpq__file_size_packed (3),
 .BR libmpq__block_read (3),
 .BR libmpq__block_verify (3)
+.SH AUTHOR
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

@@ -385,8 +385,8 @@ extern LIBMPQ_API const char *libmpq__version(void);
 /*
  * Translate a libmpq return code into a static diagnostic string.
  * The returned pointer is owned by the library and is safe to retain, but its
- * contents must not be modified or freed. Unknown codes produce a generic
- * diagnostic rather than causing an allocation or other side effect.
+ * contents must not be modified or freed. Unknown or unsupported codes
+ * return NULL without allocation or other side effects.
  */
 extern LIBMPQ_API const char *libmpq__strerror(int32_t return_code);
 
@@ -635,9 +635,10 @@ extern LIBMPQ_API int32_t libmpq__archive_add_path(
 
 /*
  * Clone an opened archive into an independent read handle.
- * The clone reopens and reparses the source so file positions, decoded tables,
- * and cached state are not shared with the original handle. Both handles are
- * independently closable, but the source must remain valid while cloning.
+ * The clone reopens a filesystem source or clones the custom source backend
+ * and reparses its tables, so decoded metadata and caches are independent.
+ * Custom-I/O callback context remains caller-owned. Both handles are
+ * independently closable; the backing source must remain valid.
  */
 extern LIBMPQ_API int32_t libmpq__archive_clone(mpq_archive_s **clone, mpq_archive_s *source);
 
@@ -650,19 +651,18 @@ extern LIBMPQ_API int32_t libmpq__archive_clone(mpq_archive_s **clone, mpq_archi
 extern LIBMPQ_API int32_t libmpq__archive_close(mpq_archive_s *mpq_archive);
 
 /*
- * Calculate the total stored size of all extractable file entries.
- * The result includes packed payload bytes as represented by the block table,
- * but excludes archive headers and table storage. The output pointer must be
- * valid and the handle must refer to an opened archive.
+ * Add the stored sizes of all extractable entries to *packed_size.
+ * The sizes include packed payload bytes but exclude headers and tables.
+ * Pass a valid opened archive and output pointer, initialized to zero when
+ * the total alone is required.
  */
 extern LIBMPQ_API int32_t
 libmpq__archive_size_packed(mpq_archive_s *mpq_archive, libmpq__off_t *packed_size);
 
 /*
- * Calculate the total logical size of all extractable file entries.
- * Sizes are summed after decompression and before any caller buffer limits are
- * applied. The function writes the result to unpacked_size and returns a
- * negative error for an invalid handle or output pointer.
+ * Add the logical sizes of all extractable entries to *unpacked_size.
+ * Pass a valid opened archive and output pointer, initialized to zero when
+ * the total alone is required.
  */
 extern LIBMPQ_API int32_t
 libmpq__archive_size_unpacked(mpq_archive_s *mpq_archive, libmpq__off_t *unpacked_size);
@@ -678,8 +678,7 @@ extern LIBMPQ_API int32_t libmpq__archive_offset(mpq_archive_s *mpq_archive, lib
 /*
  * Return the public MPQ format version of an opened archive.
  * The result identifies the supported v1 or v2 layout rather than the raw
- * on-disk version field. The output pointer must be valid and is unchanged on
- * failure.
+ * on-disk version field. Pass a valid opened archive and output pointer.
  */
 extern LIBMPQ_API int32_t libmpq__archive_version(mpq_archive_s *mpq_archive, uint32_t *version);
 

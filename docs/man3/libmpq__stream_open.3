@@ -19,10 +19,11 @@ libmpq__stream_open \- open a logical MPQ member stream by number.
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.B "int32_t libmpq__stream_open("
-.B "        mpq_archive_s *archive, uint32_t file_number,"
-.B "        mpq_stream_s **stream"
-.B ");"
+.BI "int32_t libmpq__stream_open("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        uint32_t " "file_number,"
+.BI "        mpq_stream_s **" "stream"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Open file number \fIfile_number\fP as a decoded logical member stream. The output
@@ -40,8 +41,14 @@ file, clone, allocation, or decoding error and leaves \fI*stream\fP NULL.
 \fBLIBMPQ_ERROR_EXIST\fP reports an invalid archive, output pointer, file
 number, or writer-mode archive.
 .SH SEE ALSO
-.BR libmpq__file_read (3),
+.BR libmpq (3),
 .BR libmpq__stream_open_name (3),
+.BR libmpq__stream_read (3),
+.BR libmpq__stream_seek (3),
+.BR libmpq__stream_tell (3),
+.BR libmpq__stream_size (3),
+.BR libmpq__stream_close (3),
+.BR libmpq__file_read (3),
 .BR libmpq__file_verify (3),
 .BR libmpq__archive_close (3)
 .SH AUTHOR

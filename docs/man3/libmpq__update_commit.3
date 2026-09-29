@@ -19,17 +19,28 @@ libmpq__update_commit \- publish a staged MPQ update
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__update_commit(mpq_update_s *update);"
+.BI "int32_t libmpq__update_commit(mpq_update_s *" "update" ");"
 .fi
 .SH DESCRIPTION
-Validates and atomically publishes the private working copy over the original filesystem file. Immediately before publication, libmpq performs a best-effort identity recheck. This is not a lock or a conditional replacement primitive. The handle is consumed on both success and failure; do not use it again. A no-op transaction preserves the complete original container byte-for-byte.
+Validates and atomically publishes the private working copy over the original
+filesystem file. Immediately before publication, libmpq performs a best-effort
+identity recheck. This is not a lock or a conditional replacement primitive.
+The handle is consumed on both success and failure; do not use it again. A
+no-op transaction preserves the complete original container byte-for-byte.
 .SH RETURN VALUE
 Returns \fBLIBMPQ_SUCCESS\fP on success, or a negative libmpq error.
 .SH ERRORS
-A failure before publication leaves the original file untouched. A negative LIBMPQ_ERROR_* result may report identity conflict, validation, flush, close, or publication failure.
+A failure before publication leaves the original file untouched. A negative
+LIBMPQ_ERROR_* result may report identity conflict, validation, flush, close,
+or publication failure.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__update_begin (3),
 .BR libmpq__update_begin_mpqe (3),
+.BR libmpq__update_replace_data (3),
+.BR libmpq__update_replace_path (3),
+.BR libmpq__update_remove (3),
+.BR libmpq__update_rename (3),
 .BR libmpq__update_abort (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.

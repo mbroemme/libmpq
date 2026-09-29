@@ -19,20 +19,33 @@ libmpq__update_rename \- rename a named member in a staged MPQ update
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.B "int32_t libmpq__update_rename("
-.B "        mpq_update_s *update, const char *old_filename,"
-.B "        const char *new_filename"
-.B ");"
+.BI "int32_t libmpq__update_rename("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "old_filename,"
+.BI "        const char *" "new_filename"
+.BI ");"
 .fi
 .SH DESCRIPTION
-Renames an existing member in the private working copy. The new name must not already exist. Encrypted members are decoded under the old name and re-encoded under the new name so filename-derived keys remain correct. The original archive remains unchanged until commit.
+Renames an existing member in the private working copy. The new name must not
+already exist. Encrypted members are decoded under the old name and re-encoded
+under the new name so filename-derived keys remain correct. The original
+archive remains unchanged until commit.
 .SH RETURN VALUE
 Returns \fBLIBMPQ_SUCCESS\fP on success, or a negative libmpq error.
 .SH ERRORS
-A missing old name or existing new name returns LIBMPQ_ERROR_EXIST. Renaming an encrypted member whose physical block is shared by another name returns LIBMPQ_ERROR_FORMAT. Decryption, allocation, encoding, and I/O errors may also be returned.
+A missing old name or existing new name returns LIBMPQ_ERROR_EXIST. Renaming
+an encrypted member whose physical block is shared by another name returns
+LIBMPQ_ERROR_FORMAT. Decryption, allocation, encoding, and I/O errors may also
+be returned.
 .SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__update_begin (3),
+.BR libmpq__update_begin_mpqe (3),
+.BR libmpq__update_replace_data (3),
+.BR libmpq__update_replace_path (3),
 .BR libmpq__update_remove (3),
-.BR libmpq__update_commit (3)
+.BR libmpq__update_commit (3),
+.BR libmpq__update_abort (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.
 .SH REPORTING BUGS

@@ -17,13 +17,12 @@
 libmpq__file_size_unpacked \- return the unpacked size of one file.
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__file_size_unpacked("
-.BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        uint32_t        " "file_number",
-.BI "        libmpq__off_t  *" "unpacked_size"
+.BI "        mpq_archive_s *" "mpq_archive,"
+.BI "        uint32_t " "file_number,"
+.BI "        libmpq__off_t *" "unpacked_size"
 .BI ");"
 .fi
 .SH DESCRIPTION
@@ -35,10 +34,12 @@ The first argument is an archive handle opened by
 \fIfile_number\fP in \fIunpacked_size\fP.
 .SH RETURN VALUE
 On success, a zero is returned and on error one of the following constants.
+.SH ERRORS
 .TP
 .B LIBMPQ_ERROR_EXIST
 The file does not exist in the archive.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__archive_size_unpacked (3)
 .SH AUTHOR
 The libmpq project is maintained by

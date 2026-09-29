@@ -17,15 +17,14 @@
 libmpq__archive_open_mpqe \- open an MPQE-wrapped MPQ archive for reading.
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__archive_open_mpqe("
 .BI "        mpq_archive_s **" "mpq_archive,"
-.BI "        const char     *" "mpq_filename,"
-.BI "        libmpq__off_t   " "archive_offset,"
-.BI "        const uint8_t  *" "auth_code,"
-.BI "        size_t          " "auth_code_size"
+.BI "        const char *" "mpq_filename,"
+.BI "        libmpq__off_t " "archive_offset,"
+.BI "        const uint8_t *" "auth_code,"
+.BI "        size_t " "auth_code_size"
 .BI ");"
 .fi
 .SH DESCRIPTION
@@ -49,13 +48,17 @@ On success, *\fImpq_archive\fP is set to a new \fBmpq_archive_s\fP and zero
 is returned. On failure, the output handle is set to NULL. In addition to the
 errors documented for
 \fBlibmpq__archive_open\fP(), the function returns the following error.
+.SH ERRORS
 .TP
 .B LIBMPQ_ERROR_DECRYPT
 \fIauth_code\fP is NULL or shorter than 32 bytes.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__archive_open (3),
-.BR libmpq__archive_close (3),
-.BR libmpq__archive_clone (3)
+.BR libmpq__archive_open_io (3),
+.BR libmpq__archive_open_mpqe_io (3),
+.BR libmpq__archive_clone (3),
+.BR libmpq__archive_close (3)
 .SH AUTHOR
 The libmpq project is maintained by
 .B Maik Broemme <mbroemme@libmpq.org>.

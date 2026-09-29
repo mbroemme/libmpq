@@ -19,17 +19,26 @@ libmpq__patch_abort \- discard a staged patch archive
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__patch_abort(mpq_patch_s *patch);"
+.BI "int32_t libmpq__patch_abort(mpq_patch_s *" "patch" ");"
 .fi
 .SH DESCRIPTION
-Closes the staged patch writer and removes its unpublished temporary output. The base archive and destination patch path remain unchanged. This call consumes \fIpatch\fP whether it succeeds or fails; callers must not reuse the pointer.
+Closes the staged patch writer and removes its unpublished temporary output.
+The base archive and destination patch path remain unchanged. This call
+consumes \fIpatch\fP whether it succeeds or fails; callers must not reuse the
+pointer.
 .SH RETURN VALUE
 Returns \fBLIBMPQ_SUCCESS\fP or a negative libmpq error.
 .SH ERRORS
-A NULL handle returns LIBMPQ_ERROR_EXIST. Close or temporary-file cleanup errors may also propagate.
+A NULL handle returns LIBMPQ_ERROR_EXIST. Close or temporary-file cleanup
+errors may also propagate.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__patch_begin (3),
 .BR libmpq__patch_begin_mpqe (3),
+.BR libmpq__patch_sign (3),
+.BR libmpq__patch_replace_data (3),
+.BR libmpq__patch_replace_path (3),
+.BR libmpq__patch_remove (3),
 .BR libmpq__patch_finish (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.

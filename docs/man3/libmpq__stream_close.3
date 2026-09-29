@@ -18,7 +18,8 @@ libmpq__stream_close \- close and consume a logical MPQ member stream.
 .SH SYNOPSIS
 .nf
 .B #include <libmpq/mpq.h>
-.BI "int32_t libmpq__stream_close(mpq_stream_s *" stream ");"
+.sp
+.BI "int32_t libmpq__stream_close(mpq_stream_s *" "stream" ");"
 .fi
 .SH DESCRIPTION
 Release retained offset-table state and the decoded block cache, then close the
@@ -31,7 +32,13 @@ still attempted.
 \fBLIBMPQ_ERROR_EXIST\fP reports a NULL stream. A clone close can report its
 underlying close error.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__stream_open (3),
+.BR libmpq__stream_open_name (3),
+.BR libmpq__stream_read (3),
+.BR libmpq__stream_seek (3),
+.BR libmpq__stream_tell (3),
+.BR libmpq__stream_size (3),
 .BR libmpq__archive_close (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.

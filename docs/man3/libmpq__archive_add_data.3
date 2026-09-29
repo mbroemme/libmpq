@@ -17,20 +17,54 @@
 libmpq__archive_add_data \- add an in-memory file to an MPQ archive
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__archive_add_data("
-.BI "        mpq_archive_s  *" "archive,"
-.BI "        const char     *" "name,"
-.BI "        const uint8_t  *" "buffer,"
-.BI "        libmpq__off_t   " "size,"
+.BI "        mpq_archive_s *" "mpq_archive,"
+.BI "        const char *" "filename,"
+.BI "        const uint8_t *" "buffer,"
+.BI "        libmpq__off_t " "size,"
 .BI "        const mpq_file_options_s *" "options"
 .BI ");"
 .fi
 .SH DESCRIPTION
-Adds a complete memory buffer using the same options as the streaming writer.
+Adds \fIsize\fP bytes from caller-owned \fIbuffer\fP under \fIfilename\fP.
+The call begins, writes, and finishes one member using the same file options
+as the streaming writer. NULL \fIoptions\fP selects writer defaults; the
+buffer need only remain valid until this call returns.
+.SH RETURN VALUE
+Returns \fBLIBMPQ_SUCCESS\fP after the member is staged in the writer
+archive, or a negative libmpq error. Archive publication still requires
+\fBlibmpq__archive_close\fP().
+.SH ERRORS
+Invalid writer state or storage options return \fBLIBMPQ_ERROR_FORMAT\fP;
+duplicate names return \fBLIBMPQ_ERROR_EXIST\fP; invalid or excessive
+sizes return \fBLIBMPQ_ERROR_SIZE\fP. Allocation, compression, and I/O
+errors may also propagate.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__archive_create (3),
+.BR libmpq__archive_create_mpqe (3),
 .BR libmpq__archive_add_path (3),
-.BR libmpq__writer_begin (3)
+.BR libmpq__writer_begin (3),
+.BR libmpq__writer_write (3),
+.BR libmpq__writer_timestamp (3),
+.BR libmpq__writer_finish (3)
+.SH AUTHOR
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

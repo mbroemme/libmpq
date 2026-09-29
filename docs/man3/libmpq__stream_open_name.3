@@ -18,10 +18,12 @@ libmpq__stream_open_name \- open a logical MPQ member stream by name.
 .SH SYNOPSIS
 .nf
 .B #include <libmpq/mpq.h>
-.B "int32_t libmpq__stream_open_name("
-.B "        mpq_archive_s *archive, const char *filename,"
-.B "        mpq_stream_s **stream"
-.B ");"
+.sp
+.BI "int32_t libmpq__stream_open_name("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        const char *" "filename,"
+.BI "        mpq_stream_s **" "stream"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Resolve \fIfilename\fP and open its decoded logical member stream. The plaintext
@@ -35,7 +37,13 @@ allocation error with \fI*stream\fP NULL.
 .SH ERRORS
 \fBLIBMPQ_ERROR_EXIST\fP reports invalid input, a missing name, or writer mode.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__stream_open (3),
+.BR libmpq__stream_read (3),
+.BR libmpq__stream_seek (3),
+.BR libmpq__stream_tell (3),
+.BR libmpq__stream_size (3),
+.BR libmpq__stream_close (3),
 .BR libmpq__file_number (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.

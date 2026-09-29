@@ -17,12 +17,9 @@
 libmpq__archive_close \- close an opened MPQ archive.
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__archive_close("
-.BI "        mpq_archive_s  *" "mpq_archive"
-.BI ");"
+.BI "int32_t libmpq__archive_close(mpq_archive_s *" "mpq_archive" ");"
 .fi
 .SH DESCRIPTION
 Close the archive handle returned by an archive open or create function.
@@ -33,11 +30,17 @@ The archive handle must not be used or closed again after this call, including
 when finalization or output close reports an error.
 .SH RETURN VALUE
 On success, a zero is returned and on error one of the following constants.
+.SH ERRORS
 .TP
 .B LIBMPQ_ERROR_CLOSE
 The given file could not be closed.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__archive_open (3),
+.BR libmpq__archive_open_io (3),
+.BR libmpq__archive_open_mpqe (3),
+.BR libmpq__archive_open_mpqe_io (3),
+.BR libmpq__archive_clone (3),
 .BR libmpq__archive_size_packed (3),
 .BR libmpq__archive_size_unpacked (3),
 .BR libmpq__archive_offset (3),

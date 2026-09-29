@@ -19,20 +19,37 @@ libmpq__update_replace_path \- replace a named member from a filesystem path
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.B "int32_t libmpq__update_replace_path("
-.B "        mpq_update_s *update, const char *filename,"
-.B "        const char *source_path, const mpq_file_options_s *options"
-.B ");"
+.BI "int32_t libmpq__update_replace_path("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename,"
+.BI "        const char *" "source_path,"
+.BI "        const mpq_file_options_s *" "options"
+.BI ");"
 .fi
 .SH DESCRIPTION
-Reads replacement bytes from \fIsource_path\fP and replaces the existing \fIfilename\fP in the private working copy. Optional \fIoptions\fP use the same writer storage semantics as libmpq__archive_add_path(3), including distinct first- and later-sector compression masks; NULL selects default storage options. Supplied locale and platform must match the existing member or LIBMPQ_ERROR_FORMAT is returned. The original archive is not published until commit.
+Reads replacement bytes from \fIsource_path\fP and replaces the existing
+\fIfilename\fP in the private working copy. Optional \fIoptions\fP use the
+same writer storage semantics as libmpq__archive_add_path(3), including
+distinct first- and later-sector compression masks; NULL selects default
+storage options. Supplied locale and platform must match the existing member
+or LIBMPQ_ERROR_FORMAT is returned. The original archive is not published
+until commit.
 .SH RETURN VALUE
 Returns \fBLIBMPQ_SUCCESS\fP on success, or a negative libmpq error.
 .SH ERRORS
-A missing member returns LIBMPQ_ERROR_EXIST. A shared physical block, mismatched locale/platform, or unsupported storage options return LIBMPQ_ERROR_FORMAT. Source open/read, allocation, encoding, and I/O errors may also be returned.
+A missing member returns LIBMPQ_ERROR_EXIST. A shared physical block,
+mismatched locale/platform, or unsupported storage options return
+LIBMPQ_ERROR_FORMAT. Source open/read, allocation, encoding, and I/O errors
+may also be returned.
 .SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__update_begin (3),
+.BR libmpq__update_begin_mpqe (3),
 .BR libmpq__update_replace_data (3),
-.BR libmpq__update_commit (3)
+.BR libmpq__update_remove (3),
+.BR libmpq__update_rename (3),
+.BR libmpq__update_commit (3),
+.BR libmpq__update_abort (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.
 .SH REPORTING BUGS

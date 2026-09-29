@@ -18,10 +18,12 @@ libmpq__stream_seek \- seek in a logical MPQ member stream.
 .SH SYNOPSIS
 .nf
 .B #include <libmpq/mpq.h>
-.B "int32_t libmpq__stream_seek("
-.B "        mpq_stream_s *stream, libmpq__off_t offset,"
-.B "        int32_t origin"
-.B ");"
+.sp
+.BI "int32_t libmpq__stream_seek("
+.BI "        mpq_stream_s *" "stream,"
+.BI "        libmpq__off_t " "offset,"
+.BI "        int32_t " "origin"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Seek relative to \fBLIBMPQ_SEEK_SET\fP, \fBLIBMPQ_SEEK_CUR\fP, or
@@ -34,8 +36,13 @@ Returns \fBLIBMPQ_SUCCESS\fP on success.
 \fBLIBMPQ_ERROR_EXIST\fP reports a NULL stream. \fBLIBMPQ_ERROR_SEEK\fP
 reports an invalid origin or position.
 .SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__stream_open (3),
+.BR libmpq__stream_open_name (3),
+.BR libmpq__stream_read (3),
 .BR libmpq__stream_tell (3),
-.BR libmpq__stream_size (3)
+.BR libmpq__stream_size (3),
+.BR libmpq__stream_close (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.
 .SH REPORTING BUGS

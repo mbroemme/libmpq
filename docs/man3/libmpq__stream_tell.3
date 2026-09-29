@@ -18,7 +18,11 @@ libmpq__stream_tell \- return a logical member stream position.
 .SH SYNOPSIS
 .nf
 .B #include <libmpq/mpq.h>
-.BI "int32_t libmpq__stream_tell(mpq_stream_s *" stream ", libmpq__off_t *" position ");"
+.sp
+.BI "int32_t libmpq__stream_tell("
+.BI "        mpq_stream_s *" "stream,"
+.BI "        libmpq__off_t *" "position"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Store the current logical position in \fI*position\fP. This operation performs
@@ -28,7 +32,13 @@ Returns \fBLIBMPQ_SUCCESS\fP on success.
 .SH ERRORS
 \fBLIBMPQ_ERROR_EXIST\fP reports an invalid stream or output pointer.
 .SH SEE ALSO
-.BR libmpq__stream_seek (3)
+.BR libmpq (3),
+.BR libmpq__stream_open (3),
+.BR libmpq__stream_open_name (3),
+.BR libmpq__stream_read (3),
+.BR libmpq__stream_seek (3),
+.BR libmpq__stream_size (3),
+.BR libmpq__stream_close (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.
 .SH REPORTING BUGS

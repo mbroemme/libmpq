@@ -17,12 +17,11 @@
 libmpq__archive_files \- return the number of valid files in an MPQ archive.
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__archive_files("
-.BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        uint32_t       *" "files"
+.BI "        mpq_archive_s *" "mpq_archive,"
+.BI "        uint32_t *" "files"
 .BI ");"
 .fi
 .SH DESCRIPTION
@@ -36,6 +35,7 @@ in \fIfiles\fP.
 .SH RETURN VALUE
 On success, a zero is returned.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__file_blocks (3)
 .SH AUTHOR
 The libmpq project is maintained by

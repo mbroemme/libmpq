@@ -20,9 +20,9 @@ libmpq__file_attributes \- read stored per-file attributes
 .B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__file_attributes("
-.BI "        mpq_archive_s         " "*mpq_archive",
-.BI "        uint32_t               " "file_number",
-.BI "        mpq_file_attributes_s " "*attributes"
+.BI "        mpq_archive_s *" "mpq_archive,"
+.BI "        uint32_t " "file_number,"
+.BI "        mpq_file_attributes_s *" "attributes"
 .BI ");"
 .fi
 .SH DESCRIPTION
@@ -47,10 +47,13 @@ The native ABI is 40 bytes: fields begin at offsets 0, 4, 8, 16, and 32,
 followed by reserved[4] at offset 36. Reserved bytes are returned as zero.
 Natural alignment is retained; this is not the serialized little-endian payload.
 .SH RETURN VALUE
-Returns LIBMPQ_SUCCESS on success or a negative libmpq error.
-EXIST means missing metadata or an invalid file number; FORMAT means
-malformed attributes. I/O and allocation errors are propagated.
-NULL arguments return EXIST. Use on the wrong handle type returns NOT_INITIALIZED.
+Returns \fBLIBMPQ_SUCCESS\fP with stored attributes on success, or a
+negative libmpq error. The output is zeroed on failure.
+.SH ERRORS
+\fBLIBMPQ_ERROR_EXIST\fP means a required argument, file number, or
+attributes file is absent. Malformed attributes return
+\fBLIBMPQ_ERROR_FORMAT\fP; a writer handle returns
+\fBLIBMPQ_ERROR_NOT_INITIALIZED\fP. I/O and allocation errors may propagate.
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__file_verify (3),
@@ -59,3 +62,21 @@ NULL arguments return EXIST. Use on the wrong handle type returns NOT_INITIALIZE
 .BR libmpq__archive_attributes (3),
 .BR libmpq__writer_timestamp (3),
 .BR libmpq__writer_finish (3)
+.SH AUTHOR
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

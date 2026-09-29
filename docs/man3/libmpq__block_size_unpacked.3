@@ -17,14 +17,13 @@
 libmpq__block_size_unpacked \- return the unpacked size of one block.
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__block_size_unpacked("
-.BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        uint32_t        " "file_number",
-.BI "        uint32_t        " "block_number",
-.BI "        libmpq__off_t  *" "unpacked_size"
+.BI "        mpq_archive_s *" "mpq_archive,"
+.BI "        uint32_t " "file_number,"
+.BI "        uint32_t " "block_number,"
+.BI "        libmpq__off_t *" "unpacked_size"
 .BI ");"
 .fi
 .SH DESCRIPTION
@@ -37,10 +36,12 @@ arguments select the block. The function stores its unpacked size in
 \fIunpacked_size\fP. No explicit offset-table management is needed.
 .SH RETURN VALUE
 On success, a zero is returned and on error one of the following constants.
+.SH ERRORS
 .TP
 .B LIBMPQ_ERROR_EXIST
 The file or block does not exist in the archive.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__block_size_packed (3),
 .BR libmpq__archive_size_unpacked (3),
 .BR libmpq__file_size_unpacked (3)

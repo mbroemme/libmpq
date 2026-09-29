@@ -17,23 +17,24 @@
 libmpq__archive_offset \- return the archive offset in the backing file.
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__archive_offset("
-.BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        libmpq__off_t  *" "offset"
+.BI "        mpq_archive_s *" "mpq_archive,"
+.BI "        libmpq__off_t *" "offset"
 .BI ");"
 .fi
 .SH DESCRIPTION
 .PP
-Call \fBlibmpq__archive_offset\fP() to get the archive's absolute byte offset in the backing file.
+Call \fBlibmpq__archive_offset\fP() to get the archive's absolute byte offset
+in the backing file.
 .LP
 The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The function stores the offset in \fIoffset\fP.
 .SH RETURN VALUE
 On success, a zero is returned.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__file_offset (3)
 .SH AUTHOR
 The libmpq project is maintained by

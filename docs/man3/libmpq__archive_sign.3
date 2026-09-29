@@ -17,68 +17,53 @@
 libmpq__archive_sign \- configure weak signing before writer close
 .SH SYNOPSIS
 .nf
-#include <libmpq/mpq.h>
-
-int32_t libmpq__archive_sign(mpq_archive_s *archive, uint32_t type,
-    const uint8_t *private_key, size_t key_size);
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__archive_sign("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        uint32_t " "signature_type,"
+.BI "        const uint8_t *" "private_key,"
+.BI "        size_t " "private_key_size"
+.BI ");"
 .fi
 .SH DESCRIPTION
-Weak MPQ signatures use MD5 with RSA-512 and PKCS#1 v1.5. Strong signatures
-use an external NGIS trailer with SHA-1 and RSA-2048. Both are historical
-compatibility mechanisms and must not be used for modern authenticity decisions.
+Configures \fIarchive\fP, an active MPQ v1 or v2 writer, to generate one
+\fIsignature_type\fP: \fBLIBMPQ_SIGNATURE_WEAK\fP or
+\fBLIBMPQ_SIGNATURE_STRONG\fP. A file writer must not be active. Each
+type may be configured once; ordinary MPQ archives may use both.
+Configuration is non-consuming and copies the caller's
+\fIprivate_key\fP. Final signing occurs when
+\fBlibmpq__archive_close\fP(3) finalizes the archive; reopen it to
+inspect or verify the result.
 .PP
-Weak raw keys are exactly 128 bytes: a 64-byte unsigned big-endian modulus
-followed by a zero-padded 64-byte big-endian exponent value. Use a public key
-to verify a signature and a private key to create one. The modulus must be
-full-width and odd; the exponent
-must be odd, at least 3, and less than the modulus. No default or
-product-specific keys or PEM parser are built in. These checks do not
-establish mathematical key-pair validity.
+Weak private keys are exactly 128 raw bytes: a 64-byte unsigned
+big-endian modulus and a zero-padded 64-byte private exponent. Strong
+private keys have the same layout with 256-byte fields, 512 bytes total.
+The modulus must be full-width and odd; the exponent must be odd, at
+least 3, and less than the modulus. The checks validate representation,
+not mathematical key-pair validity. No PEM parser or default or
+product-specific keys are built in.
 .PP
-Strong public verification keys contain a 256-byte unsigned big-endian
-modulus and a 256-byte zero-padded unsigned big-endian public exponent,
-512 bytes total. Strong private signing keys use the same 512-byte layout
-with a zero-padded unsigned big-endian private exponent. Strong signing emits
-only the plain SHA-1 archive-range variant. Internal weak signatures remain
-available inside MPQE-wrapped MPQs. No external strong NGIS representation is
-defined for MPQE transport streams.
-.PP
-Strong verification additionally accepts uppercase-basename and ARCHIVE
-digest variants, but the writer does not emit them.
-.PP
-Detection returns zero for absence, LIBMPQ_SIGNATURE_WEAK,
-LIBMPQ_SIGNATURE_STRONG, or LIBMPQ_SIGNATURE_WEAK | LIBMPQ_SIGNATURE_STRONG
-for structurally valid storage. Verification
-requires exactly one type and the matching caller public key: 128 bytes for
-weak or 512 bytes for strong.
-The non-NULL output masks are zeroed before validation and remain zero on errors.
-.PP
-Signing requires a v1 or v2 writer with no active file writer and may configure
-each signature type once. Weak signing immediately consumes one file slot for a
-zeroed 72-byte (signature) file. Signing copies the key and happens at close
-after finalizing all tables and internal files. Weak signature attribute values are zero. Strong signing
-appends a plain SHA-1 archive-range NGIS trailer after the logical archive. The
-retained key is cleared on close, including failure. Reopen to verify the signed result.
-.PP
-Hashing starts at the MPQ archive offset and covers the declared archive extent for v1
-or the metadata-derived required extent for v2,
-with all 72 signature bytes treated as zero. The stored signature integer is
-little-endian. The first eight bytes must be zero; compressed, encrypted,
-sector-CRC, overlapping, and incorrectly sized signature storage is rejected.
-Reader verification is independent of archive version and writer compression
-policy. For archives physically beginning with HM3W, weak and strong signature
-hashing starts at physical offset zero and ends at the logical MPQ end. Weak
-hashing treats the internal (signature) payload as zero.
+Weak signing creates an internal \fB(signature)\fP member and consumes a
+file slot. Strong signing appends an external NGIS trailer using the plain
+SHA-1 archive-range variant. MPQE writers support internal weak signing
+but reject external strong signing because no MPQE transport
+representation is defined for it. Both algorithms are legacy
+compatibility mechanisms, not modern trust primitives.
 .SH RETURN VALUE
-Zero on success; existing negative libmpq errors on failure.
-EXIST denotes NULL required handles/outputs or an absent requested signature;
-FORMAT denotes malformed storage/key, unsupported flags, or unsupported
-signing version; NOT_INITIALIZED denotes the wrong handle/lifecycle.
-I/O and writer capacity errors are propagated.
+Returns \fBLIBMPQ_SUCCESS\fP after configuration, or a negative libmpq
+error. A failed request does not consume the writer handle.
+.SH ERRORS
+NULL archive handles return \fBLIBMPQ_ERROR_EXIST\fP; invalid type,
+key, duplicate configuration, or MPQE strong signing return
+\fBLIBMPQ_ERROR_FORMAT\fP. Wrong writer state returns
+\fBLIBMPQ_ERROR_NOT_INITIALIZED\fP. Allocation and capacity errors may
+also propagate.
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__archive_signatures (3),
-.BR libmpq__archive_verify (3)
+.BR libmpq__archive_verify (3),
+.BR libmpq__patch_sign (3)
 .SH AUTHOR
 Maik Broemme <mbroemme@libmpq.org>
 .SH REPORTING BUGS

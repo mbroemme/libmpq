@@ -17,18 +17,17 @@
 libmpq__archive_open_mpqe_io \- open an MPQE-wrapped MPQ through random-access I/O.
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__archive_open_mpqe_io("
 .BI "        mpq_archive_s **" "mpq_archive,"
-.BI "        void            *" "context,"
+.BI "        void *" "context,"
 .BI "        libmpq_read_at_fn " "read_at,"
-.BI "        libmpq__off_t    " "source_size,"
-.BI "        libmpq__off_t    " "archive_offset,"
-.BI "        const uint8_t    *" "auth_code,"
-.BI "        size_t            " "auth_code_size,"
-.BI "        const char       *" "source_name"
+.BI "        libmpq__off_t " "source_size,"
+.BI "        libmpq__off_t " "archive_offset,"
+.BI "        const uint8_t *" "auth_code,"
+.BI "        size_t " "auth_code_size,"
+.BI "        const char *" "source_name"
 .BI ");"
 .fi
 .SH DESCRIPTION
@@ -46,11 +45,18 @@ identifiable by MPQE alone and can therefore produce an ordinary MPQ parser
 error after decryption.
 .SH RETURN VALUE
 On success, *\fImpq_archive\fP receives a new \fBmpq_archive_s\fP and zero is
-returned. On failure, the output handle is NULL. The errors documented for
-\fBlibmpq__archive_open_io\fP can apply. \fBLIBMPQ_ERROR_DECRYPT\fP reports a
-NULL or too-short authentication code.
+returned. On failure, a valid output handle pointer receives NULL and a
+negative libmpq error is returned.
+.SH ERRORS
+The input, callback, size, and offset errors of
+\fBlibmpq__archive_open_io\fP(3) apply.
+\fBLIBMPQ_ERROR_DECRYPT\fP reports a NULL or too-short authentication
+code. Reader, callback, allocation, and parser errors may also propagate.
 .SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__archive_open (3),
 .BR libmpq__archive_open_io (3),
+.BR libmpq__archive_open_mpqe (3),
 .BR libmpq__archive_clone (3),
 .BR libmpq__archive_close (3)
 .SH AUTHOR

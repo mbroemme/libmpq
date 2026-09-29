@@ -17,13 +17,12 @@
 libmpq__archive_open \- open an MPQ archive for reading.
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__archive_open("
-.BI "        mpq_archive_s **" "mpq_archive",
-.BI "        const char     *" "mpq_filename",
-.BI "        libmpq__off_t   " "archive_offset"
+.BI "        mpq_archive_s **" "mpq_archive,"
+.BI "        const char *" "mpq_filename,"
+.BI "        libmpq__off_t " "archive_offset"
 .BI ");"
 .fi
 .SH DESCRIPTION
@@ -39,6 +38,7 @@ The function stores the newly allocated archive handle in
 .SH RETURN VALUE
 On success, *\fImpq_archive\fP is set to a new \fBmpq_archive_s\fP and zero
 is returned. On error, one of the following constants is returned.
+.SH ERRORS
 .TP
 .B LIBMPQ_ERROR_EXIST
 The given archive file does not exist.
@@ -58,6 +58,11 @@ The given file is not a valid MPQ archive.
 .B LIBMPQ_ERROR_READ
 Reading the archive failed.
 .SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__archive_open_io (3),
+.BR libmpq__archive_open_mpqe (3),
+.BR libmpq__archive_open_mpqe_io (3),
+.BR libmpq__archive_clone (3),
 .BR libmpq__archive_close (3),
 .BR libmpq__archive_size_packed (3),
 .BR libmpq__archive_size_unpacked (3),

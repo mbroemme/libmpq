@@ -20,10 +20,10 @@ libmpq__file_verify \- explicitly compare stored file checksums
 .B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__file_verify("
-.BI "        mpq_archive_s *" "archive",
-.BI "        uint32_t       " "file_number",
-.BI "        uint32_t       " "verify_flags",
-.BI "        uint32_t      *" "mismatches"
+.BI "        mpq_archive_s *" "archive,"
+.BI "        uint32_t " "file_number,"
+.BI "        uint32_t " "verify_flags,"
+.BI "        uint32_t *" "mismatches"
 .BI ");"
 .fi
 .SH DESCRIPTION
@@ -75,14 +75,33 @@ A clear bit means the checksum matched or was unavailable/skipped.
 Operation failures return a negative libmpq error and leave *mismatches zero,
 even if earlier sectors had mismatches. Bits are published only after the
 complete operation succeeds.
+When mismatches is non-NULL it is initialized before validation.
+.SH ERRORS
 LIBMPQ_ERROR_EXIST means a NULL argument, invalid file number, or absent
 attributes. LIBMPQ_ERROR_NOT_INITIALIZED means a writer handle was supplied.
 LIBMPQ_ERROR_FORMAT means unknown request bits or malformed metadata.
 Read, seek, decoding, size, and allocation failures are reported as errors.
-When mismatches is non-NULL it is initialized before validation.
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__block_verify (3),
 .BR libmpq__file_attributes (3),
 .BR libmpq__archive_attributes (3),
 .BR libmpq__file_read (3)
+.SH AUTHOR
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

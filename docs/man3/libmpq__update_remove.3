@@ -19,17 +19,29 @@ libmpq__update_remove \- remove a named member from a staged MPQ update
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__update_remove(mpq_update_s *update, const char *filename);"
+.BI "int32_t libmpq__update_remove("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename"
+.BI ");"
 .fi
 .SH DESCRIPTION
-Removes an existing named member from the private working copy. Other physical entries, including entries not listed in (listfile), retain their packed bytes. The original archive remains unchanged until commit.
+Removes an existing named member from the private working copy. Other physical
+entries, including entries not listed in (listfile), retain their packed
+bytes. The original archive remains unchanged until commit.
 .SH RETURN VALUE
 Returns \fBLIBMPQ_SUCCESS\fP on success, or a negative libmpq error.
 .SH ERRORS
-A missing member returns LIBMPQ_ERROR_EXIST. Allocation, format, and I/O errors may also be returned.
+A missing member returns LIBMPQ_ERROR_EXIST. Allocation, format, and I/O
+errors may also be returned.
 .SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__update_begin (3),
+.BR libmpq__update_begin_mpqe (3),
+.BR libmpq__update_replace_data (3),
+.BR libmpq__update_replace_path (3),
 .BR libmpq__update_rename (3),
-.BR libmpq__update_commit (3)
+.BR libmpq__update_commit (3),
+.BR libmpq__update_abort (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.
 .SH REPORTING BUGS

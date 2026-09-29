@@ -18,7 +18,11 @@ libmpq__stream_size \- return a logical MPQ member size.
 .SH SYNOPSIS
 .nf
 .B #include <libmpq/mpq.h>
-.BI "int32_t libmpq__stream_size(mpq_stream_s *" stream ", libmpq__off_t *" size ");"
+.sp
+.BI "int32_t libmpq__stream_size("
+.BI "        mpq_stream_s *" "stream,"
+.BI "        libmpq__off_t *" "size"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Store the immutable logical unpacked member size in \fI*size\fP. This operation
@@ -28,7 +32,13 @@ Returns \fBLIBMPQ_SUCCESS\fP on success.
 .SH ERRORS
 \fBLIBMPQ_ERROR_EXIST\fP reports an invalid stream or output pointer.
 .SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__stream_open (3),
+.BR libmpq__stream_open_name (3),
+.BR libmpq__stream_read (3),
+.BR libmpq__stream_seek (3),
 .BR libmpq__stream_tell (3),
+.BR libmpq__stream_close (3),
 .BR libmpq__file_size_unpacked (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.

@@ -17,12 +17,11 @@
 libmpq__archive_compression_allowed \- query whether writer compression is allowed
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__archive_compression_allowed("
-.BI "        uint32_t                    " "archive_version",
-.BI "        uint32_t                    " "compression_mask",
+.BI "        uint32_t " "archive_version,"
+.BI "        uint32_t " "compression_mask,"
 .BI "        libmpq_compression_policy_t " "policy"
 .BI ");"
 .fi

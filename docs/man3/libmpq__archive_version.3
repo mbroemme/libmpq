@@ -17,12 +17,11 @@
 libmpq__archive_version \- return the MPQ archive format version.
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__archive_version("
-.BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        uint32_t       *" "version"
+.BI "        mpq_archive_s *" "mpq_archive,"
+.BI "        uint32_t *" "version"
 .BI ");"
 .fi
 .SH DESCRIPTION
@@ -37,6 +36,7 @@ The first argument is an archive handle opened by
 .SH RETURN VALUE
 On success, a zero is returned.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__archive_open (3)
 .SH AUTHOR
 The libmpq project is maintained by

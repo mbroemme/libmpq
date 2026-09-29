@@ -17,19 +17,52 @@
 libmpq__archive_add_path \- add a filesystem file to an MPQ archive
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__archive_add_path("
-.BI "        mpq_archive_s  *" "archive,"
-.BI "        const char     *" "name,"
-.BI "        const char     *" "source_path,"
+.BI "        mpq_archive_s *" "mpq_archive,"
+.BI "        const char *" "filename,"
+.BI "        const char *" "source_path,"
 .BI "        const mpq_file_options_s *" "options"
 .BI ");"
 .fi
 .SH DESCRIPTION
-Reads \fIsource_path\fP and adds it under the archive name \fIname\fP.
+Reads caller-owned \fIsource_path\fP in bounded chunks and adds it under
+\fIfilename\fP. The source file is not modified. NULL \fIoptions\fP
+selects writer defaults. Archive publication still requires
+\fBlibmpq__archive_close\fP().
+.SH RETURN VALUE
+Returns \fBLIBMPQ_SUCCESS\fP after the member is staged in the writer
+archive, or a negative libmpq error.
+.SH ERRORS
+An inaccessible source returns \fBLIBMPQ_ERROR_OPEN\fP; source read or
+seek failures return \fBLIBMPQ_ERROR_READ\fP or
+\fBLIBMPQ_ERROR_SEEK\fP. Invalid writer state/options, duplicate names,
+size limits, allocation, and output I/O errors may also propagate.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__archive_create (3),
+.BR libmpq__archive_create_mpqe (3),
 .BR libmpq__archive_add_data (3),
-.BR libmpq__writer_begin (3)
+.BR libmpq__writer_begin (3),
+.BR libmpq__writer_write (3),
+.BR libmpq__writer_timestamp (3),
+.BR libmpq__writer_finish (3)
+.SH AUTHOR
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

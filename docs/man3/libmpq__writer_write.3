@@ -17,18 +17,50 @@
 libmpq__writer_write \- write bytes through an MPQ file writer
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__writer_write("
-.BI "        mpq_writer_s   *" "writer,"
-.BI "        const uint8_t  *" "buffer,"
-.BI "        libmpq__off_t   " "size"
+.BI "        mpq_writer_s *" "writer,"
+.BI "        const uint8_t *" "buffer,"
+.BI "        libmpq__off_t " "size"
 .BI ");"
 .fi
 .SH DESCRIPTION
-Appends bytes to the writer returned by libmpq__writer_begin(3). Writes beyond
-the declared unpacked size are rejected.
+Appends \fIsize\fP bytes from caller-owned \fIbuffer\fP to the active
+\fIwriter\fP. The writer remains active on success. Bytes may be buffered
+or written as complete sectors; call libmpq__writer_finish(3) to publish
+the member entry.
+.SH RETURN VALUE
+Returns \fBLIBMPQ_SUCCESS\fP when the bytes are accepted, or a negative
+libmpq error. This call does not consume the writer.
+.SH ERRORS
+A NULL writer, NULL data with nonzero size, negative size, or data beyond
+the declared unpacked size returns \fBLIBMPQ_ERROR_SIZE\fP. Compression
+and I/O errors may also propagate.
 .SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__archive_create (3),
+.BR libmpq__archive_create_mpqe (3),
+.BR libmpq__archive_add_data (3),
+.BR libmpq__archive_add_path (3),
 .BR libmpq__writer_begin (3),
+.BR libmpq__writer_timestamp (3),
 .BR libmpq__writer_finish (3)
+.SH AUTHOR
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

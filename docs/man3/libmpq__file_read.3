@@ -17,15 +17,14 @@
 libmpq__file_read \- read, decrypt, and decompress one file.
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__file_read("
-.BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        uint32_t        " "file_number",
-.BI "        uint8_t        *" "out_buf",
-.BI "        libmpq__off_t   " "out_size",
-.BI "        libmpq__off_t  *" "transferred"
+.BI "        mpq_archive_s *" "mpq_archive,"
+.BI "        uint32_t " "file_number,"
+.BI "        uint8_t *" "out_buf,"
+.BI "        libmpq__off_t " "out_size,"
+.BI "        libmpq__off_t *" "transferred"
 .BI ");"
 .fi
 .SH DESCRIPTION
@@ -50,6 +49,7 @@ function stores the number of bytes written in \fItransferred\fP.
 Offset-table caching is managed internally; no explicit open or close is needed.
 .SH RETURN VALUE
 On success, a zero is returned and on error one of the following constants.
+.SH ERRORS
 .TP
 .B LIBMPQ_ERROR_EXIST
 File does not exist in archive.
@@ -72,6 +72,7 @@ Decrypting file failed.
 .B LIBMPQ_ERROR_UNPACK
 Unpacking file failed.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__block_read (3)
 .SH AUTHOR
 The libmpq project is maintained by

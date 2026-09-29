@@ -19,16 +19,28 @@ libmpq__patch_remove \- stage a delete marker for a named base member
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__patch_remove(mpq_patch_s *patch, const char *filename);"
+.BI "int32_t libmpq__patch_remove("
+.BI "        mpq_patch_s *" "patch,"
+.BI "        const char *" "filename"
+.BI ");"
 .fi
 .SH DESCRIPTION
-Stages a delete marker for an existing named member. Applying the published patch hides that member from the base archive, but neither this call nor patch publication modifies the base archive itself. A missing member cannot be removed.
+Stages a delete marker for an existing named member. Applying the published
+patch hides that member from the base archive, but neither this call nor patch
+publication modifies the base archive itself. A missing member cannot be
+removed.
 .SH RETURN VALUE
 Returns \fBLIBMPQ_SUCCESS\fP or a negative libmpq error.
 .SH ERRORS
-A NULL handle or missing member returns LIBMPQ_ERROR_EXIST. Malformed identity, allocation, and write errors may also propagate.
+A NULL handle or missing member returns LIBMPQ_ERROR_EXIST. Malformed
+identity, allocation, and write errors may also propagate.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__patch_begin (3),
+.BR libmpq__patch_begin_mpqe (3),
+.BR libmpq__patch_sign (3),
+.BR libmpq__patch_replace_data (3),
+.BR libmpq__patch_replace_path (3),
 .BR libmpq__patch_finish (3),
 .BR libmpq__patch_abort (3)
 .SH AUTHOR

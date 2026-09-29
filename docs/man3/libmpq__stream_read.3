@@ -18,10 +18,13 @@ libmpq__stream_read \- read decoded logical MPQ member bytes.
 .SH SYNOPSIS
 .nf
 .B #include <libmpq/mpq.h>
-.B "int32_t libmpq__stream_read("
-.B "        mpq_stream_s *stream, uint8_t *buffer,"
-.B "        libmpq__off_t size, libmpq__off_t *transferred"
-.B ");"
+.sp
+.BI "int32_t libmpq__stream_read("
+.BI "        mpq_stream_s *" "stream,"
+.BI "        uint8_t *" "buffer,"
+.BI "        libmpq__off_t " "size,"
+.BI "        libmpq__off_t *" "transferred"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Read up to \fIsize\fP decoded logical bytes, crossing sectors as needed. The
@@ -42,7 +45,13 @@ buffer. \fBLIBMPQ_ERROR_SIZE\fP reports an invalid size.
 decryption, decompression, allocation, and malformed-data errors can also
 propagate from the sector decoder.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__stream_open (3),
+.BR libmpq__stream_open_name (3),
+.BR libmpq__stream_seek (3),
+.BR libmpq__stream_tell (3),
+.BR libmpq__stream_size (3),
+.BR libmpq__stream_close (3),
 .BR libmpq__file_verify (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.

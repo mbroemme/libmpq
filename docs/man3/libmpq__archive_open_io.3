@@ -17,16 +17,15 @@
 libmpq__archive_open_io \- open an MPQ archive through random-access I/O.
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__archive_open_io("
 .BI "        mpq_archive_s **" "mpq_archive,"
-.BI "        void            *" "context,"
+.BI "        void *" "context,"
 .BI "        libmpq_read_at_fn " "read_at,"
-.BI "        libmpq__off_t    " "source_size,"
-.BI "        libmpq__off_t    " "archive_offset,"
-.BI "        const char       *" "source_name"
+.BI "        libmpq__off_t " "source_size,"
+.BI "        libmpq__off_t " "archive_offset,"
+.BI "        const char *" "source_name"
 .BI ");"
 .fi
 .SH DESCRIPTION
@@ -49,11 +48,17 @@ is NULL, basename-dependent strong signatures are skipped; plain and ARCHIVE
 strong variants remain available.
 .SH RETURN VALUE
 On success, *\fImpq_archive\fP receives a new \fBmpq_archive_s\fP and zero is
-returned. On failure, the output handle is NULL. In addition to reader/parser
-errors, \fBLIBMPQ_ERROR_EXIST\fP reports a NULL output or callback,
-\fBLIBMPQ_ERROR_SIZE\fP reports a negative source size, and
-\fBLIBMPQ_ERROR_SEEK\fP reports an invalid explicit archive offset.
+returned. On failure, a valid output handle pointer receives NULL and a
+negative libmpq error is returned.
+.SH ERRORS
+\fBLIBMPQ_ERROR_EXIST\fP reports a NULL output or callback;
+\fBLIBMPQ_ERROR_SIZE\fP a negative source size; and
+\fBLIBMPQ_ERROR_SEEK\fP an invalid explicit archive offset. Reader,
+callback, allocation, and parser errors may also propagate.
 .SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__archive_open (3),
+.BR libmpq__archive_open_mpqe (3),
 .BR libmpq__archive_open_mpqe_io (3),
 .BR libmpq__archive_clone (3),
 .BR libmpq__archive_close (3)

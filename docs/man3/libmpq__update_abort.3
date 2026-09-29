@@ -19,17 +19,24 @@ libmpq__update_abort \- discard a staged MPQ update
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__update_abort(mpq_update_s *update);"
+.BI "int32_t libmpq__update_abort(mpq_update_s *" "update" ");"
 .fi
 .SH DESCRIPTION
-Discards the private working copy and leaves the original destination unchanged. Cleanup is attempted even if one step fails. The handle is consumed regardless of the result; do not use it again.
+Discards the private working copy and leaves the original destination
+unchanged. Cleanup is attempted even if one step fails. The handle is consumed
+regardless of the result; do not use it again.
 .SH RETURN VALUE
 Returns \fBLIBMPQ_SUCCESS\fP on success, or a negative libmpq error.
 .SH ERRORS
 Cleanup or close failures return a negative LIBMPQ_ERROR_* value.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__update_begin (3),
 .BR libmpq__update_begin_mpqe (3),
+.BR libmpq__update_replace_data (3),
+.BR libmpq__update_replace_path (3),
+.BR libmpq__update_remove (3),
+.BR libmpq__update_rename (3),
 .BR libmpq__update_commit (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.

@@ -19,21 +19,38 @@ libmpq__update_replace_data \- replace a named member in a staged MPQ update
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.B "int32_t libmpq__update_replace_data("
-.B "        mpq_update_s *update, const char *filename,"
-.B "        const uint8_t *data, libmpq__off_t size,"
-.B "        const mpq_file_options_s *options"
-.B ");"
+.BI "int32_t libmpq__update_replace_data("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename,"
+.BI "        const uint8_t *" "data,"
+.BI "        libmpq__off_t " "size,"
+.BI "        const mpq_file_options_s *" "options"
+.BI ");"
 .fi
 .SH DESCRIPTION
-Replaces the existing \fIfilename\fP with \fIsize\fP bytes from \fIdata\fP in the private working copy. Optional \fIoptions\fP use the same writer storage semantics as libmpq__archive_add_data(3), including distinct first- and later-sector compression masks; NULL selects default storage options. Supplied locale and platform must match the existing member or LIBMPQ_ERROR_FORMAT is returned. The original destination remains unchanged until commit. Existing attributes and listfile entries are updated when present.
+Replaces the existing \fIfilename\fP with \fIsize\fP bytes from \fIdata\fP in
+the private working copy. Optional \fIoptions\fP use the same writer storage
+semantics as libmpq__archive_add_data(3), including distinct first- and
+later-sector compression masks; NULL selects default storage options. Supplied
+locale and platform must match the existing member or LIBMPQ_ERROR_FORMAT is
+returned. The original destination remains unchanged until commit. Existing
+attributes and listfile entries are updated when present.
 .SH RETURN VALUE
 Returns \fBLIBMPQ_SUCCESS\fP on success, or a negative libmpq error.
 .SH ERRORS
-A missing member returns LIBMPQ_ERROR_EXIST. A shared physical block, mismatched locale/platform in \fIoptions\fP, or unsupported storage options return LIBMPQ_ERROR_FORMAT. Invalid size, allocation, encoding, and I/O errors may also be returned.
+A missing member returns LIBMPQ_ERROR_EXIST. A shared physical block,
+mismatched locale/platform in \fIoptions\fP, or unsupported storage options
+return LIBMPQ_ERROR_FORMAT. Invalid size, allocation, encoding, and I/O errors
+may also be returned.
 .SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__update_begin (3),
+.BR libmpq__update_begin_mpqe (3),
 .BR libmpq__update_replace_path (3),
-.BR libmpq__update_commit (3)
+.BR libmpq__update_remove (3),
+.BR libmpq__update_rename (3),
+.BR libmpq__update_commit (3),
+.BR libmpq__update_abort (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.
 .SH REPORTING BUGS

@@ -17,24 +17,26 @@
 libmpq__archive_size_packed \- return the total packed size of archive files.
 .SH SYNOPSIS
 .nf
-.B
-#include <libmpq/mpq.h>
+.B #include <libmpq/mpq.h>
 .sp
 .BI "int32_t libmpq__archive_size_packed("
-.BI "        mpq_archive_s  *" "mpq_archive",
-.BI "        libmpq__off_t  *" "packed_size"
+.BI "        mpq_archive_s *" "mpq_archive,"
+.BI "        libmpq__off_t *" "packed_size"
 .BI ");"
 .fi
 .SH DESCRIPTION
 .PP
-Call \fBlibmpq__archive_size_packed\fP() to get the total packed size of all valid files in the archive.
+Call \fBlibmpq__archive_size_packed\fP() to get the total packed size of all
+valid files in the archive.
 .LP
 The first argument is an archive handle opened by
-\fBlibmpq__archive_open\fP(). The function stores the total packed size in
-\fIpacked_size\fP.
+\fBlibmpq__archive_open\fP(). The function adds the packed sizes to
+\fI*packed_size\fP. Initialize that value to zero to obtain only this
+archive's total.
 .SH RETURN VALUE
 On success, a zero is returned.
 .SH SEE ALSO
+.BR libmpq (3),
 .BR libmpq__file_size_packed (3)
 .SH AUTHOR
 The libmpq project is maintained by
