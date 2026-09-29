@@ -134,7 +134,7 @@ for combination in msvc:x64 msvc:arm64 mingw:x86_64 mingw:aarch64; do
 	grep -q 'PE architecture mismatch' "${temporary}/failure.log"
 	reset_stage
 	bash "${project}/scripts/package-windows.sh" prepare "${options[@]}"
-	for document in README.md DEVELOPER.md MPQ.md; do
+	for document in README.md DEVELOPER.md RELEASING.md MPQ.md; do
 		cmp "${project}/${document}" "${stage}/${document}"
 	done
 	[[ -f "${stage}/bin/Codec.DLL" && -f "${stage}/bin/helper.dll" ]]
@@ -150,7 +150,7 @@ for combination in msvc:x64 msvc:arm64 mingw:x86_64 mingw:aarch64; do
 	grep -q 'PE architecture mismatch' "${temporary}/failure.log"
 	bash "${project}/scripts/package-windows.sh" archive "${options[@]}" > "${temporary}/zip.log"
 	unzip -t "${output}" > /dev/null
-	for document in README.md DEVELOPER.md MPQ.md; do
+	for document in README.md DEVELOPER.md RELEASING.md MPQ.md; do
 		unzip -p "${output}" "${stage##*/}/${document}" | cmp "${project}/${document}" -
 	done
 	expect_failure bash "${project}/scripts/package-windows.sh" archive "${options[@]}"

@@ -89,7 +89,7 @@ for directory in bin include lib share; do
 		cp -a "${installed_usr}/${directory}" "${package_dir}/"
 	fi
 done
-cp README.md DEVELOPER.md MPQ.md COPYING COPYING.LESSER "${package_dir}/"
+cp README.md DEVELOPER.md RELEASING.md MPQ.md COPYING COPYING.LESSER "${package_dir}/"
 
 readonly package_config="${package_dir}/bin/libmpq-config"
 if [[ ! -f "${package_config}" ]]; then

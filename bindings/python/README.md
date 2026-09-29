@@ -1,89 +1,50 @@
 # libmpq Python bindings
 
-Create a separate patch artifact without modifying its base archive:
-
-```python
-with mpq.Patch.begin("base.mpq", "changes.mpq") as patch:
-    patch.replace_data("foo.txt", b"new contents")
-    patch.remove("old.txt")
-    patch.sign(private_key)  # or patch.sign(strong_key, mpq.SIGNATURE_STRONG)
-    patch.finish()
-```
-
-`Patch.begin()` creates an ordinary MPQ patch. For an MPQE-wrapped patch, use
-the same `Patch` wrapper with an explicit caller-supplied authentication code:
-
-```python
-with mpq.Patch.begin_mpqe("base.mpq", "changes.mpqe", auth_code) as patch:
-    patch.replace_data("foo.txt", b"new contents")
-    patch.finish()
-```
-
-The auth bytes are needed only during begin. Authenticated readers need the
-same code to open the result; unfinished patches are aborted on cleanup, not
-published.
-
-`replace_path` accepts a filesystem source. `finish()` publishes the patch;
-`abort()` discards it, and leaving the context unfinished aborts automatically.
-Omitting replacement options passes native NULL and uses native patch defaults;
-pass `FileCreateOptions` explicitly to configure patch-member storage. Patch
-options must match the base member's locale/platform identity. Patch add and
-rename are not supported.
-Signing configures the active patch without consuming it; an ordinary MPQ
-patch may configure weak and strong signatures separately. MPQE patches allow
-weak signing only. After `finish()`, use `Archive.signatures()` and
-`Archive.verify()` on the finished artifact, as for any other archive.
-
-Transactional updates use a separate handle. Edits stay private until commit;
-leaving the context without committing aborts them automatically:
-
-```python
-with mpq.Update.begin("archive.mpq") as update:
-    update.replace_data("foo.txt", b"new contents")
-    update.rename("old.txt", "new.txt")
-    update.commit()
-```
-
-Use the same `Update` methods for MPQE after an authenticated begin:
-
-```python
-with mpq.Update.begin_mpqe("archive.mpqe", auth_code) as update:
-    update.replace_data("foo.txt", b"new contents")
-    update.commit()
-```
-
-`replace_path`, `remove`, and explicit `abort` are also available. Commit and
-abort consume the update handle even on error. Omitting replacement options
-passes a native NULL options pointer, so libmpq uses defaults and preserves
-the member's locale/platform identity. Supply `FileCreateOptions` as the
-optional third argument for custom storage; its locale/platform must match
-the existing member. Ordinary MPQs and embedded W3X/W3M containers use
-`Update.begin`; MPQE uses `Update.begin_mpqe` with an explicit code. The code
-is needed only during begin. Both paths abort automatically without commit.
-
-Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
-Strong verification uses a 512-byte raw public key: a 256-byte unsigned
-big-endian modulus followed by a 256-byte zero-padded unsigned big-endian
-public exponent. Strong signing uses the same layout with the private exponent
-and emits only the plain SHA-1 archive-range variant. External strong NGIS
-signatures are not detected or verified for MPQE transport streams.
-Use `Writer.sign(privateKey)` for weak signing or
-`Writer.sign(privateKey, SIGNATURE_STRONG)` for strong signing before writer close, and
-`Archive.signatures()` / `Archive.verify(publicKey)` on reopened archives.
-Verification returns mismatch bits; malformed keys/archives raise normal binding
-errors. Weak keys are exactly 128 bytes: 64-byte big-endian modulus followed by a
-64-byte big-endian exponent. Signing supports v1 and v2; no keys are built
-in. MD5/RSA-512 is legacy compatibility, not modern authenticity protection.
-See [the format guide](../../MPQ.md) for details.
-
 The `mpq` module provides Python 3.11+ ctypes bindings for libmpq, with
 explicit archive and reader lifecycle management, typed native errors,
 archive creation, cloning, metadata, block access, compression, encryption,
 and streaming writes.
 
+## Installation
+
+The canonical release installation path is [PyPI](https://pypi.org/project/libmpq/):
+
+```sh
+python -m pip install libmpq
+```
+
+The binding is distributed through Python packaging rather than Autotools.
+Autotools includes the binding sources in source archives but does not install
+the Python package. For a local package installation, use the PEP 517 build
+backend through `pip`:
+
+```sh
+python -m pip install .
+```
+
+## Basic archive usage
+
+Typical usage is explicitly closeable and safe with context managers:
+
+```python
+import mpq
+
+with mpq.Archive("data.mpq", offset=0) as archive:
+    entry = archive["readme.txt"]
+    print(entry.read())
+```
+
+Native failures raise `LibmpqError` subclasses with `.code` and `.message`
+attributes. I/O and missing-file subclasses remain compatible with the
+corresponding Python built-in exception categories.
+
+### Reading and writing
+
 Use `packed_size` and `unpacked_size` for archive/file sizes and `file.read()`
 for payload bytes. Decode text explicitly, for example
 `file.read().decode("utf-8")`.
+
+### Logical member streams
 
 Use archive.open_stream(name) for incremental seekable member access. Streams
 retain an independent native archive clone, so they remain usable after the
@@ -94,11 +55,35 @@ checksums, but do not implicitly verify whole-file CRC32/MD5 attributes.
         chunk = stream.read(4096)
         stream.seek(0)
 
+### Custom random-access I/O
+
 Use `Archive.open_io(source, size, source_name=...)` for a caller-owned
 seekable source such as `io.BytesIO`. The binding retains the source while
 archives or derived streams are alive, but never closes it.
 
     archive = mpq.Archive.open_io(io.BytesIO(data), len(data), source_name="data.mpq")
+
+## Archive creation
+
+Use the same context-manager pattern for ordinary and MPQE writers:
+
+```python
+with mpq.Writer("created.mpq", version=mpq.ARCHIVE_VERSION_TWO) as writer:
+    writer.add("payload.bin", b"payload", mpq.FileCreateOptions.raw())
+
+with mpq.Writer.create_mpqe(
+    "created.mpqe", b"LIBMPQ-MPQE-EXAMPLE-AUTH-CODE-01"
+) as writer:
+    writer.add("payload.bin", b"payload")
+```
+
+MPQE creation writes a private plaintext temporary file before atomically
+replacing the destination with the encrypted archive. Use `Update.begin_mpqe`
+to modify an existing MPQE archive. Cleanup is best effort if the process
+crashes. The example authentication code is illustrative and non-secret; real
+callers must provide their own authentication code of at least 32 bytes.
+
+### Compression policy
 
 Creation defaults to `COMPRESSION_POLICY_STANDARD`. Pass
 `flags=mpq.ARCHIVE_CREATE_COMPRESSION_EXTENDED` to `Writer` or
@@ -118,94 +103,7 @@ combinations. Neither policy allows SPARSE with WAVE ADPCM. The shared
 `sparse*.txt` fixtures use UTF-32LE with a BOM; `.read()` returns bytes,
 which can be decoded with `.decode("utf-32")`.
 
-The canonical release installation path is [PyPI](https://pypi.org/project/libmpq/):
-
-```sh
-python -m pip install libmpq
-```
-
-The binding is distributed through Python packaging rather than Autotools.
-Autotools includes the binding sources in source archives but does not install
-the Python package. For a local package installation, use the PEP 517 build
-backend through `pip`:
-
-```sh
-python -m pip install .
-```
-
-For source-tree development, set `LIBMPQ_LIBRARY` to an absolute
-shared-library path, or build libmpq in the source tree and let the
-development fallback locate `src/.libs/libmpq.so`.
-
-```sh
-./configure
-make
-LIBMPQ_LIBRARY="$PWD/src/.libs/libmpq.so" python -m pytest bindings/python/tests
-```
-
-Linux release wheels target `manylinux_2_17_x86_64`,
-`manylinux_2_17_aarch64`, `musllinux_1_2_x86_64`, and
-`musllinux_1_2_aarch64`. Each is built and tested natively using CPython 3.11.
-Windows release wheels target `win_amd64` and `win_arm64`, also built and
-tested natively using CPython 3.11. macOS wheels target `macosx_11_0_x86_64`
-and `macosx_11_0_arm64`, with native Intel and Apple Silicon builds. All
-eight wheels use the `py3-none` ABI.
-
-Linux release wheels contain a private native library at `mpq_libs/libmpq.so`. It
-is loaded by its exact package path through `ctypes`, intentionally has no ELF
-`DT_SONAME`, and does not require a separate system libmpq installation. The
-release Python ZIP contains one sdist and all eight Linux/Windows/macOS
-wheels as a supplementary GitHub Release download. The sdist contains the
-canonical C and header sources and is free of native build products.
-
-Windows wheels bundle `mpq_libs/libmpq.dll` and its required non-system
-runtime DLLs, so no separately installed libmpq SDK is needed. The release
-build reuses MSVC/CMake and architecture-matched vcpkg dependencies, then
-delvewheel repairs the wheel using existing-DLL analysis and a custom patch
-before `ctypes` loads the library. Installed-wheel tests run with vcpkg and
-native build directories excluded from `PATH`. Local Windows wheel builds
-must set `LIBMPQ_LIBRARY` to a prebuilt shared CMake DLL; the backend does
-not compile Windows sources itself.
-
-macOS wheels contain `mpq_libs/libmpq.dylib` and any required non-system
-dylibs bundled by delocate. No separately installed libmpq SDK is needed.
-Both architectures retain the native SDK's macOS 11.0 deployment baseline;
-there is no universal2 wheel. The release build uses the Apple toolchain
-with Autotools and passes the installed dylib through `LIBMPQ_LIBRARY`.
-It uses system zlib, bzip2, and liblzma, with Homebrew xz supplying only
-headers. Repaired wheels are checked for architecture, deployment target,
-and relocatable runtime paths, then tested with native Python and no
-build overrides or Homebrew library search paths.
-
-Typical usage is explicitly closeable and safe with context managers:
-
-```python
-import mpq
-
-with mpq.Archive("data.mpq", offset=0) as archive:
-    entry = archive["readme.txt"]
-    print(entry.read())
-
-with mpq.Writer("created.mpq", version=mpq.ARCHIVE_VERSION_TWO) as writer:
-    writer.add("payload.bin", b"payload", mpq.FileCreateOptions.raw())
-
-with mpq.Writer.create_mpqe(
-    "created.mpqe", b"LIBMPQ-MPQE-EXAMPLE-AUTH-CODE-01"
-) as writer:
-    writer.add("payload.bin", b"payload")
-```
-
-MPQE creation writes a private plaintext temporary file before atomically
-replacing the destination with the encrypted archive. Use `Update.begin_mpqe`
-to modify an existing MPQE archive. Cleanup is best effort if the process
-crashes. The example authentication code is illustrative and non-secret; real
-callers must provide their own authentication code of at least 32 bytes.
-
-Native failures raise `LibmpqError` subclasses with `.code` and `.message`
-attributes. I/O and missing-file subclasses remain compatible with the
-corresponding Python built-in exception categories.
-
-## Optional attributes
+### Optional attributes and integrity
 
 Set `FILE_FLAG_SECTOR_CRC` in file options alongside COMPRESS or IMPLODE
 to generate sector Adler-32 tables, including for encrypted files. Empty,
@@ -262,9 +160,135 @@ decrypted packed sectors before decoding, including lossy ADPCM. Malformed
 optional sector tables are skipped during extraction; lossy ADPCM skips only
 file-level CRC32/MD5 comparison.
 
+## Transactional updates
+
+Transactional updates use a separate handle. Edits stay private until commit;
+leaving the context without committing aborts them automatically:
+
+```python
+with mpq.Update.begin("archive.mpq") as update:
+    update.replace_data("foo.txt", b"new contents")
+    update.rename("old.txt", "new.txt")
+    update.commit()
+```
+
+Use the same `Update` methods for MPQE after an authenticated begin:
+
+```python
+with mpq.Update.begin_mpqe("archive.mpqe", auth_code) as update:
+    update.replace_data("foo.txt", b"new contents")
+    update.commit()
+```
+
+`replace_path`, `remove`, and explicit `abort` are also available. Commit and
+abort consume the update handle even on error. Omitting replacement options
+passes a native NULL options pointer, so libmpq uses defaults and preserves
+the member's locale/platform identity. Supply `FileCreateOptions` as the
+optional third argument for custom storage; its locale/platform must match
+the existing member. Ordinary MPQs and embedded W3X/W3M containers use
+`Update.begin`; MPQE uses `Update.begin_mpqe` with an explicit code. The code
+is needed only during begin. Both paths abort automatically without commit.
+
+## Patch creation
+
+Create a separate patch artifact without modifying its base archive:
+
+```python
+with mpq.Patch.begin("base.mpq", "changes.mpq") as patch:
+    patch.replace_data("foo.txt", b"new contents")
+    patch.remove("old.txt")
+    patch.sign(private_key)  # or patch.sign(strong_key, mpq.SIGNATURE_STRONG)
+    patch.finish()
+```
+
+`Patch.begin()` creates an ordinary MPQ patch. For an MPQE-wrapped patch, use
+the same `Patch` wrapper with an explicit caller-supplied authentication code:
+
+```python
+with mpq.Patch.begin_mpqe("base.mpq", "changes.mpqe", auth_code) as patch:
+    patch.replace_data("foo.txt", b"new contents")
+    patch.finish()
+```
+
+The auth bytes are needed only during begin. Authenticated readers need the
+same code to open the result; unfinished patches are aborted on cleanup, not
+published.
+
+`replace_path` accepts a filesystem source. `finish()` publishes the patch;
+`abort()` discards it, and leaving the context unfinished aborts automatically.
+Omitting replacement options passes native NULL and uses native patch defaults;
+pass `FileCreateOptions` explicitly to configure patch-member storage. Patch
+options must match the base member's locale/platform identity. Patch add and
+rename are not supported.
+Signing configures the active patch without consuming it; an ordinary MPQ
+patch may configure weak and strong signatures separately. MPQE-wrapped
+patches support weak signing; external strong signatures are not defined for
+MPQE transport streams. After `finish()`, use `Archive.signatures()` and
+`Archive.verify()` on the finished artifact, as for any other archive.
+
+## Signatures
+
+Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
+Strong verification uses a 512-byte raw public key: a 256-byte unsigned
+big-endian modulus followed by a 256-byte zero-padded unsigned big-endian
+public exponent. Strong signing uses the same layout with the private exponent
+and emits only the plain SHA-1 archive-range variant. Weak signatures are
+supported inside MPQE-wrapped MPQs. External strong signatures are not defined
+for MPQE transport streams.
+Use `Writer.sign(privateKey)` for weak signing or
+`Writer.sign(privateKey, SIGNATURE_STRONG)` for strong signing before writer close, and
+`Archive.signatures()` / `Archive.verify(publicKey)` on reopened archives.
+Verification returns mismatch bits; malformed keys/archives raise normal binding
+errors. Weak keys are exactly 128 bytes: 64-byte big-endian modulus followed by a
+64-byte big-endian exponent. Signing supports v1 and v2. libmpq does not
+ship Blizzard- or product-specific public verification keys or private signing
+keys; all signature key material is supplied explicitly by the caller.
+MD5/RSA-512 is legacy compatibility, not modern authenticity protection.
+See [the format guide](../../MPQ.md) for details.
+
 `Archive.signatures()` reports weak MD5/RSA-512 internal signatures and strong
 SHA-1/RSA-2048 external `NGIS` trailers. `Archive.verify(key)` remains the
 weak convenience form. Pass `signature_type=SIGNATURE_STRONG` and a 512-byte
 raw public key for strong verification. Strong signatures are legacy
 compatibility data. `Writer.sign(key, SIGNATURE_STRONG)` creates the
 plain SHA-1 archive-range strong variant from a 512-byte raw private key.
+
+## Development and testing
+
+For source-tree development, set `LIBMPQ_LIBRARY` to an absolute
+shared-library path, or build libmpq in the source tree and let the
+development fallback locate `src/.libs/libmpq.so`.
+
+```sh
+./configure
+make
+LIBMPQ_LIBRARY="$PWD/src/.libs/libmpq.so" python -m pytest bindings/python/tests
+```
+
+## Distribution packages
+
+Linux release wheels target `manylinux_2_17_x86_64`,
+`manylinux_2_17_aarch64`, `musllinux_1_2_x86_64`, and
+`musllinux_1_2_aarch64`. Windows release wheels target `win_amd64` and
+`win_arm64`. macOS wheels target `macosx_11_0_x86_64` and
+`macosx_11_0_arm64`, with native Intel and Apple Silicon builds. All
+eight wheels use the `py3-none` ABI.
+
+Linux release wheels contain a private native library at `mpq_libs/libmpq.so`. It
+is loaded by its exact package path through `ctypes`, intentionally has no ELF
+`DT_SONAME`, and does not require a separate system libmpq installation. The
+release Python ZIP contains one sdist and all eight Linux/Windows/macOS
+wheels as a supplementary GitHub Release download. The sdist contains the
+canonical C and header sources and is free of native build products.
+
+Windows wheels bundle `mpq_libs/libmpq.dll` and its required non-system
+runtime DLLs, so no separately installed libmpq SDK is needed. Local Windows
+wheel builds must set `LIBMPQ_LIBRARY` to a prebuilt shared CMake DLL; the backend does
+not compile Windows sources itself.
+
+macOS wheels contain `mpq_libs/libmpq.dylib` and any required non-system
+dylibs bundled by delocate. No separately installed libmpq SDK is needed.
+Both architectures retain the native SDK's macOS 11.0 deployment baseline;
+there is no universal2 wheel. The wheels use system zlib, bzip2, and liblzma.
+
+See [RELEASING.md](../../RELEASING.md) for maintainer release procedures.

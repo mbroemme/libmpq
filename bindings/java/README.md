@@ -1,104 +1,11 @@
 # libmpq Java bindings
 
-Create a patch artifact while leaving its base archive unchanged:
-
-```java
-try (MpqPatch patch = MpqPatch.begin(Path.of("base.mpq"), Path.of("changes.mpq"))) {
-    patch.replaceData("foo.txt", "new contents".getBytes());
-    patch.remove("old.txt");
-    patch.sign(weakPrivateKey); // or patch.sign(Mpq.SIGNATURE_STRONG, strongPrivateKey)
-    patch.finish();
-}
-```
-
-`MpqPatch.begin` creates an ordinary MPQ patch. Use `beginMpqe` and an
-explicit caller-supplied authentication code for MPQE output:
-
-```java
-try (MpqPatch patch = MpqPatch.beginMpqe(
-        Path.of("base.mpq"), Path.of("changes.mpqe"), authCode)) {
-    patch.replaceData("foo.txt", "new contents".getBytes());
-    patch.finish();
-}
-```
-
-The same `MpqPatch` handles either output. Authentication bytes are needed
-only during begin; closing without finish aborts instead of publishing.
-
-`replacePath` is also available. `finish()` publishes the patch; `abort()`
-discards it, and closing an unfinished patch aborts automatically. Omitted
-`FileOptions` pass native NULL and use native patch defaults; explicit options
-configure patch-member storage. Patch add and rename are not supported.
-Explicit locale/platform must match the base member.
-Signing configures the active patch without consuming it; an ordinary MPQ
-patch may configure weak and strong signatures separately. MPQE patches allow
-weak signing only. After `finish()`, use `Archive.signatures()` and
-`Archive.verify()` on the finished artifact.
-
-Updates are separate transactions. Closing without commit aborts staged edits:
-
-```java
-try (MpqUpdate update = MpqUpdate.begin(Path.of("archive.mpq"))) {
-    update.replaceData("foo.txt", "new contents".getBytes(), null);
-    update.rename("old.txt", "new.txt");
-    update.commit();
-}
-```
-
-The same `MpqUpdate` methods work for authenticated MPQE updates:
-
-```java
-try (MpqUpdate update = MpqUpdate.beginMpqe(Path.of("archive.mpqe"), authCode)) {
-    update.replaceData("foo.txt", "new contents".getBytes(), null);
-    update.commit();
-}
-```
-
-`replacePath`, `remove`, and explicit `abort` are also available. Commit and
-abort consume the handle even on error. Java uses `null` for no replacement
-options: it passes a native NULL pointer, so libmpq uses defaults and
-preserves the member's locale/platform identity. Pass explicit `FileOptions`
-for custom storage, including distinct first/later compression masks; their
-locale/platform must match the existing member. Embedded MPQ containers retain
-their prefix and unrelated trailing bytes. Ordinary MPQs and embedded W3X/W3M
-containers use `MpqUpdate.begin`; MPQE uses `beginMpqe` with an explicit code
-needed only during begin. Closing either active update aborts it.
-
-Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
-Strong verification uses a 512-byte raw public key: a 256-byte unsigned
-big-endian modulus followed by a 256-byte zero-padded unsigned big-endian
-public exponent. Strong signing uses the same layout with the private exponent
-and emits only the plain SHA-1 archive-range variant. External strong NGIS
-signatures are not detected or verified for MPQE transport streams.
-Use `Archive.sign(privateKey)` for weak signing or
-`Archive.sign(SIGNATURE_STRONG, privateKey)` for strong signing before writer close, and
-`Archive.signatures()` / `Archive.verify(publicKey)` on reopened archives.
-Verification returns mismatch bits; malformed keys/archives raise normal binding
-errors. Weak keys are exactly 128 bytes: 64-byte big-endian modulus followed by a
-64-byte big-endian exponent. Signing supports v1 and v2; no keys are built
-in. MD5/RSA-512 is legacy compatibility, not modern authenticity protection.
-See [the format guide](../../MPQ.md) for details.
-
 These bindings use the Java Foreign Function and Memory API and require JDK
 22 or newer. They provide a complete mapping of libmpq's stable public C API
 through `org.libmpq.ffi.LibmpqNative` and safer `AutoCloseable` wrappers in
 `org.libmpq`.
 
-Creation defaults to `Mpq.COMPRESSION_POLICY_STANDARD`. Set
-`Mpq.ARCHIVE_CREATE_COMPRESSION_EXTENDED` in `ArchiveCreateOptions.flags`
-for additional, potentially less interoperable compression forms. Use
-`Mpq.archiveCompressionAllowed(version, mask, policy)` to query whether a
-compression selection is allowed by the writer policy, using zero-based
-`Mpq.ARCHIVE_VERSION_*` selectors. Readers remain permissive.
-
-`Mpq.COMPRESSION_SPARSE` selects lossless zero-run compression. In MPQ v2+,
-STANDARD allows the fixed SPARSE forms: alone (`0x20`), with zlib (`0x22`),
-or with bzip2 (`0x30`). MPQ v1 retains normal compression-mask semantics
-under either policy, allowing other valid combinations such as SPARSE
-with Huffman (`0x21`) or PKWARE (`0x28`). In MPQ v2+, EXTENDED permits the
-broader valid lossless SPARSE combinations. Neither policy allows SPARSE
-with WAVE ADPCM. The shared `sparse*.txt` fixtures use UTF-32LE with a BOM;
-extraction returns those bytes without transcoding.
+## Installation
 
 The JAR does not contain a native library. Autotools does not install the
 Java binding; Maven builds the platform-independent runtime, sources, and
@@ -116,32 +23,14 @@ The canonical release installation path is Maven Central:
 </dependency>
 ```
 
-For example:
-
-```sh
-mvn test -Dorg.libmpq.library=/path/to/libmpq/src/.libs/libmpq.so
-```
-
-To exercise the loader-path fallback explicitly, provide the native library
-directory through the platform loader and enable the integration test mode:
-
-```sh
-LD_LIBRARY_PATH=/path/to/libmpq/src/.libs \
-    mvn test -Dorg.libmpq.test.loaderPath=true
-```
-
-The GitHub Release Java ZIP is a supplementary download containing the
-runtime, sources, and Javadoc JARs together with `COPYING`, `COPYING.LESSER`,
-and this README. Release validation also builds an external consumer using
-only the packaged runtime JAR and tests both native-library loading modes.
+## Basic archive usage
 
 The high-level API uses `Archive.open`, `Archive.openMpqe`, `Archive.create`,
-`Archive.createMpqe`, and `MpqFileWriter`. MPQE creation uses a private
-plaintext temporary file before atomically replacing the destination; the Java
-wrapper uses `MpqUpdate.beginMpqe` for authenticated changes to existing MPQE
-archives. Crash cleanup is best effort. All
-negative libmpq return codes are reported as `LibmpqException` values
-containing the original code and diagnostic text.
+`Archive.createMpqe`, and `MpqFileWriter`. All negative libmpq return codes
+are reported as `LibmpqException` values containing the original code and
+diagnostic text.
+
+### Logical member streams
 
 Use Archive.openStream(name) for incremental seekable member access. The stream
 owns an independent native archive clone and remains usable after the
@@ -153,13 +42,37 @@ checksums but do not implicitly verify whole-file CRC32/MD5 values.
         int count = stream.read(buffer);
     }
 
+### Custom random-access I/O
+
 Use `Archive.openSource(channel, sourceName)` for a caller-owned
 `SeekableByteChannel`. The binding retains it while archives or derived streams
 need it, serializes seek/read callbacks, and never closes the channel.
 
     Archive archive = Archive.openSource(channel, "data.mpq");
 
-## Optional attributes
+## Archive creation and compression policy
+
+MPQE creation uses a private plaintext temporary file before atomically
+replacing the destination. Use `MpqUpdate.beginMpqe` for authenticated changes
+to an existing MPQE archive. Crash cleanup is best effort.
+
+Creation defaults to `Mpq.COMPRESSION_POLICY_STANDARD`. Set
+`Mpq.ARCHIVE_CREATE_COMPRESSION_EXTENDED` in `ArchiveCreateOptions.flags`
+for additional, potentially less interoperable compression forms. Use
+`Mpq.archiveCompressionAllowed(version, mask, policy)` to query whether a
+compression selection is allowed by the writer policy, using zero-based
+`Mpq.ARCHIVE_VERSION_*` selectors. Readers remain permissive.
+
+`Mpq.COMPRESSION_SPARSE` selects lossless zero-run compression. In MPQ v2+,
+STANDARD allows the fixed SPARSE forms: alone (`0x20`), with zlib (`0x22`),
+or with bzip2 (`0x30`). MPQ v1 retains normal compression-mask semantics
+under either policy, allowing other valid combinations such as SPARSE
+with Huffman (`0x21`) or PKWARE (`0x28`). In MPQ v2+, EXTENDED permits the
+broader valid lossless SPARSE combinations. Neither policy allows SPARSE
+with WAVE ADPCM. The shared `sparse*.txt` fixtures use UTF-32LE with a BOM;
+extraction returns those bytes without transcoding.
+
+### Optional attributes and integrity
 
 Set `Mpq.FILE_FLAG_SECTOR_CRC` in file options alongside COMPRESS or IMPLODE
 to generate sector Adler-32 tables, including for encrypted files. Empty,
@@ -220,9 +133,122 @@ decrypted packed sectors before decoding, including lossy ADPCM. Malformed
 optional sector tables are skipped during extraction; lossy ADPCM skips only
 file-level CRC32/MD5 comparison.
 
+## Transactional updates
+
+Updates are separate transactions. Closing without commit aborts staged edits:
+
+```java
+try (MpqUpdate update = MpqUpdate.begin(Path.of("archive.mpq"))) {
+    update.replaceData("foo.txt", "new contents".getBytes(), null);
+    update.rename("old.txt", "new.txt");
+    update.commit();
+}
+```
+
+The same `MpqUpdate` methods work for authenticated MPQE updates:
+
+```java
+try (MpqUpdate update = MpqUpdate.beginMpqe(Path.of("archive.mpqe"), authCode)) {
+    update.replaceData("foo.txt", "new contents".getBytes(), null);
+    update.commit();
+}
+```
+
+`replacePath`, `remove`, and explicit `abort` are also available. Commit and
+abort consume the handle even on error. Java uses `null` for no replacement
+options: it passes a native NULL pointer, so libmpq uses defaults and
+preserves the member's locale/platform identity. Pass explicit `FileOptions`
+for custom storage, including distinct first/later compression masks; their
+locale/platform must match the existing member. Embedded MPQ containers retain
+their prefix and unrelated trailing bytes. Ordinary MPQs and embedded W3X/W3M
+containers use `MpqUpdate.begin`; MPQE uses `beginMpqe` with an explicit code
+needed only during begin. Closing either active update aborts it.
+
+## Patch creation
+
+Create a patch artifact while leaving its base archive unchanged:
+
+```java
+try (MpqPatch patch = MpqPatch.begin(Path.of("base.mpq"), Path.of("changes.mpq"))) {
+    patch.replaceData("foo.txt", "new contents".getBytes());
+    patch.remove("old.txt");
+    patch.sign(weakPrivateKey); // or patch.sign(Mpq.SIGNATURE_STRONG, strongPrivateKey)
+    patch.finish();
+}
+```
+
+`MpqPatch.begin` creates an ordinary MPQ patch. Use `beginMpqe` and an
+explicit caller-supplied authentication code for MPQE output:
+
+```java
+try (MpqPatch patch = MpqPatch.beginMpqe(
+        Path.of("base.mpq"), Path.of("changes.mpqe"), authCode)) {
+    patch.replaceData("foo.txt", "new contents".getBytes());
+    patch.finish();
+}
+```
+
+The same `MpqPatch` handles either output. Authentication bytes are needed
+only during begin; closing without finish aborts instead of publishing.
+
+`replacePath` is also available. `finish()` publishes the patch; `abort()`
+discards it, and closing an unfinished patch aborts automatically. Omitted
+`FileOptions` pass native NULL and use native patch defaults; explicit options
+configure patch-member storage. Patch add and rename are not supported.
+Explicit locale/platform must match the base member.
+Signing configures the active patch without consuming it; an ordinary MPQ
+patch may configure weak and strong signatures separately. MPQE-wrapped
+patches support weak signing; external strong signatures are not defined for
+MPQE transport streams. After `finish()`, use `Archive.signatures()` and
+`Archive.verify()` on the finished artifact.
+
+## Signatures
+
+Weak MPQ signatures are supported with caller-supplied raw RSA-512 keys.
+Strong verification uses a 512-byte raw public key: a 256-byte unsigned
+big-endian modulus followed by a 256-byte zero-padded unsigned big-endian
+public exponent. Strong signing uses the same layout with the private exponent
+and emits only the plain SHA-1 archive-range variant. Weak signatures are
+supported inside MPQE-wrapped MPQs. External strong signatures are not defined
+for MPQE transport streams.
+Use `Archive.sign(privateKey)` for weak signing or
+`Archive.sign(SIGNATURE_STRONG, privateKey)` for strong signing before writer close, and
+`Archive.signatures()` / `Archive.verify(publicKey)` on reopened archives.
+Verification returns mismatch bits; malformed keys/archives raise normal binding
+errors. Weak keys are exactly 128 bytes: 64-byte big-endian modulus followed by a
+64-byte big-endian exponent. Signing supports v1 and v2. libmpq does not
+ship Blizzard- or product-specific public verification keys or private signing
+keys; all signature key material is supplied explicitly by the caller.
+MD5/RSA-512 is legacy compatibility, not modern authenticity protection.
+See [the format guide](../../MPQ.md) for details.
+
 `Archive.signatures()` reports weak MD5/RSA-512 internal signatures and strong
 SHA-1/RSA-2048 external `NGIS` trailers. `Archive.verify(byte[])` remains the
 weak convenience overload; `verify(int, byte[])` accepts `SIGNATURE_STRONG`
 and a 512-byte raw public key. Strong signatures are legacy compatibility data.
 `Archive.sign(SIGNATURE_STRONG, key)` creates the plain SHA-1 archive-range
 strong variant from a 512-byte raw private key.
+
+## Development and testing
+
+For example:
+
+```sh
+mvn test -Dorg.libmpq.library=/path/to/libmpq/src/.libs/libmpq.so
+```
+
+To exercise the loader-path fallback explicitly, provide the native library
+directory through the platform loader and enable the integration test mode:
+
+```sh
+LD_LIBRARY_PATH=/path/to/libmpq/src/.libs \
+    mvn test -Dorg.libmpq.test.loaderPath=true
+```
+
+## Distribution packages
+
+The GitHub Release Java ZIP is a supplementary download containing the
+runtime, sources, and Javadoc JARs together with `COPYING`, `COPYING.LESSER`,
+and this README.
+
+See [RELEASING.md](../../RELEASING.md) for maintainer release procedures.

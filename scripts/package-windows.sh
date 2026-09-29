@@ -195,7 +195,8 @@ if [[ "${mode}" == prepare ]]; then
 		[[ "${base,,}" == libmpq* ]] || fail 'Prepare requires a clean install without runtime DLLs'
 	done
 	dependency_closure yes
-	cp "${source}/README.md" "${source}/DEVELOPER.md" "${source}/MPQ.md" \
+	cp "${source}/README.md" "${source}/DEVELOPER.md" \
+		"${source}/RELEASING.md" "${source}/MPQ.md" \
 		"${source}/COPYING" "${source}/COPYING.LESSER" "${stage}/"
 	if [[ "${toolchain}" == mingw ]]; then
 		pc="${stage}/lib/pkgconfig/libmpq.pc"

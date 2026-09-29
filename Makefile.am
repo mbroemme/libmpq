@@ -23,6 +23,7 @@ EXTRA_DIST = \
 	COPYING.LESSER \
 	README.md \
 	DEVELOPER.md \
+	RELEASING.md \
 	MPQ.md \
 	RELICENSING.md \
 	dub.sdl \

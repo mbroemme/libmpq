@@ -324,7 +324,7 @@ Windows SDK ZIPs bundle the required non-system runtime DLLs under `bin/`;
 choose the MSVC or MinGW-w64 package to match your compiler. No special
 libmpq consumer preprocessor define is required. See the
 [SDK setup instructions](DEVELOPER.md#native-c-sdk-packages) and
-[release package summary](DEVELOPER.md#release-package-summary).
+[release package summary](RELEASING.md#release-package-summary).
 
 ## Bindings
 
@@ -336,7 +336,7 @@ Optional language bindings are distributed through their native ecosystems:
 
 Autotools does not install the bindings. See each binding's README for usage
 and installation, or the [developer guide](DEVELOPER.md#binding-development)
-for local builds, tests, and release packaging.
+for local builds and tests. See the [release guide](RELEASING.md) for packaging.
 
 ## Documentation
 
@@ -344,8 +344,9 @@ The documentation includes manual pages for all available public API
 functions, together with a helper for retrieving the compiler and linker flags
 required to use libmpq.
 
-See the [developer guide](DEVELOPER.md) for API integration and release
-workflows. For an implementation-oriented overview of MPQ v1 through v4
+See the [developer guide](DEVELOPER.md) for API integration and the
+[release guide](RELEASING.md) for release workflows. For an
+implementation-oriented overview of MPQ v1 through v4
 headers, tables, encryption, sectors, and compression, see the
 [MPQ format guide](MPQ.md).
 
