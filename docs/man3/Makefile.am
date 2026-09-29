@@ -1,58 +1,35 @@
 # Include the manual pages in source distributions.
-EXTRA_DIST			= $(man_MANS)
+EXTRA_DIST = $(man_MANS)
 
 # Manual pages for the installed libmpq library API.
 man_MANS = \
-	libmpq__archive_signatures.3 \
-	libmpq__archive_verify.3 \
-	libmpq__archive_sign.3 \
-	libmpq__block_size_packed.3 \
-	libmpq__block_compression.3 \
-	libmpq__block_verify.3 \
-	libmpq__file_verify.3 \
-	libmpq__archive_attributes.3 \
-	libmpq__file_attributes.3 \
-	libmpq__writer_timestamp.3 \
 	libmpq.3 \
-	libmpq__archive_compression_allowed.3 \
-	libmpq__archive_close.3 \
+	libmpq__archive_add_data.3 \
+	libmpq__archive_add_path.3 \
+	libmpq__archive_attributes.3 \
 	libmpq__archive_clone.3 \
+	libmpq__archive_close.3 \
+	libmpq__archive_compression_allowed.3 \
+	libmpq__archive_create.3 \
+	libmpq__archive_create_mpqe.3 \
 	libmpq__archive_files.3 \
 	libmpq__archive_offset.3 \
 	libmpq__archive_open.3 \
 	libmpq__archive_open_io.3 \
 	libmpq__archive_open_mpqe.3 \
 	libmpq__archive_open_mpqe_io.3 \
-	libmpq__stream_open.3 \
-	libmpq__stream_open_name.3 \
-	libmpq__stream_read.3 \
-	libmpq__stream_seek.3 \
-	libmpq__stream_tell.3 \
-	libmpq__stream_size.3 \
-	libmpq__stream_close.3 \
-	libmpq__update_begin.3 \
-	libmpq__update_begin_mpqe.3 \
-	libmpq__update_replace_data.3 \
-	libmpq__update_replace_path.3 \
-	libmpq__update_remove.3 \
-	libmpq__update_rename.3 \
-	libmpq__update_commit.3 \
-	libmpq__update_abort.3 \
-	libmpq__patch_begin.3 \
-	libmpq__patch_begin_mpqe.3 \
-	libmpq__patch_sign.3 \
-	libmpq__patch_replace_data.3 \
-	libmpq__patch_replace_path.3 \
-	libmpq__patch_remove.3 \
-	libmpq__patch_finish.3 \
-	libmpq__patch_abort.3 \
+	libmpq__archive_sign.3 \
+	libmpq__archive_signatures.3 \
 	libmpq__archive_size_packed.3 \
 	libmpq__archive_size_unpacked.3 \
+	libmpq__archive_verify.3 \
 	libmpq__archive_version.3 \
-	libmpq__archive_create.3 \
-	libmpq__archive_create_mpqe.3 \
+	libmpq__block_compression.3 \
 	libmpq__block_read.3 \
+	libmpq__block_size_packed.3 \
 	libmpq__block_size_unpacked.3 \
+	libmpq__block_verify.3 \
+	libmpq__file_attributes.3 \
 	libmpq__file_blocks.3 \
 	libmpq__file_flags.3 \
 	libmpq__file_hash.3 \
@@ -60,12 +37,35 @@ man_MANS = \
 	libmpq__file_number_from_hash.3 \
 	libmpq__file_offset.3 \
 	libmpq__file_read.3 \
-	libmpq__writer_begin.3 \
-	libmpq__writer_write.3 \
-	libmpq__writer_finish.3 \
-	libmpq__archive_add_data.3 \
-	libmpq__archive_add_path.3 \
 	libmpq__file_size_packed.3 \
 	libmpq__file_size_unpacked.3 \
+	libmpq__file_verify.3 \
+	libmpq__patch_abort.3 \
+	libmpq__patch_begin.3 \
+	libmpq__patch_begin_mpqe.3 \
+	libmpq__patch_finish.3 \
+	libmpq__patch_remove.3 \
+	libmpq__patch_replace_data.3 \
+	libmpq__patch_replace_path.3 \
+	libmpq__patch_sign.3 \
+	libmpq__stream_close.3 \
+	libmpq__stream_open.3 \
+	libmpq__stream_open_name.3 \
+	libmpq__stream_read.3 \
+	libmpq__stream_seek.3 \
+	libmpq__stream_size.3 \
+	libmpq__stream_tell.3 \
 	libmpq__strerror.3 \
-	libmpq__version.3
+	libmpq__update_abort.3 \
+	libmpq__update_begin.3 \
+	libmpq__update_begin_mpqe.3 \
+	libmpq__update_commit.3 \
+	libmpq__update_remove.3 \
+	libmpq__update_rename.3 \
+	libmpq__update_replace_data.3 \
+	libmpq__update_replace_path.3 \
+	libmpq__version.3 \
+	libmpq__writer_begin.3 \
+	libmpq__writer_finish.3 \
+	libmpq__writer_timestamp.3 \
+	libmpq__writer_write.3

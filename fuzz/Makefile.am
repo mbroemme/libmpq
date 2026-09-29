@@ -1,20 +1,20 @@
 # Build opt-in libFuzzer targets. They are not installed or part of make check.
 noinst_PROGRAMS = \
-	fuzz-attributes \
-	fuzz-patch-apply \
 	fuzz-archive-open \
-	fuzz-mpqe-open \
-	fuzz-file-read \
-	fuzz-writer-roundtrip \
-	fuzz-encrypted-archive \
-	fuzz-sector-decode \
-	fuzz-pkware-decode \
-	fuzz-huffman-decode \
-	fuzz-zlib-decode \
+	fuzz-attributes \
 	fuzz-bzip2-decode \
+	fuzz-encrypted-archive \
+	fuzz-file-read \
+	fuzz-huffman-decode \
 	fuzz-lzma-decode \
+	fuzz-mpqe-open \
+	fuzz-patch-apply \
+	fuzz-pkware-decode \
+	fuzz-sector-decode \
 	fuzz-sparse-decode \
-	fuzz-wave-decode
+	fuzz-wave-decode \
+	fuzz-writer-roundtrip \
+	fuzz-zlib-decode
 
 # Compile fuzz targets against generated configuration, public, and private headers.
 AM_CPPFLAGS = -I$(top_builddir) -I$(top_srcdir)/include -I$(top_srcdir)/src
@@ -87,17 +87,17 @@ fuzz_wave_decode_LDFLAGS = $(AM_LDFLAGS) -fsanitize=fuzzer,address,undefined
 
 # Include the harness sources and usage notes in source distributions.
 EXTRA_DIST = \
-	fuzz-attributes.c \
-	fuzz-patch-apply.c \
 	README.md \
 	corpus/README.md \
 	corpus/writer-roundtrip/pkware-short-runs.txt \
 	fuzz-archive-open.c \
+	fuzz-attributes.c \
 	fuzz-codec-decode.c \
 	fuzz-common.h \
 	fuzz-encrypted-archive.c \
 	fuzz-file-read.c \
 	fuzz-mpqe-open.c \
+	fuzz-patch-apply.c \
 	fuzz-sector-decode.c \
 	fuzz-wave-decode.c \
 	fuzz-writer-roundtrip.c

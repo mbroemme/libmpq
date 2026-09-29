@@ -1,45 +1,69 @@
 # Build the shared library and keep private headers out of installations.
-lib_LTLIBRARIES			= libmpq.la
+lib_LTLIBRARIES = libmpq.la
 
 # Keep private implementation headers available to in-tree readers and fuzzers.
-noinst_HEADERS			= mpq-compression.h mpq-crypt-buf.h mpq-crypto.h mpq-endian.h mpq-huffman.h mpq-internal.h mpq-mpqe.h mpq-patch-reader.h mpq-patch-writer.h mpq-pkware.h mpq-file.h mpq-stream.h mpq-reader.h mpq-sparse.h mpq-source.h mpq-update.h mpq-wave.h mpq-writer.h mpq-attributes.h mpq-md5.h mpq-sha1.h mpq-verify.h mpq-signature.h mpq-rsa.h
+noinst_HEADERS = \
+	mpq-attributes.h \
+	mpq-compression.h \
+	mpq-crypt-buf.h \
+	mpq-crypto.h \
+	mpq-endian.h \
+	mpq-file.h \
+	mpq-huffman.h \
+	mpq-internal.h \
+	mpq-md5.h \
+	mpq-mpqe.h \
+	mpq-patch-reader.h \
+	mpq-patch-writer.h \
+	mpq-pkware.h \
+	mpq-reader.h \
+	mpq-rsa.h \
+	mpq-sha1.h \
+	mpq-signature.h \
+	mpq-source.h \
+	mpq-sparse.h \
+	mpq-stream.h \
+	mpq-update.h \
+	mpq-verify.h \
+	mpq-wave.h \
+	mpq-writer.h
 
 # Use generated configuration and installed public headers when compiling.
-AM_CPPFLAGS			= -I$(top_builddir) -I$(top_srcdir)/include
+AM_CPPFLAGS = -I$(top_builddir) -I$(top_srcdir)/include
 
 # Link the public library from the complete native implementation.
-libmpq_la_SOURCES		= $(GENERAL_SRCS)
-libmpq_la_LDFLAGS		= -no-undefined -version-info @LIBMPQ_ABI@
+libmpq_la_SOURCES = $(GENERAL_SRCS)
+libmpq_la_LDFLAGS = -no-undefined -version-info @LIBMPQ_ABI@
 
 # Fuzzers need private codec entry points without widening the installed ABI.
 # This convenience library is built only for --enable-fuzzing configurations.
 if ENABLE_FUZZING
-noinst_LTLIBRARIES		= libmpq-fuzz-internal.la
-libmpq_fuzz_internal_la_SOURCES	= $(GENERAL_SRCS)
+noinst_LTLIBRARIES = libmpq-fuzz-internal.la
+libmpq_fuzz_internal_la_SOURCES = $(GENERAL_SRCS)
 endif
 
 # Library source files.
 GENERAL_SRCS = \
-	mpq-signature.c \
-	mpq-rsa.c \
-	mpq-file.c \
-	mpq-stream.c \
-	mpq-verify.c \
+	mpq-api.c \
 	mpq-attributes.c \
-	mpq-md5.c \
-	mpq-sha1.c \
 	mpq-compression.c \
 	mpq-crypto.c \
 	mpq-endian.c \
+	mpq-file.c \
 	mpq-huffman.c \
-	mpq-api.c \
+	mpq-md5.c \
 	mpq-mpqe.c \
 	mpq-patch-reader.c \
 	mpq-patch-writer.c \
 	mpq-pkware.c \
 	mpq-reader.c \
-	mpq-sparse.c \
+	mpq-rsa.c \
+	mpq-sha1.c \
+	mpq-signature.c \
 	mpq-source.c \
+	mpq-sparse.c \
+	mpq-stream.c \
 	mpq-update.c \
+	mpq-verify.c \
 	mpq-wave.c \
 	mpq-writer.c
