@@ -217,7 +217,8 @@ libmpq__reader_file_read(
 
         libmpq__block_size_unpacked(mpq_archive, file_number, i, &unpacked_size);
 
-        if ((result = libmpq__reader_block_read(
+        /* Offset state is already held for the complete file read. */
+        if ((result = libmpq__reader_block_read_acquired(
                  mpq_archive, file_number, i, out_buf + transferred_total, unpacked_size,
                  &transferred_block, checksums != NULL ? checksums + i : NULL, &sector_mismatches,
                  &block_lossy

@@ -92,15 +92,18 @@ CLEANFILES = \
 	update.mpqe \
 	update.mpqe.reference
 
-# Build explicitly for repeatable, non-installed patch and update profiling.
+# Build explicitly for repeatable, non-installed reader, patch, and update profiling.
 EXTRA_PROGRAMS = \
 	bench-patch-reader \
 	bench-patch-writer \
+	bench-reader \
 	bench-update
 bench_patch_reader_SOURCES = bench-mpq-patch-reader.c
 bench_patch_reader_LDADD = $(test_patch_writer_LDADD)
 bench_patch_writer_SOURCES = bench-mpq-patch-writer.c
 bench_patch_writer_LDADD = $(test_patch_writer_LDADD)
+bench_reader_SOURCES = bench-mpq-reader.c
+bench_reader_LDADD = $(test_attributes_LDADD)
 bench_update_SOURCES = bench-mpq-update.c
 bench_update_LDADD = $(test_update_LDADD)
 
@@ -109,6 +112,7 @@ benchmarks: $(EXTRA_PROGRAMS)
 run-benchmarks: benchmarks
 	./bench-patch-reader$(EXEEXT)
 	./bench-patch-writer$(EXEEXT)
+	./bench-reader$(EXEEXT)
 	./bench-update$(EXEEXT)
 
 # Verify the generated build-tree helper honors configured installation paths.

@@ -479,8 +479,10 @@ and reduces legal/distribution risk from bundling product-specific material.
 
 ### Developer benchmarks
 
-The three module-specific benchmarks are non-installed developer tools:
+The four module-specific benchmarks are non-installed developer tools:
 
+- `bench-reader` measures single-file and many-file archive open, name lookup,
+  and full-file extraction for stored, zlib, and encrypted workloads.
 - `bench-patch-reader` measures patch-view materialization for COPY, BSD0, and
   mixed chains.
 - `bench-patch-writer` measures patch staging and COPY/BSD0 transform selection.
@@ -489,9 +491,10 @@ The three module-specific benchmarks are non-installed developer tools:
 
 In a disposable build tree, build them together with `make -C tests benchmarks`
 and run their default cases with `make -C tests run-benchmarks`. Individual
-build targets are `make -C tests bench-patch-reader`,
-`make -C tests bench-patch-writer`, and `make -C tests bench-update`. Run an
-individual tool from `tests` as `./bench-patch-reader [runs]`,
+build targets are `make -C tests bench-reader`,
+`make -C tests bench-patch-reader`, `make -C tests bench-patch-writer`, and
+`make -C tests bench-update`. Run an individual tool from `tests` as
+`./bench-reader [runs]`, `./bench-patch-reader [runs]`,
 `./bench-patch-writer [runs]`, or `./bench-update [runs]`.
 
 The optional `runs` argument defaults to three; each tool reports the best

@@ -304,10 +304,13 @@ typedef struct
 {
     mpq_archive_s *archive;
     uint32_t number;
+    uint32_t blocks;
     uint32_t count;
+    uint64_t file_base;
     uint32_t *offsets;
     mpq_io_read_at_fn read_at;
     void *context;
+    int acquired;
     int nested;
 } offset_snapshot_s;
 
@@ -318,7 +321,23 @@ snapshot_read(void *context, uint64_t offset, uint8_t *buffer, size_t size)
     mpq_file_s *file = snapshot->archive->mpq_file[snapshot->number];
     if (file != NULL && file->packed_offset != NULL && file->packed_offset[0] != 0) {
         memcpy(snapshot->offsets, file->packed_offset, snapshot->count * sizeof(uint32_t));
-        snapshot->nested = file->open_count == 2;
+        /* MPQE backend reads are chunk-aligned, so their ranges cannot
+         * distinguish payload reads from optional checksum metadata. */
+        if (snapshot->archive->source->mpqe) {
+            if (file->open_count == 1)
+                snapshot->acquired = 1;
+        } else if (offset >= snapshot->file_base) {
+            /* The optional checksum table is metadata, not a file-sector read. */
+            uint64_t relative = offset - snapshot->file_base;
+
+            if (relative >= file->packed_offset[0] &&
+                relative < file->packed_offset[snapshot->blocks]) {
+                if (file->open_count == 1)
+                    snapshot->acquired = 1;
+                else if (file->open_count > 1)
+                    snapshot->nested = 1;
+            }
+        }
     }
     return snapshot->read_at(snapshot->context, offset, buffer, size);
 }
@@ -349,8 +368,15 @@ test_archive_offsets(mpq_archive_s *archive, uint32_t number, uint32_t **offsets
     }
     snapshot.archive = archive;
     snapshot.number = number;
+    snapshot.blocks = blocks;
+    snapshot.file_base =
+        (uint64_t)archive->archive_offset +
+        archive->mpq_block[archive->mpq_map[number].block_table_indices].offset +
+        ((uint64_t)archive->mpq_block_ex[archive->mpq_map[number].block_table_indices].offset_high
+         << 32);
     snapshot.read_at = archive->source->backend.read_at;
     snapshot.context = context;
+    snapshot.acquired = 0;
     snapshot.nested = 0;
     archive->source->backend.context = &snapshot;
     archive->source->backend.read_at = snapshot_read;
@@ -358,7 +384,7 @@ test_archive_offsets(mpq_archive_s *archive, uint32_t number, uint32_t **offsets
     archive->source->backend.read_at = snapshot.read_at;
     archive->source->backend.context = context;
     free(buffer);
-    if (result < 0 || !snapshot.nested || archive->mpq_file[number] != NULL) {
+    if (result < 0 || !snapshot.acquired || snapshot.nested || archive->mpq_file[number] != NULL) {
         free(snapshot.offsets);
         return -1;
     }
