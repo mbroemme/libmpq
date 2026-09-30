@@ -25,6 +25,7 @@ check_PROGRAMS = \
 	test-mpq \
 	test-pkware \
 	test-reader \
+	test-stream \
 	test-patch-reader \
 	test-patch-writer \
 	test-update \
@@ -92,11 +93,12 @@ CLEANFILES = \
 	update.mpqe \
 	update.mpqe.reference
 
-# Build explicitly for repeatable, non-installed reader, patch, and update profiling.
+# Build explicitly for repeatable, non-installed module profiling.
 EXTRA_PROGRAMS = \
 	bench-patch-reader \
 	bench-patch-writer \
 	bench-reader \
+	bench-stream \
 	bench-update
 bench_patch_reader_SOURCES = bench-mpq-patch-reader.c
 bench_patch_reader_LDADD = $(test_patch_writer_LDADD)
@@ -104,6 +106,8 @@ bench_patch_writer_SOURCES = bench-mpq-patch-writer.c
 bench_patch_writer_LDADD = $(test_patch_writer_LDADD)
 bench_reader_SOURCES = bench-mpq-reader.c
 bench_reader_LDADD = $(test_attributes_LDADD)
+bench_stream_SOURCES = bench-mpq-stream.c
+bench_stream_LDADD = $(test_attributes_LDADD)
 bench_update_SOURCES = bench-mpq-update.c
 bench_update_LDADD = $(test_update_LDADD)
 
@@ -113,6 +117,7 @@ run-benchmarks: benchmarks
 	./bench-patch-reader$(EXEEXT)
 	./bench-patch-writer$(EXEEXT)
 	./bench-reader$(EXEEXT)
+	./bench-stream$(EXEEXT)
 	./bench-update$(EXEEXT)
 
 # Verify the generated build-tree helper honors configured installation paths.
@@ -151,6 +156,7 @@ test_pkware_SOURCES = test-mpq-pkware.c \
 	../src/mpq-endian.c \
 	$(COMMON_SOURCES)
 test_reader_SOURCES = test-mpq-reader.c $(COMMON_SOURCES)
+test_stream_SOURCES = test-mpq-stream.c $(COMMON_SOURCES)
 test_patch_reader_SOURCES = test-mpq-patch-reader.c $(COMMON_SOURCES)
 test_patch_reader_LDADD = $(top_builddir)/src/mpq-patch-reader.lo $(test_attributes_LDADD)
 test_patch_writer_SOURCES = test-mpq-patch-writer.c $(COMMON_SOURCES)
@@ -225,6 +231,7 @@ EXTRA_DIST = \
 	test-mpq-api.c \
 	test-mpq-pkware.c \
 	test-mpq-reader.c \
+	test-mpq-stream.c \
 	test-mpq-patch-reader.c \
 	test-mpq-patch-writer.c \
 	test-mpq-update.c \
