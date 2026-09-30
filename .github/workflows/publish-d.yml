@@ -53,23 +53,17 @@ jobs:
         run: |
           set -euo pipefail
           version="${LIBMPQ_D_VERSION}"
-          url="https://code.dlang.org/api/packages/libmpq/${version}/info"
+          page_url="https://code.dlang.org/packages/libmpq"
           response="$(mktemp)"
           trap 'rm -f -- "${response}"' EXIT
           for _ in $(seq 1 40); do
-            if curl --fail --silent --show-error --location "${url}" > "${response}" &&
-                python - "${response}" "${version}" <<'PY'
-          import json
-          import sys
-          with open(sys.argv[1], encoding="utf-8") as response:
-              metadata = json.load(response)
-          sys.exit(metadata.get("version") != sys.argv[2])
-          PY
+            if curl --fail --silent --show-error --location "${page_url}" > "${response}" &&
+                grep -Fq -- "/packages/libmpq/${version}\"" "${response}"
             then
-              echo "code.dlang.org successfully discovered libmpq version ${version}."
+              echo "code.dlang.org exposes libmpq version ${version}."
               exit 0
             fi
             sleep 60
           done
-          echo "code.dlang.org did not discover libmpq version ${version} within the allowed time: ${url}" >&2
+          echo "code.dlang.org did not expose libmpq version ${version} within the allowed time: ${page_url}" >&2
           exit 1
