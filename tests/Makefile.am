@@ -99,6 +99,7 @@ EXTRA_PROGRAMS = \
 	bench-patch-writer \
 	bench-reader \
 	bench-stream \
+	bench-writer \
 	bench-update
 bench_patch_reader_SOURCES = bench-mpq-patch-reader.c
 bench_patch_reader_LDADD = $(test_patch_writer_LDADD)
@@ -108,6 +109,8 @@ bench_reader_SOURCES = bench-mpq-reader.c
 bench_reader_LDADD = $(test_attributes_LDADD)
 bench_stream_SOURCES = bench-mpq-stream.c
 bench_stream_LDADD = $(test_attributes_LDADD)
+bench_writer_SOURCES = bench-mpq-writer.c
+bench_writer_LDADD = $(test_attributes_LDADD)
 bench_update_SOURCES = bench-mpq-update.c
 bench_update_LDADD = $(test_update_LDADD)
 
@@ -118,6 +121,7 @@ run-benchmarks: benchmarks
 	./bench-patch-writer$(EXEEXT)
 	./bench-reader$(EXEEXT)
 	./bench-stream$(EXEEXT)
+	./bench-writer$(EXEEXT)
 	./bench-update$(EXEEXT)
 
 # Verify the generated build-tree helper honors configured installation paths.

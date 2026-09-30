@@ -965,24 +965,32 @@ writer_file_begin(
         return LIBMPQ_ERROR_FORMAT;
     }
 
-    /* Probe existing entries for duplicate name/locale/platform combinations. */
+    /* Existing writer entries already occupy their MPQ hash probe sequence. */
     {
         uint32_t h1;
         uint32_t h2;
         uint32_t h3;
         uint32_t i;
         libmpq__file_hash(name, &h1, &h2, &h3);
-        for (i = 0; i < a->write_next_block; i++) {
-            uint32_t a1;
-            uint32_t a2;
-            uint32_t a3;
-            if (a->write_names[i] == NULL || a->write_locales[i] != options->locale ||
-                a->write_platforms[i] != options->platform)
-                continue;
-            libmpq__file_hash(a->write_names[i], &a1, &a2, &a3);
-            if (h1 == a1 && h2 == a2 && h3 == a3) {
-                free(w);
-                return LIBMPQ_ERROR_EXIST;
+        for (i = 0; i < a->write_hash_capacity; i++) {
+            const mpq_hash_s *entry = &a->mpq_hash[(h1 + i) & (a->write_hash_capacity - 1)];
+
+            if (entry->block_table_index == LIBMPQ_HASH_FREE)
+                break;
+            if (entry->hash_a == h2 && entry->hash_b == h3 && entry->locale == options->locale &&
+                entry->platform == options->platform) {
+                uint32_t existing1;
+                uint32_t existing2;
+                uint32_t existing3;
+
+                /* Hash entries omit h1, so confirm it for matching identities. */
+                libmpq__file_hash(
+                    a->write_names[entry->block_table_index], &existing1, &existing2, &existing3
+                );
+                if (existing1 == h1) {
+                    free(w);
+                    return LIBMPQ_ERROR_EXIST;
+                }
             }
         }
     }
