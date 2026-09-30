@@ -1,5 +1,5 @@
 /*
- *  bench-mpq-patch-reader.c -- deterministic private patch-view benchmark.
+ *  bench-mpq-patch-writer.c -- deterministic patch-staging benchmark.
  *
  *  Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -67,7 +67,7 @@ fill_bytes(uint8_t *data, size_t size, uint32_t seed)
     }
 }
 
-/* Make an ordinary one-member archive for either the initial or next layer. */
+/* Make an ordinary one-member archive before the staging timer starts. */
 static int
 make_archive(const char *path, const uint8_t *data, size_t size)
 {
@@ -75,7 +75,6 @@ make_archive(const char *path, const uint8_t *data, size_t size)
                                               LIBMPQ_ARCHIVE_CREATE_LISTFILE, 0 };
     mpq_file_options_s storage = { 0, 0, 0, 0, 0 };
     mpq_archive_s *archive = NULL;
-
     int32_t status = libmpq__archive_create(&archive, path, &creation);
 
     if (status != LIBMPQ_SUCCESS) {
@@ -91,21 +90,23 @@ make_archive(const char *path, const uint8_t *data, size_t size)
     return libmpq__archive_close(archive) != LIBMPQ_SUCCESS;
 }
 
-/* Generate a patch with production selection and normal finalization. */
+/* Time only replacement staging, excluding begin and finalization. */
 static int
-make_patch(const char *base, const char *path, const uint8_t *data, size_t size)
+make_patch(const char *base, const char *path, const uint8_t *data, size_t size, double *stage_time)
 {
     mpq_patch_writer_s *writer = NULL;
     mpq_file_options_s storage = { 0, 0, 0, 0, 0 };
-
     int32_t status = libmpq__patch_writer_begin(&writer, base, path);
+    double start;
 
     if (status != LIBMPQ_SUCCESS) {
         fprintf(stderr, "patch begin failed: %d\n", status);
         return 1;
     }
+    start = elapsed_now();
     status =
         libmpq__patch_writer_replace(writer, "payload.bin", data, (libmpq__off_t)size, &storage);
+    *stage_time = elapsed_now() - start;
     if (status != LIBMPQ_SUCCESS) {
         fprintf(stderr, "patch replace failed: %d\n", status);
         (void)libmpq__patch_writer_abort(writer);
@@ -114,7 +115,7 @@ make_patch(const char *base, const char *path, const uint8_t *data, size_t size)
     return libmpq__patch_writer_finish(writer) != LIBMPQ_SUCCESS;
 }
 
-/* Inspect the stored plaintext patch prefix and PTCH transform before timing. */
+/* Inspect the completed artifact outside the timer to verify its transform. */
 static int
 check_transform(const char *path, const char expected[4])
 {
@@ -158,7 +159,7 @@ done:
     return failed;
 }
 
-/* Benchmark materialization only; setup and verification are outside the timer. */
+/* Benchmark single or repeated staging with all setup and inspection untimed. */
 static int
 run_case(size_t size, int layers, int mode, unsigned repeats)
 {
@@ -166,7 +167,6 @@ run_case(size_t size, int layers, int mode, unsigned repeats)
     char next_path[96];
     char patch_one[96];
     char patch_two[96];
-    const char *patches[2];
     uint8_t *before = NULL;
     uint8_t *middle = NULL;
     uint8_t *after = NULL;
@@ -174,13 +174,17 @@ run_case(size_t size, int layers, int mode, unsigned repeats)
     double best = 1e30;
 
     (void)snprintf(
-        base_path, sizeof(base_path), "bench-base-%lu-%d.mpq", (unsigned long)size, mode
+        base_path, sizeof(base_path), "bench-writer-base-%lu-%d.mpq", (unsigned long)size, mode
     );
     (void)snprintf(
-        next_path, sizeof(next_path), "bench-next-%lu-%d.mpq", (unsigned long)size, mode
+        next_path, sizeof(next_path), "bench-writer-next-%lu-%d.mpq", (unsigned long)size, mode
     );
-    (void)snprintf(patch_one, sizeof(patch_one), "bench-one-%lu-%d.mpq", (unsigned long)size, mode);
-    (void)snprintf(patch_two, sizeof(patch_two), "bench-two-%lu-%d.mpq", (unsigned long)size, mode);
+    (void)snprintf(
+        patch_one, sizeof(patch_one), "bench-writer-one-%lu-%d.mpq", (unsigned long)size, mode
+    );
+    (void)snprintf(
+        patch_two, sizeof(patch_two), "bench-writer-two-%lu-%d.mpq", (unsigned long)size, mode
+    );
     before = malloc(size);
     middle = malloc(size);
     after = malloc(size);
@@ -203,56 +207,30 @@ run_case(size_t size, int layers, int mode, unsigned repeats)
                 after[i] ^= 0xa5u;
         }
     }
-    if (make_archive(base_path, before, size) || make_patch(base_path, patch_one, middle, size) ||
-        check_transform(patch_one, mode == 1 ? "BSD0" : "COPY"))
+    if (make_archive(base_path, before, size))
         goto done;
-    patches[0] = patch_one;
-    if (layers == 2) {
-        if (make_archive(next_path, middle, size) ||
-            make_patch(next_path, patch_two, after, size) ||
-            check_transform(patch_two, mode == 0 ? "COPY" : "BSD0"))
-            goto done;
-        patches[1] = patch_two;
-    }
+    if (layers == 2 && make_archive(next_path, middle, size))
+        goto done;
     for (unsigned i = 0; i < repeats; i++) {
-        mpq_patch_view_s *view = NULL;
-        mpq_archive_s *archive;
-        uint32_t number;
-        uint8_t *actual = NULL;
-        libmpq__off_t transferred = 0;
-        double start = elapsed_now();
-        double duration;
+        double stage_one = 0;
+        double stage_two = 0;
 
-        int32_t status = libmpq__patch_view_open(&view, base_path, patches, (size_t)layers);
-
-        if (status != LIBMPQ_SUCCESS) {
-            fprintf(stderr, "patch view failed: %d\n", status);
+        if (make_patch(base_path, patch_one, middle, size, &stage_one) ||
+            check_transform(patch_one, mode == 1 ? "BSD0" : "COPY"))
             goto done;
-        }
-        duration = elapsed_now() - start;
-        if (duration < best)
-            best = duration;
-        archive = libmpq__patch_view_archive(view);
-        if (libmpq__file_number(archive, "payload.bin", &number) != LIBMPQ_SUCCESS ||
-            (actual = malloc(size)) == NULL ||
-            libmpq__file_read(archive, number, actual, (libmpq__off_t)size, &transferred) !=
-                LIBMPQ_SUCCESS ||
-            transferred != (libmpq__off_t)size ||
-            memcmp(actual, layers == 2 ? after : middle, size) != 0) {
-            free(actual);
-            (void)libmpq__patch_view_close(view);
+        if (layers == 2 && (make_patch(next_path, patch_two, after, size, &stage_two) ||
+                            check_transform(patch_two, mode == 0 ? "COPY" : "BSD0")))
             goto done;
-        }
-        free(actual);
-        if (libmpq__patch_view_close(view) != LIBMPQ_SUCCESS)
+        if (stage_one + stage_two < best)
+            best = stage_one + stage_two;
+        if (i + 1 < repeats && (remove(patch_one) != 0 || (layers == 2 && remove(patch_two) != 0)))
             goto done;
     }
     printf(
-        "%s %s %lu KiB: %.3f ms (best/%u); %lu reconstructed member bytes, "
-        "%d full-view passes\n",
-        layers == 2 ? "chain" : "single", mode == 2 ? "COPY+BSD0" : (mode == 1 ? "BSD0" : "COPY"),
-        (unsigned long)(size / 1024), best * 1000.0, repeats,
-        (unsigned long)(size * (size_t)layers), layers
+        "%s %s %lu KiB: writer %.3f ms elapsed (best/%u); %d staging pass(es)\n",
+        layers == 2 ? "repeated" : "single",
+        mode == 2 ? "COPY+BSD0" : (mode == 1 ? "BSD0" : "COPY"), (unsigned long)(size / 1024),
+        best * 1000.0, repeats, layers
     );
     failed = 0;
 
@@ -267,7 +245,7 @@ done:
     return failed;
 }
 
-/* Run identical deterministic cases at useful small, medium, and large sizes. */
+/* Run the same deterministic data sizes and transforms as the reader tool. */
 int
 main(int argc, char **argv)
 {

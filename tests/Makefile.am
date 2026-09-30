@@ -92,10 +92,14 @@ CLEANFILES = \
 	update.mpqe \
 	update.mpqe.reference
 
-# Build explicitly for repeatable, non-installed patch-view profiling.
-EXTRA_PROGRAMS = bench-patch-reader
+# Build explicitly for repeatable, non-installed patch profiling.
+EXTRA_PROGRAMS = \
+	bench-patch-reader \
+	bench-patch-writer
 bench_patch_reader_SOURCES = bench-mpq-patch-reader.c
 bench_patch_reader_LDADD = $(test_patch_writer_LDADD)
+bench_patch_writer_SOURCES = bench-mpq-patch-writer.c
+bench_patch_writer_LDADD = $(test_patch_writer_LDADD)
 
 # Verify the generated build-tree helper honors configured installation paths.
 check-local:

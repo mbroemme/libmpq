@@ -459,14 +459,15 @@ A content change invalidates the base archive's signatures, so the temporary
 view omits stale weak and strong signatures. Patch-view composition remains
 private.
 
-The non-installed `tests/bench-patch-reader` tool profiles COPY, BSD0, and
-mixed chains at 64 KiB, 1 MiB, and 16 MiB. Build it with
-`make -C tests bench-patch-reader` in a disposable build tree, then run
-`(cd tests && ./bench-patch-reader 5)`. The optional argument is the repeat
-count; reported time is the best wall-clock materialization time and excludes
-fixture creation and result verification. Layer count is also the number of
-full-view reconstruction passes. Results depend on filesystem caches and
-should be compared on the same host and build configuration.
+The non-installed patch benchmarks cover COPY, BSD0, and mixed cases at
+64 KiB, 1 MiB, and 16 MiB. Build them in a disposable build tree with
+`make -C tests bench-patch-reader` and `make -C tests bench-patch-writer`.
+Run `(cd tests && ./bench-patch-reader 5)` to measure patch-view
+materialization, or `(cd tests && ./bench-patch-writer 5)` to measure patch
+replacement staging and transform selection. The optional argument is the
+repeat count. Both report monotonic elapsed time and exclude fixture creation
+and result verification. Compare results on the same host and build
+configuration because filesystem caches affect them.
 
 ### Game-neutral authentication and namespace policy
 
