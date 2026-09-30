@@ -350,6 +350,13 @@ above. Ordinary updates do not write PATCH_BIT=true; the separate patch writer
 sets it for patch-file entries. The current rebuild rejects an archive extent
 that cannot fit the 32-bit MPQ archive-size field.
 
+The non-installed `tests/bench-update` tool measures transactional update
+begin, staging, and commit separately for ordinary MPQs, embedded HM3W-style
+containers, and authenticated MPQE archives. Build it with
+`make -C tests bench-update` in a disposable build tree, then run
+`(cd tests && ./bench-update 3)`. Fixture creation and result checks are
+outside the timed sections; the optional argument sets the repeat count.
+
 ### Patch archive creation
 
 The public patch handle creates a new MPQ v1/v2 patch artifact without modifying

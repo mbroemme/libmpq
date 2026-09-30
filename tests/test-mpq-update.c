@@ -1389,6 +1389,7 @@ test_public_mpqe_updates(void)
                                    "update-mpqe-remove.mpqe", "update-mpqe-rename.mpqe",
                                    "update-mpqe-multiple.mpqe" };
     static const uint8_t replacement[] = "authenticated replacement contents";
+    static const uint8_t original_plain[] = "ordinary file";
     static const uint8_t secret[] = "secret compressed and encrypted payload";
     uint8_t borrowed_code[LIBMPQ_MPQE_AUTH_CODE_MINIMUM];
     uint8_t wrong_code[LIBMPQ_MPQE_AUTH_CODE_MINIMUM] = { 0 };
@@ -1416,6 +1417,16 @@ test_public_mpqe_updates(void)
                 i == 0 ? sizeof(borrowed_code) : sizeof(auth_code) - 1u
             ) == LIBMPQ_SUCCESS
         );
+        if (i == 0) {
+            UPDATE_CHECK(
+                libmpq__archive_open(&archive, libmpq__update_path(update), -1) == LIBMPQ_SUCCESS
+            );
+            UPDATE_CHECK(
+                check_named(archive, "plain", original_plain, sizeof(original_plain) - 1u) == 0
+            );
+            UPDATE_CHECK(libmpq__archive_close(archive) == LIBMPQ_SUCCESS);
+            archive = NULL;
+        }
         if (i == 0)
             memset(borrowed_code, 0, sizeof(borrowed_code));
         if (i == 0 || i == 4)
