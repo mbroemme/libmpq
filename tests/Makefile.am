@@ -97,6 +97,7 @@ CLEANFILES = \
 EXTRA_PROGRAMS = \
 	bench-patch-reader \
 	bench-patch-writer \
+	bench-mpqe \
 	bench-reader \
 	bench-stream \
 	bench-writer \
@@ -105,6 +106,8 @@ bench_patch_reader_SOURCES = bench-mpq-patch-reader.c
 bench_patch_reader_LDADD = $(test_patch_writer_LDADD)
 bench_patch_writer_SOURCES = bench-mpq-patch-writer.c
 bench_patch_writer_LDADD = $(test_patch_writer_LDADD)
+bench_mpqe_SOURCES = bench-mpq-mpqe.c
+bench_mpqe_LDADD = $(test_attributes_LDADD)
 bench_reader_SOURCES = bench-mpq-reader.c
 bench_reader_LDADD = $(test_attributes_LDADD)
 bench_stream_SOURCES = bench-mpq-stream.c
@@ -119,6 +122,7 @@ benchmarks: $(EXTRA_PROGRAMS)
 run-benchmarks: benchmarks
 	./bench-patch-reader$(EXEEXT)
 	./bench-patch-writer$(EXEEXT)
+	./bench-mpqe$(EXEEXT)
 	./bench-reader$(EXEEXT)
 	./bench-stream$(EXEEXT)
 	./bench-writer$(EXEEXT)
