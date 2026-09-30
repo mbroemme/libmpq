@@ -305,7 +305,8 @@ done:
 static int
 run_case(
     const char *fixture, const char *working, bench_kind_e kind, bench_action_e action,
-    const uint8_t *before, const uint8_t *after, size_t size, unsigned repeats
+    const uint8_t *before, const uint8_t *after, size_t size, const char *size_label,
+    unsigned repeats
 )
 {
     static const char *kinds[] = { "MPQ", "HM3W", "MPQE" };
@@ -364,16 +365,16 @@ run_case(
 
     failed:
         fprintf(
-            stderr, "%s %s %lu KiB: benchmark failed (%d)\n", kinds[kind], actions[action],
-            (unsigned long)(size / 1024), result
+            stderr, "%s %s %s: benchmark failed (%d)\n", size_label, kinds[kind], actions[action],
+            result
         );
         if (update != NULL)
             (void)libmpq__update_abort(update);
         return 1;
     }
     printf(
-        "%s %s %lu KiB: begin %.3f ms, operation %.3f ms, commit %.3f ms (best/%u)\n", kinds[kind],
-        actions[action], (unsigned long)(size / 1024), begin_best * 1000.0, operation_best * 1000.0,
+        "%s %s %s: begin %.3f ms, operation %.3f ms, commit %.3f ms (best/%u)\n", size_label,
+        kinds[kind], actions[action], begin_best * 1000.0, operation_best * 1000.0,
         commit_best * 1000.0, repeats
     );
     return 0;
@@ -384,17 +385,20 @@ int
 main(int argc, char **argv)
 {
     static const size_t sizes[] = { 64u * 1024u, 1024u * 1024u, 16u * 1024u * 1024u };
+    static const char *size_labels[] = { "64 KiB", "1 MiB", "16 MiB" };
     const char *fixture = "bench-update-fixture.bin";
     const char *working = "bench-update-working.bin";
     const char *source = "bench-update-source.mpq";
     unsigned repeats = 3;
     int failed = 1;
 
-    if (argc > 1) {
+    if (argc > 2)
+        return 2;
+    if (argc == 2) {
         char *end = NULL;
         unsigned long parsed = strtoul(argv[1], &end, 10);
 
-        if (end == argv[1] || *end != '\0' || parsed == 0 || parsed > 100)
+        if (argv[1][0] < '0' || argv[1][0] > '9' || *end != '\0' || parsed == 0 || parsed > 100)
             return 2;
         repeats = (unsigned)parsed;
     }
@@ -421,7 +425,10 @@ main(int argc, char **argv)
             for (bench_action_e action = BENCH_REPLACE; action <= BENCH_NOOP; action++) {
                 if (kind != BENCH_PLAIN && action != BENCH_REPLACE && action != BENCH_NOOP)
                     continue;
-                if (run_case(fixture, working, kind, action, before, after, size, repeats)) {
+                if (run_case(
+                        fixture, working, kind, action, before, after, size, size_labels[index],
+                        repeats
+                    )) {
                     free(before);
                     free(after);
                     goto done;

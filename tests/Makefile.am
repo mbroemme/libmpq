@@ -104,6 +104,13 @@ bench_patch_writer_LDADD = $(test_patch_writer_LDADD)
 bench_update_SOURCES = bench-mpq-update.c
 bench_update_LDADD = $(test_update_LDADD)
 
+.PHONY: benchmarks run-benchmarks
+benchmarks: $(EXTRA_PROGRAMS)
+run-benchmarks: benchmarks
+	./bench-patch-reader$(EXEEXT)
+	./bench-patch-writer$(EXEEXT)
+	./bench-update$(EXEEXT)
+
 # Verify the generated build-tree helper honors configured installation paths.
 check-local:
 	test "$$($(top_builddir)/libmpq-config --cflags)" = "-I$(includedir)"

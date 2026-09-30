@@ -350,13 +350,6 @@ above. Ordinary updates do not write PATCH_BIT=true; the separate patch writer
 sets it for patch-file entries. The current rebuild rejects an archive extent
 that cannot fit the 32-bit MPQ archive-size field.
 
-The non-installed `tests/bench-update` tool measures transactional update
-begin, staging, and commit separately for ordinary MPQs, embedded HM3W-style
-containers, and authenticated MPQE archives. Build it with
-`make -C tests bench-update` in a disposable build tree, then run
-`(cd tests && ./bench-update 3)`. Fixture creation and result checks are
-outside the timed sections; the optional argument sets the repeat count.
-
 ### Patch archive creation
 
 The public patch handle creates a new MPQ v1/v2 patch artifact without modifying
@@ -466,16 +459,6 @@ A content change invalidates the base archive's signatures, so the temporary
 view omits stale weak and strong signatures. Patch-view composition remains
 private.
 
-The non-installed patch benchmarks cover COPY, BSD0, and mixed cases at
-64 KiB, 1 MiB, and 16 MiB. Build them in a disposable build tree with
-`make -C tests bench-patch-reader` and `make -C tests bench-patch-writer`.
-Run `(cd tests && ./bench-patch-reader 5)` to measure patch-view
-materialization, or `(cd tests && ./bench-patch-writer 5)` to measure patch
-replacement staging and transform selection. The optional argument is the
-repeat count. Both report monotonic elapsed time and exclude fixture creation
-and result verification. Compare results on the same host and build
-configuration because filesystem caches affect them.
-
 ### Game-neutral authentication and namespace policy
 
 libmpq does not embed product-specific Blizzard MPQE keys. Callers provide
@@ -493,6 +476,30 @@ key material, including public verification keys or private signing keys. All
 signature keys are supplied explicitly by the caller. This leaves trust
 decisions with applications, avoids maintaining a product-specific key database,
 and reduces legal/distribution risk from bundling product-specific material.
+
+### Developer benchmarks
+
+The three module-specific benchmarks are non-installed developer tools:
+
+- `bench-patch-reader` measures patch-view materialization for COPY, BSD0, and
+  mixed chains.
+- `bench-patch-writer` measures patch staging and COPY/BSD0 transform selection.
+- `bench-update` measures transactional update begin, operation, and commit for
+  ordinary MPQ, embedded HM3W-style, and authenticated MPQE archives.
+
+In a disposable build tree, build them together with `make -C tests benchmarks`
+and run their default cases with `make -C tests run-benchmarks`. Individual
+build targets are `make -C tests bench-patch-reader`,
+`make -C tests bench-patch-writer`, and `make -C tests bench-update`. Run an
+individual tool from `tests` as `./bench-patch-reader [runs]`,
+`./bench-patch-writer [runs]`, or `./bench-update [runs]`.
+
+The optional `runs` argument defaults to three; each tool reports the best
+monotonic elapsed time for deterministic 64 KiB, 1 MiB, and 16 MiB cases.
+Fixture creation and result verification are outside timed regions where
+practical. These benchmarks are not part of `make check`. Compare before and
+after results on the same machine and build configuration; the timings are not
+portable performance guarantees.
 
 ## SDK integration and binding development
 

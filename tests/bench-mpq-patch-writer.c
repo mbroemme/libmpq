@@ -161,7 +161,7 @@ done:
 
 /* Benchmark single or repeated staging with all setup and inspection untimed. */
 static int
-run_case(size_t size, int layers, int mode, unsigned repeats)
+run_case(size_t size, const char *size_label, int layers, int mode, unsigned repeats)
 {
     char base_path[96];
     char next_path[96];
@@ -227,10 +227,9 @@ run_case(size_t size, int layers, int mode, unsigned repeats)
             goto done;
     }
     printf(
-        "%s %s %lu KiB: writer %.3f ms elapsed (best/%u); %d staging pass(es)\n",
+        "%s %s %s: %.3f ms elapsed (best/%u); %d staging pass(es)\n", size_label,
         layers == 2 ? "repeated" : "single",
-        mode == 2 ? "COPY+BSD0" : (mode == 1 ? "BSD0" : "COPY"), (unsigned long)(size / 1024),
-        best * 1000.0, repeats, layers
+        mode == 2 ? "COPY+BSD0" : (mode == 1 ? "BSD0" : "COPY"), best * 1000.0, repeats, layers
     );
     failed = 0;
 
@@ -251,19 +250,22 @@ main(int argc, char **argv)
 {
     unsigned repeats = 3;
     const size_t sizes[] = { 64u * 1024u, 1024u * 1024u, 16u * 1024u * 1024u };
+    const char *size_labels[] = { "64 KiB", "1 MiB", "16 MiB" };
 
-    if (argc > 1) {
+    if (argc > 2)
+        return 2;
+    if (argc == 2) {
         char *end = NULL;
         unsigned long parsed = strtoul(argv[1], &end, 10);
 
-        if (end == argv[1] || *end != '\0' || parsed == 0 || parsed > 100)
+        if (argv[1][0] < '0' || argv[1][0] > '9' || *end != '\0' || parsed == 0 || parsed > 100)
             return 2;
         repeats = (unsigned)parsed;
     }
     for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++)
         for (int layers = 1; layers <= 2; layers++)
             for (int mode = 0; mode <= (layers == 2 ? 2 : 1); mode++)
-                if (run_case(sizes[i], layers, mode, repeats) != 0)
+                if (run_case(sizes[i], size_labels[i], layers, mode, repeats) != 0)
                     return 1;
     return 0;
 }
