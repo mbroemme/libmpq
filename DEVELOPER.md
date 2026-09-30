@@ -459,6 +459,15 @@ A content change invalidates the base archive's signatures, so the temporary
 view omits stale weak and strong signatures. Patch-view composition remains
 private.
 
+The non-installed `tests/bench-patch-reader` tool profiles COPY, BSD0, and
+mixed chains at 64 KiB, 1 MiB, and 16 MiB. Build it with
+`make -C tests bench-patch-reader` in a disposable build tree, then run
+`(cd tests && ./bench-patch-reader 5)`. The optional argument is the repeat
+count; reported time is the best wall-clock materialization time and excludes
+fixture creation and result verification. Layer count is also the number of
+full-view reconstruction passes. Results depend on filesystem caches and
+should be compared on the same host and build configuration.
+
 ### Game-neutral authentication and namespace policy
 
 libmpq does not embed product-specific Blizzard MPQE keys. Callers provide

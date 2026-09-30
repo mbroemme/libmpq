@@ -212,11 +212,11 @@ patch_apply_bsd0(
                : LIBMPQ_ERROR_FORMAT;
 }
 
-/* Apply and verify a decoded PTCH payload without exposing malformed output. */
-int32_t
-libmpq__patch_apply(
+/* Apply and verify a PTCH payload, optionally borrowing COPY output. */
+static int32_t
+patch_apply_internal(
     const uint8_t *base, size_t base_size, const uint8_t *patch, size_t patch_size,
-    uint8_t **output, size_t *output_size
+    uint8_t **output, size_t *output_size, uint8_t borrow_copy
 )
 {
     uint32_t complete_size;
@@ -274,15 +274,24 @@ libmpq__patch_apply(
     } else {
         return LIBMPQ_ERROR_FORMAT;
     }
-    result = malloc(after_size == 0 ? 1 : after_size);
-    if (result == NULL) {
-        status = LIBMPQ_ERROR_MALLOC;
-        goto done;
-    }
     if (memcmp(patch + 64, "COPY", 4) == 0) {
-        memcpy(result, decoded, after_size);
+        if (borrow_copy)
+            result = decoded;
+        else {
+            result = malloc(after_size == 0 ? 1 : after_size);
+            if (result == NULL) {
+                status = LIBMPQ_ERROR_MALLOC;
+                goto done;
+            }
+            memcpy(result, decoded, after_size);
+        }
         status = LIBMPQ_SUCCESS;
     } else {
+        result = malloc(after_size == 0 ? 1 : after_size);
+        if (result == NULL) {
+            status = LIBMPQ_ERROR_MALLOC;
+            goto done;
+        }
         status = patch_apply_bsd0(base, base_size, decoded, decoded_size, result, after_size);
     }
     if (status == LIBMPQ_SUCCESS)
@@ -296,8 +305,19 @@ libmpq__patch_apply(
 done:
     if (decoded != encoded)
         free(decoded);
-    free(result);
+    if (result != encoded)
+        free(result);
     return status;
+}
+
+/* Preserve the owning output contract for tests, fuzzers, and other callers. */
+int32_t
+libmpq__patch_apply(
+    const uint8_t *base, size_t base_size, const uint8_t *patch, size_t patch_size,
+    uint8_t **output, size_t *output_size
+)
+{
+    return patch_apply_internal(base, base_size, patch, patch_size, output, output_size, 0);
 }
 
 /* Construct the stable path of a sibling temporary file. */
@@ -1405,6 +1425,7 @@ patch_stage_hash(
     uint8_t *payload = NULL;
     uint8_t *base = NULL;
     uint8_t *result = NULL;
+    uint8_t borrowed_result = 0;
     size_t payload_size = 0;
     size_t base_size = 0;
     size_t result_size = 0;
@@ -1440,9 +1461,13 @@ patch_stage_hash(
             goto done;
         }
         status = patch_read_adjusted(lower, entry->name, lower_number, &base, &base_size);
-        if (status == LIBMPQ_SUCCESS)
-            status =
-                libmpq__patch_apply(base, base_size, payload, payload_size, &result, &result_size);
+        if (status == LIBMPQ_SUCCESS) {
+            borrowed_result =
+                payload_size > LIBMPQ_PATCH_HEADER_SIZE && memcmp(payload + 64, "COPY", 4) == 0;
+            status = patch_apply_internal(
+                base, base_size, payload, payload_size, &result, &result_size, borrowed_result
+            );
+        }
     } else {
         result = payload;
         result_size = payload_size;
@@ -1491,7 +1516,8 @@ patch_stage_hash(
 done:
     free(base);
     free(payload);
-    free(result);
+    if (!borrowed_result)
+        free(result);
     return status;
 }
 

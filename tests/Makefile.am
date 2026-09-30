@@ -92,6 +92,11 @@ CLEANFILES = \
 	update.mpqe \
 	update.mpqe.reference
 
+# Build explicitly for repeatable, non-installed patch-view profiling.
+EXTRA_PROGRAMS = bench-patch-reader
+bench_patch_reader_SOURCES = bench-mpq-patch-reader.c
+bench_patch_reader_LDADD = $(test_patch_writer_LDADD)
+
 # Verify the generated build-tree helper honors configured installation paths.
 check-local:
 	test "$$($(top_builddir)/libmpq-config --cflags)" = "-I$(includedir)"
