@@ -120,6 +120,7 @@ libmpq__verify_file(
     mpq_md5_s md5;
     uint8_t digest[16];
     uint8_t *buffer = NULL;
+    size_t buffer_capacity = 0;
     uint32_t *checksums = NULL;
     uint32_t crc = 0;
     uint32_t blocks = 0;
@@ -188,12 +189,19 @@ libmpq__verify_file(
             status = LIBMPQ_ERROR_SIZE;
             goto cleanup;
         }
-        buffer = malloc(size == 0 ? 1 : (size_t)size);
-        if (buffer == NULL) {
-            status = LIBMPQ_ERROR_MALLOC;
-            goto cleanup;
+        /* The operation owns one decoded-sector buffer and already holds offsets. */
+        if ((size_t)size > buffer_capacity || buffer == NULL) {
+            size_t needed = size == 0 ? 1 : (size_t)size;
+            uint8_t *resized = realloc(buffer, needed);
+
+            if (resized == NULL) {
+                status = LIBMPQ_ERROR_MALLOC;
+                goto cleanup;
+            }
+            buffer = resized;
+            buffer_capacity = needed;
         }
-        status = libmpq__reader_block_read(
+        status = libmpq__reader_block_read_acquired(
             archive, file_number, i, buffer, size, &transferred,
             checksums != NULL ? checksums + i : NULL, &mismatch_mask, NULL
         );
@@ -208,8 +216,6 @@ libmpq__verify_file(
         if ((verify_flags & LIBMPQ_VERIFY_FILE_MD5) != 0)
             libmpq__md5_update(&md5, buffer, (size_t)size);
         total += size;
-        free(buffer);
-        buffer = NULL;
     }
     if (total != expected) {
         status = LIBMPQ_ERROR_READ;

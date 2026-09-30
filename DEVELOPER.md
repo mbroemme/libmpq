@@ -479,7 +479,7 @@ and reduces legal/distribution risk from bundling product-specific material.
 
 ### Developer benchmarks
 
-The seven module-specific benchmarks are non-installed developer tools:
+The nine module-specific benchmarks are non-installed developer tools:
 
 - `bench-reader` measures single-file and many-file archive open, name lookup,
   and full-file extraction for stored, zlib, and encrypted workloads.
@@ -490,6 +490,10 @@ The seven module-specific benchmarks are non-installed developer tools:
   member writes, many-small-file insertion, and archive finalization.
 - `bench-mpqe` measures MPQE encoding, authenticated open, and transport reads
   alongside equivalent ordinary-MPQ diagnostic cases.
+- `bench-verify` measures sector Adler-32, CRC32/MD5 `(attributes)`, automatic
+  extraction checks, and explicit file verification.
+- `bench-signature` measures weak, strong, and combined archive signature
+  verification.
 - `bench-patch-reader` measures patch-view materialization for COPY, BSD0, and
   mixed chains.
 - `bench-patch-writer` measures patch staging and COPY/BSD0 transform selection.
@@ -500,10 +504,12 @@ In a disposable build tree, build them together with `make -C tests benchmarks`
 and run their default cases with `make -C tests run-benchmarks`. Individual
 build targets are `make -C tests bench-reader`, `make -C tests bench-stream`,
 `make -C tests bench-writer`, `make -C tests bench-mpqe`,
+`make -C tests bench-verify`, `make -C tests bench-signature`,
 `make -C tests bench-patch-reader`, `make -C tests bench-patch-writer`, and
 `make -C tests bench-update`. Run an individual tool from `tests` as
 `./bench-reader [runs]`, `./bench-stream [runs]`, `./bench-writer [runs]`,
-`./bench-mpqe [runs]`,
+`./bench-mpqe [runs]`, `./bench-verify [runs]`,
+`./bench-signature [runs]`,
 `./bench-patch-reader [runs]`,
 `./bench-patch-writer [runs]`, or `./bench-update [runs]`.
 

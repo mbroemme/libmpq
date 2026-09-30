@@ -342,13 +342,17 @@ snapshot_read(void *context, uint64_t offset, uint8_t *buffer, size_t size)
     return snapshot->read_at(snapshot->context, offset, buffer, size);
 }
 
-int
-test_archive_offsets(mpq_archive_s *archive, uint32_t number, uint32_t **offsets)
+/* Observe a complete read or explicit verification through the same source probe. */
+static int
+test_offsets_operation(
+    mpq_archive_s *archive, uint32_t number, uint32_t verify_flags, uint32_t **offsets
+)
 {
     uint32_t blocks;
     libmpq__off_t size;
     uint8_t *buffer;
     int32_t result;
+    uint32_t mismatches = UINT32_MAX;
     offset_snapshot_s snapshot;
     void *context = archive->source->backend.context;
     *offsets = NULL;
@@ -360,8 +364,8 @@ test_archive_offsets(mpq_archive_s *archive, uint32_t number, uint32_t **offsets
     if (archive->mpq_block[archive->mpq_map[number].block_table_indices].flags & LIBMPQ_FLAG_CRC)
         ++snapshot.count;
     snapshot.offsets = calloc(snapshot.count, sizeof(uint32_t));
-    buffer = malloc(size == 0 ? 1 : (size_t)size);
-    if (snapshot.offsets == NULL || buffer == NULL) {
+    buffer = verify_flags == 0 ? malloc(size == 0 ? 1 : (size_t)size) : NULL;
+    if (snapshot.offsets == NULL || (verify_flags == 0 && buffer == NULL)) {
         free(snapshot.offsets);
         free(buffer);
         return -1;
@@ -380,16 +384,38 @@ test_archive_offsets(mpq_archive_s *archive, uint32_t number, uint32_t **offsets
     snapshot.nested = 0;
     archive->source->backend.context = &snapshot;
     archive->source->backend.read_at = snapshot_read;
-    result = libmpq__file_read(archive, number, buffer, size, NULL);
+    if (verify_flags == 0)
+        result = libmpq__file_read(archive, number, buffer, size, NULL);
+    else
+        result = libmpq__file_verify(archive, number, verify_flags, &mismatches);
     archive->source->backend.read_at = snapshot.read_at;
     archive->source->backend.context = context;
     free(buffer);
-    if (result < 0 || !snapshot.acquired || snapshot.nested || archive->mpq_file[number] != NULL) {
+    if (result < 0 || (verify_flags != 0 && mismatches != 0) || !snapshot.acquired ||
+        snapshot.nested || archive->mpq_file[number] != NULL) {
         free(snapshot.offsets);
         return -1;
     }
     *offsets = snapshot.offsets;
     return 0;
+}
+
+/* Check that full-file extraction holds one offset reference for payload reads. */
+int
+test_archive_offsets(mpq_archive_s *archive, uint32_t number, uint32_t **offsets)
+{
+    return test_offsets_operation(archive, number, 0, offsets);
+}
+
+/* Check that explicit multi-sector verification does not reacquire payload offsets. */
+int
+test_archive_verify_offsets(mpq_archive_s *archive, uint32_t number, uint32_t verify_flags)
+{
+    uint32_t *offsets = NULL;
+    int result = test_offsets_operation(archive, number, verify_flags, &offsets);
+
+    free(offsets);
+    return result;
 }
 
 /* Portable filesystem helpers for ASCII test workspace paths. */

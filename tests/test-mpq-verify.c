@@ -536,6 +536,8 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
         uint64_t base = archive->archive_offset + (uint64_t)archive->mpq_block[index].offset;
         REQUIRE(libmpq__file_blocks(archive, number, &blocks) == 0);
         REQUIRE(test_archive_offsets(archive, number, &offsets) == 0);
+        if (!mpqe && blocks > 1)
+            REQUIRE(test_archive_verify_offsets(archive, number, LIBMPQ_VERIFY_ALL) == 0);
         REQUIRE(offsets[0] == (blocks + 2) * 4);
         REQUIRE(offsets[blocks + 1] == archive->mpq_block[index].packed_size);
         REQUIRE(libmpq__reader_sector_checksums(archive, number, &checksums) == 0);
