@@ -449,6 +449,7 @@ patch_writer_payload(
                 transform = NULL;
                 continue;
             }
+
             /* Equal or larger candidates cannot win; only contenders need validation. */
             if (LIBMPQ_PATCH_INFO_SIZE + LIBMPQ_PATCH_COPY_HEADER_SIZE + transform_size >=
                 best_size) {

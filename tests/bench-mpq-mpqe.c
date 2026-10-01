@@ -305,7 +305,7 @@ load_file(const char *path, uint8_t **data, size_t *size)
     return failed;
 }
 
-/* Measure small sequential and fixed seek reads at the private source boundary. */
+/* Measure small sequential and deterministic random read_at calls. */
 static int
 run_source_reads(const char *raw_path, const char *mpqe_path, unsigned runs)
 {
@@ -388,8 +388,8 @@ run_source_reads(const char *raw_path, const char *mpqe_path, unsigned runs)
             best[transport][1] * 1000.0, runs
         );
         printf(
-            "16 MiB %s source seek/read: %.3f ms elapsed (best/%u)\n", transport ? "MPQE" : "MPQ",
-            best[transport][2] * 1000.0, runs
+            "16 MiB %s source random read_at: %.3f ms elapsed (best/%u)\n",
+            transport ? "MPQE" : "MPQ", best[transport][2] * 1000.0, runs
         );
     }
     failed = 0;

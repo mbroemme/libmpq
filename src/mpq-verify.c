@@ -189,6 +189,7 @@ libmpq__verify_file(
             status = LIBMPQ_ERROR_SIZE;
             goto cleanup;
         }
+
         /* The operation owns one decoded-sector buffer and already holds offsets. */
         if ((size_t)size > buffer_capacity || buffer == NULL) {
             size_t needed = size == 0 ? 1 : (size_t)size;

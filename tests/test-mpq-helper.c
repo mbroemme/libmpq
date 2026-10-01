@@ -321,12 +321,16 @@ snapshot_read(void *context, uint64_t offset, uint8_t *buffer, size_t size)
     mpq_file_s *file = snapshot->archive->mpq_file[snapshot->number];
     if (file != NULL && file->packed_offset != NULL && file->packed_offset[0] != 0) {
         memcpy(snapshot->offsets, file->packed_offset, snapshot->count * sizeof(uint32_t));
-        /* MPQE backend reads are chunk-aligned, so their ranges cannot
-         * distinguish payload reads from optional checksum metadata. */
+
+        /*
+         * MPQE backend reads are chunk-aligned, so their ranges cannot
+         * distinguish payload reads from optional checksum metadata.
+         */
         if (snapshot->archive->source->mpqe) {
             if (file->open_count == 1)
                 snapshot->acquired = 1;
         } else if (offset >= snapshot->file_base) {
+
             /* The optional checksum table is metadata, not a file-sector read. */
             uint64_t relative = offset - snapshot->file_base;
 

@@ -118,6 +118,7 @@ fill_input(uint8_t *data, size_t size, input_kind_t kind)
             data[i] = (i % 256u < 240u) ? 0 : (uint8_t)i;
             break;
         case INPUT_PCM:
+
             /* Little-endian signed 16-bit triangular PCM, not arbitrary bytes. */
             if ((i & 1u) == 0) {
                 int16_t sample = (int16_t)(((i / 2u) % 256u) * 192u - 24576);
@@ -197,6 +198,7 @@ run_case(const benchmark_case_s *case_info, unsigned runs)
         goto done;
     if (case_info->mask != 0 && case_info->kind == INPUT_RANDOM && emitted != 0)
         goto done;
+
     /* Lossy ADPCM is checked against an untimed decode, not source PCM. */
     if (case_info->lossy && emitted != 0) {
         reference = malloc(case_info->size);
