@@ -25,6 +25,7 @@ check_PROGRAMS = \
 	test-mpq \
 	test-pkware \
 	test-reader \
+	test-source \
 	test-stream \
 	test-patch-reader \
 	test-patch-writer \
@@ -101,6 +102,7 @@ EXTRA_PROGRAMS = \
 	bench-signature \
 	bench-mpqe \
 	bench-reader \
+	bench-source \
 	bench-stream \
 	bench-writer \
 	bench-update
@@ -115,6 +117,8 @@ bench_mpqe_SOURCES = bench-mpq-mpqe.c
 bench_mpqe_LDADD = $(test_attributes_LDADD)
 bench_reader_SOURCES = bench-mpq-reader.c
 bench_reader_LDADD = $(test_attributes_LDADD)
+bench_source_SOURCES = bench-mpq-source.c $(COMMON_SOURCES)
+bench_source_LDADD = $(test_attributes_LDADD)
 bench_stream_SOURCES = bench-mpq-stream.c
 bench_stream_LDADD = $(test_attributes_LDADD)
 bench_writer_SOURCES = bench-mpq-writer.c
@@ -131,6 +135,7 @@ run-benchmarks: benchmarks
 	./bench-signature$(EXEEXT)
 	./bench-mpqe$(EXEEXT)
 	./bench-reader$(EXEEXT)
+	./bench-source$(EXEEXT)
 	./bench-stream$(EXEEXT)
 	./bench-writer$(EXEEXT)
 	./bench-update$(EXEEXT)
@@ -144,6 +149,8 @@ check-local:
 COMMON_SOURCES = test-mpq-helper.c test-mpq-helper.h
 test_file_SOURCES = test-mpq-file.c $(COMMON_SOURCES)
 test_file_LDADD = $(top_builddir)/src/mpq-source.lo $(PRIVATE_MPQE_LDADD) $(LDADD)
+test_source_SOURCES = test-mpq-source.c $(COMMON_SOURCES)
+test_source_LDADD = $(test_file_LDADD)
 test_verify_SOURCES = test-mpq-verify.c $(COMMON_SOURCES)
 test_verify_LDADD = $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-source.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
 test_attributes_SOURCES = test-mpq-attributes.c $(COMMON_SOURCES)
