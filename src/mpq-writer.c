@@ -434,22 +434,15 @@ finalize_archive(mpq_archive_s *a)
     }
     free(raw);
 
-    /* Serialize the fixed-capacity block table using explicit little-endian fields. */
+    /* Serialize the fixed-capacity block table before its existing encryption. */
     bytes = (size_t)a->write_capacity * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE;
     raw = malloc(bytes);
     if (!raw)
         return LIBMPQ_ERROR_MALLOC;
-    for (i = 0; i < a->write_capacity; i++) {
-        libmpq__store_le32(raw + (size_t)i * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE, a->mpq_block[i].offset);
-        libmpq__store_le32(
-            raw + (size_t)i * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE + 4, a->mpq_block[i].packed_size
-        );
-        libmpq__store_le32(
-            raw + (size_t)i * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE + 8, a->mpq_block[i].unpacked_size
-        );
-        libmpq__store_le32(
-            raw + (size_t)i * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE + 12, a->mpq_block[i].flags
-        );
+    result = libmpq__block_table_encode(a->mpq_block, a->write_capacity, raw, bytes);
+    if (result < 0) {
+        free(raw);
+        return result;
     }
     libmpq__crypto_encrypt_block(
         raw, (uint32_t)bytes, libmpq__crypto_hash_string("(block table)", 0x300)
@@ -464,10 +457,11 @@ finalize_archive(mpq_archive_s *a)
         raw = malloc(bytes);
         if (!raw)
             return LIBMPQ_ERROR_MALLOC;
-        for (i = 0; i < a->write_capacity; i++)
-            libmpq__store_le16(
-                raw + (size_t)i * LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE, a->mpq_block_ex[i].offset_high
-            );
+        result = libmpq__block_ex_table_encode(a->mpq_block_ex, a->write_capacity, raw, bytes);
+        if (result < 0) {
+            free(raw);
+            return result;
+        }
         if (write_at(a->fp, a->mpq_header_ex.extended_offset, raw, bytes) < 0) {
             free(raw);
             return LIBMPQ_ERROR_WRITE;

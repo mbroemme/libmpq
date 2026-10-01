@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 
+#include "mpq-block.h"
 #include "mpq-file.h"
 #include "mpq-hash.h"
 #include "mpq-header.h"
@@ -63,10 +64,6 @@
 #define LIBMPQ_SIGNATURE_NAME "(signature)"
 #define LIBMPQ_ATTRIBUTES_NAME "(attributes)"
 
-/* Serialized MPQ block-table sizes, independent of native structure alignment. */
-#define LIBMPQ_BLOCK_ENTRY_WIRE_SIZE 16u
-#define LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE 2u
-
 /* Keep boolean-like constants available for old C environments. */
 #ifndef FALSE
 #define FALSE 0
@@ -74,33 +71,6 @@
 #ifndef TRUE
 #define TRUE 1
 #endif
-
-/*
- * Native representation of the metadata for one stored file payload. The offset and
- * packed size identify the bytes on disk, while the unpacked size describes
- * the result after decryption and decompression. Patch-file blocks instead
- * record the reconstructed result size; their plaintext prefix supplies the
- * decoded PTCH-body size. Flags select the storage, encryption, and
- * compression rules needed to interpret that payload.
- */
-typedef struct
-{
-    uint32_t offset;        /* Payload offset from the archive start. */
-    uint32_t packed_size;   /* Stored payload size. */
-    uint32_t unpacked_size; /* Size after decryption and decompression. */
-    uint32_t flags;         /* MPQ file flags. */
-} mpq_block_s;
-
-/*
- * The version 2 extension for a block-table entry whose payload offset does
- * not fit in the legacy 32-bit block-table field. The low offset remains in
- * mpq_block_s, and this field supplies its upper 16 bits. It is unused for
- * version 1 archives and must remain synchronized with the low offset.
- */
-typedef struct
-{
-    uint16_t offset_high; /* Upper 16 bits of the file payload offset. */
-} mpq_block_ex_s;
 
 /* Cached state for an opened MPQ file entry. */
 typedef struct

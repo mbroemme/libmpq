@@ -995,44 +995,6 @@ table_size(uint32_t count, size_t item_size, size_t *size)
 }
 
 /*
- * Decode the fixed-width block table used by MPQ v1 and v2 archives.
- * The high offset words are handled separately by the extended-table helper.
- */
-static void
-decode_mpq_block_table(mpq_block_s *table, const uint8_t *raw, uint32_t count)
-{
-    uint32_t i;
-
-    if (table == 0 || raw == 0)
-        return;
-    for (i = 0; i < count; i++) {
-        const uint8_t *entry = raw + (size_t)i * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE;
-
-        table[i].offset = libmpq__load_le32(entry + 0);
-        table[i].packed_size = libmpq__load_le32(entry + 4);
-        table[i].unpacked_size = libmpq__load_le32(entry + 8);
-        table[i].flags = libmpq__load_le32(entry + 12);
-    }
-}
-
-/*
- * Decode the optional high 16-bit offset table for MPQ v2 block entries.
- * The caller has already positioned the input at the extension table and
- * supplies storage sized for the block-table entry count.
- */
-static void
-decode_mpq_block_ex_table(mpq_block_ex_s *table, const uint8_t *raw, uint32_t count)
-{
-    uint32_t i;
-
-    if (table == 0 || raw == 0)
-        return;
-    for (i = 0; i < count; i++) {
-        table[i].offset_high = libmpq__load_le16(raw + (size_t)i * LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE);
-    }
-}
-
-/*
  * Decode a packed array of little-endian 32-bit values in place.
  * This is used for sector offset tables whose serialized representation is
  * independent of the host CPU's byte order.
@@ -1283,9 +1245,12 @@ libmpq__reader_archive_open_source(
     libmpq__crypto_decrypt_block(
         table_data, (uint32_t)table_bytes, libmpq__crypto_hash_string("(block table)", 0x300)
     );
-    decode_mpq_block_table(
-        (*mpq_archive)->mpq_block, table_data, (*mpq_archive)->mpq_header.block_table_count
+    result = libmpq__block_table_decode(
+        table_data, table_bytes, (*mpq_archive)->mpq_block,
+        (*mpq_archive)->mpq_header.block_table_count
     );
+    if (result < 0)
+        goto error;
     free(table_data);
     table_data = NULL;
 
@@ -1312,9 +1277,12 @@ libmpq__reader_archive_open_source(
                 result = LIBMPQ_ERROR_FORMAT;
             goto error;
         }
-        decode_mpq_block_ex_table(
-            (*mpq_archive)->mpq_block_ex, table_data, (*mpq_archive)->mpq_header.block_table_count
+        result = libmpq__block_ex_table_decode(
+            table_data, table_bytes, (*mpq_archive)->mpq_block_ex,
+            (*mpq_archive)->mpq_header.block_table_count
         );
+        if (result < 0)
+            goto error;
         free(table_data);
         table_data = NULL;
     }

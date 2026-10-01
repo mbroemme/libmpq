@@ -4,6 +4,7 @@ lib_LTLIBRARIES = libmpq.la
 # Keep private implementation headers available to in-tree readers and fuzzers.
 noinst_HEADERS = \
 	mpq-attributes.h \
+	mpq-block.h \
 	mpq-compression.h \
 	mpq-crypt-buf.h \
 	mpq-crypto.h \
@@ -48,6 +49,7 @@ endif
 GENERAL_SRCS = \
 	mpq-api.c \
 	mpq-attributes.c \
+	mpq-block.c \
 	mpq-compression.c \
 	mpq-crypto.c \
 	mpq-endian.c \

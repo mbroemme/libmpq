@@ -116,6 +116,7 @@ include(CTest)
 if(BUILD_TESTING)
     set(test_modules
         file
+        block
         verify
         attributes
         md5

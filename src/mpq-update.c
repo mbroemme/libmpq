@@ -1019,14 +1019,12 @@ update_write_tables(mpq_archive_s *archive, FILE *output, uint64_t *extent)
     raw = malloc(bytes == 0 ? 1u : bytes);
     if (raw == NULL)
         return LIBMPQ_ERROR_MALLOC;
-    for (i = 0; i < archive->mpq_header.block_table_count; i++) {
-        size_t at = (size_t)i * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE;
-        const mpq_block_s *entry = &archive->mpq_block[i];
-
-        libmpq__store_le32(raw + at, entry->offset);
-        libmpq__store_le32(raw + at + 4u, entry->packed_size);
-        libmpq__store_le32(raw + at + 8u, entry->unpacked_size);
-        libmpq__store_le32(raw + at + 12u, entry->flags);
+    result = libmpq__block_table_encode(
+        archive->mpq_block, archive->mpq_header.block_table_count, raw, bytes
+    );
+    if (result < 0) {
+        free(raw);
+        return result;
     }
     libmpq__crypto_encrypt_block(
         raw, (uint32_t)bytes, libmpq__crypto_hash_string("(block table)", 0x300)
@@ -1044,7 +1042,10 @@ update_write_tables(mpq_archive_s *archive, FILE *output, uint64_t *extent)
         for (i = 0; i < archive->mpq_header.block_table_count; i++) {
             uint8_t word[2];
 
-            libmpq__store_le16(word, archive->mpq_block_ex[i].offset_high);
+            result =
+                libmpq__block_ex_table_encode(&archive->mpq_block_ex[i], 1, word, sizeof(word));
+            if (result < 0)
+                return result;
             if (fwrite(word, 1, sizeof(word), output) != sizeof(word))
                 return LIBMPQ_ERROR_WRITE;
         }

@@ -9,6 +9,7 @@ LDADD = $(top_builddir)/src/mpq-file.lo $(top_builddir)/src/libmpq.la
 # Each executable mirrors one implementation module in src/.
 check_PROGRAMS = \
 	test-file \
+	test-block \
 	test-verify \
 	test-attributes \
 	test-md5 \
@@ -153,14 +154,16 @@ check-local:
 
 # Compile shared assertions and deterministic-data helpers into every test.
 COMMON_SOURCES = test-mpq-helper.c test-mpq-helper.h
+test_block_SOURCES = test-mpq-block.c $(COMMON_SOURCES)
+test_block_LDADD = $(top_builddir)/src/mpq-block.lo $(top_builddir)/src/mpq-endian.lo $(LDADD)
 test_file_SOURCES = test-mpq-file.c $(COMMON_SOURCES)
 test_file_LDADD = $(top_builddir)/src/mpq-source.lo $(PRIVATE_MPQE_LDADD) $(LDADD)
 test_source_SOURCES = test-mpq-source.c $(COMMON_SOURCES)
 test_source_LDADD = $(test_file_LDADD)
 test_verify_SOURCES = test-mpq-verify.c $(COMMON_SOURCES)
-test_verify_LDADD = $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-hash.lo $(top_builddir)/src/mpq-header.lo $(top_builddir)/src/mpq-source.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
+test_verify_LDADD = $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-block.lo $(top_builddir)/src/mpq-hash.lo $(top_builddir)/src/mpq-header.lo $(top_builddir)/src/mpq-source.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
 test_attributes_SOURCES = test-mpq-attributes.c $(COMMON_SOURCES)
-test_attributes_LDADD = $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-hash.lo $(top_builddir)/src/mpq-header.lo $(top_builddir)/src/mpq-source.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
+test_attributes_LDADD = $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-block.lo $(top_builddir)/src/mpq-hash.lo $(top_builddir)/src/mpq-header.lo $(top_builddir)/src/mpq-source.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
 test_md5_SOURCES = test-mpq-md5.c $(COMMON_SOURCES)
 test_signature_SOURCES = test-mpq-signature.c $(COMMON_SOURCES)
 test_signature_LDADD = $(top_builddir)/src/mpq-rsa.lo $(top_builddir)/src/mpq-sha1.lo $(test_attributes_LDADD)
@@ -249,6 +252,7 @@ test_wave_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures
 
 # Ship the deterministic fixture corpus and all module-mapped test sources.
 EXTRA_DIST = \
+	test-mpq-block.c \
 	test-mpq-consumer.c \
 	test-mpq-helper.h \
 	test-mpq-helper.c \
