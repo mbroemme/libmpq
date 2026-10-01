@@ -21,6 +21,7 @@ check_PROGRAMS = \
 	test-malformed \
 	test-mpqe \
 	test-endian \
+	test-header \
 	test-fixtures \
 	test-mpq \
 	test-pkware \
@@ -156,9 +157,9 @@ test_file_LDADD = $(top_builddir)/src/mpq-source.lo $(PRIVATE_MPQE_LDADD) $(LDAD
 test_source_SOURCES = test-mpq-source.c $(COMMON_SOURCES)
 test_source_LDADD = $(test_file_LDADD)
 test_verify_SOURCES = test-mpq-verify.c $(COMMON_SOURCES)
-test_verify_LDADD = $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-source.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
+test_verify_LDADD = $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-header.lo $(top_builddir)/src/mpq-source.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
 test_attributes_SOURCES = test-mpq-attributes.c $(COMMON_SOURCES)
-test_attributes_LDADD = $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-source.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
+test_attributes_LDADD = $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-header.lo $(top_builddir)/src/mpq-source.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
 test_md5_SOURCES = test-mpq-md5.c $(COMMON_SOURCES)
 test_signature_SOURCES = test-mpq-signature.c $(COMMON_SOURCES)
 test_signature_LDADD = $(top_builddir)/src/mpq-rsa.lo $(top_builddir)/src/mpq-sha1.lo $(test_attributes_LDADD)
@@ -171,6 +172,8 @@ test_huffman_SOURCES = test-mpq-huffman.c ../src/mpq-huffman.c $(COMMON_SOURCES)
 test_malformed_SOURCES = test-mpq-malformed.c $(COMMON_SOURCES)
 test_mpqe_SOURCES = test-mpq-mpqe.c $(COMMON_SOURCES)
 test_endian_SOURCES = test-mpq-endian.c ../src/mpq-endian.c $(COMMON_SOURCES)
+test_header_SOURCES = test-mpq-header.c $(COMMON_SOURCES)
+test_header_LDADD = $(top_builddir)/src/mpq-header.lo $(top_builddir)/src/mpq-endian.lo $(LDADD)
 test_fixtures_SOURCES = test-mpq-fixtures.c $(COMMON_SOURCES)
 test_fixtures_LDADD = $(test_attributes_LDADD)
 test_mpq_SOURCES = test-mpq-api.c $(COMMON_SOURCES)
@@ -254,6 +257,7 @@ EXTRA_DIST = \
 	test-mpq-malformed.c \
 	test-mpq-mpqe.c \
 	test-mpq-endian.c \
+	test-mpq-header.c \
 	test-mpq-api.c \
 	test-mpq-pkware.c \
 	test-mpq-reader.c \

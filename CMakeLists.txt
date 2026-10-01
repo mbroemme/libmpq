@@ -128,6 +128,7 @@ if(BUILD_TESTING)
         malformed
         mpqe
         endian
+        header
         fixtures
         api
         pkware

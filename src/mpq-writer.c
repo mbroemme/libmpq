@@ -349,6 +349,9 @@ finalize_archive(mpq_archive_s *a)
     size_t bytes;
     uint64_t end;
     uint8_t header[LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE];
+    mpq_header_s wire_header;
+    mpq_header_ex_s wire_ex;
+    int32_t result;
 
     /* An unfinished streamed file would leave archive tables inconsistent. */
     if (a->write_current)
@@ -489,25 +492,23 @@ finalize_archive(mpq_archive_s *a)
     if (end > UINT32_MAX)
         return LIBMPQ_ERROR_SIZE;
     memset(header, 0, sizeof(header));
-    libmpq__store_le32(header, LIBMPQ_HEADER);
-    libmpq__store_le32(header + 4, a->mpq_header.header_size);
-    libmpq__store_le32(header + 8, (uint32_t)end);
-    libmpq__store_le16(header + 12, a->mpq_header.version);
-    libmpq__store_le16(header + 14, a->mpq_header.block_size);
-    libmpq__store_le32(header + 16, a->mpq_header.hash_table_offset);
-    libmpq__store_le32(header + 20, a->mpq_header.block_table_offset);
-    libmpq__store_le32(header + 24, a->mpq_header.hash_table_count);
-    libmpq__store_le32(header + 28, a->mpq_header.block_table_count);
+    wire_header = a->mpq_header;
+    wire_header.mpq_magic = LIBMPQ_HEADER;
+    wire_header.archive_size = (uint32_t)end;
+    result = libmpq__header_encode(&wire_header, header, sizeof(header));
+    if (result < 0)
+        return result;
     if (a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO) {
-        libmpq__store_le64(header + LIBMPQ_HEADER_WIRE_SIZE, a->mpq_header_ex.extended_offset);
-        libmpq__store_le16(
-            header + LIBMPQ_HEADER_WIRE_SIZE + 8,
-            (uint16_t)(((uint64_t)a->mpq_header.hash_table_offset) >> 32)
+        wire_ex = a->mpq_header_ex;
+        wire_ex.hash_table_offset_high =
+            (uint16_t)(((uint64_t)a->mpq_header.hash_table_offset) >> 32);
+        wire_ex.block_table_offset_high =
+            (uint16_t)(((uint64_t)a->mpq_header.block_table_offset) >> 32);
+        result = libmpq__header_ex_encode(
+            &wire_ex, header + LIBMPQ_HEADER_WIRE_SIZE, LIBMPQ_HEADER_EX_WIRE_SIZE
         );
-        libmpq__store_le16(
-            header + LIBMPQ_HEADER_WIRE_SIZE + 10,
-            (uint16_t)(((uint64_t)a->mpq_header.block_table_offset) >> 32)
-        );
+        if (result < 0)
+            return result;
     }
     if (write_at(a->fp, 0, header, a->mpq_header.header_size) < 0 || fflush(a->fp) != 0)
         return LIBMPQ_ERROR_WRITE;

@@ -26,20 +26,12 @@
 #include <sys/types.h>
 
 #include "mpq-file.h"
+#include "mpq-header.h"
 #include "mpq-mpqe.h"
 #include "mpq-rsa.h"
 
 /* Common success return code used by libmpq functions. */
 #define LIBMPQ_SUCCESS 0
-
-/* MPQ archive signature stored as the little-endian bytes "MPQ\x1A". */
-#define LIBMPQ_HEADER 0x1A51504D
-
-/* MPQ archive version used before World of Warcraft: The Burning Crusade. */
-#define LIBMPQ_ARCHIVE_VERSION_ONE 0
-
-/* MPQ archive version used by World of Warcraft: The Burning Crusade and newer. */
-#define LIBMPQ_ARCHIVE_VERSION_TWO 1
 
 /* File entry exists in the block table and has not been deleted. */
 #define LIBMPQ_FLAG_EXISTS 0x80000000
@@ -73,9 +65,7 @@
 #define LIBMPQ_SIGNATURE_NAME "(signature)"
 #define LIBMPQ_ATTRIBUTES_NAME "(attributes)"
 
-/* Serialized MPQ wire sizes, independent of native structure alignment. */
-#define LIBMPQ_HEADER_WIRE_SIZE 32u
-#define LIBMPQ_HEADER_EX_WIRE_SIZE 12u
+/* Serialized MPQ table sizes, independent of native structure alignment. */
 #define LIBMPQ_HASH_ENTRY_WIRE_SIZE 16u
 #define LIBMPQ_BLOCK_ENTRY_WIRE_SIZE 16u
 #define LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE 2u
@@ -87,34 +77,6 @@
 #ifndef TRUE
 #define TRUE 1
 #endif
-
-/*
- * Native representation of the fixed MPQ archive header at the archive start.
- * It identifies the format, describes the sector-size exponent, and locates
- * the encrypted hash and block tables relative to the archive. Version 1
- * archives use the 32-bit offsets in this structure; version 2 archives pair
- * them with mpq_header_ex_s when the table locations need high bits.
- */
-typedef struct
-{
-    uint32_t mpq_magic;          /* MPQ signature. */
-    uint32_t header_size;        /* Serialized header size in bytes. */
-    uint32_t archive_size;       /* Size of the archive in bytes. */
-    uint16_t version;            /* Archive format version. */
-    uint16_t block_size;         /* File sector size exponent: 512 * 2 ^ block_size. */
-    uint32_t hash_table_offset;  /* Offset of the hash table from the archive start. */
-    uint32_t block_table_offset; /* Offset of the block table from the archive start. */
-    uint32_t hash_table_count;   /* Number of entries in the hash table. */
-    uint32_t block_table_count;  /* Number of entries in the block table. */
-} mpq_header_s;
-
-/* Extended archive offsets used by version 2 archives. */
-typedef struct
-{
-    uint64_t extended_offset;         /* Extended block-table offset from the archive start. */
-    uint16_t hash_table_offset_high;  /* High 16 bits of the hash-table offset. */
-    uint16_t block_table_offset_high; /* High 16 bits of the block-table offset. */
-} mpq_header_ex_s;
 
 /*
  * One encrypted-table entry used to resolve a filename without storing its

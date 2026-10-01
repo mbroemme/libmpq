@@ -995,38 +995,6 @@ table_size(uint32_t count, size_t item_size, size_t *size)
 }
 
 /*
- * Decode the fixed MPQ v1 header from its little-endian byte representation.
- * The helper performs no validation; callers validate version, offsets, and
- * counts after all header fields have been loaded.
- */
-static void
-decode_mpq_header(mpq_header_s *header, const uint8_t *raw)
-{
-    header->mpq_magic = libmpq__load_le32(raw + 0);
-    header->header_size = libmpq__load_le32(raw + 4);
-    header->archive_size = libmpq__load_le32(raw + 8);
-    header->version = libmpq__load_le16(raw + 12);
-    header->block_size = libmpq__load_le16(raw + 14);
-    header->hash_table_offset = libmpq__load_le32(raw + 16);
-    header->block_table_offset = libmpq__load_le32(raw + 20);
-    header->hash_table_count = libmpq__load_le32(raw + 24);
-    header->block_table_count = libmpq__load_le32(raw + 28);
-}
-
-/*
- * Decode the optional MPQ v2 high-offset header extension.
- * Its fields extend table and archive offsets without changing the v1 header
- * layout, so they are loaded separately when the archive version requires it.
- */
-static void
-decode_mpq_header_ex(mpq_header_ex_s *header, const uint8_t *raw)
-{
-    header->extended_offset = libmpq__load_le64(raw + 0);
-    header->hash_table_offset_high = libmpq__load_le16(raw + 8);
-    header->block_table_offset_high = libmpq__load_le16(raw + 10);
-}
-
-/*
  * Decode the encrypted hash-table entries into native archive structures.
  * Each entry is read field-by-field to avoid alignment and host-endian
  * assumptions when the library runs on a different architecture.
@@ -1180,7 +1148,10 @@ libmpq__reader_archive_open_source(
              )) < 0)
             goto error;
 
-        decode_mpq_header(&(*mpq_archive)->mpq_header, header_data);
+        if ((result = libmpq__header_decode(
+                 &(*mpq_archive)->mpq_header, header_data, sizeof(header_data)
+             )) < 0)
+            goto error;
 
         if ((*mpq_archive)->mpq_header.mpq_magic == LIBMPQ_HEADER) {
             if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE) {
@@ -1249,7 +1220,10 @@ libmpq__reader_archive_open_source(
              )) < 0)
             goto error;
 
-        decode_mpq_header_ex(&(*mpq_archive)->mpq_header_ex, header_ex_data);
+        if ((result = libmpq__header_ex_decode(
+                 &(*mpq_archive)->mpq_header_ex, header_ex_data, sizeof(header_ex_data)
+             )) < 0)
+            goto error;
     }
 
     /* Metadata tables are decoded once and kept with the archive handle for later lookups. */
