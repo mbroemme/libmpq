@@ -18,6 +18,7 @@
  */
 
 #include "mpq-patch-writer.h"
+#include "mpq-archive.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
 #include "mpq-file.h"

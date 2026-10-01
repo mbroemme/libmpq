@@ -28,6 +28,7 @@
 
 #include <libmpq/mpq.h>
 
+#include "mpq-archive.h"
 #include "mpq-attributes.h"
 #include "mpq-compression.h"
 #include "mpq-crypto.h"

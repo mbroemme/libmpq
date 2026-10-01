@@ -18,6 +18,7 @@
  */
 
 #include "mpq-verify.h"
+#include "mpq-archive.h"
 #include "mpq-attributes.h"
 #include "mpq-internal.h"
 #include "mpq-md5.h"

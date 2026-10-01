@@ -22,6 +22,7 @@
 #endif
 
 #include "mpq-update.h"
+#include "mpq-archive.h"
 #include "mpq-attributes.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"

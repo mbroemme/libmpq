@@ -3,6 +3,7 @@ lib_LTLIBRARIES = libmpq.la
 
 # Keep private implementation headers available to in-tree readers and fuzzers.
 noinst_HEADERS = \
+	mpq-archive.h \
 	mpq-attributes.h \
 	mpq-block.h \
 	mpq-compression.h \

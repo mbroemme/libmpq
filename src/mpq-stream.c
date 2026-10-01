@@ -18,6 +18,7 @@
  */
 
 #include "mpq-stream.h"
+#include "mpq-archive.h"
 #include "mpq-internal.h"
 #include "mpq-reader.h"
 

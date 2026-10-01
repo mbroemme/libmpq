@@ -18,6 +18,7 @@
  */
 
 #include "mpq-signature.h"
+#include "mpq-archive.h"
 #include "mpq-crypto.h"
 #include "mpq-file.h"
 #include "mpq-internal.h"
