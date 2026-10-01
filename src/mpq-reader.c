@@ -995,29 +995,6 @@ table_size(uint32_t count, size_t item_size, size_t *size)
 }
 
 /*
- * Decode the encrypted hash-table entries into native archive structures.
- * Each entry is read field-by-field to avoid alignment and host-endian
- * assumptions when the library runs on a different architecture.
- */
-static void
-decode_mpq_hash_table(mpq_hash_s *table, const uint8_t *raw, uint32_t count)
-{
-    uint32_t i;
-
-    if (table == 0 || raw == 0)
-        return;
-    for (i = 0; i < count; i++) {
-        const uint8_t *entry = raw + (size_t)i * LIBMPQ_HASH_ENTRY_WIRE_SIZE;
-
-        table[i].hash_a = libmpq__load_le32(entry + 0);
-        table[i].hash_b = libmpq__load_le32(entry + 4);
-        table[i].locale = libmpq__load_le16(entry + 8);
-        table[i].platform = libmpq__load_le16(entry + 10);
-        table[i].block_table_index = libmpq__load_le32(entry + 12);
-    }
-}
-
-/*
  * Decode the fixed-width block table used by MPQ v1 and v2 archives.
  * The high offset words are handled separately by the extended-table helper.
  */
@@ -1271,9 +1248,12 @@ libmpq__reader_archive_open_source(
     libmpq__crypto_decrypt_block(
         table_data, (uint32_t)table_bytes, libmpq__crypto_hash_string("(hash table)", 0x300)
     );
-    decode_mpq_hash_table(
-        (*mpq_archive)->mpq_hash, table_data, (*mpq_archive)->mpq_header.hash_table_count
+    result = libmpq__hash_table_decode(
+        table_data, table_bytes, (*mpq_archive)->mpq_hash,
+        (*mpq_archive)->mpq_header.hash_table_count
     );
+    if (result < 0)
+        goto error;
     free(table_data);
     table_data = NULL;
 

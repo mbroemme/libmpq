@@ -57,7 +57,8 @@ locate(mpq_archive_s *a, uint64_t *offset, uint64_t *extent, uint8_t payload[LIB
     libmpq__file_hash(LIBMPQ_SIGNATURE_NAME, &h1, &h2, &h3);
     for (i = 0; i < a->mpq_header.hash_table_count; ++i) {
         const mpq_hash_s *entry = &a->mpq_hash[i];
-        if (entry->block_table_index >= 0xfffffffeu || entry->hash_a != h2 || entry->hash_b != h3)
+        if (entry->block_table_index >= LIBMPQ_HASH_DELETED || entry->hash_a != h2 ||
+            entry->hash_b != h3)
             continue;
         if (index != UINT32_MAX || entry->locale != 0 || entry->platform != 0 ||
             entry->block_table_index >= a->mpq_header.block_table_count)

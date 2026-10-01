@@ -420,20 +420,10 @@ finalize_archive(mpq_archive_s *a)
     raw = malloc(bytes);
     if (!raw)
         return LIBMPQ_ERROR_MALLOC;
-    for (i = 0; i < a->write_hash_capacity; i++) {
-        libmpq__store_le32(raw + (size_t)i * LIBMPQ_HASH_ENTRY_WIRE_SIZE, a->mpq_hash[i].hash_a);
-        libmpq__store_le32(
-            raw + (size_t)i * LIBMPQ_HASH_ENTRY_WIRE_SIZE + 4, a->mpq_hash[i].hash_b
-        );
-        libmpq__store_le16(
-            raw + (size_t)i * LIBMPQ_HASH_ENTRY_WIRE_SIZE + 8, a->mpq_hash[i].locale
-        );
-        libmpq__store_le16(
-            raw + (size_t)i * LIBMPQ_HASH_ENTRY_WIRE_SIZE + 10, a->mpq_hash[i].platform
-        );
-        libmpq__store_le32(
-            raw + (size_t)i * LIBMPQ_HASH_ENTRY_WIRE_SIZE + 12, a->mpq_hash[i].block_table_index
-        );
+    result = libmpq__hash_table_encode(a->mpq_hash, a->write_hash_capacity, raw, bytes);
+    if (result < 0) {
+        free(raw);
+        return result;
     }
     libmpq__crypto_encrypt_block(
         raw, (uint32_t)bytes, libmpq__crypto_hash_string("(hash table)", 0x300)

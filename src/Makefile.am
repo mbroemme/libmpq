@@ -9,6 +9,7 @@ noinst_HEADERS = \
 	mpq-crypto.h \
 	mpq-endian.h \
 	mpq-file.h \
+	mpq-hash.h \
 	mpq-header.h \
 	mpq-huffman.h \
 	mpq-internal.h \
@@ -51,6 +52,7 @@ GENERAL_SRCS = \
 	mpq-crypto.c \
 	mpq-endian.c \
 	mpq-file.c \
+	mpq-hash.c \
 	mpq-header.c \
 	mpq-huffman.c \
 	mpq-md5.c \

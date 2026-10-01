@@ -26,6 +26,7 @@
 #include <sys/types.h>
 
 #include "mpq-file.h"
+#include "mpq-hash.h"
 #include "mpq-header.h"
 #include "mpq-mpqe.h"
 #include "mpq-rsa.h"
@@ -57,16 +58,12 @@
 /* Packed block offset table has an additional CRC checksum entry. */
 #define LIBMPQ_FLAG_CRC 0x04000000
 
-/* Hash-table slot has never held a file entry. */
-#define LIBMPQ_HASH_FREE 0xFFFFFFFF
-
 /* Well-known pseudo-files stored inside some MPQ archives. */
 #define LIBMPQ_LISTFILE_NAME "(listfile)"
 #define LIBMPQ_SIGNATURE_NAME "(signature)"
 #define LIBMPQ_ATTRIBUTES_NAME "(attributes)"
 
-/* Serialized MPQ table sizes, independent of native structure alignment. */
-#define LIBMPQ_HASH_ENTRY_WIRE_SIZE 16u
+/* Serialized MPQ block-table sizes, independent of native structure alignment. */
 #define LIBMPQ_BLOCK_ENTRY_WIRE_SIZE 16u
 #define LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE 2u
 
@@ -77,22 +74,6 @@
 #ifndef TRUE
 #define TRUE 1
 #endif
-
-/*
- * One encrypted-table entry used to resolve a filename without storing its
- * plaintext in the hash table. The two Storm filename hashes are matched
- * together with locale and platform before the block-table index is used.
- * A free index marks an unused slot, while a valid index must refer to an
- * existing entry in the archive's block table.
- */
-typedef struct
-{
-    uint32_t hash_a;            /* First filename hash. */
-    uint32_t hash_b;            /* Second filename hash. */
-    uint16_t locale;            /* File locale identifier. */
-    uint16_t platform;          /* File platform identifier; zero means default. */
-    uint32_t block_table_index; /* Index into the block table. */
-} mpq_hash_s;
 
 /*
  * Native representation of the metadata for one stored file payload. The offset and

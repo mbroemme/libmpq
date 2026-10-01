@@ -714,7 +714,7 @@ update_delete_hash(mpq_hash_s *entry)
     entry->hash_b = 0;
     entry->locale = 0;
     entry->platform = 0;
-    entry->block_table_index = UINT32_MAX - 1u;
+    entry->block_table_index = LIBMPQ_HASH_DELETED;
 }
 
 static int32_t
@@ -996,15 +996,12 @@ update_write_tables(mpq_archive_s *archive, FILE *output, uint64_t *extent)
     raw = malloc(bytes == 0 ? 1u : bytes);
     if (raw == NULL)
         return LIBMPQ_ERROR_MALLOC;
-    for (i = 0; i < archive->mpq_header.hash_table_count; i++) {
-        size_t at = (size_t)i * LIBMPQ_HASH_ENTRY_WIRE_SIZE;
-        const mpq_hash_s *entry = &archive->mpq_hash[i];
-
-        libmpq__store_le32(raw + at, entry->hash_a);
-        libmpq__store_le32(raw + at + 4u, entry->hash_b);
-        libmpq__store_le16(raw + at + 8u, entry->locale);
-        libmpq__store_le16(raw + at + 10u, entry->platform);
-        libmpq__store_le32(raw + at + 12u, entry->block_table_index);
+    result = libmpq__hash_table_encode(
+        archive->mpq_hash, archive->mpq_header.hash_table_count, raw, bytes
+    );
+    if (result < 0) {
+        free(raw);
+        return result;
     }
     libmpq__crypto_encrypt_block(
         raw, (uint32_t)bytes, libmpq__crypto_hash_string("(hash table)", 0x300)
