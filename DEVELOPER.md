@@ -479,8 +479,10 @@ and reduces legal/distribution risk from bundling product-specific material.
 
 ### Developer benchmarks
 
-The ten module-specific benchmarks are non-installed developer tools:
+The eleven module-specific benchmarks are non-installed developer tools:
 
+- `bench-compression` times production compression/decompression dispatch for
+  representative codecs and compressible, structured, and incompressible data.
 - `bench-reader` measures single-file and many-file archive open, name lookup,
   and full-file extraction for stored, zlib, and encrypted workloads.
 - `bench-source` compares file-backed and custom-memory-I/O open, extraction,
@@ -502,23 +504,23 @@ The ten module-specific benchmarks are non-installed developer tools:
 - `bench-update` measures transactional update begin, operation, and commit for
   ordinary MPQ, embedded HM3W-style, and authenticated MPQE archives.
 
-In a disposable build tree, build them together with `make -C tests benchmarks`
-and run their default cases with `make -C tests run-benchmarks`. Individual
-build targets are `make -C tests bench-reader`, `make -C tests bench-source`,
-`make -C tests bench-stream`,
-`make -C tests bench-writer`, `make -C tests bench-mpqe`,
-`make -C tests bench-verify`, `make -C tests bench-signature`,
-`make -C tests bench-patch-reader`, `make -C tests bench-patch-writer`, and
-`make -C tests bench-update`. Run an individual tool from `tests` as
-`./bench-reader [runs]`, `./bench-source [runs]`, `./bench-stream [runs]`,
-`./bench-writer [runs]`,
-`./bench-mpqe [runs]`, `./bench-verify [runs]`,
-`./bench-signature [runs]`,
-`./bench-patch-reader [runs]`,
-`./bench-patch-writer [runs]`, or `./bench-update [runs]`.
+From a disposable build tree, build and run all benchmarks with:
+
+```sh
+make -C tests benchmarks
+make -C tests run-benchmarks
+```
+
+To build and run one benchmark, use any name from the list above. For example:
+
+```sh
+make -C tests bench-compression
+./tests/bench-compression 3
+```
 
 The optional `runs` argument defaults to three; each tool reports the best
-monotonic elapsed time for deterministic 64 KiB, 1 MiB, and 16 MiB cases.
+monotonic elapsed time for deterministic cases. Compression cases use 64 KiB,
+1 MiB, and 16 MiB where practical; slower legacy codecs stay at 64 KiB.
 Fixture creation and result verification are outside timed regions where
 practical. These benchmarks are not part of `make check`. Compare before and
 after results on the same machine and build configuration; the timings are not

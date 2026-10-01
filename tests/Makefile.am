@@ -96,6 +96,7 @@ CLEANFILES = \
 
 # Build explicitly for repeatable, non-installed module profiling.
 EXTRA_PROGRAMS = \
+	bench-compression \
 	bench-patch-reader \
 	bench-patch-writer \
 	bench-verify \
@@ -106,6 +107,8 @@ EXTRA_PROGRAMS = \
 	bench-stream \
 	bench-writer \
 	bench-update
+bench_compression_SOURCES = bench-mpq-compression.c
+bench_compression_LDADD = $(test_lzma_LDADD)
 bench_patch_reader_SOURCES = bench-mpq-patch-reader.c
 bench_patch_reader_LDADD = $(test_patch_writer_LDADD)
 bench_patch_writer_SOURCES = bench-mpq-patch-writer.c
@@ -129,6 +132,7 @@ bench_update_LDADD = $(test_update_LDADD)
 .PHONY: benchmarks run-benchmarks
 benchmarks: $(EXTRA_PROGRAMS)
 run-benchmarks: benchmarks
+	./bench-compression$(EXEEXT)
 	./bench-patch-reader$(EXEEXT)
 	./bench-patch-writer$(EXEEXT)
 	./bench-verify$(EXEEXT)
