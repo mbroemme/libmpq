@@ -9,6 +9,7 @@ noinst_HEADERS = \
 	mpq-crypt-buf.h \
 	mpq-crypto.h \
 	mpq-endian.h \
+	mpq-entry.h \
 	mpq-file.h \
 	mpq-hash.h \
 	mpq-header.h \

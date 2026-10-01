@@ -26,6 +26,7 @@
 #include <sys/types.h>
 
 #include "mpq-block.h"
+#include "mpq-entry.h"
 #include "mpq-file.h"
 #include "mpq-hash.h"
 #include "mpq-header.h"
@@ -71,29 +72,6 @@
 #ifndef TRUE
 #define TRUE 1
 #endif
-
-/* Cached state for an opened MPQ file entry. */
-typedef struct
-{
-    uint32_t seed;                /* Per-file decryption seed. */
-    uint8_t seed_known;           /* Whether seed was recovered successfully. */
-    uint32_t *packed_offset;      /* Packed sector offsets for multi-sector files. */
-    uint32_t packed_offset_count; /* Number of packed_offset entries. */
-    uint32_t open_count;          /* Reference count for the cached sector table. */
-} mpq_file_s;
-
-/*
- * Translation from libmpq's compact public file numbering to the serialized
- * block table. MPQ block tables can contain unused or invalid entries, so a
- * public file number is not necessarily the same as its block-table index.
- * block_table_diff preserves how many invalid entries were skipped while
- * constructing the mapping for callers that need the original layout.
- */
-typedef struct
-{
-    uint32_t block_table_indices; /* Block-table index for this public file number. */
-    uint32_t block_table_diff;    /* Number of skipped invalid block entries before this file. */
-} mpq_map_s;
 
 struct mpq_writer_mpqe_ops;
 
