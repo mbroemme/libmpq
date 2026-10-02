@@ -109,8 +109,8 @@ documentation below for build, test, and library-loading instructions.
 
 For build and install use the commands below. If `--prefix=/usr` is used, the
 `make install` command must be run as root. It installs the native shared
-library, public headers, tools, and manual pages. Language bindings are built
-and installed separately with their native package managers.
+library, public headers, the libmpq-config script, and manual pages. Language
+bindings are built and installed separately with their native package managers.
 
 ```sh
 ./configure --prefix=/usr &&

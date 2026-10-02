@@ -98,7 +98,6 @@ docs/man1/Makefile
 docs/man3/Makefile
 tests/Makefile
 fuzz/Makefile
-tools/Makefile
 ])
 
 # Complete the configuration process.

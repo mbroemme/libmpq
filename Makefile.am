@@ -19,8 +19,7 @@ DIST_SUBDIRS = \
 	docs/man3 \
 	tests \
 	fuzz \
-	bindings \
-	tools
+	bindings
 
 # Install the libmpq runtime configuration script.
 bin_SCRIPTS = libmpq-config

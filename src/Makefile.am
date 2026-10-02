@@ -7,7 +7,6 @@ noinst_HEADERS = \
 	mpq-attributes.h \
 	mpq-block.h \
 	mpq-compression.h \
-	mpq-crypt-buf.h \
 	mpq-crypto.h \
 	mpq-endian.h \
 	mpq-entry.h \
