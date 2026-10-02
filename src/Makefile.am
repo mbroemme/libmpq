@@ -15,7 +15,6 @@ noinst_HEADERS = \
 	mpq-hash.h \
 	mpq-header.h \
 	mpq-huffman.h \
-	mpq-internal.h \
 	mpq-md5.h \
 	mpq-mpqe.h \
 	mpq-patch-reader.h \
