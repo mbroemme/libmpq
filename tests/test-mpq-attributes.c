@@ -18,9 +18,10 @@
  */
 
 /* Optional attributes, explicit metadata, and physical block indexing. */
+#include "mpq-archive.h"
 #include "mpq-attributes.h"
+#include "mpq-block.h"
 #include "mpq-endian.h"
-#include "mpq-internal.h"
 #include "test-mpq-helper.h"
 
 #include <stdio.h>
@@ -272,7 +273,7 @@ test_manual(int malformed, uint32_t storage)
     REQUIRE(flags == (malformed ? 0 : LIBMPQ_VERIFY_FILE_CRC32));
     REQUIRE(
         libmpq__file_read(archive, number, output, 3, &transferred) ==
-        (malformed ? LIBMPQ_SUCCESS : LIBMPQ_ERROR_READ)
+        (malformed ? 0 : LIBMPQ_ERROR_READ)
     );
     if (malformed)
         REQUIRE(transferred == 3);

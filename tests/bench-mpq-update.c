@@ -21,7 +21,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
-#include "mpq-internal.h"
+#include <libmpq/mpq.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -170,12 +170,12 @@ make_archive(const char *path, const uint8_t *data, size_t size, bench_kind_e ki
         );
     else
         result = libmpq__archive_create(&archive, path, &options);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         return 1;
     result = libmpq__archive_add_data(archive, "payload.bin", data, (libmpq__off_t)size, NULL);
-    if (libmpq__archive_close(archive) != LIBMPQ_SUCCESS)
+    if (libmpq__archive_close(archive) != 0)
         return 1;
-    return result != LIBMPQ_SUCCESS;
+    return result != 0;
 }
 
 /* Wrap a plain MPQ at an aligned offset with unchanged prefix and suffix. */
@@ -268,10 +268,10 @@ check_result(
         result = libmpq__archive_open_mpqe(&archive, path, -1, bench_auth, sizeof(bench_auth) - 1u);
     else
         result = libmpq__archive_open(&archive, path, -1);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     if (kind == BENCH_EMBEDDED &&
-        (libmpq__archive_offset(archive, &offset) != LIBMPQ_SUCCESS || offset != BENCH_PREFIX_SIZE))
+        (libmpq__archive_offset(archive, &offset) != 0 || offset != BENCH_PREFIX_SIZE))
         goto done;
     if (action == BENCH_REMOVE) {
         if (libmpq__file_number(archive, "payload.bin", &number) == LIBMPQ_ERROR_EXIST)
@@ -284,19 +284,19 @@ check_result(
     result = libmpq__file_number(
         archive, action == BENCH_RENAME ? "renamed.bin" : "payload.bin", &number
     );
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     actual = malloc(size);
     if (actual == NULL)
         goto done;
     result = libmpq__file_read(archive, number, actual, (libmpq__off_t)size, &transferred);
-    if (result == LIBMPQ_SUCCESS && transferred == (libmpq__off_t)size &&
+    if (result == 0 && transferred == (libmpq__off_t)size &&
         memcmp(actual, action == BENCH_REPLACE ? after : before, size) == 0)
         failed = 0;
 
 done:
     free(actual);
-    if (archive != NULL && libmpq__archive_close(archive) != LIBMPQ_SUCCESS)
+    if (archive != NULL && libmpq__archive_close(archive) != 0)
         failed = 1;
     return failed;
 }
@@ -332,7 +332,7 @@ run_case(
         else
             result = libmpq__update_begin(&update, working);
         begin_elapsed = elapsed_now() - start;
-        if (result != LIBMPQ_SUCCESS)
+        if (result != 0)
             goto failed;
         if (action != BENCH_NOOP) {
             start = elapsed_now();
@@ -345,14 +345,14 @@ run_case(
             else
                 result = libmpq__update_remove(update, "payload.bin");
             operation_elapsed = elapsed_now() - start;
-            if (result != LIBMPQ_SUCCESS)
+            if (result != 0)
                 goto failed;
         }
         start = elapsed_now();
         result = libmpq__update_commit(update);
         update = NULL;
         commit_elapsed = elapsed_now() - start;
-        if (result != LIBMPQ_SUCCESS || check_result(working, kind, action, before, after, size) ||
+        if (result != 0 || check_result(working, kind, action, before, after, size) ||
             (action == BENCH_NOOP && !same_file(fixture, working)))
             goto failed;
         if (begin_elapsed < begin_best)

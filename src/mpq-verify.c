@@ -20,7 +20,7 @@
 #include "mpq-verify.h"
 #include "mpq-archive.h"
 #include "mpq-attributes.h"
-#include "mpq-internal.h"
+#include "mpq-block.h"
 #include "mpq-md5.h"
 #include "mpq-reader.h"
 
@@ -91,17 +91,17 @@ libmpq__verify_block(
         archive, file_number, block_number, buffer, size, &transferred, &stored, &mismatch_mask,
         NULL
     );
-    if (status == LIBMPQ_SUCCESS && transferred != size)
+    if (status == 0 && transferred != size)
         status = LIBMPQ_ERROR_READ;
 cleanup:
     free(buffer);
     free(checksums);
     {
         int32_t close_status = libmpq__reader_offsets_release(archive, file_number);
-        if (status == LIBMPQ_SUCCESS)
+        if (status == 0)
             status = close_status;
     }
-    if (status == LIBMPQ_SUCCESS) {
+    if (status == 0) {
         *checksum = stored;
         *mismatches = mismatch_mask;
     }
@@ -143,7 +143,7 @@ libmpq__verify_file(
     if ((verify_flags & ~LIBMPQ_VERIFY_ALL) != 0)
         return LIBMPQ_ERROR_FORMAT;
     if (verify_flags == 0)
-        return LIBMPQ_SUCCESS;
+        return 0;
     memset(&attributes, 0, sizeof(attributes));
     if ((verify_flags & (LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5)) != 0) {
         status = libmpq__file_attributes(archive, file_number, &attributes);
@@ -159,7 +159,7 @@ libmpq__verify_file(
         (storage & (LIBMPQ_FLAG_COMPRESSED | LIBMPQ_FLAG_COMPRESS_PKZIP)) == 0)
         verify_flags &= ~LIBMPQ_VERIFY_SECTOR_CRC;
     if (verify_flags == 0)
-        return LIBMPQ_SUCCESS;
+        return 0;
     status = libmpq__file_size_unpacked(archive, file_number, &expected);
     if (status < 0)
         return status;
@@ -232,10 +232,10 @@ cleanup:
     free(buffer);
     {
         int32_t close_status = libmpq__reader_offsets_release(archive, file_number);
-        if (status == LIBMPQ_SUCCESS)
+        if (status == 0)
             status = close_status;
     }
-    if (status == LIBMPQ_SUCCESS)
+    if (status == 0)
         *mismatches = mismatch_mask;
     return status;
 }

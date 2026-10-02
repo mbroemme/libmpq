@@ -26,6 +26,9 @@
 /* Use the public definitions for compression-stage bits and writer policies. */
 #include <libmpq/mpq.h>
 
+/* Internal marker for an uncompressed block in the dispatch path. */
+#define LIBMPQ_FLAG_COMPRESS_NONE 0x00000300
+
 /* MPQ v2+ serializes LZMA as a special method, not a stage-mask combination. */
 #define LIBMPQ_COMPRESSION_LZMA_METHOD 0x12u
 #define LIBMPQ_LZMA_USE_FILTER 0u

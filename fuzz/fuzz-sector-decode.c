@@ -17,8 +17,8 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "mpq-block.h"
 #include "mpq-compression.h"
-#include "mpq-internal.h"
 
 #include <stdint.h>
 #include <stdlib.h>

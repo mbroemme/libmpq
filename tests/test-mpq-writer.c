@@ -18,7 +18,7 @@
  */
 
 /* Exercise deterministic writer output and generated writer/readback properties. */
-#include "mpq-internal.h"
+#include "mpq-archive.h"
 #include "mpq-mpqe.h"
 #include "mpq-writer.h"
 #include "test-mpq-helper.h"
@@ -350,7 +350,7 @@ transform_mpqe_chunk(uint8_t chunk[LIBMPQ_MPQE_CHUNK_SIZE], uint64_t offset)
     int32_t result;
 
     result = libmpq__mpqe_key(key, mpqe_auth_code, sizeof(mpqe_auth_code) - 1U);
-    if (result == LIBMPQ_SUCCESS)
+    if (result == 0)
         libmpq__mpqe_transform_chunk(chunk, key, offset);
     libmpq__mpqe_clear(key, sizeof(key));
     return result;
@@ -372,7 +372,7 @@ decrypt_mpqe_path(const char *path, uint8_t **data, size_t *size)
             physical = sizeof(chunk);
         memset(chunk, 0, sizeof(chunk));
         memcpy(chunk, *data + offset, physical);
-        if (transform_mpqe_chunk(chunk, offset) != LIBMPQ_SUCCESS) {
+        if (transform_mpqe_chunk(chunk, offset) != 0) {
             libmpq__mpqe_clear(chunk, sizeof(chunk));
             free(*data);
             *data = NULL;

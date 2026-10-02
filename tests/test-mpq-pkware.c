@@ -18,8 +18,8 @@
  */
 
 /* Exercise extraction of PKWARE and implode fixture payloads. */
+#include "mpq-block.h"
 #include "mpq-compression.h"
-#include "mpq-internal.h"
 #include "mpq-pkware.h"
 #include "test-mpq-helper.h"
 

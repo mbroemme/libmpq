@@ -27,6 +27,27 @@
 #define LIBMPQ_BLOCK_ENTRY_WIRE_SIZE 16u
 #define LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE 2u
 
+/* File entry exists in the block table and has not been deleted. */
+#define LIBMPQ_FLAG_EXISTS 0x80000000
+
+/* File payload is encrypted and must be decrypted before decompression. */
+#define LIBMPQ_FLAG_ENCRYPTED 0x00010000
+
+/* Mask covering all MPQ compression mode bits. */
+#define LIBMPQ_FLAG_COMPRESSED 0x0000FF00
+
+/* File payload uses the PKWARE Data Compression Library algorithm. */
+#define LIBMPQ_FLAG_COMPRESS_PKZIP 0x00000100
+
+/* File payload uses Blizzard's chained multi-compression format. */
+#define LIBMPQ_FLAG_COMPRESS_MULTI 0x00000200
+
+/* File is stored as a single sector without a packed block offset table. */
+#define LIBMPQ_FLAG_SINGLE 0x01000000
+
+/* Packed block offset table has an additional CRC checksum entry. */
+#define LIBMPQ_FLAG_CRC 0x04000000
+
 /*
  * Native representation of one stored file payload. Offset and packed size
  * locate its bytes, while unpacked size describes the decoded result. Patch

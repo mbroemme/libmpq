@@ -20,7 +20,8 @@
 /* Verify read-only MPQE source opening with public fixtures. */
 #include "test-mpq-helper.h"
 
-#include "mpq-internal.h"
+#include "mpq-archive.h"
+#include "mpq-block.h"
 #include "mpq-mpqe.h"
 #include "mpq-signature.h"
 #include "mpq-source.h"
@@ -47,7 +48,7 @@ memory_read_at(void *context, libmpq__off_t offset, uint8_t *buffer, size_t size
         size > source->size - (size_t)offset)
         return LIBMPQ_ERROR_READ;
     memcpy(buffer, source->data + (size_t)offset, size);
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /* Verify MPQE key derivation using a synthetic known-answer vector. */

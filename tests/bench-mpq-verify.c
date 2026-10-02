@@ -21,7 +21,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
-#include "mpq-internal.h"
+#include "mpq-archive.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -92,15 +92,15 @@ create_file_archive(
     mpq_archive_s *archive = NULL;
     int32_t result = libmpq__archive_create(&archive, path, &archive_options);
 
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         return 1;
     result =
         libmpq__archive_add_data(archive, "payload.bin", data, (libmpq__off_t)size, &file_options);
-    if (result == LIBMPQ_SUCCESS)
+    if (result == 0)
         result = libmpq__archive_close(archive);
     else
         (void)libmpq__archive_close(archive);
-    return result != LIBMPQ_SUCCESS;
+    return result != 0;
 }
 
 /* Measure automatic full-file checks and explicit verification separately. */
@@ -121,13 +121,13 @@ run_file_case(
     int failed = 1;
 
     if (create_file_archive(path, data, size, kind) ||
-        libmpq__archive_open(&archive, path, 0) != LIBMPQ_SUCCESS ||
-        libmpq__file_number(archive, "payload.bin", &number) != LIBMPQ_SUCCESS ||
-        libmpq__file_flags(archive, number, &flags) != LIBMPQ_SUCCESS ||
+        libmpq__archive_open(&archive, path, 0) != 0 ||
+        libmpq__file_number(archive, "payload.bin", &number) != 0 ||
+        libmpq__file_flags(archive, number, &flags) != 0 ||
         (flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SECTOR_CRC)) != kind->storage)
         goto done;
     if (kind->attributes != 0 &&
-        (libmpq__file_attributes(archive, number, &attributes) != LIBMPQ_SUCCESS ||
+        (libmpq__file_attributes(archive, number, &attributes) != 0 ||
          (attributes.flags & (LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5)) != kind->attributes))
         goto done;
     if ((kind->storage & LIBMPQ_FILE_FLAG_SECTOR_CRC) != 0) {
@@ -135,13 +135,12 @@ run_file_case(
         uint32_t checksum = 0;
         uint32_t mismatches = UINT32_MAX;
 
-        if (libmpq__file_blocks(archive, number, &blocks) != LIBMPQ_SUCCESS || blocks == 0 ||
-            libmpq__block_verify(archive, number, 0, &checksum, &mismatches) != LIBMPQ_SUCCESS ||
+        if (libmpq__file_blocks(archive, number, &blocks) != 0 || blocks == 0 ||
+            libmpq__block_verify(archive, number, 0, &checksum, &mismatches) != 0 ||
             checksum == 0 || mismatches != 0)
             goto done;
         mismatches = UINT32_MAX;
-        if (libmpq__block_verify(archive, number, blocks - 1, &checksum, &mismatches) !=
-                LIBMPQ_SUCCESS ||
+        if (libmpq__block_verify(archive, number, blocks - 1, &checksum, &mismatches) != 0 ||
             checksum == 0 || mismatches != 0)
             goto done;
     }
@@ -158,8 +157,7 @@ run_file_case(
         start = elapsed_now();
         result = libmpq__file_read(archive, number, actual, (libmpq__off_t)size, &transferred);
         duration = elapsed_now() - start;
-        if (result != LIBMPQ_SUCCESS || transferred != (libmpq__off_t)size ||
-            memcmp(actual, data, size) != 0)
+        if (result != 0 || transferred != (libmpq__off_t)size || memcmp(actual, data, size) != 0)
             goto done;
         if (duration < extract_best)
             extract_best = duration;
@@ -169,7 +167,7 @@ run_file_case(
             start = elapsed_now();
             result = libmpq__file_verify(archive, number, kind->verify, &mismatches);
             duration = elapsed_now() - start;
-            if (result != LIBMPQ_SUCCESS || mismatches != 0)
+            if (result != 0 || mismatches != 0)
                 goto done;
             if (duration < verify_best)
                 verify_best = duration;
@@ -186,7 +184,7 @@ run_file_case(
         );
     failed = 0;
 done:
-    if (archive != NULL && libmpq__archive_close(archive) != LIBMPQ_SUCCESS)
+    if (archive != NULL && libmpq__archive_close(archive) != 0)
         failed = 1;
     free(actual);
     (void)remove(path);

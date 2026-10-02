@@ -21,7 +21,6 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
-#include "mpq-internal.h"
 #include "test-mpq-helper.h"
 
 #include <stdio.h>
@@ -69,31 +68,31 @@ create_signed_archive(const char *path, const uint8_t *data, size_t size, uint32
     mpq_file_options_s file_options = { 0, 0, 0, 0, 0 };
     uint8_t strong_private[512];
     mpq_archive_s *archive = NULL;
-    int32_t result = LIBMPQ_SUCCESS;
+    int32_t result = 0;
 
     test_strong_signature_private_key(strong_private);
     result = libmpq__archive_create(&archive, path, &options);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         return 1;
     if ((types & LIBMPQ_SIGNATURE_WEAK) != 0)
         result = libmpq__archive_sign(
             archive, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
             sizeof(test_signature_private_key)
         );
-    if (result == LIBMPQ_SUCCESS && (types & LIBMPQ_SIGNATURE_STRONG) != 0)
+    if (result == 0 && (types & LIBMPQ_SIGNATURE_STRONG) != 0)
         result = libmpq__archive_sign(
             archive, LIBMPQ_SIGNATURE_STRONG, strong_private, sizeof(strong_private)
         );
     memset(strong_private, 0, sizeof(strong_private));
-    if (result == LIBMPQ_SUCCESS)
+    if (result == 0)
         result = libmpq__archive_add_data(
             archive, "payload.bin", data, (libmpq__off_t)size, &file_options
         );
-    if (result == LIBMPQ_SUCCESS)
+    if (result == 0)
         result = libmpq__archive_close(archive);
     else
         (void)libmpq__archive_close(archive);
-    return result != LIBMPQ_SUCCESS;
+    return result != 0;
 }
 
 /* Verify each requested signature through the public archive API. */
@@ -106,7 +105,7 @@ verify_signatures(mpq_archive_s *archive, uint32_t types)
         (libmpq__archive_verify(
              archive, LIBMPQ_SIGNATURE_WEAK, test_signature_public_key,
              sizeof(test_signature_public_key), &mismatches
-         ) != LIBMPQ_SUCCESS ||
+         ) != 0 ||
          mismatches != 0))
         return 1;
     mismatches = UINT32_MAX;
@@ -114,7 +113,7 @@ verify_signatures(mpq_archive_s *archive, uint32_t types)
         (libmpq__archive_verify(
              archive, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
              sizeof(test_strong_signature_public_key), &mismatches
-         ) != LIBMPQ_SUCCESS ||
+         ) != 0 ||
          mismatches != 0))
         return 1;
     return 0;
@@ -134,8 +133,8 @@ run_signature_case(
     int failed = 1;
 
     if (create_signed_archive(path, data, size, types) ||
-        libmpq__archive_open(&archive, path, 0) != LIBMPQ_SUCCESS ||
-        libmpq__archive_signatures(archive, &present) != LIBMPQ_SUCCESS || present != types ||
+        libmpq__archive_open(&archive, path, 0) != 0 ||
+        libmpq__archive_signatures(archive, &present) != 0 || present != types ||
         verify_signatures(archive, types))
         goto done;
     for (unsigned run = 0; run < runs; run++) {
@@ -154,7 +153,7 @@ run_signature_case(
     );
     failed = 0;
 done:
-    if (archive != NULL && libmpq__archive_close(archive) != LIBMPQ_SUCCESS)
+    if (archive != NULL && libmpq__archive_close(archive) != 0)
         failed = 1;
     (void)remove(path);
     if (failed)

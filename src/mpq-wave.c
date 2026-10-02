@@ -25,7 +25,6 @@
 
 #include "mpq-wave.h"
 #include "mpq-endian.h"
-#include "mpq-internal.h"
 #include <libmpq/mpq.h>
 #include <stdlib.h>
 #include <string.h>
@@ -132,7 +131,7 @@ libmpq__wave_probe_pcm16(const uint8_t *data, uint32_t size, libmpq_wave_info_s 
     info->channels = channels;
     info->data_offset = data_offset;
     info->data_size = data_size;
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -183,7 +182,7 @@ libmpq__wave_probe_pcm16_prefix(
     info->channels = channels;
     info->data_offset = data_offset;
     info->data_size = data_size;
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -236,7 +235,7 @@ libmpq__wave_compress(
     }
     *out_buf = out;
     *out_size = pos;
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*

@@ -18,8 +18,9 @@
  */
 
 /* Verify every checked-in v1 and v2 fixture archive and extracted payload. */
+#include "mpq-archive.h"
 #include "mpq-attributes.h"
-#include "mpq-internal.h"
+#include "mpq-block.h"
 #include "mpq-reader.h"
 #include "mpq-signature.h"
 #include "test-mpq-helper.h"

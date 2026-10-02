@@ -21,7 +21,8 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "test-mpq-helper.h"
-#include "../src/mpq-internal.h"
+#include "../src/mpq-archive.h"
+#include "../src/mpq-block.h"
 #include "../src/mpq-source.h"
 
 #include <stdio.h>

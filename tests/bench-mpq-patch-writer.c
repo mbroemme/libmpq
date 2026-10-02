@@ -21,7 +21,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
-#include "mpq-internal.h"
+#include "mpq-archive.h"
 #include "mpq-patch-reader.h"
 #include "mpq-patch-writer.h"
 #include "mpq-source.h"
@@ -77,17 +77,17 @@ make_archive(const char *path, const uint8_t *data, size_t size)
     mpq_archive_s *archive = NULL;
     int32_t status = libmpq__archive_create(&archive, path, &creation);
 
-    if (status != LIBMPQ_SUCCESS) {
+    if (status != 0) {
         fprintf(stderr, "archive create failed: %d\n", status);
         return 1;
     }
     status = libmpq__archive_add_data(archive, "payload.bin", data, (libmpq__off_t)size, &storage);
-    if (status != LIBMPQ_SUCCESS) {
+    if (status != 0) {
         fprintf(stderr, "archive add failed: %d\n", status);
         (void)libmpq__archive_close(archive);
         return 1;
     }
-    return libmpq__archive_close(archive) != LIBMPQ_SUCCESS;
+    return libmpq__archive_close(archive) != 0;
 }
 
 /* Time only replacement staging, excluding begin and finalization. */
@@ -99,7 +99,7 @@ make_patch(const char *base, const char *path, const uint8_t *data, size_t size,
     int32_t status = libmpq__patch_writer_begin(&writer, base, path);
     double start;
 
-    if (status != LIBMPQ_SUCCESS) {
+    if (status != 0) {
         fprintf(stderr, "patch begin failed: %d\n", status);
         return 1;
     }
@@ -107,12 +107,12 @@ make_patch(const char *base, const char *path, const uint8_t *data, size_t size,
     status =
         libmpq__patch_writer_replace(writer, "payload.bin", data, (libmpq__off_t)size, &storage);
     *stage_time = elapsed_now() - start;
-    if (status != LIBMPQ_SUCCESS) {
+    if (status != 0) {
         fprintf(stderr, "patch replace failed: %d\n", status);
         (void)libmpq__patch_writer_abort(writer);
         return 1;
     }
-    return libmpq__patch_writer_finish(writer) != LIBMPQ_SUCCESS;
+    return libmpq__patch_writer_finish(writer) != 0;
 }
 
 /* Inspect the completed artifact outside the timer to verify its transform. */
@@ -128,9 +128,9 @@ check_transform(const char *path, const char expected[4])
     uint32_t block;
     int failed = 1;
 
-    if (libmpq__archive_open(&archive, path, 0) != LIBMPQ_SUCCESS)
+    if (libmpq__archive_open(&archive, path, 0) != 0)
         goto done;
-    if (libmpq__file_number(archive, "payload.bin", &number) != LIBMPQ_SUCCESS)
+    if (libmpq__file_number(archive, "payload.bin", &number) != 0)
         goto done;
     block = archive->mpq_map[number].block_table_indices;
     if ((archive->mpq_block[block].flags & LIBMPQ_FILE_FLAG_PATCH_FILE) == 0 ||
@@ -138,11 +138,11 @@ check_transform(const char *path, const char expected[4])
         goto done;
     offset = (uint64_t)archive->archive_offset + archive->mpq_block[block].offset +
              ((uint64_t)archive->mpq_block_ex[block].offset_high << 32);
-    if (libmpq__source_read_at(archive->source, offset, prefix, sizeof(prefix)) != LIBMPQ_SUCCESS ||
-        libmpq__patch_info_parse(prefix, sizeof(prefix), &info) != LIBMPQ_SUCCESS ||
+    if (libmpq__source_read_at(archive->source, offset, prefix, sizeof(prefix)) != 0 ||
+        libmpq__patch_info_parse(prefix, sizeof(prefix), &info) != 0 ||
         info.length != sizeof(prefix) ||
         libmpq__source_read_at(archive->source, offset + info.length, header, sizeof(header)) !=
-            LIBMPQ_SUCCESS ||
+            0 ||
         memcmp(header, "PTCH", 4) != 0)
         goto done;
     if (memcmp(header + 64, expected, 4) != 0) {
@@ -154,7 +154,7 @@ check_transform(const char *path, const char expected[4])
 done:
     if (failed)
         fprintf(stderr, "%s: patch transform inspection failed\n", path);
-    if (archive != NULL && libmpq__archive_close(archive) != LIBMPQ_SUCCESS)
+    if (archive != NULL && libmpq__archive_close(archive) != 0)
         failed = 1;
     return failed;
 }

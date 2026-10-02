@@ -17,9 +17,10 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "mpq-archive.h"
+#include "mpq-block.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
-#include "mpq-internal.h"
 #include "mpq-md5.h"
 #include "mpq-reader.h"
 #include "mpq-source.h"
@@ -52,8 +53,7 @@ failure_close(void *context)
 {
     read_failure_s *failure = context;
 
-    return failure->backend.close == NULL ? LIBMPQ_SUCCESS
-                                          : failure->backend.close(failure->backend.context);
+    return failure->backend.close == NULL ? 0 : failure->backend.close(failure->backend.context);
 }
 
 static void

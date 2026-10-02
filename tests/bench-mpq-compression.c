@@ -21,8 +21,8 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
+#include "mpq-block.h"
 #include "mpq-compression.h"
-#include "mpq-internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -140,7 +140,7 @@ encode(
     return libmpq__compression_encode_sector(
                input, case_info->size, case_info->mask, case_info->version,
                LIBMPQ_COMPRESSION_POLICY_EXTENDED, packed, packed_size, emitted
-           ) == LIBMPQ_SUCCESS;
+           ) == 0;
 }
 
 static int

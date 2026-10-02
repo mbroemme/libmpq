@@ -22,7 +22,6 @@
 #endif
 
 #include "mpq-file.h"
-#include "mpq-internal.h"
 #include "mpq-mpqe.h"
 #include "mpq-source.h"
 
@@ -66,22 +65,22 @@ file_backend_read_at(void *context, uint64_t offset, uint8_t *buffer, size_t siz
     if (offset > backend->size || size > backend->size - offset)
         return LIBMPQ_ERROR_READ;
     if (size == 0)
-        return LIBMPQ_SUCCESS;
-    if (file_backend_seek(backend, offset) != LIBMPQ_SUCCESS)
+        return 0;
+    if (file_backend_seek(backend, offset) != 0)
         return LIBMPQ_ERROR_SEEK;
     if (fread(buffer, 1, size, backend->file) != size)
         return LIBMPQ_ERROR_READ;
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 static int32_t
 file_backend_close(void *context)
 {
     mpq_file_backend_s *backend = context;
-    int32_t result = LIBMPQ_SUCCESS;
+    int32_t result = 0;
 
     if (backend == NULL)
-        return LIBMPQ_SUCCESS;
+        return 0;
     if (backend->owned && backend->file != NULL && fclose(backend->file) != 0)
         result = LIBMPQ_ERROR_CLOSE;
     free(backend);
@@ -128,7 +127,7 @@ static int32_t
 custom_backend_close(void *context)
 {
     free(context);
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 static void
@@ -156,7 +155,7 @@ custom_backend_clone(void *context, mpq_io_backend_s *clone)
     clone->close = custom_backend_close;
     clone->discard = custom_backend_discard;
     clone->clone = custom_backend_clone;
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 static int32_t
@@ -179,7 +178,7 @@ source_set_file_backend(mpq_source_s *source, FILE *file, uint64_t size, uint8_t
     source->backend.close = file_backend_close;
     source->backend.discard = file_backend_discard;
     source->size = size;
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 static int32_t
@@ -204,7 +203,7 @@ source_set_custom_backend(
     source->backend.discard = custom_backend_discard;
     source->backend.clone = custom_backend_clone;
     source->size = size;
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 static int32_t
@@ -215,7 +214,7 @@ backend_read_at(const mpq_io_backend_s *backend, uint64_t offset, uint8_t *buffe
     if (offset > backend->size || size > backend->size - offset)
         return LIBMPQ_ERROR_READ;
     if (size == 0)
-        return LIBMPQ_SUCCESS;
+        return 0;
     return backend->read_at(backend->context, offset, buffer, size);
 }
 
@@ -250,7 +249,7 @@ libmpq__source_open_common(mpq_source_s **source, const char *path)
         return LIBMPQ_ERROR_SEEK;
     }
     result = source_set_file_backend(*source, file, (uint64_t)end, 1);
-    if (result != LIBMPQ_SUCCESS) {
+    if (result != 0) {
         fclose(file);
         free(*source);
         *source = NULL;
@@ -291,7 +290,7 @@ libmpq__source_open_io(
         return LIBMPQ_ERROR_MALLOC;
     (*source)->allocated = 1;
     result = source_set_custom_backend(*source, context, read_at, size);
-    if (result != LIBMPQ_SUCCESS) {
+    if (result != 0) {
         free(*source);
         *source = NULL;
     }
@@ -310,17 +309,17 @@ libmpq__source_open_mpqe(
         return LIBMPQ_ERROR_EXIST;
     *source = NULL;
     result = libmpq__mpqe_key(key, auth_code, auth_code_size);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         return result;
     result = libmpq__source_open_common(source, path);
-    if (result != LIBMPQ_SUCCESS) {
+    if (result != 0) {
         libmpq__mpqe_clear(key, sizeof(key));
         return result;
     }
     (*source)->mpqe = 1;
     memcpy((*source)->key, key, sizeof(key));
     libmpq__mpqe_clear(key, sizeof(key));
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 int32_t
@@ -336,17 +335,17 @@ libmpq__source_open_mpqe_io(
         return LIBMPQ_ERROR_EXIST;
     *source = NULL;
     result = libmpq__mpqe_key(key, auth_code, auth_code_size);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         return result;
     result = libmpq__source_open_io(source, context, read_at, size);
-    if (result != LIBMPQ_SUCCESS) {
+    if (result != 0) {
         libmpq__mpqe_clear(key, sizeof(key));
         return result;
     }
     (*source)->mpqe = 1;
     memcpy((*source)->key, key, sizeof(key));
     libmpq__mpqe_clear(key, sizeof(key));
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 int32_t
@@ -371,7 +370,7 @@ libmpq__source_clone(mpq_source_s **clone, const mpq_source_s *source, const cha
         result = libmpq__source_open_common(clone, path);
     }
 
-    if (result != LIBMPQ_SUCCESS) {
+    if (result != 0) {
         libmpq__source_discard(*clone);
         *clone = NULL;
         return result;
@@ -381,7 +380,7 @@ libmpq__source_clone(mpq_source_s **clone, const mpq_source_s *source, const cha
     (*clone)->mpqe = source->mpqe;
     if (source->mpqe)
         memcpy((*clone)->key, source->key, sizeof((*clone)->key));
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 static int32_t
@@ -427,7 +426,7 @@ source_mpqe_read_at(mpq_source_s *source, uint64_t offset, uint8_t *buffer, size
             return LIBMPQ_ERROR_READ;
         }
         result = backend_read_at(&source->backend, chunk_offset, chunks, physical);
-        if (result != LIBMPQ_SUCCESS) {
+        if (result != 0) {
             libmpq__mpqe_clear(chunks, sizeof(chunks));
             return result;
         }
@@ -443,7 +442,7 @@ source_mpqe_read_at(mpq_source_s *source, uint64_t offset, uint8_t *buffer, size
         copied += available;
         libmpq__mpqe_clear(chunks, sizeof(chunks));
     }
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 int32_t
@@ -454,7 +453,7 @@ libmpq__source_read_at(mpq_source_s *source, uint64_t offset, uint8_t *buffer, s
     if (offset > source->size || size > source->size - offset)
         return LIBMPQ_ERROR_READ;
     if (size == 0)
-        return LIBMPQ_SUCCESS;
+        return 0;
     if (source->mpqe)
         return source_mpqe_read_at(source, offset, buffer, size);
     return backend_read_at(&source->backend, offset, buffer, size);
@@ -492,8 +491,7 @@ libmpq__source_close(mpq_source_s *source)
 
     if (source == NULL)
         return LIBMPQ_ERROR_EXIST;
-    result = source->backend.close == NULL ? LIBMPQ_SUCCESS
-                                           : source->backend.close(source->backend.context);
+    result = source->backend.close == NULL ? 0 : source->backend.close(source->backend.context);
     libmpq__mpqe_clear(source->key, sizeof(source->key));
     if (source->allocated)
         free(source);

@@ -21,7 +21,6 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
-#include "mpq-internal.h"
 #include "mpq-reader.h"
 #include "test-mpq-helper.h"
 
@@ -113,7 +112,7 @@ memory_read_at(void *context, libmpq__off_t offset, uint8_t *buffer, size_t size
     }
     if (size != 0)
         memcpy(buffer, source->data + (size_t)offset, size);
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /* Reset diagnostic counters without changing the caller-owned byte buffer. */
@@ -174,15 +173,15 @@ make_archive(const char *path, const uint8_t *data, size_t size, const bench_mod
         );
     else
         result = libmpq__archive_create(&archive, path, &options);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         return 1;
     result =
         libmpq__archive_add_data(archive, "payload.bin", data, (libmpq__off_t)size, &mode->options);
-    if (result == LIBMPQ_SUCCESS)
+    if (result == 0)
         result = libmpq__archive_close(archive);
     else
         (void)libmpq__archive_close(archive);
-    return result != LIBMPQ_SUCCESS;
+    return result != 0;
 }
 
 /* Build a metadata-heavy archive to exercise table reads at open time. */
@@ -196,21 +195,21 @@ make_many_archive(const char *path)
     char name[40];
     int32_t result = libmpq__archive_create(&archive, path, &options);
 
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         return 1;
     for (unsigned i = 0; i < BENCH_SMALL_FILES; i++) {
         (void)snprintf(name, sizeof(name), "small-%04u.bin", i);
         fill_bytes(data, sizeof(data));
         data[0] = (uint8_t)i;
         result = libmpq__archive_add_data(archive, name, data, sizeof(data), &file_options);
-        if (result != LIBMPQ_SUCCESS)
+        if (result != 0)
             break;
     }
-    if (result == LIBMPQ_SUCCESS)
+    if (result == 0)
         result = libmpq__archive_close(archive);
     else
         (void)libmpq__archive_close(archive);
-    return result != LIBMPQ_SUCCESS;
+    return result != 0;
 }
 
 /* Time only archive opening, then diagnose custom callback granularity separately. */
@@ -226,23 +225,23 @@ run_open(const char *path, memory_source_s *memory, const char *label, int mpqe,
             int32_t result = open_archive(&archive, path, memory, custom, mpqe);
             double duration = elapsed_now() - start;
 
-            if (result != LIBMPQ_SUCCESS)
+            if (result != 0)
                 return 1;
             if (duration < best[custom])
                 best[custom] = duration;
             result = libmpq__archive_close(archive);
             archive = NULL;
-            if (result != LIBMPQ_SUCCESS)
+            if (result != 0)
                 return 1;
         }
     }
     start_counting(memory);
-    if (open_archive(&archive, path, memory, 1, mpqe) != LIBMPQ_SUCCESS) {
+    if (open_archive(&archive, path, memory, 1, mpqe) != 0) {
         memory->count = 0;
         return 1;
     }
     print_counts(label, memory);
-    if (libmpq__archive_close(archive) != LIBMPQ_SUCCESS)
+    if (libmpq__archive_close(archive) != 0)
         return 1;
     printf("%s file open: %.3f ms elapsed (best/%u)\n", label, best[0] * 1000.0, runs);
     printf("%s custom open: %.3f ms elapsed (best/%u)\n", label, best[1] * 1000.0, runs);
@@ -256,13 +255,12 @@ extract_payload(mpq_archive_s *archive, uint32_t number, uint8_t *output, size_t
     libmpq__off_t transferred = 0;
     int32_t result = libmpq__reader_offsets_acquire(archive, number, "payload.bin");
 
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         return result;
     result = libmpq__file_read(archive, number, output, (libmpq__off_t)size, &transferred);
-    if (libmpq__reader_offsets_release(archive, number) != LIBMPQ_SUCCESS)
+    if (libmpq__reader_offsets_release(archive, number) != 0)
         return LIBMPQ_ERROR_READ;
-    return result == LIBMPQ_SUCCESS && transferred != (libmpq__off_t)size ? LIBMPQ_ERROR_READ
-                                                                          : result;
+    return result == 0 && transferred != (libmpq__off_t)size ? LIBMPQ_ERROR_READ : result;
 }
 
 /* Confirm the first and last sectors match the claimed storage mode. */
@@ -272,8 +270,8 @@ verify_mode(mpq_archive_s *archive, uint32_t number, const bench_mode_s *mode)
     uint32_t blocks = 0;
     int failed = 1;
 
-    if (libmpq__file_blocks(archive, number, &blocks) != LIBMPQ_SUCCESS || blocks == 0 ||
-        libmpq__reader_offsets_acquire(archive, number, "payload.bin") != LIBMPQ_SUCCESS)
+    if (libmpq__file_blocks(archive, number, &blocks) != 0 || blocks == 0 ||
+        libmpq__reader_offsets_acquire(archive, number, "payload.bin") != 0)
         return 1;
     for (unsigned i = 0; i < 2; i++) {
         uint32_t method = UINT32_MAX;
@@ -281,13 +279,12 @@ verify_mode(mpq_archive_s *archive, uint32_t number, const bench_mode_s *mode)
         uint32_t expected =
             mode->options.flags & LIBMPQ_FILE_FLAG_COMPRESS ? LIBMPQ_COMPRESSION_ZLIB : 0;
 
-        if (libmpq__block_compression(archive, number, block, &method) != LIBMPQ_SUCCESS ||
-            method != expected)
+        if (libmpq__block_compression(archive, number, block, &method) != 0 || method != expected)
             goto done;
     }
     failed = 0;
 done:
-    if (libmpq__reader_offsets_release(archive, number) != LIBMPQ_SUCCESS)
+    if (libmpq__reader_offsets_release(archive, number) != 0)
         failed = 1;
     return failed;
 }
@@ -312,12 +309,10 @@ run_extract(
         uint32_t flags = 0;
         libmpq__off_t logical_size = 0;
 
-        if (open_archive(&archives[custom], path, memory, custom, mpqe) != LIBMPQ_SUCCESS ||
-            libmpq__file_number(archives[custom], "payload.bin", &numbers[custom]) !=
-                LIBMPQ_SUCCESS ||
-            libmpq__file_flags(archives[custom], numbers[custom], &flags) != LIBMPQ_SUCCESS ||
-            libmpq__file_size_unpacked(archives[custom], numbers[custom], &logical_size) !=
-                LIBMPQ_SUCCESS ||
+        if (open_archive(&archives[custom], path, memory, custom, mpqe) != 0 ||
+            libmpq__file_number(archives[custom], "payload.bin", &numbers[custom]) != 0 ||
+            libmpq__file_flags(archives[custom], numbers[custom], &flags) != 0 ||
+            libmpq__file_size_unpacked(archives[custom], numbers[custom], &logical_size) != 0 ||
             logical_size != (libmpq__off_t)size ||
             (flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED)) !=
                 mode->options.flags ||
@@ -332,7 +327,7 @@ run_extract(
             start = elapsed_now();
             result = extract_payload(archives[custom], numbers[custom], actual, size);
             duration = elapsed_now() - start;
-            if (result != LIBMPQ_SUCCESS || memcmp(actual, expected, size) != 0)
+            if (result != 0 || memcmp(actual, expected, size) != 0)
                 goto done;
             if (duration < best[custom])
                 best[custom] = duration;
@@ -340,7 +335,7 @@ run_extract(
     }
     start_counting(memory);
     memset(actual, 0xa5, size);
-    if (extract_payload(archives[1], numbers[1], actual, size) != LIBMPQ_SUCCESS ||
+    if (extract_payload(archives[1], numbers[1], actual, size) != 0 ||
         memcmp(actual, expected, size) != 0) {
         memory->count = 0;
         goto done;
@@ -358,7 +353,7 @@ run_extract(
     failed = 0;
 done:
     for (int custom = 0; custom < 2; custom++)
-        if (archives[custom] != NULL && libmpq__archive_close(archives[custom]) != LIBMPQ_SUCCESS)
+        if (archives[custom] != NULL && libmpq__archive_close(archives[custom]) != 0)
             failed = 1;
     free(actual);
     if (failed)
@@ -379,7 +374,7 @@ stream_work(
             size_t take = size - offset < chunk ? size - offset : chunk;
 
             if (libmpq__stream_read(stream, actual + offset, (libmpq__off_t)take, &transferred) !=
-                    LIBMPQ_SUCCESS ||
+                    0 ||
                 transferred != (libmpq__off_t)take)
                 return 1;
         }
@@ -388,11 +383,10 @@ stream_work(
     for (unsigned i = 0; i < BENCH_SEEKS; i++) {
         libmpq__off_t transferred = 0;
 
-        if (libmpq__stream_seek(stream, (libmpq__off_t)offsets[i], LIBMPQ_SEEK_SET) !=
-                LIBMPQ_SUCCESS ||
+        if (libmpq__stream_seek(stream, (libmpq__off_t)offsets[i], LIBMPQ_SEEK_SET) != 0 ||
             libmpq__stream_read(
                 stream, actual + (size_t)i * BENCH_SEEK_SIZE, BENCH_SEEK_SIZE, &transferred
-            ) != LIBMPQ_SUCCESS ||
+            ) != 0 ||
             transferred != BENCH_SEEK_SIZE)
             return 1;
     }
@@ -434,15 +428,14 @@ run_stream(
     for (unsigned i = 0; i < BENCH_SEEKS; i++)
         offsets[i] = ((size_t)i * 104729u) % (size - BENCH_SEEK_SIZE + 1u);
     for (int custom = 0; custom < 2; custom++) {
-        if (open_archive(&archives[custom], path, memory, custom, 0) != LIBMPQ_SUCCESS ||
-            libmpq__stream_open_name(archives[custom], "payload.bin", &streams[custom]) !=
-                LIBMPQ_SUCCESS)
+        if (open_archive(&archives[custom], path, memory, custom, 0) != 0 ||
+            libmpq__stream_open_name(archives[custom], "payload.bin", &streams[custom]) != 0)
             goto done;
         for (unsigned run = 0; run < runs; run++) {
             double start;
             double duration;
 
-            if (libmpq__stream_seek(streams[custom], 0, LIBMPQ_SEEK_SET) != LIBMPQ_SUCCESS)
+            if (libmpq__stream_seek(streams[custom], 0, LIBMPQ_SEEK_SET) != 0)
                 goto done;
             memset(actual, 0xa5, random ? BENCH_SEEKS * BENCH_SEEK_SIZE : size);
             start = elapsed_now();
@@ -454,7 +447,7 @@ run_stream(
                 best[custom] = duration;
         }
     }
-    if (libmpq__stream_seek(streams[1], 0, LIBMPQ_SEEK_SET) != LIBMPQ_SUCCESS)
+    if (libmpq__stream_seek(streams[1], 0, LIBMPQ_SEEK_SET) != 0)
         goto done;
     memset(actual, 0xa5, random ? BENCH_SEEKS * BENCH_SEEK_SIZE : size);
     start_counting(memory);
@@ -469,9 +462,9 @@ run_stream(
     failed = 0;
 done:
     for (int custom = 0; custom < 2; custom++) {
-        if (streams[custom] != NULL && libmpq__stream_close(streams[custom]) != LIBMPQ_SUCCESS)
+        if (streams[custom] != NULL && libmpq__stream_close(streams[custom]) != 0)
             failed = 1;
-        if (archives[custom] != NULL && libmpq__archive_close(archives[custom]) != LIBMPQ_SUCCESS)
+        if (archives[custom] != NULL && libmpq__archive_close(archives[custom]) != 0)
             failed = 1;
     }
     free(actual);

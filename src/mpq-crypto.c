@@ -20,7 +20,6 @@
 #include "mpq-crypto.h"
 #include "mpq-crypt-buf.h"
 #include "mpq-endian.h"
-#include "mpq-internal.h"
 #include <libmpq/mpq.h>
 
 #include <ctype.h>
@@ -76,7 +75,7 @@ libmpq__crypto_encrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
     }
 
     /* Block encryption has no recoverable per-word error state. */
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -103,7 +102,7 @@ libmpq__crypto_decrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
     }
 
     /* Block decryption has no recoverable per-word error state. */
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -158,7 +157,7 @@ libmpq__crypto_detect_file_key(
 
             if (second == known_second[j]) {
                 *key = seed;
-                return LIBMPQ_SUCCESS;
+                return 0;
             }
         }
     }
@@ -224,7 +223,7 @@ libmpq__crypto_derive_block_table_seed(
 
         if ((ch - ch2) <= block_size) {
             *key = saveseed1;
-            return LIBMPQ_SUCCESS;
+            return 0;
         }
     }
 

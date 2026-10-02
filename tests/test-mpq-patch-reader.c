@@ -17,10 +17,11 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "mpq-archive.h"
 #include "mpq-attributes.h"
+#include "mpq-block.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
-#include "mpq-internal.h"
 #include "mpq-md5.h"
 #include "mpq-mpqe.h"
 #include "mpq-patch-reader.h"
@@ -59,7 +60,7 @@ expect_bad_patch(const uint8_t *base, size_t base_size, const uint8_t *patch, si
     size_t output_size = 123;
     int32_t status = libmpq__patch_apply(base, base_size, patch, patch_size, &output, &output_size);
 
-    TEST_CHECK(status != LIBMPQ_SUCCESS);
+    TEST_CHECK(status != 0);
     TEST_CHECK(output == NULL && output_size == 0);
     return 0;
 }
@@ -162,11 +163,10 @@ fixture_namespaced_patch(
     uint8_t *payload = NULL;
     size_t payload_size = 0;
 
-    TEST_CHECK(libmpq__archive_create(&writer, path, &options) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_create(&writer, path, &options) == 0);
     if (marker != NULL)
         TEST_CHECK(
-            libmpq__archive_add_data(writer, marker, (const uint8_t *)"test", 4, &storage) ==
-            LIBMPQ_SUCCESS
+            libmpq__archive_add_data(writer, marker, (const uint8_t *)"test", 4, &storage) == 0
         );
     if (replacement != NULL) {
         if (before != NULL) {
@@ -177,21 +177,20 @@ fixture_namespaced_patch(
             libmpq__archive_add_data(
                 writer, replacement, before == NULL ? after : payload,
                 (libmpq__off_t)(before == NULL ? after_size : payload_size), &storage
-            ) == LIBMPQ_SUCCESS
+            ) == 0
         );
         if (before != NULL)
             writer->mpq_block[writer->write_next_block - 1].flags |= LIBMPQ_FILE_FLAG_PATCH_FILE;
     }
     if (deleted != NULL) {
-        TEST_CHECK(libmpq__archive_add_data(writer, deleted, NULL, 0, &storage) == LIBMPQ_SUCCESS);
+        TEST_CHECK(libmpq__archive_add_data(writer, deleted, NULL, 0, &storage) == 0);
         writer->mpq_block[writer->write_next_block - 1].flags |= LIBMPQ_FILE_FLAG_DELETE_MARKER;
     }
     if (added != NULL)
         TEST_CHECK(
-            libmpq__archive_add_data(writer, added, new_text, sizeof(new_text) - 1, &storage) ==
-            LIBMPQ_SUCCESS
+            libmpq__archive_add_data(writer, added, new_text, sizeof(new_text) - 1, &storage) == 0
         );
-    TEST_CHECK(libmpq__archive_close(writer) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_close(writer) == 0);
     free(payload);
     return 0;
 }
@@ -228,7 +227,7 @@ fixture_mpqe_patch(
     FILE *output;
 
     TEST_CHECK(test_read_path(source, &data, &size) == 0);
-    TEST_CHECK(libmpq__mpqe_key(key, auth_code, auth_size) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__mpqe_key(key, auth_code, auth_size) == 0);
     for (size_t offset = 0; offset < size; offset += sizeof(chunk)) {
         size_t count = size - offset < sizeof(chunk) ? size - offset : sizeof(chunk);
 
@@ -411,53 +410,50 @@ test_mpqe_base_views(void)
     TEST_CHECK(
         libmpq__patch_view_open_mpqe_base(
             &view, base_path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1, replacement, 1
-        ) == LIBMPQ_SUCCESS
+        ) == 0
     );
     TEST_CHECK(check_view(view, first_text, sizeof(first_text) - 1) == 0);
     TEST_CHECK(
         libmpq__file_number(libmpq__patch_view_archive(view), "pkware.txt", &number) ==
         LIBMPQ_ERROR_EXIST
     );
-    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
 
     TEST_CHECK(test_temp_path(delete_path, sizeof(delete_path), "patch-mpqe-delete") == 0);
     delete_layer[0] = delete_path;
-    TEST_CHECK(libmpq__archive_create(&writer, delete_path, &create) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_create(&writer, delete_path, &create) == 0);
     TEST_CHECK(
         libmpq__archive_add_data(
             writer, "(patch_metadata)", (const uint8_t *)"test", 4, &storage
-        ) == LIBMPQ_SUCCESS
+        ) == 0
     );
-    TEST_CHECK(libmpq__archive_add_data(writer, "pkware.txt", NULL, 0, &storage) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_add_data(writer, "pkware.txt", NULL, 0, &storage) == 0);
     writer->mpq_block[writer->write_next_block - 1].flags |= LIBMPQ_FILE_FLAG_DELETE_MARKER;
-    TEST_CHECK(libmpq__archive_close(writer) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_close(writer) == 0);
     TEST_CHECK(
         libmpq__patch_view_open_mpqe_base(
             &view, base_path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1, delete_layer, 1
-        ) == LIBMPQ_SUCCESS
+        ) == 0
     );
     TEST_CHECK(
         libmpq__file_number(libmpq__patch_view_archive(view), "pkware.txt", &number) ==
         LIBMPQ_ERROR_EXIST
     );
-    TEST_CHECK(
-        libmpq__file_number(libmpq__patch_view_archive(view), "overview.txt", &number) ==
-        LIBMPQ_SUCCESS
-    );
-    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__file_number(libmpq__patch_view_archive(view), "overview.txt", &number) == 0);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
     TEST_CHECK(remove(delete_path) == 0);
 
     TEST_CHECK(
         libmpq__patch_view_open_mpqe_base(
             &view, base_path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1, chain, 2
-        ) == LIBMPQ_SUCCESS
+        ) == 0
     );
     TEST_CHECK(check_view(view, second_text, sizeof(second_text) - 1) == 0);
     TEST_CHECK(
         libmpq__file_number(libmpq__patch_view_archive(view), "bzip2.txt", &number) ==
         LIBMPQ_ERROR_EXIST
     );
-    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
 
     TEST_CHECK(
         libmpq__patch_view_open_mpqe_base(&view, base_path, NULL, 0, replacement, 1) ==
@@ -469,7 +465,7 @@ test_mpqe_base_views(void)
     TEST_CHECK(
         libmpq__patch_view_open_mpqe_base(
             &view, base_path, wrong_code, sizeof(wrong_code), replacement, 1
-        ) != LIBMPQ_SUCCESS
+        ) != 0
     );
     TEST_CHECK(view == NULL);
     TEST_CHECK(test_temp_path(malformed_path, sizeof(malformed_path), "patch-mpqe-malformed") == 0);
@@ -480,7 +476,7 @@ test_mpqe_base_views(void)
     TEST_CHECK(
         libmpq__patch_view_open_mpqe_base(
             &view, malformed_path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1, replacement, 1
-        ) != LIBMPQ_SUCCESS
+        ) != 0
     );
     TEST_CHECK(view == NULL);
     TEST_CHECK(remove(malformed_path) == 0);
@@ -494,10 +490,10 @@ test_mpqe_base_views(void)
     TEST_CHECK(
         libmpq__archive_open_mpqe(
             &base, base_path, -1, mpqe_auth_code, sizeof(mpqe_auth_code) - 1
-        ) == LIBMPQ_SUCCESS
+        ) == 0
     );
-    TEST_CHECK(libmpq__file_number(base, "overview.txt", &number) == LIBMPQ_SUCCESS);
-    TEST_CHECK(libmpq__archive_close(base) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__file_number(base, "overview.txt", &number) == 0);
+    TEST_CHECK(libmpq__archive_close(base) == 0);
     return 0;
 }
 
@@ -696,7 +692,7 @@ test_chain_edges(void)
         TEST_CHECK(libmpq__patch_view_open(&view, base_path, layers, 2) == 0);
         TEST_CHECK(
             libmpq__file_number(libmpq__patch_view_archive(view), name, &number) ==
-            (expected == NULL ? LIBMPQ_ERROR_EXIST : LIBMPQ_SUCCESS)
+            (expected == NULL ? LIBMPQ_ERROR_EXIST : 0)
         );
         if (expected != NULL) {
             if (scenario < 3)
@@ -905,7 +901,7 @@ test_unlisted_patch_member(void)
         TEST_CHECK(libmpq__archive_open(&patch, path, 0) == 0);
         TEST_CHECK(
             libmpq__file_number(patch, "(listfile)", &number) ==
-            (mode == 0 ? LIBMPQ_ERROR_EXIST : LIBMPQ_SUCCESS)
+            (mode == 0 ? LIBMPQ_ERROR_EXIST : 0)
         );
         TEST_CHECK(libmpq__archive_close(patch) == 0);
         patch = NULL;
@@ -974,7 +970,7 @@ test_missing_listfile(void)
         TEST_CHECK(libmpq__archive_open(&patch, path, 0) == 0);
         TEST_CHECK(
             libmpq__file_number(patch, "(listfile)", &number) ==
-            (mode == 0 ? LIBMPQ_ERROR_EXIST : LIBMPQ_SUCCESS)
+            (mode == 0 ? LIBMPQ_ERROR_EXIST : 0)
         );
         TEST_CHECK(libmpq__archive_close(patch) == 0);
         patch = NULL;
@@ -1035,46 +1031,41 @@ test_listfile_without_final_newline(void)
 
     TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "patch-listfile-base") == 0);
     TEST_CHECK(test_temp_path(patch_path, sizeof(patch_path), "patch-listfile-layer") == 0);
-    TEST_CHECK(libmpq__archive_create(&writer, base_path, &options) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_create(&writer, base_path, &options) == 0);
     TEST_CHECK(
-        libmpq__archive_add_data(writer, "overview.txt", before, sizeof(before) - 1, &storage) ==
-        LIBMPQ_SUCCESS
+        libmpq__archive_add_data(writer, "overview.txt", before, sizeof(before) - 1, &storage) == 0
     );
     TEST_CHECK(
-        libmpq__archive_add_data(writer, "(listfile)", listing, sizeof(listing) - 1, &storage) ==
-        LIBMPQ_SUCCESS
+        libmpq__archive_add_data(writer, "(listfile)", listing, sizeof(listing) - 1, &storage) == 0
     );
-    TEST_CHECK(libmpq__archive_close(writer) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_close(writer) == 0);
     stored = fixture_copy_patch(
         before, sizeof(before) - 1, first_text, sizeof(first_text) - 1, &stored_size
     );
     TEST_CHECK(stored != NULL);
-    TEST_CHECK(libmpq__archive_create(&writer, patch_path, &options) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_create(&writer, patch_path, &options) == 0);
     TEST_CHECK(
         libmpq__archive_add_data(
             writer, "(patch_metadata)", (const uint8_t *)"test", 4, &storage
-        ) == LIBMPQ_SUCCESS
+        ) == 0
     );
     TEST_CHECK(
         libmpq__archive_add_data(
             writer, "overview.txt", stored, (libmpq__off_t)stored_size, &storage
-        ) == LIBMPQ_SUCCESS
+        ) == 0
     );
     writer->mpq_block[writer->write_next_block - 1].flags |= LIBMPQ_FILE_FLAG_PATCH_FILE;
-    TEST_CHECK(libmpq__archive_close(writer) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_close(writer) == 0);
     free(stored);
-    TEST_CHECK(libmpq__patch_view_open(&view, base_path, patches, 1) == LIBMPQ_SUCCESS);
-    TEST_CHECK(
-        libmpq__file_number(libmpq__patch_view_archive(view), "(listfile)", &number) ==
-        LIBMPQ_SUCCESS
-    );
+    TEST_CHECK(libmpq__patch_view_open(&view, base_path, patches, 1) == 0);
+    TEST_CHECK(libmpq__file_number(libmpq__patch_view_archive(view), "(listfile)", &number) == 0);
     TEST_CHECK(
         test_archive_read(libmpq__patch_view_archive(view), number, &actual, &actual_size) == 0
     );
     TEST_CHECK(actual_size == sizeof(expected) - 1);
     TEST_CHECK(memcmp(actual, expected, actual_size) == 0);
     free(actual);
-    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
     TEST_CHECK(remove(patch_path) == 0);
     TEST_CHECK(remove(base_path) == 0);
     return 0;
@@ -1741,7 +1732,7 @@ check_named_member(mpq_patch_view_s *view, const char *name, const uint8_t *expe
     size_t actual_size = 0;
     uint32_t number;
 
-    TEST_CHECK(libmpq__file_number(archive, name, &number) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__file_number(archive, name, &number) == 0);
     TEST_CHECK(test_archive_read(archive, number, &actual, &actual_size) == 0);
     TEST_CHECK(actual_size == size && memcmp(actual, expected, size) == 0);
     free(actual);
@@ -1809,17 +1800,14 @@ test_patch_namespaces(void)
     TEST_CHECK(test_temp_path(restore_path, sizeof(restore_path), "prefix-restore") == 0);
     TEST_CHECK(test_temp_path(patch_only_path, sizeof(patch_only_path), "prefix-only") == 0);
     TEST_CHECK(test_temp_path(mixed_path, sizeof(mixed_path), "prefix-mixed") == 0);
-    TEST_CHECK(libmpq__archive_create(&writer, base_path, &options) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_create(&writer, base_path, &options) == 0);
     TEST_CHECK(
         libmpq__archive_add_data(
             writer, "overview.txt", original, sizeof(original) - 1, &storage
-        ) == LIBMPQ_SUCCESS
+        ) == 0
     );
-    TEST_CHECK(
-        libmpq__archive_add_data(writer, "keep.txt", kept, sizeof(kept) - 1, &storage) ==
-        LIBMPQ_SUCCESS
-    );
-    TEST_CHECK(libmpq__archive_close(writer) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_add_data(writer, "keep.txt", kept, sizeof(kept) - 1, &storage) == 0);
+    TEST_CHECK(libmpq__archive_close(writer) == 0);
     TEST_CHECK(
         fixture_namespaced_patch(
             first_path, "Base\\(patch_metadata)", "Base\\overview.txt", original,
@@ -1875,22 +1863,22 @@ test_patch_namespaces(void)
             second_text, sizeof(second_text) - 1, NULL, NULL, 1
         ) == 0
     );
-    TEST_CHECK(libmpq__archive_create(&writer, conflict_path, &options) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_create(&writer, conflict_path, &options) == 0);
     TEST_CHECK(
         libmpq__archive_add_data(
             writer, "Base\\(patch_metadata)", (const uint8_t *)"a", 1, &storage
-        ) == LIBMPQ_SUCCESS
+        ) == 0
     );
     TEST_CHECK(
         libmpq__archive_add_data(
             writer, "Other\\(patch_metadata)", (const uint8_t *)"b", 1, &storage
-        ) == LIBMPQ_SUCCESS
+        ) == 0
     );
-    TEST_CHECK(libmpq__archive_close(writer) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__archive_close(writer) == 0);
 
     base = (mpq_patch_source_s){ base_path, NULL, 0, NULL };
     layers[0] = (mpq_patch_source_s){ first_path, NULL, 0, "Base" };
-    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 1) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 1) == 0);
     TEST_CHECK(check_named_member(view, "overview.txt", first_text, sizeof(first_text) - 1) == 0);
     TEST_CHECK(check_named_member(view, "patch-only.txt", new_text, sizeof(new_text) - 1) == 0);
     TEST_CHECK(libmpq__file_number(libmpq__patch_view_archive(view), "keep.txt", &number) != 0);
@@ -1898,53 +1886,52 @@ test_patch_namespaces(void)
         libmpq__file_number(libmpq__patch_view_archive(view), "Base\\overview.txt", &number) != 0
     );
     TEST_CHECK(
-        libmpq__file_number(libmpq__patch_view_archive(view), LIBMPQ_LISTFILE_NAME, &number) ==
-        LIBMPQ_SUCCESS
+        libmpq__file_number(libmpq__patch_view_archive(view), LIBMPQ_LISTFILE_NAME, &number) == 0
     );
     TEST_CHECK(test_archive_read(libmpq__patch_view_archive(view), number, &list, &list_size) == 0);
     TEST_CHECK(contains_text(list, list_size, "patch-only.txt"));
     TEST_CHECK(!contains_text(list, list_size, "Base\\patch-only.txt"));
     free(list);
-    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
 
     layers[0].prefix = NULL;
-    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 1) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 1) == 0);
     TEST_CHECK(check_named_member(view, "overview.txt", first_text, sizeof(first_text) - 1) == 0);
-    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
     layers[0].prefix = "Base\\";
     layers[1] = (mpq_patch_source_s){ second_path, NULL, 0, "enGB" };
-    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 2) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 2) == 0);
     TEST_CHECK(check_named_member(view, "overview.txt", second_text, sizeof(second_text) - 1) == 0);
     TEST_CHECK(check_named_member(view, "patch-only.txt", new_text, sizeof(new_text) - 1) == 0);
-    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
     layers[1] = (mpq_patch_source_s){ mixed_path, NULL, 0, NULL };
-    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 2) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 2) == 0);
     TEST_CHECK(check_named_member(view, "overview.txt", second_text, sizeof(second_text) - 1) == 0);
-    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
     layers[1] = (mpq_patch_source_s){ patch_only_path, NULL, 0, NULL };
-    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 2) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 2) == 0);
     TEST_CHECK(
         check_named_member(view, "patch-only.txt", second_text, sizeof(second_text) - 1) == 0
     );
-    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
     layers[1] = (mpq_patch_source_s){ delete_path, NULL, 0, NULL };
-    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 2) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 2) == 0);
     TEST_CHECK(libmpq__file_number(libmpq__patch_view_archive(view), "overview.txt", &number) != 0);
-    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
     layers[0] = (mpq_patch_source_s){ delete_path, NULL, 0, NULL };
     layers[1] = (mpq_patch_source_s){ restore_path, NULL, 0, NULL };
-    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 2) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 2) == 0);
     TEST_CHECK(check_named_member(view, "overview.txt", second_text, sizeof(second_text) - 1) == 0);
-    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
     layers[0] = (mpq_patch_source_s){ root_path, NULL, 0, NULL };
-    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 1) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 1) == 0);
     TEST_CHECK(check_named_member(view, "overview.txt", first_text, sizeof(first_text) - 1) == 0);
-    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
 
     layers[0] = (mpq_patch_source_s){ boundary_path, NULL, 0, "Base" };
-    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 1) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 1) == 0);
     TEST_CHECK(check_named_member(view, "overview.txt", original, sizeof(original) - 1) == 0);
-    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
     layers[0] = (mpq_patch_source_s){ unknown_path, NULL, 0, "Base" };
     TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 1) == LIBMPQ_ERROR_FORMAT);
     TEST_CHECK(view == NULL);
@@ -1962,9 +1949,9 @@ test_patch_namespaces(void)
     );
     layers[0] = (mpq_patch_source_s){ secure_path, first_patch_auth_code,
                                       sizeof(first_patch_auth_code) - 1, "Base" };
-    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 1) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 1) == 0);
     TEST_CHECK(check_named_member(view, "overview.txt", first_text, sizeof(first_text) - 1) == 0);
-    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
 
     TEST_CHECK(
         fixture_mpqe_patch(
@@ -1982,9 +1969,9 @@ test_patch_namespaces(void)
     );
     layers[1] = (mpq_patch_source_s){ secure_second_path, second_patch_auth_code,
                                       sizeof(second_patch_auth_code) - 1, "enGB" };
-    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 2) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, layers, 2) == 0);
     TEST_CHECK(check_named_member(view, "overview.txt", second_text, sizeof(second_text) - 1) == 0);
-    TEST_CHECK(libmpq__patch_view_close(view) == LIBMPQ_SUCCESS);
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
 
     TEST_CHECK(remove(base_path) == 0);
     TEST_CHECK(remove(first_path) == 0);

@@ -17,7 +17,6 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "mpq-internal.h"
 #include "mpq-source.h"
 #include "test-mpq-helper.h"
 
@@ -57,7 +56,7 @@ memory_read_at(void *context, libmpq__off_t offset, uint8_t *buffer, size_t size
         return memory->failure;
     if (size != 0)
         memcpy(buffer, memory->data + (size_t)offset, size);
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /* Check range handling, callback errors, and borrowed-context clone lifetime. */

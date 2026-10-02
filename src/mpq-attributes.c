@@ -20,7 +20,6 @@
 #include "mpq-attributes.h"
 #include "mpq-archive.h"
 #include "mpq-endian.h"
-#include "mpq-internal.h"
 #include "mpq-md5.h"
 #include "mpq-reader.h"
 
@@ -118,7 +117,7 @@ libmpq__attributes_parse(
         !match_layout(data, size, count, count, &candidate, 1))
         return LIBMPQ_ERROR_FORMAT;
     *view = candidate;
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -164,17 +163,17 @@ libmpq__attributes_load(mpq_archive_s *archive)
     int32_t result;
 
     if (archive->attributes != NULL)
-        return LIBMPQ_SUCCESS;
-    if (archive->attributes_error != LIBMPQ_SUCCESS)
+        return 0;
+    if (archive->attributes_error != 0)
         return archive->attributes_error;
     result = libmpq__file_number(archive, LIBMPQ_ATTRIBUTES_NAME, &number);
-    if (result != LIBMPQ_SUCCESS) {
+    if (result != 0) {
         if (result == LIBMPQ_ERROR_EXIST || result == LIBMPQ_ERROR_FORMAT)
             archive->attributes_error = result;
         return result;
     }
     result = libmpq__file_size_unpacked(archive, number, &size);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         return result;
     if (size < 8 || (uint64_t)size > SIZE_MAX ||
         (uint64_t)size > 8 + (uint64_t)archive->mpq_header.block_table_count * 32) {
@@ -189,18 +188,18 @@ libmpq__attributes_load(mpq_archive_s *archive)
         return LIBMPQ_ERROR_MALLOC;
     }
     result = libmpq__reader_offsets_acquire(archive, number, LIBMPQ_ATTRIBUTES_NAME);
-    if (result == LIBMPQ_SUCCESS) {
+    if (result == 0) {
         result = libmpq__file_read(archive, number, data, size, &transferred);
         (void)libmpq__reader_offsets_release(archive, number);
-        if (result == LIBMPQ_SUCCESS && transferred != size)
+        if (result == 0 && transferred != size)
             result = LIBMPQ_ERROR_READ;
     }
-    if (result == LIBMPQ_SUCCESS)
+    if (result == 0)
         result = libmpq__attributes_parse(
             data, (size_t)size, archive->mpq_header.block_table_count,
             archive->mpq_map[number].block_table_indices, view
         );
-    if (result != LIBMPQ_SUCCESS) {
+    if (result != 0) {
         free(data);
         free(view);
         if (result == LIBMPQ_ERROR_FORMAT)
@@ -208,7 +207,7 @@ libmpq__attributes_load(mpq_archive_s *archive)
         return result;
     }
     archive->attributes = view;
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -263,23 +262,23 @@ libmpq__attributes_verify_data(
         return status;
     if (expected < 0 || (uint64_t)expected != size)
         return LIBMPQ_ERROR_SIZE;
-    if (libmpq__file_number(archive, LIBMPQ_ATTRIBUTES_NAME, &metadata_number) == LIBMPQ_SUCCESS &&
+    if (libmpq__file_number(archive, LIBMPQ_ATTRIBUTES_NAME, &metadata_number) == 0 &&
         metadata_number == file_number)
-        return LIBMPQ_SUCCESS;
-    if (libmpq__file_number(archive, LIBMPQ_SIGNATURE_NAME, &metadata_number) == LIBMPQ_SUCCESS &&
+        return 0;
+    if (libmpq__file_number(archive, LIBMPQ_SIGNATURE_NAME, &metadata_number) == 0 &&
         metadata_number == file_number)
-        return LIBMPQ_SUCCESS;
+        return 0;
 
     memset(&attributes, 0, sizeof(attributes));
     status = libmpq__file_attributes(archive, file_number, &attributes);
     if (status < 0)
-        return LIBMPQ_SUCCESS;
+        return 0;
     if ((attributes.flags & LIBMPQ_ATTRIBUTE_CRC32) != 0)
         verify_flags |= LIBMPQ_VERIFY_FILE_CRC32;
     if ((attributes.flags & LIBMPQ_ATTRIBUTE_MD5) != 0)
         verify_flags |= LIBMPQ_VERIFY_FILE_MD5;
     if (verify_flags == 0)
-        return LIBMPQ_SUCCESS;
+        return 0;
     if ((verify_flags & LIBMPQ_VERIFY_FILE_CRC32) != 0) {
         size_t remaining = size;
         const uint8_t *cursor = data;
@@ -298,7 +297,7 @@ libmpq__attributes_verify_data(
         libmpq__md5_final(&md5, digest);
     }
     libmpq__attributes_compare_file(&attributes, verify_flags, crc, digest, mismatches);
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -369,7 +368,7 @@ libmpq__attributes_serialize(
     }
     *data = raw;
     *size = (size_t)length;
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /* Only private patch creation/materialization may serialize true patch bits. */
@@ -393,7 +392,7 @@ libmpq__attributes_serialize_patch_bits(
         copy[i].patch_bit = 0;
     status = libmpq__attributes_serialize(copy, count, self, flags, data, size);
     free(copy);
-    if (status != LIBMPQ_SUCCESS || (flags & LIBMPQ_ATTRIBUTE_PATCH_BIT) == 0)
+    if (status != 0 || (flags & LIBMPQ_ATTRIBUTE_PATCH_BIT) == 0)
         return status;
     if (flags & LIBMPQ_ATTRIBUTE_CRC32)
         bits_offset += (size_t)count * 4;
@@ -412,5 +411,5 @@ libmpq__attributes_serialize_patch_bits(
         }
         (*data)[bits_offset + i / 8] |= (uint8_t)(0x80u >> (i % 8));
     }
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
