@@ -279,8 +279,8 @@ private void testFixture() {
     auto listfile = archive.file("(listfile)");
     assert(listfile.read().length > 0);
     assert(archive.file("overview.txt").verify() == 0);
-    assert(archive.file("(attributes)").verify(VERIFY_FILE_MD5) ==
-           VERIFY_FILE_MD5);
+    // The (attributes) self-MD5 is an absent, all-zero placeholder.
+    assert(archive.file("(attributes)").verify(VERIFY_FILE_MD5) == 0);
     assert(archive.fileNumber(Mpq.fileHash("(listfile)")) == listfile.no());
     auto encryptedExpected = archive.file("encrypted-compress.txt").read();
     auto encrypted = archive.openStream("encrypted-compress.txt");

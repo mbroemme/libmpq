@@ -41,6 +41,7 @@ rejected. A zero request is a no-op after validating the reader and file number.
 .SS "File CRC32 and MD5"
 Available values from (attributes) are compared against the complete logical
 uncompressed file contents, not compressed or encrypted storage.
+An all-zero MD5 row is unavailable and is skipped.
 Lossless files match the writer's source-byte checksums. Lossy ADPCM decoding
 cannot reproduce the original source bytes byte-for-byte. Automatic complete
 reads therefore skip file-level CRC32/MD5 comparison for such members; this

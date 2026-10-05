@@ -100,6 +100,15 @@ test_layouts(void)
     TEST_CHECK(
         libmpq__attributes_parse(raw, sizeof(raw), UINT32_MAX, 0, &view) == LIBMPQ_ERROR_FORMAT
     );
+    memset(raw, 0, sizeof(raw));
+    libmpq__store_le32(raw, LIBMPQ_ATTRIBUTES_VERSION);
+    libmpq__store_le32(raw + 4, LIBMPQ_ATTRIBUTE_MD5);
+    TEST_CHECK(libmpq__attributes_parse(raw, 8 + 9 * 16, 9, 8, &view) == 0);
+    libmpq__attributes_get(&view, 0, &entry);
+    TEST_CHECK(entry.flags == 0);
+    raw[8 + 15] = 1;
+    libmpq__attributes_get(&view, 0, &entry);
+    TEST_CHECK(entry.flags == LIBMPQ_ATTRIBUTE_MD5 && entry.md5[15] == 1);
     return 0;
 }
 
@@ -390,6 +399,52 @@ cleanup:
     return result;
 }
 
+/* A zero MD5 row is an unavailable placeholder, not an integrity failure. */
+static int
+test_zero_md5_placeholder(void)
+{
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_ONE, 4, 512, 0,
+                                             LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 };
+    mpq_archive_s *archive = NULL;
+    mpq_file_attributes_s attributes;
+    const uint8_t payload[] = "placeholder-md5";
+    uint8_t output[sizeof(payload)];
+    uint8_t zero[16] = { 0 };
+    uint32_t number;
+    uint32_t flags;
+    uint32_t mismatches;
+    libmpq__off_t transferred = 0;
+    char path[256] = { 0 };
+    int result = 0;
+
+    REQUIRE(test_temp_path(path, sizeof(path), "zero-md5") == 0);
+    REQUIRE(libmpq__archive_create(&archive, path, &options) == 0);
+    REQUIRE(libmpq__archive_add_data(archive, "payload", payload, sizeof(payload), NULL) == 0);
+    memset(archive->write_attributes[0].md5, 0, sizeof(archive->write_attributes[0].md5));
+    REQUIRE(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+
+    REQUIRE(libmpq__archive_open(&archive, path, 0) == 0);
+    REQUIRE(libmpq__archive_attributes(archive, &flags) == 0);
+    REQUIRE((flags & LIBMPQ_ATTRIBUTE_MD5) != 0);
+    REQUIRE(libmpq__file_number(archive, "payload", &number) == 0);
+    REQUIRE(libmpq__file_attributes(archive, number, &attributes) == 0);
+    REQUIRE(attributes.flags == LIBMPQ_ATTRIBUTE_CRC32);
+    REQUIRE(memcmp(attributes.md5, zero, sizeof(zero)) == 0);
+    mismatches = UINT32_MAX;
+    REQUIRE(libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &mismatches) == 0);
+    REQUIRE(mismatches == 0);
+    REQUIRE(libmpq__file_read(archive, number, output, sizeof(output), &transferred) == 0);
+    REQUIRE(transferred == sizeof(payload));
+    REQUIRE(memcmp(output, payload, sizeof(payload)) == 0);
+cleanup:
+    if (archive != NULL)
+        (void)libmpq__archive_close(archive);
+    if (path[0] != 0)
+        remove(path);
+    return result;
+}
+
 /* Exercise serializer sizes and availability around packed-byte boundaries. */
 static int
 test_serialization(void)
@@ -417,7 +472,7 @@ test_serialization(void)
             REQUIRE(libmpq__attributes_parse(raw, size, count, count - 1, &view) == 0);
             for (i = 0; i < count; ++i) {
                 libmpq__attributes_get(&view, i, &actual);
-                REQUIRE(actual.flags == flags);
+                REQUIRE(actual.flags == (i == count - 1 ? flags & ~LIBMPQ_ATTRIBUTE_MD5 : flags));
                 REQUIRE(actual.patch_bit == 0);
                 if (flags & 1)
                     REQUIRE(actual.crc32 == (i == count - 1 ? 0 : entries[i].crc32));
@@ -505,6 +560,7 @@ main(void)
     TEST_CHECK(memcmp(unavailable.reserved, "\0\0\0\0", sizeof(unavailable.reserved)) == 0);
     TEST_CHECK(libmpq__writer_timestamp(NULL, 0) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(test_layouts() == 0);
+    TEST_CHECK(test_zero_md5_placeholder() == 0);
     TEST_CHECK(test_serialization() == 0);
     for (version = 0; version < 2; ++version) {
         TEST_CHECK(test_creation_options(version, 0) == 0);

@@ -135,8 +135,18 @@ libmpq__attributes_get(const mpq_attributes_s *view, uint32_t index, mpq_file_at
         result->crc32 = libmpq__load_le32(view->data + view->offsets[0] + (size_t)index * 4);
     if (result->flags & LIBMPQ_ATTRIBUTE_FILETIME)
         result->filetime = libmpq__load_le64(view->data + view->offsets[1] + (size_t)index * 8);
-    if (result->flags & LIBMPQ_ATTRIBUTE_MD5)
+    if (result->flags & LIBMPQ_ATTRIBUTE_MD5) {
+        uint8_t nonzero = 0;
+        size_t i;
+
         memcpy(result->md5, view->data + view->offsets[2] + (size_t)index * 16, 16);
+        for (i = 0; i < sizeof(result->md5); ++i)
+            nonzero |= result->md5[i];
+
+        /* An all-zero row is an absent MD5 value, not a digest to compare. */
+        if (nonzero == 0)
+            result->flags &= ~LIBMPQ_ATTRIBUTE_MD5;
+    }
     if (view->flags & LIBMPQ_ATTRIBUTE_PATCH_BIT) {
         if (index < view->patch_bits) {
             result->flags |= LIBMPQ_ATTRIBUTE_PATCH_BIT;

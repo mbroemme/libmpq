@@ -598,7 +598,8 @@ class LibmpqTest {
             assertEquals(4, Mpq.VERIFY_FILE_MD5);
             assertEquals(7, Mpq.VERIFY_ALL);
             assertEquals(0x04000000, Mpq.FILE_FLAG_SECTOR_CRC);
-            assertEquals(Mpq.VERIFY_FILE_MD5,
+            // The (attributes) self-MD5 is an absent, all-zero placeholder.
+            assertEquals(0,
                 archive.verify(archive.fileNumber("(attributes)"), Mpq.VERIFY_FILE_MD5));
             java.util.zip.CRC32 crc = new java.util.zip.CRC32();
             crc.update(data);
