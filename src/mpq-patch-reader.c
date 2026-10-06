@@ -334,14 +334,16 @@ libmpq__patch_apply(
 static char *
 patch_temporary_path(const char *absolute, const char *temporary)
 {
-    const char *slash = strrchr(absolute, '/');
+
+    /* Call libc functions directly to avoid C11-only generic macros in C99. */
+    const char *slash = (strrchr)(absolute, '/');
     size_t directory_size;
     size_t name_size = strlen(temporary);
     char *path;
 
 #ifdef _WIN32
     {
-        const char *backslash = strrchr(absolute, '\\');
+        const char *backslash = (strrchr)(absolute, '\\');
 
         if (backslash != NULL && (slash == NULL || backslash > slash))
             slash = backslash;
@@ -804,7 +806,7 @@ patch_entries(mpq_archive_s *patch, mpq_patch_entry_s **entries, uint32_t *entry
             length--;
         if (length == 0)
             continue;
-        if (memchr(list + start, 0, length) != NULL)
+        if ((memchr)(list + start, 0, length) != NULL)
             continue;
         {
             char *name = malloc(length + 1);
@@ -853,7 +855,7 @@ patch_name_equal(const char *left, const char *right, size_t length)
 static uint8_t
 patch_metadata_path(const char *name, size_t *prefix_length)
 {
-    const char *separator = strrchr(name, '\\');
+    const char *separator = (strrchr)(name, '\\');
     const char *basename = separator == NULL ? name : separator + 1;
     static const char marker[] = "(patch_metadata)";
 
@@ -1247,7 +1249,7 @@ patch_rewrite_listfile(
             at++;
         if (length == 0)
             continue;
-        if (memchr(original + start, 0, length) != NULL) {
+        if ((memchr)(original + start, 0, length) != NULL) {
             status = LIBMPQ_ERROR_FORMAT;
             goto done;
         }
