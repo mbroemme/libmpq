@@ -53,6 +53,19 @@ libmpq__header_ex_decode(mpq_header_ex_s *header, const uint8_t *wire, size_t si
     return 0;
 }
 
+/* Decode only the 24-byte v3 extension; short-header fallback belongs to the reader. */
+int32_t
+libmpq__header_v3_decode(mpq_header_v3_s *header, const uint8_t *wire, size_t size)
+{
+    if (header == NULL || wire == NULL || size < LIBMPQ_HEADER_V3_EX_WIRE_SIZE)
+        return LIBMPQ_ERROR_SIZE;
+
+    header->archive_size = libmpq__load_le64(wire);
+    header->bet_table_offset = libmpq__load_le64(wire + 8);
+    header->het_table_offset = libmpq__load_le64(wire + 16);
+    return 0;
+}
+
 /* Encode fixed native fields into the exact 32-byte little-endian base header. */
 int32_t
 libmpq__header_encode(const mpq_header_s *header, uint8_t *wire, size_t size)
@@ -83,4 +96,29 @@ libmpq__header_ex_encode(const mpq_header_ex_s *header, uint8_t *wire, size_t si
     libmpq__store_le16(wire + 8, header->hash_table_offset_high);
     libmpq__store_le16(wire + 10, header->block_table_offset_high);
     return 0;
+}
+
+/* Encode the v3 extension independently of native structure alignment. */
+int32_t
+libmpq__header_v3_encode(const mpq_header_v3_s *header, uint8_t *wire, size_t size)
+{
+    if (header == NULL || wire == NULL || size < LIBMPQ_HEADER_V3_EX_WIRE_SIZE)
+        return LIBMPQ_ERROR_SIZE;
+
+    libmpq__store_le64(wire, header->archive_size);
+    libmpq__store_le64(wire + 8, header->bet_table_offset);
+    libmpq__store_le64(wire + 16, header->het_table_offset);
+    return 0;
+}
+
+/* Select the declared size without truncating the full v3 archive extent. */
+uint64_t
+libmpq__header_archive_size(const mpq_header_s *header, const mpq_header_v3_s *v3)
+{
+    if (header == NULL)
+        return 0;
+    if (header->version == LIBMPQ_ARCHIVE_VERSION_THREE &&
+        header->header_size >= LIBMPQ_HEADER_V3_WIRE_SIZE)
+        return v3 == NULL ? 0 : v3->archive_size;
+    return header->archive_size;
 }

@@ -1192,6 +1192,12 @@ update_apply(
     result = libmpq__archive_open(&archive, update->working_path, -1);
     if (result != 0)
         return result;
+
+    /* Rebuilding v3 headers/tables is not supported by this writer. */
+    if (archive->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_TWO) {
+        result = LIBMPQ_ERROR_FORMAT;
+        goto done;
+    }
     result = libmpq__file_number(archive, old_name, &number);
     if (result != 0)
         goto done;

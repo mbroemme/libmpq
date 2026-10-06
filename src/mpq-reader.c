@@ -51,6 +51,66 @@ extend_extent(uint64_t offset, uint64_t length, uint64_t *extent)
     return 0;
 }
 
+/* Bound every known v3 table range by its authoritative archive extent. */
+static int32_t
+validate_v3_header(const mpq_archive_s *archive)
+{
+    uint64_t size = libmpq__header_archive_size(&archive->mpq_header, &archive->mpq_header_v3);
+    uint64_t hash = archive->mpq_header.hash_table_offset |
+                    ((uint64_t)archive->mpq_header_ex.hash_table_offset_high << 32);
+    uint64_t block = archive->mpq_header.block_table_offset |
+                     ((uint64_t)archive->mpq_header_ex.block_table_offset_high << 32);
+    uint64_t high = archive->mpq_header_ex.extended_offset;
+    uint64_t bet = archive->mpq_header_v3.bet_table_offset;
+    uint64_t het = archive->mpq_header_v3.het_table_offset;
+    uint32_t hashes = archive->mpq_header.hash_table_count;
+    uint32_t blocks = archive->mpq_header.block_table_count;
+
+    if (archive->archive_offset < 0 || size < archive->mpq_header.header_size ||
+        size > (uint64_t)INT64_MAX - (uint64_t)archive->archive_offset ||
+        (uint64_t)archive->archive_offset > archive->file_size ||
+        size > archive->file_size - (uint64_t)archive->archive_offset)
+        return LIBMPQ_ERROR_FORMAT;
+    if ((blocks != 0 && hashes == 0) || ((bet != 0 || het != 0) && (hashes == 0 || blocks == 0)))
+        return LIBMPQ_ERROR_FORMAT;
+    if (hashes != 0 &&
+        ((hashes & (hashes - 1u)) != 0 || hash < archive->mpq_header.header_size || hash > size ||
+         (uint64_t)hashes * LIBMPQ_HASH_ENTRY_WIRE_SIZE > size - hash))
+        return LIBMPQ_ERROR_FORMAT;
+    if (blocks != 0 && (block < archive->mpq_header.header_size || block > size ||
+                        (uint64_t)blocks * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE > size - block))
+        return LIBMPQ_ERROR_FORMAT;
+    if (high != 0 && (high < archive->mpq_header.header_size || high > size ||
+                      (uint64_t)blocks * LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE > size - high))
+        return LIBMPQ_ERROR_FORMAT;
+    if ((bet != 0 && (bet < archive->mpq_header.header_size || bet >= size)) ||
+        (het != 0 && (het < archive->mpq_header.header_size || het >= size)))
+        return LIBMPQ_ERROR_FORMAT;
+    return 0;
+}
+
+/* Require usable classic lookup when HET/BET are present, not matching table coverage. */
+static int32_t
+validate_v3_classic_lookup(const mpq_archive_s *archive)
+{
+    uint8_t usable = 0;
+
+    if (archive->mpq_header_v3.bet_table_offset == 0 &&
+        archive->mpq_header_v3.het_table_offset == 0)
+        return 0;
+    for (uint32_t i = 0; i < archive->mpq_header.hash_table_count; ++i) {
+        uint32_t index = archive->mpq_hash[i].block_table_index;
+
+        if (index >= LIBMPQ_HASH_DELETED)
+            continue;
+        if (index >= archive->mpq_header.block_table_count)
+            return LIBMPQ_ERROR_FORMAT;
+        if ((archive->mpq_block[index].flags & LIBMPQ_FLAG_EXISTS) != 0)
+            usable = 1;
+    }
+    return usable ? 0 : LIBMPQ_ERROR_FORMAT;
+}
+
 int32_t
 libmpq__archive_required_extent(const mpq_archive_s *archive, uint64_t *size)
 {
@@ -62,15 +122,17 @@ libmpq__archive_required_extent(const mpq_archive_s *archive, uint64_t *size)
         *size = 0;
     if (archive == NULL || size == NULL)
         return LIBMPQ_ERROR_EXIST;
-    if (archive->archive_offset < 0 || archive->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_TWO ||
+    if (archive->archive_offset < 0 || archive->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_THREE ||
         (archive->mpq_header.block_table_count != 0 &&
          (archive->mpq_block == NULL || archive->mpq_block_ex == NULL)))
         return LIBMPQ_ERROR_FORMAT;
     extent = archive->mpq_header.header_size;
-    if (extent <
-        LIBMPQ_HEADER_WIRE_SIZE + (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO
-                                       ? LIBMPQ_HEADER_EX_WIRE_SIZE
-                                       : 0u))
+    if (extent < LIBMPQ_HEADER_WIRE_SIZE ||
+        (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO &&
+         extent < LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE) ||
+        (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE &&
+         extent != LIBMPQ_HEADER_WIRE_SIZE &&
+         extent < LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE))
         return LIBMPQ_ERROR_FORMAT;
     hash = archive->mpq_header.hash_table_offset |
            ((uint64_t)archive->mpq_header_ex.hash_table_offset_high << 32);
@@ -117,9 +179,9 @@ libmpq__archive_signature_extent(const mpq_archive_s *archive, uint64_t *size)
     result = libmpq__archive_required_extent(archive, &required);
     if (result != 0)
         return result;
-    extent = archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE
-                 ? archive->mpq_header.archive_size
-                 : required;
+    extent = archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO
+                 ? required
+                 : libmpq__header_archive_size(&archive->mpq_header, &archive->mpq_header_v3);
     if (extent < required || (uint64_t)archive->archive_offset > archive->file_size ||
         extent > archive->file_size - (uint64_t)archive->archive_offset)
         return LIBMPQ_ERROR_FORMAT;
@@ -704,6 +766,14 @@ libmpq__reader_validate_payload_range(
 
     payload_offset = ((uint64_t)mpq_archive->mpq_block_ex[block_table_index].offset_high << 32) |
                      mpq_archive->mpq_block[block_table_index].offset;
+    if (mpq_archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE) {
+        uint64_t extent =
+            libmpq__header_archive_size(&mpq_archive->mpq_header, &mpq_archive->mpq_header_v3);
+
+        if (payload_offset > extent || relative_offset > extent - payload_offset ||
+            size > extent - payload_offset - relative_offset)
+            return LIBMPQ_ERROR_FORMAT;
+    }
     absolute_offset = (uint64_t)mpq_archive->archive_offset;
     if (payload_offset > UINT64_MAX - absolute_offset) {
         return LIBMPQ_ERROR_FORMAT;
@@ -1059,6 +1129,7 @@ libmpq__reader_archive_open_source(
     uint32_t header_search = 0;
     uint8_t header_data[LIBMPQ_HEADER_WIRE_SIZE];
     uint8_t header_ex_data[LIBMPQ_HEADER_EX_WIRE_SIZE];
+    uint8_t header_v3_data[LIBMPQ_HEADER_V3_EX_WIRE_SIZE];
     uint8_t *table_data = NULL;
     size_t table_bytes = 0;
 
@@ -1140,7 +1211,19 @@ libmpq__reader_archive_open_source(
                 }
             }
 
-            if ((*mpq_archive)->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_TWO) {
+            if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE &&
+                ((*mpq_archive)->mpq_header.header_size < LIBMPQ_HEADER_WIRE_SIZE ||
+                 ((*mpq_archive)->mpq_header.header_size != LIBMPQ_HEADER_WIRE_SIZE &&
+                  (*mpq_archive)->mpq_header.header_size <
+                      LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE) ||
+                 (*mpq_archive)->mpq_header.header_size > LIBMPQ_HEADER_V3_WIRE_SIZE ||
+                 (*mpq_archive)->mpq_header.header_size >
+                     (*mpq_archive)->file_size - (uint64_t)archive_offset)) {
+                result = LIBMPQ_ERROR_FORMAT;
+                goto error;
+            }
+
+            if ((*mpq_archive)->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_THREE) {
                 result = LIBMPQ_ERROR_FORMAT;
                 goto error;
             }
@@ -1149,6 +1232,10 @@ libmpq__reader_archive_open_source(
         }
 
         if (!header_search) {
+            result = LIBMPQ_ERROR_FORMAT;
+            goto error;
+        }
+        if (archive_offset > INT64_MAX - 512) {
             result = LIBMPQ_ERROR_FORMAT;
             goto error;
         }
@@ -1175,8 +1262,11 @@ libmpq__reader_archive_open_source(
         goto error;
     }
 
-    /* MPQ v2 stores high table offsets in a separate extension immediately after v1. */
-    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO) {
+    /* MPQ v2 and v3 store high table offsets immediately after the base header. */
+    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO ||
+        ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE &&
+         (*mpq_archive)->mpq_header.header_size >=
+             LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE)) {
         if ((uint64_t)archive_offset > UINT64_MAX - LIBMPQ_HEADER_WIRE_SIZE ||
             (uint64_t)archive_offset + LIBMPQ_HEADER_WIRE_SIZE > (*mpq_archive)->file_size ||
             sizeof(header_ex_data) >
@@ -1193,6 +1283,27 @@ libmpq__reader_archive_open_source(
         if ((result = libmpq__header_ex_decode(
                  &(*mpq_archive)->mpq_header_ex, header_ex_data, sizeof(header_ex_data)
              )) < 0)
+            goto error;
+    }
+
+    /* A short v3 header has no v3 extension; its zeroed fields remain absent. */
+    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE) {
+        if ((*mpq_archive)->mpq_header.header_size == LIBMPQ_HEADER_V3_WIRE_SIZE) {
+            result = libmpq__source_read_at(
+                source,
+                (uint64_t)archive_offset + LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE,
+                header_v3_data, sizeof(header_v3_data)
+            );
+            if (result != 0)
+                goto error;
+            result = libmpq__header_v3_decode(
+                &(*mpq_archive)->mpq_header_v3, header_v3_data, sizeof(header_v3_data)
+            );
+            if (result != 0)
+                goto error;
+        }
+        result = validate_v3_header(*mpq_archive);
+        if (result != 0)
             goto error;
     }
 
@@ -1316,6 +1427,17 @@ libmpq__reader_archive_open_source(
             goto error;
         free(table_data);
         table_data = NULL;
+    }
+
+    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE) {
+        uint64_t extent;
+
+        result = validate_v3_classic_lookup(*mpq_archive);
+        if (result != 0)
+            goto error;
+        result = libmpq__archive_signature_extent(*mpq_archive, &extent);
+        if (result != 0)
+            goto error;
     }
 
     /* Build the compact public file-number map from existing block-table entries. */

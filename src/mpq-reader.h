@@ -109,7 +109,7 @@ int32_t libmpq__reader_get_block_seed(
 );
 
 /*
- * Return the checked minimum archive-relative extent required by parsed v1/v2
+ * Return the checked minimum archive-relative extent required by parsed classic
  * serialized ranges. This does not include valid v1 trailing padding.
  */
 int32_t libmpq__archive_required_extent(const mpq_archive_s *archive, uint64_t *size);
@@ -117,7 +117,7 @@ int32_t libmpq__archive_required_extent(const mpq_archive_s *archive, uint64_t *
 /*
  * Return the archive-relative extent weak signatures must cover. v1 uses its
  * declared archive size after validating it contains the required extent;
- * v2 uses the full 64-bit required extent.
+ * v2 uses the full 64-bit required extent. v3 uses its effective declared size.
  */
 int32_t libmpq__archive_signature_extent(const mpq_archive_s *archive, uint64_t *size);
 

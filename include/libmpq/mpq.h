@@ -115,14 +115,13 @@ typedef int32_t (*libmpq_read_at_fn)(
 /* Archive format and creation constants. */
 
 /*
- * Archive format selectors accepted by mpq_archive_create_options_s.version.
- * Version one writes the classic 32-bit-offset MPQ header, while version two
- * adds the high-offset table required by the extended v2 layout. The values
- * are selectors rather than the raw on-disk version numbers and must not be
- * combined with one another.
+ * On-disk archive format versions (not combinable flags). Creation accepts
+ * only ONE and TWO; THREE is supported for reading classic-table archives.
+ * libmpq__archive_version() reports the corresponding one-based generation.
  */
 #define LIBMPQ_ARCHIVE_VERSION_ONE 0
 #define LIBMPQ_ARCHIVE_VERSION_TWO 1
+#define LIBMPQ_ARCHIVE_VERSION_THREE 2
 
 /*
  * Archive-creation flags accepted by mpq_archive_create_options_s.flags.
@@ -481,7 +480,7 @@ extern LIBMPQ_API int32_t libmpq__archive_offset(mpq_archive_s *mpq_archive, lib
 
 /*
  * Return the public MPQ format version of an opened archive.
- * The result identifies the supported v1 or v2 layout rather than the raw
+ * The result identifies the supported v1, v2 or v3 layout rather than the raw
  * on-disk version field. Pass a valid opened archive and output pointer.
  */
 extern LIBMPQ_API int32_t libmpq__archive_version(mpq_archive_s *mpq_archive, uint32_t *version);

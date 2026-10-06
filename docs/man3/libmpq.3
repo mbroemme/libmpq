@@ -418,7 +418,8 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .fi
 .SH DESCRIPTION
 \fIlibmpq\fP reads and creates MPQ v1 and v2 archives, including embedded
-MPQ containers. MPQ v3/v4 and HET/BET tables are not supported.
+MPQ containers. Reading MPQ v3 with usable classic hash/block tables is also
+supported; HET/BET decoding, v3 creation/rebuilding, and MPQ v4 are not supported.
 .SS "Archive Opening and Custom I/O"
 Open filesystem archives with \fBlibmpq__archive_open\fP(3) or provide a
 borrowed random-access callback through \fBlibmpq__archive_open_io\fP(3).

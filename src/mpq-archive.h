@@ -61,6 +61,7 @@ struct mpq_archive
 
     mpq_header_s mpq_header;       /* Decoded base archive header. */
     mpq_header_ex_s mpq_header_ex; /* Decoded extended archive header. */
+    mpq_header_v3_s mpq_header_v3; /* Decoded v3 extension; zero for short headers. */
     mpq_hash_s *mpq_hash;          /* Decrypted hash table. */
     mpq_block_s *mpq_block;        /* Decrypted block table. */
     mpq_block_ex_s *mpq_block_ex;  /* Optional extended block table. */

@@ -1673,6 +1673,12 @@ patch_apply_layer(mpq_patch_view_s *view, const mpq_patch_source_s *source)
     status = libmpq__archive_open(&lower, view->path, view->archive_offset);
     if (status != 0)
         goto done;
+
+    /* Materialization currently rebuilds only v1/v2 archive headers. */
+    if (lower->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_TWO) {
+        status = LIBMPQ_ERROR_FORMAT;
+        goto done;
+    }
     status = libmpq__archive_open(&target, view->path, view->archive_offset);
     if (status != 0)
         goto done;

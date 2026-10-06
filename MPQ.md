@@ -71,6 +71,26 @@ hi-block table is a `u16` array indexed by classic block index and supplies
 bits 32-47 of file positions. v4 records raw-table MD5 values; verify them
 only after normal structural bounds checks.
 
+The reader supports MPQ v3 (on-disk version 2) through classic hash/block
+tables. Its normal `0x44`-byte header adds three little-endian `u64` fields
+after the v2 extension: archive size at `0x2C`, BET position at `0x34`, and
+HET position at `0x3C`. The 64-bit size is authoritative, including when the
+legacy size differs. Classic high table/file offsets retain the v2 layout.
+
+For compatibility, a base-only `0x20`-byte v3 header or a declared header
+from `0x2C` through `0x43` uses the legacy archive size and absent/zero HET/BET
+positions; no partial extension is read. Rejecting partial v2 extensions
+(`0x21` through `0x2B`) is an intentional libmpq validation choice rather
+than accepting arbitrary short sizes for StormLib compatibility. A declared
+full header must contain all `0x44` bytes. HET/BET
+positions are bounded by the archive extent but those tables are not decoded.
+Mixed-table archives can use classic lookup when a classic hash entry maps
+to a live block; other live blocks need not be hash-referenced. This does not
+assert equivalence with HET/BET, whose lookup remains unavailable. Archives
+requiring HET/BET because classic lookup is absent or unusable fail with a
+format error. Compressed classic tables, HET/BET decoding, v3 creation and
+rebuilding, and MPQ v4 remain outside the current implementation.
+
 ## Classic tables
 
 Classic hash and block tables are encrypted streams of 32-bit words. Decrypt

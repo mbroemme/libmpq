@@ -353,7 +353,8 @@ headers, tables, encryption, sectors, and compression, see the
 ## Limitations
 
 * Archive creation is currently limited to seekable MPQ v1 and v2 archives.
-  MPQ v3/v4, HET/BET tables, and related format extensions are not supported.
+  Reading MPQ v3 is supported with usable classic hash/block tables; HET/BET
+  decoding and MPQ v4 remain unsupported.
 * Encrypted random-access writing is not supported. MPQE modification uses
   transactional decoding and re-encryption instead.
 * MPQE creation and updates use private plaintext staging files. Cleanup is

@@ -179,7 +179,13 @@ test_endian_SOURCES = test-mpq-endian.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_hash_SOURCES = test-mpq-hash.c $(COMMON_SOURCES)
 test_hash_LDADD = $(top_builddir)/src/mpq-hash.lo $(top_builddir)/src/mpq-endian.lo $(LDADD)
 test_header_SOURCES = test-mpq-header.c $(COMMON_SOURCES)
-test_header_LDADD = $(top_builddir)/src/mpq-header.lo $(top_builddir)/src/mpq-endian.lo $(LDADD)
+test_header_LDADD = \
+	$(top_builddir)/src/mpq-block.lo \
+	$(top_builddir)/src/mpq-crypto.lo \
+	$(top_builddir)/src/mpq-endian.lo \
+	$(top_builddir)/src/mpq-hash.lo \
+	$(top_builddir)/src/mpq-header.lo \
+	$(LDADD)
 test_fixtures_SOURCES = test-mpq-fixtures.c $(COMMON_SOURCES)
 test_fixtures_LDADD = $(test_attributes_LDADD)
 test_mpq_SOURCES = test-mpq-api.c $(COMMON_SOURCES)
