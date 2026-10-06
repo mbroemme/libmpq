@@ -111,6 +111,17 @@ file_size`, and `u32 flags`. Common flags are `0x80000000` exists,
 sector-CRC, patch, deletion, and signature flags; preserve unknown flags when
 rewriting an archive.
 
+Internally, decoded classic rows populate archive-owned `mpq_entry_s` metadata
+with 64-bit positions and sizes. Public file numbers map to these entries;
+reader, stream, metadata, and verification paths consume them rather than the
+classic block table. Classic hash rows translate through an explicit
+classic-row-to-entry mapping; canonical entry ordering is independent.
+Source provenance distinguishes classic rows from uninitialized entries.
+Classic attributes remain indexed and sized by block-table rows, not canonical
+entries. Writers and rebuild serialization still own classic wire
+tables. HET/BET conversion is not implemented; sector offset and codec-length
+limits remain unchanged.
+
 ## File sectors, encryption, and compression
 
 Unless marked single-unit, a file has `ceil(file_size / sector_size)` sectors.

@@ -177,10 +177,16 @@ libmpq__file_attributes(mpq_archive_s *archive, uint32_t number, mpq_file_attrib
         return LIBMPQ_ERROR_NOT_INITIALIZED;
     if (libmpq__reader_validate_file_number(archive, number) != 0)
         return LIBMPQ_ERROR_EXIST;
+    if (archive->mpq_entry[archive->mpq_map[number].entry_index].source_kind !=
+            LIBMPQ_ENTRY_SOURCE_CLASSIC ||
+        archive->mpq_entry[archive->mpq_map[number].entry_index].source_index >=
+            archive->mpq_header.block_table_count)
+        return LIBMPQ_ERROR_FORMAT;
     result = libmpq__archive_attributes(archive, &flags);
     if (result == 0)
         libmpq__attributes_get(
-            archive->attributes, archive->mpq_map[number].block_table_indices, attributes
+            archive->attributes,
+            archive->mpq_entry[archive->mpq_map[number].entry_index].source_index, attributes
         );
     return result;
 }
@@ -572,6 +578,8 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
         free(mpq_archive->write_platforms);
         libmpq__attributes_free(mpq_archive);
         free(mpq_archive->mpq_hash);
+        free(mpq_archive->mpq_entry);
+        free(mpq_archive->classic_entry_indices);
         free(mpq_archive->mpq_block);
         free(mpq_archive->mpq_block_ex);
         free(mpq_archive->filename);
@@ -583,7 +591,7 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
 
     result = libmpq__source_close(mpq_archive->source);
 
-    for (i = 0; i < mpq_archive->mpq_header.block_table_count; i++) {
+    for (i = 0; i < mpq_archive->entry_count; i++) {
         if (mpq_archive->mpq_file[i] != NULL) {
             free(mpq_archive->mpq_file[i]->packed_offset);
             free(mpq_archive->mpq_file[i]);
@@ -594,6 +602,8 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
     libmpq__attributes_free(mpq_archive);
     free(mpq_archive->mpq_file);
     free(mpq_archive->mpq_hash);
+    free(mpq_archive->mpq_entry);
+    free(mpq_archive->classic_entry_indices);
     free(mpq_archive->mpq_block);
     free(mpq_archive->mpq_block_ex);
     free(mpq_archive->filename);
@@ -615,8 +625,7 @@ libmpq__archive_size_packed(mpq_archive_s *mpq_archive, libmpq__off_t *packed_si
     uint32_t i;
 
     for (i = 0; i < mpq_archive->files; i++) {
-        *packed_size +=
-            mpq_archive->mpq_block[mpq_archive->mpq_map[i].block_table_indices].packed_size;
+        *packed_size += mpq_archive->mpq_entry[mpq_archive->mpq_map[i].entry_index].packed_size;
     }
 
     return 0;
@@ -635,8 +644,7 @@ libmpq__archive_size_unpacked(mpq_archive_s *mpq_archive, libmpq__off_t *unpacke
     uint32_t i;
 
     for (i = 0; i < mpq_archive->files; i++) {
-        *unpacked_size +=
-            mpq_archive->mpq_block[mpq_archive->mpq_map[i].block_table_indices].unpacked_size;
+        *unpacked_size += mpq_archive->mpq_entry[mpq_archive->mpq_map[i].entry_index].unpacked_size;
     }
 
     return 0;
@@ -680,9 +688,9 @@ libmpq__archive_files(mpq_archive_s *mpq_archive, uint32_t *files)
 }
 
 /*
- * Return the packed size of a file entry by block-table number.
+ * Return the packed size of a canonical entry by public file number.
  * The public file number is validated and translated through the compact map
- * before reading the corresponding block-table entry.
+ * before reading the corresponding canonical entry.
  */
 int32_t
 libmpq__file_size_packed(
@@ -694,13 +702,13 @@ libmpq__file_size_packed(
     }
 
     *packed_size =
-        mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].packed_size;
+        mpq_archive->mpq_entry[mpq_archive->mpq_map[file_number].entry_index].packed_size;
 
     return 0;
 }
 
 /*
- * Return the unpacked size of a file entry by block-table number.
+ * Return the unpacked size of a canonical entry by public file number.
  * Invalid compact file numbers are rejected before any archive metadata is
  * accessed.
  */
@@ -714,7 +722,7 @@ libmpq__file_size_unpacked(
     }
 
     *unpacked_size =
-        mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].unpacked_size;
+        mpq_archive->mpq_entry[mpq_archive->mpq_map[file_number].entry_index].unpacked_size;
 
     return 0;
 }
@@ -731,11 +739,7 @@ libmpq__file_offset(mpq_archive_s *mpq_archive, uint32_t file_number, libmpq__of
         return LIBMPQ_ERROR_EXIST;
     }
 
-    *offset = mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].offset +
-              (((long long)mpq_archive
-                    ->mpq_block_ex[mpq_archive->mpq_map[file_number].block_table_indices]
-                    .offset_high)
-               << 32);
+    *offset = mpq_archive->mpq_entry[mpq_archive->mpq_map[file_number].entry_index].offset;
 
     return 0;
 }
@@ -757,7 +761,7 @@ libmpq__file_blocks(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *
     return 0;
 }
 
-/* Return stored block-table flags without reading or modifying payload data. */
+/* Return canonical entry flags without reading or modifying payload data. */
 int32_t
 libmpq__file_flags(mpq_archive_s *archive, uint32_t file_number, uint32_t *flags)
 {
@@ -767,7 +771,7 @@ libmpq__file_flags(mpq_archive_s *archive, uint32_t file_number, uint32_t *flags
     if (archive == NULL || libmpq__reader_validate_file_number(archive, file_number) < 0)
         return LIBMPQ_ERROR_EXIST;
 
-    *flags = archive->mpq_block[archive->mpq_map[file_number].block_table_indices].flags;
+    *flags = archive->mpq_entry[archive->mpq_map[file_number].entry_index].flags;
     return 0;
 }
 
@@ -799,6 +803,7 @@ libmpq__file_number_from_hash(
     uint32_t i;
     uint32_t ht_count;
     uint32_t block_table_index;
+    uint32_t entry_index;
 
     ht_count = mpq_archive->mpq_header.hash_table_count;
     if (ht_count == 0) {
@@ -812,12 +817,14 @@ libmpq__file_number_from_hash(
          i = (i + 1) % ht_count) {
         if (mpq_archive->mpq_hash[i].hash_a == hash2 && mpq_archive->mpq_hash[i].hash_b == hash3) {
             block_table_index = mpq_archive->mpq_hash[i].block_table_index;
-            if (block_table_index >= mpq_archive->mpq_header.block_table_count ||
-                (mpq_archive->mpq_block[block_table_index].flags & LIBMPQ_FLAG_EXISTS) == 0) {
+            if (libmpq__entry_index_from_classic(mpq_archive, block_table_index, &entry_index) !=
+                    0 ||
+                (mpq_archive->mpq_entry[entry_index].flags & LIBMPQ_FLAG_EXISTS) == 0) {
                 return LIBMPQ_ERROR_FORMAT;
             }
-            *number = block_table_index - mpq_archive->mpq_map[block_table_index].block_table_diff;
-            if (*number >= mpq_archive->files) {
+            *number = mpq_archive->mpq_entry[entry_index].file_number;
+            if (*number >= mpq_archive->files ||
+                mpq_archive->mpq_map[*number].entry_index != entry_index) {
                 return LIBMPQ_ERROR_FORMAT;
             }
 
@@ -833,7 +840,7 @@ libmpq__file_number_from_hash(
 }
 
 /*
- * Resolve an MPQ file name to its block-table number through the hash table.
+ * Resolve an MPQ file name to its public number through classic hash lookup.
  * The name is hashed with all three Storm phases before the collision-aware
  * lookup is delegated to the precomputed-hash helper.
  */
@@ -921,26 +928,24 @@ libmpq__block_size_unpacked(
         return LIBMPQ_ERROR_EXIST;
     }
 
-    if ((mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags &
+    if ((mpq_archive->mpq_entry[mpq_archive->mpq_map[file_number].entry_index].flags &
          LIBMPQ_FLAG_SINGLE) != 0) {
 
         /* A single-unit entry has one logical block containing the whole file. */
         *unpacked_size =
-            mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices]
-                .unpacked_size;
+            mpq_archive->mpq_entry[mpq_archive->mpq_map[file_number].entry_index].unpacked_size;
     }
 
-    if ((mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].flags &
+    if ((mpq_archive->mpq_entry[mpq_archive->mpq_map[file_number].entry_index].flags &
          LIBMPQ_FLAG_SINGLE) == 0) {
 
         /* Every non-final sector is full-sized; only the tail uses a remainder. */
         if (block_number < libmpq__reader_count_file_blocks(mpq_archive, file_number) - 1) {
             *unpacked_size = mpq_archive->block_size;
         } else {
-            *unpacked_size =
-                mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices]
-                    .unpacked_size -
-                mpq_archive->block_size * block_number;
+            *unpacked_size = mpq_archive->mpq_entry[mpq_archive->mpq_map[file_number].entry_index]
+                                 .unpacked_size -
+                             mpq_archive->block_size * block_number;
         }
     }
 

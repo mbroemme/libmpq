@@ -186,10 +186,13 @@ test_fixture_members(mpq_archive_s *archive, const char *raw_path, uint32_t vers
             TEST_CHECK(libmpq__block_compression(archive, mpqe_number, block, &mpqe_method) == 0);
             TEST_CHECK(raw_method == mpqe_method);
         }
-        TEST_CHECK(
-            raw_archive->mpq_block[raw_archive->mpq_map[raw_number].block_table_indices].flags ==
-            archive->mpq_block[archive->mpq_map[mpqe_number].block_table_indices].flags
-        );
+        {
+            uint32_t raw_flags;
+            uint32_t mpqe_flags;
+            TEST_CHECK(libmpq__file_flags(raw_archive, raw_number, &raw_flags) == 0);
+            TEST_CHECK(libmpq__file_flags(archive, mpqe_number, &mpqe_flags) == 0);
+            TEST_CHECK(raw_flags == mpqe_flags);
+        }
         TEST_CHECK(
             libmpq__file_verify(archive, mpqe_number, LIBMPQ_VERIFY_SECTOR_CRC, &verification) == 0
         );

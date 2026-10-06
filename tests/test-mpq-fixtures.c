@@ -153,7 +153,7 @@ test_fixture_storage(
         TEST_CHECK(method == (name_index == 1 ? 0x08U : name_index == 7 ? 0x02U : expected_method));
 
     TEST_CHECK(libmpq__file_flags(archive, number, &flags) == 0);
-    TEST_CHECK(flags == archive->mpq_block[archive->mpq_map[number].block_table_indices].flags);
+    TEST_CHECK(flags == archive->mpq_entry[archive->mpq_map[number].entry_index].flags);
     compressed = flags & LIBMPQ_FILE_FLAG_COMPRESS;
     encrypted = flags & LIBMPQ_FILE_FLAG_ENCRYPTED;
     imploded = flags & LIBMPQ_FILE_FLAG_IMPLODE;
@@ -198,7 +198,7 @@ test_fixture_checksums(mpq_archive_s *archive, const uint8_t *raw, size_t size, 
 
     TEST_CHECK(libmpq__archive_files(archive, &files) == 0);
     for (number = 0; number < files; ++number) {
-        mpq_block_s *entry = &archive->mpq_block[archive->mpq_map[number].block_table_indices];
+        const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
         uint32_t verification = UINT32_MAX;
         int eligible = entry->unpacked_size != 0 && (entry->flags & LIBMPQ_FLAG_SINGLE) == 0 &&
                        (entry->flags & (LIBMPQ_FLAG_COMPRESSED | LIBMPQ_FLAG_COMPRESS_PKZIP));

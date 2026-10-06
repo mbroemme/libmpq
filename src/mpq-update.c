@@ -1113,8 +1113,8 @@ update_validate_member(
     if (data == NULL)
         return LIBMPQ_ERROR_MALLOC;
 
-    if ((archive->mpq_block[archive->mpq_map[number].block_table_indices].flags &
-         LIBMPQ_FLAG_ENCRYPTED) != 0) {
+    if ((archive->mpq_entry[archive->mpq_map[number].entry_index].flags & LIBMPQ_FLAG_ENCRYPTED) !=
+        0) {
         result = libmpq__reader_offsets_acquire(archive, number, name);
         if (result == 0) {
             result = libmpq__file_read(archive, number, data, size, &transferred);
@@ -1201,7 +1201,7 @@ update_apply(
     result = libmpq__file_number(archive, old_name, &number);
     if (result != 0)
         goto done;
-    block = archive->mpq_map[number].block_table_indices;
+    block = archive->mpq_entry[archive->mpq_map[number].entry_index].source_index;
     slot = update_hash_slot(archive, old_name, block);
     if (slot == UINT32_MAX) {
         result = LIBMPQ_ERROR_FORMAT;
@@ -1251,8 +1251,9 @@ update_apply(
     }
     if (libmpq__file_number(archive, LIBMPQ_LISTFILE_NAME, &list_number) == 0) {
         has_list = 1;
-        if (update_block_references(archive, archive->mpq_map[list_number].block_table_indices) !=
-            1) {
+        if (update_block_references(
+                archive, archive->mpq_entry[archive->mpq_map[list_number].entry_index].source_index
+            ) != 1) {
             result = LIBMPQ_ERROR_FORMAT;
             goto done;
         }
@@ -1275,7 +1276,8 @@ update_apply(
             goto done;
         }
         if (update_block_references(
-                archive, archive->mpq_map[attributes_number].block_table_indices
+                archive,
+                archive->mpq_entry[archive->mpq_map[attributes_number].entry_index].source_index
             ) != 1) {
             result = LIBMPQ_ERROR_FORMAT;
             goto done;
@@ -1298,7 +1300,8 @@ update_apply(
     if (libmpq__file_number(archive, LIBMPQ_SIGNATURE_NAME, &signature_number) == 0) {
         has_signature = 1;
         if (update_block_references(
-                archive, archive->mpq_map[signature_number].block_table_indices
+                archive,
+                archive->mpq_entry[archive->mpq_map[signature_number].entry_index].source_index
             ) != 1) {
             result = LIBMPQ_ERROR_FORMAT;
             goto done;
@@ -1375,7 +1378,8 @@ update_apply(
             goto done;
     }
     if (has_signature) {
-        uint32_t signature_block = archive->mpq_map[signature_number].block_table_indices;
+        uint32_t signature_block =
+            archive->mpq_entry[archive->mpq_map[signature_number].entry_index].source_index;
 
         for (i = 0; i < archive->mpq_header.hash_table_count; i++)
             if (archive->mpq_hash[i].block_table_index == signature_block)
@@ -1388,7 +1392,8 @@ update_apply(
             memset(&attributes[signature_block], 0, sizeof(attributes[signature_block]));
     }
     if (has_list) {
-        uint32_t list_block = archive->mpq_map[list_number].block_table_indices;
+        uint32_t list_block =
+            archive->mpq_entry[archive->mpq_map[list_number].entry_index].source_index;
 
         options.flags = LIBMPQ_FILE_FLAG_SINGLE;
         options.compression_first = 0;
@@ -1406,7 +1411,8 @@ update_apply(
             goto done;
     }
     if (has_attributes) {
-        uint32_t attributes_block = archive->mpq_map[attributes_number].block_table_indices;
+        uint32_t attributes_block =
+            archive->mpq_entry[archive->mpq_map[attributes_number].entry_index].source_index;
 
         result = libmpq__attributes_serialize(
             attributes, archive->mpq_header.block_table_count, attributes_block, attribute_flags,

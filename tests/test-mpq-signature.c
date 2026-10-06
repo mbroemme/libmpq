@@ -594,6 +594,8 @@ test_logical_extent(void)
     mpq_archive_s archive = { 0 };
     mpq_block_s block = { 0 };
     mpq_block_ex_s high = { 0 };
+    mpq_entry_s entries[2] = { 0 };
+    uint32_t entry_index = 1;
     mpq_hash_s hash = { 0 };
     mpq_source_s source = { 0 };
     uint64_t extent = 99;
@@ -612,6 +614,9 @@ test_logical_extent(void)
     archive.mpq_hash = &hash;
     archive.mpq_block = &block;
     archive.mpq_block_ex = &high;
+    archive.mpq_entry = entries;
+    archive.entry_count = 2;
+    archive.classic_entry_indices = &entry_index;
     archive.file_size = UINT64_MAX;
     archive.source = &source;
     source.size = UINT64_MAX;
@@ -623,6 +628,7 @@ test_logical_extent(void)
     block.packed_size = block.unpacked_size = 72;
     block.flags = LIBMPQ_FLAG_EXISTS;
     high.offset_high = 1;
+    libmpq__entry_from_classic(&entries[1], &block, &high, 0);
     TEST_CHECK(libmpq__archive_signature_extent(&archive, &extent) == 0);
     TEST_CHECK(extent == (UINT64_C(1) << 32) + 136);
     TEST_CHECK(libmpq__archive_signatures(&archive, &signatures) == 0);
@@ -663,6 +669,7 @@ test_logical_extent(void)
     block.packed_size = 0;
     block.unpacked_size = 0;
     high.offset_high = UINT16_MAX;
+    libmpq__entry_from_classic(&entries[1], &block, &high, 0);
     TEST_CHECK(libmpq__archive_required_extent(&archive, &extent) == 0);
     TEST_CHECK(extent == 152);
     return 0;
@@ -900,7 +907,7 @@ main(void)
     uint32_t mismatch = 99;
     uint32_t types = 99;
     uint32_t flags;
-    uint32_t saved_offset;
+    uint64_t saved_offset;
     uint32_t i;
     uint64_t signature_offset;
     uint64_t required_extent;
@@ -974,15 +981,15 @@ main(void)
     TEST_CHECK(
         libmpq__archive_verify(a, 1, NULL, 128, &mismatch) == LIBMPQ_ERROR_FORMAT && mismatch == 0
     );
-    index = a->mpq_map[number].block_table_indices;
+    index = a->mpq_map[number].entry_index;
     for (i = 71; i <= 73; i += 2) {
-        a->mpq_block[index].unpacked_size = i;
+        a->mpq_entry[index].unpacked_size = i;
         TEST_CHECK(libmpq__archive_signatures(a, &types) == LIBMPQ_ERROR_FORMAT && types == 0);
     }
-    a->mpq_block[index].unpacked_size = 72;
-    flags = a->mpq_block[index].flags;
+    a->mpq_entry[index].unpacked_size = 72;
+    flags = a->mpq_entry[index].flags;
     TEST_CHECK(flags == LIBMPQ_FLAG_EXISTS);
-    a->mpq_block[index].flags |= LIBMPQ_FLAG_SINGLE;
+    a->mpq_entry[index].flags |= LIBMPQ_FLAG_SINGLE;
     TEST_CHECK(
         libmpq__archive_verify(a, 1, test_signature_public_key, 128, &mismatch) == 0 &&
         mismatch == 0
@@ -990,25 +997,25 @@ main(void)
     for (i = 0; i < 3; ++i) {
         static const uint32_t invalid_flags[] = { LIBMPQ_FLAG_COMPRESS_MULTI, LIBMPQ_FLAG_ENCRYPTED,
                                                   LIBMPQ_FLAG_CRC };
-        a->mpq_block[index].flags = flags | invalid_flags[i];
+        a->mpq_entry[index].flags = flags | invalid_flags[i];
         TEST_CHECK(
             libmpq__archive_verify(a, 1, test_signature_public_key, 128, &mismatch) ==
                 LIBMPQ_ERROR_FORMAT &&
             mismatch == 0
         );
     }
-    a->mpq_block[index].flags = flags;
-    a->mpq_block[index].packed_size = 71;
+    a->mpq_entry[index].flags = flags;
+    a->mpq_entry[index].packed_size = 71;
     TEST_CHECK(libmpq__archive_signatures(a, &types) == LIBMPQ_ERROR_FORMAT);
-    a->mpq_block[index].packed_size = 72;
+    a->mpq_entry[index].packed_size = 72;
     saved_offset = a->mpq_header.hash_table_offset;
     a->mpq_header.hash_table_offset = a->mpq_header.archive_size;
     TEST_CHECK(libmpq__archive_signatures(a, &types) == LIBMPQ_ERROR_FORMAT && types == 0);
     a->mpq_header.hash_table_offset = saved_offset;
-    saved_offset = a->mpq_block[0].offset;
-    a->mpq_block[0].offset = a->mpq_header.archive_size;
+    saved_offset = a->mpq_entry[0].offset;
+    a->mpq_entry[0].offset = a->mpq_header.archive_size;
     TEST_CHECK(libmpq__archive_signatures(a, &types) == LIBMPQ_ERROR_FORMAT && types == 0);
-    a->mpq_block[0].offset = saved_offset;
+    a->mpq_entry[0].offset = saved_offset;
     a->source->backend.read_at = failed_read;
     TEST_CHECK(
         libmpq__archive_verify(a, 1, test_signature_public_key, 128, &mismatch) ==

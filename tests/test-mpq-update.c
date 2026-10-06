@@ -354,7 +354,12 @@ share_archive_block(const char *path, const char *source_name, const char *alias
     if (libmpq__file_number(archive, source_name, &first) != 0 ||
         libmpq__file_number(archive, alias_name, &second) != 0)
         goto fail;
-    block = archive->mpq_map[first].block_table_indices;
+    if (archive->mpq_entry[archive->mpq_map[first].entry_index].source_kind !=
+            LIBMPQ_ENTRY_SOURCE_CLASSIC ||
+        archive->mpq_entry[archive->mpq_map[second].entry_index].source_kind !=
+            LIBMPQ_ENTRY_SOURCE_CLASSIC)
+        goto fail;
+    block = archive->mpq_entry[archive->mpq_map[first].entry_index].source_index;
     count = archive->mpq_header.hash_table_count;
     bytes = (size_t)count * LIBMPQ_HASH_ENTRY_WIRE_SIZE;
     raw = malloc(bytes);
@@ -364,7 +369,8 @@ share_archive_block(const char *path, const char *source_name, const char *alias
         mpq_hash_s *entry = &archive->mpq_hash[i];
         size_t at = (size_t)i * LIBMPQ_HASH_ENTRY_WIRE_SIZE;
 
-        if (entry->block_table_index == archive->mpq_map[second].block_table_indices)
+        if (entry->block_table_index ==
+            archive->mpq_entry[archive->mpq_map[second].entry_index].source_index)
             entry->block_table_index = block;
         libmpq__store_le32(raw + at, entry->hash_a);
         libmpq__store_le32(raw + at + 4u, entry->hash_b);
@@ -714,7 +720,7 @@ test_public_signatures(void)
     uint8_t *packed = NULL;
     uint8_t *after = NULL;
     uint32_t wave_number;
-    uint32_t wave_block;
+    uint32_t wave_entry;
     uint32_t packed_size;
     uint64_t packed_offset;
     uint32_t signatures = UINT32_MAX;
@@ -724,9 +730,9 @@ test_public_signatures(void)
     UPDATE_CHECK(copy_file(FIXTURE_DIR "/mpq-v1-features.mpq", "update-signatures.mpq") == 0);
     UPDATE_CHECK(libmpq__archive_open(&archive, "update-signatures.mpq", 0) == 0);
     UPDATE_CHECK(libmpq__file_number(archive, "wave-mono.wav", &wave_number) == 0);
-    wave_block = archive->mpq_map[wave_number].block_table_indices;
-    packed_size = archive->mpq_block[wave_block].packed_size;
-    packed_offset = archive->mpq_block[wave_block].offset;
+    wave_entry = archive->mpq_map[wave_number].entry_index;
+    packed_size = archive->mpq_entry[wave_entry].packed_size;
+    packed_offset = archive->mpq_entry[wave_entry].offset;
     packed = malloc(packed_size);
     after = malloc(packed_size);
     UPDATE_CHECK(packed != NULL && after != NULL);
@@ -753,9 +759,9 @@ test_public_signatures(void)
         UPDATE_CHECK(attributes.filetime == 0);
     }
     UPDATE_CHECK(libmpq__file_number(archive, "wave-mono.wav", &wave_number) == 0);
-    UPDATE_CHECK(archive->mpq_map[wave_number].block_table_indices == wave_block);
-    UPDATE_CHECK(archive->mpq_block[wave_block].packed_size == packed_size);
-    UPDATE_CHECK(archive->mpq_block[wave_block].offset == packed_offset);
+    UPDATE_CHECK(archive->mpq_map[wave_number].entry_index == wave_entry);
+    UPDATE_CHECK(archive->mpq_entry[wave_entry].packed_size == packed_size);
+    UPDATE_CHECK(archive->mpq_entry[wave_entry].offset == packed_offset);
     UPDATE_CHECK(libmpq__source_read_at(archive->source, packed_offset, after, packed_size) == 0);
     UPDATE_CHECK(memcmp(after, packed, packed_size) == 0);
     UPDATE_CHECK(libmpq__archive_signatures(archive, &signatures) == 0);
@@ -878,7 +884,7 @@ test_public_replace_options(void)
     mpq_archive_s *archive = NULL;
     uint32_t number;
     uint32_t method;
-    uint32_t block;
+    uint32_t entry_index;
 
     memset(replacement, 'Q', sizeof(replacement));
     TEST_CHECK(create_edit_archive("update-options-data.mpq", 0) == 0);
@@ -903,8 +909,8 @@ test_public_replace_options(void)
     TEST_CHECK(libmpq__archive_open(&archive, "update-options-data.mpq", 0) == 0);
     TEST_CHECK(check_named(archive, "plain", replacement, sizeof(replacement)) == 0);
     TEST_CHECK(libmpq__file_number(archive, "plain", &number) == 0);
-    block = archive->mpq_map[number].block_table_indices;
-    TEST_CHECK((archive->mpq_block[block].flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0);
+    entry_index = archive->mpq_map[number].entry_index;
+    TEST_CHECK((archive->mpq_entry[entry_index].flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0);
     TEST_CHECK(libmpq__block_compression(archive, number, 0, &method) == 0);
     TEST_CHECK(method == LIBMPQ_COMPRESSION_ZLIB);
     TEST_CHECK(libmpq__block_compression(archive, number, 1, &method) == 0);

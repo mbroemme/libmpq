@@ -495,7 +495,7 @@ patch_read_named(mpq_archive_s *archive, const char *name, uint8_t **data, size_
 static int32_t
 patch_member_info(mpq_archive_s *archive, uint32_t number, mpq_patch_info_s *info)
 {
-    mpq_block_s *block;
+    mpq_entry_s *block;
     uint8_t fixed[LIBMPQ_PATCH_INFO_SIZE];
     uint64_t offset;
     uint32_t physical;
@@ -504,14 +504,13 @@ patch_member_info(mpq_archive_s *archive, uint32_t number, mpq_patch_info_s *inf
     if (archive == NULL || info == NULL ||
         libmpq__reader_validate_file_number(archive, number) != 0)
         return LIBMPQ_ERROR_EXIST;
-    physical = archive->mpq_map[number].block_table_indices;
-    block = &archive->mpq_block[physical];
+    physical = archive->mpq_map[number].entry_index;
+    block = &archive->mpq_entry[physical];
     if ((block->flags & LIBMPQ_FILE_FLAG_PATCH_FILE) == 0)
         return LIBMPQ_ERROR_EXIST;
     if (block->packed_size < LIBMPQ_PATCH_INFO_SIZE)
         return LIBMPQ_ERROR_FORMAT;
-    offset = (uint64_t)archive->archive_offset + block->offset +
-             ((uint64_t)archive->mpq_block_ex[physical].offset_high << 32);
+    offset = (uint64_t)archive->archive_offset + block->offset;
     status = libmpq__source_read_at(archive->source, offset, fixed, sizeof(fixed));
     if (status != 0)
         return status;
@@ -545,7 +544,7 @@ patch_read_incremental(
 )
 {
     mpq_archive_s *clone = NULL;
-    mpq_block_s *block;
+    mpq_entry_s *block;
     uint8_t *body = NULL;
     mpq_patch_info_s info;
     uint64_t shifted;
@@ -559,20 +558,21 @@ patch_read_incremental(
     status = patch_member_info(archive, number, &info);
     if (status != 0)
         return status;
-    physical = archive->mpq_map[number].block_table_indices;
     prefix_size = info.length;
     status = libmpq__archive_clone(&clone, archive);
     if (status != 0)
         goto done;
-    block = &clone->mpq_block[physical];
-    shifted = (uint64_t)block->offset +
-              ((uint64_t)clone->mpq_block_ex[physical].offset_high << 32) + prefix_size;
+    status = libmpq__reader_validate_file_number(clone, number);
+    if (status != 0)
+        goto done;
+    physical = clone->mpq_map[number].entry_index;
+    block = &clone->mpq_entry[physical];
+    shifted = block->offset + prefix_size;
     if (shifted > UINT32_MAX && clone->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE) {
         status = LIBMPQ_ERROR_FORMAT;
         goto done;
     }
-    block->offset = (uint32_t)shifted;
-    clone->mpq_block_ex[physical].offset_high = (uint16_t)(shifted >> 32);
+    block->offset = shifted;
     block->packed_size -= prefix_size;
     block->unpacked_size = info.data_size;
     block->flags &= ~LIBMPQ_FILE_FLAG_PATCH_FILE;
@@ -644,8 +644,9 @@ libmpq__patch_payload_read(
 static uint8_t
 patch_live_hash(const mpq_archive_s *archive, const mpq_hash_s *hash)
 {
-    return hash->block_table_index < archive->mpq_header.block_table_count &&
-           (archive->mpq_block[hash->block_table_index].flags & LIBMPQ_FLAG_EXISTS) != 0;
+    uint32_t index;
+    return libmpq__entry_index_from_classic(archive, hash->block_table_index, &index) == 0 &&
+           (archive->mpq_entry[index].flags & LIBMPQ_FLAG_EXISTS) != 0;
 }
 
 static uint32_t
@@ -676,10 +677,13 @@ patch_matching_hash(const mpq_archive_s *archive, const mpq_patch_entry_s *needl
 static uint32_t
 patch_number_for_block(const mpq_archive_s *archive, uint32_t block)
 {
-    for (uint32_t i = 0; i < archive->files; i++)
-        if (archive->mpq_map[i].block_table_indices == block)
-            return i;
-    return UINT32_MAX;
+    uint32_t index;
+    uint32_t number;
+    if (libmpq__entry_index_from_classic(archive, block, &index) != 0)
+        return UINT32_MAX;
+    number = archive->mpq_entry[index].file_number;
+    return number < archive->files && archive->mpq_map[number].entry_index == index ? number
+                                                                                    : UINT32_MAX;
 }
 
 /* Resolve identity first; the source's block index only decodes its wire row. */
@@ -690,6 +694,7 @@ patch_attribute_for_identity(
 )
 {
     uint32_t slot;
+    uint32_t index;
 
     memset(attributes, 0, sizeof(*attributes));
     if (archive->attributes == NULL)
@@ -697,9 +702,11 @@ patch_attribute_for_identity(
     slot = patch_hash_slot(archive, hash_a, hash_b, locale, platform);
     if (slot == UINT32_MAX)
         return LIBMPQ_ERROR_EXIST;
-    libmpq__attributes_get(
-        archive->attributes, archive->mpq_hash[slot].block_table_index, attributes
-    );
+    if (libmpq__entry_index_from_classic(
+            archive, archive->mpq_hash[slot].block_table_index, &index
+        ) != 0)
+        return LIBMPQ_ERROR_FORMAT;
+    libmpq__attributes_get(archive->attributes, archive->mpq_entry[index].source_index, attributes);
     return 0;
 }
 
@@ -1015,12 +1022,17 @@ patch_new_block(mpq_archive_s *archive, uint32_t *index)
 {
     uint32_t block = archive->mpq_header.block_table_count;
     size_t count = (size_t)block + 1;
+    uint32_t entry_index = archive->entry_count;
+    size_t entries = (size_t)entry_index + 1;
     void *grown;
 
-    if (block == UINT32_MAX || count > SIZE_MAX / sizeof(*archive->mpq_block) ||
+    if (block == UINT32_MAX || entry_index == UINT32_MAX ||
+        count > SIZE_MAX / sizeof(*archive->classic_entry_indices) ||
+        count > SIZE_MAX / sizeof(*archive->mpq_block) ||
         count > SIZE_MAX / sizeof(*archive->mpq_block_ex) ||
-        count > SIZE_MAX / sizeof(*archive->mpq_file) ||
-        count > SIZE_MAX / sizeof(*archive->mpq_map))
+        entries > SIZE_MAX / sizeof(*archive->mpq_entry) ||
+        entries > SIZE_MAX / sizeof(*archive->mpq_file) ||
+        entries > SIZE_MAX / sizeof(*archive->mpq_map))
         return LIBMPQ_ERROR_SIZE;
     grown = realloc(archive->mpq_block, count * sizeof(*archive->mpq_block));
     if (grown == NULL)
@@ -1030,18 +1042,33 @@ patch_new_block(mpq_archive_s *archive, uint32_t *index)
     if (grown == NULL)
         return LIBMPQ_ERROR_MALLOC;
     archive->mpq_block_ex = grown;
-    grown = realloc(archive->mpq_file, count * sizeof(*archive->mpq_file));
+    grown =
+        realloc(archive->classic_entry_indices, count * sizeof(*archive->classic_entry_indices));
+    if (grown == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    archive->classic_entry_indices = grown;
+    grown = realloc(archive->mpq_file, entries * sizeof(*archive->mpq_file));
     if (grown == NULL)
         return LIBMPQ_ERROR_MALLOC;
     archive->mpq_file = grown;
-    grown = realloc(archive->mpq_map, count * sizeof(*archive->mpq_map));
+    grown = realloc(archive->mpq_map, entries * sizeof(*archive->mpq_map));
     if (grown == NULL)
         return LIBMPQ_ERROR_MALLOC;
     archive->mpq_map = grown;
+    grown = realloc(archive->mpq_entry, entries * sizeof(*archive->mpq_entry));
+    if (grown == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    archive->mpq_entry = grown;
     memset(&archive->mpq_block[block], 0, sizeof(*archive->mpq_block));
     memset(&archive->mpq_block_ex[block], 0, sizeof(*archive->mpq_block_ex));
-    archive->mpq_file[block] = NULL;
-    memset(&archive->mpq_map[block], 0, sizeof(*archive->mpq_map));
+    archive->mpq_file[entry_index] = NULL;
+    memset(&archive->mpq_map[entry_index], 0, sizeof(*archive->mpq_map));
+    archive->classic_entry_indices[block] = entry_index;
+    libmpq__entry_from_classic(
+        &archive->mpq_entry[entry_index], &archive->mpq_block[block], &archive->mpq_block_ex[block],
+        block
+    );
+    archive->entry_count++;
     archive->mpq_header.block_table_count++;
     *index = block;
     return 0;
@@ -1084,6 +1111,7 @@ patch_append_member(
 {
     libmpq__off_t absolute = libmpq__file_tell(output);
     uint64_t offset;
+    uint32_t index;
     int32_t status;
 
     if (absolute < archive->archive_offset)
@@ -1094,12 +1122,19 @@ patch_append_member(
     status = patch_new_block(archive, block);
     if (status != 0)
         return status;
+    status = libmpq__entry_index_from_classic(archive, *block, &index);
+    if (status != 0)
+        return status;
     if (size != 0 && fwrite(data, 1, size, output) != size)
         return LIBMPQ_ERROR_WRITE;
     archive->mpq_block[*block].offset = (uint32_t)offset;
     archive->mpq_block[*block].packed_size = (uint32_t)size;
     archive->mpq_block[*block].unpacked_size = (uint32_t)size;
     archive->mpq_block[*block].flags = LIBMPQ_FLAG_EXISTS | LIBMPQ_FLAG_SINGLE;
+    libmpq__entry_from_classic(
+        &archive->mpq_entry[index], &archive->mpq_block[*block], &archive->mpq_block_ex[*block],
+        *block
+    );
     return 0;
 }
 
@@ -1500,7 +1535,7 @@ patch_stage_hash(
     uint32_t slot = patch_matching_hash(lower, entry);
     uint32_t patch_number = patch_number_for_block(patch, entry->block_index);
     uint32_t lower_number = UINT32_MAX;
-    uint32_t flags = patch->mpq_block[entry->block_index].flags;
+    uint32_t flags;
     uint8_t *payload = NULL;
     uint8_t *base = NULL;
     uint8_t *result = NULL;
@@ -1513,6 +1548,7 @@ patch_stage_hash(
 
     if (patch_number == UINT32_MAX)
         return LIBMPQ_ERROR_FORMAT;
+    flags = patch->mpq_entry[patch->mpq_map[patch_number].entry_index].flags;
     if (slot != UINT32_MAX)
         lower_number = patch_number_for_block(lower, lower->mpq_hash[slot].block_table_index);
     if ((flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) != 0) {
@@ -1655,11 +1691,15 @@ patch_apply_layer(mpq_patch_view_s *view, const mpq_patch_source_s *source)
         }
         detected = 1;
     }
-    for (uint32_t i = 0; i < patch->mpq_header.hash_table_count; i++)
+    for (uint32_t i = 0; i < patch->mpq_header.hash_table_count; i++) {
+        uint32_t index;
         if (patch_live_hash(patch, &patch->mpq_hash[i]) &&
-            (patch->mpq_block[patch->mpq_hash[i].block_table_index].flags &
+            libmpq__entry_index_from_classic(patch, patch->mpq_hash[i].block_table_index, &index) ==
+                0 &&
+            (patch->mpq_entry[index].flags &
              (LIBMPQ_FILE_FLAG_PATCH_FILE | LIBMPQ_FILE_FLAG_DELETE_MARKER)) != 0)
             detected = 1;
+    }
     status = patch_entries(patch, &entries, &entry_count);
     if (status != 0)
         goto done;
@@ -1731,10 +1771,14 @@ patch_apply_layer(mpq_patch_view_s *view, const mpq_patch_source_s *source)
         goto done;
     for (uint32_t i = 0; i < entry_count; i++) {
         const mpq_patch_entry_s *entry = &entries[i];
+        uint32_t index;
 
         if (!entry->live || entry->internal)
             continue;
-        if ((patch->mpq_block[entry->block_index].flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) != 0 &&
+        status = libmpq__entry_index_from_classic(patch, entry->block_index, &index);
+        if (status != 0)
+            goto done;
+        if ((patch->mpq_entry[index].flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) != 0 &&
             patch_matching_hash(target, entry) == UINT32_MAX)
             continue;
         status = patch_stage_hash(
@@ -1743,8 +1787,7 @@ patch_apply_layer(mpq_patch_view_s *view, const mpq_patch_source_s *source)
         );
         if (status != 0)
             goto done;
-        if (has_attributes &&
-            (patch->mpq_block[entry->block_index].flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) == 0)
+        if (has_attributes && (patch->mpq_entry[index].flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) == 0)
             changed[i] = 1;
         mutated = 1;
     }

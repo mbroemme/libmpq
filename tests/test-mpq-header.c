@@ -19,11 +19,13 @@
 
 #include "../src/mpq-archive.h"
 #include "../src/mpq-crypto.h"
+#include "../src/mpq-endian.h"
 #include "../src/mpq-header.h"
 #include "test-mpq-helper.h"
 
 #include <libmpq/mpq.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* Check both directions against independent v1 and v2 wire vectors. */
@@ -248,12 +250,13 @@ v3_fixture(v3_source_s *source, uint32_t header_size, uint64_t shift, uint64_t b
 
 /* Exercise public lookup, extraction and streaming with full or short v3 headers. */
 static int
-test_v3_classic(uint32_t header_size, uint64_t shift, uint64_t base)
+test_v3_classic(uint32_t header_size, uint64_t shift, uint64_t base, int adjusted)
 {
     v3_source_s source;
     mpq_archive_s *archive = NULL;
     mpq_stream_s *stream = NULL;
     uint8_t actual[9000];
+    uint8_t expected[9000];
     uint32_t number;
     uint32_t version;
     uint32_t files;
@@ -261,6 +264,27 @@ test_v3_classic(uint32_t header_size, uint64_t shift, uint64_t base)
     libmpq__off_t size;
 
     TEST_CHECK(v3_fixture(&source, header_size, shift, base) == 0);
+    memcpy(expected, source.bytes + header_size + 82, sizeof(expected));
+    if (adjusted) {
+        uint8_t *raw = source.bytes + header_size + 64;
+        uint32_t table_key = libmpq__crypto_hash_string("(block table)", 0x300);
+        uint32_t key =
+            (libmpq__crypto_hash_string("payload.bin", 0x300) + header_size + 82) ^ 9000u;
+        TEST_CHECK(libmpq__crypto_decrypt_block(raw, 16, table_key) == 0);
+        libmpq__store_le32(raw + 12, LIBMPQ_FLAG_EXISTS | LIBMPQ_FLAG_ENCRYPTED | 0x00020000u);
+        TEST_CHECK(libmpq__crypto_encrypt_block(raw, 16, table_key) == 0);
+        for (uint32_t i = 0, position = 0; position < sizeof(expected); ++i) {
+            uint32_t size = sizeof(expected) - position;
+            if (size > 4096)
+                size = 4096;
+            TEST_CHECK(
+                libmpq__crypto_encrypt_block(
+                    source.bytes + header_size + 82 + position, size, key + i
+                ) == 0
+            );
+            position += size;
+        }
+    }
     TEST_CHECK(
         libmpq__archive_open_io(
             &archive, &source, v3_read_at, (libmpq__off_t)source.source_size, base != 0 ? -1 : 0,
@@ -276,19 +300,38 @@ test_v3_classic(uint32_t header_size, uint64_t shift, uint64_t base)
     );
     TEST_CHECK(archive->mpq_header_v3.bet_table_offset == 0);
     TEST_CHECK(archive->mpq_header_v3.het_table_offset == 0);
+
+    /* Consumption needs canonical metadata, not decoded classic block storage. */
+    free(archive->mpq_block);
+    free(archive->mpq_block_ex);
+    archive->mpq_block = NULL;
+    archive->mpq_block_ex = NULL;
     TEST_CHECK(libmpq__file_number(archive, "payload.bin", &number) == 0);
     TEST_CHECK(libmpq__file_size_unpacked(archive, number, &size) == 0 && size == 9000);
+    TEST_CHECK(
+        libmpq__file_offset(archive, number, &size) == 0 &&
+        (uint64_t)size == shift + header_size + 82
+    );
     memset(actual, 0xa5, sizeof(actual));
-    TEST_CHECK(libmpq__file_read(archive, number, actual, sizeof(actual), &transferred) == 0);
-    TEST_CHECK(transferred == 9000);
-    TEST_CHECK(memcmp(actual, source.bytes + header_size + 82, sizeof(actual)) == 0);
+    if (adjusted) {
+        TEST_CHECK(libmpq__stream_open_name(archive, "payload.bin", &stream) == 0);
+        TEST_CHECK(
+            libmpq__stream_read(stream, actual, sizeof(actual), &transferred) == 0 &&
+            transferred == 9000
+        );
+        TEST_CHECK(libmpq__stream_close(stream) == 0);
+    } else {
+        TEST_CHECK(libmpq__file_read(archive, number, actual, sizeof(actual), &transferred) == 0);
+        TEST_CHECK(transferred == 9000);
+    }
+    TEST_CHECK(memcmp(actual, expected, sizeof(actual)) == 0);
     TEST_CHECK(libmpq__stream_open_name(archive, "payload.bin", &stream) == 0);
     memset(actual, 0xa5, sizeof(actual));
     TEST_CHECK(libmpq__stream_read(stream, actual, 4300, &transferred) == 0 && transferred == 4300);
     TEST_CHECK(
         libmpq__stream_read(stream, actual + 4300, 4700, &transferred) == 0 && transferred == 4700
     );
-    TEST_CHECK(memcmp(actual, source.bytes + header_size + 82, sizeof(actual)) == 0);
+    TEST_CHECK(memcmp(actual, expected, sizeof(actual)) == 0);
     TEST_CHECK(libmpq__stream_read(stream, actual, 1, &transferred) == 0 && transferred == 0);
     TEST_CHECK(libmpq__stream_close(stream) == 0);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
@@ -526,9 +569,10 @@ int
 main(void)
 {
     if (test_header_vectors() != 0 || test_truncated_headers() != 0 || test_v3_vector() != 0 ||
-        test_v3_classic(68, 0, 0) != 0 || test_v3_classic(32, 0, 0) != 0 ||
-        test_v3_classic(44, 0, 0) != 0 || test_v3_classic(60, 0, 512) != 0 ||
-        test_v3_classic(68, UINT64_C(0x100000000), 512) != 0 || test_v3_rejection() != 0 ||
+        test_v3_classic(68, 0, 0, 0) != 0 || test_v3_classic(32, 0, 0, 0) != 0 ||
+        test_v3_classic(44, 0, 0, 0) != 0 || test_v3_classic(60, 0, 512, 0) != 0 ||
+        test_v3_classic(68, UINT64_C(0x100000000), 512, 0) != 0 ||
+        test_v3_classic(68, UINT64_C(0x100000000), 512, 1) != 0 || test_v3_rejection() != 0 ||
         test_v3_optional_tables() != 0 || test_v3_mixed_tables() != 0)
         return 1;
     return 0;

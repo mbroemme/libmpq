@@ -197,10 +197,7 @@ test_pkware_SOURCES = test-mpq-pkware.c \
 	../src/mpq-endian.c \
 	$(COMMON_SOURCES)
 test_reader_SOURCES = test-mpq-reader.c $(COMMON_SOURCES)
-test_reader_LDADD = \
-	$(top_builddir)/src/mpq-crypto.lo \
-	$(top_builddir)/src/mpq-endian.lo \
-	$(LDADD)
+test_reader_LDADD = $(test_attributes_LDADD)
 test_stream_SOURCES = test-mpq-stream.c $(COMMON_SOURCES)
 test_patch_reader_SOURCES = test-mpq-patch-reader.c $(COMMON_SOURCES)
 test_patch_reader_LDADD = $(top_builddir)/src/mpq-patch-reader.lo $(test_attributes_LDADD)

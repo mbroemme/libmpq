@@ -125,19 +125,18 @@ check_transform(const char *path, const char expected[4])
     uint8_t header[68];
     uint64_t offset;
     uint32_t number;
-    uint32_t block;
+    uint32_t entry_index;
     int failed = 1;
 
     if (libmpq__archive_open(&archive, path, 0) != 0)
         goto done;
     if (libmpq__file_number(archive, "payload.bin", &number) != 0)
         goto done;
-    block = archive->mpq_map[number].block_table_indices;
-    if ((archive->mpq_block[block].flags & LIBMPQ_FILE_FLAG_PATCH_FILE) == 0 ||
-        archive->mpq_block[block].packed_size < sizeof(prefix) + sizeof(header))
+    entry_index = archive->mpq_map[number].entry_index;
+    if ((archive->mpq_entry[entry_index].flags & LIBMPQ_FILE_FLAG_PATCH_FILE) == 0 ||
+        archive->mpq_entry[entry_index].packed_size < sizeof(prefix) + sizeof(header))
         goto done;
-    offset = (uint64_t)archive->archive_offset + archive->mpq_block[block].offset +
-             ((uint64_t)archive->mpq_block_ex[block].offset_high << 32);
+    offset = (uint64_t)archive->archive_offset + archive->mpq_entry[entry_index].offset;
     if (libmpq__source_read_at(archive->source, offset, prefix, sizeof(prefix)) != 0 ||
         libmpq__patch_info_parse(prefix, sizeof(prefix), &info) != 0 ||
         info.length != sizeof(prefix) ||

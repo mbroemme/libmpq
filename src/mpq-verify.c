@@ -59,7 +59,7 @@ libmpq__verify_block(
     if (libmpq__reader_validate_file_number(archive, file_number) < 0 ||
         libmpq__reader_validate_block_number(archive, file_number, block_number) < 0)
         return LIBMPQ_ERROR_EXIST;
-    storage = archive->mpq_block[archive->mpq_map[file_number].block_table_indices].flags;
+    storage = archive->mpq_entry[archive->mpq_map[file_number].entry_index].flags;
     if ((storage & LIBMPQ_FLAG_CRC) == 0 || (storage & LIBMPQ_FLAG_SINGLE) != 0 ||
         (storage & (LIBMPQ_FLAG_COMPRESSED | LIBMPQ_FLAG_COMPRESS_PKZIP)) == 0)
         return LIBMPQ_ERROR_EXIST;
@@ -154,7 +154,7 @@ libmpq__verify_file(
         verify_flags &= ~LIBMPQ_VERIFY_FILE_CRC32;
     if ((attributes.flags & LIBMPQ_ATTRIBUTE_MD5) == 0)
         verify_flags &= ~LIBMPQ_VERIFY_FILE_MD5;
-    storage = archive->mpq_block[archive->mpq_map[file_number].block_table_indices].flags;
+    storage = archive->mpq_entry[archive->mpq_map[file_number].entry_index].flags;
     if ((storage & LIBMPQ_FLAG_CRC) == 0 || (storage & LIBMPQ_FLAG_SINGLE) != 0 ||
         (storage & (LIBMPQ_FLAG_COMPRESSED | LIBMPQ_FLAG_COMPRESS_PKZIP)) == 0)
         verify_flags &= ~LIBMPQ_VERIFY_SECTOR_CRC;

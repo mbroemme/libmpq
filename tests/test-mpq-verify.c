@@ -240,7 +240,7 @@ test_sectors(
     REQUIRE(status == 0);
     REQUIRE(libmpq__archive_open(&archive, path, 0) == 0);
     REQUIRE(libmpq__file_number(archive, "payload", &number) == 0);
-    index = archive->mpq_map[number].block_table_indices;
+    index = archive->mpq_map[number].entry_index;
     for (i = 0; i < sectors; ++i) {
         uint32_t stored = UINT32_MAX;
         bits = UINT32_MAX;
@@ -297,7 +297,7 @@ test_sectors(
         REQUIRE(libmpq__stream_close(stream) == 0);
 
         REQUIRE(libmpq__block_size_unpacked(archive, number, sectors - 1, &tail_size) == 0);
-        failure.offset = (uint64_t)archive->archive_offset + archive->mpq_block[index].offset +
+        failure.offset = (uint64_t)archive->archive_offset + archive->mpq_entry[index].offset +
                          offsets[sectors - 1];
         failure.reads = 0;
         failure_install(archive->source, &failure, corrupt_read);
@@ -318,7 +318,7 @@ test_sectors(
         REQUIRE(
             fseek(
                 file,
-                (long)((uint64_t)archive->archive_offset + archive->mpq_block[index].offset +
+                (long)((uint64_t)archive->archive_offset + archive->mpq_entry[index].offset +
                        offsets[sectors] + sizeof(checksum)),
                 SEEK_SET
             ) == 0
@@ -352,7 +352,7 @@ test_sectors(
         free(table);
         REQUIRE(status == 0 && observed == LIBMPQ_VERIFY_SECTOR_CRC);
         failure.offset =
-            (uint64_t)archive->archive_offset + archive->mpq_block[index].offset + offsets[1];
+            (uint64_t)archive->archive_offset + archive->mpq_entry[index].offset + offsets[1];
         failure.reads = 0;
         failure_install(archive->source, &failure, fail_read);
         bits = UINT32_MAX;
@@ -370,9 +370,9 @@ test_sectors(
         REQUIRE(archive->mpq_file[number] == NULL);
     }
     if (!absent) {
-        uint32_t saved;
-        saved = archive->mpq_block[index].packed_size;
-        archive->mpq_block[index].packed_size = position - 1;
+        uint64_t saved;
+        saved = archive->mpq_entry[index].packed_size;
+        archive->mpq_entry[index].packed_size = position - 1;
         REQUIRE(check_block_error(archive, number, 0, LIBMPQ_ERROR_FORMAT) == 0);
         bits = UINT32_MAX;
         REQUIRE(
@@ -386,13 +386,13 @@ test_sectors(
                  ? LIBMPQ_ERROR_READ
                  : 0)
         );
-        archive->mpq_block[index].packed_size = saved;
+        archive->mpq_entry[index].packed_size = saved;
         REQUIRE(archive->mpq_file[number] == NULL);
     }
     if (!absent && !encrypted) {
         read_failure_s failure;
         failure.offset =
-            (uint64_t)archive->archive_offset + archive->mpq_block[index].offset + offsets[0];
+            (uint64_t)archive->archive_offset + archive->mpq_entry[index].offset + offsets[0];
         failure.reads = 0;
         failure_install(archive->source, &failure, corrupt_method);
         bits = UINT32_MAX;
@@ -472,8 +472,8 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
                   : libmpq__archive_open(&archive, path, 0);
     REQUIRE(status == 0);
     REQUIRE(libmpq__file_number(archive, "payload", &number) == 0);
-    index = archive->mpq_map[number].block_table_indices;
-    REQUIRE(((archive->mpq_block[index].flags & LIBMPQ_FLAG_CRC) != 0) == !!eligible);
+    index = archive->mpq_map[number].entry_index;
+    REQUIRE(((archive->mpq_entry[index].flags & LIBMPQ_FLAG_CRC) != 0) == !!eligible);
     REQUIRE(libmpq__file_blocks(archive, number, &blocks) == 0);
     for (i = 0; i < blocks; ++i) {
         libmpq__off_t packed_size = -1;
@@ -488,7 +488,7 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
                                                               : LIBMPQ_COMPRESSION_ZLIB)
         );
         if (storage & LIBMPQ_FILE_FLAG_SINGLE) {
-            REQUIRE(packed_size == archive->mpq_block[index].packed_size);
+            REQUIRE((uint64_t)packed_size == archive->mpq_entry[index].packed_size);
         } else if (!eligible) {
             size_t remaining = size - (size_t)i * 512;
             REQUIRE(packed_size == (libmpq__off_t)(remaining < 512 ? remaining : 512));
@@ -533,13 +533,13 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
     REQUIRE(libmpq__file_read(archive, number, output, sizeof(output), &transferred) == 0);
     REQUIRE(transferred == (libmpq__off_t)size && memcmp(plain, output, size) == 0);
     if (eligible) {
-        uint64_t base = archive->archive_offset + (uint64_t)archive->mpq_block[index].offset;
+        uint64_t base = archive->archive_offset + (uint64_t)archive->mpq_entry[index].offset;
         REQUIRE(libmpq__file_blocks(archive, number, &blocks) == 0);
         REQUIRE(test_archive_offsets(archive, number, &offsets) == 0);
         if (!mpqe && blocks > 1)
             REQUIRE(test_archive_verify_offsets(archive, number, LIBMPQ_VERIFY_ALL) == 0);
         REQUIRE(offsets[0] == (blocks + 2) * 4);
-        REQUIRE(offsets[blocks + 1] == archive->mpq_block[index].packed_size);
+        REQUIRE(offsets[blocks + 1] == archive->mpq_entry[index].packed_size);
         REQUIRE(libmpq__reader_sector_checksums(archive, number, &checksums) == 0);
         REQUIRE(checksums != NULL);
         if (blocks > 8)

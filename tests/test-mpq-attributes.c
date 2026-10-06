@@ -357,7 +357,7 @@ test_verify(uint32_t version, uint32_t storage, uint32_t corrupt)
     if (storage == 0 || (storage & LIBMPQ_FILE_FLAG_SINGLE) != 0) {
 
         /* A CRC flag alone does not create a table for raw or single-unit files. */
-        archive->mpq_block[archive->mpq_map[number].block_table_indices].flags |= LIBMPQ_FLAG_CRC;
+        archive->mpq_entry[archive->mpq_map[number].entry_index].flags |= LIBMPQ_FLAG_CRC;
         bits = UINT32_MAX;
         REQUIRE(libmpq__file_verify(archive, number, LIBMPQ_VERIFY_SECTOR_CRC, &bits) == 0);
         REQUIRE(bits == 0);
@@ -382,7 +382,7 @@ test_verify(uint32_t version, uint32_t storage, uint32_t corrupt)
     );
 
     /* An I/O failure must leave the result zero. */
-    archive->mpq_block[archive->mpq_map[number].block_table_indices].offset = UINT32_MAX;
+    archive->mpq_entry[archive->mpq_map[number].entry_index].offset = UINT32_MAX;
     bits = UINT32_MAX;
     REQUIRE(
         libmpq__file_verify(

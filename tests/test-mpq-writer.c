@@ -738,8 +738,8 @@ test_property_case(uint32_t version, uint32_t sector_size, size_t payload_size)
             uint32_t flags = 0;
 
             if (libmpq__file_flags(archive, number, &flags) != 0 ||
-                flags != archive->mpq_block[archive->mpq_map[number].block_table_indices].flags) {
-                test_failure(__FILE__, __LINE__, "stored file flags match the block table");
+                flags != archive->mpq_entry[archive->mpq_map[number].entry_index].flags) {
+                test_failure(__FILE__, __LINE__, "stored file flags match canonical metadata");
                 goto cleanup;
             }
         }

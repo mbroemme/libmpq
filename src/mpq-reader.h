@@ -24,6 +24,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Translate a classic block row to validated canonical metadata, not a public number. */
+int32_t libmpq__entry_index_from_classic(
+    const mpq_archive_s *archive, uint32_t block_index, uint32_t *entry_index
+);
+
 int32_t libmpq__reader_block_size_packed(
     mpq_archive_s *archive, uint32_t number, uint32_t block, libmpq__off_t *packed_size
 );

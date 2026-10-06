@@ -169,6 +169,7 @@ libmpq__attributes_load(mpq_archive_s *archive)
     libmpq__off_t size = 0;
     libmpq__off_t transferred = 0;
     mpq_attributes_s *view;
+    const mpq_entry_s *entry;
     uint8_t *data;
     int32_t result;
 
@@ -185,6 +186,10 @@ libmpq__attributes_load(mpq_archive_s *archive)
     result = libmpq__file_size_unpacked(archive, number, &size);
     if (result != 0)
         return result;
+    entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+    if (entry->source_kind != LIBMPQ_ENTRY_SOURCE_CLASSIC ||
+        entry->source_index >= archive->mpq_header.block_table_count)
+        return LIBMPQ_ERROR_FORMAT;
     if (size < 8 || (uint64_t)size > SIZE_MAX ||
         (uint64_t)size > 8 + (uint64_t)archive->mpq_header.block_table_count * 32) {
         archive->attributes_error = LIBMPQ_ERROR_FORMAT;
@@ -206,8 +211,7 @@ libmpq__attributes_load(mpq_archive_s *archive)
     }
     if (result == 0)
         result = libmpq__attributes_parse(
-            data, (size_t)size, archive->mpq_header.block_table_count,
-            archive->mpq_map[number].block_table_indices, view
+            data, (size_t)size, archive->mpq_header.block_table_count, entry->source_index, view
         );
     if (result != 0) {
         free(data);

@@ -62,20 +62,19 @@ locate(mpq_archive_s *a, uint64_t *offset, uint64_t *extent, uint8_t payload[LIB
             entry->hash_b != h3)
             continue;
         if (index != UINT32_MAX || entry->locale != 0 || entry->platform != 0 ||
-            entry->block_table_index >= a->mpq_header.block_table_count)
+            libmpq__entry_index_from_classic(a, entry->block_table_index, &index) != 0)
             return LIBMPQ_ERROR_FORMAT;
-        index = entry->block_table_index;
     }
     if (index == UINT32_MAX)
         return LIBMPQ_ERROR_EXIST;
     result = libmpq__archive_signature_extent(a, &size);
     if (result != 0)
         return result;
-    if (a->mpq_block[index].unpacked_size != LIBMPQ_SIGNATURE_SIZE ||
-        a->mpq_block[index].packed_size != LIBMPQ_SIGNATURE_SIZE ||
-        (a->mpq_block[index].flags & ~LIBMPQ_FLAG_SINGLE) != LIBMPQ_FLAG_EXISTS)
+    if (a->mpq_entry[index].unpacked_size != LIBMPQ_SIGNATURE_SIZE ||
+        a->mpq_entry[index].packed_size != LIBMPQ_SIGNATURE_SIZE ||
+        (a->mpq_entry[index].flags & ~LIBMPQ_FLAG_SINGLE) != LIBMPQ_FLAG_EXISTS)
         return LIBMPQ_ERROR_FORMAT;
-    pos = a->mpq_block[index].offset | ((uint64_t)a->mpq_block_ex[index].offset_high << 32);
+    pos = a->mpq_entry[index].offset;
     if (a->archive_offset < 0 || size < a->mpq_header.header_size ||
         pos < a->mpq_header.header_size || pos > size || size - pos < LIBMPQ_SIGNATURE_SIZE ||
         (uint64_t)a->archive_offset > a->file_size ||
@@ -96,11 +95,11 @@ locate(mpq_archive_s *a, uint64_t *offset, uint64_t *extent, uint8_t payload[LIB
     if (table != 0 &&
         (table > size || table_size > size - table || overlaps(table, table_size, pos)))
         return LIBMPQ_ERROR_FORMAT;
-    for (i = 0; i < a->mpq_header.block_table_count; ++i) {
-        uint64_t other = a->mpq_block[i].offset | ((uint64_t)a->mpq_block_ex[i].offset_high << 32);
-        if ((a->mpq_block[i].flags & LIBMPQ_FLAG_EXISTS) && a->mpq_block[i].packed_size != 0) {
-            if (other > size || a->mpq_block[i].packed_size > size - other ||
-                (i != index && overlaps(other, a->mpq_block[i].packed_size, pos)))
+    for (i = 0; i < a->entry_count; ++i) {
+        uint64_t other = a->mpq_entry[i].offset;
+        if ((a->mpq_entry[i].flags & LIBMPQ_FLAG_EXISTS) && a->mpq_entry[i].packed_size != 0) {
+            if (other > size || a->mpq_entry[i].packed_size > size - other ||
+                (i != index && overlaps(other, a->mpq_entry[i].packed_size, pos)))
                 return LIBMPQ_ERROR_FORMAT;
         }
     }

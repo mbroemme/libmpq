@@ -59,15 +59,18 @@ struct mpq_archive
     uint32_t block_size;          /* Unpacked sector size in bytes. */
     libmpq__off_t archive_offset; /* Absolute archive start in the backing file. */
 
-    mpq_header_s mpq_header;       /* Decoded base archive header. */
-    mpq_header_ex_s mpq_header_ex; /* Decoded extended archive header. */
-    mpq_header_v3_s mpq_header_v3; /* Decoded v3 extension; zero for short headers. */
-    mpq_hash_s *mpq_hash;          /* Decrypted hash table. */
-    mpq_block_s *mpq_block;        /* Decrypted block table. */
-    mpq_block_ex_s *mpq_block_ex;  /* Optional extended block table. */
-    mpq_file_s **mpq_file;         /* Per-file cached sector tables. */
+    mpq_header_s mpq_header;         /* Decoded base archive header. */
+    mpq_header_ex_s mpq_header_ex;   /* Decoded extended archive header. */
+    mpq_header_v3_s mpq_header_v3;   /* Decoded v3 extension; zero for short headers. */
+    mpq_hash_s *mpq_hash;            /* Decrypted hash table. */
+    mpq_block_s *mpq_block;          /* Decrypted block table. */
+    mpq_block_ex_s *mpq_block_ex;    /* Optional extended block table. */
+    mpq_file_s **mpq_file;           /* Per-file cached sector tables. */
+    mpq_entry_s *mpq_entry;          /* Archive-owned canonical entries for consumption. */
+    uint32_t entry_count;            /* Entry/cache capacity, including unused classic rows. */
+    uint32_t *classic_entry_indices; /* Classic block row to canonical entry index. */
 
-    mpq_map_s *mpq_map;                      /* Public file-number to block-table mapping. */
+    mpq_map_s *mpq_map;                      /* Public file-number to canonical-entry mapping. */
     uint32_t files;                          /* Number of valid extractable file entries. */
     mpq_attributes_s *attributes;            /* Lazy validated reader attributes. */
     int32_t attributes_error;                /* Cached absence or structural failure. */

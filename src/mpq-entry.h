@@ -20,7 +20,41 @@
 #ifndef LIBMPQ_MPQ_ENTRY_H
 #define LIBMPQ_MPQ_ENTRY_H
 
+#include "mpq-block.h"
+
 #include <stdint.h>
+
+/* Entry provenance identifies the native table row without constraining readers to it. */
+#define LIBMPQ_ENTRY_SOURCE_NONE 0u
+#define LIBMPQ_ENTRY_SOURCE_CLASSIC 1u
+#define LIBMPQ_ENTRY_SOURCE_BET 2u
+
+/* Logical member metadata owned by the archive, independent of classic wire widths. */
+typedef struct
+{
+    uint64_t offset;        /* Complete archive-relative payload position. */
+    uint64_t packed_size;   /* Stored payload length. */
+    uint64_t unpacked_size; /* Logical decoded length (target length for patch members). */
+    uint32_t flags;         /* Storage flags, including reader-discovered encryption. */
+    uint32_t source_index;  /* Row in the table identified by source_kind. */
+    uint32_t file_number;   /* Compact public number, or UINT32_MAX for unused entries. */
+    uint8_t source_kind;    /* Provenance only; logical reads do not require classic indices. */
+} mpq_entry_s;
+
+/* Convert classic wire metadata once; format writers still own the original tables. */
+static inline void
+libmpq__entry_from_classic(
+    mpq_entry_s *entry, const mpq_block_s *block, const mpq_block_ex_s *high, uint32_t index
+)
+{
+    entry->offset = block->offset | ((uint64_t)high->offset_high << 32);
+    entry->packed_size = block->packed_size;
+    entry->unpacked_size = block->unpacked_size;
+    entry->flags = block->flags;
+    entry->source_index = index;
+    entry->source_kind = LIBMPQ_ENTRY_SOURCE_CLASSIC;
+    entry->file_number = UINT32_MAX;
+}
 
 /* Per-member reader/cache state for decryption and packed sector offsets. */
 typedef struct
@@ -33,14 +67,12 @@ typedef struct
 } mpq_file_s;
 
 /*
- * Map a compact public file number, resolved through the archive hash table,
- * to its physical block-table entry. Unused or invalid blocks may be skipped;
- * block_table_diff records how many were skipped before this entry.
+ * Map a compact public file number to canonical member metadata. Unused
+ * entries are skipped without changing public numbering or source identity.
  */
 typedef struct
 {
-    uint32_t block_table_indices; /* Block-table index for this public file number. */
-    uint32_t block_table_diff;    /* Number of skipped invalid block entries before this file. */
+    uint32_t entry_index; /* Canonical entry index for this public file number. */
 } mpq_map_s;
 
 #endif /* LIBMPQ_MPQ_ENTRY_H */

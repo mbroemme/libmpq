@@ -366,7 +366,7 @@ test_offsets_operation(
         (uint64_t)size > SIZE_MAX)
         return -1;
     snapshot.count = blocks + 1U;
-    if (archive->mpq_block[archive->mpq_map[number].block_table_indices].flags & LIBMPQ_FLAG_CRC)
+    if (archive->mpq_entry[archive->mpq_map[number].entry_index].flags & LIBMPQ_FLAG_CRC)
         ++snapshot.count;
     snapshot.offsets = calloc(snapshot.count, sizeof(uint32_t));
     buffer = verify_flags == 0 ? malloc(size == 0 ? 1 : (size_t)size) : NULL;
@@ -378,11 +378,8 @@ test_offsets_operation(
     snapshot.archive = archive;
     snapshot.number = number;
     snapshot.blocks = blocks;
-    snapshot.file_base =
-        (uint64_t)archive->archive_offset +
-        archive->mpq_block[archive->mpq_map[number].block_table_indices].offset +
-        ((uint64_t)archive->mpq_block_ex[archive->mpq_map[number].block_table_indices].offset_high
-         << 32);
+    snapshot.file_base = (uint64_t)archive->archive_offset +
+                         archive->mpq_entry[archive->mpq_map[number].entry_index].offset;
     snapshot.read_at = archive->source->backend.read_at;
     snapshot.context = context;
     snapshot.acquired = 0;
