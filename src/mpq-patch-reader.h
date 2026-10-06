@@ -24,8 +24,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define LIBMPQ_FILE_FLAG_PATCH_FILE 0x00100000u
-#define LIBMPQ_FILE_FLAG_DELETE_MARKER 0x02000000u
 #define LIBMPQ_PATCH_INFO_SIZE 28u
 
 typedef struct

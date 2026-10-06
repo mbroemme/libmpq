@@ -31,7 +31,9 @@ The function returns the selected member's actual stored block-table flags
 in \fIflags\fP. Inspect the public LIBMPQ_FILE_FLAG_COMPRESS,
 LIBMPQ_FILE_FLAG_IMPLODE, LIBMPQ_FILE_FLAG_ENCRYPTED,
 LIBMPQ_FILE_FLAG_SINGLE, and LIBMPQ_FILE_FLAG_SECTOR_CRC bits for storage
-properties. Other stored bits are returned unchanged.
+properties. LIBMPQ_FILE_FLAG_PATCH_FILE identifies a patch payload, and
+LIBMPQ_FILE_FLAG_DELETE_MARKER identifies a deletion entry. Other stored bits
+are returned unchanged.
 .PP
 COMPRESS and IMPLODE describe file storage; individual sectors may fall back
 to raw data. Use \fBlibmpq__block_compression\fP() for a sector's effective
@@ -47,7 +49,8 @@ The archive or output pointer is NULL, or the file number is invalid.
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__archive_files (3),
-.BR libmpq__block_compression (3)
+.BR libmpq__block_compression (3),
+.BR libmpq__patch_payload_read (3)
 .SH AUTHOR
 The libmpq project is maintained by
 .B Maik Broemme <mbroemme@libmpq.org>.

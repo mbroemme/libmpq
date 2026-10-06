@@ -214,6 +214,21 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .sp
 .BI "int32_t libmpq__patch_finish(mpq_patch_s *" "patch" ");"
 .sp
+.BI "int32_t libmpq__patch_payload_read("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        uint32_t " "file_number,"
+.BI "        const char *" "filename,"
+.BI "        uint8_t *" "buffer,"
+.BI "        libmpq__off_t " "capacity,"
+.BI "        libmpq__off_t *" "transferred"
+.BI ");"
+.sp
+.BI "int32_t libmpq__patch_payload_size("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        uint32_t " "file_number,"
+.BI "        libmpq__off_t *" "size"
+.BI ");"
+.sp
 .BI "int32_t libmpq__patch_remove("
 .BI "        mpq_patch_s *" "patch,"
 .BI "        const char *" "filename"
@@ -415,6 +430,9 @@ Use \fBlibmpq__stream_open\fP(3) or
 seeking. Streams own a private archive clone and are consumed by
 \fBlibmpq__stream_close\fP(3). Complete reads use
 \fBlibmpq__file_read\fP(3).
+Patch-file members instead expose their decoded, unapplied PTCH bodies through
+\fBlibmpq__patch_payload_size\fP(3) and
+\fBlibmpq__patch_payload_read\fP(3).
 .SS "Archive Creation and Writers"
 Create MPQ v1/v2 archives with \fBlibmpq__archive_create\fP(3).
 Add complete buffers or paths with the archive-add calls, or use the
@@ -495,6 +513,8 @@ lossy ADPCM may legitimately differ from source-byte checksums.
 .BR libmpq__patch_begin (3),
 .BR libmpq__patch_begin_mpqe (3),
 .BR libmpq__patch_finish (3),
+.BR libmpq__patch_payload_read (3),
+.BR libmpq__patch_payload_size (3),
 .BR libmpq__patch_remove (3),
 .BR libmpq__patch_replace_data (3),
 .BR libmpq__patch_replace_path (3),

@@ -1,0 +1,63 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.TH LIBMPQ__PATCH_PAYLOAD_READ 3 2026-10-06 "The MoPaQ archive library"
+.SH NAME
+libmpq__patch_payload_read \- read one decoded PTCH payload.
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__patch_payload_read("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        uint32_t " "file_number,"
+.BI "        const char *" "filename,"
+.BI "        uint8_t *" "buffer,"
+.BI "        libmpq__off_t " "capacity,"
+.BI "        libmpq__off_t *" "transferred"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Decode a member flagged \fBLIBMPQ_FILE_FLAG_PATCH_FILE\fP into caller-owned
+\fIbuffer\fP. The returned bytes begin with PTCH, excluding the plaintext
+patch-info prefix. The prefix's MD5 is checked against the decoded body.
+\fIfilename\fP is the physical archive name for key derivation and may be
+NULL if no name-derived key is needed. The function does not apply the patch
+to a base file; BSD0 payloads require the matching base for materialization.
+.SH RETURN VALUE
+Returns zero and stores the byte count in \fItransferred\fP on success.
+On failure, \fItransferred\fP is zero and a negative libmpq error is returned.
+.SH ERRORS
+.TP
+.B LIBMPQ_ERROR_EXIST
+The archive, output pointer, file number, or patch-file flag is absent.
+.TP
+.B LIBMPQ_ERROR_SIZE
+\fIcapacity\fP is too small, negative, or its nonempty buffer is NULL.
+.TP
+.B LIBMPQ_ERROR_FORMAT
+The prefix, decoded size, or payload MD5 is invalid.
+.PP
+Allocation, I/O, decryption, and decompression errors may also propagate.
+.SH SEE ALSO
+.BR libmpq__patch_payload_size (3),
+.BR libmpq__file_read (3),
+.BR libmpq__file_flags (3)
+.SH AUTHOR
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.

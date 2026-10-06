@@ -152,6 +152,10 @@ typedef int32_t (*libmpq_read_at_fn)(
 #define LIBMPQ_FILE_FLAG_ENCRYPTED 0x00010000u
 #define LIBMPQ_FILE_FLAG_SINGLE 0x01000000u
 
+/* Reader-visible patch and deletion entries; these are not writer options. */
+#define LIBMPQ_FILE_FLAG_PATCH_FILE 0x00100000u
+#define LIBMPQ_FILE_FLAG_DELETE_MARKER 0x02000000u
+
 /*
  * Generate sector Adler-32 checksums for sectorized compressed/imploded files.
  * Ignored for empty, raw, or single-unit files.
@@ -561,7 +565,8 @@ extern LIBMPQ_API int32_t libmpq__file_size_packed(
 /*
  * Return the logical size of one public file entry after decompression.
  * This is the size callers should expect from libmpq__file_read, independent
- * of how many sectors or compression stages are stored on disk.
+ * of how many sectors or compression stages are stored on disk. For a patch
+ * member it is the patched target size, not the decoded PTCH payload size.
  */
 extern LIBMPQ_API int32_t libmpq__file_size_unpacked(
     mpq_archive_s *mpq_archive, uint32_t file_number, libmpq__off_t *unpacked_size
@@ -846,6 +851,25 @@ extern LIBMPQ_API int32_t libmpq__update_commit(mpq_update_s *update);
  * This consumes the update handle even when cleanup reports an error.
  */
 extern LIBMPQ_API int32_t libmpq__update_abort(mpq_update_s *update);
+
+/* Patch payload access. */
+
+/*
+ * Return the decoded PTCH payload size for a patch-file member. The ordinary
+ * file size describes the patched target, not this stored payload.
+ */
+extern LIBMPQ_API int32_t
+libmpq__patch_payload_size(mpq_archive_s *archive, uint32_t file_number, libmpq__off_t *size);
+
+/*
+ * Decode and validate a patch-file member's PTCH payload into caller memory.
+ * filename is the physical archive name used for encrypted members; it may be
+ * NULL when no name-derived key is needed. This does not apply the patch.
+ */
+extern LIBMPQ_API int32_t libmpq__patch_payload_read(
+    mpq_archive_s *archive, uint32_t file_number, const char *filename, uint8_t *buffer,
+    libmpq__off_t capacity, libmpq__off_t *transferred
+);
 
 /* Patch archive creation. */
 

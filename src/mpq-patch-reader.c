@@ -17,13 +17,22 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "mpq-patch-reader.h"
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
+/* Export public patch-payload entry points when building a Windows DLL. */
+#if defined(_WIN32) && defined(DLL_EXPORT)
+#define LIBMPQ_API __declspec(dllexport)
+#endif
+
 #include "mpq-archive.h"
 #include "mpq-attributes.h"
 #include "mpq-block.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
 #include "mpq-md5.h"
+#include "mpq-patch-reader.h"
 #include "mpq-reader.h"
 #include "mpq-signature.h"
 #include "mpq-source.h"
@@ -483,6 +492,48 @@ patch_read_named(mpq_archive_s *archive, const char *name, uint8_t **data, size_
     return patch_read_adjusted(archive, name, number, data, size);
 }
 
+static int32_t
+patch_member_info(mpq_archive_s *archive, uint32_t number, mpq_patch_info_s *info)
+{
+    mpq_block_s *block;
+    uint8_t fixed[LIBMPQ_PATCH_INFO_SIZE];
+    uint64_t offset;
+    uint32_t physical;
+    int32_t status;
+
+    if (archive == NULL || info == NULL ||
+        libmpq__reader_validate_file_number(archive, number) != 0)
+        return LIBMPQ_ERROR_EXIST;
+    physical = archive->mpq_map[number].block_table_indices;
+    block = &archive->mpq_block[physical];
+    if ((block->flags & LIBMPQ_FILE_FLAG_PATCH_FILE) == 0)
+        return LIBMPQ_ERROR_EXIST;
+    if (block->packed_size < LIBMPQ_PATCH_INFO_SIZE)
+        return LIBMPQ_ERROR_FORMAT;
+    offset = (uint64_t)archive->archive_offset + block->offset +
+             ((uint64_t)archive->mpq_block_ex[physical].offset_high << 32);
+    status = libmpq__source_read_at(archive->source, offset, fixed, sizeof(fixed));
+    if (status != 0)
+        return status;
+    status = patch_info_parse_header(fixed, sizeof(fixed), block->packed_size, info);
+    return status;
+}
+
+int32_t
+libmpq__patch_payload_size(mpq_archive_s *archive, uint32_t number, libmpq__off_t *size)
+{
+    mpq_patch_info_s info;
+    int32_t status;
+
+    if (size == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *size = 0;
+    status = patch_member_info(archive, number, &info);
+    if (status == 0)
+        *size = info.data_size;
+    return status;
+}
+
 /*
  * Parse the plaintext patch prefix before using its body size, then
  * decode the stored body through normal MPQ reader semantics. Patch-file
@@ -495,10 +546,8 @@ patch_read_incremental(
 {
     mpq_archive_s *clone = NULL;
     mpq_block_s *block;
-    uint8_t fixed[LIBMPQ_PATCH_INFO_SIZE];
     uint8_t *body = NULL;
     mpq_patch_info_s info;
-    uint64_t offset;
     uint64_t shifted;
     uint32_t prefix_size;
     uint32_t physical;
@@ -507,18 +556,10 @@ patch_read_incremental(
 
     *data = NULL;
     *size = 0;
+    status = patch_member_info(archive, number, &info);
+    if (status != 0)
+        return status;
     physical = archive->mpq_map[number].block_table_indices;
-    block = &archive->mpq_block[physical];
-    if (block->packed_size < LIBMPQ_PATCH_INFO_SIZE)
-        return LIBMPQ_ERROR_FORMAT;
-    offset = (uint64_t)archive->archive_offset + block->offset +
-             ((uint64_t)archive->mpq_block_ex[physical].offset_high << 32);
-    status = libmpq__source_read_at(archive->source, offset, fixed, sizeof(fixed));
-    if (status != 0)
-        return status;
-    status = patch_info_parse_header(fixed, sizeof(fixed), block->packed_size, &info);
-    if (status != 0)
-        return status;
     prefix_size = info.length;
     status = libmpq__archive_clone(&clone, archive);
     if (status != 0)
@@ -561,6 +602,39 @@ done:
         free(*data);
         *data = NULL;
         *size = 0;
+    }
+    free(body);
+    return status;
+}
+
+int32_t
+libmpq__patch_payload_read(
+    mpq_archive_s *archive, uint32_t number, const char *name, uint8_t *buffer,
+    libmpq__off_t capacity, libmpq__off_t *transferred
+)
+{
+    libmpq__off_t expected;
+    uint8_t *body = NULL;
+    size_t body_size = 0;
+    int32_t status;
+
+    if (transferred == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *transferred = 0;
+    status = libmpq__patch_payload_size(archive, number, &expected);
+    if (status != 0)
+        return status;
+    if (capacity < 0 || capacity < expected || (expected != 0 && buffer == NULL))
+        return LIBMPQ_ERROR_SIZE;
+    status = patch_read_incremental(archive, name, number, &body, &body_size);
+    if (status == 0) {
+        if ((uint64_t)body_size != (uint64_t)expected)
+            status = LIBMPQ_ERROR_FORMAT;
+        else {
+            if (body_size != 0)
+                memcpy(buffer, body, body_size);
+            *transferred = expected;
+        }
     }
     free(body);
     return status;

@@ -28,6 +28,8 @@ libmpq__file_size_unpacked \- return the unpacked size of one file.
 .SH DESCRIPTION
 .PP
 Call \fBlibmpq__file_size_unpacked\fP() to get the unpacked size of one file.
+For a patch-file member this is the patched target size; use
+\fBlibmpq__patch_payload_size\fP(3) for the stored PTCH body.
 .LP
 The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The function stores the unpacked size for
@@ -40,6 +42,7 @@ On success, a zero is returned and on error one of the following constants.
 The file does not exist in the archive.
 .SH SEE ALSO
 .BR libmpq (3),
+.BR libmpq__patch_payload_size (3),
 .BR libmpq__archive_size_unpacked (3)
 .SH AUTHOR
 The libmpq project is maintained by

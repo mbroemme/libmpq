@@ -44,6 +44,8 @@ man_MANS = \
 	libmpq__patch_begin.3 \
 	libmpq__patch_begin_mpqe.3 \
 	libmpq__patch_finish.3 \
+	libmpq__patch_payload_read.3 \
+	libmpq__patch_payload_size.3 \
 	libmpq__patch_remove.3 \
 	libmpq__patch_replace_data.3 \
 	libmpq__patch_replace_path.3 \

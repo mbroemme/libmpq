@@ -148,6 +148,66 @@ fixture_patch_archive(
     return 0;
 }
 
+/* Public payload reads keep the target size distinct from PTCH bytes. */
+static int
+test_public_patch_payload(void)
+{
+    char path[512];
+    mpq_archive_s *archive = NULL;
+    uint8_t *stored = NULL;
+    uint8_t *decoded = NULL;
+    size_t stored_size = 0;
+    uint32_t number;
+    libmpq__off_t payload_size = -1;
+    libmpq__off_t transferred = -1;
+
+    TEST_CHECK(libmpq__patch_payload_size(NULL, 0, &payload_size) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(payload_size == 0);
+    TEST_CHECK(
+        libmpq__patch_payload_read(NULL, 0, NULL, NULL, 0, &transferred) == LIBMPQ_ERROR_EXIST
+    );
+    TEST_CHECK(transferred == 0);
+
+    TEST_CHECK(test_temp_path(path, sizeof(path), "public-patch-payload") == 0);
+    stored = fixture_copy_patch(
+        first_text, sizeof(first_text) - 1, second_text, sizeof(second_text) - 1, &stored_size
+    );
+    TEST_CHECK(stored != NULL);
+    TEST_CHECK(
+        fixture_patch_archive(
+            path, LIBMPQ_ARCHIVE_VERSION_ONE, first_text, sizeof(first_text) - 1, second_text,
+            sizeof(second_text) - 1, NULL
+        ) == 0
+    );
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "overview.txt", &number) == 0);
+    TEST_CHECK(libmpq__patch_payload_size(archive, number, &payload_size) == 0);
+    TEST_CHECK(payload_size == (libmpq__off_t)(stored_size - LIBMPQ_PATCH_INFO_SIZE));
+    decoded = malloc((size_t)payload_size);
+    TEST_CHECK(decoded != NULL);
+    TEST_CHECK(
+        libmpq__patch_payload_read(
+            archive, number, "overview.txt", decoded, payload_size - 1, &transferred
+        ) == LIBMPQ_ERROR_SIZE
+    );
+    TEST_CHECK(transferred == 0);
+    TEST_CHECK(
+        libmpq__patch_payload_read(
+            archive, number, "overview.txt", decoded, payload_size, &transferred
+        ) == 0
+    );
+    TEST_CHECK(transferred == payload_size);
+    TEST_CHECK(memcmp(decoded, stored + LIBMPQ_PATCH_INFO_SIZE, (size_t)payload_size) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "patch-only.txt", &number) == 0);
+    TEST_CHECK(libmpq__patch_payload_size(archive, number, &payload_size) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(payload_size == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    free(stored);
+    free(decoded);
+    TEST_CHECK(remove(path) == 0);
+    return 0;
+}
+
 /* Create one synthetic namespaced layer without changing the public writer. */
 static int
 fixture_namespaced_patch(
@@ -1997,6 +2057,7 @@ main(int argc, char **argv)
     if (argc == 2 && strcmp(argv[1], "--refresh") == 0)
         return refresh_fixtures();
     TEST_CHECK(argc == 1);
+    TEST_CHECK(test_public_patch_payload() == 0);
     TEST_CHECK(test_views() == 0);
     TEST_CHECK(test_mpqe_base_views() == 0);
     TEST_CHECK(test_mpqe_patch_layers() == 0);

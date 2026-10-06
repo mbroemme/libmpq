@@ -736,6 +736,7 @@ libmpq__reader_offsets_acquire(mpq_archive_s *mpq_archive, uint32_t file_number,
     uint32_t block_table_index;
     uint32_t packed_offset_count;
     uint32_t packed_size;
+    uint32_t stored_table_size;
     int32_t result = 0;
     uint8_t *packed_data = NULL;
 
@@ -772,6 +773,7 @@ libmpq__reader_offsets_acquire(mpq_archive_s *mpq_archive, uint32_t file_number,
     if ((mpq_archive->mpq_block[block_table_index].flags & LIBMPQ_FLAG_CRC) != 0) {
         packed_size += sizeof(uint32_t);
     }
+    stored_table_size = packed_size;
 
     if ((mpq_archive->mpq_file[file_number] = calloc(1, sizeof(mpq_file_s))) == NULL) {
         result = LIBMPQ_ERROR_MALLOC;
@@ -822,10 +824,38 @@ libmpq__reader_offsets_acquire(mpq_archive_s *mpq_archive, uint32_t file_number,
             goto error;
         }
 
-        /* Some protected archives omit the encrypted flag; a wrong first offset exposes that. */
-        if (libmpq__load_le32(packed_data) != packed_size &&
-            libmpq__load_le32(packed_data) != packed_size + 4) {
-            mpq_archive->mpq_block[block_table_index].flags |= LIBMPQ_FLAG_ENCRYPTED;
+        /* WoW MPQs may contain bounded extra DWORDs before the first sector. */
+        if ((mpq_archive->mpq_block[block_table_index].flags & LIBMPQ_FLAG_ENCRYPTED) == 0) {
+            uint32_t first_offset = libmpq__load_le32(packed_data);
+
+            if (first_offset >= packed_size && first_offset - packed_size <= 0x400u &&
+                (first_offset & 3u) == 0 &&
+                first_offset <= mpq_archive->mpq_block[block_table_index].packed_size) {
+                if (first_offset > packed_size) {
+                    uint8_t *expanded = realloc(packed_data, first_offset);
+
+                    if (expanded == NULL) {
+                        result = LIBMPQ_ERROR_MALLOC;
+                        goto error;
+                    }
+                    packed_data = expanded;
+                    result = libmpq__source_read_at(
+                        mpq_archive->source,
+                        mpq_archive->mpq_block[block_table_index].offset +
+                            ((uint64_t)mpq_archive->mpq_block_ex[block_table_index].offset_high
+                             << 32) +
+                            (uint64_t)mpq_archive->archive_offset + packed_size,
+                        packed_data + packed_size, first_offset - packed_size
+                    );
+                    if (result != 0)
+                        goto error;
+                }
+                stored_table_size = first_offset;
+            } else {
+
+                /* Some protected archives omit the encrypted flag. */
+                mpq_archive->mpq_block[block_table_index].flags |= LIBMPQ_FLAG_ENCRYPTED;
+            }
         }
 
         /* The packed offset table uses seed - 1, so recover the file seed first. */
@@ -860,7 +890,7 @@ libmpq__reader_offsets_acquire(mpq_archive_s *mpq_archive, uint32_t file_number,
             mpq_archive->mpq_file[file_number]->packed_offset, packed_data,
             packed_size / sizeof(uint32_t)
         );
-        if (mpq_archive->mpq_file[file_number]->packed_offset[0] != packed_size) {
+        if (mpq_archive->mpq_file[file_number]->packed_offset[0] != stored_table_size) {
             result = LIBMPQ_ERROR_FORMAT;
             goto error;
         }

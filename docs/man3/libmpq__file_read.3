@@ -40,6 +40,10 @@ ADPCM members skip automatic file CRC32/MD5 comparison. Usable sector
 Adler-32 entries are automatically compared over decrypted packed data before
 decompression, including ADPCM. Malformed optional sector tables are skipped
 during extraction. FILETIME and PATCH_BIT remain metadata.
+.PP
+For members flagged \fBLIBMPQ_FILE_FLAG_PATCH_FILE\fP, the block-table
+unpacked size is the patched target size, not the stored PTCH body size.
+Use \fBlibmpq__patch_payload_read\fP(3) to extract that body.
 .LP
 The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The \fIfile_number\fP argument selects the
@@ -73,6 +77,7 @@ Decrypting file failed.
 Unpacking file failed.
 .SH SEE ALSO
 .BR libmpq (3),
+.BR libmpq__patch_payload_read (3),
 .BR libmpq__block_read (3)
 .SH AUTHOR
 The libmpq project is maintained by
