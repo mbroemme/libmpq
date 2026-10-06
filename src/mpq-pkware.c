@@ -23,7 +23,6 @@
  */
 
 #include "mpq-pkware.h"
-#include "mpq-internal.h"
 #include <libmpq/mpq.h>
 
 #include <stdlib.h>
@@ -610,7 +609,7 @@ libmpq__pkzip_compress(
     free(history);
     *out_buf = out;
     *out_size = (uint32_t)(2 + (bit_count + 7) / 8);
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /* PKWARE copyright banner kept for parity with the original implementation. */

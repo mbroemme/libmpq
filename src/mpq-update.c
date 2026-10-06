@@ -22,10 +22,11 @@
 #endif
 
 #include "mpq-update.h"
+#include "mpq-archive.h"
 #include "mpq-attributes.h"
+#include "mpq-block.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
-#include "mpq-internal.h"
 #include "mpq-mpqe.h"
 #include "mpq-reader.h"
 #include "mpq-signature.h"
@@ -73,7 +74,7 @@ static const mpq_update_ops_s default_update_ops = { fflush, fclose, libmpq__dir
 static void
 update_result(int32_t *result, int32_t next)
 {
-    if (*result == LIBMPQ_SUCCESS && next != LIBMPQ_SUCCESS)
+    if (*result == 0 && next != 0)
         *result = next;
 }
 
@@ -127,7 +128,7 @@ update_copy(FILE *input, FILE *output)
             break;
         }
     }
-    return fflush(output) == 0 ? LIBMPQ_SUCCESS : LIBMPQ_ERROR_WRITE;
+    return fflush(output) == 0 ? 0 : LIBMPQ_ERROR_WRITE;
 }
 
 static int32_t
@@ -146,7 +147,7 @@ update_identity(const mpq_update_s *update)
     if (file == NULL)
         return LIBMPQ_ERROR_EXIST;
     result = libmpq__file_identity(file, &device, &inode);
-    if (result == LIBMPQ_SUCCESS && (device != update->device || inode != update->inode))
+    if (result == 0 && (device != update->device || inode != update->inode))
         result = LIBMPQ_ERROR_EXIST;
     if (fclose(file) != 0)
         update_result(&result, LIBMPQ_ERROR_CLOSE);
@@ -156,7 +157,7 @@ update_identity(const mpq_update_s *update)
 static int32_t
 update_cleanup(mpq_update_s *update, uint8_t remove_temporary)
 {
-    int32_t result = LIBMPQ_SUCCESS;
+    int32_t result = 0;
 
     if (update->working != NULL) {
         if (update->ops->close(update->working) != 0)
@@ -178,8 +179,9 @@ update_cleanup(mpq_update_s *update, uint8_t remove_temporary)
 static int32_t
 update_copy_range(mpq_archive_s *archive, FILE *output, uint64_t offset, uint64_t size);
 
-int32_t
-libmpq__update_transaction_begin(mpq_update_s **update, const char *path)
+/* Prepare a private working file; MPQE decoding fills it directly. */
+static int32_t
+update_transaction_begin_source(mpq_update_s **update, const char *path, uint8_t copy_source)
 {
     mpq_update_s *state;
     FILE *input = NULL;
@@ -200,10 +202,10 @@ libmpq__update_transaction_begin(mpq_update_s **update, const char *path)
         goto fail;
     }
     result = libmpq__directory_open(absolute, &state->directory, &state->destination);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto fail;
     result = libmpq__directory_file_validate(state->directory, state->destination);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto fail;
     input = libmpq__directory_file_open(state->directory, state->destination, "rb");
     if (input == NULL) {
@@ -211,13 +213,13 @@ libmpq__update_transaction_begin(mpq_update_s **update, const char *path)
         goto fail;
     }
     result = libmpq__file_identity(input, &state->device, &state->inode);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto fail;
     result = libmpq__directory_temporary_reopenable(
         state->directory, ".libmpq-update-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", 1, &state->temporary,
         &state->working
     );
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto fail;
     state->working_path = update_working_path(absolute, state->temporary);
     if (state->working_path == NULL) {
@@ -239,9 +241,11 @@ libmpq__update_transaction_begin(mpq_update_s **update, const char *path)
         state->mode = (uint32_t)(status.st_mode & 07777);
     }
 #endif
-    result = update_copy(input, state->working);
-    if (result != LIBMPQ_SUCCESS)
-        goto fail;
+    if (copy_source) {
+        result = update_copy(input, state->working);
+        if (result != 0)
+            goto fail;
+    }
     if (fclose(input) != 0) {
         input = NULL;
         result = LIBMPQ_ERROR_CLOSE;
@@ -249,7 +253,7 @@ libmpq__update_transaction_begin(mpq_update_s **update, const char *path)
     }
     free(absolute);
     *update = state;
-    return LIBMPQ_SUCCESS;
+    return 0;
 
 fail:
     free(absolute);
@@ -259,7 +263,14 @@ fail:
     return result;
 }
 
-/* Decode an authenticated MPQE copy into a private plaintext working file. */
+/* Begin an ordinary or embedded update with a byte-for-byte working copy. */
+int32_t
+libmpq__update_transaction_begin(mpq_update_s **update, const char *path)
+{
+    return update_transaction_begin_source(update, path, 1);
+}
+
+/* Decode an authenticated MPQE source directly into its private working file. */
 int32_t
 libmpq__update_transaction_begin_mpqe(
     mpq_update_s **update, const char *path, const uint8_t *auth_code, size_t auth_code_size
@@ -268,10 +279,9 @@ libmpq__update_transaction_begin_mpqe(
     mpq_archive_s *source = NULL;
     mpq_archive_s *check = NULL;
     mpq_update_s *state;
-    FILE *plaintext = NULL;
-    char *temporary = NULL;
-    char *plaintext_path = NULL;
     uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE];
+    uint64_t device;
+    uint64_t inode;
     int32_t result;
 
     if (update != NULL)
@@ -279,76 +289,50 @@ libmpq__update_transaction_begin_mpqe(
     if (update == NULL)
         return LIBMPQ_ERROR_EXIST;
     result = libmpq__mpqe_key(key, auth_code, auth_code_size);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         return result;
     libmpq__mpqe_clear(key, sizeof(key));
-    result = libmpq__update_transaction_begin(update, path);
-    if (result != LIBMPQ_SUCCESS)
+    result = update_transaction_begin_source(update, path, 0);
+    if (result != 0)
         return result;
     state = *update;
-    result = libmpq__reader_archive_open_mpqe(
-        &source, state->working_path, -1, auth_code, auth_code_size
-    );
-    if (result != LIBMPQ_SUCCESS)
+    result = libmpq__reader_archive_open_mpqe(&source, path, -1, auth_code, auth_code_size);
+    if (result != 0)
         goto fail;
-    result = libmpq__directory_temporary_reopenable(
-        state->directory, ".libmpq-update-plain-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", 1, &temporary,
-        &plaintext
-    );
-    if (result != LIBMPQ_SUCCESS)
+    result = libmpq__source_file_identity(source->source, &device, &inode);
+    if (result != 0)
         goto fail;
-    plaintext_path = update_working_path(state->working_path, temporary);
-    if (plaintext_path == NULL) {
-        result = LIBMPQ_ERROR_MALLOC;
+    if (device != state->device || inode != state->inode) {
+        result = LIBMPQ_ERROR_EXIST;
         goto fail;
     }
-    result = update_copy_range(source, plaintext, 0, source->file_size);
-    if (result != LIBMPQ_SUCCESS)
+    result = update_copy_range(source, state->working, 0, source->file_size);
+    if (result != 0)
         goto fail;
-    if (fflush(plaintext) != 0) {
+    if (fflush(state->working) != 0) {
         result = LIBMPQ_ERROR_WRITE;
         goto fail;
     }
-    result = libmpq__reader_archive_open_path(&check, plaintext_path, -1);
-    if (result != LIBMPQ_SUCCESS)
+    result = libmpq__reader_archive_open_path(&check, state->working_path, -1);
+    if (result != 0)
         goto fail;
     result = libmpq__archive_close(check);
     check = NULL;
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto fail;
     result = libmpq__archive_close(source);
     source = NULL;
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto fail;
-    if (fclose(state->working) != 0) {
-        state->working = NULL;
-        result = LIBMPQ_ERROR_CLOSE;
-        goto fail;
-    }
-    state->working = NULL;
-    result = libmpq__directory_remove(state->directory, state->temporary);
-    if (result != LIBMPQ_SUCCESS)
-        goto fail;
-    free(state->temporary);
-    free(state->working_path);
-    state->temporary = temporary;
-    state->working_path = plaintext_path;
-    state->working = plaintext;
     state->mpqe = 1;
     memcpy(state->mpqe_auth, auth_code, sizeof(state->mpqe_auth));
-    return LIBMPQ_SUCCESS;
+    return 0;
 
 fail:
     if (check != NULL)
         (void)libmpq__archive_close(check);
     if (source != NULL)
         (void)libmpq__archive_close(source);
-    if (plaintext != NULL)
-        (void)fclose(plaintext);
-    if (temporary != NULL)
-        (void)libmpq__directory_remove(state->directory, temporary);
-    free(temporary);
-    free(plaintext_path);
     (void)update_cleanup(state, 1);
     *update = NULL;
     return result;
@@ -392,25 +376,25 @@ update_commit_mpqe(mpq_update_s *update)
     else if (update->ops->flush(update->working) != 0)
         result = LIBMPQ_ERROR_WRITE;
     else
-        result = LIBMPQ_SUCCESS;
-    if (result != LIBMPQ_SUCCESS)
+        result = 0;
+    if (result != 0)
         goto done;
     if (!update->dirty) {
         if (update->ops->close(update->working) != 0)
             result = LIBMPQ_ERROR_CLOSE;
         update->working = NULL;
-        if (result == LIBMPQ_SUCCESS)
+        if (result == 0)
             result = update_identity(update);
         goto done;
     }
     result = libmpq__mpqe_key(key, update->mpqe_auth, sizeof(update->mpqe_auth));
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     result = libmpq__directory_temporary_reopenable(
         update->directory, ".libmpq-update-mpqe-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", 1,
         &encrypted_name, &encrypted
     );
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto clear_key;
     encrypted_path = update_working_path(update->working_path, encrypted_name);
     if (encrypted_path == NULL) {
@@ -419,16 +403,16 @@ update_commit_mpqe(mpq_update_s *update)
     }
     result = libmpq__writer_mpqe_transform_file(update->working, encrypted, key);
     libmpq__mpqe_clear(key, sizeof(key));
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     result = libmpq__reader_archive_open_mpqe(
         &check, encrypted_path, -1, update->mpqe_auth, sizeof(update->mpqe_auth)
     );
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     result = libmpq__archive_close(check);
     check = NULL;
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
 #ifndef _WIN32
     if (fchmod(fileno(encrypted), (mode_t)update->mode) != 0) {
@@ -438,7 +422,7 @@ update_commit_mpqe(mpq_update_s *update)
 #else
     result =
         libmpq__directory_copy_security(update->directory, update->destination, encrypted_name);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
 #endif
     if (fclose(encrypted) != 0) {
@@ -454,13 +438,13 @@ update_commit_mpqe(mpq_update_s *update)
     }
     update->working = NULL;
     result = libmpq__directory_remove(update->directory, update->temporary);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     plaintext_removed = 1;
     result = update_identity(update);
-    if (result == LIBMPQ_SUCCESS) {
+    if (result == 0) {
         result = update->ops->publish(update->directory, encrypted_name, update->destination);
-        published = result == LIBMPQ_SUCCESS;
+        published = result == 0;
     }
     goto done;
 
@@ -482,7 +466,7 @@ done:
 int32_t
 libmpq__update_transaction_commit(mpq_update_s *update)
 {
-    int32_t result = LIBMPQ_SUCCESS;
+    int32_t result = 0;
     int32_t cleanup_result;
     uint8_t published = 0;
 
@@ -496,19 +480,19 @@ libmpq__update_transaction_commit(mpq_update_s *update)
         result = LIBMPQ_ERROR_WRITE;
     }
 #ifndef _WIN32
-    if (result == LIBMPQ_SUCCESS && fchmod(fileno(update->working), (mode_t)update->mode) != 0)
+    if (result == 0 && fchmod(fileno(update->working), (mode_t)update->mode) != 0)
         result = LIBMPQ_ERROR_WRITE;
     if (update->working != NULL) {
         if (update->ops->close(update->working) != 0)
             update_result(&result, LIBMPQ_ERROR_CLOSE);
         update->working = NULL;
     }
-    if (result == LIBMPQ_SUCCESS)
+    if (result == 0)
         result = update_identity(update);
 #else
-    if (result == LIBMPQ_SUCCESS)
+    if (result == 0)
         result = update_identity(update);
-    if (result == LIBMPQ_SUCCESS) {
+    if (result == 0) {
         result = libmpq__directory_copy_security(
             update->directory, update->destination, update->temporary
         );
@@ -519,9 +503,9 @@ libmpq__update_transaction_commit(mpq_update_s *update)
         update->working = NULL;
     }
 #endif
-    if (result == LIBMPQ_SUCCESS) {
+    if (result == 0) {
         result = update->ops->publish(update->directory, update->temporary, update->destination);
-        published = result == LIBMPQ_SUCCESS;
+        published = result == 0;
     }
     cleanup_result = update_cleanup(update, (uint8_t)!published);
     update_result(&result, cleanup_result);
@@ -545,14 +529,14 @@ update_copy_range(mpq_archive_s *archive, FILE *output, uint64_t offset, uint64_
         size_t chunk = size < sizeof(buffer) ? (size_t)size : sizeof(buffer);
         int32_t result = libmpq__source_read_at(archive->source, offset, buffer, chunk);
 
-        if (result != LIBMPQ_SUCCESS)
+        if (result != 0)
             return result;
         if (fwrite(buffer, 1, chunk, output) != chunk)
             return LIBMPQ_ERROR_WRITE;
         offset += chunk;
         size -= chunk;
     }
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 static int32_t
@@ -567,12 +551,12 @@ update_read_named(mpq_archive_s *archive, const char *name, uint8_t **data, size
     *data = NULL;
     *size = 0;
     result = libmpq__stream_open_name(archive, name, &stream);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         return result;
     result = libmpq__stream_size(stream, &length);
-    if (result != LIBMPQ_SUCCESS || length < 0 || (uint64_t)length > SIZE_MAX) {
+    if (result != 0 || length < 0 || (uint64_t)length > SIZE_MAX) {
         (void)libmpq__stream_close(stream);
-        return result == LIBMPQ_SUCCESS ? LIBMPQ_ERROR_SIZE : result;
+        return result == 0 ? LIBMPQ_ERROR_SIZE : result;
     }
     bytes = malloc(length == 0 ? 1u : (size_t)length);
     if (bytes == NULL) {
@@ -580,17 +564,17 @@ update_read_named(mpq_archive_s *archive, const char *name, uint8_t **data, size
         return LIBMPQ_ERROR_MALLOC;
     }
     result = libmpq__stream_read(stream, bytes, length, &transferred);
-    if (result == LIBMPQ_SUCCESS && transferred != length)
+    if (result == 0 && transferred != length)
         result = LIBMPQ_ERROR_READ;
-    if (libmpq__stream_close(stream) != LIBMPQ_SUCCESS && result == LIBMPQ_SUCCESS)
+    if (libmpq__stream_close(stream) != 0 && result == 0)
         result = LIBMPQ_ERROR_CLOSE;
-    if (result != LIBMPQ_SUCCESS) {
+    if (result != 0) {
         free(bytes);
         return result;
     }
     *data = bytes;
     *size = (size_t)length;
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 static int32_t
@@ -607,10 +591,10 @@ update_listfile(
     int32_t result;
 
     result = libmpq__file_number(archive, LIBMPQ_LISTFILE_NAME, index);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         return result;
     result = update_read_named(archive, LIBMPQ_LISTFILE_NAME, &original, &original_size);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         return result;
     if (original_size > SIZE_MAX - strlen(new_name == NULL ? "" : new_name) - 2u) {
         free(original);
@@ -673,7 +657,7 @@ update_listfile(
     free(original);
     *data = updated;
     *size = used;
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 static uint32_t
@@ -731,7 +715,7 @@ update_delete_hash(mpq_hash_s *entry)
     entry->hash_b = 0;
     entry->locale = 0;
     entry->platform = 0;
-    entry->block_table_index = UINT32_MAX - 1u;
+    entry->block_table_index = LIBMPQ_HASH_DELETED;
 }
 
 static int32_t
@@ -762,7 +746,7 @@ update_insert_hash(mpq_archive_s *archive, const char *name, const mpq_hash_s *o
     archive->mpq_hash[candidate] = *original;
     archive->mpq_hash[candidate].hash_a = libmpq__crypto_hash_string(name, 0x100);
     archive->mpq_hash[candidate].hash_b = libmpq__crypto_hash_string(name, 0x200);
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 static int32_t
@@ -798,7 +782,7 @@ update_encode(
         update->directory, ".libmpq-packed-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", 1, &temporary,
         &temporary_file
     );
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         return result;
     temporary_path = update_working_path(update->working_path, temporary);
     if (temporary_path == NULL) {
@@ -811,9 +795,9 @@ update_encode(
             result = LIBMPQ_ERROR_OPEN;
             goto done;
         }
-        if (libmpq__file_seek(input, 0, SEEK_END) != LIBMPQ_SUCCESS ||
+        if (libmpq__file_seek(input, 0, SEEK_END) != 0 ||
             (measured = libmpq__file_tell(input)) < 0 ||
-            libmpq__file_seek(input, 0, SEEK_SET) != LIBMPQ_SUCCESS) {
+            libmpq__file_seek(input, 0, SEEK_SET) != 0) {
             result = LIBMPQ_ERROR_SEEK;
             goto done;
         }
@@ -822,11 +806,11 @@ update_encode(
         libmpq__off_t old_size = 0;
 
         result = libmpq__stream_open_name(archive, old_name, &old_stream);
-        if (result != LIBMPQ_SUCCESS)
+        if (result != 0)
             goto done;
         result = libmpq__stream_size(old_stream, &old_size);
-        if (result != LIBMPQ_SUCCESS || old_size < 0) {
-            result = result == LIBMPQ_SUCCESS ? LIBMPQ_ERROR_SIZE : result;
+        if (result != 0 || old_size < 0) {
+            result = result == 0 ? LIBMPQ_ERROR_SIZE : result;
             goto done;
         }
         size = (uint64_t)old_size;
@@ -837,11 +821,11 @@ update_encode(
     }
     result = libmpq__writer_archive_create_file(&writer, temporary_path, temporary_file, &options);
     temporary_file = NULL;
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     result =
         libmpq__writer_file_begin(writer, name, (libmpq__off_t)size, file_options, &file_writer);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     if (expected_md5 != NULL ||
         (attributes != NULL && (attributes->flags & LIBMPQ_ATTRIBUTE_MD5) != 0))
@@ -861,8 +845,8 @@ update_encode(
             libmpq__off_t transferred = 0;
 
             result = libmpq__stream_read(old_stream, buffer, (libmpq__off_t)chunk, &transferred);
-            if (result != LIBMPQ_SUCCESS || transferred != (libmpq__off_t)chunk) {
-                if (result == LIBMPQ_SUCCESS)
+            if (result != 0 || transferred != (libmpq__off_t)chunk) {
+                if (result == 0)
                     result = LIBMPQ_ERROR_READ;
                 break;
             }
@@ -873,7 +857,7 @@ update_encode(
             break;
         }
         result = libmpq__writer_file_write(file_writer, bytes, (libmpq__off_t)chunk);
-        if (result != LIBMPQ_SUCCESS)
+        if (result != 0)
             break;
         if (attributes != NULL) {
             if ((attributes->flags & LIBMPQ_ATTRIBUTE_CRC32) != 0)
@@ -885,11 +869,11 @@ update_encode(
         remaining -= chunk;
         position += chunk;
     }
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     result = libmpq__writer_file_finish(file_writer);
     file_writer = NULL;
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     if (attributes != NULL) {
         attributes->crc32 = crc;
@@ -909,16 +893,16 @@ update_encode(
         *expected_size = size;
     result = libmpq__archive_close(writer);
     writer = NULL;
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     result = libmpq__archive_open(&packed, temporary_path, 0);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     if (expected_md5 != NULL &&
         ((file_options->compression_first | file_options->compression_next) &
          (LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO)) != 0) {
         result = libmpq__stream_open_name(packed, name, &expected_stream);
-        if (result != LIBMPQ_SUCCESS)
+        if (result != 0)
             goto done;
         libmpq__md5_init(&md5);
         remaining = size;
@@ -928,8 +912,8 @@ update_encode(
 
             result =
                 libmpq__stream_read(expected_stream, buffer, (libmpq__off_t)chunk, &transferred);
-            if (result != LIBMPQ_SUCCESS || transferred != (libmpq__off_t)chunk) {
-                if (result == LIBMPQ_SUCCESS)
+            if (result != 0 || transferred != (libmpq__off_t)chunk) {
+                if (result == 0)
                     result = LIBMPQ_ERROR_READ;
                 goto done;
             }
@@ -939,7 +923,7 @@ update_encode(
         libmpq__md5_final(&md5, expected_md5);
         result = libmpq__stream_close(expected_stream);
         expected_stream = NULL;
-        if (result != LIBMPQ_SUCCESS)
+        if (result != 0)
             goto done;
     }
     measured = libmpq__file_tell(output);
@@ -989,6 +973,9 @@ static int32_t
 update_write_tables(mpq_archive_s *archive, FILE *output, uint64_t *extent)
 {
     uint8_t header[LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE] = { 0 };
+    mpq_header_s wire_header;
+    mpq_header_ex_s wire_ex;
+    int32_t result;
     uint8_t *raw;
     uint64_t hash_offset;
     uint64_t block_offset;
@@ -1010,15 +997,12 @@ update_write_tables(mpq_archive_s *archive, FILE *output, uint64_t *extent)
     raw = malloc(bytes == 0 ? 1u : bytes);
     if (raw == NULL)
         return LIBMPQ_ERROR_MALLOC;
-    for (i = 0; i < archive->mpq_header.hash_table_count; i++) {
-        size_t at = (size_t)i * LIBMPQ_HASH_ENTRY_WIRE_SIZE;
-        const mpq_hash_s *entry = &archive->mpq_hash[i];
-
-        libmpq__store_le32(raw + at, entry->hash_a);
-        libmpq__store_le32(raw + at + 4u, entry->hash_b);
-        libmpq__store_le16(raw + at + 8u, entry->locale);
-        libmpq__store_le16(raw + at + 10u, entry->platform);
-        libmpq__store_le32(raw + at + 12u, entry->block_table_index);
+    result = libmpq__hash_table_encode(
+        archive->mpq_hash, archive->mpq_header.hash_table_count, raw, bytes
+    );
+    if (result < 0) {
+        free(raw);
+        return result;
     }
     libmpq__crypto_encrypt_block(
         raw, (uint32_t)bytes, libmpq__crypto_hash_string("(hash table)", 0x300)
@@ -1036,14 +1020,12 @@ update_write_tables(mpq_archive_s *archive, FILE *output, uint64_t *extent)
     raw = malloc(bytes == 0 ? 1u : bytes);
     if (raw == NULL)
         return LIBMPQ_ERROR_MALLOC;
-    for (i = 0; i < archive->mpq_header.block_table_count; i++) {
-        size_t at = (size_t)i * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE;
-        const mpq_block_s *entry = &archive->mpq_block[i];
-
-        libmpq__store_le32(raw + at, entry->offset);
-        libmpq__store_le32(raw + at + 4u, entry->packed_size);
-        libmpq__store_le32(raw + at + 8u, entry->unpacked_size);
-        libmpq__store_le32(raw + at + 12u, entry->flags);
+    result = libmpq__block_table_encode(
+        archive->mpq_block, archive->mpq_header.block_table_count, raw, bytes
+    );
+    if (result < 0) {
+        free(raw);
+        return result;
     }
     libmpq__crypto_encrypt_block(
         raw, (uint32_t)bytes, libmpq__crypto_hash_string("(block table)", 0x300)
@@ -1061,7 +1043,10 @@ update_write_tables(mpq_archive_s *archive, FILE *output, uint64_t *extent)
         for (i = 0; i < archive->mpq_header.block_table_count; i++) {
             uint8_t word[2];
 
-            libmpq__store_le16(word, archive->mpq_block_ex[i].offset_high);
+            result =
+                libmpq__block_ex_table_encode(&archive->mpq_block_ex[i], 1, word, sizeof(word));
+            if (result < 0)
+                return result;
             if (fwrite(word, 1, sizeof(word), output) != sizeof(word))
                 return LIBMPQ_ERROR_WRITE;
         }
@@ -1072,27 +1057,31 @@ update_write_tables(mpq_archive_s *archive, FILE *output, uint64_t *extent)
     end = (uint64_t)measured - archive_offset;
     if (end > UINT32_MAX)
         return LIBMPQ_ERROR_SIZE;
-    libmpq__store_le32(header, LIBMPQ_HEADER);
-    libmpq__store_le32(header + 4u, archive->mpq_header.header_size);
-    libmpq__store_le32(header + 8u, (uint32_t)end);
-    libmpq__store_le16(header + 12u, archive->mpq_header.version);
-    libmpq__store_le16(header + 14u, archive->mpq_header.block_size);
-    libmpq__store_le32(header + 16u, (uint32_t)hash_offset);
-    libmpq__store_le32(header + 20u, (uint32_t)block_offset);
-    libmpq__store_le32(header + 24u, archive->mpq_header.hash_table_count);
-    libmpq__store_le32(header + 28u, archive->mpq_header.block_table_count);
+    wire_header = archive->mpq_header;
+    wire_header.mpq_magic = LIBMPQ_HEADER;
+    wire_header.archive_size = (uint32_t)end;
+    wire_header.hash_table_offset = (uint32_t)hash_offset;
+    wire_header.block_table_offset = (uint32_t)block_offset;
+    result = libmpq__header_encode(&wire_header, header, sizeof(header));
+    if (result < 0)
+        return result;
     if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO) {
-        libmpq__store_le64(header + 32u, block_ex_offset);
-        libmpq__store_le16(header + 40u, (uint16_t)(hash_offset >> 32));
-        libmpq__store_le16(header + 42u, (uint16_t)(block_offset >> 32));
+        wire_ex.extended_offset = block_ex_offset;
+        wire_ex.hash_table_offset_high = (uint16_t)(hash_offset >> 32);
+        wire_ex.block_table_offset_high = (uint16_t)(block_offset >> 32);
+        result = libmpq__header_ex_encode(
+            &wire_ex, header + LIBMPQ_HEADER_WIRE_SIZE, LIBMPQ_HEADER_EX_WIRE_SIZE
+        );
+        if (result < 0)
+            return result;
     }
-    if (libmpq__file_seek(output, archive_offset, SEEK_SET) != LIBMPQ_SUCCESS ||
+    if (libmpq__file_seek(output, archive_offset, SEEK_SET) != 0 ||
         fwrite(header, 1, archive->mpq_header.header_size, output) !=
             archive->mpq_header.header_size ||
-        libmpq__file_seek(output, archive_offset + end, SEEK_SET) != LIBMPQ_SUCCESS)
+        libmpq__file_seek(output, archive_offset + end, SEEK_SET) != 0)
         return LIBMPQ_ERROR_WRITE;
     *extent = end;
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /* Decode a complete member for pre-rename capture or rebuilt-copy validation. */
@@ -1111,10 +1100,10 @@ update_validate_member(
     int32_t result;
 
     result = libmpq__file_number(archive, name, &number);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         return result;
     result = libmpq__file_size_unpacked(archive, number, &size);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         return result;
     if (size < 0 || (uint64_t)size > SIZE_MAX)
         return LIBMPQ_ERROR_SIZE;
@@ -1127,25 +1116,25 @@ update_validate_member(
     if ((archive->mpq_block[archive->mpq_map[number].block_table_indices].flags &
          LIBMPQ_FLAG_ENCRYPTED) != 0) {
         result = libmpq__reader_offsets_acquire(archive, number, name);
-        if (result == LIBMPQ_SUCCESS) {
+        if (result == 0) {
             result = libmpq__file_read(archive, number, data, size, &transferred);
             update_result(&result, libmpq__reader_offsets_release(archive, number));
         }
     } else {
         result = libmpq__file_read(archive, number, data, size, &transferred);
     }
-    if (result == LIBMPQ_SUCCESS && transferred != size)
+    if (result == 0 && transferred != size)
         result = LIBMPQ_ERROR_READ;
-    if (result == LIBMPQ_SUCCESS && (compare_contents || actual_md5 != NULL)) {
+    if (result == 0 && (compare_contents || actual_md5 != NULL)) {
         libmpq__md5_init(&md5);
         libmpq__md5_update(&md5, data, (size_t)size);
         libmpq__md5_final(&md5, digest);
         if (compare_contents && memcmp(digest, expected_md5, sizeof(digest)) != 0)
             result = LIBMPQ_ERROR_READ;
-        if (result == LIBMPQ_SUCCESS && actual_md5 != NULL)
+        if (result == 0 && actual_md5 != NULL)
             memcpy(actual_md5, digest, sizeof(digest));
     }
-    if (result == LIBMPQ_SUCCESS && actual_size != NULL)
+    if (result == 0 && actual_size != NULL)
         *actual_size = (uint64_t)size;
     free(data);
     return result;
@@ -1201,10 +1190,10 @@ update_apply(
     if (fflush(update->working) != 0)
         return LIBMPQ_ERROR_WRITE;
     result = libmpq__archive_open(&archive, update->working_path, -1);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         return result;
     result = libmpq__file_number(archive, old_name, &number);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     block = archive->mpq_map[number].block_table_indices;
     slot = update_hash_slot(archive, old_name, block);
@@ -1230,7 +1219,7 @@ update_apply(
         uint32_t collision;
 
         result = libmpq__file_number(archive, new_name, &collision);
-        if (result == LIBMPQ_SUCCESS) {
+        if (result == 0) {
             result = LIBMPQ_ERROR_EXIST;
             goto done;
         }
@@ -1238,7 +1227,7 @@ update_apply(
             goto done;
     }
     result = libmpq__archive_signature_extent(archive, &extent);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     if ((uint64_t)archive->archive_offset > UINT64_MAX - extent) {
         result = LIBMPQ_ERROR_SIZE;
@@ -1249,12 +1238,12 @@ update_apply(
         uint8_t actual[4];
 
         result = libmpq__source_read_at(archive->source, suffix, actual, sizeof(actual));
-        if (result != LIBMPQ_SUCCESS)
+        if (result != 0)
             goto done;
         if (memcmp(actual, marker, sizeof(marker)) == 0)
             suffix += LIBMPQ_STRONG_TRAILER_SIZE;
     }
-    if (libmpq__file_number(archive, LIBMPQ_LISTFILE_NAME, &list_number) == LIBMPQ_SUCCESS) {
+    if (libmpq__file_number(archive, LIBMPQ_LISTFILE_NAME, &list_number) == 0) {
         has_list = 1;
         if (update_block_references(archive, archive->mpq_map[list_number].block_table_indices) !=
             1) {
@@ -1268,15 +1257,14 @@ update_apply(
                                              : old_name,
             &list, &list_size, &list_number
         );
-        if (result != LIBMPQ_SUCCESS)
+        if (result != 0)
             goto done;
     }
     result = libmpq__attributes_load(archive);
-    if (result == LIBMPQ_SUCCESS) {
+    if (result == 0) {
         has_attributes = 1;
         attribute_flags = archive->attributes->flags;
-        if (libmpq__file_number(archive, LIBMPQ_ATTRIBUTES_NAME, &attributes_number) !=
-            LIBMPQ_SUCCESS) {
+        if (libmpq__file_number(archive, LIBMPQ_ATTRIBUTES_NAME, &attributes_number) != 0) {
             result = LIBMPQ_ERROR_FORMAT;
             goto done;
         }
@@ -1301,7 +1289,7 @@ update_apply(
     } else if (result != LIBMPQ_ERROR_EXIST) {
         goto done;
     }
-    if (libmpq__file_number(archive, LIBMPQ_SIGNATURE_NAME, &signature_number) == LIBMPQ_SUCCESS) {
+    if (libmpq__file_number(archive, LIBMPQ_SIGNATURE_NAME, &signature_number) == 0) {
         has_signature = 1;
         if (update_block_references(
                 archive, archive->mpq_map[signature_number].block_table_indices
@@ -1313,14 +1301,14 @@ update_apply(
     if (action == LIBMPQ_UPDATE_RENAME) {
         result =
             update_validate_member(archive, old_name, NULL, 0, 0, expected_md5, &expected_size);
-        if (result != LIBMPQ_SUCCESS)
+        if (result != 0)
             goto done;
     }
     result = libmpq__directory_temporary_reopenable(
         update->directory, ".libmpq-rebuild-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", 1, &temporary,
         &rebuilt
     );
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     rebuilt_path = update_working_path(update->working_path, temporary);
     if (rebuilt_path == NULL) {
@@ -1328,7 +1316,7 @@ update_apply(
         goto done;
     }
     result = update_copy_range(archive, rebuilt, 0, (uint64_t)archive->archive_offset + extent);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     if (action == LIBMPQ_UPDATE_REMOVE) {
         update_delete_hash(&archive->mpq_hash[slot]);
@@ -1371,13 +1359,13 @@ update_apply(
             action == LIBMPQ_UPDATE_REPLACE ? expected_md5 : NULL,
             action == LIBMPQ_UPDATE_REPLACE ? &expected_size : NULL
         );
-        if (result != LIBMPQ_SUCCESS)
+        if (result != 0)
             goto done;
     }
     if (action == LIBMPQ_UPDATE_RENAME) {
         update_delete_hash(&archive->mpq_hash[slot]);
         result = update_insert_hash(archive, new_name, &hash);
-        if (result != LIBMPQ_SUCCESS)
+        if (result != 0)
             goto done;
     }
     if (has_signature) {
@@ -1408,7 +1396,7 @@ update_apply(
             &archive->mpq_block[list_block], &archive->mpq_block_ex[list_block],
             has_attributes ? &attributes[list_block] : NULL, NULL, NULL
         );
-        if (result != LIBMPQ_SUCCESS)
+        if (result != 0)
             goto done;
     }
     if (has_attributes) {
@@ -1418,7 +1406,7 @@ update_apply(
             attributes, archive->mpq_header.block_table_count, attributes_block, attribute_flags,
             &attribute_data, &attribute_size
         );
-        if (result != LIBMPQ_SUCCESS)
+        if (result != 0)
             goto done;
         options.flags = LIBMPQ_FILE_FLAG_SINGLE;
         options.compression_first = 0;
@@ -1428,15 +1416,15 @@ update_apply(
             NULL, &options, &archive->mpq_block[attributes_block],
             &archive->mpq_block_ex[attributes_block], NULL, NULL, NULL
         );
-        if (result != LIBMPQ_SUCCESS)
+        if (result != 0)
             goto done;
     }
     result = update_write_tables(archive, rebuilt, &rebuilt_extent);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     if (suffix < archive->file_size) {
         result = update_copy_range(archive, rebuilt, suffix, archive->file_size - suffix);
-        if (result != LIBMPQ_SUCCESS)
+        if (result != 0)
             goto done;
     }
     if (fflush(rebuilt) != 0) {
@@ -1444,7 +1432,7 @@ update_apply(
         goto done;
     }
     result = libmpq__archive_open(&check, rebuilt_path, -1);
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     if (check->archive_offset != archive->archive_offset ||
         check->mpq_header.archive_size != rebuilt_extent) {
@@ -1454,25 +1442,25 @@ update_apply(
     if (action != LIBMPQ_UPDATE_REPLACE) {
         result = libmpq__file_number(check, old_name, &number);
         if (result != LIBMPQ_ERROR_EXIST) {
-            result = result == LIBMPQ_SUCCESS ? LIBMPQ_ERROR_FORMAT : result;
+            result = result == 0 ? LIBMPQ_ERROR_FORMAT : result;
             goto done;
         }
     }
-    result = LIBMPQ_SUCCESS;
+    result = 0;
     if (action == LIBMPQ_UPDATE_REPLACE || action == LIBMPQ_UPDATE_RENAME)
         result = update_validate_member(
             check, action == LIBMPQ_UPDATE_RENAME ? new_name : old_name, expected_md5,
             expected_size, 1, NULL, NULL
         );
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     result = libmpq__archive_close(check);
     check = NULL;
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
     result = libmpq__archive_close(archive);
     archive = NULL;
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         goto done;
 
     /*

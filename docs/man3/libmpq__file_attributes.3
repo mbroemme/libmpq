@@ -32,7 +32,9 @@ The file number is mapped to its physical block-table row.
 .SS "Availability and Value Interpretation"
 Flags identify available values; unavailable values are zero. Recognized
 legacy layouts can omit rows or patch bits, so per-file availability may
-differ from the archive header flags. The result is zeroed on failure.
+differ from the archive header flags. An all-zero MD5 row is an unavailable
+placeholder even when the archive contains an MD5 array. The result is zeroed
+on failure.
 .PP
 FILETIME is an unsigned 64-bit Windows timestamp. MD5 is sixteen bytes,
 not hexadecimal text. CRC32 and MD5 describe source bytes before compression;

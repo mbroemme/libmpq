@@ -28,11 +28,12 @@
 
 #include <libmpq/mpq.h>
 
+#include "mpq-archive.h"
 #include "mpq-attributes.h"
+#include "mpq-block.h"
 #include "mpq-compression.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
-#include "mpq-internal.h"
 #include "mpq-patch-writer.h"
 #include "mpq-reader.h"
 #include "mpq-rsa.h"
@@ -154,7 +155,7 @@ libmpq__archive_attributes(mpq_archive_s *archive, uint32_t *flags)
     if (archive->write_mode)
         return LIBMPQ_ERROR_NOT_INITIALIZED;
     result = libmpq__attributes_load(archive);
-    if (result == LIBMPQ_SUCCESS)
+    if (result == 0)
         *flags = archive->attributes->flags;
     return result;
 }
@@ -174,10 +175,10 @@ libmpq__file_attributes(mpq_archive_s *archive, uint32_t number, mpq_file_attrib
         return LIBMPQ_ERROR_EXIST;
     if (archive->write_mode)
         return LIBMPQ_ERROR_NOT_INITIALIZED;
-    if (libmpq__reader_validate_file_number(archive, number) != LIBMPQ_SUCCESS)
+    if (libmpq__reader_validate_file_number(archive, number) != 0)
         return LIBMPQ_ERROR_EXIST;
     result = libmpq__archive_attributes(archive, &flags);
-    if (result == LIBMPQ_SUCCESS)
+    if (result == 0)
         libmpq__attributes_get(
             archive->attributes, archive->mpq_map[number].block_table_indices, attributes
         );
@@ -260,16 +261,16 @@ libmpq__update_begin(mpq_update_s **update, const char *path)
     mpq_archive_s *archive = NULL;
     int32_t result = libmpq__update_transaction_begin(update, path);
 
-    if (result != LIBMPQ_SUCCESS)
+    if (result != 0)
         return result;
     result = libmpq__archive_open(&archive, libmpq__update_path(*update), -1);
     if (archive != NULL) {
         int32_t close_result = libmpq__archive_close(archive);
 
-        if (result == LIBMPQ_SUCCESS)
+        if (result == 0)
             result = close_result;
     }
-    if (result != LIBMPQ_SUCCESS) {
+    if (result != 0) {
         (void)libmpq__update_transaction_abort(*update);
         *update = NULL;
     }
@@ -327,10 +328,10 @@ libmpq__update_commit(mpq_update_s *update)
     if (archive != NULL) {
         int32_t close_result = libmpq__archive_close(archive);
 
-        if (result == LIBMPQ_SUCCESS)
+        if (result == 0)
             result = close_result;
     }
-    if (result != LIBMPQ_SUCCESS) {
+    if (result != 0) {
         (void)libmpq__update_transaction_abort(update);
         return result;
     }
@@ -543,7 +544,7 @@ int32_t
 libmpq__archive_close(mpq_archive_s *mpq_archive)
 {
     uint32_t i;
-    int32_t result = LIBMPQ_SUCCESS;
+    int32_t result = 0;
 
     if (mpq_archive == NULL)
         return LIBMPQ_ERROR_EXIST;
@@ -553,9 +554,9 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
         /* Writer closure must serialize tables before releasing writer storage. */
         result = libmpq__writer_finalize(mpq_archive);
         libmpq__writer_file_abort(mpq_archive->write_current);
-        if (result == LIBMPQ_SUCCESS && mpq_archive->write_mpqe)
+        if (result == 0 && mpq_archive->write_mpqe)
             result = libmpq__writer_finalize_mpqe(mpq_archive);
-        if (mpq_archive->fp != NULL && fclose(mpq_archive->fp) < 0 && result == LIBMPQ_SUCCESS)
+        if (mpq_archive->fp != NULL && fclose(mpq_archive->fp) < 0 && result == 0)
             result = LIBMPQ_ERROR_CLOSE;
         libmpq__writer_mpqe_cleanup(mpq_archive);
         libmpq__rsa_clear(
@@ -618,7 +619,7 @@ libmpq__archive_size_packed(mpq_archive_s *mpq_archive, libmpq__off_t *packed_si
             mpq_archive->mpq_block[mpq_archive->mpq_map[i].block_table_indices].packed_size;
     }
 
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -638,7 +639,7 @@ libmpq__archive_size_unpacked(mpq_archive_s *mpq_archive, libmpq__off_t *unpacke
             mpq_archive->mpq_block[mpq_archive->mpq_map[i].block_table_indices].unpacked_size;
     }
 
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -650,7 +651,7 @@ libmpq__archive_offset(mpq_archive_s *mpq_archive, libmpq__off_t *offset)
 {
     *offset = mpq_archive->archive_offset;
 
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -663,7 +664,7 @@ libmpq__archive_version(mpq_archive_s *mpq_archive, uint32_t *version)
 {
     *version = mpq_archive->mpq_header.version + 1;
 
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -675,7 +676,7 @@ libmpq__archive_files(mpq_archive_s *mpq_archive, uint32_t *files)
 {
     *files = mpq_archive->files;
 
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -695,7 +696,7 @@ libmpq__file_size_packed(
     *packed_size =
         mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].packed_size;
 
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -715,7 +716,7 @@ libmpq__file_size_unpacked(
     *unpacked_size =
         mpq_archive->mpq_block[mpq_archive->mpq_map[file_number].block_table_indices].unpacked_size;
 
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -736,7 +737,7 @@ libmpq__file_offset(mpq_archive_s *mpq_archive, uint32_t file_number, libmpq__of
                     .offset_high)
                << 32);
 
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -753,7 +754,7 @@ libmpq__file_blocks(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *
 
     *blocks = libmpq__reader_count_file_blocks(mpq_archive, file_number);
 
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /* Return stored block-table flags without reading or modifying payload data. */
@@ -767,7 +768,7 @@ libmpq__file_flags(mpq_archive_s *archive, uint32_t file_number, uint32_t *flags
         return LIBMPQ_ERROR_EXIST;
 
     *flags = archive->mpq_block[archive->mpq_map[file_number].block_table_indices].flags;
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -820,7 +821,7 @@ libmpq__file_number_from_hash(
                 return LIBMPQ_ERROR_FORMAT;
             }
 
-            return LIBMPQ_SUCCESS;
+            return 0;
         }
 
         if ((i + 1) % ht_count == hash1) {
@@ -943,7 +944,7 @@ libmpq__block_size_unpacked(
         }
     }
 
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /* Query stored sector bytes through the reader's offset-table lifecycle. */

@@ -18,9 +18,9 @@
  */
 
 #include "mpq-compression.h"
+#include "mpq-block.h"
 #include "mpq-endian.h"
 #include "mpq-huffman.h"
-#include "mpq-internal.h"
 #include "mpq-pkware.h"
 #include "mpq-sparse.h"
 #include "mpq-wave.h"
@@ -62,7 +62,7 @@ copy_raw(
     *output = data;
     *output_size = input_size;
     *emitted_mask = 0;
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /* Decode the MPQ v2+ LZMA framing using the caller-known unpacked sector size. */
@@ -192,7 +192,7 @@ encode_lzma(
     *output = packed;
     *output_size = LIBMPQ_LZMA_TOTAL_OVERHEAD + encoded_size;
     *emitted_mask = LIBMPQ_COMPRESSION_LZMA_METHOD;
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -634,7 +634,7 @@ compression_stage(uint8_t **data, size_t *size, uint32_t mask)
         free(*data);
         *data = candidate;
         *size = candidate_size;
-        return LIBMPQ_SUCCESS;
+        return 0;
     } else if (mask == LIBMPQ_COMPRESSION_HUFFMAN) {
         struct huffman_tree_s *tree = calloc(1, sizeof(*tree));
         struct huffman_output_stream_s stream;
@@ -654,7 +654,7 @@ compression_stage(uint8_t **data, size_t *size, uint32_t mask)
         free(*data);
         *data = out;
         *size = (size_t)encoded;
-        return LIBMPQ_SUCCESS;
+        return 0;
     } else if (mask == LIBMPQ_COMPRESSION_WAVE_MONO || mask == LIBMPQ_COMPRESSION_WAVE_STEREO) {
         uint8_t *candidate = NULL;
         uint32_t candidate_size = 0;
@@ -668,7 +668,7 @@ compression_stage(uint8_t **data, size_t *size, uint32_t mask)
         free(*data);
         *data = candidate;
         *size = candidate_size;
-        return LIBMPQ_SUCCESS;
+        return 0;
     } else if (mask == LIBMPQ_COMPRESSION_ZLIB) {
         memset(&z, 0, sizeof(z));
         z.next_in = *data;
@@ -712,7 +712,7 @@ compression_stage(uint8_t **data, size_t *size, uint32_t mask)
     free(*data);
     *data = out;
     *size = out_size;
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -798,7 +798,7 @@ libmpq__compression_encode_sector(
         *output = packed;
         *output_size = size + 1;
     }
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*

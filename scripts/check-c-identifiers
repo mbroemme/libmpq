@@ -25,9 +25,9 @@ status=0
 search_c_sources()
 {
 	if command -v rg >/dev/null 2>&1; then
-		rg -n --glob '*.c' --glob '*.h' -- "$1" src include tools tests fuzz
+		rg -n --glob '*.c' --glob '*.h' -- "$1" src include tests fuzz
 	else
-		grep -R -n -E --include='*.c' --include='*.h' -- "$1" src include tools tests fuzz
+		grep -R -n -E --include='*.c' --include='*.h' -- "$1" src include tests fuzz
 	fi
 }
 

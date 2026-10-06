@@ -477,6 +477,55 @@ signature keys are supplied explicitly by the caller. This leaves trust
 decisions with applications, avoids maintaining a product-specific key database,
 and reduces legal/distribution risk from bundling product-specific material.
 
+### Developer benchmarks
+
+The eleven module-specific benchmarks are non-installed developer tools:
+
+- `bench-compression` times production compression/decompression dispatch for
+  representative codecs and compressible, structured, and incompressible data.
+- `bench-reader` measures single-file and many-file archive open, name lookup,
+  and full-file extraction for stored, zlib, and encrypted workloads.
+- `bench-source` compares file-backed and custom-memory-I/O open, extraction,
+  focused stream reads, callback granularity, and authenticated MPQE access.
+- `bench-stream` measures stream open, sequential and incremental reads, and
+  forward, backward, and random seeks on stored, compressed, and encrypted
+  members.
+- `bench-writer` measures ordinary archive creation, one-shot and streaming
+  member writes, many-small-file insertion, and archive finalization.
+- `bench-mpqe` measures MPQE encoding, authenticated open, and transport reads
+  alongside equivalent ordinary-MPQ diagnostic cases.
+- `bench-verify` measures sector Adler-32, CRC32/MD5 `(attributes)`, automatic
+  extraction checks, and explicit file verification.
+- `bench-signature` measures weak, strong, and combined archive signature
+  verification.
+- `bench-patch-reader` measures patch-view materialization for COPY, BSD0, and
+  mixed chains.
+- `bench-patch-writer` measures patch staging and COPY/BSD0 transform selection.
+- `bench-update` measures transactional update begin, operation, and commit for
+  ordinary MPQ, embedded HM3W-style, and authenticated MPQE archives.
+
+From a disposable build tree, build and run all benchmarks with:
+
+```sh
+make -C tests benchmarks
+make -C tests run-benchmarks
+```
+
+To build and run one benchmark, use any name from the list above. For example:
+
+```sh
+make -C tests bench-compression
+./tests/bench-compression 3
+```
+
+The optional `runs` argument defaults to three; each tool reports the best
+monotonic elapsed time for deterministic cases. Compression cases use 64 KiB,
+1 MiB, and 16 MiB where practical; slower legacy codecs stay at 64 KiB.
+Fixture creation and result verification are outside timed regions where
+practical. These benchmarks are not part of `make check`. Compare before and
+after results on the same machine and build configuration; the timings are not
+portable performance guarantees.
+
 ## SDK integration and binding development
 
 ### Native C SDK packages

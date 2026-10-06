@@ -1,5 +1,5 @@
 # Initialize the Autoconf package metadata.
-AC_INIT([libmpq],[0.8.0],[mbroemme@libmpq.org],[libmpq])
+AC_INIT([libmpq],[0.8.1],[mbroemme@libmpq.org],[libmpq])
 AC_SUBST(LIBMPQ_ABI, [5:0:1])
 
 # Detect the canonical host and target build environments.
@@ -98,7 +98,6 @@ docs/man1/Makefile
 docs/man3/Makefile
 tests/Makefile
 fuzz/Makefile
-tools/Makefile
 ])
 
 # Complete the configuration process.

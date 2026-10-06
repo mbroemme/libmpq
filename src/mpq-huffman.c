@@ -30,7 +30,6 @@
 
 #include "mpq-huffman.h"
 #include "mpq-endian.h"
-#include "mpq-internal.h"
 #include <libmpq/mpq.h>
 
 #include <stdlib.h>
@@ -231,7 +230,7 @@ huffman_write_bit(struct huffman_output_stream_s *os, uint32_t bit)
         os->bit_buf = 0;
         os->bits = 0;
     }
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -248,7 +247,7 @@ huffman_write_bits(struct huffman_output_stream_s *os, uint32_t value, uint32_t 
             return result;
         value >>= 1;
     }
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -300,7 +299,7 @@ huffman_insert_literal(struct huffman_tree_s *ht, uint32_t value)
     libmpq__huffman_update_weights(ht, literal);
     if (ht->compression_type_zero == 0)
         libmpq__huffman_update_weights(ht, old);
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /*
@@ -534,7 +533,7 @@ huffman_item_reference_valid(
     uintptr_t end = (uintptr_t)&ht->node_pool[sizeof(ht->node_pool) / sizeof(ht->node_pool[0])];
 
     if (item == PTR_PTR(&ht->current_sentinel) || item == PTR_PTR(&ht->first)) {
-        return TRUE;
+        return 1;
     }
 
     return address >= first && address < end && (address - first) % sizeof(ht->node_pool[0]) == 0;
@@ -991,7 +990,7 @@ libmpq__huffman_decode(
     libmpq__huffman_tree_build(ht, n8bits);
 
     /* Compression type 0 uses 8-bit literal handling. */
-    ht->compression_type_zero = (n8bits == 0) ? TRUE : FALSE;
+    ht->compression_type_zero = (n8bits == 0) ? 1 : 0;
 
     for (;;) {
         n7bits = libmpq__huffman_peek_seven_bits(is);
@@ -1001,7 +1000,7 @@ libmpq__huffman_decode(
 
         /* Quick-decode entries cache symbols for seven-bit prefixes after tree updates. */
         qd = &ht->quick_decode_cache[n7bits];
-        has_qd = (qd->tree_update_generation >= ht->tree_update_generation) ? TRUE : FALSE;
+        has_qd = (qd->tree_update_generation >= ht->tree_update_generation) ? 1 : 0;
 
         /* Prefer a cache entry, falling back to tree traversal after updates. */
         if (has_qd) {
@@ -1058,7 +1057,7 @@ libmpq__huffman_decode(
                 }
             } while (p_item1->child != NULL);
 
-            if (has_qd == FALSE) {
+            if (has_qd == 0) {
                 if (bit_count > 7) {
                     qd->tree_update_generation = ht->tree_update_generation;
                     qd->bits = bit_count;
@@ -1159,7 +1158,7 @@ libmpq__huffman_encode(
     os->out_buf[0] = 0;
     libmpq__huffman_tree_init(ht, LIBMPQ_HUFF_COMPRESS);
     libmpq__huffman_tree_build(ht, 0);
-    ht->compression_type_zero = TRUE;
+    ht->compression_type_zero = 1;
 
     /* Encode each input byte while keeping the tree synchronized with decoding. */
     for (i = 0; i < in_length; i++) {

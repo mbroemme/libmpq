@@ -2,7 +2,7 @@
 # Keep the release version synchronized with AC_INIT in configure.ac;
 # it is independent of the Libtool ABI version.
 cmake_minimum_required(VERSION 3.21)
-project(libmpq VERSION 0.8.0 LANGUAGES C)
+project(libmpq VERSION 0.8.1 LANGUAGES C)
 
 # Native MSVC frontend; Autotools remains the canonical Unix/cross build.
 option(BUILD_SHARED_LIBS "Build the shared library" ON)
@@ -116,6 +116,7 @@ include(CTest)
 if(BUILD_TESTING)
     set(test_modules
         file
+        block
         verify
         attributes
         md5
@@ -128,6 +129,8 @@ if(BUILD_TESTING)
         malformed
         mpqe
         endian
+        hash
+        header
         fixtures
         api
         pkware

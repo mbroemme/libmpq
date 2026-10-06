@@ -22,7 +22,6 @@
 #endif
 
 #include "mpq-endian.h"
-#include "mpq-internal.h"
 #include "mpq-mpqe.h"
 
 #include <string.h>
@@ -67,7 +66,7 @@ libmpq__mpqe_key(
     }
     memcpy(key, derived_key, sizeof(derived_key));
     libmpq__mpqe_clear(derived_key, sizeof(derived_key));
-    return LIBMPQ_SUCCESS;
+    return 0;
 }
 
 /* Decrypt one zero-padded MPQE chunk in place using its absolute stream position. */

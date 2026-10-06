@@ -244,6 +244,7 @@ the attributes entry itself are zero. Ordinary archive creation emits zero
 patch bits; the patch writer sets them for patch-file entries. Checksums are
 metadata, not cryptographic authentication. Complete lossless file reads
 automatically compare available CRC32 and MD5 values against decoded contents;
+an all-zero MD5 row is an unavailable placeholder, not a digest to compare.
 FILETIME and PATCH_BIT remain
 metadata only. Lossy ADPCM decoded bytes can differ from source-byte metadata,
 so those members are not automatically compared. Complete file reads also

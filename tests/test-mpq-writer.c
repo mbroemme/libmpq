@@ -18,7 +18,7 @@
  */
 
 /* Exercise deterministic writer output and generated writer/readback properties. */
-#include "mpq-internal.h"
+#include "mpq-archive.h"
 #include "mpq-mpqe.h"
 #include "mpq-writer.h"
 #include "test-mpq-helper.h"
@@ -350,7 +350,7 @@ transform_mpqe_chunk(uint8_t chunk[LIBMPQ_MPQE_CHUNK_SIZE], uint64_t offset)
     int32_t result;
 
     result = libmpq__mpqe_key(key, mpqe_auth_code, sizeof(mpqe_auth_code) - 1U);
-    if (result == LIBMPQ_SUCCESS)
+    if (result == 0)
         libmpq__mpqe_transform_chunk(chunk, key, offset);
     libmpq__mpqe_clear(key, sizeof(key));
     return result;
@@ -372,7 +372,7 @@ decrypt_mpqe_path(const char *path, uint8_t **data, size_t *size)
             physical = sizeof(chunk);
         memset(chunk, 0, sizeof(chunk));
         memcpy(chunk, *data + offset, physical);
-        if (transform_mpqe_chunk(chunk, offset) != LIBMPQ_SUCCESS) {
+        if (transform_mpqe_chunk(chunk, offset) != 0) {
             libmpq__mpqe_clear(chunk, sizeof(chunk));
             free(*data);
             *data = NULL;
@@ -913,12 +913,98 @@ test_writer_determinism(void)
     return 0;
 }
 
+/* Probe the writer hash table without changing duplicate identity rules. */
+static int
+test_writer_duplicate_identity(void)
+{
+    char path[160];
+    mpq_archive_s *archive = NULL;
+    mpq_file_options_s options = { 0, 0, 0, 0, 0 };
+    const uint8_t data[] = { 0x42 };
+
+    TEST_CHECK(test_temp_path(path, sizeof(path), "writer-duplicate") == 0);
+    TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_ONE, 0) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "first.bin", data, sizeof(data), &options) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "second.bin", data, sizeof(data), &options) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, "FIRST.BIN", data, sizeof(data), &options) ==
+        LIBMPQ_ERROR_EXIST
+    );
+    options.locale = 1;
+    TEST_CHECK(libmpq__archive_add_data(archive, "first.bin", data, sizeof(data), &options) == 0);
+    options.locale = 0;
+    options.platform = 1;
+    TEST_CHECK(libmpq__archive_add_data(archive, "first.bin", data, sizeof(data), &options) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    remove(path);
+    return 0;
+}
+
+/* A duplicate must be found after an earlier name displaced its hash slot. */
+static int
+test_writer_displaced_duplicate(void)
+{
+    char path[160];
+    char first[64] = { 0 };
+    char second[64] = { 0 };
+    mpq_archive_s *archive = NULL;
+    const uint8_t data[] = { 0x42 };
+    uint32_t capacity;
+    uint32_t first_hash[3] = { 0, 0, 0 };
+    uint32_t second_hash[3] = { 0, 0, 0 };
+    uint32_t bucket;
+    uint32_t displaced;
+    int found = 0;
+
+    TEST_CHECK(test_temp_path(path, sizeof(path), "writer-displaced") == 0);
+    TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_ONE, 0) == 0);
+    capacity = archive->write_hash_capacity;
+    TEST_CHECK(capacity != 0 && (capacity & (capacity - 1)) == 0);
+    for (uint32_t a = 0; a < capacity && !found; a++) {
+        (void)snprintf(first, sizeof(first), "collision-%04u.bin", a);
+        libmpq__file_hash(first, &first_hash[0], &first_hash[1], &first_hash[2]);
+        for (uint32_t b = a + 1; b <= capacity; b++) {
+            (void)snprintf(second, sizeof(second), "collision-%04u.bin", b);
+            libmpq__file_hash(second, &second_hash[0], &second_hash[1], &second_hash[2]);
+            if ((first_hash[0] & (capacity - 1)) == (second_hash[0] & (capacity - 1)) &&
+                (first_hash[0] != second_hash[0] || first_hash[1] != second_hash[1] ||
+                 first_hash[2] != second_hash[2])) {
+                found = 1;
+                break;
+            }
+        }
+    }
+    TEST_CHECK(found && strcmp(first, second) != 0);
+    bucket = first_hash[0] & (capacity - 1);
+    displaced = (bucket + 1) & (capacity - 1);
+    TEST_CHECK((second_hash[0] & (capacity - 1)) == bucket);
+    TEST_CHECK(libmpq__archive_add_data(archive, first, data, sizeof(data), NULL) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, second, data, sizeof(data), NULL) == 0);
+    TEST_CHECK(archive->mpq_hash[bucket].hash_a == first_hash[1]);
+    TEST_CHECK(archive->mpq_hash[bucket].hash_b == first_hash[2]);
+    TEST_CHECK(archive->mpq_hash[displaced].hash_a == second_hash[1]);
+    TEST_CHECK(archive->mpq_hash[displaced].hash_b == second_hash[2]);
+    TEST_CHECK(archive->mpq_hash[displaced].block_table_index != LIBMPQ_HASH_FREE);
+    TEST_CHECK(
+        archive->mpq_hash[displaced].block_table_index !=
+        archive->mpq_hash[bucket].block_table_index
+    );
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, second, data, sizeof(data), NULL) == LIBMPQ_ERROR_EXIST
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    remove(path);
+    return 0;
+}
+
 /* Verify deterministic output, generated properties, and MPQE creation/failure hardening. */
 int
 main(void)
 {
     TEST_CHECK(test_writer_abort_on_close() == 0);
     TEST_CHECK(test_writer_determinism() == 0);
+    TEST_CHECK(test_writer_duplicate_identity() == 0);
+    TEST_CHECK(test_writer_displaced_duplicate() == 0);
     TEST_CHECK(test_writer_properties() == 0);
     TEST_CHECK(test_mpqe_writer_credential_validation() == 0);
     TEST_CHECK(test_mpqe_writer_roundtrip(LIBMPQ_ARCHIVE_VERSION_ONE, 0) == 0);

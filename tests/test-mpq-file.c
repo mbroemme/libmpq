@@ -19,8 +19,8 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+#include "mpq-archive.h"
 #include "mpq-file.h"
-#include "mpq-internal.h"
 #include "mpq-source.h"
 #include "test-mpq-helper.h"
 #include <stdlib.h>
@@ -59,9 +59,8 @@ close_failure_close(void *context)
     int32_t result;
 
     ++failure->closes;
-    result = failure->backend.close == NULL ? LIBMPQ_SUCCESS
-                                            : failure->backend.close(failure->backend.context);
-    return result == LIBMPQ_SUCCESS ? LIBMPQ_ERROR_CLOSE : result;
+    result = failure->backend.close == NULL ? 0 : failure->backend.close(failure->backend.context);
+    return result == 0 ? LIBMPQ_ERROR_CLOSE : result;
 }
 
 static void

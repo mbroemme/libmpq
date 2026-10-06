@@ -20,8 +20,10 @@
 /* Exercise the compiled little-endian serialization module. */
 #include "test-mpq-helper.h"
 
+#include "../src/mpq-block.h"
 #include "../src/mpq-endian.h"
-#include "../src/mpq-internal.h"
+#include "../src/mpq-hash.h"
+#include "../src/mpq-header.h"
 
 #include <stdio.h>
 #include <stdlib.h>
