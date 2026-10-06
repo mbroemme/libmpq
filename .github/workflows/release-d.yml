@@ -364,10 +364,12 @@ jobs:
             & ${env:DC} -mtriple=aarch64-windows-msvc --version
             if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
           }
-          cmake -S . -B build -A '${{ matrix.cmake_platform }}' '-DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }}' -DBUILD_SHARED_LIBS=ON "-DCMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
+          cmake -S . -B build -A '${{ matrix.cmake_platform }}' '-DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }}' -DBUILD_SHARED_LIBS=ON -DVCPKG_APPLOCAL_DEPS=OFF "-DCMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
           cmake --build build --config Release --parallel
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          # Resolve vcpkg DLLs from PATH instead of racing app-local copies.
+          ${env:PATH} = "${env:VCPKG_INSTALLATION_ROOT}/installed/${{ matrix.vcpkg_triplet }}/bin;${env:PATH}"
           ctest --test-dir build -C Release --output-on-failure
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
           ${name} = "libmpq-${env:LIBMPQ_D_VERSION}-windows-msvc-${{ matrix.msvc_arch }}"
