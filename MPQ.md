@@ -229,10 +229,11 @@ hash to a BET index using a bitmap/index table and reduced hash bits. BET
 stores reduced name hashes plus bit fields for position, unpacked size, packed
 size, flag-array index, and an unknown field.
 
-Private structural decoders now accept already-decrypted/decompressed table
-bytes. They are not connected to archive opening: HET filename lookup and BET
-conversion into canonical `mpq_entry_s` entries remain unimplemented. MPQ v4
-also remains unsupported. Future loading must retain the plaintext common
+Private structural decoders and HET candidate lookup accept already-decrypted/
+decompressed table bytes. They are not connected to archive opening: normal
+filename lookup still uses classic tables, and BET conversion into canonical
+`mpq_entry_s` entries remains unimplemented. MPQ v4 also remains unsupported.
+Future loading must retain the plaintext common
 envelope and decrypt/decompress its contained data before structural decoding.
 
 The common envelope is three little-endian DWORDs: signature at byte 0,
@@ -294,6 +295,50 @@ bits on writes, and reject overflow, overruns, and values exceeding the given
 width. Zero-width reads produce zero; zero-width writes accept only zero.
 Multiplication and conversion to byte storage are checked without overflowing
 the rounding operation. No C bitfields or unaligned integer casts are used.
+
+### Internal HET filename lookup
+
+HET uses Jenkins `hashlittle2`, not the classic Storm filename hash. Normalize
+the first at most 264 filename bytes by converting ASCII `A`..`Z` to lowercase
+and `/` to `\`; all other bytes, including bytes above `0x7F`, are unchanged.
+Normalization is locale-independent. An empty filename has a defined hash;
+NULL is rejected by the private helper. The two lookup3 seeds are 2 for the
+low result and 1 for the high result. Combine the outputs as
+`(high << 32) | low`, using explicit little-endian byte loads.
+
+For declared hash width `N` (8..64), retain the low `N` bits and force bit
+`N - 1` to one. This adjusted hash determines all three lookup values:
+
+```text
+NameHash1    = hash >> (N - 8)           # high eight retained bits
+NameHash2    = hash & ((1 << (N-8)) - 1) # remaining low bits
+initial slot = hash % total_count
+```
+
+The private partition helper handles full-width masks without a shift by 64.
+The table view borrows validated NameHash1 and packed-index arrays; the caller
+must keep the decoded buffer alive and immutable. A zero-slot header may be
+structurally decoded, but cannot initialize a lookup view.
+
+Probe successive slots, wrapping to zero, for at most `total_count` visits.
+NameHash1 zero terminates a missing lookup. Nonzero values must have their
+high bit set. In particular, `0x80` must not be treated unconditionally as
+empty or deleted: it is also a possible valid NameHash1. The caller can reject
+deleted candidates while confirming their hashes. A full table never causes
+an unbounded probe loop.
+
+On a NameHash1 match, read `index_size` low bits starting at
+`slot * index_size_total`. Extra bits belong to the high end of the slot's
+stride and are not part of the BET index; they do not shift its start.
+Extraction uses checked bit access and returns a 64-bit index without
+truncation. Lookup checks candidates against the caller's BET entry count.
+
+NameHash1 alone is insufficient to identify a filename. The private lookup
+therefore requires a caller-supplied matcher that confirms the candidate's
+NameHash2, continuing on hash collisions and propagating matcher errors.
+Tests supply synthetic reference hashes. No BET hash array or file record is
+decoded yet, no BET entry becomes `mpq_entry_s`, and normal archive opening
+and public filename lookup remain unchanged.
 
 ## Internal files and integrity data
 
