@@ -281,7 +281,7 @@ patch_writer_member(
     result = libmpq__file_number(state->base, name, number);
     if (result != 0)
         return result;
-    block = state->base->mpq_entry[state->base->mpq_map[*number].entry_index].source_index;
+    block = state->base->mpq_entry[state->base->mpq_map[*number].entry_index].classic_source_index;
     libmpq__file_hash(name, &hash1, &hash_a, &hash_b);
     for (uint32_t i = 0; i < state->base->mpq_header.hash_table_count; i++) {
         const mpq_hash_s *entry = &state->base->mpq_hash[i];

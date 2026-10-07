@@ -204,6 +204,8 @@ libmpq__bet_entry_decode(
     if (entry == NULL)
         return LIBMPQ_ERROR_SIZE;
     memset(entry, 0, sizeof(*entry));
+    entry->classic_source_index = UINT32_MAX;
+    entry->bet_source_index = UINT32_MAX;
     result = libmpq__bet_match((void *)table, index, expected, &matches);
     if (result != 0)
         return result;
@@ -216,8 +218,8 @@ libmpq__bet_entry_decode(
     entry->unpacked_size = decoded.unpacked_size;
     entry->packed_size = decoded.packed_size;
     entry->flags = decoded.flags;
-    entry->source_kind = LIBMPQ_ENTRY_SOURCE_BET;
-    entry->source_index = (uint32_t)index;
+    entry->source_mask = LIBMPQ_ENTRY_SOURCE_BET;
+    entry->bet_source_index = (uint32_t)index;
     entry->file_number = UINT32_MAX;
     return 0;
 }

@@ -357,7 +357,8 @@ Candidate matching masks the expected hash to the effective width and requires
 equality, independently of NameHash1. A mismatch is not a valid candidate.
 
 Confirmed records convert to `mpq_entry_s` with full-width metadata,
-`LIBMPQ_ENTRY_SOURCE_BET`, and `source_index` equal to the BET index. No classic
+`source_mask` containing `LIBMPQ_ENTRY_SOURCE_BET`, and `bet_source_index`
+equal to the BET index. `classic_source_index` is `UINT32_MAX`; no classic
 block row is fabricated. Isolated conversion leaves `file_number` at
 `UINT32_MAX`; archive loading assigns compact public numbers to live entries.
 BET decoding remains isolated from classic tables and attributes.
@@ -385,14 +386,23 @@ zlib/bzip2 stages reject trailing input; existing LZMA validation also requires
 complete input consumption. Structural parsing follows transformation.
 There is no heuristic plaintext fallback for a damaged encrypted payload.
 
-The archive owns decoded HET/BET buffers, borrowed views, and a separate
-BET-row-to-entry mapping. Classic and BET rows stay distinct: neither a row
-number nor matching metadata proves cross-table filename identity. Currently,
-mixed archives enumerate live rows from both systems, possibly exposing two
-representations of one member. This is provisional pending a separate
-compatibility investigation, not permanent format semantics; HET lookup selects
-the BET representation first. Classic public numbering is unchanged when no extended
-tables exist. Classic `(attributes)` rows do not apply to BET provenance.
+The archive owns decoded HET/BET buffers, borrowed views, and explicit classic
+and BET source-row-to-entry mappings. Normal, non-defragmented mixed archives
+use StormLib-compatible unified rows: classic row N and BET row N represent
+the same canonical row.
+The canonical row count is the maximum of the two source counts, not their sum.
+BET initializes metadata; a live classic row then overlays offset, sizes, and
+flags. An unused classic row does not erase live BET metadata. Matching metadata
+on different row numbers never causes heuristic deduplication.
+
+Each canonical entry records a `source_mask` and separate `classic_source_index`
+and `bet_source_index` values; an absent source index is `UINT32_MAX`. Both
+explicit mappings resolve a shared row, so classic and HET filename lookup
+converge on its public file number. Enumeration counts each live canonical row
+once and skips rows without EXISTS. Classic-only public numbering is unchanged.
+Classic `(attributes)` remain indexed by `classic_source_index` and sized by
+classic block count, including shared rows; BET-only entries have no classic
+attributes row. HET/BET hash information remains in the table views.
 
 HET/BET archives are read-only. Transactional updates and classic patch
 rebuild/materialization reject them rather than omit BET-only members.

@@ -224,11 +224,10 @@ reader_v3_fixture(
         reader_v3_store_table(source, bet_wire, bet_size, compress_bet, "(block table)") == 0
     );
     if (classic != 0) {
-        mpq_block_s block = { 68, 9000, 9000, LIBMPQ_FLAG_EXISTS };
+        mpq_block_s block[2] = { { 68, (uint32_t)payload_size, 9000, flags },
+                                 { (uint32_t)(68 + payload_size), 72, 72, LIBMPQ_FLAG_EXISTS } };
         mpq_hash_s hashes[8];
-        header.block_table_count = 1;
-        if (classic == 3)
-            block = (mpq_block_s){ (uint32_t)(68 + payload_size), 72, 72, LIBMPQ_FLAG_EXISTS };
+        header.block_table_count = classic == 3 ? 2 : 1;
         if (classic == 1) {
             memset(hashes, 0xff, sizeof(hashes));
             header.hash_table_count = 8;
@@ -258,13 +257,19 @@ reader_v3_fixture(
         }
         header.block_table_offset = (uint32_t)(shift + source->size);
         ex.block_table_offset_high = (uint16_t)(shift >> 32);
-        TEST_CHECK(libmpq__block_table_encode(&block, 1, source->bytes + source->size, 16) == 0);
         TEST_CHECK(
-            libmpq__crypto_encrypt_block(
-                source->bytes + source->size, 16, libmpq__crypto_hash_string("(block table)", 0x300)
+            libmpq__block_table_encode(
+                block, header.block_table_count, source->bytes + source->size,
+                16 * header.block_table_count
             ) == 0
         );
-        source->size += 16;
+        TEST_CHECK(
+            libmpq__crypto_encrypt_block(
+                source->bytes + source->size, 16 * header.block_table_count,
+                libmpq__crypto_hash_string("(block table)", 0x300)
+            ) == 0
+        );
+        source->size += 16 * header.block_table_count;
         if (high) {
             ex.extended_offset = shift + source->size;
             libmpq__store_le16(source->bytes + source->size, (uint16_t)(shift >> 32));
@@ -290,6 +295,344 @@ reader_v3_fixture(
                 );
             }
     }
+    return 0;
+}
+
+/* Same-index rows merge even when metadata differs; other rows never alias. */
+static int
+reader_v3_mixed_fixture(
+    reader_v3_source_s *source, uint32_t classic_count, uint32_t bet_count, int live_sources,
+    int attributes
+)
+{
+    uint32_t capacity = classic_count > bet_count ? classic_count : bet_count;
+    mpq_header_s header = { LIBMPQ_HEADER, 68, 0, LIBMPQ_ARCHIVE_VERSION_THREE, 3, 0, 0, 16,
+                            classic_count };
+    mpq_header_ex_s ex = { 0 };
+    mpq_header_v3_s v3;
+    mpq_block_s blocks[4];
+    mpq_hash_s hashes[16];
+    uint8_t het[132] = { 0 };
+    uint8_t bet[256] = { 0 };
+    size_t record_bytes;
+    size_t hash_bytes;
+    size_t bet_size;
+    uint32_t i;
+    TEST_CHECK(capacity <= 4 && classic_count >= 2 && bet_count >= 2);
+    memset(source, 0, sizeof(*source));
+    source->size = 68 + capacity * 64;
+    memset(hashes, 0xff, sizeof(hashes));
+    for (i = 0; i < capacity; i++) {
+        char name[32];
+        uint32_t h1;
+        uint32_t h2;
+        uint32_t h3;
+        uint32_t slot;
+        for (uint32_t j = 0; j < 64; j++)
+            source->bytes[68 + i * 64 + j] = (uint8_t)(i * 71 + j);
+        blocks[i] = (mpq_block_s){ 68 + i * 64, 64, 64, LIBMPQ_FLAG_EXISTS };
+        if ((live_sources == 1 && i == 1) || (live_sources == 2 && i == 0))
+            blocks[i].flags = 0;
+        if (attributes && i == 1) {
+            blocks[i].packed_size = blocks[i].unpacked_size = 8 + classic_count * 4;
+            libmpq__store_le32(source->bytes + blocks[i].offset, 100);
+            libmpq__store_le32(source->bytes + blocks[i].offset + 4, LIBMPQ_ATTRIBUTE_CRC32);
+        }
+        if (i >= classic_count)
+            continue;
+        for (uint32_t alias = 0; alias < 2; alias++) {
+            if (attributes && i == 1 && alias != 0)
+                continue;
+            TEST_CHECK(
+                snprintf(name, sizeof(name), alias ? "bet-%u.bin" : "classic-%u.bin", i) > 0
+            );
+            libmpq__file_hash(attributes && i == 1 ? "(attributes)" : name, &h1, &h2, &h3);
+            slot = h1 & 15;
+            while (hashes[slot].block_table_index != LIBMPQ_HASH_FREE)
+                slot = (slot + 1) & 15;
+            hashes[slot] = (mpq_hash_s){ h2, h3, 0, 0, i };
+        }
+    }
+    if (attributes)
+        for (i = 0; i < classic_count; i++)
+            libmpq__store_le32(
+                source->bytes + blocks[1].offset + 8 + i * 4,
+                i == 1 ? 0 : (uint32_t)crc32(0, source->bytes + 68 + i * 64, 64)
+            );
+    TEST_CHECK(libmpq__bit_bytes(bet_count, 130, &record_bytes) == 0);
+    TEST_CHECK(libmpq__bit_bytes(bet_count, 56, &hash_bytes) == 0);
+    bet_size = 100 + record_bytes + hash_bytes;
+    libmpq__store_le32(bet, LIBMPQ_BET_SIGNATURE);
+    libmpq__store_le32(bet + 4, 1);
+    libmpq__store_le32(bet + 8, (uint32_t)bet_size - 12);
+    libmpq__store_le32(bet + 12, (uint32_t)bet_size - 12);
+    libmpq__store_le32(bet + 16, bet_count);
+    libmpq__store_le32(bet + 24, 130);
+    libmpq__store_le32(bet + 32, 64);
+    libmpq__store_le32(bet + 36, 96);
+    libmpq__store_le32(bet + 40, 128);
+    libmpq__store_le32(bet + 44, 130);
+    libmpq__store_le32(bet + 48, 64);
+    libmpq__store_le32(bet + 52, 32);
+    libmpq__store_le32(bet + 56, 32);
+    libmpq__store_le32(bet + 60, 2);
+    libmpq__store_le32(bet + 68, 56);
+    libmpq__store_le32(bet + 76, 56);
+    libmpq__store_le32(bet + 80, (uint32_t)hash_bytes);
+    libmpq__store_le32(bet + 84, 3);
+    libmpq__store_le32(bet + 88, LIBMPQ_FLAG_EXISTS);
+    libmpq__store_le32(bet + 92, LIBMPQ_FLAG_EXISTS | LIBMPQ_FLAG_SINGLE);
+    libmpq__store_le32(het, LIBMPQ_HET_SIGNATURE);
+    libmpq__store_le32(het + 4, 1);
+    libmpq__store_le32(het + 8, 120);
+    libmpq__store_le32(het + 12, 120);
+    libmpq__store_le32(het + 16, bet_count);
+    libmpq__store_le32(het + 20, 64);
+    libmpq__store_le32(het + 24, 64);
+    libmpq__store_le32(het + 28, 3);
+    libmpq__store_le32(het + 36, 3);
+    libmpq__store_le32(het + 40, 24);
+    for (i = 0; i < bet_count; i++) {
+        char name[32];
+        uint64_t hash;
+        mpq_het_hash_s parts;
+        uint32_t slot;
+        uint32_t flag_index = live_sources && i == 0 ? 2 : i == 0 ? 1 : 0;
+        uint64_t offset = blocks[i].offset;
+        uint32_t packed = blocks[i].packed_size;
+        uint32_t unpacked = blocks[i].unpacked_size;
+        if (i == 0) {
+            offset++;
+            packed = 16;
+            unpacked = 16;
+        }
+
+        /* Equal metadata on distinct rows must not cause heuristic deduplication. */
+        if (i == 3) {
+            offset = blocks[0].offset;
+            packed = unpacked = 64;
+        }
+        TEST_CHECK(snprintf(name, sizeof(name), "bet-%u.bin", i) > 0);
+        TEST_CHECK(
+            libmpq__het_hash_filename(attributes && i == 1 ? "(attributes)" : name, &hash) == 0
+        );
+        TEST_CHECK(libmpq__het_hash_partition(hash, 64, 64, &parts) == 0);
+        slot = parts.initial_slot;
+        while (het[44 + slot] != 0)
+            slot = (slot + 1) % 64;
+        het[44 + slot] = parts.name_hash1;
+        TEST_CHECK(libmpq__bit_set(het + 108, 24, slot * 3, 3, i) == 0);
+        TEST_CHECK(libmpq__bit_set(bet + 100, record_bytes, i * 130, 64, offset) == 0);
+        TEST_CHECK(libmpq__bit_set(bet + 100, record_bytes, i * 130 + 64, 32, unpacked) == 0);
+        TEST_CHECK(libmpq__bit_set(bet + 100, record_bytes, i * 130 + 96, 32, packed) == 0);
+        TEST_CHECK(libmpq__bit_set(bet + 100, record_bytes, i * 130 + 128, 2, flag_index) == 0);
+        TEST_CHECK(
+            libmpq__bit_set(bet + 100 + record_bytes, hash_bytes, i * 56, 56, parts.name_hash2) == 0
+        );
+    }
+    source->het_offset = source->size;
+    TEST_CHECK(reader_v3_store_table(source, het, sizeof(het), 0, "(hash table)") == 0);
+    source->bet_offset = source->size;
+    TEST_CHECK(reader_v3_store_table(source, bet, bet_size, 0, "(block table)") == 0);
+    header.hash_table_offset = (uint32_t)source->size;
+    TEST_CHECK(libmpq__hash_table_encode(hashes, 16, source->bytes + source->size, 256) == 0);
+    TEST_CHECK(
+        libmpq__crypto_encrypt_block(
+            source->bytes + source->size, 256, libmpq__crypto_hash_string("(hash table)", 0x300)
+        ) == 0
+    );
+    source->size += 256;
+    header.block_table_offset = (uint32_t)source->size;
+    TEST_CHECK(
+        libmpq__block_table_encode(
+            blocks, classic_count, source->bytes + source->size, classic_count * 16
+        ) == 0
+    );
+    TEST_CHECK(
+        libmpq__crypto_encrypt_block(
+            source->bytes + source->size, classic_count * 16,
+            libmpq__crypto_hash_string("(block table)", 0x300)
+        ) == 0
+    );
+    source->size += classic_count * 16;
+    v3 = (mpq_header_v3_s){ source->size, source->bet_offset, source->het_offset };
+    TEST_CHECK(libmpq__header_encode(&header, source->bytes, 32) == 0);
+    TEST_CHECK(libmpq__header_ex_encode(&ex, source->bytes + 32, 12) == 0);
+    TEST_CHECK(libmpq__header_v3_encode(&v3, source->bytes + 44, 24) == 0);
+    return 0;
+}
+
+static int
+test_v3_mixed_rows(uint32_t classic_count, uint32_t bet_count, int live_sources, int attributes)
+{
+    reader_v3_source_s source;
+    mpq_archive_s *archive = NULL;
+    uint32_t capacity = classic_count > bet_count ? classic_count : bet_count;
+    uint32_t files;
+    TEST_CHECK(
+        reader_v3_mixed_fixture(&source, classic_count, bet_count, live_sources, attributes) == 0
+    );
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &archive, &source, reader_v3_read_at, (libmpq__off_t)source.size, 0, NULL
+        ) == 0
+    );
+    TEST_CHECK(archive->entry_count == capacity);
+    if (attributes) {
+        mpq_entry_s saved = archive->mpq_entry[0];
+        archive->mpq_entry[0] = archive->mpq_entry[2];
+        archive->mpq_entry[2] = saved;
+        for (uint32_t i = 0; i < capacity; i++) {
+            const mpq_entry_s *entry = &archive->mpq_entry[i];
+            if ((entry->source_mask & LIBMPQ_ENTRY_SOURCE_CLASSIC) != 0)
+                archive->classic_entry_indices[entry->classic_source_index] = i;
+            if ((entry->source_mask & LIBMPQ_ENTRY_SOURCE_BET) != 0)
+                archive->bet_entry_indices[entry->bet_source_index] = i;
+            archive->mpq_map[entry->file_number].entry_index = i;
+        }
+    }
+    TEST_CHECK(
+        libmpq__archive_files(archive, &files) == 0 && files == capacity - (live_sources == 2)
+    );
+    for (uint32_t i = 0; i < capacity; i++) {
+        char name[32];
+        uint32_t index;
+        uint32_t classic_index = UINT32_MAX;
+        uint32_t bet_index = UINT32_MAX;
+        uint32_t number;
+        uint32_t classic_number;
+        uint32_t h1;
+        uint32_t h2;
+        uint32_t h3;
+        uint32_t flags;
+        libmpq__off_t value;
+        libmpq__off_t transferred;
+        uint8_t data[64];
+        mpq_stream_s *stream = NULL;
+        mpq_entry_s saved;
+        if (i < classic_count)
+            TEST_CHECK(libmpq__entry_index_from_classic(archive, i, &classic_index) == 0);
+        if (i < bet_count)
+            TEST_CHECK(libmpq__entry_index_from_bet(archive, i, &bet_index) == 0);
+        if (i < classic_count && i < bet_count)
+            TEST_CHECK(classic_index == bet_index);
+        index = i < bet_count ? bet_index : classic_index;
+        saved = archive->mpq_entry[index];
+        if (i == 0 && live_sources == 0) {
+            mpq_bet_entry_s raw;
+            TEST_CHECK(libmpq__bet_record_decode(&archive->mpq_bet, 0, &raw) == 0);
+            TEST_CHECK(
+                raw.offset != saved.offset && raw.packed_size != saved.packed_size &&
+                raw.unpacked_size != saved.unpacked_size && raw.flags != saved.flags
+            );
+        }
+        TEST_CHECK(
+            saved.source_mask == ((i < classic_count ? LIBMPQ_ENTRY_SOURCE_CLASSIC : 0) |
+                                  (i < bet_count ? LIBMPQ_ENTRY_SOURCE_BET : 0))
+        );
+        TEST_CHECK(saved.classic_source_index == (i < classic_count ? i : UINT32_MAX));
+        TEST_CHECK(saved.bet_source_index == (i < bet_count ? i : UINT32_MAX));
+        if (i == 3 && i >= classic_count) {
+            const mpq_entry_s *first = &archive->mpq_entry[archive->bet_entry_indices[0]];
+            TEST_CHECK(saved.offset == first->offset);
+            TEST_CHECK(saved.packed_size == first->packed_size);
+            TEST_CHECK(saved.unpacked_size == first->unpacked_size);
+            TEST_CHECK(saved.flags == first->flags);
+            TEST_CHECK(index != archive->bet_entry_indices[0]);
+        }
+        if (live_sources == 2 && i == 0) {
+            TEST_CHECK((saved.flags & LIBMPQ_FLAG_EXISTS) == 0 && saved.file_number == UINT32_MAX);
+            continue;
+        }
+        TEST_CHECK(
+            snprintf(name, sizeof(name), i < bet_count ? "bet-%u.bin" : "classic-%u.bin", i) > 0
+        );
+        TEST_CHECK(
+            libmpq__file_number(archive, attributes && i == 1 ? "(attributes)" : name, &number) == 0
+        );
+        TEST_CHECK(archive->mpq_map[number].entry_index == index);
+        if (i < classic_count && !(live_sources && i == 1)) {
+            TEST_CHECK(snprintf(name, sizeof(name), "classic-%u.bin", i) > 0);
+            libmpq__file_hash(attributes && i == 1 ? "(attributes)" : name, &h1, &h2, &h3);
+            TEST_CHECK(libmpq__file_number_from_hash(archive, h1, h2, h3, &classic_number) == 0);
+            TEST_CHECK(classic_number == number);
+            if (i < bet_count) {
+                TEST_CHECK(snprintf(name, sizeof(name), "bet-%u.bin", i) > 0);
+                libmpq__file_hash(attributes && i == 1 ? "(attributes)" : name, &h1, &h2, &h3);
+                TEST_CHECK(
+                    libmpq__file_number_from_hash(archive, h1, h2, h3, &classic_number) == 0
+                );
+                TEST_CHECK(classic_number == number);
+            }
+            TEST_CHECK(saved.offset == archive->mpq_block[i].offset);
+            TEST_CHECK(saved.packed_size == archive->mpq_block[i].packed_size);
+            TEST_CHECK(saved.unpacked_size == archive->mpq_block[i].unpacked_size);
+            TEST_CHECK(saved.flags == archive->mpq_block[i].flags);
+        }
+        TEST_CHECK(
+            libmpq__file_offset(archive, number, &value) == 0 && (uint64_t)value == saved.offset
+        );
+        TEST_CHECK(
+            libmpq__file_size_packed(archive, number, &value) == 0 &&
+            (uint64_t)value == saved.packed_size
+        );
+        TEST_CHECK(
+            libmpq__file_size_unpacked(archive, number, &value) == 0 &&
+            (uint64_t)value == saved.unpacked_size
+        );
+        TEST_CHECK(libmpq__file_flags(archive, number, &flags) == 0 && flags == saved.flags);
+        TEST_CHECK(
+            libmpq__file_read(archive, number, data, sizeof(data), &transferred) == 0 &&
+            (uint64_t)transferred == saved.unpacked_size
+        );
+        TEST_CHECK(memcmp(data, source.bytes + saved.offset, (size_t)transferred) == 0);
+        TEST_CHECK(libmpq__stream_open(archive, number, &stream) == 0);
+        TEST_CHECK(
+            libmpq__stream_read(stream, data, sizeof(data), &transferred) == 0 &&
+            (uint64_t)transferred == saved.unpacked_size
+        );
+        TEST_CHECK(memcmp(data, source.bytes + saved.offset, (size_t)transferred) == 0);
+        TEST_CHECK(libmpq__stream_close(stream) == 0);
+        if (attributes && i != 1) {
+            mpq_file_attributes_s info;
+            int32_t result = libmpq__file_attributes(archive, number, &info);
+            if (i < classic_count)
+                TEST_CHECK(
+                    result == 0 && info.crc32 == (uint32_t)crc32(0, source.bytes + saved.offset, 64)
+                );
+            else
+                TEST_CHECK(result == LIBMPQ_ERROR_FORMAT);
+        }
+        if (i < classic_count) {
+            archive->mpq_entry[index].source_mask &= (uint8_t)~LIBMPQ_ENTRY_SOURCE_CLASSIC;
+            TEST_CHECK(
+                libmpq__entry_index_from_classic(archive, i, &classic_index) == LIBMPQ_ERROR_FORMAT
+            );
+            archive->mpq_entry[index] = saved;
+            archive->mpq_entry[index].classic_source_index = UINT32_MAX;
+            TEST_CHECK(
+                libmpq__entry_index_from_classic(archive, i, &classic_index) == LIBMPQ_ERROR_FORMAT
+            );
+            archive->mpq_entry[index] = saved;
+            archive->classic_entry_indices[i] = capacity;
+            TEST_CHECK(
+                libmpq__entry_index_from_classic(archive, i, &classic_index) == LIBMPQ_ERROR_FORMAT
+            );
+            archive->classic_entry_indices[i] = index;
+        }
+        if (i < bet_count) {
+            archive->mpq_entry[index].source_mask &= (uint8_t)~LIBMPQ_ENTRY_SOURCE_BET;
+            TEST_CHECK(libmpq__entry_index_from_bet(archive, i, &bet_index) == LIBMPQ_ERROR_FORMAT);
+            archive->mpq_entry[index] = saved;
+            archive->mpq_entry[index].bet_source_index = UINT32_MAX;
+            TEST_CHECK(libmpq__entry_index_from_bet(archive, i, &bet_index) == LIBMPQ_ERROR_FORMAT);
+            archive->mpq_entry[index] = saved;
+            archive->bet_entry_indices[i] = capacity;
+            TEST_CHECK(libmpq__entry_index_from_bet(archive, i, &bet_index) == LIBMPQ_ERROR_FORMAT);
+            archive->bet_entry_indices[i] = index;
+        }
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
     return 0;
 }
 
@@ -324,9 +667,7 @@ test_v3_bet_read(
             base ? -1 : 0, NULL
         ) == 0
     );
-    TEST_CHECK(
-        libmpq__archive_files(archive, &files) == 0 && files == (empty ? 0u : 2u + (classic != 0))
-    );
+    TEST_CHECK(libmpq__archive_files(archive, &files) == 0 && files == (empty ? 0u : 2u));
     TEST_CHECK(libmpq__reader_ext_table_sizes(archive, &het_size, &bet_size) == 0);
     TEST_CHECK(het_size == source.bet_offset - source.het_offset);
     TEST_CHECK(
@@ -339,7 +680,11 @@ test_v3_bet_read(
         TEST_CHECK(libmpq__file_number(archive, "PAYLOAD.BIN", &number) == 0);
         TEST_CHECK(libmpq__entry_index_from_bet(archive, 0, &index) == 0);
         TEST_CHECK(archive->mpq_map[number].entry_index == index);
-        TEST_CHECK(index != 0 || classic == 0);
+        if (classic != 0) {
+            uint32_t classic_index;
+            TEST_CHECK(libmpq__entry_index_from_classic(archive, 0, &classic_index) == 0);
+            TEST_CHECK(classic_index == index);
+        }
         TEST_CHECK(
             libmpq__file_offset(archive, number, &size) == 0 && (uint64_t)size == shift + 68
         );
@@ -390,8 +735,8 @@ test_v3_bet_read(
         if (classic == 1) {
             TEST_CHECK(libmpq__file_number(archive, "fallback.bin", &number) == 0);
             TEST_CHECK(
-                archive->mpq_entry[archive->mpq_map[number].entry_index].source_kind ==
-                LIBMPQ_ENTRY_SOURCE_CLASSIC
+                archive->mpq_entry[archive->mpq_map[number].entry_index].source_mask ==
+                (LIBMPQ_ENTRY_SOURCE_CLASSIC | LIBMPQ_ENTRY_SOURCE_BET)
             );
         }
         archive->bet_entry_indices[0] = UINT32_MAX;
@@ -904,10 +1249,10 @@ test_extended_sector_offsets(void)
     TEST_CHECK(libmpq__file_number(archive, "payload.bin", &number) == 0);
     TEST_CHECK(libmpq__file_blocks(archive, number, &blocks) == 0 && blocks > 1);
     TEST_CHECK(
-        archive->mpq_entry[archive->mpq_map[number].entry_index].source_kind ==
+        archive->mpq_entry[archive->mpq_map[number].entry_index].source_mask ==
         LIBMPQ_ENTRY_SOURCE_CLASSIC
     );
-    physical = archive->mpq_entry[archive->mpq_map[number].entry_index].source_index;
+    physical = archive->mpq_entry[archive->mpq_map[number].entry_index].classic_source_index;
     member_offset = archive->mpq_block[physical].offset;
     first_offset = (blocks + 1u) * 4u;
     insert_at = member_offset + first_offset;
@@ -997,8 +1342,8 @@ test_canonical_entries(uint32_t version)
     TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
     TEST_CHECK(libmpq__file_number(archive, "payload.bin", &number) == 0);
     index = archive->mpq_map[number].entry_index;
-    TEST_CHECK(archive->mpq_entry[index].source_kind == LIBMPQ_ENTRY_SOURCE_CLASSIC);
-    classic = archive->mpq_entry[index].source_index;
+    TEST_CHECK(archive->mpq_entry[index].source_mask == LIBMPQ_ENTRY_SOURCE_CLASSIC);
+    classic = archive->mpq_entry[index].classic_source_index;
 
     /* Move the payload to another entry without changing public file numbers. */
     {
@@ -1008,7 +1353,7 @@ test_canonical_entries(uint32_t version)
         archive->mpq_entry[other] = saved;
         for (uint32_t i = 0; i < archive->entry_count; ++i) {
             mpq_entry_s *entry = &archive->mpq_entry[i];
-            archive->classic_entry_indices[entry->source_index] = i;
+            archive->classic_entry_indices[entry->classic_source_index] = i;
             if (entry->file_number != UINT32_MAX)
                 archive->mpq_map[entry->file_number].entry_index = i;
         }
@@ -1063,25 +1408,25 @@ test_canonical_entries(uint32_t version)
         );
         archive->classic_entry_indices = mapping;
     }
-    archive->mpq_entry[index].source_kind = LIBMPQ_ENTRY_SOURCE_NONE;
+    archive->mpq_entry[index].source_mask = LIBMPQ_ENTRY_SOURCE_NONE;
     TEST_CHECK(
         libmpq__file_attributes(archive, archive->mpq_entry[index].file_number, &attributes) ==
         LIBMPQ_ERROR_FORMAT
     );
     TEST_CHECK(libmpq__entry_index_from_classic(archive, classic, &flags) == LIBMPQ_ERROR_FORMAT);
-    archive->mpq_entry[index].source_kind = LIBMPQ_ENTRY_SOURCE_BET;
+    archive->mpq_entry[index].source_mask = LIBMPQ_ENTRY_SOURCE_BET;
     TEST_CHECK(
         libmpq__file_attributes(archive, archive->mpq_entry[index].file_number, &attributes) ==
         LIBMPQ_ERROR_FORMAT
     );
-    archive->mpq_entry[index].source_kind = LIBMPQ_ENTRY_SOURCE_CLASSIC;
-    archive->mpq_entry[index].source_index = archive->mpq_header.block_table_count;
+    archive->mpq_entry[index].source_mask = LIBMPQ_ENTRY_SOURCE_CLASSIC;
+    archive->mpq_entry[index].classic_source_index = archive->mpq_header.block_table_count;
     TEST_CHECK(
         libmpq__file_attributes(archive, archive->mpq_entry[index].file_number, &attributes) ==
         LIBMPQ_ERROR_FORMAT
     );
     TEST_CHECK(libmpq__entry_index_from_classic(archive, classic, &flags) == LIBMPQ_ERROR_FORMAT);
-    archive->mpq_entry[index].source_index = classic;
+    archive->mpq_entry[index].classic_source_index = classic;
     TEST_CHECK(libmpq__file_number(archive, "payload.bin", &number) == 0);
     TEST_CHECK(libmpq__file_offset(archive, number, &offset) == 0);
     TEST_CHECK(libmpq__file_size_packed(archive, number, &packed) == 0);
@@ -1190,12 +1535,20 @@ main(void)
     libmpq__off_t transferred;
 
     TEST_CHECK(test_extended_sector_offsets() == 0);
+    TEST_CHECK(test_v3_mixed_rows(2, 2, 0, 0) == 0);
+    TEST_CHECK(test_v3_mixed_rows(2, 4, 0, 0) == 0);
+    TEST_CHECK(test_v3_mixed_rows(4, 2, 0, 0) == 0);
+    TEST_CHECK(test_v3_mixed_rows(2, 2, 1, 0) == 0);
+    TEST_CHECK(test_v3_mixed_rows(2, 2, 2, 0) == 0);
+    TEST_CHECK(test_v3_mixed_rows(2, 4, 0, 1) == 0);
     for (int het = 0; het < 2; het++)
         for (int bet = 0; bet < 2; bet++)
             TEST_CHECK(test_v3_bet_read(het, bet, 0, 0, 0, 0, 0, 0) == 0);
     TEST_CHECK(test_v3_bet_read(0, 0, 1, 0, 0, 0, 0, 0) == 0);
     TEST_CHECK(test_v3_bet_read(1, 1, 1, 1, 0, 0, 0, 512) == 0);
     TEST_CHECK(test_v3_bet_read(0, 0, 2, 0, 0, 0, 0, 0) == 0);
+    TEST_CHECK(test_v3_bet_read(0, 0, 1, 0, 1, 0, 0, 0) == 0);
+    TEST_CHECK(test_v3_bet_read(1, 1, 1, 0, 3, 0, 0, 0) == 0);
     TEST_CHECK(test_v3_bet_read(0, 0, 0, 0, 1, 0, 0, 0) == 0);
     TEST_CHECK(test_v3_bet_read(1, 1, 0, 0, 2, 0, 0, 0) == 0);
     TEST_CHECK(test_v3_bet_read(1, 1, 0, 0, 3, 0, 0, 0) == 0);

@@ -275,10 +275,11 @@ test_records(void)
         TEST_CHECK(libmpq__bet_entry_decode(&table, i, 0x51 + i, &entry) == 0);
         TEST_CHECK(entry.offset == record.offset && entry.packed_size == record.packed_size);
         TEST_CHECK(entry.unpacked_size == record.unpacked_size && entry.flags == record.flags);
-        TEST_CHECK(entry.source_kind == LIBMPQ_ENTRY_SOURCE_BET && entry.source_index == i);
+        TEST_CHECK(entry.source_mask == LIBMPQ_ENTRY_SOURCE_BET && entry.bet_source_index == i);
+        TEST_CHECK(entry.classic_source_index == UINT32_MAX);
         TEST_CHECK(entry.file_number == UINT32_MAX);
         TEST_CHECK(libmpq__bet_entry_decode(&table, i, 0x50 + i, &entry) == LIBMPQ_ERROR_EXIST);
-        TEST_CHECK(entry.source_kind == LIBMPQ_ENTRY_SOURCE_NONE && entry.offset == 0);
+        TEST_CHECK(entry.source_mask == LIBMPQ_ENTRY_SOURCE_NONE && entry.offset == 0);
     }
     libmpq__store_le32(wire + 64, 0);
     TEST_CHECK(libmpq__bet_view_init(wire, 179, &table) == 0);
@@ -378,7 +379,7 @@ test_het_bet(void)
     );
     TEST_CHECK(index == 1);
     TEST_CHECK(libmpq__bet_entry_decode(&bet, index, parts.name_hash2, &entry) == 0);
-    TEST_CHECK(entry.source_kind == LIBMPQ_ENTRY_SOURCE_BET && entry.source_index == 1);
+    TEST_CHECK(entry.source_mask == LIBMPQ_ENTRY_SOURCE_BET && entry.bet_source_index == 1);
     TEST_CHECK(entry.offset == UINT64_MAX - 1 && entry.file_number == UINT32_MAX);
     return 0;
 }

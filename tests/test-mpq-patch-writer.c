@@ -123,10 +123,10 @@ check_patch_archive(const char *path, uint8_t replace, uint8_t remove_member)
     if (replace) {
         TEST_CHECK(libmpq__file_number(archive, "replace.txt", &number) == 0);
         TEST_CHECK(
-            archive->mpq_entry[archive->mpq_map[number].entry_index].source_kind ==
+            archive->mpq_entry[archive->mpq_map[number].entry_index].source_mask ==
             LIBMPQ_ENTRY_SOURCE_CLASSIC
         );
-        block = archive->mpq_entry[archive->mpq_map[number].entry_index].source_index;
+        block = archive->mpq_entry[archive->mpq_map[number].entry_index].classic_source_index;
         TEST_CHECK(libmpq__file_flags(archive, number, &flags) == 0);
         TEST_CHECK((flags & LIBMPQ_FILE_FLAG_PATCH_FILE) != 0);
         TEST_CHECK((flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) == 0);
@@ -166,10 +166,10 @@ check_patch_archive(const char *path, uint8_t replace, uint8_t remove_member)
     if (remove_member) {
         TEST_CHECK(libmpq__file_number(archive, "remove.txt", &number) == 0);
         TEST_CHECK(
-            archive->mpq_entry[archive->mpq_map[number].entry_index].source_kind ==
+            archive->mpq_entry[archive->mpq_map[number].entry_index].source_mask ==
             LIBMPQ_ENTRY_SOURCE_CLASSIC
         );
-        block = archive->mpq_entry[archive->mpq_map[number].entry_index].source_index;
+        block = archive->mpq_entry[archive->mpq_map[number].entry_index].classic_source_index;
         TEST_CHECK(libmpq__file_flags(archive, number, &flags) == 0);
         TEST_CHECK((flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) != 0);
         TEST_CHECK((flags & LIBMPQ_FILE_FLAG_PATCH_FILE) == 0);
@@ -203,10 +203,10 @@ test_patch_block_size(const char *path)
     TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
     TEST_CHECK(libmpq__file_number(archive, "replace.txt", &number) == 0);
     TEST_CHECK(
-        archive->mpq_entry[archive->mpq_map[number].entry_index].source_kind ==
+        archive->mpq_entry[archive->mpq_map[number].entry_index].source_mask ==
         LIBMPQ_ENTRY_SOURCE_CLASSIC
     );
-    block = archive->mpq_entry[archive->mpq_map[number].entry_index].source_index;
+    block = archive->mpq_entry[archive->mpq_map[number].entry_index].classic_source_index;
     TEST_CHECK(archive->mpq_block[block].unpacked_size == sizeof(new_data) - 1);
     offset = (uint64_t)archive->archive_offset + archive->mpq_block[block].offset +
              ((uint64_t)archive->mpq_block_ex[block].offset_high << 32);
@@ -536,10 +536,10 @@ test_delta_selection(uint8_t kind)
     TEST_CHECK(libmpq__archive_open(&patch, patch_path, 0) == 0);
     TEST_CHECK(libmpq__file_number(patch, "delta.bin", &number) == 0);
     TEST_CHECK(
-        patch->mpq_entry[patch->mpq_map[number].entry_index].source_kind ==
+        patch->mpq_entry[patch->mpq_map[number].entry_index].source_mask ==
         LIBMPQ_ENTRY_SOURCE_CLASSIC
     );
-    block = patch->mpq_entry[patch->mpq_map[number].entry_index].source_index;
+    block = patch->mpq_entry[patch->mpq_map[number].entry_index].classic_source_index;
     TEST_CHECK(libmpq__file_flags(patch, number, &flags) == 0);
     TEST_CHECK((flags & LIBMPQ_FILE_FLAG_PATCH_FILE) != 0);
     TEST_CHECK(patch->mpq_block[block].unpacked_size == after_size);
@@ -1040,10 +1040,10 @@ test_public_patch_storage(uint32_t flags)
     TEST_CHECK(libmpq__archive_open(&stored, patch_path, 0) == 0);
     TEST_CHECK(libmpq__file_number(stored, "replace.txt", &number) == 0);
     TEST_CHECK(
-        stored->mpq_entry[stored->mpq_map[number].entry_index].source_kind ==
+        stored->mpq_entry[stored->mpq_map[number].entry_index].source_mask ==
         LIBMPQ_ENTRY_SOURCE_CLASSIC
     );
-    block = stored->mpq_entry[stored->mpq_map[number].entry_index].source_index;
+    block = stored->mpq_entry[stored->mpq_map[number].entry_index].classic_source_index;
     offset = (uint64_t)stored->archive_offset + stored->mpq_block[block].offset +
              ((uint64_t)stored->mpq_block_ex[block].offset_high << 32);
     TEST_CHECK(stored->mpq_block[block].unpacked_size == sizeof(replacement));

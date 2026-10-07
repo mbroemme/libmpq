@@ -177,16 +177,17 @@ libmpq__file_attributes(mpq_archive_s *archive, uint32_t number, mpq_file_attrib
         return LIBMPQ_ERROR_NOT_INITIALIZED;
     if (libmpq__reader_validate_file_number(archive, number) != 0)
         return LIBMPQ_ERROR_EXIST;
-    if (archive->mpq_entry[archive->mpq_map[number].entry_index].source_kind !=
-            LIBMPQ_ENTRY_SOURCE_CLASSIC ||
-        archive->mpq_entry[archive->mpq_map[number].entry_index].source_index >=
+    if ((archive->mpq_entry[archive->mpq_map[number].entry_index].source_mask &
+         LIBMPQ_ENTRY_SOURCE_CLASSIC) == 0 ||
+        archive->mpq_entry[archive->mpq_map[number].entry_index].classic_source_index >=
             archive->mpq_header.block_table_count)
         return LIBMPQ_ERROR_FORMAT;
     result = libmpq__archive_attributes(archive, &flags);
     if (result == 0)
         libmpq__attributes_get(
             archive->attributes,
-            archive->mpq_entry[archive->mpq_map[number].entry_index].source_index, attributes
+            archive->mpq_entry[archive->mpq_map[number].entry_index].classic_source_index,
+            attributes
         );
     return result;
 }

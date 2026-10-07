@@ -191,7 +191,7 @@ test_public_patch_payload(void)
         archive->mpq_entry[other] = saved;
         for (uint32_t i = 0; i < archive->entry_count; ++i) {
             mpq_entry_s *entry = &archive->mpq_entry[i];
-            archive->classic_entry_indices[entry->source_index] = i;
+            archive->classic_entry_indices[entry->classic_source_index] = i;
             if (entry->file_number != UINT32_MAX)
                 archive->mpq_map[entry->file_number].entry_index = i;
         }
@@ -729,10 +729,10 @@ test_chain_edges(void)
     TEST_CHECK(libmpq__archive_open(&base, base_path, 0) == 0);
     TEST_CHECK(libmpq__file_number(base, "chain.txt", &number) == 0);
     TEST_CHECK(
-        base->mpq_entry[base->mpq_map[number].entry_index].source_kind ==
+        base->mpq_entry[base->mpq_map[number].entry_index].source_mask ==
         LIBMPQ_ENTRY_SOURCE_CLASSIC
     );
-    original_chain_block = base->mpq_entry[base->mpq_map[number].entry_index].source_index;
+    original_chain_block = base->mpq_entry[base->mpq_map[number].entry_index].classic_source_index;
     TEST_CHECK(libmpq__file_number(base, "keep.txt", &number) == 0);
     TEST_CHECK(libmpq__file_attributes(base, number, &original_keep) == 0);
     TEST_CHECK(libmpq__archive_close(base) == 0);
@@ -782,12 +782,12 @@ test_chain_edges(void)
                 TEST_CHECK(
                     libmpq__patch_view_archive(view)
                         ->mpq_entry[libmpq__patch_view_archive(view)->mpq_map[number].entry_index]
-                        .source_kind == LIBMPQ_ENTRY_SOURCE_CLASSIC
+                        .source_mask == LIBMPQ_ENTRY_SOURCE_CLASSIC
                 );
                 TEST_CHECK(
                     libmpq__patch_view_archive(view)
                         ->mpq_entry[libmpq__patch_view_archive(view)->mpq_map[number].entry_index]
-                        .source_index != original_chain_block
+                        .classic_source_index != original_chain_block
                 );
             }
             TEST_CHECK(
@@ -1258,10 +1258,10 @@ test_attribute_identity_remap(
     TEST_CHECK(libmpq__archive_open(&base, base_path, 0) == 0);
     TEST_CHECK(libmpq__file_number(base, "patch-only.txt", &number) == 0);
     TEST_CHECK(
-        base->mpq_entry[base->mpq_map[number].entry_index].source_kind ==
+        base->mpq_entry[base->mpq_map[number].entry_index].source_mask ==
         LIBMPQ_ENTRY_SOURCE_CLASSIC
     );
-    original_b_block = base->mpq_entry[base->mpq_map[number].entry_index].source_index;
+    original_b_block = base->mpq_entry[base->mpq_map[number].entry_index].classic_source_index;
     TEST_CHECK(libmpq__file_attributes(base, number, &original_b) == 0);
     TEST_CHECK(
         (original->flags & (LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_FILETIME |
@@ -1313,11 +1313,11 @@ test_attribute_identity_remap(
         TEST_CHECK(attributes.filetime == original->filetime);
         if (count == 1) {
             TEST_CHECK(
-                result->mpq_entry[result->mpq_map[number].entry_index].source_kind ==
+                result->mpq_entry[result->mpq_map[number].entry_index].source_mask ==
                 LIBMPQ_ENTRY_SOURCE_CLASSIC
             );
             TEST_CHECK(
-                result->mpq_entry[result->mpq_map[number].entry_index].source_index ==
+                result->mpq_entry[result->mpq_map[number].entry_index].classic_source_index ==
                 original_block
             );
             TEST_CHECK(attributes.crc32 == original->crc32);
@@ -1325,11 +1325,11 @@ test_attribute_identity_remap(
         }
         if (count == 2) {
             TEST_CHECK(
-                result->mpq_entry[result->mpq_map[number].entry_index].source_kind ==
+                result->mpq_entry[result->mpq_map[number].entry_index].source_mask ==
                 LIBMPQ_ENTRY_SOURCE_CLASSIC
             );
             TEST_CHECK(
-                result->mpq_entry[result->mpq_map[number].entry_index].source_index !=
+                result->mpq_entry[result->mpq_map[number].entry_index].classic_source_index !=
                 original_block
             );
             TEST_CHECK(attributes.crc32 == expected_a_crc);
@@ -1342,11 +1342,12 @@ test_attribute_identity_remap(
         }
         TEST_CHECK(libmpq__file_number(result, "patch-only.txt", &number) == 0);
         TEST_CHECK(
-            result->mpq_entry[result->mpq_map[number].entry_index].source_kind ==
+            result->mpq_entry[result->mpq_map[number].entry_index].source_mask ==
             LIBMPQ_ENTRY_SOURCE_CLASSIC
         );
         TEST_CHECK(
-            result->mpq_entry[result->mpq_map[number].entry_index].source_index != original_b_block
+            result->mpq_entry[result->mpq_map[number].entry_index].classic_source_index !=
+            original_b_block
         );
         TEST_CHECK(libmpq__file_attributes(result, number, &attributes) == 0);
         TEST_CHECK(attributes.patch_bit == original_b.patch_bit);
@@ -1408,10 +1409,10 @@ test_patch_bit(void)
     TEST_CHECK(libmpq__attributes_load(archive) == 0);
     TEST_CHECK(libmpq__file_number(archive, "overview.txt", &number) == 0);
     TEST_CHECK(
-        archive->mpq_entry[archive->mpq_map[number].entry_index].source_kind ==
+        archive->mpq_entry[archive->mpq_map[number].entry_index].source_mask ==
         LIBMPQ_ENTRY_SOURCE_CLASSIC
     );
-    data_block = archive->mpq_entry[archive->mpq_map[number].entry_index].source_index;
+    data_block = archive->mpq_entry[archive->mpq_map[number].entry_index].classic_source_index;
     TEST_CHECK(libmpq__file_number(archive, LIBMPQ_ATTRIBUTES_NAME, &attributes_number) == 0);
     attributes_entry = archive->mpq_map[attributes_number].entry_index;
     TEST_CHECK((archive->mpq_entry[attributes_entry].flags & LIBMPQ_FLAG_SINGLE) != 0);

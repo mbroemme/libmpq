@@ -708,7 +708,9 @@ patch_attribute_for_identity(
             archive, archive->mpq_hash[slot].block_table_index, &index
         ) != 0)
         return LIBMPQ_ERROR_FORMAT;
-    libmpq__attributes_get(archive->attributes, archive->mpq_entry[index].source_index, attributes);
+    libmpq__attributes_get(
+        archive->attributes, archive->mpq_entry[index].classic_source_index, attributes
+    );
     return 0;
 }
 

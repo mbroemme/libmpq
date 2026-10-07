@@ -112,16 +112,9 @@ locate(mpq_archive_s *a, uint64_t *offset, uint64_t *extent, uint8_t payload[LIB
     }
     for (i = 0; i < a->entry_count; ++i) {
         uint64_t other = a->mpq_entry[i].offset;
-
-        /* Mixed tables may describe the very same physical signature bytes twice. */
-        uint8_t alias = a->het_data != NULL &&
-                        a->mpq_entry[i].source_kind != a->mpq_entry[index].source_kind &&
-                        other == pos && a->mpq_entry[i].packed_size == LIBMPQ_SIGNATURE_SIZE &&
-                        a->mpq_entry[i].unpacked_size == LIBMPQ_SIGNATURE_SIZE &&
-                        a->mpq_entry[i].flags == a->mpq_entry[index].flags;
         if ((a->mpq_entry[i].flags & LIBMPQ_FLAG_EXISTS) && a->mpq_entry[i].packed_size != 0) {
             if (other > size || a->mpq_entry[i].packed_size > size - other ||
-                (i != index && !alias && overlaps(other, a->mpq_entry[i].packed_size, pos)))
+                (i != index && overlaps(other, a->mpq_entry[i].packed_size, pos)))
                 return LIBMPQ_ERROR_FORMAT;
         }
     }

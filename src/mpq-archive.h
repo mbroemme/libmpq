@@ -69,7 +69,7 @@ struct mpq_archive
     mpq_block_ex_s *mpq_block_ex;    /* Optional extended block table. */
     mpq_file_s **mpq_file;           /* Per-file cached sector tables. */
     mpq_entry_s *mpq_entry;          /* Archive-owned canonical entries for consumption. */
-    uint32_t entry_count;            /* Entry/cache capacity, including unused classic rows. */
+    uint32_t entry_count;            /* Canonical capacity, including unused source rows. */
     uint32_t *classic_entry_indices; /* Classic block row to canonical entry index. */
     uint32_t *bet_entry_indices;     /* BET row to canonical entry index. */
     mpq_het_s mpq_het;               /* Views borrow the owned decoded buffers below. */

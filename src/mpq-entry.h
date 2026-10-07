@@ -24,7 +24,7 @@
 
 #include <stdint.h>
 
-/* Entry provenance identifies the native table row without constraining readers to it. */
+/* Provenance flags can coexist; zero never identifies a valid source. */
 #define LIBMPQ_ENTRY_SOURCE_NONE 0u
 #define LIBMPQ_ENTRY_SOURCE_CLASSIC 1u
 #define LIBMPQ_ENTRY_SOURCE_BET 2u
@@ -32,13 +32,14 @@
 /* Logical member metadata owned by the archive, independent of classic wire widths. */
 typedef struct
 {
-    uint64_t offset;        /* Complete archive-relative payload position. */
-    uint64_t packed_size;   /* Stored payload length. */
-    uint64_t unpacked_size; /* Logical decoded length (target length for patch members). */
-    uint32_t flags;         /* Storage flags, including reader-discovered encryption. */
-    uint32_t source_index;  /* Row in the table identified by source_kind. */
-    uint32_t file_number;   /* Compact public number, or UINT32_MAX for unused entries. */
-    uint8_t source_kind;    /* Provenance only; logical reads do not require classic indices. */
+    uint64_t offset;               /* Complete archive-relative payload position. */
+    uint64_t packed_size;          /* Stored payload length. */
+    uint64_t unpacked_size;        /* Logical decoded length (target length for patch members). */
+    uint32_t flags;                /* Storage flags, including reader-discovered encryption. */
+    uint32_t classic_source_index; /* Classic row, or UINT32_MAX when absent. */
+    uint32_t bet_source_index;     /* BET row, or UINT32_MAX when absent. */
+    uint32_t file_number;          /* Compact public number, or UINT32_MAX for unused entries. */
+    uint8_t source_mask;           /* Sources present; logical reads do not require either index. */
 } mpq_entry_s;
 
 /* Convert classic wire metadata once; format writers still own the original tables. */
@@ -51,8 +52,9 @@ libmpq__entry_from_classic(
     entry->packed_size = block->packed_size;
     entry->unpacked_size = block->unpacked_size;
     entry->flags = block->flags;
-    entry->source_index = index;
-    entry->source_kind = LIBMPQ_ENTRY_SOURCE_CLASSIC;
+    entry->classic_source_index = index;
+    entry->bet_source_index = UINT32_MAX;
+    entry->source_mask = LIBMPQ_ENTRY_SOURCE_CLASSIC;
     entry->file_number = UINT32_MAX;
 }
 

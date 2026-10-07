@@ -179,8 +179,8 @@ libmpq__attributes_load(mpq_archive_s *archive)
         return archive->attributes_error;
     result = libmpq__file_number(archive, LIBMPQ_ATTRIBUTES_NAME, &number);
     if (result == 0 &&
-        archive->mpq_entry[archive->mpq_map[number].entry_index].source_kind ==
-            LIBMPQ_ENTRY_SOURCE_BET &&
+        (archive->mpq_entry[archive->mpq_map[number].entry_index].source_mask &
+         LIBMPQ_ENTRY_SOURCE_CLASSIC) == 0 &&
         archive->mpq_header.hash_table_count != 0) {
         uint32_t h1;
         uint32_t h2;
@@ -199,8 +199,8 @@ libmpq__attributes_load(mpq_archive_s *archive)
     if (result != 0)
         return result;
     entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
-    if (entry->source_kind != LIBMPQ_ENTRY_SOURCE_CLASSIC ||
-        entry->source_index >= archive->mpq_header.block_table_count)
+    if ((entry->source_mask & LIBMPQ_ENTRY_SOURCE_CLASSIC) == 0 ||
+        entry->classic_source_index >= archive->mpq_header.block_table_count)
         return LIBMPQ_ERROR_FORMAT;
     if (size < 8 || (uint64_t)size > SIZE_MAX ||
         (uint64_t)size > 8 + (uint64_t)archive->mpq_header.block_table_count * 32) {
@@ -223,7 +223,8 @@ libmpq__attributes_load(mpq_archive_s *archive)
     }
     if (result == 0)
         result = libmpq__attributes_parse(
-            data, (size_t)size, archive->mpq_header.block_table_count, entry->source_index, view
+            data, (size_t)size, archive->mpq_header.block_table_count, entry->classic_source_index,
+            view
         );
     if (result != 0) {
         free(data);

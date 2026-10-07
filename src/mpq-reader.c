@@ -65,8 +65,8 @@ libmpq__entry_index_from_classic(
         return LIBMPQ_ERROR_FORMAT;
     index = archive->classic_entry_indices[block_index];
     if (index >= archive->entry_count ||
-        archive->mpq_entry[index].source_kind != LIBMPQ_ENTRY_SOURCE_CLASSIC ||
-        archive->mpq_entry[index].source_index != block_index)
+        (archive->mpq_entry[index].source_mask & LIBMPQ_ENTRY_SOURCE_CLASSIC) == 0 ||
+        archive->mpq_entry[index].classic_source_index != block_index)
         return LIBMPQ_ERROR_FORMAT;
     *entry_index = index;
     return 0;
@@ -85,8 +85,8 @@ libmpq__entry_index_from_bet(
         return LIBMPQ_ERROR_FORMAT;
     index = archive->bet_entry_indices[bet_index];
     if (index >= archive->entry_count ||
-        archive->mpq_entry[index].source_kind != LIBMPQ_ENTRY_SOURCE_BET ||
-        archive->mpq_entry[index].source_index != bet_index)
+        (archive->mpq_entry[index].source_mask & LIBMPQ_ENTRY_SOURCE_BET) == 0 ||
+        archive->mpq_entry[index].bet_source_index != bet_index)
         return LIBMPQ_ERROR_FORMAT;
     *entry_index = index;
     return 0;
@@ -249,7 +249,7 @@ done:
     return result;
 }
 
-/* Build the second canonical producer without aliasing any classic table row. */
+/* BET establishes rows; live classic metadata overlays shared source rows. */
 static int32_t
 load_het_bet(mpq_archive_s *archive)
 {
@@ -258,6 +258,7 @@ load_het_bet(mpq_archive_s *archive)
     size_t size;
     uint32_t classic_count = archive->mpq_header.block_table_count;
     uint32_t count;
+    uint32_t capacity;
     uint32_t i;
     int32_t result;
     if (archive->mpq_header_v3.het_table_offset == 0)
@@ -284,14 +285,14 @@ load_het_bet(mpq_archive_s *archive)
     if (result != 0)
         return result;
     count = archive->mpq_bet.header.entry_count;
-    if (count > UINT32_MAX - classic_count || archive->mpq_het.header.entry_count != count ||
+    if (archive->mpq_het.header.entry_count != count ||
         archive->mpq_het.header.name_hash_bit_size - 8 != archive->mpq_bet.header.name_hash2_size)
         return LIBMPQ_ERROR_FORMAT;
-    if ((uint64_t)count + classic_count > SIZE_MAX / sizeof(mpq_entry_s))
+    capacity = count > classic_count ? count : classic_count;
+    if (capacity != 0 && SIZE_MAX / capacity < sizeof(mpq_entry_s))
         return LIBMPQ_ERROR_FORMAT;
     if (count != 0) {
-        mpq_entry_s *entries =
-            realloc(archive->mpq_entry, (size_t)(classic_count + count) * sizeof(*entries));
+        mpq_entry_s *entries = realloc(archive->mpq_entry, (size_t)capacity * sizeof(*entries));
         if (entries == NULL)
             return LIBMPQ_ERROR_MALLOC;
         archive->mpq_entry = entries;
@@ -299,16 +300,17 @@ load_het_bet(mpq_archive_s *archive)
         if (archive->bet_entry_indices == NULL)
             return LIBMPQ_ERROR_MALLOC;
     }
-    archive->entry_count = classic_count + count;
+    archive->entry_count = capacity;
     for (i = 0; i < count; i++) {
         uint64_t hash;
-        mpq_entry_s *entry = &archive->mpq_entry[classic_count + i];
+        mpq_entry_s decoded;
+        mpq_entry_s *entry = &decoded;
         result = libmpq__bet_name_hash2(&archive->mpq_bet, i, &hash);
         if (result == 0)
             result = libmpq__bet_entry_decode(&archive->mpq_bet, i, hash, entry);
         if (result != 0)
             return result;
-        archive->bet_entry_indices[i] = classic_count + i;
+        archive->bet_entry_indices[i] = i;
         if (entry->offset > INT64_MAX || entry->packed_size > INT64_MAX ||
             entry->unpacked_size > INT64_MAX ||
             ((entry->flags & LIBMPQ_FLAG_EXISTS) != 0 &&
@@ -319,6 +321,18 @@ load_het_bet(mpq_archive_s *archive)
                   libmpq__header_archive_size(&archive->mpq_header, &archive->mpq_header_v3) -
                       entry->offset)))
             return LIBMPQ_ERROR_FORMAT;
+        if (i < classic_count) {
+            const mpq_entry_s *classic = &archive->mpq_entry[i];
+            if ((classic->flags & LIBMPQ_FLAG_EXISTS) != 0) {
+                entry->offset = classic->offset;
+                entry->packed_size = classic->packed_size;
+                entry->unpacked_size = classic->unpacked_size;
+                entry->flags = classic->flags;
+            }
+            entry->source_mask |= LIBMPQ_ENTRY_SOURCE_CLASSIC;
+            entry->classic_source_index = i;
+        }
+        archive->mpq_entry[i] = decoded;
     }
 
     /* Reject malformed live slots at open, even if later lookup would miss them. */
@@ -1157,12 +1171,12 @@ libmpq__reader_offsets_acquire(mpq_archive_s *mpq_archive, uint32_t file_number,
                 mpq_archive->mpq_entry[entry_index].flags |= LIBMPQ_FLAG_ENCRYPTED;
 
                 /* Preserve discovered flags for classic rebuilds, when that storage exists. */
-                if (mpq_archive->mpq_entry[entry_index].source_kind ==
-                        LIBMPQ_ENTRY_SOURCE_CLASSIC &&
-                    mpq_archive->mpq_entry[entry_index].source_index <
+                if ((mpq_archive->mpq_entry[entry_index].source_mask &
+                     LIBMPQ_ENTRY_SOURCE_CLASSIC) != 0 &&
+                    mpq_archive->mpq_entry[entry_index].classic_source_index <
                         mpq_archive->mpq_header.block_table_count &&
                     mpq_archive->mpq_block != NULL)
-                    mpq_archive->mpq_block[mpq_archive->mpq_entry[entry_index].source_index]
+                    mpq_archive->mpq_block[mpq_archive->mpq_entry[entry_index].classic_source_index]
                         .flags |= LIBMPQ_FLAG_ENCRYPTED;
             }
         }

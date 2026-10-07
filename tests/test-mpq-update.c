@@ -354,12 +354,12 @@ share_archive_block(const char *path, const char *source_name, const char *alias
     if (libmpq__file_number(archive, source_name, &first) != 0 ||
         libmpq__file_number(archive, alias_name, &second) != 0)
         goto fail;
-    if (archive->mpq_entry[archive->mpq_map[first].entry_index].source_kind !=
+    if (archive->mpq_entry[archive->mpq_map[first].entry_index].source_mask !=
             LIBMPQ_ENTRY_SOURCE_CLASSIC ||
-        archive->mpq_entry[archive->mpq_map[second].entry_index].source_kind !=
+        archive->mpq_entry[archive->mpq_map[second].entry_index].source_mask !=
             LIBMPQ_ENTRY_SOURCE_CLASSIC)
         goto fail;
-    block = archive->mpq_entry[archive->mpq_map[first].entry_index].source_index;
+    block = archive->mpq_entry[archive->mpq_map[first].entry_index].classic_source_index;
     count = archive->mpq_header.hash_table_count;
     bytes = (size_t)count * LIBMPQ_HASH_ENTRY_WIRE_SIZE;
     raw = malloc(bytes);
@@ -370,7 +370,7 @@ share_archive_block(const char *path, const char *source_name, const char *alias
         size_t at = (size_t)i * LIBMPQ_HASH_ENTRY_WIRE_SIZE;
 
         if (entry->block_table_index ==
-            archive->mpq_entry[archive->mpq_map[second].entry_index].source_index)
+            archive->mpq_entry[archive->mpq_map[second].entry_index].classic_source_index)
             entry->block_table_index = block;
         libmpq__store_le32(raw + at, entry->hash_a);
         libmpq__store_le32(raw + at + 4u, entry->hash_b);
