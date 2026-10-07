@@ -5,14 +5,18 @@ lib_LTLIBRARIES = libmpq.la
 noinst_HEADERS = \
 	mpq-archive.h \
 	mpq-attributes.h \
+	mpq-bet.h \
+	mpq-bit.h \
 	mpq-block.h \
 	mpq-compression.h \
 	mpq-crypto.h \
 	mpq-endian.h \
 	mpq-entry.h \
+	mpq-ext-table.h \
 	mpq-file.h \
 	mpq-hash.h \
 	mpq-header.h \
+	mpq-het.h \
 	mpq-huffman.h \
 	mpq-md5.h \
 	mpq-mpqe.h \
@@ -49,13 +53,17 @@ endif
 GENERAL_SRCS = \
 	mpq-api.c \
 	mpq-attributes.c \
+	mpq-bet.c \
+	mpq-bit.c \
 	mpq-block.c \
 	mpq-compression.c \
 	mpq-crypto.c \
 	mpq-endian.c \
+	mpq-ext-table.c \
 	mpq-file.c \
 	mpq-hash.c \
 	mpq-header.c \
+	mpq-het.c \
 	mpq-huffman.c \
 	mpq-md5.c \
 	mpq-mpqe.c \

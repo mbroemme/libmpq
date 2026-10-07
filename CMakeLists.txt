@@ -115,6 +115,10 @@ endif()
 include(CTest)
 if(BUILD_TESTING)
     set(test_modules
+        bit
+        ext-table
+        het
+        bet
         file
         block
         verify

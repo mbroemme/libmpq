@@ -88,7 +88,7 @@ Mixed-table archives can use classic lookup when a classic hash entry maps
 to a live block; other live blocks need not be hash-referenced. This does not
 assert equivalence with HET/BET, whose lookup remains unavailable. Archives
 requiring HET/BET because classic lookup is absent or unusable fail with a
-format error. Compressed classic tables, HET/BET decoding, v3 creation and
+format error. Compressed classic tables, HET/BET lookup, v3 creation and
 rebuilding, and MPQ v4 remain outside the current implementation.
 
 ## Classic tables
@@ -229,11 +229,71 @@ hash to a BET index using a bitmap/index table and reduced hash bits. BET
 stores reduced name hashes plus bit fields for position, unpacked size, packed
 size, flag-array index, and an unknown field.
 
-Implement these with a checked bit reader, not C bitfields. The HET/BET headers
-declare each field's bit offset and width; reject ranges beyond the record or
-table, and require their entry counts to agree. Modern archives can carry
-classic tables too, so retain both paths. StormLib's `TMPQHetHeader` and
-`TMPQBetHeader` are the public field map to use with v3/v4 fixtures.
+Private structural decoders now accept already-decrypted/decompressed table
+bytes. They are not connected to archive opening: HET filename lookup and BET
+conversion into canonical `mpq_entry_s` entries remain unimplemented. MPQ v4
+also remains unsupported. Future loading must retain the plaintext common
+envelope and decrypt/decompress its contained data before structural decoding.
+
+The common envelope is three little-endian DWORDs: signature at byte 0,
+version at byte 4 (supported value 1), and `data_size` at byte 8. `data_size`
+excludes this 12-byte envelope but includes the table-specific header and
+arrays. A valid HET or BET requires table-specific `dwTableSize` to equal
+`ExtHdr.dwDataSize` (`table_size == envelope.data_size`); both exclude the
+12-byte common envelope. Declared data must fit the supplied buffer; bytes
+beyond the declared payload are not interpreted as table data. The parsers
+allocate nothing and report byte ranges relative to the beginning of the
+complete decoded envelope.
+
+The HET-specific header contains eight DWORDs, in wire order:
+
+```text
+table_size, entry_count, total_count, name_hash_bit_size,
+index_size_total, index_size_extra, index_size, index_table_size
+```
+
+Its 32-byte header is followed by `total_count` one-byte NameHash1 slots, then
+the declared index array. Name hashes have 8..64 bits; only their high byte is
+stored here. Occupied count cannot exceed total count. Index widths are at
+most 64 bits, effective and extra widths must fit the total, and nonempty slot
+tables require a nonzero effective width. The index array storage must be
+exactly `ceil(total_count * index_size_total / 8)` bytes, with no padding.
+Header, slots, and declared index storage must account for `table_size`
+exactly.
+
+The BET-specific header contains nineteen DWORDs (76 bytes), in wire order:
+
+```text
+table_size, entry_count, unknown, table_entry_size,
+bit_index_file_position, bit_index_file_size, bit_index_compressed_size,
+bit_index_flag_index, bit_index_unknown,
+bit_count_file_position, bit_count_file_size, bit_count_compressed_size,
+bit_count_flag_index, bit_count_unknown,
+name_hash2_total, name_hash2_extra, name_hash2_size,
+name_hash_array_size, flag_count
+```
+
+The header is followed by `flag_count` little-endian DWORD flags, packed file
+records, then packed NameHash2 values. Reserved fields are preserved rather
+than interpreted. Each record field is at most 64 bits, fits its nonzero
+record width, and cannot overlap another nonempty field. The flag index is
+at most 32 bits and must be wide enough to address the flags array; actual
+index values remain for later entry decoding to validate. NameHash2 effective
+and extra widths must fit its total (at most 64 bits). Nonempty file tables
+require flags and a nonzero effective hash width. Checked, rounded-up record
+and hash storage must fit. NameHash2 storage must be exactly
+`ceil(entry_count * name_hash2_total / 8)` bytes, with no padding, and all
+declared arrays must account for the table size exactly. HET/BET counts are
+not compared by these independent parsers.
+
+Bit zero is the low bit of byte zero. Fields proceed from low to high bits
+within a byte and then into the next byte; the first field bit is the value's
+least significant bit, independently of host endianness. Checked bit helpers
+support 0..64-bit reads/writes across byte boundaries, preserve surrounding
+bits on writes, and reject overflow, overruns, and values exceeding the given
+width. Zero-width reads produce zero; zero-width writes accept only zero.
+Multiplication and conversion to byte storage are checked without overflowing
+the rounding operation. No C bitfields or unaligned integer casts are used.
 
 ## Internal files and integrity data
 

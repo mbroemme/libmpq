@@ -8,6 +8,10 @@ LDADD = $(top_builddir)/src/mpq-file.lo $(top_builddir)/src/libmpq.la
 
 # Each executable mirrors one implementation module in src/.
 check_PROGRAMS = \
+	test-bit \
+	test-ext-table \
+	test-het \
+	test-bet \
 	test-file \
 	test-block \
 	test-verify \
@@ -154,6 +158,14 @@ check-local:
 
 # Compile shared assertions and deterministic-data helpers into every test.
 COMMON_SOURCES = test-mpq-helper.c test-mpq-helper.h
+test_bit_SOURCES = test-mpq-bit.c $(COMMON_SOURCES)
+test_bit_LDADD = $(top_builddir)/src/mpq-bit.lo $(LDADD)
+test_ext_table_SOURCES = test-mpq-ext-table.c $(COMMON_SOURCES)
+test_ext_table_LDADD = $(top_builddir)/src/mpq-ext-table.lo $(top_builddir)/src/mpq-endian.lo $(LDADD)
+test_het_SOURCES = test-mpq-het.c $(COMMON_SOURCES)
+test_het_LDADD = $(top_builddir)/src/mpq-het.lo $(top_builddir)/src/mpq-bit.lo $(test_ext_table_LDADD)
+test_bet_SOURCES = test-mpq-bet.c $(COMMON_SOURCES)
+test_bet_LDADD = $(top_builddir)/src/mpq-bet.lo $(top_builddir)/src/mpq-bit.lo $(test_ext_table_LDADD)
 test_block_SOURCES = test-mpq-block.c $(COMMON_SOURCES)
 test_block_LDADD = $(top_builddir)/src/mpq-block.lo $(top_builddir)/src/mpq-endian.lo $(LDADD)
 test_file_SOURCES = test-mpq-file.c $(COMMON_SOURCES)
