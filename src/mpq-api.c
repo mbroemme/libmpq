@@ -604,6 +604,9 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
     free(mpq_archive->mpq_hash);
     free(mpq_archive->mpq_entry);
     free(mpq_archive->classic_entry_indices);
+    free(mpq_archive->bet_entry_indices);
+    free(mpq_archive->het_data);
+    free(mpq_archive->bet_data);
     free(mpq_archive->mpq_block);
     free(mpq_archive->mpq_block_ex);
     free(mpq_archive->filename);
@@ -839,8 +842,24 @@ libmpq__file_number_from_hash(
     return LIBMPQ_ERROR_EXIST;
 }
 
+/* Confirm the hash and skip non-live BET rows without masking malformed mappings. */
+static int32_t
+api_bet_match(void *context, uint64_t bet_index, uint64_t hash, int *matches)
+{
+    mpq_archive_s *archive = context;
+    uint32_t index;
+    int32_t result = libmpq__bet_match(&archive->mpq_bet, bet_index, hash, matches);
+    if (result != 0 || !*matches)
+        return result;
+    result = libmpq__entry_index_from_bet(archive, bet_index, &index);
+    if (result != 0)
+        return result;
+    *matches = (archive->mpq_entry[index].flags & LIBMPQ_FLAG_EXISTS) != 0;
+    return 0;
+}
+
 /*
- * Resolve an MPQ file name to its public number through classic hash lookup.
+ * Resolve a name through validated HET/BET first, with classic fallback on a miss.
  * The name is hashed with all three Storm phases before the collision-aware
  * lookup is delegated to the precomputed-hash helper.
  */
@@ -850,6 +869,28 @@ libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *
     uint32_t hash1;
     uint32_t hash2;
     uint32_t hash3;
+    int32_t result;
+    if (mpq_archive == NULL || filename == NULL || number == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (mpq_archive->het_data != NULL) {
+        uint64_t bet_index;
+        uint32_t index;
+        result = libmpq__het_lookup(
+            &mpq_archive->mpq_het, filename, mpq_archive->mpq_bet.header.entry_count, api_bet_match,
+            mpq_archive, &bet_index
+        );
+        if (result == 0) {
+            result = libmpq__entry_index_from_bet(mpq_archive, bet_index, &index);
+            if (result != 0)
+                return result;
+            *number = mpq_archive->mpq_entry[index].file_number;
+            if (*number >= mpq_archive->files || mpq_archive->mpq_map[*number].entry_index != index)
+                return LIBMPQ_ERROR_FORMAT;
+            return 0;
+        }
+        if (result != LIBMPQ_ERROR_EXIST)
+            return result;
+    }
 
     libmpq__file_hash(filename, &hash1, &hash2, &hash3);
     return libmpq__file_number_from_hash(mpq_archive, hash1, hash2, hash3, number);

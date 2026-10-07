@@ -178,6 +178,18 @@ libmpq__attributes_load(mpq_archive_s *archive)
     if (archive->attributes_error != 0)
         return archive->attributes_error;
     result = libmpq__file_number(archive, LIBMPQ_ATTRIBUTES_NAME, &number);
+    if (result == 0 &&
+        archive->mpq_entry[archive->mpq_map[number].entry_index].source_kind ==
+            LIBMPQ_ENTRY_SOURCE_BET &&
+        archive->mpq_header.hash_table_count != 0) {
+        uint32_t h1;
+        uint32_t h2;
+        uint32_t h3;
+
+        /* Classic attributes describe classic rows, even if HET has its own namesake. */
+        libmpq__file_hash(LIBMPQ_ATTRIBUTES_NAME, &h1, &h2, &h3);
+        result = libmpq__file_number_from_hash(archive, h1, h2, h3, &number);
+    }
     if (result != 0) {
         if (result == LIBMPQ_ERROR_EXIST || result == LIBMPQ_ERROR_FORMAT)
             archive->attributes_error = result;

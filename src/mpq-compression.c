@@ -250,10 +250,8 @@ libmpq__compression_decompress_huffman(
  * The output count returned by zlib is converted to the libmpq block API's
  * signed transfer convention, while zlib failures are propagated unchanged.
  */
-int32_t
-libmpq__compression_decompress_zlib(
-    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
-)
+static int32_t
+decompress_zlib(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size, int exact)
 {
 
     /* Zlib stream state and transferred-byte count for this stream. */
@@ -283,12 +281,24 @@ libmpq__compression_decompress_zlib(
     }
 
     tb = z.total_out;
+    if (exact && z.avail_in != 0) {
+        inflateEnd(&z);
+        return LIBMPQ_ERROR_UNPACK;
+    }
 
     if ((result = inflateEnd(&z)) != Z_OK) {
         return result;
     }
 
     return tb;
+}
+
+int32_t
+libmpq__compression_decompress_zlib(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
+)
+{
+    return decompress_zlib(in_buf, in_size, out_buf, out_size, 0);
 }
 
 /*
@@ -341,10 +351,8 @@ libmpq__compression_decompress_pkzip(
  * The bzip2 state consumes the compressed block and writes decoded bytes
  * directly to the destination supplied by the archive reader.
  */
-int32_t
-libmpq__compression_decompress_bzip2(
-    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
-)
+static int32_t
+decompress_bzip2(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size, int exact)
 {
 
     /* Bzip2 stream state and transferred-byte count for this stream. */
@@ -372,6 +380,10 @@ libmpq__compression_decompress_bzip2(
 
         result = BZ2_bzDecompress(&strm);
         if (result == BZ_STREAM_END) {
+            if (exact && strm.avail_in != 0) {
+                BZ2_bzDecompressEnd(&strm);
+                return LIBMPQ_ERROR_UNPACK;
+            }
             break;
         }
         if (result != BZ_OK || (strm.avail_in == available_in && strm.avail_out == available_out)) {
@@ -451,9 +463,10 @@ libmpq__compression_decompress_sparse(
  * The leading mask selects supported codecs, and intermediate buffers preserve
  * each stage's output while the next stage consumes it.
  */
-int32_t
-libmpq__compression_decompress_multi(
-    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size, uint32_t format_version
+static int32_t
+decompress_multi(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size, uint32_t format_version,
+    int exact
 )
 {
 
@@ -517,7 +530,13 @@ libmpq__compression_decompress_multi(
                 work_buf = (in_buf == out_buf) ? temp_buf : out_buf;
 
             /* Decompress the current stage with the mapped backend. */
-            if ((tb = dcmp_table[i].decompress(in_buf, in_size, work_buf, out_size)) < 0) {
+            if (exact && dcmp_table[i].mask == LIBMPQ_COMPRESSION_ZLIB)
+                tb = decompress_zlib(in_buf, in_size, work_buf, out_size, 1);
+            else if (exact && dcmp_table[i].mask == LIBMPQ_COMPRESSION_BZIP2)
+                tb = decompress_bzip2(in_buf, in_size, work_buf, out_size, 1);
+            else
+                tb = dcmp_table[i].decompress(in_buf, in_size, work_buf, out_size);
+            if (tb < 0) {
                 free(temp_buf);
                 return tb;
             }
@@ -542,6 +561,31 @@ libmpq__compression_decompress_multi(
     free(temp_buf);
 
     return tb;
+}
+
+int32_t
+libmpq__compression_decompress_bzip2(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size
+)
+{
+    return decompress_bzip2(in_buf, in_size, out_buf, out_size, 0);
+}
+
+int32_t
+libmpq__compression_decompress_multi(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size, uint32_t version
+)
+{
+    return decompress_multi(in_buf, in_size, out_buf, out_size, version, 0);
+}
+
+/* Tables have exact extents: framed codecs must consume their entire input. */
+int32_t
+libmpq__compression_decompress_table(
+    uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size, uint32_t version
+)
+{
+    return decompress_multi(in_buf, in_size, out_buf, out_size, version, 1);
 }
 
 /*

@@ -72,6 +72,70 @@ libmpq__entry_index_from_classic(
     return 0;
 }
 
+int32_t
+libmpq__entry_index_from_bet(
+    const mpq_archive_s *archive, uint64_t bet_index, uint32_t *entry_index
+)
+{
+    uint32_t index;
+    if (entry_index != NULL)
+        *entry_index = UINT32_MAX;
+    if (archive == NULL || entry_index == NULL || archive->bet_entry_indices == NULL ||
+        archive->mpq_entry == NULL || bet_index >= archive->mpq_bet.header.entry_count)
+        return LIBMPQ_ERROR_FORMAT;
+    index = archive->bet_entry_indices[bet_index];
+    if (index >= archive->entry_count ||
+        archive->mpq_entry[index].source_kind != LIBMPQ_ENTRY_SOURCE_BET ||
+        archive->mpq_entry[index].source_index != bet_index)
+        return LIBMPQ_ERROR_FORMAT;
+    *entry_index = index;
+    return 0;
+}
+
+/* Absent structures are skipped, not used as zero boundaries. Classic sizes stay fixed. */
+int32_t
+libmpq__reader_ext_table_sizes(const mpq_archive_s *archive, uint64_t *het_size, uint64_t *bet_size)
+{
+    uint64_t positions[6];
+    uint64_t lengths[5];
+    size_t i;
+    size_t j;
+    if (het_size == NULL || bet_size == NULL || archive == NULL)
+        return LIBMPQ_ERROR_FORMAT;
+    *het_size = *bet_size = 0;
+    positions[0] = archive->mpq_header_v3.het_table_offset;
+    positions[1] = archive->mpq_header_v3.bet_table_offset;
+    positions[2] = archive->mpq_header.hash_table_count == 0
+                       ? 0
+                       : archive->mpq_header.hash_table_offset |
+                             ((uint64_t)archive->mpq_header_ex.hash_table_offset_high << 32);
+    positions[3] = archive->mpq_header.block_table_count == 0
+                       ? 0
+                       : archive->mpq_header.block_table_offset |
+                             ((uint64_t)archive->mpq_header_ex.block_table_offset_high << 32);
+    positions[4] = archive->mpq_header_ex.extended_offset;
+    positions[5] = libmpq__header_archive_size(&archive->mpq_header, &archive->mpq_header_v3);
+    lengths[0] = lengths[1] = LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE;
+    lengths[2] = (uint64_t)archive->mpq_header.hash_table_count * LIBMPQ_HASH_ENTRY_WIRE_SIZE;
+    lengths[3] = (uint64_t)archive->mpq_header.block_table_count * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE;
+    lengths[4] = (uint64_t)archive->mpq_header.block_table_count * LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE;
+    for (i = 0; i < 5; i++) {
+        if (positions[i] == 0)
+            continue;
+        if (positions[i] < archive->mpq_header.header_size)
+            return LIBMPQ_ERROR_FORMAT;
+        for (j = i + 1; j < 5 && positions[j] == 0; j++) {
+        }
+        if (positions[i] >= positions[j] || lengths[i] > positions[j] - positions[i])
+            return LIBMPQ_ERROR_FORMAT;
+        if (i == 0)
+            *het_size = positions[j] - positions[i];
+        if (i == 1)
+            *bet_size = positions[j] - positions[i];
+    }
+    return 0;
+}
+
 /* Bound every known v3 table range by its authoritative archive extent. */
 static int32_t
 validate_v3_header(const mpq_archive_s *archive)
@@ -92,7 +156,7 @@ validate_v3_header(const mpq_archive_s *archive)
         (uint64_t)archive->archive_offset > archive->file_size ||
         size > archive->file_size - (uint64_t)archive->archive_offset)
         return LIBMPQ_ERROR_FORMAT;
-    if ((blocks != 0 && hashes == 0) || ((bet != 0 || het != 0) && (hashes == 0 || blocks == 0)))
+    if ((blocks != 0 && hashes == 0 && het == 0) || ((bet == 0) != (het == 0)))
         return LIBMPQ_ERROR_FORMAT;
     if (hashes != 0 &&
         ((hashes & (hashes - 1u)) != 0 || hash < archive->mpq_header.header_size || hash > size ||
@@ -107,29 +171,167 @@ validate_v3_header(const mpq_archive_s *archive)
     if ((bet != 0 && (bet < archive->mpq_header.header_size || bet >= size)) ||
         (het != 0 && (het < archive->mpq_header.header_size || het >= size)))
         return LIBMPQ_ERROR_FORMAT;
+    if (het != 0) {
+        uint64_t het_size;
+        uint64_t bet_size;
+        return libmpq__reader_ext_table_sizes(archive, &het_size, &bet_size);
+    }
     return 0;
 }
 
-/* Require usable classic lookup when HET/BET are present, not matching table coverage. */
+/* The envelope is plaintext; only its contained data is ciphered, then decompressed. */
 static int32_t
-validate_v3_classic_lookup(const mpq_archive_s *archive)
+ext_table_load(
+    mpq_archive_s *archive, uint64_t offset, uint64_t stored_size, uint32_t signature, uint32_t key,
+    uint8_t **output, size_t *output_size
+)
 {
-    uint8_t usable = 0;
-
-    if (archive->mpq_header_v3.bet_table_offset == 0 &&
-        archive->mpq_header_v3.het_table_offset == 0)
-        return 0;
-    for (uint32_t i = 0; i < archive->mpq_header.hash_table_count; ++i) {
-        uint32_t index = archive->mpq_hash[i].block_table_index;
-
-        if (index >= LIBMPQ_HASH_DELETED)
-            continue;
-        if (index >= archive->mpq_header.block_table_count)
-            return LIBMPQ_ERROR_FORMAT;
-        if ((archive->mpq_block[index].flags & LIBMPQ_FLAG_EXISTS) != 0)
-            usable = 1;
+    uint8_t envelope[LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE];
+    uint8_t *stored = NULL;
+    uint8_t *decoded = NULL;
+    uint32_t data_size;
+    uint64_t decoded_size;
+    size_t payload_size;
+    int32_t result;
+    *output = NULL;
+    *output_size = 0;
+    if (stored_size < sizeof(envelope) || stored_size > LIBMPQ_EXT_TABLE_MAX_SIZE ||
+        stored_size - sizeof(envelope) > INT32_MAX)
+        return LIBMPQ_ERROR_FORMAT;
+    result = libmpq__source_read_at(
+        archive->source, (uint64_t)archive->archive_offset + offset, envelope, sizeof(envelope)
+    );
+    if (result != 0)
+        return result;
+    data_size = libmpq__load_le32(envelope + 8);
+    decoded_size = (uint64_t)data_size + sizeof(envelope);
+    if (libmpq__load_le32(envelope) != signature ||
+        libmpq__load_le32(envelope + 4) != LIBMPQ_EXT_TABLE_VERSION || data_size == 0 ||
+        data_size > INT32_MAX || decoded_size > LIBMPQ_EXT_TABLE_MAX_SIZE ||
+        decoded_size > SIZE_MAX)
+        return LIBMPQ_ERROR_FORMAT;
+    payload_size = (size_t)(stored_size - sizeof(envelope));
+    if (payload_size == 0 || payload_size > data_size)
+        return LIBMPQ_ERROR_FORMAT;
+    stored = malloc(payload_size);
+    decoded = malloc(sizeof(envelope) + data_size);
+    if (stored == NULL || decoded == NULL) {
+        result = LIBMPQ_ERROR_MALLOC;
+        goto done;
     }
-    return usable ? 0 : LIBMPQ_ERROR_FORMAT;
+    memcpy(decoded, envelope, sizeof(envelope));
+    result = libmpq__source_read_at(
+        archive->source, (uint64_t)archive->archive_offset + offset + sizeof(envelope), stored,
+        payload_size
+    );
+    if (result != 0)
+        goto done;
+    libmpq__crypto_decrypt_block(stored, (uint32_t)payload_size, key);
+    if (payload_size < data_size) {
+        result = libmpq__compression_decompress_table(
+            stored, (uint32_t)payload_size, decoded + sizeof(envelope), data_size,
+            LIBMPQ_ARCHIVE_VERSION_THREE
+        );
+        if (result != (int32_t)data_size) {
+            result = LIBMPQ_ERROR_FORMAT;
+            goto done;
+        }
+    } else {
+        memcpy(decoded + sizeof(envelope), stored, payload_size);
+    }
+    *output = decoded;
+    *output_size = sizeof(envelope) + data_size;
+    decoded = NULL;
+    result = 0;
+done:
+    free(stored);
+    free(decoded);
+    return result;
+}
+
+/* Build the second canonical producer without aliasing any classic table row. */
+static int32_t
+load_het_bet(mpq_archive_s *archive)
+{
+    uint64_t het_size;
+    uint64_t bet_size;
+    size_t size;
+    uint32_t classic_count = archive->mpq_header.block_table_count;
+    uint32_t count;
+    uint32_t i;
+    int32_t result;
+    if (archive->mpq_header_v3.het_table_offset == 0)
+        return 0;
+    result = libmpq__reader_ext_table_sizes(archive, &het_size, &bet_size);
+    if (result != 0)
+        return result;
+    result = ext_table_load(
+        archive, archive->mpq_header_v3.het_table_offset, het_size, LIBMPQ_HET_SIGNATURE,
+        libmpq__crypto_hash_string("(hash table)", 0x300), &archive->het_data, &size
+    );
+    if (result != 0)
+        return result;
+    result = libmpq__het_view_init(archive->het_data, size, &archive->mpq_het);
+    if (result != 0)
+        return result;
+    result = ext_table_load(
+        archive, archive->mpq_header_v3.bet_table_offset, bet_size, LIBMPQ_BET_SIGNATURE,
+        libmpq__crypto_hash_string("(block table)", 0x300), &archive->bet_data, &size
+    );
+    if (result != 0)
+        return result;
+    result = libmpq__bet_view_init(archive->bet_data, size, &archive->mpq_bet);
+    if (result != 0)
+        return result;
+    count = archive->mpq_bet.header.entry_count;
+    if (count > UINT32_MAX - classic_count || archive->mpq_het.header.entry_count != count ||
+        archive->mpq_het.header.name_hash_bit_size - 8 != archive->mpq_bet.header.name_hash2_size)
+        return LIBMPQ_ERROR_FORMAT;
+    if ((uint64_t)count + classic_count > SIZE_MAX / sizeof(mpq_entry_s))
+        return LIBMPQ_ERROR_FORMAT;
+    if (count != 0) {
+        mpq_entry_s *entries =
+            realloc(archive->mpq_entry, (size_t)(classic_count + count) * sizeof(*entries));
+        if (entries == NULL)
+            return LIBMPQ_ERROR_MALLOC;
+        archive->mpq_entry = entries;
+        archive->bet_entry_indices = calloc(count, sizeof(uint32_t));
+        if (archive->bet_entry_indices == NULL)
+            return LIBMPQ_ERROR_MALLOC;
+    }
+    archive->entry_count = classic_count + count;
+    for (i = 0; i < count; i++) {
+        uint64_t hash;
+        mpq_entry_s *entry = &archive->mpq_entry[classic_count + i];
+        result = libmpq__bet_name_hash2(&archive->mpq_bet, i, &hash);
+        if (result == 0)
+            result = libmpq__bet_entry_decode(&archive->mpq_bet, i, hash, entry);
+        if (result != 0)
+            return result;
+        archive->bet_entry_indices[i] = classic_count + i;
+        if (entry->offset > INT64_MAX || entry->packed_size > INT64_MAX ||
+            entry->unpacked_size > INT64_MAX ||
+            ((entry->flags & LIBMPQ_FLAG_EXISTS) != 0 &&
+             (entry->offset < archive->mpq_header.header_size ||
+              entry->offset >
+                  libmpq__header_archive_size(&archive->mpq_header, &archive->mpq_header_v3) ||
+              entry->packed_size >
+                  libmpq__header_archive_size(&archive->mpq_header, &archive->mpq_header_v3) -
+                      entry->offset)))
+            return LIBMPQ_ERROR_FORMAT;
+    }
+
+    /* Reject malformed live slots at open, even if later lookup would miss them. */
+    for (i = 0; i < archive->mpq_het.header.total_count; i++) {
+        uint64_t index;
+        uint8_t prefix = archive->mpq_het.name_hash1[i];
+        if (prefix == LIBMPQ_HET_SLOT_FREE)
+            continue;
+        if ((prefix & 0x80) == 0 || libmpq__het_slot_index(&archive->mpq_het, i, &index) != 0 ||
+            index >= count)
+            return LIBMPQ_ERROR_FORMAT;
+    }
+    return 0;
 }
 
 int32_t
@@ -180,6 +382,14 @@ libmpq__archive_required_extent(const mpq_archive_s *archive, uint64_t *size)
             extend_extent(
                 archive->mpq_entry[i].offset, archive->mpq_entry[i].packed_size, &extent
             ) != 0)
+            return LIBMPQ_ERROR_FORMAT;
+    }
+    if (archive->het_data != NULL) {
+        uint64_t het_size;
+        uint64_t bet_size;
+        if (libmpq__reader_ext_table_sizes(archive, &het_size, &bet_size) != 0 ||
+            extend_extent(archive->mpq_header_v3.het_table_offset, het_size, &extent) != 0 ||
+            extend_extent(archive->mpq_header_v3.bet_table_offset, bet_size, &extent) != 0)
             return LIBMPQ_ERROR_FORMAT;
     }
     *size = extent;
@@ -1335,11 +1545,6 @@ libmpq__reader_archive_open_source(
           ((*mpq_archive)->mpq_block_ex =
                calloc((*mpq_archive)->mpq_header.block_table_count, sizeof(mpq_block_ex_s))) ==
               NULL ||
-          ((*mpq_archive)->mpq_file =
-               calloc((*mpq_archive)->mpq_header.block_table_count, sizeof(mpq_file_s *))) ==
-              NULL ||
-          ((*mpq_archive)->mpq_map =
-               calloc((*mpq_archive)->mpq_header.block_table_count, sizeof(mpq_map_s))) == NULL ||
           ((*mpq_archive)->mpq_entry =
                calloc((*mpq_archive)->mpq_header.block_table_count, sizeof(mpq_entry_s))) == NULL ||
           ((*mpq_archive)->classic_entry_indices =
@@ -1467,12 +1672,21 @@ libmpq__reader_archive_open_source(
     if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE) {
         uint64_t extent;
 
-        result = validate_v3_classic_lookup(*mpq_archive);
+        result = load_het_bet(*mpq_archive);
         if (result != 0)
             goto error;
         result = libmpq__archive_signature_extent(*mpq_archive, &extent);
         if (result != 0)
             goto error;
+    }
+
+    if ((*mpq_archive)->entry_count != 0) {
+        (*mpq_archive)->mpq_map = calloc((*mpq_archive)->entry_count, sizeof(mpq_map_s));
+        (*mpq_archive)->mpq_file = calloc((*mpq_archive)->entry_count, sizeof(mpq_file_s *));
+        if ((*mpq_archive)->mpq_map == NULL || (*mpq_archive)->mpq_file == NULL) {
+            result = LIBMPQ_ERROR_MALLOC;
+            goto error;
+        }
     }
 
     /* Build public numbering from canonical entries, independent of table provenance. */
@@ -1501,6 +1715,9 @@ error:
     free((*mpq_archive)->mpq_map);
     free((*mpq_archive)->mpq_entry);
     free((*mpq_archive)->classic_entry_indices);
+    free((*mpq_archive)->bet_entry_indices);
+    free((*mpq_archive)->het_data);
+    free((*mpq_archive)->bet_data);
     free((*mpq_archive)->mpq_file);
     free((*mpq_archive)->mpq_hash);
     free((*mpq_archive)->mpq_block);

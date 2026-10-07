@@ -72,7 +72,7 @@ bits 32-47 of file positions. v4 records raw-table MD5 values; verify them
 only after normal structural bounds checks.
 
 The reader supports MPQ v3 (on-disk version 2) through classic hash/block
-tables. Its normal `0x44`-byte header adds three little-endian `u64` fields
+tables or HET/BET. Its normal `0x44`-byte header adds three little-endian `u64` fields
 after the v2 extension: archive size at `0x2C`, BET position at `0x34`, and
 HET position at `0x3C`. The 64-bit size is authoritative, including when the
 legacy size differs. Classic high table/file offsets retain the v2 layout.
@@ -83,13 +83,13 @@ positions; no partial extension is read. Rejecting partial v2 extensions
 (`0x21` through `0x2B`) is an intentional libmpq validation choice rather
 than accepting arbitrary short sizes for StormLib compatibility. A declared
 full header must contain all `0x44` bytes. HET/BET
-positions are bounded by the archive extent but those tables are not decoded.
+positions and stored extents are bounded by the archive extent.
 Mixed-table archives can use classic lookup when a classic hash entry maps
 to a live block; other live blocks need not be hash-referenced. This does not
-assert equivalence with HET/BET, whose lookup remains unavailable. Archives
-requiring HET/BET because classic lookup is absent or unusable fail with a
-format error. Compressed classic tables, HET/BET lookup, v3 creation and
-rebuilding, and MPQ v4 remain outside the current implementation.
+assert equivalence with HET/BET. Declared extended tables must form a valid
+pair; malformed tables fail opening rather than downgrading to classic lookup.
+Compressed classic tables, v3 creation and rebuilding, and MPQ v4 remain
+outside the current implementation.
 
 ## Classic tables
 
@@ -120,7 +120,7 @@ Source provenance distinguishes classic rows from uninitialized entries.
 Classic attributes remain indexed and sized by block-table rows, not canonical
 entries. Writers and rebuild serialization still own classic wire
 tables. Isolated BET decoding also produces canonical entries with explicit
-BET provenance, but archive loading does not yet populate them. Sector offset
+BET provenance; archive loading owns both producers and their explicit maps. Sector offset
 and codec-length limits remain unchanged.
 
 ## File sectors, encryption, and compression
@@ -231,12 +231,12 @@ stores reduced name hashes plus bit fields for position, unpacked size, packed
 size, flag-array index, and an unknown field.
 
 Private structural decoders and HET candidate lookup accept already-decrypted/
-decompressed table bytes. They are not connected to archive opening: normal
-filename lookup still uses classic tables. In-memory HET/BET lookup and BET
-conversion into canonical `mpq_entry_s` entries are implemented internally.
+decompressed table bytes. Archive opening loads the tables and populates BET
+canonical entries. Normal filename lookup tries HET/BET first and falls back
+to classic lookup only on a valid miss, not a malformed table or mapping.
 MPQ v4 remains unsupported.
-Future loading must retain the plaintext common
-envelope and decrypt/decompress its contained data before structural decoding.
+Loading retains the plaintext common envelope and decrypts/decompresses its
+contained data before structural decoding.
 
 The common envelope is three little-endian DWORDs: signature at byte 0,
 version at byte 4 (supported value 1), and `data_size` at byte 8. `data_size`
@@ -338,8 +338,7 @@ truncation. Lookup checks candidates against the caller's BET entry count.
 NameHash1 alone is insufficient to identify a filename. The private lookup
 therefore requires a caller-supplied matcher that confirms the candidate's
 NameHash2, continuing on hash collisions and propagating matcher errors.
-The BET matcher decodes the candidate's NameHash2; normal archive opening
-and public filename lookup remain unchanged.
+The BET matcher decodes the candidate's NameHash2 and rejects non-live entries.
 
 ### Internal BET record decoding
 
@@ -359,9 +358,45 @@ equality, independently of NameHash1. A mismatch is not a valid candidate.
 
 Confirmed records convert to `mpq_entry_s` with full-width metadata,
 `LIBMPQ_ENTRY_SOURCE_BET`, and `source_index` equal to the BET index. No classic
-block row or public file number is fabricated (`file_number` is `UINT32_MAX`).
-Archive-level loading/decryption/decompression and public HET lookup are not
-integrated yet; BET decoding is isolated from classic tables and attributes.
+block row is fabricated. Isolated conversion leaves `file_number` at
+`UINT32_MAX`; archive loading assigns compact public numbers to live entries.
+BET decoding remains isolated from classic tables and attributes.
+
+### Archive-level HET/BET reading
+
+Present v3 structures must follow HET, BET, classic hash, classic block,
+hi-block, archive end. Missing structures are skipped. Each extended table's
+stored extent ends at the next present structure, or the effective 64-bit
+archive end; fixed-size classic tables must not overlap that next structure.
+All relative positions are checked against the declared archive and backing
+source before I/O. Each stored and decoded extended table has an inclusive
+defensive limit of `0x00100000` bytes (1 MiB), including its 12-byte common
+envelope. Oversized stored extents are rejected before reading the envelope;
+oversized decoded lengths are rejected after reading only the envelope, before
+payload allocation, reading, or decompression. Size arithmetic remains checked.
+The HET and BET entry counts must match exactly.
+
+The common 12-byte envelope is plaintext. The contained payload is decrypted
+with the existing `(hash table)` key for HET (`0xC3AF3770`) or `(block table)`
+key for BET (`0xEC83B3A3`); trailing partial DWORDs retain their cipher semantics.
+If the stored payload is shorter than `data_size`, production MPQ compression
+dispatch decompresses it and must produce exactly `data_size` bytes. Framed
+zlib/bzip2 stages reject trailing input; existing LZMA validation also requires
+complete input consumption. Structural parsing follows transformation.
+There is no heuristic plaintext fallback for a damaged encrypted payload.
+
+The archive owns decoded HET/BET buffers, borrowed views, and a separate
+BET-row-to-entry mapping. Classic and BET rows stay distinct: neither a row
+number nor matching metadata proves cross-table filename identity. Currently,
+mixed archives enumerate live rows from both systems, possibly exposing two
+representations of one member. This is provisional pending a separate
+compatibility investigation, not permanent format semantics; HET lookup selects
+the BET representation first. Classic public numbering is unchanged when no extended
+tables exist. Classic `(attributes)` rows do not apply to BET provenance.
+
+HET/BET archives are read-only. Transactional updates and classic patch
+rebuild/materialization reject them rather than omit BET-only members.
+MPQ v3 writing, extended-table generation, and MPQ v4 remain unsupported.
 
 ## Internal files and integrity data
 

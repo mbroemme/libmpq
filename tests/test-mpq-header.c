@@ -404,7 +404,7 @@ test_v3_rejection(void)
     return 0;
 }
 
-/* Nonzero HET/BET positions do not force their use when classic lookup is usable. */
+/* Declared malformed extended tables must not disappear behind classic fallback. */
 static int
 test_v3_optional_tables(void)
 {
@@ -427,12 +427,9 @@ test_v3_optional_tables(void)
     TEST_CHECK(
         libmpq__archive_open_io(
             &archive, &source, v3_read_at, (libmpq__off_t)source.source_size, 0, NULL
-        ) == 0
+        ) == LIBMPQ_ERROR_FORMAT
     );
-    TEST_CHECK(archive->mpq_header_v3.bet_table_offset == v3.bet_table_offset);
-    TEST_CHECK(archive->mpq_header_v3.het_table_offset == v3.het_table_offset);
-    TEST_CHECK(libmpq__archive_close(archive) == 0);
-    archive = NULL;
+    TEST_CHECK(archive == NULL);
 
     /* With no reachable live blocks, name lookup would require HET/BET. */
     memset(hashes, 0xff, sizeof(hashes));
@@ -527,7 +524,7 @@ test_v3_mixed_tables(void)
     ex.extended_offset = 9182;
     source.length = 9210;
     source.source_size = source.length;
-    v3 = (mpq_header_v3_s){ source.length, 9194, 9202 };
+    v3 = (mpq_header_v3_s){ source.length, 0, 0 };
     TEST_CHECK(libmpq__header_encode(&header, source.bytes, 32) == 0);
     TEST_CHECK(libmpq__header_ex_encode(&ex, source.bytes + 32, 12) == 0);
     TEST_CHECK(libmpq__header_v3_encode(&v3, source.bytes + 44, 24) == 0);

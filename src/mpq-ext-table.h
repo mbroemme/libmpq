@@ -24,6 +24,9 @@
 #include <stdint.h>
 
 #define LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE 12u
+
+/* Inclusive loader limit for each stored/decoded table, including its envelope. */
+#define LIBMPQ_EXT_TABLE_MAX_SIZE 0x00100000u
 #define LIBMPQ_EXT_TABLE_VERSION 1u
 #define LIBMPQ_HET_SIGNATURE 0x1a544548u
 #define LIBMPQ_BET_SIGNATURE 0x1a544542u

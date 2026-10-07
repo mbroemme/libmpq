@@ -765,6 +765,8 @@ patch_entries(mpq_archive_s *patch, mpq_patch_entry_s **entries, uint32_t *entry
     int32_t status;
 
     *entries = NULL;
+    if (patch->het_data != NULL)
+        return LIBMPQ_ERROR_FORMAT;
     *entry_count = patch->mpq_header.hash_table_count;
     if (*entry_count == 0)
         return LIBMPQ_ERROR_FORMAT;

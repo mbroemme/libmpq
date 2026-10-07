@@ -55,8 +55,15 @@ locate(mpq_archive_s *a, uint64_t *offset, uint64_t *extent, uint8_t payload[LIB
     uint64_t table;
     uint64_t table_size;
     int32_t result;
+    if (a->het_data != NULL) {
+        uint32_t number;
+        result = libmpq__file_number(a, LIBMPQ_SIGNATURE_NAME, &number);
+        if (result != 0)
+            return result;
+        index = a->mpq_map[number].entry_index;
+    }
     libmpq__file_hash(LIBMPQ_SIGNATURE_NAME, &h1, &h2, &h3);
-    for (i = 0; i < a->mpq_header.hash_table_count; ++i) {
+    for (i = 0; a->het_data == NULL && i < a->mpq_header.hash_table_count; ++i) {
         const mpq_hash_s *entry = &a->mpq_hash[i];
         if (entry->block_table_index >= LIBMPQ_HASH_DELETED || entry->hash_a != h2 ||
             entry->hash_b != h3)
@@ -95,11 +102,26 @@ locate(mpq_archive_s *a, uint64_t *offset, uint64_t *extent, uint8_t payload[LIB
     if (table != 0 &&
         (table > size || table_size > size - table || overlaps(table, table_size, pos)))
         return LIBMPQ_ERROR_FORMAT;
+    if (a->het_data != NULL) {
+        uint64_t het_size;
+        uint64_t bet_size;
+        if (libmpq__reader_ext_table_sizes(a, &het_size, &bet_size) != 0 ||
+            overlaps(a->mpq_header_v3.het_table_offset, het_size, pos) ||
+            overlaps(a->mpq_header_v3.bet_table_offset, bet_size, pos))
+            return LIBMPQ_ERROR_FORMAT;
+    }
     for (i = 0; i < a->entry_count; ++i) {
         uint64_t other = a->mpq_entry[i].offset;
+
+        /* Mixed tables may describe the very same physical signature bytes twice. */
+        uint8_t alias = a->het_data != NULL &&
+                        a->mpq_entry[i].source_kind != a->mpq_entry[index].source_kind &&
+                        other == pos && a->mpq_entry[i].packed_size == LIBMPQ_SIGNATURE_SIZE &&
+                        a->mpq_entry[i].unpacked_size == LIBMPQ_SIGNATURE_SIZE &&
+                        a->mpq_entry[i].flags == a->mpq_entry[index].flags;
         if ((a->mpq_entry[i].flags & LIBMPQ_FLAG_EXISTS) && a->mpq_entry[i].packed_size != 0) {
             if (other > size || a->mpq_entry[i].packed_size > size - other ||
-                (i != index && overlaps(other, a->mpq_entry[i].packed_size, pos)))
+                (i != index && !alias && overlaps(other, a->mpq_entry[i].packed_size, pos)))
                 return LIBMPQ_ERROR_FORMAT;
         }
     }

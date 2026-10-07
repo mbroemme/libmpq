@@ -140,4 +140,9 @@ int32_t libmpq__compression_decompress_block(
     uint32_t compression_type, uint32_t format_version
 );
 
+/* Table-only dispatch: additionally reject trailing input in framed zlib/bzip2 stages. */
+int32_t libmpq__compression_decompress_table(
+    uint8_t *input, uint32_t input_size, uint8_t *output, uint32_t output_size, uint32_t version
+);
+
 #endif /* LIBMPQ_COMPRESSION_H */

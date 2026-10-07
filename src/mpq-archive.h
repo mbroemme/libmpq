@@ -21,11 +21,13 @@
 #define LIBMPQ_MPQ_ARCHIVE_H
 
 #include "mpq-attributes.h"
+#include "mpq-bet.h"
 #include "mpq-block.h"
 #include "mpq-entry.h"
 #include "mpq-file.h"
 #include "mpq-hash.h"
 #include "mpq-header.h"
+#include "mpq-het.h"
 #include "mpq-mpqe.h"
 #include "mpq-rsa.h"
 
@@ -69,6 +71,11 @@ struct mpq_archive
     mpq_entry_s *mpq_entry;          /* Archive-owned canonical entries for consumption. */
     uint32_t entry_count;            /* Entry/cache capacity, including unused classic rows. */
     uint32_t *classic_entry_indices; /* Classic block row to canonical entry index. */
+    uint32_t *bet_entry_indices;     /* BET row to canonical entry index. */
+    mpq_het_s mpq_het;               /* Views borrow the owned decoded buffers below. */
+    mpq_bet_s mpq_bet;
+    uint8_t *het_data;
+    uint8_t *bet_data;
 
     mpq_map_s *mpq_map;                      /* Public file-number to canonical-entry mapping. */
     uint32_t files;                          /* Number of valid extractable file entries. */

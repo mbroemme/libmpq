@@ -28,6 +28,14 @@
 int32_t libmpq__entry_index_from_classic(
     const mpq_archive_s *archive, uint32_t block_index, uint32_t *entry_index
 );
+int32_t libmpq__entry_index_from_bet(
+    const mpq_archive_s *archive, uint64_t bet_index, uint32_t *entry_index
+);
+
+/* Validate v3 table ordering and infer each present extended table's stored size. */
+int32_t libmpq__reader_ext_table_sizes(
+    const mpq_archive_s *archive, uint64_t *het_size, uint64_t *bet_size
+);
 
 int32_t libmpq__reader_block_size_packed(
     mpq_archive_s *archive, uint32_t number, uint32_t block, libmpq__off_t *packed_size
