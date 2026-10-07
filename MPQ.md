@@ -119,8 +119,9 @@ classic-row-to-entry mapping; canonical entry ordering is independent.
 Source provenance distinguishes classic rows from uninitialized entries.
 Classic attributes remain indexed and sized by block-table rows, not canonical
 entries. Writers and rebuild serialization still own classic wire
-tables. HET/BET conversion is not implemented; sector offset and codec-length
-limits remain unchanged.
+tables. Isolated BET decoding also produces canonical entries with explicit
+BET provenance, but archive loading does not yet populate them. Sector offset
+and codec-length limits remain unchanged.
 
 ## File sectors, encryption, and compression
 
@@ -231,8 +232,9 @@ size, flag-array index, and an unknown field.
 
 Private structural decoders and HET candidate lookup accept already-decrypted/
 decompressed table bytes. They are not connected to archive opening: normal
-filename lookup still uses classic tables, and BET conversion into canonical
-`mpq_entry_s` entries remains unimplemented. MPQ v4 also remains unsupported.
+filename lookup still uses classic tables. In-memory HET/BET lookup and BET
+conversion into canonical `mpq_entry_s` entries are implemented internally.
+MPQ v4 remains unsupported.
 Future loading must retain the plaintext common
 envelope and decrypt/decompress its contained data before structural decoding.
 
@@ -336,9 +338,30 @@ truncation. Lookup checks candidates against the caller's BET entry count.
 NameHash1 alone is insufficient to identify a filename. The private lookup
 therefore requires a caller-supplied matcher that confirms the candidate's
 NameHash2, continuing on hash collisions and propagating matcher errors.
-Tests supply synthetic reference hashes. No BET hash array or file record is
-decoded yet, no BET entry becomes `mpq_entry_s`, and normal archive opening
+The BET matcher decodes the candidate's NameHash2; normal archive opening
 and public filename lookup remain unchanged.
+
+### Internal BET record decoding
+
+The borrowed BET view references validated flags, records, and NameHash2
+regions in caller-owned, immutable decoded table bytes. No payload is copied.
+For an index below `entry_count`, record fields start at
+`index * table_entry_size + field.bit_index` and use each declared bit count.
+Positions, packed/unpacked sizes, and the uninterpreted unknown field remain
+64-bit values; zero-width fields yield zero. Checked bit access bounds every
+read. A record's flag index must be below `flag_count`, then selects a
+little-endian DWORD from the flags array.
+
+NameHash2 starts at `index * name_hash2_total`; only `name_hash2_size` low
+bits are extracted. Extra bits are high stride bits, not a start adjustment.
+Candidate matching masks the expected hash to the effective width and requires
+equality, independently of NameHash1. A mismatch is not a valid candidate.
+
+Confirmed records convert to `mpq_entry_s` with full-width metadata,
+`LIBMPQ_ENTRY_SOURCE_BET`, and `source_index` equal to the BET index. No classic
+block row or public file number is fabricated (`file_number` is `UINT32_MAX`).
+Archive-level loading/decryption/decompression and public HET lookup are not
+integrated yet; BET decoding is isolated from classic tables and attributes.
 
 ## Internal files and integrity data
 

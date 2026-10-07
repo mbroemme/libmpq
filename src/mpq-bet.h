@@ -20,6 +20,7 @@
 #ifndef LIBMPQ_MPQ_BET_H
 #define LIBMPQ_MPQ_BET_H
 
+#include "mpq-entry.h"
 #include "mpq-ext-table.h"
 
 #define LIBMPQ_BET_HEADER_WIRE_SIZE 76u
@@ -60,5 +61,41 @@ typedef struct
 
 /* Decode header/ranges from already-decrypted/decompressed table bytes. */
 int32_t libmpq__bet_header_decode(const uint8_t *input, size_t size, mpq_bet_header_s *header);
+
+/* Borrowed validated regions; the caller keeps decoded bytes alive and immutable. */
+typedef struct
+{
+    mpq_bet_header_s header;
+    const uint8_t *flags;
+    size_t flags_size;
+    const uint8_t *records;
+    size_t records_size;
+    const uint8_t *name_hash2;
+    size_t name_hash2_size;
+} mpq_bet_s;
+
+/* Full-width metadata; unknown bits are preserved without assigning semantics. */
+typedef struct
+{
+    uint64_t offset;
+    uint64_t unpacked_size;
+    uint64_t packed_size;
+    uint64_t unknown;
+    uint64_t flag_index;
+    uint64_t name_hash2;
+    uint32_t flags;
+} mpq_bet_entry_s;
+
+int32_t libmpq__bet_view_init(const uint8_t *input, size_t size, mpq_bet_s *table);
+int32_t libmpq__bet_name_hash2(const mpq_bet_s *table, uint64_t index, uint64_t *hash);
+int32_t libmpq__bet_record_decode(const mpq_bet_s *table, uint64_t index, mpq_bet_entry_s *entry);
+
+/* HET matcher: compare only effective low NameHash2 bits, never extra stride bits. */
+int32_t libmpq__bet_match(void *context, uint64_t index, uint64_t expected, int *matches);
+
+/* Confirm the hash before conversion; failure clears output, mismatch returns EXIST. */
+int32_t libmpq__bet_entry_decode(
+    const mpq_bet_s *table, uint64_t index, uint64_t expected, mpq_entry_s *entry
+);
 
 #endif

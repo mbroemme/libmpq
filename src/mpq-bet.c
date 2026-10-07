@@ -21,6 +21,7 @@
 #include "mpq-bit.h"
 #include "mpq-endian.h"
 #include <libmpq/mpq.h>
+#include <string.h>
 
 /* Check individual fields and reject overlapping nonempty record domains. */
 static int32_t
@@ -40,6 +41,184 @@ bet_fields_validate(const mpq_bet_field_s *fields, uint32_t record_size)
                 return LIBMPQ_ERROR_FORMAT;
         }
     }
+    return 0;
+}
+
+/* Recheck geometry for defensive use of caller-owned views, without reading payload. */
+static int32_t
+bet_view_validate(const mpq_bet_s *table)
+{
+    size_t bytes;
+    mpq_bet_field_s fields[5];
+
+    if (table == NULL)
+        return LIBMPQ_ERROR_SIZE;
+    fields[0] = table->header.file_position;
+    fields[1] = table->header.file_size;
+    fields[2] = table->header.compressed_size;
+    fields[3] = table->header.flag_index;
+    fields[4] = table->header.unknown_field;
+    if (table->header.table_entry_size == 0 ||
+        bet_fields_validate(fields, table->header.table_entry_size) != 0 ||
+        table->header.name_hash2_total > 64 ||
+        table->header.name_hash2_size > table->header.name_hash2_total ||
+        table->header.name_hash2_extra >
+            table->header.name_hash2_total - table->header.name_hash2_size ||
+        (table->header.entry_count != 0 &&
+         (table->header.flag_count == 0 || table->header.name_hash2_size == 0)) ||
+        table->header.flag_index.bit_count > 32)
+        return LIBMPQ_ERROR_FORMAT;
+    if (libmpq__bit_bytes(table->header.entry_count, table->header.table_entry_size, &bytes) != 0 ||
+        bytes != table->records_size || (bytes != 0 && table->records == NULL))
+        return LIBMPQ_ERROR_SIZE;
+    if (libmpq__bit_bytes(table->header.entry_count, table->header.name_hash2_total, &bytes) != 0 ||
+        bytes != table->name_hash2_size || (bytes != 0 && table->name_hash2 == NULL))
+        return LIBMPQ_ERROR_SIZE;
+    if (libmpq__bit_bytes(table->header.flag_count, 32, &bytes) != 0 ||
+        bytes != table->flags_size || (bytes != 0 && table->flags == NULL))
+        return LIBMPQ_ERROR_SIZE;
+    return 0;
+}
+
+int32_t
+libmpq__bet_view_init(const uint8_t *input, size_t size, mpq_bet_s *table)
+{
+    mpq_bet_s decoded = { 0 };
+    int32_t result;
+
+    if (table == NULL)
+        return LIBMPQ_ERROR_SIZE;
+    memset(table, 0, sizeof(*table));
+    result = libmpq__bet_header_decode(input, size, &decoded.header);
+    if (result != 0)
+        return result;
+    decoded.flags = input + decoded.header.flags.offset;
+    decoded.flags_size = decoded.header.flags.size;
+    decoded.records = input + decoded.header.records.offset;
+    decoded.records_size = decoded.header.records.size;
+    decoded.name_hash2 = input + decoded.header.name_hash2.offset;
+    decoded.name_hash2_size = decoded.header.name_hash2.size;
+    *table = decoded;
+    return 0;
+}
+
+int32_t
+libmpq__bet_name_hash2(const mpq_bet_s *table, uint64_t index, uint64_t *hash)
+{
+    int32_t result;
+
+    if (hash == NULL)
+        return LIBMPQ_ERROR_SIZE;
+    *hash = 0;
+    result = bet_view_validate(table);
+    if (result != 0)
+        return result;
+    if (index >= table->header.entry_count)
+        return LIBMPQ_ERROR_EXIST;
+
+    /* Both factors are bounded by uint32_t (stride additionally by 64). */
+    return libmpq__bit_get(
+        table->name_hash2, table->name_hash2_size, index * table->header.name_hash2_total,
+        table->header.name_hash2_size, hash
+    );
+}
+
+int32_t
+libmpq__bet_record_decode(const mpq_bet_s *table, uint64_t index, mpq_bet_entry_s *entry)
+{
+    mpq_bet_entry_s decoded = { 0 };
+    mpq_bet_field_s fields[5];
+    uint64_t values[5];
+    uint64_t base;
+    size_t i;
+    int32_t result;
+
+    if (entry == NULL)
+        return LIBMPQ_ERROR_SIZE;
+    memset(entry, 0, sizeof(*entry));
+    result = bet_view_validate(table);
+    if (result != 0)
+        return result;
+    if (index >= table->header.entry_count)
+        return LIBMPQ_ERROR_EXIST;
+    fields[0] = table->header.file_position;
+    fields[1] = table->header.file_size;
+    fields[2] = table->header.compressed_size;
+    fields[3] = table->header.flag_index;
+    fields[4] = table->header.unknown_field;
+
+    /* uint32_t index/count and record width bound the product and field sums. */
+    base = index * table->header.table_entry_size;
+    for (i = 0; i < 5; i++) {
+        result = libmpq__bit_get(
+            table->records, table->records_size, base + fields[i].bit_index, fields[i].bit_count,
+            &values[i]
+        );
+        if (result != 0)
+            return result;
+    }
+    if (values[3] >= table->header.flag_count)
+        return LIBMPQ_ERROR_FORMAT;
+    decoded.offset = values[0];
+    decoded.unpacked_size = values[1];
+    decoded.packed_size = values[2];
+    decoded.flag_index = values[3];
+    decoded.unknown = values[4];
+    decoded.flags = libmpq__load_le32(table->flags + (size_t)values[3] * 4);
+    result = libmpq__bet_name_hash2(table, index, &decoded.name_hash2);
+    if (result != 0)
+        return result;
+    *entry = decoded;
+    return 0;
+}
+
+int32_t
+libmpq__bet_match(void *context, uint64_t index, uint64_t expected, int *matches)
+{
+    const mpq_bet_s *table = context;
+    uint64_t actual;
+    uint64_t mask;
+    int32_t result;
+
+    if (matches == NULL)
+        return LIBMPQ_ERROR_SIZE;
+    *matches = 0;
+    result = libmpq__bet_name_hash2(table, index, &actual);
+    if (result != 0)
+        return result;
+    mask = table->header.name_hash2_size == 64 ? UINT64_MAX
+                                               : (UINT64_C(1) << table->header.name_hash2_size) - 1;
+    *matches = actual == (expected & mask);
+    return 0;
+}
+
+int32_t
+libmpq__bet_entry_decode(
+    const mpq_bet_s *table, uint64_t index, uint64_t expected, mpq_entry_s *entry
+)
+{
+    mpq_bet_entry_s decoded;
+    int matches;
+    int32_t result;
+
+    if (entry == NULL)
+        return LIBMPQ_ERROR_SIZE;
+    memset(entry, 0, sizeof(*entry));
+    result = libmpq__bet_match((void *)table, index, expected, &matches);
+    if (result != 0)
+        return result;
+    if (!matches)
+        return LIBMPQ_ERROR_EXIST;
+    result = libmpq__bet_record_decode(table, index, &decoded);
+    if (result != 0)
+        return result;
+    entry->offset = decoded.offset;
+    entry->unpacked_size = decoded.unpacked_size;
+    entry->packed_size = decoded.packed_size;
+    entry->flags = decoded.flags;
+    entry->source_kind = LIBMPQ_ENTRY_SOURCE_BET;
+    entry->source_index = (uint32_t)index;
+    entry->file_number = UINT32_MAX;
     return 0;
 }
 
