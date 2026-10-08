@@ -65,6 +65,7 @@ libmpq__ext_table_encode(
     payload_size = wire_size - LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE;
     if (compress) {
         uint8_t mask;
+
         /* Zlib framing is shared with v2; normal creation still rejects v3. */
         result = libmpq__compression_encode_sector(
             wire + LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE, payload_size, LIBMPQ_COMPRESSION_ZLIB,
@@ -74,6 +75,7 @@ libmpq__ext_table_encode(
         if (result != 0)
             return result;
     }
+
     /* Equal-sized compressed data is ambiguous to the loader: store the original instead. */
     if (payload_size >= wire_size - LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE) {
         free(payload);
@@ -95,6 +97,7 @@ libmpq__ext_table_encode(
         payload != NULL ? payload : wire + LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE, payload_size
     );
     free(payload);
+
     /* The bounded payload fits uint32_t; trailing incomplete words remain unchanged. */
     libmpq__crypto_encrypt_block(
         output + LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE, (uint32_t)payload_size, key

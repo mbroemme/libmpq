@@ -223,6 +223,7 @@ test_patch_writer_LDADD = \
 	$(top_builddir)/src/mpq-patch-writer.lo \
 	$(top_builddir)/src/mpq-patch-reader.lo \
 	$(top_builddir)/src/mpq-writer.lo \
+	$(top_builddir)/src/mpq-ext-table-builder.lo \
 	$(top_builddir)/src/mpq-stream.lo \
 	$(top_builddir)/src/mpq-signature.lo \
 	$(top_builddir)/src/mpq-rsa.lo \
@@ -232,6 +233,7 @@ test_update_SOURCES = test-mpq-update.c $(COMMON_SOURCES)
 test_update_LDADD = \
 	$(top_builddir)/src/mpq-update.lo \
 	$(top_builddir)/src/mpq-writer.lo \
+	$(top_builddir)/src/mpq-ext-table-builder.lo \
 	$(top_builddir)/src/mpq-stream.lo \
 	$(top_builddir)/src/mpq-signature.lo \
 	$(top_builddir)/src/mpq-rsa.lo \
@@ -258,7 +260,7 @@ test_sparse_LDADD = $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
 # The legacy PKWARE dispatcher test also calls the production SPARSE codec.
 test_pkware_LDADD = $(top_builddir)/src/mpq-sparse.lo $(LDADD)
 
-test_writer_LDADD = $(PRIVATE_MPQE_LDADD) $(LDADD)
+test_writer_LDADD = $(top_builddir)/src/mpq-writer.lo $(top_builddir)/src/mpq-ext-table-builder.lo $(top_builddir)/src/mpq-signature.lo $(top_builddir)/src/mpq-rsa.lo $(top_builddir)/src/mpq-sha1.lo $(test_attributes_LDADD)
 
 # Fixture-dependent tests resolve archives from the source tree, including
 # when Automake runs them from a separate VPATH or distcheck build directory.

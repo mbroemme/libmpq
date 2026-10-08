@@ -78,6 +78,7 @@ encoding_roundtrip(const uint8_t *wire, size_t size, bool compress, int smaller)
         return 1;
     }
     memcpy(decoded, wire, 12);
+
     /* Wrong key must fail structural parsing (or compressed-stream decoding). */
     memcpy(decoded + 12, stored + 12, stored_payload);
     libmpq__crypto_decrypt_block(decoded + 12, (uint32_t)stored_payload, key ^ 1u);

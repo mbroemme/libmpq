@@ -596,8 +596,47 @@ callers cannot supply an arbitrary key. Encryption uses complete little-endian
 Stored buffers decode through the existing table loader's decrypt/decompress
 path. Tests include independent fixed encrypted vectors, fallback boundaries,
 deterministic output, and synthetic archive-loader/read/stream round trips.
-No archive layout or header finalization, v3 writing/update, or public API
-changes are introduced by this encoder.
+This encoder does not perform archive I/O or enable public v3 creation/update.
+
+### Private v3 archive finalization
+
+The existing seekable writer has a private v3 creation entry point for internal
+integration tests. Public creation still rejects version THREE, and v3 update
+and rebuild remain unsupported. No separate writer pipeline is introduced.
+
+Private v3 output reserves a 68-byte (`0x44`) header, writes file payloads at
+their final archive-relative positions, then appends HET, BET, classic hash,
+classic block, and (when file positions require it) hi-block tables. Stored
+tables are adjacent, without padding. The existing in-memory builders,
+serializers, and compress/encrypt encoder run only after payloads and generated
+internal files are finished.
+
+BET row N and classic block row N come from the same completed writer metadata
+and retain insertion order. Classic block count is the completed row count,
+not reserved capacity. Corresponding offsets, sizes, and flags must match;
+reader precedence is not used to repair writer inconsistencies. Classic
+`uint32_t` size limits remain enforced. File positions retain their high
+`uint16_t` word in the optional hi-block table and their full `uint64_t` BET
+value. Table positions are checked before narrowing into low/high header words.
+Every table range advances through checked `uint64_t` multiplication and
+addition bounded by `INT64_MAX`. Both classic hash/block offsets are checked
+against their 48-bit low/high representation; HET/BET and hi-block offsets
+remain full-width. Legacy v1/v2 finalization still serializes reserved block
+capacity, while v3 uses completed rows, including the valid zero-row case.
+
+Finalization rewrites the base, v2 extension, and v3 extension using the
+canonical little-endian header encoders, then follows existing flush/signature
+handling. The v3 archive-size field is authoritative; the legacy size word
+stores its low 32 bits explicitly. The public API is unchanged. Private v3
+FIX_KEY encryption uses the final file offset and unpacked size, and payloads
+are never moved afterward. Legacy v1/v2 writer behavior remains unchanged.
+
+Synthetic tests reopen private output through normal reader APIs, compare
+classic and BET metadata and lookups, exercise streaming and encrypted files,
+and check exact table boundaries. A sparse file tests positions above 4 GiB
+and hi-block output without allocating a huge payload. Where stream cookies
+are available, write failures are injected at payload/table writes and final
+header rewrite; unsuccessful output retains no valid committed header.
 
 ## Internal files and integrity data
 

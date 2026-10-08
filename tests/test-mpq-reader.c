@@ -1784,6 +1784,7 @@ main(void)
     TEST_CHECK(test_v3_bet_read(1, 1, 0, 0, 3, 0, 0, 0) == 0);
     TEST_CHECK(test_v3_bet_read(1, 1, 0, 0, 0, 0, UINT64_C(0x100000000), 0) == 0);
     TEST_CHECK(test_v3_bet_read(0, 0, 0, 0, 0, 1, 0, 0) == 0);
+
     /* Production encoder bytes must pass the existing generic-I/O table loader. */
     TEST_CHECK(test_v3_bet_read(2, 2, 0, 0, 0, 0, 0, 0) == 0);
     TEST_CHECK(test_v3_bet_read(3, 3, 0, 0, 1, 0, 0, 0) == 0);

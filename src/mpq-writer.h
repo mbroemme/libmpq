@@ -24,6 +24,7 @@
 #include "mpq-md5.h"
 #include "mpq-mpqe.h"
 #include <libmpq/mpq.h>
+#include <stdbool.h>
 #include <stdio.h>
 
 /*
@@ -74,6 +75,12 @@ int32_t libmpq__writer_archive_create(
 );
 int32_t libmpq__writer_archive_create_file(
     mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options
+);
+
+/* Private integration only: adopt file (or open path), keeping public v3 creation disabled. */
+int32_t libmpq__writer_archive_create_v3(
+    mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options,
+    bool compress_tables
 );
 int32_t libmpq__writer_archive_create_mpqe(
     mpq_archive_s **out, const char *path, const uint8_t *auth_code, size_t auth_code_size,
