@@ -20,6 +20,7 @@
 #ifndef LIBMPQ_MPQ_EXT_TABLE_H
 #define LIBMPQ_MPQ_EXT_TABLE_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -54,6 +55,15 @@ typedef struct
 
 int32_t libmpq__ext_table_decode(
     const uint8_t *input, size_t size, uint32_t signature, mpq_ext_table_header_s *header
+);
+
+/*
+ * Encode a complete validated HET/BET wire table without archive I/O.
+ * Its signature selects the table key; only the payload is compressed/encrypted.
+ * Caller frees stored. Failure clears stored/size; wire is never modified.
+ */
+int32_t libmpq__ext_table_encode(
+    const uint8_t *wire, size_t wire_size, bool compress, uint8_t **stored, size_t *stored_size
 );
 
 #endif

@@ -22,6 +22,7 @@
 #include "mpq-bit.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
+#include "mpq-ext-table.h"
 #include "mpq-md5.h"
 #include "mpq-reader.h"
 #include "test-mpq-helper.h"
@@ -81,6 +82,17 @@ reader_v3_store_table(
 {
     uint8_t stored[1024];
     size_t stored_size = size;
+    if (compressed >= 2) {
+        uint8_t *encoded = NULL;
+        TEST_CHECK(
+            libmpq__ext_table_encode(decoded, size, compressed == 2, &encoded, &stored_size) == 0
+        );
+        TEST_CHECK(source->size + stored_size <= sizeof(source->bytes));
+        memcpy(source->bytes + source->size, encoded, stored_size);
+        source->size += stored_size;
+        free(encoded);
+        return 0;
+    }
     if (compressed) {
         unsigned long capacity = sizeof(stored) - 13;
         memcpy(stored, decoded, 12);
@@ -1772,6 +1784,9 @@ main(void)
     TEST_CHECK(test_v3_bet_read(1, 1, 0, 0, 3, 0, 0, 0) == 0);
     TEST_CHECK(test_v3_bet_read(1, 1, 0, 0, 0, 0, UINT64_C(0x100000000), 0) == 0);
     TEST_CHECK(test_v3_bet_read(0, 0, 0, 0, 0, 1, 0, 0) == 0);
+    /* Production encoder bytes must pass the existing generic-I/O table loader. */
+    TEST_CHECK(test_v3_bet_read(2, 2, 0, 0, 0, 0, 0, 0) == 0);
+    TEST_CHECK(test_v3_bet_read(3, 3, 0, 0, 1, 0, 0, 0) == 0);
     TEST_CHECK(test_v3_bet_errors() == 0);
     TEST_CHECK(test_v3_extent_geometry() == 0);
     TEST_CHECK(test_v3_table_keys() == 0);

@@ -502,9 +502,9 @@ table sizes respect the existing 1 MiB envelope-inclusive defensive limit.
 Builders own their allocations; failed builds preserve prior outputs and
 cleanup is safe for empty or partially built tables. Synthetic tests validate
 the builders against the existing parsers, HET lookup, and BET record decoder.
-Both table serializers operate only on owned memory buffers. Archive
-serialization, encryption, compression, layout/finalization, and public v3
-creation remain unimplemented.
+Both table serializers operate only on owned memory buffers. A separate
+private encoder compresses/encrypts these buffers; archive serialization,
+layout/finalization, and public v3 creation remain unimplemented.
 
 ### Private BET wire serialization
 
@@ -571,8 +571,33 @@ Synthetic tests cover a fixed complete wire vector, sparse slots, `0x80`,
 extra/non-byte-aligned strides, 64-bit indices, deterministic padding, and
 malformed states. Existing builder tests now use both production serializers
 before HET header/view decoding and filename lookup with BET NameHash2
-confirmation. No encryption, compression, archive layout/finalization, or
-public v3 writing is enabled.
+confirmation. The serializers themselves do not encrypt, compress, or write
+archives; public v3 writing remains disabled.
+
+### Private stored extended-table encoding
+
+`libmpq__ext_table_encode()` accepts a complete structurally validated HET or
+BET wire buffer and returns a separate caller-owned allocation, freed with
+`free()`. Errors clear the output pointer and size to NULL/zero. Input bytes
+are unchanged. The envelope-inclusive 1 MiB limit and exact declared payload
+size are checked before allocation, using the existing HET/BET header parsers.
+
+The 12-byte common envelope remains plaintext and describes the uncompressed
+payload. Optional zlib encoding reuses the existing MPQ compression dispatcher
+and leading method marker. Compressed payloads are used only when strictly
+smaller; equal-sized or expanded results fall back to the original payload.
+The compatible v2 zlib encoding policy is reused internally without enabling
+public v3 creation.
+
+Compression precedes encryption. The validated signature selects the existing
+hash-table key (`0xc3af3770`) for HET or block-table key (`0xec83b3a3`) for BET;
+callers cannot supply an arbitrary key. Encryption uses complete little-endian
+`uint32_t` words. Trailing 1-3 bytes remain unchanged, with no added padding.
+Stored buffers decode through the existing table loader's decrypt/decompress
+path. Tests include independent fixed encrypted vectors, fallback boundaries,
+deterministic output, and synthetic archive-loader/read/stream round trips.
+No archive layout or header finalization, v3 writing/update, or public API
+changes are introduced by this encoder.
 
 ## Internal files and integrity data
 
