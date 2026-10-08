@@ -31,6 +31,7 @@ readonly mpqe_output="${output_root}/mpqe-open"
 readonly encrypted_output="${output_root}/encrypted-archive"
 readonly file_read_output="${output_root}/file-read"
 readonly sector_output="${output_root}/sector-decode"
+readonly ext_table_output="${output_root}/ext-table"
 readonly writer_output="${output_root}/writer-roundtrip"
 readonly pkware_output="${output_root}/pkware-decode"
 readonly huffman_output="${output_root}/huffman-decode"
@@ -52,6 +53,7 @@ mkdir -p \
 	"${encrypted_output}" \
 	"${file_read_output}" \
 	"${sector_output}" \
+	"${ext_table_output}" \
 	"${writer_output}" \
 	"${pkware_output}" \
 	"${huffman_output}" \
@@ -63,6 +65,22 @@ mkdir -p \
 
 cp "${project_root}/tests/fixtures/mpq-v1-features.mpq" "${archive_output}/fixture-v1.mpq"
 cp "${project_root}/tests/fixtures/mpq-v2-features.mpq" "${archive_output}/fixture-v2.mpq"
+cp "${project_root}/tests/fixtures/mpq-v3-features.mpq" "${archive_output}/fixture-v3.mpq"
+
+# Already-decoded synthetic tables reach structural parsers without encryption.
+{
+	printf 'HET\x1a\x01\x00\x00\x00\x25\x00\x00\x00'
+	printf '\x25\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00\x40\x00\x00\x00'
+	printf '\x03\x00\x00\x00\x00\x00\x00\x00\x03\x00\x00\x00\x02\x00\x00\x00'
+	printf '\x80\x81\x00\x08\x00'
+} > "${ext_table_output}/het"
+{
+	printf 'BET\x1a\x01\x00\x00\x00\x4c\x00\x00\x00'
+	printf '\x4c\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00'
+	printf '\x00%.0s' {1..40}
+	printf '\x38\x00\x00\x00\x00\x00\x00\x00\x38\x00\x00\x00'
+	printf '\x00%.0s' {1..8}
+} > "${ext_table_output}/bet"
 
 # Prefix each raw attributes payload with the bounded count/self selector bytes.
 printf '\x00\x00\x64\x00\x00\x00\x00\x00\x00\x00' > "${attributes_output}/empty"
@@ -110,9 +128,10 @@ write_v2_header > "${archive_output}/minimal-v2-empty.mpq"
 write_v1_empty_tables_header > "${archive_output}/v1-empty-tables.mpq"
 write_v1_oversized_tables_header > "${archive_output}/v1-oversized-tables.mpq"
 
-# Seed authenticated MPQE parsing with public v1 and v2 regression streams.
+# Seed authenticated MPQE parsing with public synthetic v1/v2/v3 streams.
 cp "${project_root}/tests/fixtures/mpq-v1-features.mpqe" "${mpqe_output}/fixture-v1.mpqe"
 cp "${project_root}/tests/fixtures/mpq-v2-features.mpqe" "${mpqe_output}/fixture-v2.mpqe"
+cp "${project_root}/tests/fixtures/mpq-v3-features.mpqe" "${mpqe_output}/fixture-v3.mpqe"
 printf '\x00' > "${mpqe_output}/truncated.mpqe"
 dd if=/dev/zero bs=512 count=1 status=none > "${archive_output}/embedded-v1-header.bin"
 write_v1_header >> "${archive_output}/embedded-v1-header.bin"

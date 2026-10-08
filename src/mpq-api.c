@@ -756,9 +756,18 @@ libmpq__file_offset(mpq_archive_s *mpq_archive, uint32_t file_number, libmpq__of
 int32_t
 libmpq__file_blocks(mpq_archive_s *mpq_archive, uint32_t file_number, uint32_t *blocks)
 {
-    if (libmpq__reader_validate_file_number(mpq_archive, file_number) < 0) {
+    if (blocks != NULL)
+        *blocks = 0;
+    if (mpq_archive == NULL || blocks == NULL ||
+        libmpq__reader_validate_file_number(mpq_archive, file_number) < 0) {
         return LIBMPQ_ERROR_EXIST;
     }
+
+    /* The sector reader cannot consume lengths beyond its 32-bit offset domain. */
+    const mpq_entry_s *entry =
+        &mpq_archive->mpq_entry[mpq_archive->mpq_map[file_number].entry_index];
+    if (entry->packed_size > UINT32_MAX || entry->unpacked_size > UINT32_MAX)
+        return LIBMPQ_ERROR_SIZE;
 
     *blocks = libmpq__reader_count_file_blocks(mpq_archive, file_number);
 

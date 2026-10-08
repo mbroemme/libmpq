@@ -20,7 +20,10 @@
 /* Verify every checked-in v1 and v2 fixture archive and extracted payload. */
 #include "mpq-archive.h"
 #include "mpq-attributes.h"
+#include "mpq-bit.h"
 #include "mpq-block.h"
+#include "mpq-crypto.h"
+#include "mpq-endian.h"
 #include "mpq-reader.h"
 #include "mpq-signature.h"
 #include "test-mpq-helper.h"
@@ -28,6 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <zlib.h>
 
 /* Fixed source checksums independently calculated with Python zlib/hashlib. */
 static const struct
@@ -598,12 +602,336 @@ refresh_fixture(const char *path, uint32_t version, size_t fixture_index)
     return 0;
 }
 
+/* Frame/encrypt only the payload, preserving the plaintext common envelope. */
+static int
+fixture_v3_store_table(
+    uint8_t *output, const uint8_t *input, size_t size, int packed, uint32_t key,
+    size_t *stored_size
+)
+{
+    memcpy(output, input, 12);
+    *stored_size = size;
+    if (packed) {
+        unsigned long length = (unsigned long)size - 13;
+        output[12] = LIBMPQ_COMPRESSION_ZLIB;
+        TEST_CHECK(
+            compress2(output + 13, &length, input + 12, (unsigned long)size - 12, 9) == Z_OK
+        );
+        *stored_size = (size_t)length + 13;
+        TEST_CHECK(*stored_size < size);
+    } else {
+        memcpy(output + 12, input + 12, size - 12);
+    }
+    TEST_CHECK(libmpq__crypto_encrypt_block(output + 12, (uint32_t)*stored_size - 12, key) == 0);
+    return 0;
+}
+
+/*
+ * Retain project-owned v2 payload bytes/positions, replacing only format tables.
+ * This private recipe is not public v3 writing. Unused rows remain unused;
+ * zero.bin is a BET-only tail. The existing corpus includes every native codec.
+ */
+static int
+build_v3_fixture(const char *path, int mixed, int packed)
+{
+    mpq_archive_s *source = NULL;
+    mpq_md5_s digest_context;
+    uint8_t digest[LIBMPQ_MD5_SIZE];
+    uint8_t encoded[LIBMPQ_RSA_SIZE];
+    uint8_t signature[LIBMPQ_RSA_SIZE];
+    uint8_t *original;
+    size_t original_size;
+    uint64_t extent;
+    mpq_header_s header;
+    mpq_header_ex_s ex = { 0 };
+    mpq_header_v3_s v3;
+    uint8_t het[162] = { 0 };
+    uint8_t bet[4096] = { 0 };
+    const char *names[33] = { 0 };
+    uint8_t *wire;
+    size_t position;
+    size_t record_bytes;
+    size_t hash_bytes;
+    size_t bet_size;
+    size_t stored_size;
+    uint32_t signature_row = 0;
+    FILE *file;
+    char input[512];
+    TEST_CHECK(snprintf(input, sizeof(input), "%s/mpq-v2-features.mpq", FIXTURE_DIR) > 0);
+    TEST_CHECK(test_read_path(input, &original, &original_size) == 0);
+    TEST_CHECK(libmpq__archive_open(&source, input, 0) == 0);
+    TEST_CHECK(libmpq__archive_signature_extent(source, &extent) == 0);
+    TEST_CHECK(extent >= 68 && (uint64_t)extent <= original_size);
+    TEST_CHECK(source->mpq_header.block_table_count == 32);
+    for (uint32_t i = 0; i < 17; i++) {
+        uint32_t number;
+        const char *name = i < 14    ? fixture_names[i]
+                           : i == 14 ? "(listfile)"
+                           : i == 15 ? "(attributes)"
+                                     : "(signature)";
+        TEST_CHECK(libmpq__file_number(source, name, &number) == 0);
+        uint32_t row = source->mpq_entry[source->mpq_map[number].entry_index].classic_source_index;
+        TEST_CHECK(row < 32 && names[row] == NULL);
+        names[row] = name;
+        if (i == 16)
+            signature_row = row;
+    }
+    names[32] = "zero.bin";
+    TEST_CHECK(libmpq__bit_bytes(33, 134, &record_bytes) == 0);
+    TEST_CHECK(libmpq__bit_bytes(33, 58, &hash_bytes) == 0);
+    bet_size = 88 + 33 * 4 + record_bytes + hash_bytes;
+    TEST_CHECK(bet_size <= sizeof(bet));
+    libmpq__store_le32(het, LIBMPQ_HET_SIGNATURE);
+    libmpq__store_le32(het + 4, 1);
+    libmpq__store_le32(het + 8, sizeof(het) - 12);
+    libmpq__store_le32(het + 12, sizeof(het) - 12);
+    libmpq__store_le32(het + 16, 33);
+    libmpq__store_le32(het + 20, 67);
+    libmpq__store_le32(het + 24, 64);
+    libmpq__store_le32(het + 28, 6);
+    libmpq__store_le32(het + 36, 6);
+    libmpq__store_le32(het + 40, 51);
+    libmpq__store_le32(bet, LIBMPQ_BET_SIGNATURE);
+    libmpq__store_le32(bet + 4, 1);
+    libmpq__store_le32(bet + 8, (uint32_t)bet_size - 12);
+    libmpq__store_le32(bet + 12, (uint32_t)bet_size - 12);
+    libmpq__store_le32(bet + 16, 33);
+    libmpq__store_le32(bet + 24, 134);
+    libmpq__store_le32(bet + 32, 64);
+    libmpq__store_le32(bet + 36, 96);
+    libmpq__store_le32(bet + 40, 128);
+    libmpq__store_le32(bet + 44, 134);
+    libmpq__store_le32(bet + 48, 64);
+    libmpq__store_le32(bet + 52, 32);
+    libmpq__store_le32(bet + 56, 32);
+    libmpq__store_le32(bet + 60, 6);
+    libmpq__store_le32(bet + 68, 58);
+    libmpq__store_le32(bet + 72, 2);
+    libmpq__store_le32(bet + 76, 56);
+    libmpq__store_le32(bet + 80, (uint32_t)hash_bytes);
+    libmpq__store_le32(bet + 84, 33);
+    for (uint32_t i = 0; i < 33; i++) {
+        const mpq_block_s zero = { (uint32_t)extent, 0, 0, LIBMPQ_FLAG_EXISTS };
+        const mpq_block_s *block = i < 32 ? &source->mpq_block[i] : &zero;
+        uint8_t *records = bet + 88 + 33 * 4;
+        uint64_t base = (uint64_t)i * 134;
+        libmpq__store_le32(bet + 88 + i * 4, block->flags);
+        TEST_CHECK(libmpq__bit_set(records, record_bytes, base, 64, block->offset) == 0);
+        TEST_CHECK(
+            libmpq__bit_set(records, record_bytes, base + 64, 32, block->unpacked_size) == 0
+        );
+        TEST_CHECK(libmpq__bit_set(records, record_bytes, base + 96, 32, block->packed_size) == 0);
+        TEST_CHECK(libmpq__bit_set(records, record_bytes, base + 128, 6, i) == 0);
+        if (names[i] != NULL) {
+            uint64_t hash;
+            mpq_het_hash_s parts;
+            TEST_CHECK(libmpq__het_hash_filename(names[i], &hash) == 0);
+            TEST_CHECK(libmpq__het_hash_partition(hash, 64, 67, &parts) == 0);
+            uint32_t slot = parts.initial_slot;
+            while (het[44 + slot] != 0)
+                slot = (slot + 1) % 67;
+            het[44 + slot] = parts.name_hash1;
+            TEST_CHECK(libmpq__bit_set(het + 111, 51, slot * 6, 6, i) == 0);
+            TEST_CHECK(
+                libmpq__bit_set(records + record_bytes, hash_bytes, i * 58, 56, parts.name_hash2) ==
+                0
+            );
+            TEST_CHECK(libmpq__bit_set(records + record_bytes, hash_bytes, i * 58 + 56, 2, 3) == 0);
+        }
+    }
+    wire = calloc(1, (size_t)extent + sizeof(het) + bet_size + 4096);
+    TEST_CHECK(wire != NULL);
+    memcpy(wire, original, (size_t)extent);
+    free(original);
+    position = (size_t)extent;
+    v3.het_table_offset = position;
+    TEST_CHECK(
+        fixture_v3_store_table(
+            wire + position, het, sizeof(het), packed, 0xc3af3770u, &stored_size
+        ) == 0
+    );
+    position += stored_size;
+    v3.bet_table_offset = position;
+    TEST_CHECK(
+        fixture_v3_store_table(wire + position, bet, bet_size, packed, 0xec83b3a3u, &stored_size) ==
+        0
+    );
+    position += stored_size;
+    header = source->mpq_header;
+    header.version = LIBMPQ_ARCHIVE_VERSION_THREE;
+    header.header_size = 68;
+    header.hash_table_offset = header.block_table_offset = 0;
+    if (mixed) {
+        size_t bytes = header.hash_table_count * LIBMPQ_HASH_ENTRY_WIRE_SIZE;
+        header.hash_table_offset = (uint32_t)position;
+        TEST_CHECK(
+            libmpq__hash_table_encode(
+                source->mpq_hash, header.hash_table_count, wire + position, bytes
+            ) == 0
+        );
+        TEST_CHECK(
+            libmpq__crypto_encrypt_block(wire + position, (uint32_t)bytes, 0xc3af3770u) == 0
+        );
+        position += bytes;
+        bytes = 32 * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE;
+        header.block_table_offset = (uint32_t)position;
+        TEST_CHECK(libmpq__block_table_encode(source->mpq_block, 32, wire + position, bytes) == 0);
+        TEST_CHECK(
+            libmpq__crypto_encrypt_block(wire + position, (uint32_t)bytes, 0xec83b3a3u) == 0
+        );
+        position += bytes;
+    } else {
+        header.hash_table_count = header.block_table_count = 0;
+    }
+    v3.archive_size = position;
+    header.archive_size = (uint32_t)position;
+    TEST_CHECK(libmpq__header_encode(&header, wire, 32) == 0);
+    TEST_CHECK(libmpq__header_ex_encode(&ex, wire + 32, 12) == 0);
+    TEST_CHECK(libmpq__header_v3_encode(&v3, wire + 44, 24) == 0);
+    size_t signature_offset = source->mpq_block[signature_row].offset;
+    memset(wire + signature_offset, 0, LIBMPQ_SIGNATURE_SIZE);
+    libmpq__md5_init(&digest_context);
+    libmpq__md5_update(&digest_context, wire, position);
+    libmpq__md5_final(&digest_context, digest);
+    libmpq__rsa_md5_encode(digest, encoded);
+    TEST_CHECK(libmpq__rsa_weak_operation(test_signature_private_key, encoded, signature) == 0);
+    for (size_t i = 0; i < sizeof(signature); i++)
+        wire[signature_offset + 8 + i] = signature[sizeof(signature) - 1 - i];
+    file = fopen(path, "wb+");
+    TEST_CHECK(file != NULL);
+    TEST_CHECK(fwrite(wire, 1, position, file) == position);
+    TEST_CHECK(fclose(file) == 0);
+    free(wire);
+    TEST_CHECK(libmpq__archive_close(source) == 0);
+    return 0;
+}
+
+/* Compare every decoded codec against the independent existing synthetic corpus. */
+static int
+test_v3_fixture(const char *path, int mixed)
+{
+    mpq_archive_s *reference = NULL;
+    mpq_archive_s *archive = NULL;
+    char input[512];
+    uint32_t files;
+    uint32_t mismatches;
+    TEST_CHECK(build_v3_fixture(path, mixed, 0) == 0);
+    if (mixed) {
+        uint8_t *committed;
+        uint8_t *generated;
+        size_t committed_size;
+        size_t generated_size;
+        char fixture_path[512];
+        TEST_CHECK(
+            snprintf(fixture_path, sizeof(fixture_path), "%s/mpq-v3-features.mpq", FIXTURE_DIR) > 0
+        );
+        TEST_CHECK(test_read_path(fixture_path, &committed, &committed_size) == 0);
+        TEST_CHECK(test_read_path(path, &generated, &generated_size) == 0);
+        TEST_CHECK(
+            committed_size == generated_size && memcmp(committed, generated, committed_size) == 0
+        );
+        free(committed);
+        free(generated);
+    }
+    TEST_CHECK(snprintf(input, sizeof(input), "%s/mpq-v2-features.mpq", FIXTURE_DIR) > 0);
+    TEST_CHECK(libmpq__archive_open(&reference, input, 0) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(libmpq__archive_files(archive, &files) == 0 && files == 18);
+    TEST_CHECK(archive->entry_count == 33);
+    TEST_CHECK(
+        libmpq__archive_verify(
+            archive, LIBMPQ_SIGNATURE_WEAK, test_signature_public_key,
+            sizeof(test_signature_public_key), &mismatches
+        ) == 0
+    );
+    TEST_CHECK(mismatches == 0);
+    for (uint32_t i = 0; i < 18; i++) {
+        const char *name = i < 14    ? fixture_names[i]
+                           : i == 14 ? "(listfile)"
+                           : i == 15 ? "(attributes)"
+                           : i == 16 ? "(signature)"
+                                     : "zero.bin";
+        uint32_t number;
+        uint32_t again;
+        uint32_t row;
+        uint8_t *actual;
+        uint8_t *expected = NULL;
+        size_t size;
+        size_t expected_size = 0;
+        mpq_stream_s *stream = NULL;
+        libmpq__off_t transferred;
+        libmpq__off_t position;
+        TEST_CHECK(libmpq__file_number(archive, name, &number) == 0);
+        TEST_CHECK(libmpq__file_number(archive, name, &again) == 0 && again == number);
+        row = archive->mpq_map[number].entry_index;
+        TEST_CHECK((archive->mpq_entry[row].source_mask & LIBMPQ_ENTRY_SOURCE_BET) != 0);
+        if (i != 17 && mixed) {
+            uint32_t h1;
+            uint32_t h2;
+            uint32_t h3;
+            libmpq__file_hash(name, &h1, &h2, &h3);
+            TEST_CHECK(libmpq__file_number_from_hash(archive, h1, h2, h3, &again) == 0);
+            TEST_CHECK(again == number);
+        }
+        TEST_CHECK(test_archive_read(archive, number, &actual, &size) == 0);
+        if (i < 16) {
+            TEST_CHECK(libmpq__file_number(reference, name, &again) == 0);
+            TEST_CHECK(test_archive_read(reference, again, &expected, &expected_size) == 0);
+            TEST_CHECK(size == expected_size && memcmp(actual, expected, size) == 0);
+        } else if (i == 17) {
+            TEST_CHECK(size == 0 && archive->mpq_entry[row].source_mask == LIBMPQ_ENTRY_SOURCE_BET);
+        }
+        TEST_CHECK(libmpq__stream_open_name(archive, name, &stream) == 0);
+        TEST_CHECK(libmpq__stream_size(stream, &position) == 0 && (uint64_t)position == size);
+        for (size_t offset = 0; offset < size;) {
+            uint8_t chunk[37];
+            size_t count = size - offset < sizeof(chunk) ? size - offset : sizeof(chunk);
+            memset(chunk, 0xa5, sizeof(chunk));
+            TEST_CHECK(libmpq__stream_read(stream, chunk, count, &transferred) == 0);
+            TEST_CHECK(
+                (uint64_t)transferred == count && memcmp(chunk, actual + offset, count) == 0
+            );
+            offset += count;
+        }
+        TEST_CHECK(libmpq__stream_tell(stream, &position) == 0 && (uint64_t)position == size);
+        TEST_CHECK(libmpq__stream_read(stream, NULL, 0, &transferred) == 0 && transferred == 0);
+        for (uint32_t seek = 0; seek < 7 && size != 0; seek++) {
+            uint8_t byte;
+            size_t offset = ((size_t)seek * 997) % size;
+            TEST_CHECK(libmpq__stream_seek(stream, (libmpq__off_t)offset, LIBMPQ_SEEK_SET) == 0);
+            TEST_CHECK(
+                libmpq__stream_read(stream, &byte, 1, &transferred) == 0 && transferred == 1
+            );
+            TEST_CHECK(byte == actual[offset]);
+        }
+        TEST_CHECK(libmpq__stream_close(stream) == 0);
+        free(actual);
+        free(expected);
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__archive_close(reference) == 0);
+    TEST_CHECK(remove(path) == 0);
+    return 0;
+}
+
 /* Verify both deterministic fixture formats against the embedded manifest. */
 int
 main(int argc, char **argv)
 {
     char path[512];
     size_t i;
+
+    if (argc == 3 &&
+        (strcmp(argv[1], "--v3-output") == 0 || strcmp(argv[1], "--v3-only-output") == 0 ||
+         strcmp(argv[1], "--v3-packed-output") == 0)) {
+        TEST_CHECK(
+            build_v3_fixture(
+                argv[2], strcmp(argv[1], "--v3-only-output") != 0,
+                strcmp(argv[1], "--v3-packed-output") == 0
+            ) == 0
+        );
+        return 0;
+    }
 
     for (i = 0; i < 2; ++i) {
         TEST_CHECK(
@@ -614,6 +942,10 @@ main(int argc, char **argv)
             continue;
         }
         TEST_CHECK(test_fixture(path, (uint32_t)(i + 1), i) == 0);
+    }
+    if (argc == 1) {
+        TEST_CHECK(test_v3_fixture("fixture-v3-mixed.mpq", 1) == 0);
+        TEST_CHECK(test_v3_fixture("fixture-v3-bet.mpq", 0) == 0);
     }
     return 0;
 }

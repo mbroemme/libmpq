@@ -376,6 +376,10 @@ envelope. Oversized stored extents are rejected before reading the envelope;
 oversized decoded lengths are rejected after reading only the envelope, before
 payload allocation, reading, or decompression. Size arithmetic remains checked.
 The HET and BET entry counts must match exactly.
+An empty pair has zero entries in both tables; the HET runtime view still needs
+a nonzero slot count and index width. Zero-slot HET headers may be structurally
+decoded but are not usable archive lookup tables. Empty classic-only archives
+remain valid without extended tables.
 
 The common 12-byte envelope is plaintext. The contained payload is decrypted
 with the existing `(hash table)` key for HET (`0xC3AF3770`) or `(block table)`
@@ -407,6 +411,54 @@ attributes row. HET/BET hash information remains in the table views.
 HET/BET archives are read-only. Transactional updates and classic patch
 rebuild/materialization reject them rather than omit BET-only members.
 MPQ v3 writing, extended-table generation, and MPQ v4 remain unsupported.
+
+### Read interoperability checks
+
+The checked-in v3 feature archive is generated only from project-owned synthetic
+payloads. Normal tests cover all native codecs through BET entries, special-file
+discovery, weak verification with a caller-supplied test key, zero-length members,
+small sequential reads, deterministic seeks, and mixed-row lookup equivalence.
+Separate reader tests cover FIX_KEY encryption, 64-bit positions, classic-only
+tails, malformed mappings, strict table limits, keys, and table ordering.
+
+Automated compatibility coverage is entirely self-contained: deterministic
+synthetic v3 fixtures, independently verified fixed HET hash vectors, malformed
+archive tests, fuzzing, and reader/stream/integrity tests. The library and its
+native tests remain C-only. StormLib is an external reference, not a build,
+test, vendored, or CI dependency; no installation or download is required.
+
+Independent implementations such as StormLib may be used manually for local
+comparison. Compare archive-open success, live file enumeration/count, filename
+lookup hits/misses, flags, packed/unpacked sizes, offsets, and extracted payload
+bytes/checksums. Public file numbers need not equal another implementation's
+physical table indices. Standalone Huffman and Huffman+zlib EXTENDED masks are
+known reference limitations: StormLib's v2+ dispatcher rejects them, while
+libmpq's synthetic tests verify them. For lossy WAVE members, compare decoded
+bytes between readers rather than requiring equality with source PCM.
+
+For manual/local testing only, use a legally obtained real v3 archive, such as
+a historical World of Warcraft Cataclysm Beta MPQ. Keep it and all extracted
+data outside the repository and CI. Inspect its header with a hex viewer:
+little-endian format version 2 at 0x0c, normal header length 0x44 at 0x04,
+64-bit archive extent at 0x2c, BET offset at 0x34, and HET offset at 0x3c
+(relative to the MPQ header, which may be embedded). Use separate applications
+or locally maintained callers of each library's public API to inspect the same
+archive and member names. For manual extraction, use separate temporary output
+directories outside the repository and compare lengths and `sha256sum` results.
+Patch members require a matching base to compare the applied result; decoded
+PTCH payload access is not patch application. Do not
+copy Blizzard archive bytes, trimmed archives, extracted payloads, or derived
+binary fixtures into the repository. Repository and CI fixtures must be
+synthetic only. Successful synthetic tests are not a claim that every historical
+protected/defragmented archive is supported.
+
+Current sector/codec lengths are 32-bit even though canonical BET metadata and
+positions are 64-bit. Unrepresentable member reads and block counts fail with
+SIZE rather than truncating. V3 modification is rejected at transaction setup;
+replace/remove/rename cannot proceed through a v3 transaction. Before adding
+writer support, preserve these explicit source mappings and validate generated
+tables independently; neither this fixture recipe nor reconciliation enables
+public v3 creation.
 
 ## Internal files and integrity data
 

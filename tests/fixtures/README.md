@@ -28,6 +28,7 @@ signature forms that apply to it:
 | `mpq-v1-features.mpqe` | encrypted v1 features, weak only |
 | `mpq-v2-features.mpq` | v2 features, weak `(signature)`, strong `ARCHIVE` `NGIS` |
 | `mpq-v2-features.mpqe` | encrypted v2 features, weak only |
+| `mpq-v3-features.mpqe` | synthetic v3 HET/BET features wrapped in MPQE, weak only |
 | `mpq-v1-features.w3x` | Warcraft III HM3W wrapper using MPQ v1 semantics, weak signature, strong basename `NGIS` |
 
 Warcraft III `.w3m` and `.w3x` files share the same outer HM3W/embedded-MPQ
@@ -52,7 +53,37 @@ The encrypted MPQE fixtures intentionally have no external strong trailer.
 | `mpq-v1-features.mpqe` | `1961416258e68cf7b10c271b338ed2c3d45c56619e9446cd8a97caccc56481c7` |
 | `mpq-v2-features.mpq` | `5b6c8a1a91fcc21bfe871a770da78724b8aaf247fa0077efedaf4d8cf0ba0ff0` |
 | `mpq-v2-features.mpqe` | `8b139dbba5ac1b7b1f78220a49d2328ea7db91069f906676af7ab675182db2af` |
+| `mpq-v3-features.mpqe` | `b75e011f111b05e6fdaa53c70252540f13ca683ac0fee6c17dd78add8fed2f03` |
 | `mpq-v1-features.w3x` | `f45e7148b86b7a65bce5b92feae046683726dd79efa8f8e87f66afd02b56bdba` |
+
+## MPQ v3 read compatibility fixture
+
+`mpq-v3-features.mpq` is entirely synthetic. Its private recipe retains the
+project-owned v2 codec payloads and their positions, appends encrypted HET/BET
+and classic tables, and writes a normal 0x44 v3 header. It does not use or enable
+a public v3 writer. The 67-slot HET uses a non-power-of-two probe space. BET uses
+64-bit-capable offsets, 134-bit records, and 58-bit NameHash2 strides with two
+extra bits. Shared rows reconcile once; `zero.bin` is a BET-only tail.
+Unused rows stay unused. `(listfile)`, `(attributes)` and a freshly signed
+test-key `(signature)` are present. Original encrypted sector bytes, checksum
+metadata and all codec masks are preserved. The generated HET/BET-only variant
+is exercised at runtime, together with repeated small reads and random seeks.
+Separate reader tests cover classic-only tails, conflicting source metadata,
+FIX_KEY encryption, sparse offsets above 4 GiB, and malformed tables.
+
+In a disposable build, regenerate only this fixture with:
+
+```sh
+cd tests
+./test-fixtures --v3-output fixtures/mpq-v3-features.mpq
+./test-fixtures --v3-only-output /tmp/synthetic-v3-bet.mpq
+./test-fixtures --v3-packed-output /tmp/synthetic-v3-packed.mpq
+```
+
+The normal fixture test checks byte-for-byte reproducibility and compares all
+decoded members against the synthetic v2 reference, including lossy WAVE's
+existing decoded reference bytes. SHA-256 of the mixed fixture is
+`1a9912f063fa2a2090f561ffd01c7163d0657b4b38cac6e67b72aa359b1e3c15`.
 
 ## Weak-signature feature details
 
@@ -198,12 +229,23 @@ The descriptions inside the archives document archive creation and
 extraction, supported features, encryption ordering, standalone versus masked
 PKWARE, and valid compression chains.
 
-`mpq-v1-features.mpqe` and `mpq-v2-features.mpqe` are the corresponding full
-MPQE-encrypted byte streams. They use the deliberately non-secret 32-byte test
-authentication code `LIBMPQ-MPQE-TEST-AUTH-CODE-00001`. Each 64-byte logical
+`mpq-v1-features.mpqe`, `mpq-v2-features.mpqe`, and `mpq-v3-features.mpqe` are
+the corresponding full MPQE-encrypted byte streams. They use the deliberately
+non-secret 32-byte test authentication code `LIBMPQ-MPQE-TEST-AUTH-CODE-00001`.
+Each 64-byte logical
 chunk, including the final partial physical chunk, is transformed separately;
 only the physical bytes are stored. These fixtures are public interoperability
 vectors for MPQE stream implementations and are not installer credentials.
+
+The v3 MPQE fixture wraps the exact synthetic `mpq-v3-features.mpq` bytes,
+without recreating the archive or enabling a public v3 writer. It tests
+MPQE -> MPQ v3 -> HET/BET -> canonical member read/stream composition, including
+the BET-only zero-byte tail and rejection of incorrect authentication material.
+Regenerate it in a disposable build from `tests` with:
+
+```sh
+./test-mpqe --v3-output fixtures/mpq-v3-features.mpqe
+```
 
 `mpq-v2-features.mpq` and `mpq-v2-features.mpqe` additionally contain
 `lzma.txt`, stored using MPQ method `0x12`. Its text describes LZMA as an

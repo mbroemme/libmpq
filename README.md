@@ -34,6 +34,18 @@ MPQ v2+ LZMA method.
 
 ## Features
 
+| Format | Read | Create/update |
+| --- | --- | --- |
+| MPQ v1 (wire version 0) | Supported | Supported |
+| MPQ v2 (wire version 1) | Supported | Supported |
+| MPQ v3 (wire version 2) | Classic, HET/BET, mixed tables | Not supported |
+| MPQ v4 (wire version 3) | Not supported | Not supported |
+
+V3 coverage uses synthetic archives. Extended tables have a defensive 1 MiB
+limit; current file decoding requires packed/unpacked member lengths to fit
+32 bits. Wide file positions and metadata are preserved. See [MPQ.md](MPQ.md)
+for compatibility constraints and manual interoperability checks.
+
 * Read, inspect, and extract MPQ archives, including archives embedded at a
   non-zero file offset.
 * Stream and seek within logical archive members without requiring a complete

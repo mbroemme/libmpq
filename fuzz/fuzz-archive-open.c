@@ -97,6 +97,22 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
 
     if (libmpq__archive_open(&archive, archive_path, 0) == 0) {
+        mpq_stream_s *stream = NULL;
+        uint8_t output[64];
+        libmpq__off_t transferred;
+        libmpq__off_t unpacked;
+        libmpq__off_t packed;
+        uint32_t number;
+
+        /* Streams cache a whole single-unit member, even for a tiny read. */
+        if (libmpq__file_number(archive, "overview.txt", &number) == 0 &&
+            libmpq__file_size_unpacked(archive, number, &unpacked) == 0 &&
+            libmpq__file_size_packed(archive, number, &packed) == 0 && unpacked >= 0 &&
+            unpacked <= 65536 && packed >= 0 && packed <= 65536 &&
+            libmpq__stream_open_name(archive, "overview.txt", &stream) == 0) {
+            (void)libmpq__stream_read(stream, output, sizeof(output), &transferred);
+            libmpq__stream_close(stream);
+        }
         libmpq__archive_close(archive);
     }
 

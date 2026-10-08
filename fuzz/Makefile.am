@@ -4,6 +4,7 @@ noinst_PROGRAMS = \
 	fuzz-attributes \
 	fuzz-bzip2-decode \
 	fuzz-encrypted-archive \
+	fuzz-ext-table \
 	fuzz-file-read \
 	fuzz-huffman-decode \
 	fuzz-lzma-decode \
@@ -25,6 +26,10 @@ AM_LDFLAGS = -no-install
 fuzz_attributes_SOURCES = fuzz-attributes.c
 fuzz_attributes_LDADD = $(top_builddir)/src/libmpq-fuzz-internal.la $(LIBS)
 fuzz_attributes_LDFLAGS = $(AM_LDFLAGS) -fsanitize=fuzzer,address,undefined
+
+fuzz_ext_table_SOURCES = fuzz-ext-table.c
+fuzz_ext_table_LDADD = $(top_builddir)/src/libmpq-fuzz-internal.la $(LIBS)
+fuzz_ext_table_LDFLAGS = $(AM_LDFLAGS) -fsanitize=fuzzer,address,undefined
 
 fuzz_patch_apply_SOURCES = fuzz-patch-apply.c
 fuzz_patch_apply_LDADD = $(top_builddir)/src/libmpq-fuzz-internal.la $(LIBS)
@@ -95,6 +100,7 @@ EXTRA_DIST = \
 	fuzz-codec-decode.c \
 	fuzz-common.h \
 	fuzz-encrypted-archive.c \
+	fuzz-ext-table.c \
 	fuzz-file-read.c \
 	fuzz-mpqe-open.c \
 	fuzz-patch-apply.c \

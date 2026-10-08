@@ -200,7 +200,7 @@ test_header_LDADD = \
 	$(top_builddir)/src/mpq-header.lo \
 	$(LDADD)
 test_fixtures_SOURCES = test-mpq-fixtures.c $(COMMON_SOURCES)
-test_fixtures_LDADD = $(test_attributes_LDADD)
+test_fixtures_LDADD = $(top_builddir)/src/mpq-rsa.lo $(test_attributes_LDADD)
 test_mpq_SOURCES = test-mpq-api.c $(COMMON_SOURCES)
 test_pkware_SOURCES = test-mpq-pkware.c \
 	../src/mpq-compression.c \
@@ -305,3 +305,5 @@ EXTRA_DIST = \
 	fixtures/mpq-v2-features.mpq \
 	fixtures/mpq-v2-features-patch.mpq \
 	fixtures/mpq-v2-features.mpqe
+
+EXTRA_DIST += fixtures/mpq-v3-features.mpq fixtures/mpq-v3-features.mpqe

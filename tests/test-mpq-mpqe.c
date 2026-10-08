@@ -469,17 +469,150 @@ test_open_failure_output(void)
     return 0;
 }
 
-/* Exercise full v1 and v2 fixtures through the public MPQE open path. */
+/* Wrap the synthetic v3 bytes using the same transform as the other MPQE tests. */
+static int
+wrap_v3_fixture(const char *output)
+{
+    FILE *file;
+    uint8_t *data = NULL;
+    size_t data_size;
+    uint8_t chunk[LIBMPQ_MPQE_CHUNK_SIZE];
+    int result = 0;
+
+    if (test_read_path(FIXTURE_DIR "/mpq-v3-features.mpq", &data, &data_size) != 0)
+        return 1;
+    file = fopen(output, "wb");
+    if (file == NULL) {
+        free(data);
+        return 1;
+    }
+    for (size_t offset = 0; offset < data_size; offset += sizeof(chunk)) {
+        size_t size = data_size - offset < sizeof(chunk) ? data_size - offset : sizeof(chunk);
+        memset(chunk, 0, sizeof(chunk));
+        memcpy(chunk, data + offset, size);
+        if (transform_chunk(chunk, offset) != 0 || fwrite(chunk, 1, size, file) != size) {
+            result = 1;
+            break;
+        }
+    }
+    free(data);
+    if (fclose(file) != 0)
+        result = 1;
+    return result;
+}
+
+/* MPQE -> v3 -> HET/BET -> canonical members, without duplicating codec coverage. */
+static int
+test_v3_fixture(void)
+{
+    static const char *const names[] = { "overview.txt", "zero.bin" };
+    mpq_archive_s *plain = NULL;
+    mpq_archive_s *encrypted = NULL;
+    mpq_stream_s *stream = NULL;
+    uint8_t wrong_code[sizeof(auth_code) - 1U];
+    uint32_t version;
+    uint32_t plain_files;
+    uint32_t encrypted_files;
+    uint8_t bytes[7];
+    libmpq__off_t transferred;
+    libmpq__off_t position;
+
+    memcpy(wrong_code, auth_code, sizeof(wrong_code));
+    wrong_code[0] ^= 1U;
+    TEST_CHECK(
+        libmpq__archive_open_mpqe(
+            &encrypted, FIXTURE_DIR "/mpq-v3-features.mpqe", 0, wrong_code, sizeof(wrong_code)
+        ) < 0
+    );
+    TEST_CHECK(encrypted == NULL);
+    TEST_CHECK(libmpq__archive_open(&plain, FIXTURE_DIR "/mpq-v3-features.mpq", 0) == 0);
+    TEST_CHECK(
+        libmpq__archive_open_mpqe(
+            &encrypted, FIXTURE_DIR "/mpq-v3-features.mpqe", 0, auth_code, sizeof(auth_code) - 1U
+        ) == 0
+    );
+
+    /* The public version query is one-based; the decoded wire version is two. */
+    TEST_CHECK(libmpq__archive_version(encrypted, &version) == 0 && version == 3);
+    TEST_CHECK(encrypted->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE);
+    TEST_CHECK(libmpq__archive_files(plain, &plain_files) == 0);
+    TEST_CHECK(libmpq__archive_files(encrypted, &encrypted_files) == 0);
+    TEST_CHECK(plain_files == encrypted_files && encrypted_files == 18);
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        uint32_t a;
+        uint32_t b;
+        uint32_t plain_flags;
+        uint32_t encrypted_flags;
+        libmpq__off_t plain_size;
+        libmpq__off_t encrypted_size;
+        uint8_t *expected = NULL;
+        uint8_t *actual = NULL;
+        size_t expected_size;
+        size_t actual_size;
+
+        TEST_CHECK(libmpq__file_number(plain, names[i], &a) == 0);
+        TEST_CHECK(libmpq__file_number(encrypted, names[i], &b) == 0);
+        TEST_CHECK(
+            (encrypted->mpq_entry[encrypted->mpq_map[b].entry_index].source_mask &
+             LIBMPQ_ENTRY_SOURCE_BET) != 0
+        );
+        if (i == 1)
+            TEST_CHECK(
+                encrypted->mpq_entry[encrypted->mpq_map[b].entry_index].source_mask ==
+                LIBMPQ_ENTRY_SOURCE_BET
+            );
+        TEST_CHECK(libmpq__file_flags(plain, a, &plain_flags) == 0);
+        TEST_CHECK(libmpq__file_flags(encrypted, b, &encrypted_flags) == 0);
+        TEST_CHECK(plain_flags == encrypted_flags);
+        TEST_CHECK(libmpq__file_size_packed(plain, a, &plain_size) == 0);
+        TEST_CHECK(libmpq__file_size_packed(encrypted, b, &encrypted_size) == 0);
+        TEST_CHECK(plain_size == encrypted_size);
+        TEST_CHECK(libmpq__file_size_unpacked(plain, a, &plain_size) == 0);
+        TEST_CHECK(libmpq__file_size_unpacked(encrypted, b, &encrypted_size) == 0);
+        TEST_CHECK(plain_size == encrypted_size);
+        TEST_CHECK(test_archive_read(plain, a, &expected, &expected_size) == 0);
+        TEST_CHECK(test_archive_read(encrypted, b, &actual, &actual_size) == 0);
+        TEST_CHECK(expected_size == actual_size);
+        TEST_CHECK(actual_size == 0 || memcmp(expected, actual, actual_size) == 0);
+        TEST_CHECK(libmpq__stream_open_name(encrypted, names[i], &stream) == 0);
+        if (actual_size != 0) {
+            TEST_CHECK(actual_size >= sizeof(bytes) + 3);
+            TEST_CHECK(libmpq__stream_seek(stream, 3, LIBMPQ_SEEK_SET) == 0);
+            TEST_CHECK(libmpq__stream_tell(stream, &position) == 0 && position == 3);
+            TEST_CHECK(libmpq__stream_read(stream, bytes, sizeof(bytes), &transferred) == 0);
+            TEST_CHECK(
+                transferred == sizeof(bytes) && memcmp(bytes, expected + 3, sizeof(bytes)) == 0
+            );
+        } else {
+            TEST_CHECK(libmpq__stream_read(stream, bytes, sizeof(bytes), &transferred) == 0);
+            TEST_CHECK(transferred == 0);
+        }
+        TEST_CHECK(libmpq__stream_close(stream) == 0);
+        stream = NULL;
+        free(expected);
+        free(actual);
+    }
+    TEST_CHECK(libmpq__archive_close(plain) == 0);
+    TEST_CHECK(libmpq__archive_close(encrypted) == 0);
+    return test_source_reads(
+        FIXTURE_DIR "/mpq-v3-features.mpq", FIXTURE_DIR "/mpq-v3-features.mpqe"
+    );
+}
+
+/* Exercise v1/v2 fixtures and focused v3 composition through public MPQE opening. */
 int
-main(void)
+main(int argc, char **argv)
 {
     size_t i;
 
+    if (argc == 3 && strcmp(argv[1], "--v3-output") == 0)
+        return wrap_v3_fixture(argv[2]);
     TEST_CHECK(test_key_derivation() == 0);
     TEST_CHECK(test_chunk_transform() == 0);
     for (i = 0; i < sizeof(fixtures) / sizeof(fixtures[0]); ++i)
         TEST_CHECK(test_fixture(&fixtures[i], i) == 0);
     TEST_CHECK(test_open_failure_output() == 0);
     TEST_CHECK(test_source_cross_batch() == 0);
+    TEST_CHECK(test_v3_fixture() == 0);
     return 0;
 }

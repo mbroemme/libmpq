@@ -22,6 +22,7 @@
 #include "mpq-bit.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
+#include "mpq-md5.h"
 #include "mpq-reader.h"
 #include "test-mpq-helper.h"
 
@@ -1113,6 +1114,73 @@ test_v3_bet_errors(void)
         TEST_CHECK(libmpq__crypto_encrypt_block(source.bytes + position + 12, stored, key) == 0);
         TEST_CHECK(reader_v3_expect_failure(&source) == 0);
     }
+    for (int which = 0; which < 2; which++)
+        for (int delta = -1; delta <= 1; delta += 2) {
+            TEST_CHECK(reader_v3_fixture(&source, 1, 1, 0, 0, 0, 0, 0, 0) == 0);
+            uint8_t *envelope = source.bytes + (which ? source.bet_offset : source.het_offset);
+            uint32_t expected = libmpq__load_le32(envelope + 8);
+            libmpq__store_le32(envelope + 8, delta < 0 ? expected - 1 : expected + 1);
+            TEST_CHECK(reader_v3_expect_failure(&source) == 0);
+        }
+    return 0;
+}
+
+/* Extent inference is ordered, bounded and independent of optional classic tables. */
+static int
+test_v3_extent_geometry(void)
+{
+    mpq_archive_s archive = { 0 };
+    uint64_t het;
+    uint64_t bet;
+    archive.mpq_header =
+        (mpq_header_s){ LIBMPQ_HEADER, 68, 0, LIBMPQ_ARCHIVE_VERSION_THREE, 3, 160, 192, 2, 2 };
+    archive.mpq_header_ex.extended_offset = 224;
+    archive.mpq_header_v3 = (mpq_header_v3_s){ 228, 112, 68 };
+    for (uint32_t mask = 0; mask < 8; mask++) {
+        archive.mpq_header.hash_table_count = (mask & 1) ? 2 : 0;
+        archive.mpq_header.block_table_count = (mask & 2) ? 2 : 0;
+        archive.mpq_header_ex.extended_offset = (mask & 4) ? 224 : 0;
+        TEST_CHECK(libmpq__reader_ext_table_sizes(&archive, &het, &bet) == 0);
+        TEST_CHECK(het == 44);
+        TEST_CHECK(bet == ((mask & 1) ? 160u : (mask & 2) ? 192u : (mask & 4) ? 224u : 228u) - 112);
+    }
+    archive.mpq_header.hash_table_count = archive.mpq_header.block_table_count = 2;
+    archive.mpq_header_ex.extended_offset = 224;
+    archive.mpq_header.block_table_offset = 191; /* one-byte overlap */
+    TEST_CHECK(libmpq__reader_ext_table_sizes(&archive, &het, &bet) == LIBMPQ_ERROR_FORMAT);
+    archive.mpq_header.block_table_offset = 159; /* reversed classic ordering */
+    TEST_CHECK(libmpq__reader_ext_table_sizes(&archive, &het, &bet) == LIBMPQ_ERROR_FORMAT);
+    archive.mpq_header.block_table_offset = 192;
+    for (uint64_t offset = 228; offset <= 229; offset++) {
+        archive.mpq_header_ex.extended_offset = offset;
+        TEST_CHECK(libmpq__reader_ext_table_sizes(&archive, &het, &bet) == LIBMPQ_ERROR_FORMAT);
+    }
+    return 0;
+}
+
+/* Fixed format keys are independent of the loader's string-key derivation. */
+static int
+test_v3_table_keys(void)
+{
+    reader_v3_source_s source;
+    for (int which = 0; which < 2; which++) {
+        const uint32_t right = which ? 0xec83b3a3u : 0xc3af3770u;
+        const uint32_t wrong = which ? 0xc3af3770u : 0xec83b3a3u;
+        TEST_CHECK(reader_v3_fixture(&source, 0, 0, 0, 0, 0, 0, 0, 0) == 0);
+        size_t offset = (size_t)(which ? source.bet_offset : source.het_offset);
+        uint32_t size = (uint32_t)((which ? source.size : source.bet_offset) - offset - 12);
+        uint8_t *table = source.bytes + offset;
+        TEST_CHECK(libmpq__crypto_decrypt_block(table + 12, size, right) == 0);
+        TEST_CHECK(libmpq__load_le32(table + 12) == libmpq__load_le32(table + 8));
+        TEST_CHECK(libmpq__crypto_encrypt_block(table + 12, size, wrong) == 0);
+        TEST_CHECK(reader_v3_expect_failure(&source) == 0);
+        for (uint32_t field = 0; field < 2; field++) {
+            TEST_CHECK(reader_v3_fixture(&source, 0, 0, 0, 0, 0, 0, 0, 0) == 0);
+            table = source.bytes + offset;
+            libmpq__store_le32(table + field * 4, field == 0 ? 0 : 2);
+            TEST_CHECK(reader_v3_expect_failure(&source) == 0);
+        }
+    }
     return 0;
 }
 
@@ -1135,6 +1203,156 @@ test_v3_signature_discovery(void)
         );
         TEST_CHECK(libmpq__archive_close(archive) == 0);
     }
+    return 0;
+}
+
+/* BET provenance must not affect decoding the plaintext prefix and PTCH body. */
+static int
+test_v3_patch_payload(void)
+{
+    reader_v3_source_s source;
+    mpq_archive_s *archive = NULL;
+    mpq_bet_s bet;
+    mpq_md5_s digest;
+    uint8_t output[68];
+    uint8_t *prefix;
+    uint8_t *patch;
+    uint8_t *table;
+    uint32_t number;
+    uint32_t flags;
+    libmpq__off_t size;
+    libmpq__off_t transferred;
+    TEST_CHECK(reader_v3_fixture(&source, 0, 0, 0, 0, 0, 0, 0, 0) == 0);
+    prefix = source.bytes + 68;
+    memset(prefix, 0, 96);
+    patch = prefix + 28;
+    libmpq__store_le32(prefix, 28);
+    libmpq__store_le32(prefix + 4, 0x80000000u);
+    libmpq__store_le32(prefix + 8, 68);
+    memcpy(patch, "PTCH", 4);
+    libmpq__store_le32(patch + 4, 68);
+    memcpy(patch + 16, "MD5_", 4);
+    libmpq__store_le32(patch + 20, 40);
+    libmpq__md5_init(&digest);
+    libmpq__md5_final(&digest, patch + 24);
+    memcpy(patch + 40, patch + 24, 16);
+    memcpy(patch + 56, "XFRM", 4);
+    libmpq__store_le32(patch + 60, 12);
+    memcpy(patch + 64, "COPY", 4);
+    libmpq__md5_init(&digest);
+    libmpq__md5_update(&digest, patch, 68);
+    libmpq__md5_final(&digest, prefix + 12);
+    table = source.bytes + source.bet_offset;
+    uint32_t stored = (uint32_t)(source.size - source.bet_offset - 12);
+    TEST_CHECK(libmpq__crypto_decrypt_block(table + 12, stored, 0xec83b3a3u) == 0);
+    TEST_CHECK(libmpq__bet_view_init(table, stored + 12, &bet) == 0);
+    libmpq__store_le32(
+        (uint8_t *)bet.flags, LIBMPQ_FLAG_EXISTS | LIBMPQ_FILE_FLAG_PATCH_FILE | LIBMPQ_FLAG_SINGLE
+    );
+    TEST_CHECK(libmpq__bit_set((uint8_t *)bet.records, bet.records_size, 64, 32, 0) == 0);
+    TEST_CHECK(libmpq__bit_set((uint8_t *)bet.records, bet.records_size, 96, 32, 96) == 0);
+    TEST_CHECK(libmpq__crypto_encrypt_block(table + 12, stored, 0xec83b3a3u) == 0);
+    for (int damaged = 0; damaged < 2; damaged++) {
+        if (damaged)
+            prefix[12] ^= 1;
+        TEST_CHECK(
+            libmpq__archive_open_io(
+                &archive, &source, reader_v3_read_at, (libmpq__off_t)source.size, 0, NULL
+            ) == 0
+        );
+        TEST_CHECK(libmpq__file_number(archive, "payload.bin", &number) == 0);
+        TEST_CHECK(
+            libmpq__file_flags(archive, number, &flags) == 0 &&
+            (flags & LIBMPQ_FILE_FLAG_PATCH_FILE) != 0
+        );
+        TEST_CHECK(libmpq__patch_payload_size(archive, number, &size) == 0 && size == 68);
+        memset(output, 0xa5, sizeof(output));
+        int32_t result = libmpq__patch_payload_read(
+            archive, number, "payload.bin", output, sizeof(output), &transferred
+        );
+        TEST_CHECK(result == (damaged ? LIBMPQ_ERROR_FORMAT : 0));
+        if (!damaged)
+            TEST_CHECK(transferred == 68 && memcmp(output, patch, sizeof(output)) == 0);
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+    }
+    return 0;
+}
+
+/* Large metadata stays full-width; sector counts must not wrap at UINT32_MAX. */
+static int
+test_v3_size_conversions(void)
+{
+    reader_v3_source_s source;
+    mpq_archive_s *archive = NULL;
+    mpq_stream_s *stream = NULL;
+    uint32_t number;
+    uint32_t blocks;
+    libmpq__off_t size;
+    TEST_CHECK(reader_v3_fixture(&source, 0, 0, 0, 0, 0, 0, 0, 0) == 0);
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &archive, &source, reader_v3_read_at, (libmpq__off_t)source.size, 0, NULL
+        ) == 0
+    );
+    TEST_CHECK(libmpq__file_number(archive, "payload.bin", &number) == 0);
+    mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+    entry->unpacked_size = UINT32_MAX;
+    TEST_CHECK(libmpq__file_blocks(archive, number, &blocks) == 0);
+    TEST_CHECK(blocks == 1048576);
+    entry->unpacked_size = (uint64_t)UINT32_MAX + 1;
+    TEST_CHECK(
+        libmpq__file_size_unpacked(archive, number, &size) == 0 &&
+        (uint64_t)size == (uint64_t)UINT32_MAX + 1
+    );
+    TEST_CHECK(libmpq__file_blocks(archive, number, &blocks) == LIBMPQ_ERROR_SIZE && blocks == 0);
+    TEST_CHECK(libmpq__reader_offsets_acquire(archive, number, NULL) == LIBMPQ_ERROR_SIZE);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+
+    /* Encode the large size on disk too, so a stream's fresh clone sees it. */
+    uint8_t table[200] = { 0 };
+    mpq_bet_s bet;
+    size_t stored = source.size - (size_t)source.bet_offset;
+    uint8_t *original = source.bytes + source.bet_offset;
+    TEST_CHECK(
+        libmpq__crypto_decrypt_block(original + 12, (uint32_t)stored - 12, 0xec83b3a3u) == 0
+    );
+    TEST_CHECK(libmpq__bet_view_init(original, stored, &bet) == 0);
+    memcpy(table, original, 96);
+    libmpq__store_le32(table + 8, 140);
+    libmpq__store_le32(table + 12, 140);
+    libmpq__store_le32(table + 24, 162);
+    libmpq__store_le32(table + 36, 128);
+    libmpq__store_le32(table + 40, 160);
+    libmpq__store_le32(table + 44, 161);
+    libmpq__store_le32(table + 52, 64);
+    for (uint32_t i = 0; i < 2; i++) {
+        mpq_bet_entry_s record;
+        TEST_CHECK(libmpq__bet_record_decode(&bet, i, &record) == 0);
+        TEST_CHECK(libmpq__bit_set(table + 96, 41, i * 162, 64, record.offset) == 0);
+        TEST_CHECK(
+            libmpq__bit_set(
+                table + 96, 41, i * 162 + 64, 64,
+                i == 0 ? (uint64_t)UINT32_MAX + 1 : record.unpacked_size
+            ) == 0
+        );
+        TEST_CHECK(libmpq__bit_set(table + 96, 41, i * 162 + 128, 32, record.packed_size) == 0);
+        TEST_CHECK(libmpq__bit_set(table + 96, 41, i * 162 + 160, 1, i) == 0);
+    }
+    memcpy(table + 137, bet.name_hash2, 15);
+    TEST_CHECK(libmpq__crypto_encrypt_block(table + 12, 140, 0xec83b3a3u) == 0);
+    memcpy(original, table, 152);
+    source.size = (size_t)source.bet_offset + 152;
+    libmpq__store_le64(source.bytes + 44, source.size);
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &archive, &source, reader_v3_read_at, (libmpq__off_t)source.size, 0, NULL
+        ) == 0
+    );
+    TEST_CHECK(libmpq__file_number(archive, "payload.bin", &number) == 0);
+    TEST_CHECK(libmpq__file_blocks(archive, number, &blocks) == LIBMPQ_ERROR_SIZE && blocks == 0);
+    TEST_CHECK(libmpq__stream_open_name(archive, "payload.bin", &stream) == LIBMPQ_ERROR_SIZE);
+    TEST_CHECK(stream == NULL);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
     return 0;
 }
 
@@ -1555,10 +1773,14 @@ main(void)
     TEST_CHECK(test_v3_bet_read(1, 1, 0, 0, 0, 0, UINT64_C(0x100000000), 0) == 0);
     TEST_CHECK(test_v3_bet_read(0, 0, 0, 0, 0, 1, 0, 0) == 0);
     TEST_CHECK(test_v3_bet_errors() == 0);
+    TEST_CHECK(test_v3_extent_geometry() == 0);
+    TEST_CHECK(test_v3_table_keys() == 0);
     TEST_CHECK(test_v3_table_counts() == 0);
     TEST_CHECK(test_v3_table_limits() == 0);
     TEST_CHECK(test_v3_table_limit_boundary() == 0);
     TEST_CHECK(test_v3_signature_discovery() == 0);
+    TEST_CHECK(test_v3_size_conversions() == 0);
+    TEST_CHECK(test_v3_patch_payload() == 0);
     TEST_CHECK(test_v3_read_only() == 0);
     TEST_CHECK(test_canonical_entries(LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
     TEST_CHECK(test_canonical_entries(LIBMPQ_ARCHIVE_VERSION_TWO) == 0);

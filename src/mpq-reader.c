@@ -1895,13 +1895,15 @@ uint32_t
 libmpq__reader_count_file_blocks(mpq_archive_s *mpq_archive, uint32_t file_number)
 {
     uint32_t entry_index = mpq_archive->mpq_map[file_number].entry_index;
-    uint32_t unpacked_size = (uint32_t)mpq_archive->mpq_entry[entry_index].unpacked_size;
+    uint64_t unpacked_size = mpq_archive->mpq_entry[entry_index].unpacked_size;
 
     if ((mpq_archive->mpq_entry[entry_index].flags & LIBMPQ_FLAG_SINGLE) != 0) {
         return 1;
     }
 
-    return (unpacked_size + mpq_archive->block_size - 1) / mpq_archive->block_size;
+    uint64_t blocks =
+        unpacked_size / mpq_archive->block_size + (unpacked_size % mpq_archive->block_size != 0);
+    return blocks <= UINT32_MAX ? (uint32_t)blocks : 0;
 }
 
 /*
