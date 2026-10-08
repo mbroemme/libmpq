@@ -793,6 +793,32 @@ class LibmpqTest {
         }
     }
 
+    /** Public v3 creation shares metadata, stream and MPQE paths with legacy versions. */
+    @Test
+    void createsV3Archives(@TempDir Path directory) throws Exception {
+        byte[] payload = new byte[12000];
+        java.util.Arrays.fill(payload, (byte) 'V');
+        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
+        ArchiveCreateOptions options = new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_THREE,
+            8, 512, Mpq.ARCHIVE_CREATE_LISTFILE, Mpq.ATTRIBUTE_CRC32 | Mpq.ATTRIBUTE_FILETIME);
+        for (boolean encrypted : new boolean[] {false, true}) {
+            Path path = directory.resolve(encrypted ? "v3.mpqe" : "v3.mpq");
+            try (Archive archive = encrypted ? Archive.createMpqe(path, code, options)
+                                             : Archive.create(path, options)) {
+                archive.add("payload", payload, FileOptions.compressed(Mpq.COMPRESSION_ZLIB, Mpq.COMPRESSION_ZLIB));
+                try (MpqFileWriter writer = archive.begin("stamp", 3, FileOptions.raw())) {
+                    writer.timestamp(123456789L);
+                    writer.write(new byte[] {1, 2, 3});
+                }
+            }
+            try (Archive archive = encrypted ? Archive.openMpqe(path, code, 0) : Archive.open(path, 0)) {
+                assertEquals(3, archive.version());
+                assertArrayEquals(payload, archive.readFile(archive.fileNumber("payload")));
+                assertEquals(0, archive.verify(archive.fileNumber("payload")));
+            }
+        }
+    }
+
     /** Exercises streaming finalization and missing-file error propagation. */
     @Test
     void streamsAndRejectsMissingFile(@TempDir Path directory) throws Exception {

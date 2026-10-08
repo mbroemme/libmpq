@@ -88,7 +88,7 @@ Mixed-table archives can use classic lookup when a classic hash entry maps
 to a live block; other live blocks need not be hash-referenced. This does not
 assert equivalence with HET/BET. Declared extended tables must form a valid
 pair; malformed tables fail opening rather than downgrading to classic lookup.
-Compressed classic tables, v3 creation and rebuilding, and MPQ v4 remain
+Compressed classic tables, v3 rebuilding, and MPQ v4 remain
 outside the current implementation.
 
 ## Classic tables
@@ -408,9 +408,9 @@ Classic `(attributes)` remain indexed by `classic_source_index` and sized by
 classic block count, including shared rows; BET-only entries have no classic
 attributes row. HET/BET hash information remains in the table views.
 
-HET/BET archives are read-only. Transactional updates and classic patch
+Existing HET/BET archives cannot be modified. Transactional updates and classic patch
 rebuild/materialization reject them rather than omit BET-only members.
-MPQ v3 writing, extended-table generation, and MPQ v4 remain unsupported.
+Public v3 creation emits mixed HET/BET and classic tables; MPQ v4 remains unsupported.
 
 ### Read interoperability checks
 
@@ -455,16 +455,15 @@ protected/defragmented archive is supported.
 Current sector/codec lengths are 32-bit even though canonical BET metadata and
 positions are 64-bit. Unrepresentable member reads and block counts fail with
 SIZE rather than truncating. V3 modification is rejected at transaction setup;
-replace/remove/rename cannot proceed through a v3 transaction. Before adding
-writer support, preserve these explicit source mappings and validate generated
-tables independently; neither this fixture recipe nor reconciliation enables
-public v3 creation.
+replace/remove/rename cannot proceed through a v3 transaction. Creation uses
+the existing writer, preserving explicit source mappings and independently
+validated generated tables.
 
 ### In-memory extended-table writer builders
 
 Private owned HET/BET builders accept completed logical writer records with
 filenames and full-width positions/sizes. They do not use classic block rows or
-enable public v3 creation. Building alone does not serialize a common envelope
+directly enable creation. Building alone does not serialize a common envelope
 or write archive bytes.
 
 BET fields use consecutive position, unpacked-size, packed-size, flag-index,
@@ -503,8 +502,8 @@ Builders own their allocations; failed builds preserve prior outputs and
 cleanup is safe for empty or partially built tables. Synthetic tests validate
 the builders against the existing parsers, HET lookup, and BET record decoder.
 Both table serializers operate only on owned memory buffers. A separate
-private encoder compresses/encrypts these buffers; archive serialization,
-layout/finalization, and public v3 creation remain unimplemented.
+private encoder compresses/encrypts these buffers; the shared public writer
+places them during v3 archive finalization.
 
 ### Private BET wire serialization
 
@@ -534,7 +533,7 @@ arrays are accessed; invalid field layouts or flag indices fail without
 publishing a partial buffer. Output starts zeroed for deterministic padding.
 Synthetic tests include an independent complete wire vector and round trips
 through the header, record, and NameHash2 readers. No tables are written into
-MPQ archives, and no public v3 writer option is enabled.
+MPQ archives by this serializer alone.
 
 ### Private HET wire serialization
 
@@ -572,7 +571,7 @@ extra/non-byte-aligned strides, 64-bit indices, deterministic padding, and
 malformed states. Existing builder tests now use both production serializers
 before HET header/view decoding and filename lookup with BET NameHash2
 confirmation. The serializers themselves do not encrypt, compress, or write
-archives; public v3 writing remains disabled.
+archives. The shared writer performs v3 archive I/O separately.
 
 ### Private stored extended-table encoding
 
@@ -587,7 +586,7 @@ payload. Optional zlib encoding reuses the existing MPQ compression dispatcher
 and leading method marker. Compressed payloads are used only when strictly
 smaller; equal-sized or expanded results fall back to the original payload.
 The compatible v2 zlib encoding policy is reused internally without enabling
-public v3 creation.
+any new public codec tuning option.
 
 Compression precedes encryption. The validated signature selects the existing
 hash-table key (`0xc3af3770`) for HET or block-table key (`0xec83b3a3`) for BET;
@@ -598,13 +597,36 @@ path. Tests include independent fixed encrypted vectors, fallback boundaries,
 deterministic output, and synthetic archive-loader/read/stream round trips.
 This encoder does not perform archive I/O or enable public v3 creation/update.
 
-### Private v3 archive finalization
+### V3 archive creation and finalization
 
-The existing seekable writer has a private v3 creation entry point for internal
-integration tests. Public creation still rejects version THREE, and v3 update
-and rebuild remain unsupported. No separate writer pipeline is introduced.
+The existing public creation APIs accept `LIBMPQ_ARCHIVE_VERSION_THREE` (2).
+The default remains v1, 1024 entries, and 4096-byte sectors; explicit capacity,
+sector size, compression policy, listfile, attributes, timestamps, and signing
+options retain their meanings. MPQE creation uses the same v3 writer and
+unchanged authentication/wrapping. V3 update/rebuild and v4 remain unsupported.
+No v3-specific public API or output-format switch is introduced.
 
-Private v3 output reserves a 68-byte (`0x44`) header, writes file payloads at
+The v3 `max_files` ceiling of `0x04000000` is an implementation limit, not
+an MPQ format maximum. The classic hash capacity is the next power of two
+at least twice the requested capacity. At this ceiling its wire storage is
+2 GiB; the next capacity step needs 4 GiB, which cannot fit the classic
+cipher's `uint32_t` length. Validation itself does not allocate these tables.
+Actual creation still requires memory for reserved tables and can fail with
+an allocation error. Completed HET/BET tables must also fit the separate
+1 MiB limit, so this ceiling is not a promise of that many writable files.
+
+V3 uses the same compression policies and codec selection as v2, including
+the exclusive LZMA selector and STANDARD versus EXTENDED mask restrictions.
+Compression stages may fall back to raw storage when they do not save space;
+the emitted method mask records the stages actually retained.
+
+Weak and strong signatures stream their entire signed range using `uint64_t`
+positions and bounded read buffers. Sparse holes are hashed too: signing a
+large sparse archive is linear in its logical extent, not its allocated disk
+size. High-offset regression tests cover range/lookup and I/O failure handling;
+they do not substitute for a complete multi-gigabyte sign/verify operation.
+
+V3 output reserves a 68-byte (`0x44`) header, writes file payloads at
 their final archive-relative positions, then appends HET, BET, classic hash,
 classic block, and (when file positions require it) hi-block tables. Stored
 tables are adjacent, without padding. The existing in-memory builders,
@@ -627,11 +649,11 @@ capacity, while v3 uses completed rows, including the valid zero-row case.
 Finalization rewrites the base, v2 extension, and v3 extension using the
 canonical little-endian header encoders, then follows existing flush/signature
 handling. The v3 archive-size field is authoritative; the legacy size word
-stores its low 32 bits explicitly. The public API is unchanged. Private v3
+stores its low 32 bits explicitly. The public API/ABI is unchanged. V3
 FIX_KEY encryption uses the final file offset and unpacked size, and payloads
 are never moved afterward. Legacy v1/v2 writer behavior remains unchanged.
 
-Synthetic tests reopen private output through normal reader APIs, compare
+Synthetic tests reopen public writer output through normal reader APIs, compare
 classic and BET metadata and lookups, exercise streaming and encrypted files,
 and check exact table boundaries. A sparse file tests positions above 4 GiB
 and hi-block output without allocating a huge payload. Where stream cookies
@@ -769,7 +791,7 @@ big-endian modulus followed by a 256-byte zero-padded unsigned big-endian
 exponent. Use the public exponent for verification and the private exponent
 for creation. The writer emits only the plain SHA-1 archive-range variant.
 
-On a new v1 or v2 writer, call `libmpq__archive_sign` once for each requested
+On a new v1, v2, or v3 writer, call `libmpq__archive_sign` once for each requested
 signature type before closing, with no active file writer. It copies the private
 key. Weak signing reserves one file-table slot and a zero signature payload
 immediately. Close finalizes listfile, attributes, tables, and header before

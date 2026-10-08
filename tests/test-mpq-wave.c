@@ -474,6 +474,8 @@ main(void)
     TEST_CHECK(test_adpcm_archive(LIBMPQ_ARCHIVE_VERSION_ONE, 2) == 0);
     TEST_CHECK(test_adpcm_archive(LIBMPQ_ARCHIVE_VERSION_TWO, 1) == 0);
     TEST_CHECK(test_adpcm_archive(LIBMPQ_ARCHIVE_VERSION_TWO, 2) == 0);
+    TEST_CHECK(test_adpcm_archive(LIBMPQ_ARCHIVE_VERSION_THREE, 1) == 0);
+    TEST_CHECK(test_adpcm_archive(LIBMPQ_ARCHIVE_VERSION_THREE, 2) == 0);
     TEST_CHECK(test_wave_fixtures(1) == 0);
     TEST_CHECK(test_wave_fixtures(2) == 0);
     TEST_CHECK(test_adpcm_rejects_invalid_wave() == 0);

@@ -73,6 +73,8 @@ public final class Mpq {
     public static final int ARCHIVE_VERSION_ONE = 0;
     /** Creation selector for the MPQ v2 archive layout. */
     public static final int ARCHIVE_VERSION_TWO = 1;
+    /** Creation selector for the mixed HET/BET and classic MPQ v3 layout. */
+    public static final int ARCHIVE_VERSION_THREE = 2;
     /** Creation flag requesting a generated {@code (listfile)} entry. */
     public static final int ARCHIVE_CREATE_LISTFILE = 0x00000001;
     /** Select EXTENDED compression in archive creation flags; zero defaults to STANDARD. */

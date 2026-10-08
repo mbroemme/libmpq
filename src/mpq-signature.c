@@ -457,7 +457,8 @@ libmpq__signature_configure(mpq_archive_s *a, uint32_t type, const uint8_t *key,
         return result;
     if (a->write_attributes != NULL)
         memset(&a->write_attributes[index], 0, sizeof(*a->write_attributes));
-    a->write_signature_offset = a->mpq_block[index].offset;
+    a->write_signature_offset =
+        a->mpq_block[index].offset | ((uint64_t)a->mpq_block_ex[index].offset_high << 32);
     memcpy(a->write_signature_key, key, LIBMPQ_RSA_KEY_SIZE);
     a->write_signature = 1;
     return 0;

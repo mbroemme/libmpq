@@ -92,6 +92,7 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
     auto path = temporaryArchive(archiveVersion == ARCHIVE_VERSION_ONE ? "v1" : "v2");
     auto options = archiveVersion == ARCHIVE_VERSION_ONE ?
         ArchiveCreateOptions.v1() : ArchiveCreateOptions.v2();
+    options.version_ = archiveVersion;
     options.sectorSize = 4096;
     options.maxFiles = 16;
     options.attributes = ATTRIBUTE_CRC32 | ATTRIBUTE_FILETIME |
@@ -106,7 +107,7 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
     auto checksummed = FileOptions.compressed(COMPRESSION_ZLIB, COMPRESSION_ZLIB);
     checksummed.flags |= FILE_FLAG_SECTOR_CRC;
     archive.add("compressed.txt", repetitive, checksummed);
-    if (archiveVersion == ARCHIVE_VERSION_TWO) {
+    if (archiveVersion >= ARCHIVE_VERSION_TWO) {
         archive.add("lzma.txt", repetitive,
                     FileOptions.compressed(COMPRESSION_LZMA, COMPRESSION_LZMA));
     }
@@ -383,19 +384,20 @@ private void testSparseFixtures() {
         }
 }
 
-private void testMpqeCreate() {
+private void testMpqeCreate(uint archiveVersion = ARCHIVE_VERSION_TWO) {
     auto path = temporaryArchive("created.mpqe");
     immutable ubyte[] authCode =
         cast(immutable(ubyte)[])"LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
     write(path, cast(const(ubyte)[])"previous destination");
     auto options = ArchiveCreateOptions.v2();
+    options.version_ = archiveVersion;
     options.attributes = ATTRIBUTE_CRC32;
     auto archive = Archive.createMpqe(path, authCode, options);
     archive.add("payload.txt", cast(const(ubyte)[])"D MPQE writer regression\n");
     archive.close();
     auto reopened = Archive.openMpqe(path, authCode, 0);
     scope(exit) { reopened.close(); remove(path); }
-    assert(reopened.version_() == 2);
+    assert(reopened.version_() == archiveVersion + 1);
     assert(reopened.attributes().get() == ATTRIBUTE_CRC32);
     assert(reopened.file("payload.txt").read() ==
            cast(const(ubyte)[])"D MPQE writer regression\n");
@@ -823,6 +825,8 @@ void main() {
     testVersionAndErrors();
     testCreateReadAndMetadata(ARCHIVE_VERSION_ONE);
     testCreateReadAndMetadata(ARCHIVE_VERSION_TWO);
+    testCreateReadAndMetadata(ARCHIVE_VERSION_THREE);
+    testMpqeCreate(ARCHIVE_VERSION_THREE);
     testFixture();
     testStrongSignature();
     testStrongSigning();

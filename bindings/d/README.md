@@ -75,7 +75,9 @@ external resource represented by it.
 Creation uses typed options and supports both archive versions:
 
 ```d
-auto archive = Archive.create("new.mpq", ArchiveCreateOptions.v2());
+auto options = ArchiveCreateOptions.v2();
+options.version_ = ARCHIVE_VERSION_THREE;
+auto archive = Archive.create("new.mpq", options);
 scope(exit) archive.close();
 archive.add("hello.txt", cast(const(ubyte)[])"hello\n");
 ```
@@ -147,7 +149,7 @@ Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
 `ArchiveCreateOptions`. Zero disables generation; any nonzero combination
 creates one `(attributes)` file and consumes one reserved slot. Unknown bits
 are rejected. Creation flags remain separate. These options work for both MPQ
-v1 and v2, including MPQE creation. Payload version 100 is independent of the
+v1, v2, and v3, including MPQE creation. Payload version 100 is independent of the
 archive format version.
 
 Per-file flags distinguish unavailable fields from zero. Complete lossless
@@ -244,7 +246,7 @@ Use `Archive.sign(privateKey)` for weak signing or
 `Archive.signatures()` / `Archive.verify(publicKey)` on reopened archives.
 Verification returns mismatch bits; malformed keys/archives raise normal binding
 errors. Weak keys are exactly 128 bytes: 64-byte big-endian modulus followed by a
-64-byte big-endian exponent. Signing supports v1 and v2. libmpq does not
+64-byte big-endian exponent. Signing supports v1, v2, and v3. libmpq does not
 ship Blizzard- or product-specific public verification keys or private signing
 keys; all signature key material is supplied explicitly by the caller.
 MD5/RSA-512 is legacy compatibility, not modern authenticity protection.

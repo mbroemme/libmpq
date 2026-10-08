@@ -25,6 +25,9 @@ The canonical release installation path is Maven Central:
 
 ## Basic archive usage
 
+Use `Mpq.ARCHIVE_VERSION_THREE` in existing `ArchiveCreateOptions` to create
+mixed HET/BET plus classic v3 archives. V3 updates/rebuilds remain unsupported.
+
 The high-level API uses `Archive.open`, `Archive.openMpqe`, `Archive.create`,
 `Archive.createMpqe`, and `MpqFileWriter`. All negative libmpq return codes
 are reported as `LibmpqException` values containing the original code and
@@ -119,7 +122,7 @@ Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
 `ArchiveCreateOptions`. Constants live on `Mpq`. Zero disables generation; any
 nonzero combination creates one `(attributes)` file and consumes one reserved
 slot. Unknown bits are rejected. Creation flags remain separate. These options
-work for both MPQ v1 and v2, including MPQE creation. Payload version 100 is
+work for MPQ v1, v2, and v3, including MPQE creation. Payload version 100 is
 independent of the archive format version.
 
 Per-file flags distinguish unavailable fields from zero. Complete lossless
@@ -216,7 +219,7 @@ Use `Archive.sign(privateKey)` for weak signing or
 `Archive.signatures()` / `Archive.verify(publicKey)` on reopened archives.
 Verification returns mismatch bits; malformed keys/archives raise normal binding
 errors. Weak keys are exactly 128 bytes: 64-byte big-endian modulus followed by a
-64-byte big-endian exponent. Signing supports v1 and v2. libmpq does not
+64-byte big-endian exponent. Signing supports v1, v2, and v3. libmpq does not
 ship Blizzard- or product-specific public verification keys or private signing
 keys; all signature key material is supplied explicitly by the caller.
 MD5/RSA-512 is legacy compatibility, not modern authenticity protection.

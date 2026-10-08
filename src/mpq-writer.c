@@ -101,16 +101,7 @@ file_key(const char *name)
     return key;
 }
 
-/* Reuse the compatible v2 codec policy without enabling public v3 creation. */
-static uint32_t
-writer_codec_version(const mpq_archive_s *archive)
-{
-    return archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE
-               ? LIBMPQ_ARCHIVE_VERSION_TWO
-               : archive->mpq_header.version;
-}
-
-/* Private v3 FIX_KEY uses the already-final payload position; legacy writing is unchanged. */
+/* V3 FIX_KEY uses the already-final payload position; legacy writing is unchanged. */
 static uint32_t
 writer_file_key(const mpq_writer_s *writer)
 {
@@ -143,7 +134,7 @@ stream_flush_sector(mpq_writer_s *writer)
         return LIBMPQ_ERROR_SIZE;
     if ((writer->options.flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0)
         result = libmpq__compression_encode_sector(
-            writer->data, writer->data_size, requested, writer_codec_version(archive),
+            writer->data, writer->data_size, requested, archive->mpq_header.version,
             compression_policy(archive), &packed, &packed_size, &emitted
         );
     else if ((writer->options.flags & LIBMPQ_FILE_FLAG_IMPLODE) != 0) {
@@ -239,7 +230,7 @@ stream_write_checksums(mpq_writer_s *writer)
     for (i = 0; i < writer->block_count; ++i)
         libmpq__store_le32(raw + i * 4, writer->checksums[i]);
     result = libmpq__compression_encode_sector(
-        raw, size, LIBMPQ_COMPRESSION_ZLIB, writer_codec_version(writer->archive),
+        raw, size, LIBMPQ_COMPRESSION_ZLIB, writer->archive->mpq_header.version,
         LIBMPQ_COMPRESSION_POLICY_STANDARD, &packed, &packed_size, &emitted
     );
     free(raw);
@@ -805,17 +796,20 @@ libmpq__writer_mpqe_cleanup(mpq_archive_s *a)
 }
 
 /*
- * Create a new seekable MPQ v1 or v2 archive with reserved metadata tables.
+ * Validate supported versions and the existing archive-creation options.
  * The function validates creation options, reserves table space, initializes
  * empty hash entries, and leaves the file positioned at the first payload.
  */
-static int32_t
-writer_validate_options(const mpq_archive_create_options_s *options)
+int32_t
+libmpq__writer_validate_options(const mpq_archive_create_options_s *options)
 {
     if (options == NULL)
         return 0;
-    if (options->version > LIBMPQ_ARCHIVE_VERSION_TWO || options->max_files == UINT32_MAX ||
-        (options->max_files && options->max_files > 0x40000000u))
+
+    /* The next v3 capacity step would require a 4 GiB classic cipher buffer. */
+    if (options->version > LIBMPQ_ARCHIVE_VERSION_THREE || options->max_files == UINT32_MAX ||
+        (options->max_files && options->max_files > 0x40000000u) ||
+        (options->version == LIBMPQ_ARCHIVE_VERSION_THREE && options->max_files > 0x04000000u))
         return LIBMPQ_ERROR_FORMAT;
     if (options->sector_size &&
         (options->sector_size < 512 || (options->sector_size & (options->sector_size - 1)) != 0))
@@ -831,8 +825,7 @@ writer_validate_options(const mpq_archive_create_options_s *options)
 /* Allocate the writer before opening ordinary output, or adopt a private stream. */
 static int32_t
 writer_archive_create_handle(
-    mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options,
-    bool private_v3, bool compress_tables
+    mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options
 )
 {
     mpq_archive_create_options_s defaults = { LIBMPQ_ARCHIVE_VERSION_ONE, 1024, 4096, 0, 0 };
@@ -841,7 +834,7 @@ writer_archive_create_handle(
     uint32_t header_size;
     uint64_t offset;
     uint8_t *zero;
-    mpq_archive_create_options_s checked;
+    bool v3;
 
     if (out == NULL || path == NULL)
         return LIBMPQ_ERROR_EXIST;
@@ -850,12 +843,7 @@ writer_archive_create_handle(
         options = &defaults;
 
     /* Reject versions, capacities, and sector sizes that cannot be represented safely. */
-    checked = *options;
-    if (private_v3 && checked.version == LIBMPQ_ARCHIVE_VERSION_THREE)
-        checked.version = LIBMPQ_ARCHIVE_VERSION_TWO;
-    if (writer_validate_options(&checked) != 0 ||
-        (private_v3 &&
-         (options->version != LIBMPQ_ARCHIVE_VERSION_THREE || options->max_files > 0x04000000u))) {
+    if (libmpq__writer_validate_options(options) != 0) {
         if (file != NULL)
             (void)fclose(file);
         return LIBMPQ_ERROR_FORMAT;
@@ -883,11 +871,12 @@ writer_archive_create_handle(
     a->write_sector_size = options->sector_size ? options->sector_size : 4096;
     a->write_flags = options->flags;
     a->write_attributes_flags = options->attributes;
-    a->write_ext_compress = private_v3 && compress_tables;
+    v3 = options->version == LIBMPQ_ARCHIVE_VERSION_THREE;
+    a->write_ext_compress = v3;
 
     /* Keep hash load below one half so linear probing remains bounded. */
     a->write_hash_capacity = next_power_two(a->write_capacity * 2);
-    header_size = private_v3 ? LIBMPQ_HEADER_V3_WIRE_SIZE
+    header_size = v3 ? LIBMPQ_HEADER_V3_WIRE_SIZE
                   : options->version == LIBMPQ_ARCHIVE_VERSION_TWO
                       ? LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE
                       : LIBMPQ_HEADER_WIRE_SIZE;
@@ -915,7 +904,7 @@ writer_archive_create_handle(
         a->mpq_header_ex.extended_offset = offset;
         offset += (uint64_t)a->write_capacity * LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE;
     }
-    offset = private_v3 ? header_size : (offset + 511) & ~UINT64_C(511);
+    offset = v3 ? header_size : (offset + 511) & ~UINT64_C(511);
     if (options->version == LIBMPQ_ARCHIVE_VERSION_ONE && offset > UINT32_MAX) {
         fclose(a->fp);
         free(a->filename);
@@ -984,9 +973,9 @@ libmpq__writer_archive_create(
     if (out == NULL || path == NULL)
         return LIBMPQ_ERROR_EXIST;
     *out = NULL;
-    if (writer_validate_options(options) != 0)
+    if (libmpq__writer_validate_options(options) != 0)
         return LIBMPQ_ERROR_FORMAT;
-    return writer_archive_create_handle(out, path, NULL, options, false, false);
+    return writer_archive_create_handle(out, path, NULL, options);
 }
 
 int32_t
@@ -994,19 +983,7 @@ libmpq__writer_archive_create_file(
     mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options
 )
 {
-    return writer_archive_create_handle(out, path, file, options, false, false);
-}
-
-int32_t
-libmpq__writer_archive_create_v3(
-    mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options,
-    bool compress_tables
-)
-{
-    mpq_archive_create_options_s defaults = { LIBMPQ_ARCHIVE_VERSION_THREE, 1024, 4096, 0, 0 };
-    return writer_archive_create_handle(
-        out, path, file, options != NULL ? options : &defaults, true, compress_tables
-    );
+    return writer_archive_create_handle(out, path, file, options);
 }
 
 /*
@@ -1033,7 +1010,7 @@ libmpq__writer_archive_create_mpqe(
     result = libmpq__mpqe_key(key, auth_code, auth_code_size);
     if (result != 0)
         return result;
-    result = writer_validate_options(options);
+    result = libmpq__writer_validate_options(options);
     if (result != 0) {
         libmpq__mpqe_clear(key, sizeof(key));
         return result;
@@ -1049,7 +1026,7 @@ libmpq__writer_archive_create_mpqe(
             &encrypted
         );
     if (result == 0) {
-        result = writer_archive_create_handle(out, raw_path, raw, options, false, false);
+        result = writer_archive_create_handle(out, raw_path, raw, options);
         raw = NULL;
     }
     if (result != 0) {
@@ -1157,10 +1134,10 @@ writer_file_begin(
     }
     if ((options->flags & LIBMPQ_FILE_FLAG_COMPRESS) &&
         (!libmpq__compression_allowed(
-             writer_codec_version(a), options->compression_first, compression_policy(a)
+             a->mpq_header.version, options->compression_first, compression_policy(a)
          ) ||
          !libmpq__compression_allowed(
-             writer_codec_version(a), options->compression_next, compression_policy(a)
+             a->mpq_header.version, options->compression_next, compression_policy(a)
          ))) {
         free(w);
         return LIBMPQ_ERROR_FORMAT;
@@ -1223,7 +1200,7 @@ writer_file_begin(
 
     /* STANDARD v2 keeps the first WAVE sector lossless without standalone Huffman. */
     if (!libmpq__compression_allowed(
-            writer_codec_version(a), w->options.compression_first, compression_policy(a)
+            a->mpq_header.version, w->options.compression_first, compression_policy(a)
         ))
         w->options.compression_first = LIBMPQ_COMPRESSION_ZLIB;
     if (w->options.compression_next == 0)

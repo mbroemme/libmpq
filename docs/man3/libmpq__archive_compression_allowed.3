@@ -31,10 +31,11 @@ and writer policy. Readers remain permissive and never require this policy
 setting.
 .SS "Arguments and Selectors"
 The version uses LIBMPQ_ARCHIVE_VERSION_ONE (0) or
-LIBMPQ_ARCHIVE_VERSION_TWO (1), not the one-based archive-version accessor.
+LIBMPQ_ARCHIVE_VERSION_TWO (1), or LIBMPQ_ARCHIVE_VERSION_THREE (2), not the
+one-based archive-version accessor. V3 uses the same codec policy as v2.
 The policy type libmpq_compression_policy_t is a signed int32_t.
 A zero mask selects raw storage. LZMA uses LIBMPQ_COMPRESSION_LZMA (0x100),
-an exclusive selector available only for v2; it serializes as method 0x12.
+an exclusive selector available for v2/v3; it serializes as method 0x12.
 .SS "STANDARD and EXTENDED"
 LIBMPQ_COMPRESSION_POLICY_STANDARD (0) is the default writer policy.
 For MPQ v2+ it permits zlib, PKWARE, bzip2, LZMA, and Huffman paired with

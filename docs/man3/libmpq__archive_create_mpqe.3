@@ -28,7 +28,7 @@ libmpq__archive_create_mpqe \- create an MPQE-wrapped MPQ archive
 .BI ");"
 .fi
 .SH DESCRIPTION
-Creates a new MPQE stream at \fImpqe_filename\fP containing an MPQ v1 or v2
+Creates a new MPQE stream at \fImpqe_filename\fP containing an MPQ v1, v2, or v3
 archive. On success, \fI*mpq_archive\fP is a caller-owned writer handle. The caller
 supplies at least 32 authentication-code bytes. Add members using the
 ordinary writer APIs; \fBlibmpq__archive_close\fP() finalizes the archive,
@@ -44,7 +44,7 @@ LIBMPQ_ATTRIBUTE_FILETIME, LIBMPQ_ATTRIBUTE_MD5, and
 LIBMPQ_ATTRIBUTE_PATCH_BIT. Zero disables generation; any nonzero
 combination creates one (attributes) file and consumes one reserved slot.
 Unknown attribute bits are rejected. Version-100 attributes work in both
-MPQ v1 and v2, independently of the archive format version.
+MPQ v1, v2, and v3, independently of the archive format version.
 .PP
 Capacity includes the attributes entry and listfile if enabled; the internal
 attributes name is reserved. Finalization writes the listfile, attributes,
@@ -53,6 +53,9 @@ FILETIME defaults to zero and patch bits are zero. Use
 \fBlibmpq__writer_timestamp\fP() on an active writer for an explicit
 timestamp. Path addition never imports filesystem timestamps.
 .SS "Temporary Storage and Publication"
+V3 uses the same authentication and mixed HET/BET plus classic table layout
+as ordinary v3 creation. V3 transactional updates remain unsupported.
+.PP
 The normal writer first finalizes a private temporary plaintext MPQ in the
 destination directory, then encrypts it for publication. The plaintext
 temporary file is owner-only; the completed MPQE archive uses normal output

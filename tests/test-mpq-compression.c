@@ -18,6 +18,7 @@
  */
 
 /* Exercise raw, zlib, bzip2, and invalid compression paths. */
+#include "mpq-compression.h"
 #include "test-mpq-helper.h"
 
 #include <stdio.h>
@@ -36,12 +37,12 @@ test_policies(void)
     TEST_CHECK(libmpq__archive_compression_allowed(1, 0, INT32_MIN) == 0);
     TEST_CHECK(libmpq__archive_compression_allowed(1, 0, INT32_MAX) == 0);
 
-    for (version = 0; version <= 1; ++version) {
+    for (version = 0; version <= LIBMPQ_ARCHIVE_VERSION_THREE; ++version) {
         for (policy = 0; policy <= 1; ++policy) {
             for (mask = 0; mask < 512; ++mask) {
                 int expected = (mask & ~0xfbU) == 0 && (mask & 0xc0U) != 0xc0U &&
                                !((mask & 0x20U) && (mask & 0xc0U));
-                if (version == 1) {
+                if (version >= LIBMPQ_ARCHIVE_VERSION_TWO) {
                     expected = expected && (mask & 0x12U) != 0x12U;
                     if (policy == LIBMPQ_COMPRESSION_POLICY_STANDARD)
                         expected = mask == 0 || mask == 0x02 || mask == 0x08 || mask == 0x10 ||
@@ -54,7 +55,7 @@ test_policies(void)
             }
         }
     }
-    TEST_CHECK(libmpq__archive_compression_allowed(2, 0, 0) == 0);
+    TEST_CHECK(libmpq__archive_compression_allowed(3, 0, 0) == 0);
     TEST_CHECK(libmpq__archive_compression_allowed(UINT32_MAX, 0, 0) == 0);
     TEST_CHECK(libmpq__archive_compression_allowed(1, UINT32_MAX, 0) == 0);
     TEST_CHECK(libmpq__archive_compression_allowed(1, 0, -1) == 0);
@@ -64,7 +65,7 @@ test_policies(void)
 
 /* Writer flags select policy; normal readers reopen both policies identically. */
 static int
-test_policy_writer(uint32_t version, libmpq_compression_policy_t policy)
+test_policy_writer(uint32_t version, libmpq_compression_policy_t policy, uint32_t storage_flags)
 {
     static const uint32_t masks[] = { 0x01, 0x02,  0x08, 0x10, 0x03, 0x0a, 0x12,
                                       0x13, 0x100, 0x20, 0x22, 0x30, 0x21, 0x28,
@@ -84,6 +85,9 @@ test_policy_writer(uint32_t version, libmpq_compression_policy_t policy)
 
     if (policy == LIBMPQ_COMPRESSION_POLICY_EXTENDED)
         create.flags = LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED;
+    if (storage_flags & LIBMPQ_FILE_FLAG_SINGLE)
+        create.sector_size = 16384;
+    options.flags |= storage_flags;
     test_sparse_payload(input, sizeof(input));
     TEST_CHECK(test_temp_path(path, sizeof(path), "compression-policy") == 0);
     TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
@@ -91,7 +95,8 @@ test_policy_writer(uint32_t version, libmpq_compression_policy_t policy)
         TEST_CHECK(snprintf(name, sizeof(name), "method-%u", masks[i]) > 0);
         options.compression_first = masks[i];
         options.compression_next = LIBMPQ_COMPRESSION_ZLIB;
-        if (!libmpq__archive_compression_allowed(version, masks[i], policy)) {
+        if (!libmpq__archive_compression_allowed(version, masks[i], policy) ||
+            ((storage_flags & LIBMPQ_FILE_FLAG_SINGLE) && (masks[i] & 0xc0u))) {
             TEST_CHECK(
                 libmpq__archive_add_data(archive, name, input, sizeof(input), &options) ==
                 LIBMPQ_ERROR_FORMAT
@@ -114,19 +119,107 @@ test_policy_writer(uint32_t version, libmpq_compression_policy_t policy)
     TEST_CHECK(result == 0);
     TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
     for (i = 0; i < sizeof(masks) / sizeof(masks[0]); ++i) {
-        if (!libmpq__archive_compression_allowed(version, masks[i], policy))
+        mpq_stream_s *stream = NULL;
+        libmpq__off_t transferred;
+        if (!libmpq__archive_compression_allowed(version, masks[i], policy) ||
+            ((storage_flags & LIBMPQ_FILE_FLAG_SINGLE) && (masks[i] & 0xc0u)))
             continue;
         TEST_CHECK(snprintf(name, sizeof(name), "method-%u", masks[i]) > 0);
         TEST_CHECK(libmpq__file_number(archive, name, &number) == 0);
         TEST_CHECK(libmpq__file_size_packed(archive, number, &packed_size) == 0);
         TEST_CHECK(packed_size < (libmpq__off_t)sizeof(input));
-        TEST_CHECK(test_archive_read(archive, number, &output, &size) == 0);
+        TEST_CHECK(libmpq__stream_open_name(archive, name, &stream) == 0);
+        output = malloc(sizeof(input));
+        TEST_CHECK(output != NULL);
+        result = libmpq__stream_read(stream, output, sizeof(input), &transferred);
+        if (result != 0)
+            fprintf(
+                stderr, "codec read: version=%u policy=%d flags=%x mask=%x error=%d\n", version,
+                policy, storage_flags, masks[i], result
+            );
+        TEST_CHECK(result == 0);
+        size = (size_t)transferred;
         TEST_CHECK(size == sizeof(input) && memcmp(output, input, size) == 0);
+        TEST_CHECK(libmpq__stream_close(stream) == 0);
         free(output);
         output = NULL;
     }
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     remove(path);
+    return 0;
+}
+
+/* Compare v2/v3 codec output and fallback at sector-size boundaries. */
+static int
+test_v2_v3_sector_semantics(void)
+{
+    static const uint32_t masks[] = { 0,    0x01, 0x02, 0x08, 0x10,  0x20, 0x22,
+                                      0x30, 0x03, 0x0a, 0x12, 0x100, 0x41, 0x81 };
+    static const size_t lengths[] = { 0, 1, 31, 511, 512, 513, 4096 };
+    uint8_t input[4096];
+    uint8_t decoded[4096];
+    unsigned int pattern;
+    size_t m;
+    size_t n;
+    libmpq_compression_policy_t policy;
+    for (pattern = 0; pattern < 2; ++pattern) {
+        uint32_t state = 1;
+        for (n = 0; n < sizeof(input); ++n) {
+            state = state * 1664525u + 1013904223u;
+            input[n] = pattern == 0 ? 0 : (uint8_t)(state >> 24);
+        }
+        for (policy = LIBMPQ_COMPRESSION_POLICY_STANDARD;
+             policy <= LIBMPQ_COMPRESSION_POLICY_EXTENDED; ++policy) {
+            for (m = 0; m < sizeof(masks) / sizeof(masks[0]); ++m) {
+                int allowed =
+                    libmpq__compression_allowed(LIBMPQ_ARCHIVE_VERSION_TWO, masks[m], policy);
+                TEST_CHECK(
+                    allowed ==
+                    libmpq__compression_allowed(LIBMPQ_ARCHIVE_VERSION_THREE, masks[m], policy)
+                );
+                for (n = 0; n < sizeof(lengths) / sizeof(lengths[0]); ++n) {
+                    uint8_t *packed[2] = { NULL, NULL };
+                    uint8_t emitted[2] = { 0, 0 };
+                    size_t sizes[2] = { 0, 0 };
+                    unsigned int v;
+                    for (v = 0; v < 2; ++v) {
+                        uint32_t version = LIBMPQ_ARCHIVE_VERSION_TWO + v;
+                        int32_t result = libmpq__compression_encode_sector(
+                            input, lengths[n], masks[m], version, policy, &packed[v], &sizes[v],
+                            &emitted[v]
+                        );
+                        TEST_CHECK(result == (allowed ? 0 : LIBMPQ_ERROR_FORMAT));
+                        if (!allowed)
+                            continue;
+                        if (masks[m] == LIBMPQ_COMPRESSION_LZMA && emitted[v] != 0)
+                            TEST_CHECK(emitted[v] == 0x12);
+                        else
+                            TEST_CHECK(libmpq__compression_allowed(version, emitted[v], policy));
+                        if (emitted[v] == 0) {
+                            TEST_CHECK(sizes[v] == lengths[n]);
+                            TEST_CHECK(memcmp(packed[v], input, lengths[n]) == 0);
+                        } else {
+                            TEST_CHECK(sizes[v] < lengths[n] && packed[v][0] == emitted[v]);
+                            TEST_CHECK(
+                                libmpq__compression_decompress_multi(
+                                    packed[v], (uint32_t)sizes[v], decoded, (uint32_t)lengths[n],
+                                    version
+                                ) == (int32_t)lengths[n]
+                            );
+                            if ((masks[m] & 0xc0u) == 0)
+                                TEST_CHECK(memcmp(decoded, input, lengths[n]) == 0);
+                        }
+                    }
+                    if (allowed) {
+                        TEST_CHECK(emitted[0] == emitted[1] && sizes[0] == sizes[1]);
+                        TEST_CHECK(memcmp(packed[0], packed[1], sizes[0]) == 0);
+                    }
+                    free(packed[0]);
+                    free(packed[1]);
+                }
+            }
+        }
+    }
     return 0;
 }
 
@@ -166,18 +259,38 @@ main(void)
 
     TEST_CHECK(test_temp_path(path, sizeof(path), "compression") == 0);
     TEST_CHECK(test_policies() == 0);
+    TEST_CHECK(test_v2_v3_sector_semantics() == 0);
     TEST_CHECK(
-        test_policy_writer(LIBMPQ_ARCHIVE_VERSION_ONE, LIBMPQ_COMPRESSION_POLICY_STANDARD) == 0
+        test_policy_writer(LIBMPQ_ARCHIVE_VERSION_ONE, LIBMPQ_COMPRESSION_POLICY_STANDARD, 0) == 0
     );
     TEST_CHECK(
-        test_policy_writer(LIBMPQ_ARCHIVE_VERSION_ONE, LIBMPQ_COMPRESSION_POLICY_EXTENDED) == 0
+        test_policy_writer(LIBMPQ_ARCHIVE_VERSION_ONE, LIBMPQ_COMPRESSION_POLICY_EXTENDED, 0) == 0
     );
     TEST_CHECK(
-        test_policy_writer(LIBMPQ_ARCHIVE_VERSION_TWO, LIBMPQ_COMPRESSION_POLICY_STANDARD) == 0
+        test_policy_writer(LIBMPQ_ARCHIVE_VERSION_TWO, LIBMPQ_COMPRESSION_POLICY_STANDARD, 0) == 0
     );
     TEST_CHECK(
-        test_policy_writer(LIBMPQ_ARCHIVE_VERSION_TWO, LIBMPQ_COMPRESSION_POLICY_EXTENDED) == 0
+        test_policy_writer(LIBMPQ_ARCHIVE_VERSION_TWO, LIBMPQ_COMPRESSION_POLICY_EXTENDED, 0) == 0
     );
+    TEST_CHECK(
+        test_policy_writer(LIBMPQ_ARCHIVE_VERSION_THREE, LIBMPQ_COMPRESSION_POLICY_STANDARD, 0) == 0
+    );
+    TEST_CHECK(
+        test_policy_writer(LIBMPQ_ARCHIVE_VERSION_THREE, LIBMPQ_COMPRESSION_POLICY_EXTENDED, 0) == 0
+    );
+    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_THREE;
+         ++version) {
+        for (libmpq_compression_policy_t policy = LIBMPQ_COMPRESSION_POLICY_STANDARD;
+             policy <= LIBMPQ_COMPRESSION_POLICY_EXTENDED; ++policy) {
+            TEST_CHECK(test_policy_writer(version, policy, LIBMPQ_FILE_FLAG_ENCRYPTED) == 0);
+            TEST_CHECK(test_policy_writer(version, policy, LIBMPQ_FILE_FLAG_SINGLE) == 0);
+            TEST_CHECK(
+                test_policy_writer(
+                    version, policy, LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED
+                ) == 0
+            );
+        }
+    }
     memset(data, 'C', sizeof(data));
     TEST_CHECK(test_round_trip(path, "zlib", data, sizeof(data), LIBMPQ_COMPRESSION_ZLIB) == 0);
     remove(path);

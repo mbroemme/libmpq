@@ -623,7 +623,7 @@ def test_version_errors_and_hashes():
     assert not mpq.archive_compression_allowed(mpq.ARCHIVE_VERSION_TWO, mpq.COMPRESSION_HUFFMAN)
     assert mpq.archive_compression_allowed(mpq.ARCHIVE_VERSION_TWO, mpq.COMPRESSION_HUFFMAN,
                                      mpq.COMPRESSION_POLICY_EXTENDED)
-    for version in (mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO):
+    for version in (mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO, mpq.ARCHIVE_VERSION_THREE):
         for policy in (mpq.COMPRESSION_POLICY_STANDARD, mpq.COMPRESSION_POLICY_EXTENDED):
             for method in (mpq.COMPRESSION_SPARSE,
                            mpq.COMPRESSION_SPARSE | mpq.COMPRESSION_ZLIB,
@@ -731,16 +731,17 @@ def test_mpqe_fixture_metadata_extraction_and_clone(name, version, offset):
         mpq.Archive.open_mpqe(FIXTURES / name, code[:-1], offset)
 
 
-def test_mpqe_creation_replaces_destination(tmp_path):
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_TWO, mpq.ARCHIVE_VERSION_THREE])
+def test_mpqe_creation_replaces_destination(tmp_path, version):
     """MPQE creation publishes a complete archive over an existing target."""
     path = tmp_path / "created.mpqe"
     code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
     path.write_bytes(b"previous destination")
-    with mpq.Writer.create_mpqe(path, code, version=mpq.ARCHIVE_VERSION_TWO,
+    with mpq.Writer.create_mpqe(path, code, version=version,
                                 attributes=mpq.ATTRIBUTE_CRC32) as writer:
         writer.add("payload.txt", b"Python MPQE writer regression\n")
     with mpq.Archive.open_mpqe(path, code, offset=0) as archive:
-        assert archive.version == 2
+        assert archive.version == version + 1
         assert archive.attributes() == mpq.ATTRIBUTE_CRC32
         assert archive["payload.txt"].read() == b"Python MPQE writer regression\n"
     with pytest.raises(mpq.LibmpqDecryptError):
@@ -751,7 +752,8 @@ def test_mpqe_creation_replaces_destination(tmp_path):
         mpq.Writer(tmp_path / "invalid.mpq", attributes=0x10)
 
 
-def test_creation_streaming_compression_clone_and_blocks(tmp_path):
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_TWO, mpq.ARCHIVE_VERSION_THREE])
+def test_creation_streaming_compression_clone_and_blocks(tmp_path, version):
     """Creation APIs round-trip raw, compressed, path, stream, clone, and blocks."""
     archive_path = tmp_path / "created.mpq"
     source_path = tmp_path / "source.txt"
@@ -759,7 +761,7 @@ def test_creation_streaming_compression_clone_and_blocks(tmp_path):
     repetitive = b"R" * 12000
     streamed = bytes(range(256)) * 20
 
-    with mpq.Writer(archive_path, version=mpq.ARCHIVE_VERSION_TWO,
+    with mpq.Writer(archive_path, version=version,
                     flags=mpq.ARCHIVE_CREATE_LISTFILE,
                     attributes=mpq.ATTRIBUTE_CRC32 |
                           mpq.ATTRIBUTE_FILETIME | mpq.ATTRIBUTE_MD5 |

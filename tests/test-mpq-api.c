@@ -222,7 +222,7 @@ test_create_errors(void)
     TEST_CHECK(test_temp_path(path, sizeof(path), "invalid") == 0);
     TEST_CHECK(libmpq__archive_create(NULL, path, &options) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__archive_create(&archive, NULL, &options) == LIBMPQ_ERROR_EXIST);
-    options.version = LIBMPQ_ARCHIVE_VERSION_TWO + 1;
+    options.version = LIBMPQ_ARCHIVE_VERSION_THREE + 1;
     TEST_CHECK(libmpq__archive_create(&archive, path, &options) == LIBMPQ_ERROR_FORMAT);
     options.version = LIBMPQ_ARCHIVE_VERSION_ONE;
     options.sector_size = 1000;

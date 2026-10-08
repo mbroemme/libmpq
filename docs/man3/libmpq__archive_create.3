@@ -26,7 +26,7 @@ libmpq__archive_create \- create a seekable MPQ archive
 .BI ");"
 .fi
 .SH DESCRIPTION
-Creates an MPQ v1 or v2 archive at \fImpq_filename\fP. On success,
+Creates an MPQ v1, v2, or v3 archive at \fImpq_filename\fP. On success,
 \fI*mpq_archive\fP is a caller-owned writer handle. Add members using the
 streaming writer or archive-add convenience functions, then finalize the
 archive with \fBlibmpq__archive_close\fP().
@@ -34,6 +34,11 @@ archive with \fBlibmpq__archive_close\fP().
 The options select a fixed entry capacity, sector size, archive version,
 and optional generated (listfile). NULL \fIoptions\fP uses the built-in
 archive-creation defaults.
+.PP
+LIBMPQ_ARCHIVE_VERSION_THREE selects MPQ v3 with a 0x44-byte header,
+HET/BET and classic hash/block tables sharing the same logical rows.
+V3 transactional updates and rebuilds remain unsupported; v4 is rejected.
+Defaults remain v1 with 4096-byte sectors. Explicit sector sizes are retained.
 .PP
 Compression defaults to STANDARD. Add
 LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED to options.flags to select
@@ -44,7 +49,7 @@ LIBMPQ_ATTRIBUTE_FILETIME, LIBMPQ_ATTRIBUTE_MD5, and
 LIBMPQ_ATTRIBUTE_PATCH_BIT. Zero disables generation; any nonzero
 combination creates one (attributes) file and consumes one reserved slot.
 Unknown attribute bits are rejected. Version-100 attributes work in both
-MPQ v1 and v2, independently of the archive format version.
+MPQ v1, v2, and v3, independently of the archive format version.
 .PP
 Capacity includes the attributes entry and listfile if enabled; the internal
 attributes name is reserved. Finalization writes the listfile, attributes,

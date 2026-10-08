@@ -597,7 +597,7 @@ libmpq__compression_allowed(
     uint32_t format_version, uint32_t mask, libmpq_compression_policy_t policy
 )
 {
-    if (format_version > LIBMPQ_ARCHIVE_VERSION_TWO ||
+    if (format_version > LIBMPQ_ARCHIVE_VERSION_THREE ||
         (policy != LIBMPQ_COMPRESSION_POLICY_STANDARD &&
          policy != LIBMPQ_COMPRESSION_POLICY_EXTENDED))
         return 0;

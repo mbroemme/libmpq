@@ -105,13 +105,13 @@ extern int32_t libmpq__compression_decompress_wave_stereo(
  * stages; each stage receives the previous stage's complete output, and the
  * final result is copied to out_buf. Unknown combinations and undersized
  * output buffers are rejected with a negative libmpq error. format_version
- * is the serialized MPQ header version: 0=v1, 1=v2.
+ * is the serialized MPQ header version: 0=v1, 1=v2, 2=v3.
  */
 extern int32_t libmpq__compression_decompress_multi(
     uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t out_size, uint32_t format_version
 );
 
-/* Validate a writer policy and mask for the serialized MPQ version (0=v1, 1=v2). */
+/* Validate a writer policy and mask for the serialized MPQ version (0=v1, 1=v2, 2=v3). */
 int32_t libmpq__compression_allowed(
     uint32_t format_version, uint32_t mask, libmpq_compression_policy_t policy
 );

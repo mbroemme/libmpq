@@ -68,7 +68,7 @@ archives or derived streams are alive, but never closes it.
 Use the same context-manager pattern for ordinary and MPQE writers:
 
 ```python
-with mpq.Writer("created.mpq", version=mpq.ARCHIVE_VERSION_TWO) as writer:
+with mpq.Writer("created.mpq", version=mpq.ARCHIVE_VERSION_THREE) as writer:
     writer.add("payload.bin", b"payload", mpq.FileCreateOptions.raw())
 
 with mpq.Writer.create_mpqe(
@@ -90,7 +90,9 @@ Creation defaults to `COMPRESSION_POLICY_STANDARD`. Pass
 `Writer.create_mpqe` for additional, potentially less interoperable methods.
 Use `mpq.archive_compression_allowed(version, mask, policy)` to query whether
 a compression selection is allowed by the writer policy. Version uses
-`ARCHIVE_VERSION_ONE` or `ARCHIVE_VERSION_TWO`. Readers remain permissive
+`ARCHIVE_VERSION_ONE`, `ARCHIVE_VERSION_TWO`, or `ARCHIVE_VERSION_THREE`.
+V3 emits HET/BET plus classic tables; v3 updates/rebuilds remain unsupported.
+Readers remain permissive
 regardless of the creation policy.
 
 `COMPRESSION_SPARSE` selects lossless zero-run compression. In MPQ v2+,
@@ -146,7 +148,7 @@ Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
 `Writer` or `Writer.create_mpqe()`. Zero disables generation; any nonzero
 combination creates one `(attributes)` file and consumes one reserved slot.
 Unknown bits are rejected. Creation flags remain separate. These options work
-for both MPQ v1 and v2, including MPQE creation. Payload version 100 is
+for MPQ v1, v2, and v3, including MPQE creation. Payload version 100 is
 independent of the archive format version.
 
 Per-file flags distinguish unavailable fields from zero. Complete lossless
@@ -240,7 +242,7 @@ Use `Writer.sign(privateKey)` for weak signing or
 `Archive.signatures()` / `Archive.verify(publicKey)` on reopened archives.
 Verification returns mismatch bits; malformed keys/archives raise normal binding
 errors. Weak keys are exactly 128 bytes: 64-byte big-endian modulus followed by a
-64-byte big-endian exponent. Signing supports v1 and v2. libmpq does not
+64-byte big-endian exponent. Signing supports v1, v2, and v3. libmpq does not
 ship Blizzard- or product-specific public verification keys or private signing
 keys; all signature key material is supplied explicitly by the caller.
 MD5/RSA-512 is legacy compatibility, not modern authenticity protection.

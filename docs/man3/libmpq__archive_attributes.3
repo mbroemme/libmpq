@@ -30,7 +30,7 @@ CRC32 (1), FILETIME (2), MD5 (4), and PATCH_BIT (8). A successful zero
 mask is distinct from an absent file. The output is zeroed on failure.
 .PP
 The query lazily loads (attributes) through ordinary MPQ file reading.
-Its payload version is 100, independent of archive format v1 or v2.
+Its payload version is 100, independent of archive format v1, v2, or v3.
 Malformed optional metadata does not prevent opening or ordinary extraction;
 it fails an explicit query. No patch application is performed.
 .SH RETURN VALUE

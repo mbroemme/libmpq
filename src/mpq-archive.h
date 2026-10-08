@@ -89,7 +89,7 @@ struct mpq_archive
     /* Writer-only state. Reader handles leave these fields zeroed. */
     uint8_t write_mode;             /* Whether this handle was opened for creation. */
     uint8_t write_finalized;        /* Whether the final header and tables were written. */
-    uint8_t write_ext_compress;     /* Private v3 finalization compresses HET/BET payloads. */
+    uint8_t write_ext_compress;     /* V3 finalization compresses HET/BET payloads. */
     uint8_t write_signature;        /* Caller requested weak signing. */
     uint8_t write_strong_signature; /* Caller requested plain strong signing. */
     uint64_t write_signature_offset;

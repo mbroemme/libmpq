@@ -25,7 +25,7 @@ used by Blizzard games including Diablo, Diablo II, StarCraft, Warcraft II:
 Battle.net Edition, Warcraft III, and World of Warcraft.
 
 libmpq provides a C API for applications that need to inspect, create, modify,
-and extract MPQ archives. Creation supports seekable v1 and v2 archives,
+and extract MPQ archives. Creation supports seekable v1, v2, and v3 archives,
 streaming or buffer/path file addition, encrypted tables and payloads,
 optional listfiles,
 raw and single-unit files, PKWARE implode, multi-compression sectors using
@@ -34,12 +34,12 @@ MPQ v2+ LZMA method.
 
 ## Features
 
-| Format | Read | Create/update |
-| --- | --- | --- |
-| MPQ v1 (wire version 0) | Supported | Supported |
-| MPQ v2 (wire version 1) | Supported | Supported |
-| MPQ v3 (wire version 2) | Classic, HET/BET, mixed tables | Not supported |
-| MPQ v4 (wire version 3) | Not supported | Not supported |
+| Format | Read | Create | Update/rebuild |
+| --- | --- | --- | --- |
+| MPQ v1 (wire version 0) | Supported | Supported | Supported |
+| MPQ v2 (wire version 1) | Supported | Supported | Supported |
+| MPQ v3 (wire version 2) | Classic, HET/BET, mixed tables | Mixed HET/BET + classic tables | Not supported |
+| MPQ v4 (wire version 3) | Not supported | Not supported | Not supported |
 
 V3 coverage uses synthetic archives. Extended tables have a defensive 1 MiB
 limit; current file decoding requires packed/unpacked member lengths to fit
@@ -52,7 +52,7 @@ for compatibility constraints and manual interoperability checks.
   file buffer.
 * Open MPQ and MPQE archives from filesystem paths or caller-provided
   random-access I/O callbacks.
-* Create seekable MPQ v1 and v2 archives with configurable file-table capacity,
+* Create seekable MPQ v1, v2, and v3 archives with configurable file-table capacity,
   sector size, optional `(listfile)` and `(attributes)` metadata, encrypted
   tables, and encrypted file payloads.
 * Add raw, single-unit, sectorized, and multi-sector files through streaming,
@@ -364,9 +364,9 @@ headers, tables, encryption, sectors, and compression, see the
 
 ## Limitations
 
-* Archive creation is currently limited to seekable MPQ v1 and v2 archives.
-  Reading MPQ v3 is supported with usable classic hash/block tables; HET/BET
-  decoding and MPQ v4 remain unsupported.
+* Seekable MPQ v3 creation emits HET/BET plus classic tables with shared row
+  identity. V3 transactional update/rebuild remains unsupported; MPQ v4 is
+  unsupported. V1/v2 creation defaults are unchanged.
 * Encrypted random-access writing is not supported. MPQE modification uses
   transactional decoding and re-encryption instead.
 * MPQE creation and updates use private plaintext staging files. Cleanup is

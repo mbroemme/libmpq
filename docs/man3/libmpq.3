@@ -417,9 +417,9 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI ");"
 .fi
 .SH DESCRIPTION
-\fIlibmpq\fP reads and creates MPQ v1 and v2 archives, including embedded
-MPQ containers. Reading MPQ v3 with usable classic hash/block tables is also
-supported; HET/BET decoding, v3 creation/rebuilding, and MPQ v4 are not supported.
+\fIlibmpq\fP reads and creates MPQ v1, v2, and v3 archives, including embedded
+MPQ containers. V3 creation emits both HET/BET and classic tables.
+V3 transactional updates/rebuilding and MPQ v4 remain unsupported.
 .SS "Archive Opening and Custom I/O"
 Open filesystem archives with \fBlibmpq__archive_open\fP(3) or provide a
 borrowed random-access callback through \fBlibmpq__archive_open_io\fP(3).
@@ -435,7 +435,7 @@ Patch-file members instead expose their decoded, unapplied PTCH bodies through
 \fBlibmpq__patch_payload_size\fP(3) and
 \fBlibmpq__patch_payload_read\fP(3).
 .SS "Archive Creation and Writers"
-Create MPQ v1/v2 archives with \fBlibmpq__archive_create\fP(3).
+Create MPQ v1/v2/v3 archives with \fBlibmpq__archive_create\fP(3).
 Add complete buffers or paths with the archive-add calls, or use the
 writer begin/write/finish lifecycle for streamed members. Writer finish
 consumes the member writer; archive close finalizes and consumes the

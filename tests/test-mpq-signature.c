@@ -588,6 +588,17 @@ high_read(void *context, uint64_t offset, uint8_t *buffer, size_t size)
     return LIBMPQ_ERROR_READ;
 }
 
+/* Return a synthetic high-offset trailer, then fail the first digest read. */
+static int32_t
+high_strong_read(void *context, uint64_t offset, uint8_t *buffer, size_t size)
+{
+    static const uint8_t marker[4] = { 'N', 'G', 'I', 'S' };
+    int32_t result = high_read(context, offset, buffer, size);
+    if (result == 0 && size == LIBMPQ_STRONG_TRAILER_SIZE)
+        memcpy(buffer, marker, sizeof(marker));
+    return result;
+}
+
 static int
 test_logical_extent(void)
 {
@@ -640,6 +651,35 @@ test_logical_extent(void)
         ) == LIBMPQ_ERROR_READ
     );
     TEST_CHECK(digest_read == 16384 && mismatches == 0);
+
+    /* V3 uses its full-width extent, including high-offset weak and strong files. */
+    archive.mpq_header.version = LIBMPQ_ARCHIVE_VERSION_THREE;
+    archive.mpq_header.header_size = 68;
+    archive.mpq_header_v3.archive_size = (UINT64_C(1) << 32) + 136;
+    source.backend.read_at = high_strong_read;
+    TEST_CHECK(libmpq__archive_signature_extent(&archive, &extent) == 0);
+    TEST_CHECK(extent == archive.mpq_header_v3.archive_size);
+    TEST_CHECK(libmpq__archive_signatures(&archive, &signatures) == 0);
+    TEST_CHECK(signatures == (LIBMPQ_SIGNATURE_WEAK | LIBMPQ_SIGNATURE_STRONG));
+    digest_read = 0;
+    TEST_CHECK(
+        libmpq__archive_verify(
+            &archive, LIBMPQ_SIGNATURE_WEAK, test_signature_public_key,
+            sizeof(test_signature_public_key), &mismatches
+        ) == LIBMPQ_ERROR_READ
+    );
+    TEST_CHECK(digest_read == 16384 && mismatches == 0);
+    digest_read = 0;
+    TEST_CHECK(
+        libmpq__archive_verify(
+            &archive, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
+            sizeof(test_strong_signature_public_key), &mismatches
+        ) == LIBMPQ_ERROR_READ
+    );
+    TEST_CHECK(digest_read == 16384 && mismatches == 0);
+    archive.mpq_header.version = LIBMPQ_ARCHIVE_VERSION_TWO;
+    archive.mpq_header.header_size = 44;
+    source.backend.read_at = high_read;
 
     archive.mpq_header_ex.hash_table_offset_high = 2;
     TEST_CHECK(libmpq__archive_signature_extent(&archive, &extent) == 0);
@@ -752,7 +792,7 @@ test_strong_writer_signatures(void)
 
     test_strong_signature_private_key(strong_private);
     TEST_CHECK(test_temp_path(path, sizeof(path), "strong-writer") == 0);
-    for (version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_TWO; ++version) {
+    for (version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_THREE; ++version) {
         options.version = version;
         TEST_CHECK(libmpq__archive_create(&archive, path, &options) == 0);
         TEST_CHECK(

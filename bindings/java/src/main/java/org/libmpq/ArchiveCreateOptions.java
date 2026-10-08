@@ -11,8 +11,8 @@ package org.libmpq;
 /**
  * Immutable options passed to {@link Archive#create}.  The version field uses
  * libmpq's creation selectors: zero requests the v1 layout and one requests
- * the v2 layout.  The resulting archive reports its public format version as
- * one or two, respectively.
+ * the v2 layout; two requests mixed HET/BET and classic v3 tables.
+ * The archive reports its public format version as one, two, or three.
  * The attributes field accepts Mpq.ATTRIBUTE_* bits; any nonzero combination
  * creates one attributes file and consumes one reserved slot. Zero disables it.
  */

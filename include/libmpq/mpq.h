@@ -116,7 +116,8 @@ typedef int32_t (*libmpq_read_at_fn)(
 
 /*
  * On-disk archive format versions (not combinable flags). Creation accepts
- * only ONE and TWO; THREE is supported for reading classic-table archives.
+ * ONE, TWO, and THREE. V3 creation emits both HET/BET and classic tables;
+ * v3 transactional updates/rebuilds and v4 remain unsupported.
  * libmpq__archive_version() reports the corresponding one-based generation.
  */
 #define LIBMPQ_ARCHIVE_VERSION_ONE 0
@@ -337,7 +338,7 @@ extern LIBMPQ_API const char *libmpq__strerror(int32_t return_code);
 /*
  * Return 1 if the compression selection is allowed for the archive version
  * and policy, otherwise 0. archive_version uses
- * LIBMPQ_ARCHIVE_VERSION_* selectors (0=v1, 1=v2), not the one-based value
+ * LIBMPQ_ARCHIVE_VERSION_* selectors (0=v1, 1=v2, 2=v3), not the one-based value
  * returned by libmpq__archive_version. Zero means raw storage. LZMA requires
  * the exclusive LIBMPQ_COMPRESSION_LZMA selector, not on-disk method 0x12.
  * WAVE input and file-storage constraints still apply when adding a file.
@@ -406,7 +407,7 @@ extern LIBMPQ_API int32_t libmpq__archive_open_mpqe_io(
 );
 
 /*
- * Create a seekable MPQ v1 or v2 archive at mpq_filename.
+ * Create a seekable MPQ v1, v2, or v3 archive at mpq_filename.
  * The options determine the format, reserved table capacity, sector size, and
  * optional internal files; zero options select documented writer defaults.
  * The returned handle remains in write mode until close finalizes its tables,
@@ -418,7 +419,7 @@ extern LIBMPQ_API int32_t libmpq__archive_create(
 );
 
 /*
- * Create a new MPQE-encrypted stream containing an MPQ v1 or v2 archive.
+ * Create a new MPQE-encrypted stream containing an MPQ v1, v2, or v3 archive.
  * The archive is first finalized in a private temporary file, then encrypted
  * and atomically published at mpqe_filename when libmpq__archive_close()
  * succeeds. auth_code is borrowed only during this call; at least

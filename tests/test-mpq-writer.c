@@ -317,6 +317,20 @@ test_mpqe_writer_roundtrip(uint32_t version, int replace_existing)
         goto cleanup;
     if (libmpq__file_number(reader, "(listfile)", &number) != 0)
         goto cleanup;
+    if (version == LIBMPQ_ARCHIVE_VERSION_THREE) {
+        mpq_stream_s *stream = NULL;
+        uint32_t generation;
+        if (libmpq__archive_version(reader, &generation) != 0 || generation != 3 ||
+            reader->mpq_bet.header.entry_count == 0 ||
+            libmpq__stream_open_name(reader, "raw.bin", &stream) != 0)
+            goto cleanup;
+        result = libmpq__stream_seek(stream, 31, SEEK_SET);
+        if (result == 0)
+            result = libmpq__stream_read(stream, encrypted_output, 41, &transferred);
+        if (libmpq__stream_close(stream) != 0 || result != 0 || transferred != 41 ||
+            memcmp(encrypted_output, raw + 31, 41) != 0)
+            goto cleanup;
+    }
     status = 0;
 
 cleanup:
@@ -808,7 +822,8 @@ cleanup:
 static int
 test_writer_properties(void)
 {
-    static const uint32_t versions[] = { LIBMPQ_ARCHIVE_VERSION_ONE, LIBMPQ_ARCHIVE_VERSION_TWO };
+    static const uint32_t versions[] = { LIBMPQ_ARCHIVE_VERSION_ONE, LIBMPQ_ARCHIVE_VERSION_TWO,
+                                         LIBMPQ_ARCHIVE_VERSION_THREE };
     static const uint32_t sector_sizes[] = { 512, 4096, 16384 };
     size_t i;
     size_t j;
@@ -1011,6 +1026,91 @@ test_writer_displaced_duplicate(void)
 #ifdef __GLIBC__
 typedef struct
 {
+    uint64_t position;
+    uint64_t size;
+    size_t read_size;
+    int closed;
+} writer_signature_io_s;
+
+/* Virtual storage checks wide signing positions without hashing a 4 GiB hole. */
+static ssize_t
+writer_signature_read(void *context, char *output, size_t size)
+{
+    writer_signature_io_s *io = context;
+    (void)output;
+    io->read_size = size;
+    return 0;
+}
+
+static ssize_t
+writer_signature_write(void *context, const char *input, size_t size)
+{
+    writer_signature_io_s *io = context;
+    (void)input;
+    if (size > (uint64_t)INT64_MAX - io->position)
+        return 0;
+    io->position += size;
+    if (io->position > io->size)
+        io->size = io->position;
+    return (ssize_t)size;
+}
+
+static int
+writer_signature_seek(void *context, off64_t *offset, int origin)
+{
+    writer_signature_io_s *io = context;
+    off64_t base = origin == SEEK_SET ? 0 : (off64_t)(origin == SEEK_END ? io->size : io->position);
+    if (*offset < -base || *offset > INT64_MAX - base)
+        return -1;
+    *offset += base;
+    io->position = (uint64_t)*offset;
+    return 0;
+}
+
+static int
+writer_signature_close(void *context)
+{
+    ((writer_signature_io_s *)context)->closed = 1;
+    return 0;
+}
+
+static int
+test_v3_high_signature_io(void)
+{
+    cookie_io_functions_t ops = { writer_signature_read, writer_signature_write,
+                                  writer_signature_seek, writer_signature_close };
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_THREE, 4, 512, 0, 0 };
+    uint8_t strong_key[sizeof(test_strong_signature_public_key)];
+    test_strong_signature_private_key(strong_key);
+    for (unsigned int strong = 0; strong < 2; ++strong) {
+        writer_signature_io_s io = { 0 };
+        mpq_archive_s *archive = NULL;
+        FILE *fp = fopencookie(&io, "w+b", ops);
+        TEST_CHECK(fp != NULL && setvbuf(fp, NULL, _IONBF, 0) == 0);
+        TEST_CHECK(
+            libmpq__writer_archive_create_file(&archive, "wide-signature", fp, &options) == 0
+        );
+        TEST_CHECK(libmpq__file_seek(fp, UINT64_C(0x100000040), SEEK_SET) == 0);
+        TEST_CHECK(
+            libmpq__archive_sign(
+                archive, strong ? LIBMPQ_SIGNATURE_STRONG : LIBMPQ_SIGNATURE_WEAK,
+                strong ? strong_key : test_signature_private_key,
+                strong ? sizeof(strong_key) : sizeof(test_signature_private_key)
+            ) == 0
+        );
+        if (!strong)
+            TEST_CHECK(archive->write_signature_offset == UINT64_C(0x100000040));
+        TEST_CHECK(
+            libmpq__archive_add_data(archive, "payload", (const uint8_t *)"data", 4, NULL) == 0
+        );
+        TEST_CHECK(libmpq__archive_close(archive) == LIBMPQ_ERROR_READ);
+        TEST_CHECK(io.closed && io.size > UINT32_MAX && io.read_size != 0 && io.read_size <= 16384);
+    }
+    return 0;
+}
+
+typedef struct
+{
     uint8_t bytes[16384];
     size_t size;
     uint64_t position;
@@ -1064,7 +1164,7 @@ writer_v3_fault_close(void *context)
 }
 
 static int
-test_private_v3_failures(void)
+test_v3_failures(void)
 {
     cookie_io_functions_t ops = { NULL, writer_v3_fault_write, writer_v3_fault_seek,
                                   writer_v3_fault_close };
@@ -1076,7 +1176,7 @@ test_private_v3_failures(void)
     FILE *fp = fopencookie(&reference, "w+b", ops);
     size_t i;
     TEST_CHECK(fp != NULL && setvbuf(fp, NULL, _IONBF, 0) == 0);
-    TEST_CHECK(libmpq__writer_archive_create_v3(&archive, "cookie-v3", fp, &options, false) == 0);
+    TEST_CHECK(libmpq__writer_archive_create_file(&archive, "cookie-v3", fp, &options) == 0);
     TEST_CHECK(libmpq__archive_add_data(archive, "payload", data, sizeof(data), NULL) == 0);
     TEST_CHECK(libmpq__writer_finalize(archive) == 0 && archive->write_finalized);
     positions[0] = 68;
@@ -1091,9 +1191,7 @@ test_private_v3_failures(void)
         int32_t result;
         fp = fopencookie(&fault, "w+b", ops);
         TEST_CHECK(fp != NULL && setvbuf(fp, NULL, _IONBF, 0) == 0);
-        TEST_CHECK(
-            libmpq__writer_archive_create_v3(&archive, "cookie-v3", fp, &options, false) == 0
-        );
+        TEST_CHECK(libmpq__writer_archive_create_file(&archive, "cookie-v3", fp, &options) == 0);
         if (i == 0)
             fault.fail_at = (size_t)positions[i];
         result = libmpq__archive_add_data(archive, "payload", data, sizeof(data), NULL);
@@ -1110,14 +1208,27 @@ test_private_v3_failures(void)
         TEST_CHECK(fault.bytes[0] == 0); /* No successful header escaped a failed write. */
     }
 
+    /* At the last representable classic table position, layout succeeds before I/O fails. */
+    {
+        writer_v3_fault_s fault = { { 0 }, 0, 0, SIZE_MAX, 0, 0 };
+        fp = fopencookie(&fault, "w+b", ops);
+        TEST_CHECK(fp != NULL && setvbuf(fp, NULL, _IONBF, 0) == 0);
+        TEST_CHECK(libmpq__writer_archive_create_file(&archive, "cookie-v3", fp, &options) == 0);
+        TEST_CHECK(libmpq__archive_add_data(archive, "payload", data, sizeof(data), NULL) == 0);
+        fault.end_override = UINT64_C(0xffffffffffff) - (positions[4] - positions[1]);
+        TEST_CHECK(libmpq__writer_finalize(archive) == LIBMPQ_ERROR_WRITE);
+        TEST_CHECK(archive->mpq_header.block_table_offset == UINT32_MAX);
+        TEST_CHECK(archive->mpq_header_ex.block_table_offset_high == UINT16_MAX);
+        TEST_CHECK(archive->mpq_header_v3.bet_table_offset > UINT32_MAX);
+        TEST_CHECK(libmpq__archive_close(archive) != 0 && fault.closed);
+    }
+
     /* Reject each overflowing prefix, then both kinds of unrepresentable classic offset. */
     for (i = 0; i < 7; ++i) {
         writer_v3_fault_s fault = { { 0 }, 0, 0, SIZE_MAX, 0, 0 };
         fp = fopencookie(&fault, "w+b", ops);
         TEST_CHECK(fp != NULL && setvbuf(fp, NULL, _IONBF, 0) == 0);
-        TEST_CHECK(
-            libmpq__writer_archive_create_v3(&archive, "cookie-v3", fp, &options, false) == 0
-        );
+        TEST_CHECK(libmpq__writer_archive_create_file(&archive, "cookie-v3", fp, &options) == 0);
         TEST_CHECK(libmpq__archive_add_data(archive, "payload", data, sizeof(data), NULL) == 0);
         if (i < 4) {
             uint64_t prefix = i == 0 ? 0 : positions[i + 1] - positions[1];
@@ -1137,8 +1248,9 @@ test_private_v3_failures(void)
 #endif
 
 static int
-test_private_v3_writer(uint32_t count, bool compress_tables, bool high)
+test_v3_writer(uint32_t count, bool compress_tables, uint64_t position)
 {
+    bool high = position > UINT32_MAX;
     mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_THREE, 16, 4096, 0, 0 };
     mpq_archive_s *archive = NULL;
     char path[512];
@@ -1156,18 +1268,29 @@ test_private_v3_writer(uint32_t count, bool compress_tables, bool high)
     uint8_t header[68];
     FILE *fp;
 
-    TEST_CHECK(test_temp_path(path, sizeof(path), "private-v3") == 0);
+    TEST_CHECK(test_temp_path(path, sizeof(path), "public-v3") == 0);
+    options.version = LIBMPQ_ARCHIVE_VERSION_THREE + 1;
     TEST_CHECK(libmpq__archive_create(&archive, path, &options) == LIBMPQ_ERROR_FORMAT);
     TEST_CHECK(archive == NULL);
+    options.version = LIBMPQ_ARCHIVE_VERSION_THREE;
     if (count == 8) {
         options.flags = LIBMPQ_ARCHIVE_CREATE_LISTFILE;
         options.attributes = LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5;
     }
-    TEST_CHECK(
-        libmpq__writer_archive_create_v3(&archive, path, NULL, &options, compress_tables) == 0
-    );
-    if (high)
-        TEST_CHECK(libmpq__file_seek(archive->fp, UINT64_C(0x100000040), SEEK_SET) == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &options) == 0);
+    TEST_CHECK(archive->write_ext_compress);
+
+    /* Raw table storage is an internal test variant, not a new public option. */
+    archive->write_ext_compress = compress_tables;
+    if (count == 8)
+        TEST_CHECK(
+            libmpq__archive_sign(
+                archive, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+                sizeof(test_signature_private_key)
+            ) == 0
+        );
+    if (position != 0)
+        TEST_CHECK(libmpq__file_seek(archive->fp, (libmpq__off_t)position, SEEK_SET) == 0);
     {
         mpq_writer_s *writer = NULL;
         TEST_CHECK(
@@ -1198,12 +1321,22 @@ test_private_v3_writer(uint32_t count, bool compress_tables, bool high)
                 archive, name, payload, i == 1 ? 0 : (i >= 6 ? 233 : sizeof(payload)), &storage
             );
             if (result != 0)
-                fprintf(stderr, "private v3 add %u failed: %d\n", i, result);
+                fprintf(stderr, "v3 add %u failed: %d\n", i, result);
             TEST_CHECK(result == 0);
         }
     }
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     fp = libmpq__file_open(path, "rb");
+    {
+        mpq_update_s *update = NULL;
+        mpq_patch_s *patch = NULL;
+        char patch_path[1024];
+        snprintf(patch_path, sizeof(patch_path), "%s.patch", path);
+        TEST_CHECK(libmpq__update_begin(&update, path) == LIBMPQ_ERROR_FORMAT && update == NULL);
+        TEST_CHECK(
+            libmpq__patch_begin(&patch, path, patch_path) == LIBMPQ_ERROR_FORMAT && patch == NULL
+        );
+    }
     TEST_CHECK(fp != NULL && fread(header, 1, sizeof(header), fp) == sizeof(header));
     TEST_CHECK(fclose(fp) == 0);
     TEST_CHECK(header[4] == 68 && header[12] == 2 && header[13] == 0);
@@ -1212,7 +1345,7 @@ test_private_v3_writer(uint32_t count, bool compress_tables, bool high)
     TEST_CHECK(archive->mpq_header_v3.archive_size == archive->file_size);
     TEST_CHECK(archive->mpq_header.archive_size == (archive->file_size & UINT32_MAX));
     TEST_CHECK(
-        libmpq__archive_files(archive, &files) == 0 && files == count + (count == 8 ? 2u : 0u)
+        libmpq__archive_files(archive, &files) == 0 && files == count + (count == 8 ? 3u : 0u)
     );
     TEST_CHECK(archive->mpq_bet.header.entry_count == files);
     TEST_CHECK(archive->mpq_header.block_table_count == files && archive->entry_count == files);
@@ -1236,7 +1369,7 @@ test_private_v3_writer(uint32_t count, bool compress_tables, bool high)
     TEST_CHECK(
         hash_position + (uint64_t)archive->mpq_header.hash_table_count * 16 == block_position
     );
-    if (high) {
+    if (position != 0) {
         TEST_CHECK(
             archive->mpq_header_ex.hash_table_offset_high == 1 &&
             archive->mpq_header_ex.block_table_offset_high == 1
@@ -1246,6 +1379,8 @@ test_private_v3_writer(uint32_t count, bool compress_tables, bool high)
             archive->mpq_header_v3.het_table_offset > UINT32_MAX &&
             archive->mpq_header_v3.bet_table_offset > UINT32_MAX
         );
+    }
+    if (high) {
         TEST_CHECK(archive->mpq_header_ex.extended_offset == block_position + (uint64_t)files * 16);
         TEST_CHECK(
             archive->mpq_header_v3.archive_size ==
@@ -1274,10 +1409,13 @@ test_private_v3_writer(uint32_t count, bool compress_tables, bool high)
         );
         TEST_CHECK(number == classic_number);
         entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
-        TEST_CHECK(archive->classic_entry_indices[i] == archive->bet_entry_indices[i]);
+        uint32_t row = entry->classic_source_index;
+        if (position != 0 && i == 0)
+            TEST_CHECK(entry->offset == position);
+        TEST_CHECK(archive->classic_entry_indices[row] == archive->bet_entry_indices[row]);
         TEST_CHECK(entry->source_mask == (LIBMPQ_ENTRY_SOURCE_CLASSIC | LIBMPQ_ENTRY_SOURCE_BET));
-        TEST_CHECK(entry->classic_source_index == i && entry->bet_source_index == i);
-        TEST_CHECK(libmpq__bet_record_decode(&archive->mpq_bet, i, &record) == 0);
+        TEST_CHECK(entry->bet_source_index == row);
+        TEST_CHECK(libmpq__bet_record_decode(&archive->mpq_bet, row, &record) == 0);
         TEST_CHECK(
             record.offset == entry->offset && record.packed_size == entry->packed_size &&
             record.unpacked_size == entry->unpacked_size && record.flags == entry->flags
@@ -1297,7 +1435,7 @@ test_private_v3_writer(uint32_t count, bool compress_tables, bool high)
         {
             int32_t result = libmpq__file_read(archive, number, actual, length, &transferred);
             if (result != 0)
-                fprintf(stderr, "private v3 read %u failed: %d\n", i, result);
+                fprintf(stderr, "v3 read %u failed: %d\n", i, result);
             TEST_CHECK(result == 0);
         }
         TEST_CHECK(transferred == (libmpq__off_t)length && memcmp(actual, payload, length) == 0);
@@ -1321,6 +1459,16 @@ test_private_v3_writer(uint32_t count, bool compress_tables, bool high)
             TEST_CHECK(memcmp(actual, payload, 31) == 0);
             TEST_CHECK(libmpq__stream_close(stream) == 0);
         }
+    }
+    if (count == 8) {
+        uint32_t mismatch;
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, LIBMPQ_SIGNATURE_WEAK, test_signature_public_key,
+                sizeof(test_signature_public_key), &mismatch
+            ) == 0 &&
+            mismatch == 0
+        );
     }
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     TEST_CHECK(remove(path) == 0);
@@ -1367,20 +1515,43 @@ test_legacy_writer_capacity(uint32_t version)
     return 0;
 }
 
-/* Verify deterministic output, generated properties, and MPQE creation/failure hardening. */
+/* Validate the capacity ceiling without allocating multi-gigabyte tables. */
+static int
+test_v3_capacity_options(void)
+{
+    mpq_archive_s *archive = NULL;
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_THREE, 0x04000000u, 4096, 0,
+                                             0 };
+    TEST_CHECK(libmpq__writer_validate_options(&options) == 0);
+    TEST_CHECK(
+        (uint64_t)options.max_files * 2 * LIBMPQ_HASH_ENTRY_WIRE_SIZE == UINT64_C(0x80000000)
+    );
+    ++options.max_files;
+    TEST_CHECK(libmpq__writer_validate_options(&options) == LIBMPQ_ERROR_FORMAT);
+    TEST_CHECK(
+        libmpq__archive_create(&archive, "invalid-capacity.mpq", &options) == LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(archive == NULL);
+    return 0;
+}
+
 int
 main(void)
 {
     TEST_CHECK(test_legacy_writer_capacity(LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
     TEST_CHECK(test_legacy_writer_capacity(LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
 #ifdef __GLIBC__
-    TEST_CHECK(test_private_v3_failures() == 0);
+    TEST_CHECK(test_v3_failures() == 0);
+    TEST_CHECK(test_v3_high_signature_io() == 0);
 #endif
-    TEST_CHECK(test_private_v3_writer(0, false, false) == 0);
-    TEST_CHECK(test_private_v3_writer(1, true, false) == 0);
-    TEST_CHECK(test_private_v3_writer(8, false, false) == 0);
-    TEST_CHECK(test_private_v3_writer(8, true, false) == 0);
-    TEST_CHECK(test_private_v3_writer(1, true, true) == 0);
+    TEST_CHECK(test_v3_capacity_options() == 0);
+    TEST_CHECK(test_v3_writer(0, false, false) == 0);
+    TEST_CHECK(test_v3_writer(1, true, false) == 0);
+    TEST_CHECK(test_v3_writer(8, false, false) == 0);
+    TEST_CHECK(test_v3_writer(8, true, false) == 0);
+    TEST_CHECK(test_v3_writer(1, true, UINT32_MAX) == 0);
+    TEST_CHECK(test_v3_writer(1, true, UINT64_C(0x100000000)) == 0);
+    TEST_CHECK(test_v3_writer(1, true, UINT64_C(0x100000040)) == 0);
     TEST_CHECK(test_writer_abort_on_close() == 0);
     TEST_CHECK(test_writer_determinism() == 0);
     TEST_CHECK(test_writer_duplicate_identity() == 0);
@@ -1391,8 +1562,11 @@ main(void)
     TEST_CHECK(test_mpqe_writer_roundtrip(LIBMPQ_ARCHIVE_VERSION_ONE, 1) == 0);
     TEST_CHECK(test_mpqe_writer_roundtrip(LIBMPQ_ARCHIVE_VERSION_TWO, 0) == 0);
     TEST_CHECK(test_mpqe_writer_roundtrip(LIBMPQ_ARCHIVE_VERSION_TWO, 1) == 0);
+    TEST_CHECK(test_mpqe_writer_roundtrip(LIBMPQ_ARCHIVE_VERSION_THREE, 0) == 0);
+    TEST_CHECK(test_mpqe_writer_roundtrip(LIBMPQ_ARCHIVE_VERSION_THREE, 1) == 0);
     TEST_CHECK(test_mpqe_writer_byte_equality(LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
     TEST_CHECK(test_mpqe_writer_byte_equality(LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
+    TEST_CHECK(test_mpqe_writer_byte_equality(LIBMPQ_ARCHIVE_VERSION_THREE) == 0);
     TEST_CHECK(test_mpqe_writer_chdir() == 0);
     TEST_CHECK(test_mpqe_writer_fault(MPQE_WRITER_FAULT_FINALIZE, 0) == 0);
     TEST_CHECK(test_mpqe_writer_fault(MPQE_WRITER_FAULT_TRANSFORM, 0) == 0);
