@@ -59,4 +59,11 @@ int32_t libmpq__ext_tables_build(
 void libmpq__het_builder_free(mpq_het_builder_s *builder);
 void libmpq__bet_builder_free(mpq_bet_builder_s *builder);
 
+/*
+ * Serialize a complete plaintext, uncompressed BET table. The caller owns the
+ * returned buffer and frees it with free(). Failure resets buffer/size to NULL/0.
+ * Builders remain unchanged; no filenames are hashed and no archive is written.
+ */
+int32_t libmpq__bet_serialize(const mpq_bet_builder_s *builder, uint8_t **buffer, size_t *size);
+
 #endif

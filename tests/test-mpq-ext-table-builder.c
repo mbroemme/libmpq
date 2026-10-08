@@ -26,7 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Test-only wire emission: production builders never serialize an envelope. */
+/* HET emission remains test-only; production HET serialization is not enabled. */
 static uint8_t *
 het_wire(const mpq_het_builder_s *h)
 {
@@ -50,33 +50,12 @@ het_wire(const mpq_het_builder_s *h)
 static uint8_t *
 bet_wire(const mpq_bet_builder_s *b)
 {
-    uint8_t *wire = calloc(12u + b->header.table_size, 1);
-    const mpq_bet_field_s *fields[5] = { &b->header.file_position, &b->header.file_size,
-                                         &b->header.compressed_size, &b->header.flag_index,
-                                         &b->header.unknown_field };
-    size_t i;
-    if (wire == NULL)
+    uint8_t *wire = NULL;
+    size_t size;
+    if (libmpq__bet_serialize(b, &wire, &size) != 0 ||
+        size != LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE + b->header.table_size) {
+        free(wire);
         return NULL;
-    libmpq__store_le32(wire, LIBMPQ_BET_SIGNATURE);
-    libmpq__store_le32(wire + 4, 1);
-    libmpq__store_le32(wire + 8, b->header.table_size);
-    libmpq__store_le32(wire + 12, b->header.table_size);
-    libmpq__store_le32(wire + 16, b->header.entry_count);
-    libmpq__store_le32(wire + 20, b->header.unknown);
-    libmpq__store_le32(wire + 24, b->header.table_entry_size);
-    for (i = 0; i < 5; ++i) {
-        libmpq__store_le32(wire + 28 + i * 4, fields[i]->bit_index);
-        libmpq__store_le32(wire + 48 + i * 4, fields[i]->bit_count);
-    }
-    libmpq__store_le32(wire + 68, b->header.name_hash2_total);
-    libmpq__store_le32(wire + 72, b->header.name_hash2_extra);
-    libmpq__store_le32(wire + 76, b->header.name_hash2_size);
-    libmpq__store_le32(wire + 80, b->header.name_hash_array_size);
-    libmpq__store_le32(wire + 84, b->header.flag_count);
-    if (b->header.entry_count != 0) {
-        memcpy(wire + b->header.flags.offset, b->flags, b->header.flags.size);
-        memcpy(wire + b->header.records.offset, b->records, b->header.records.size);
-        memcpy(wire + b->header.name_hash2.offset, b->name_hash2, b->header.name_hash2.size);
     }
     return wire;
 }
@@ -111,6 +90,7 @@ roundtrip(const mpq_ext_table_file_s *files, size_t count, uint32_t capacity)
     for (i = 0; i < count; ++i) {
         uint64_t index;
         uint64_t hash;
+        uint64_t name_hash2;
         mpq_het_hash_s parts;
         mpq_bet_entry_s record;
         mpq_entry_s entry;
@@ -128,6 +108,8 @@ roundtrip(const mpq_ext_table_file_s *files, size_t count, uint32_t capacity)
             record.unpacked_size == files[i].unpacked_size && record.flags == files[i].flags
         );
         TEST_CHECK(record.unknown == 0 && record.name_hash2 == parts.name_hash2);
+        TEST_CHECK(libmpq__bet_name_hash2(&view_b, index, &name_hash2) == 0);
+        TEST_CHECK(name_hash2 == parts.name_hash2);
         TEST_CHECK(libmpq__bet_entry_decode(&view_b, index, parts.name_hash2, &entry) == 0);
         TEST_CHECK(entry.source_mask == LIBMPQ_ENTRY_SOURCE_BET && entry.bet_source_index == i);
     }
@@ -288,10 +270,208 @@ test_collisions_and_errors(void)
     return 0;
 }
 
+/* Independent full wire vector: five-bit record and a fixed reference HET hash. */
+static int
+test_serialization_vector(void)
+{
+    static const uint8_t expected[100] = {
+        0x42, 0x45, 0x54, 0x1a, 1, 0, 0, 0,    0x58, 0,    0,    0,    0x58, 0,    0,   0, 1,
+        0,    0,    0,    0,    0, 0, 0, 5,    0,    0,    0,    0,    0,    0,    0,   1, 0,
+        0,    0,    3,    0,    0, 0, 5, 0,    0,    0,    5,    0,    0,    0,    1,   0, 0,
+        0,    2,    0,    0,    0, 2, 0, 0,    0,    0,    0,    0,    0,    0,    0,   0, 0,
+        56,   0,    0,    0,    0, 0, 0, 0,    56,   0,    0,    0,    7,    0,    0,   0, 1,
+        0,    0,    0,    4,    3, 2, 1, 0x1d, 0xda, 0xf6, 0xb0, 0xc8, 0x19, 0x16, 0x42
+    };
+    mpq_ext_table_file_s file = { "prefix-0088.bin", 1, 3, 2, 0x01020304 };
+    mpq_het_builder_s h = { 0 };
+    mpq_bet_builder_s b = { 0 };
+    mpq_bet_header_s header;
+    uint8_t *wire;
+    uint8_t *again;
+    size_t size;
+    size_t again_size;
+
+    TEST_CHECK(libmpq__ext_tables_build(&file, 1, &h, &b) == 0);
+    TEST_CHECK(libmpq__bet_serialize(&b, &wire, &size) == 0);
+    TEST_CHECK(size == sizeof(expected) && memcmp(wire, expected, size) == 0);
+    TEST_CHECK(libmpq__bet_header_decode(wire, size, &header) == 0);
+    TEST_CHECK(header.table_size == 88 && header.envelope.data_size == 88);
+    TEST_CHECK(header.records.offset == 92 && header.name_hash2.offset == 93);
+    TEST_CHECK(libmpq__bet_serialize(&b, &again, &again_size) == 0);
+    TEST_CHECK(again_size == size && memcmp(wire, again, size) == 0);
+    free(again);
+    free(wire);
+
+    /* Only meaningful fields are emitted; poisoned input padding is not copied. */
+    b.records[0] |= 0xe0;
+    TEST_CHECK(libmpq__bet_serialize(&b, &wire, &size) == 0);
+    TEST_CHECK(memcmp(wire, expected, size) == 0 && b.records[0] == 0xfd);
+    free(wire);
+    file.offset = file.unpacked_size = file.packed_size = 0;
+    TEST_CHECK(libmpq__ext_tables_build(&file, 1, &h, &b) == 0);
+    b.records[0] = 0xff;
+    TEST_CHECK(libmpq__bet_serialize(&b, &wire, &size) == 0);
+    TEST_CHECK(wire[b.header.records.offset] == 0 && b.records[0] == 0xff);
+    free(wire);
+    libmpq__het_builder_free(&h);
+    libmpq__bet_builder_free(&b);
+    return 0;
+}
+
+static int
+test_serialization_stride(void)
+{
+    mpq_ext_table_file_s files[2] = { { "first", 1, 2, 3, 1 }, { "second", 4, 5, 6, 1 } };
+    mpq_het_builder_s h = { 0 };
+    mpq_bet_builder_s b = { 0 };
+    mpq_bet_s view;
+    uint64_t hashes[2];
+    uint8_t *wire;
+    size_t size;
+    size_t hash_bytes;
+    size_t i;
+
+    TEST_CHECK(libmpq__ext_tables_build(files, 2, &h, &b) == 0);
+    for (i = 0; i < 2; ++i)
+        TEST_CHECK(
+            libmpq__bit_get(b.name_hash2, b.header.name_hash2.size, i * 56, 56, &hashes[i]) == 0
+        );
+    TEST_CHECK(libmpq__bit_bytes(2, 59, &hash_bytes) == 0);
+    free(b.name_hash2);
+    b.name_hash2 = malloc(hash_bytes);
+    TEST_CHECK(b.name_hash2 != NULL);
+    memset(b.name_hash2, 0xff, hash_bytes);
+    b.header.table_size += (uint32_t)(hash_bytes - b.header.name_hash2.size);
+    b.header.envelope.data_size = b.header.table_size;
+    b.header.name_hash2.size = hash_bytes;
+    b.header.name_hash_array_size = (uint32_t)hash_bytes;
+    b.header.name_hash2_total = 59;
+    b.header.name_hash2_extra = 3;
+    for (i = 0; i < 2; ++i)
+        TEST_CHECK(libmpq__bit_set(b.name_hash2, hash_bytes, i * 59, 56, hashes[i]) == 0);
+    TEST_CHECK(libmpq__bet_serialize(&b, &wire, &size) == 0);
+    TEST_CHECK(libmpq__bet_view_init(wire, size, &view) == 0);
+    for (i = 0; i < 2; ++i) {
+        uint64_t hash;
+        uint64_t padding;
+        mpq_bet_entry_s record;
+        TEST_CHECK(libmpq__bet_name_hash2(&view, i, &hash) == 0 && hash == hashes[i]);
+        TEST_CHECK(
+            libmpq__bit_get(view.name_hash2, view.name_hash2_size, i * 59 + 56, 3, &padding) == 0
+        );
+        TEST_CHECK(padding == 0);
+        TEST_CHECK(libmpq__bet_record_decode(&view, i, &record) == 0);
+        TEST_CHECK(record.offset == files[i].offset && record.flags == 1);
+    }
+    TEST_CHECK((view.name_hash2[hash_bytes - 1] & 0xc0) == 0);
+    free(wire);
+    libmpq__het_builder_free(&h);
+    libmpq__bet_builder_free(&b);
+    return 0;
+}
+
+/* A malformed private state must reset both outputs and never expose partial bytes. */
+static int
+serialize_failure(const mpq_bet_builder_s *b, int32_t error)
+{
+    uint8_t sentinel = 0;
+    uint8_t *wire = &sentinel;
+    size_t size = SIZE_MAX;
+    TEST_CHECK(libmpq__bet_serialize(b, &wire, &size) == error);
+    TEST_CHECK(wire == NULL && size == 0);
+    return 0;
+}
+
+static int
+test_serialization_errors(void)
+{
+    mpq_ext_table_file_s file = { "errors", 1, 2, 3, 1 };
+    mpq_het_builder_s h = { 0 };
+    mpq_bet_builder_s b = { 0 };
+    mpq_bet_builder_s bad;
+    uint8_t *wire = NULL;
+    size_t size = 1;
+
+    TEST_CHECK(serialize_failure(NULL, LIBMPQ_ERROR_SIZE) == 0);
+    TEST_CHECK(libmpq__ext_tables_build(&file, 1, &h, &b) == 0);
+    TEST_CHECK(libmpq__bet_serialize(&b, NULL, &size) == LIBMPQ_ERROR_SIZE && size == 0);
+    TEST_CHECK(libmpq__bet_serialize(&b, &wire, NULL) == LIBMPQ_ERROR_SIZE && wire == NULL);
+    bad = b;
+    bad.header.entry_count = UINT32_MAX;
+    bad.header.table_entry_size = UINT32_MAX;
+    TEST_CHECK(serialize_failure(&bad, LIBMPQ_ERROR_SIZE) == 0);
+    bad = b;
+    bad.header.flag_count = UINT32_MAX;
+    TEST_CHECK(serialize_failure(&bad, LIBMPQ_ERROR_SIZE) == 0);
+    bad = b;
+    bad.header.name_hash2_total = UINT32_MAX;
+    TEST_CHECK(serialize_failure(&bad, LIBMPQ_ERROR_SIZE) == 0);
+    bad = b;
+    ++bad.header.table_size;
+    TEST_CHECK(serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad = b;
+    ++bad.header.envelope.data_size;
+    TEST_CHECK(serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad = b;
+    bad.header.envelope.signature = LIBMPQ_HET_SIGNATURE;
+    TEST_CHECK(serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad = b;
+    ++bad.header.envelope.version;
+    TEST_CHECK(serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad = b;
+    bad.header.records.offset = SIZE_MAX;
+    TEST_CHECK(serialize_failure(&bad, LIBMPQ_ERROR_SIZE) == 0);
+    bad = b;
+    --bad.header.records.size;
+    TEST_CHECK(serialize_failure(&bad, LIBMPQ_ERROR_SIZE) == 0);
+    bad = b;
+    --bad.header.name_hash2.size;
+    TEST_CHECK(serialize_failure(&bad, LIBMPQ_ERROR_SIZE) == 0);
+    bad = b;
+    bad.records = NULL;
+    TEST_CHECK(serialize_failure(&bad, LIBMPQ_ERROR_SIZE) == 0);
+    bad = b;
+    bad.flags = NULL;
+    TEST_CHECK(serialize_failure(&bad, LIBMPQ_ERROR_SIZE) == 0);
+    bad = b;
+    bad.name_hash2 = NULL;
+    TEST_CHECK(serialize_failure(&bad, LIBMPQ_ERROR_SIZE) == 0);
+    bad = b;
+    bad.header.file_position.bit_count = 65;
+    TEST_CHECK(serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad = b;
+    bad.header.file_position.bit_index = UINT32_MAX;
+    TEST_CHECK(serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad = b;
+    bad.header.file_position = b.header.file_size;
+    TEST_CHECK(serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad = b;
+    bad.header.name_hash2_extra = 1;
+    TEST_CHECK(serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    {
+        mpq_ext_table_file_s pair[2] = { { "left", 1, 2, 3, 1 }, { "right", 4, 5, 6, 2 } };
+        TEST_CHECK(libmpq__ext_tables_build(pair, 2, &h, &b) == 0);
+        bad = b;
+        bad.header.flag_count = 1;
+        bad.header.flags.size -= 4;
+        bad.header.records.offset -= 4;
+        bad.header.name_hash2.offset -= 4;
+        bad.header.table_size -= 4;
+        bad.header.envelope.data_size -= 4;
+        TEST_CHECK(serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    }
+    libmpq__het_builder_free(&h);
+    libmpq__bet_builder_free(&b);
+    return 0;
+}
+
 int
 main(void)
 {
     TEST_CHECK(test_widths() == 0);
     TEST_CHECK(test_collisions_and_errors() == 0);
+    TEST_CHECK(test_serialization_vector() == 0);
+    TEST_CHECK(test_serialization_stride() == 0);
+    TEST_CHECK(test_serialization_errors() == 0);
     return 0;
 }

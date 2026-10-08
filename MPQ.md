@@ -464,7 +464,8 @@ public v3 creation.
 
 Private owned HET/BET builders accept completed logical writer records with
 filenames and full-width positions/sizes. They do not use classic block rows or
-enable public v3 creation. No common envelope or archive bytes are serialized.
+enable public v3 creation. Building alone does not serialize a common envelope
+or write archive bytes.
 
 BET fields use consecutive position, unpacked-size, packed-size, flag-index,
 and reserved-field ordering. Each width is the minimum needed by the input;
@@ -499,10 +500,40 @@ is not merely duplicate filename rejection.
 Identical inputs generate identical headers and packed arrays. Both decoded
 table sizes respect the existing 1 MiB envelope-inclusive defensive limit.
 Builders own their allocations; failed builds preserve prior outputs and
-cleanup is safe for empty or partially built tables. Synthetic tests serialize
-temporary buffers only to validate the builders against the existing parsers,
-HET lookup, and BET record decoder. Archive serialization, encryption,
+cleanup is safe for empty or partially built tables. Synthetic tests validate
+the builders against the existing parsers, HET lookup, and BET record decoder.
+HET serialization remains test-only. Archive serialization, encryption,
 compression, layout/finalization, and public v3 creation remain unimplemented.
+
+### Private BET wire serialization
+
+`libmpq__bet_serialize()` converts an existing owned BET builder into an owned
+`uint8_t` buffer containing an uncompressed, unencrypted table. The caller
+releases the returned buffer with `free()`. Failure resets the buffer to NULL
+and its size to zero; the builder is never modified.
+
+The wire layout is the 12-byte common envelope, the 76-byte BET-specific header,
+then the flags array, packed file records, and packed NameHash2 values. The
+envelope signature/version and all nineteen `uint32_t` header values are
+encoded explicitly in little-endian order. Both `data_size` and `table_size`
+equal the complete output size minus the 12-byte common envelope.
+
+Serialization preserves the builder's flag ordering, storing each logical
+`uint32_t` value as four little-endian bytes. It does not deduplicate flags,
+recalculate record geometry, or hash filenames. Existing `uint64_t` field
+values are decoded from the builder and written with checked bit access at
+the declared bit indexes/counts. Zero-width fields remain zero. NameHash2 uses
+the declared total width as its stride and the effective width as its value
+width; extra bits and unused padding are emitted as zero.
+
+Packed byte counts, array ranges, envelope sizing, and conversions are checked
+before output allocation. The existing 1 MiB limit includes the envelope.
+The canonical BET parser validates the encoded header before packed source
+arrays are accessed; invalid field layouts or flag indices fail without
+publishing a partial buffer. Output starts zeroed for deterministic padding.
+Synthetic tests include an independent complete wire vector and round trips
+through the header, record, and NameHash2 readers. No tables are written into
+MPQ archives, and no public v3 writer option is enabled.
 
 ## Internal files and integrity data
 

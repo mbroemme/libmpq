@@ -24,6 +24,142 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Emit only fixed-width little-endian metadata, never a native structure. */
+static void
+bet_header_encode(const mpq_bet_header_s *header, uint8_t *wire)
+{
+    const mpq_bet_field_s *fields[5] = { &header->file_position, &header->file_size,
+                                         &header->compressed_size, &header->flag_index,
+                                         &header->unknown_field };
+    uint8_t *specific = wire + LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE;
+    size_t i;
+
+    libmpq__store_le32(wire, header->envelope.signature);
+    libmpq__store_le32(wire + 4, header->envelope.version);
+    libmpq__store_le32(wire + 8, header->envelope.data_size);
+    libmpq__store_le32(specific, header->table_size);
+    libmpq__store_le32(specific + 4, header->entry_count);
+    libmpq__store_le32(specific + 8, header->unknown);
+    libmpq__store_le32(specific + 12, header->table_entry_size);
+    for (i = 0; i < 5; ++i) {
+        libmpq__store_le32(specific + 16 + i * 4, fields[i]->bit_index);
+        libmpq__store_le32(specific + 36 + i * 4, fields[i]->bit_count);
+    }
+    libmpq__store_le32(specific + 56, header->name_hash2_total);
+    libmpq__store_le32(specific + 60, header->name_hash2_extra);
+    libmpq__store_le32(specific + 64, header->name_hash2_size);
+    libmpq__store_le32(specific + 68, header->name_hash_array_size);
+    libmpq__store_le32(specific + 72, header->flag_count);
+}
+
+int32_t
+libmpq__bet_serialize(const mpq_bet_builder_s *builder, uint8_t **buffer, size_t *size)
+{
+    mpq_bet_s view = { 0 };
+    mpq_bet_header_s checked;
+    mpq_bet_field_s fields[5];
+    size_t bytes[3];
+    size_t total = LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE + LIBMPQ_BET_HEADER_WIRE_SIZE;
+    size_t i;
+    uint8_t *wire;
+    int32_t result;
+
+    if (buffer != NULL)
+        *buffer = NULL;
+    if (size != NULL)
+        *size = 0;
+    if (builder == NULL || buffer == NULL || size == NULL)
+        return LIBMPQ_ERROR_SIZE;
+    view.header = builder->header;
+    if (libmpq__bit_bytes(view.header.flag_count, 32, &bytes[0]) != 0 ||
+        libmpq__bit_bytes(view.header.entry_count, view.header.table_entry_size, &bytes[1]) != 0 ||
+        libmpq__bit_bytes(view.header.entry_count, view.header.name_hash2_total, &bytes[2]) != 0)
+        return LIBMPQ_ERROR_SIZE;
+    for (i = 0; i < 3; ++i) {
+        if (bytes[i] > LIBMPQ_EXT_TABLE_MAX_SIZE - total)
+            return LIBMPQ_ERROR_SIZE;
+        total += bytes[i];
+    }
+
+    /* Checked component sizes bound all sums, conversions and later bit offsets. */
+    if (view.header.envelope.signature != LIBMPQ_BET_SIGNATURE ||
+        view.header.envelope.version != LIBMPQ_EXT_TABLE_VERSION ||
+        view.header.table_size != total - LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE ||
+        view.header.envelope.data_size != view.header.table_size ||
+        view.header.name_hash_array_size != bytes[2] ||
+        view.header.name_hash2_size > view.header.name_hash2_total ||
+        view.header.name_hash2_extra != view.header.name_hash2_total - view.header.name_hash2_size)
+        return LIBMPQ_ERROR_FORMAT;
+    if (view.header.flags.offset !=
+            LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE + LIBMPQ_BET_HEADER_WIRE_SIZE ||
+        view.header.flags.size != bytes[0] ||
+        view.header.records.offset != view.header.flags.offset + bytes[0] ||
+        view.header.records.size != bytes[1] ||
+        view.header.name_hash2.offset != view.header.records.offset + bytes[1] ||
+        view.header.name_hash2.size != bytes[2] || (bytes[0] != 0 && builder->flags == NULL) ||
+        (bytes[1] != 0 && builder->records == NULL) ||
+        (bytes[2] != 0 && builder->name_hash2 == NULL))
+        return LIBMPQ_ERROR_SIZE;
+    wire = calloc(total, 1);
+    if (wire == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    bet_header_encode(&view.header, wire);
+
+    /* Reuse the canonical parser's layout checks before accessing packed input. */
+    result = libmpq__bet_header_decode(wire, total, &checked);
+    if (result != 0)
+        goto fail;
+    view.flags = builder->flags;
+    view.flags_size = bytes[0];
+    view.records = builder->records;
+    view.records_size = bytes[1];
+    view.name_hash2 = builder->name_hash2;
+    view.name_hash2_size = bytes[2];
+    fields[0] = checked.file_position;
+    fields[1] = checked.file_size;
+    fields[2] = checked.compressed_size;
+    fields[3] = checked.flag_index;
+    fields[4] = checked.unknown_field;
+    for (i = 0; i < checked.flag_count; ++i)
+        libmpq__store_le32(
+            wire + checked.flags.offset + i * 4, libmpq__load_le32(builder->flags + i * 4)
+        );
+    for (i = 0; i < checked.entry_count; ++i) {
+        mpq_bet_entry_s record;
+        uint64_t values[5];
+        uint64_t base = (uint64_t)i * checked.table_entry_size;
+        size_t field;
+        result = libmpq__bet_record_decode(&view, i, &record);
+        if (result != 0)
+            goto fail;
+        values[0] = record.offset;
+        values[1] = record.unpacked_size;
+        values[2] = record.packed_size;
+        values[3] = record.flag_index;
+        values[4] = record.unknown;
+        for (field = 0; field < 5; ++field) {
+            result = libmpq__bit_set(
+                wire + checked.records.offset, bytes[1], base + fields[field].bit_index,
+                fields[field].bit_count, values[field]
+            );
+            if (result != 0)
+                goto fail;
+        }
+        result = libmpq__bit_set(
+            wire + checked.name_hash2.offset, bytes[2], (uint64_t)i * checked.name_hash2_total,
+            checked.name_hash2_size, record.name_hash2
+        );
+        if (result != 0)
+            goto fail;
+    }
+    *buffer = wire;
+    *size = total;
+    return 0;
+fail:
+    free(wire);
+    return result;
+}
+
 static uint32_t
 value_bits(uint64_t value)
 {
