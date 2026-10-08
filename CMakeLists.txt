@@ -117,6 +117,7 @@ if(BUILD_TESTING)
     set(test_modules
         bit
         ext-table
+        ext-table-builder
         het
         bet
         file

@@ -460,6 +460,50 @@ writer support, preserve these explicit source mappings and validate generated
 tables independently; neither this fixture recipe nor reconciliation enables
 public v3 creation.
 
+### In-memory extended-table writer builders
+
+Private owned HET/BET builders accept completed logical writer records with
+filenames and full-width positions/sizes. They do not use classic block rows or
+enable public v3 creation. No common envelope or archive bytes are serialized.
+
+BET fields use consecutive position, unpacked-size, packed-size, flag-index,
+and reserved-field ordering. Each width is the minimum needed by the input;
+zero values may use zero bits. If all record fields have zero width, the builder
+uses a one-bit minimum record size. Reserved fields are zero. Unique flags are
+sorted numerically and stored as little-endian `uint32_t` values: each logical
+flag occupies four bytes in the wire representation. One unique flags value
+requires a zero-bit flag index, including when multiple files share that value.
+Multiple unique flags values use the minimum width needed to represent their
+indices.
+
+Zero files produce empty logical HET/BET tables with zero entry counts and no
+BET flags, records, or NameHash2 values. HET retains its minimum free-slot
+storage and nonzero index width; the BET header retains the one-bit minimum
+record size.
+
+HET reuses the reader's normalized Jenkins hash and full 64-bit partition:
+the high byte is NameHash1 and the low 56 bits are NameHash2. BET stores exactly
+56 NameHash2 bits per row with no extra bits. HET capacity is the smallest odd
+number at least three and at least ceil(4 * file_count / 3), limiting occupancy
+to 75 percent. Input-order insertion uses bounded linear probing and zero
+empty markers.
+
+Filenames are normalized by the existing HET hashing implementation, preserving
+its case/separator normalization and 264-byte filename-length limit. Identical
+normalized names produce identical hashes, including names made indistinguishable
+by that length limit. Distinct filenames can also theoretically produce the same
+64-bit HET hash. The builder conservatively rejects duplicate full normalized
+HET hashes in either case, rather than creating indistinguishable entries; this
+is not merely duplicate filename rejection.
+
+Identical inputs generate identical headers and packed arrays. Both decoded
+table sizes respect the existing 1 MiB envelope-inclusive defensive limit.
+Builders own their allocations; failed builds preserve prior outputs and
+cleanup is safe for empty or partially built tables. Synthetic tests serialize
+temporary buffers only to validate the builders against the existing parsers,
+HET lookup, and BET record decoder. Archive serialization, encryption,
+compression, layout/finalization, and public v3 creation remain unimplemented.
+
 ## Internal files and integrity data
 
 `(listfile)` is optional text metadata containing names separated by CR/LF or

@@ -13,6 +13,7 @@ noinst_HEADERS = \
 	mpq-endian.h \
 	mpq-entry.h \
 	mpq-ext-table.h \
+	mpq-ext-table-builder.h \
 	mpq-file.h \
 	mpq-hash.h \
 	mpq-header.h \
@@ -60,6 +61,7 @@ GENERAL_SRCS = \
 	mpq-crypto.c \
 	mpq-endian.c \
 	mpq-ext-table.c \
+	mpq-ext-table-builder.c \
 	mpq-file.c \
 	mpq-hash.c \
 	mpq-header.c \
