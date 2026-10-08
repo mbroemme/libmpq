@@ -26,24 +26,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* HET emission remains test-only; production HET serialization is not enabled. */
 static uint8_t *
 het_wire(const mpq_het_builder_s *h)
 {
-    uint8_t *wire = calloc(12u + h->header.table_size, 1);
-    uint32_t values[11] = { LIBMPQ_HET_SIGNATURE,         1,
-                            h->header.table_size,         h->header.table_size,
-                            h->header.entry_count,        h->header.total_count,
-                            h->header.name_hash_bit_size, h->header.index_size_total,
-                            h->header.index_size_extra,   h->header.index_size,
-                            h->header.index_table_size };
-    size_t i;
-    if (wire == NULL)
+    uint8_t *wire = NULL;
+    size_t size;
+    if (libmpq__het_serialize(h, &wire, &size) != 0 ||
+        size != LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE + h->header.table_size) {
+        free(wire);
         return NULL;
-    for (i = 0; i < 11; ++i)
-        libmpq__store_le32(wire + i * 4, values[i]);
-    memcpy(wire + h->header.name_hash1.offset, h->name_hash1, h->header.name_hash1.size);
-    memcpy(wire + h->header.indices.offset, h->index_bits, h->header.indices.size);
+    }
     return wire;
 }
 
@@ -465,6 +457,217 @@ test_serialization_errors(void)
     return 0;
 }
 
+/* Fixed synthetic slots: sparse occupancy, 0x80, three-bit indices in five-bit strides. */
+static int
+het_serialize_failure(const mpq_het_builder_s *h, int32_t error)
+{
+    uint8_t sentinel = 0;
+    uint8_t *wire = &sentinel;
+    size_t size = SIZE_MAX;
+    TEST_CHECK(libmpq__het_serialize(h, &wire, &size) == error);
+    TEST_CHECK(wire == NULL && size == 0);
+    return 0;
+}
+
+static int
+test_het_serialization_vector(void)
+{
+    static const uint8_t expected[53] = { 0x48, 0x45, 0x54, 0x1a, 1,    0,    0,    0,    41, 0, 0,
+                                          0,    41,   0,    0,    0,    3,    0,    0,    0,  5, 0,
+                                          0,    0,    64,   0,    0,    0,    5,    0,    0,  0, 2,
+                                          0,    0,    0,    3,    0,    0,    0,    4,    0,  0, 0,
+                                          0x80, 0,    0xa5, 0,    0xff, 0x05, 0x08, 0x70, 0 };
+    mpq_het_builder_s h = { 0 };
+    mpq_het_s view;
+    mpq_het_header_s header;
+    uint8_t original[4];
+    uint8_t *wire;
+    uint8_t *again;
+    size_t size;
+    size_t again_size;
+    size_t i;
+    uint64_t indices[5] = { 5, 0, 2, 0, 7 };
+
+    h.header.envelope.signature = LIBMPQ_HET_SIGNATURE;
+    h.header.envelope.version = 1;
+    h.header.envelope.data_size = h.header.table_size = 41;
+    h.header.entry_count = 3;
+    h.header.total_count = 5;
+    h.header.name_hash_bit_size = 64;
+    h.header.index_size_total = 5;
+    h.header.index_size_extra = 2;
+    h.header.index_size = 3;
+    h.header.index_table_size = 4;
+    h.header.name_hash1.offset = 44;
+    h.header.name_hash1.size = 5;
+    h.header.indices.offset = 49;
+    h.header.indices.size = 4;
+    {
+        mpq_het_builder_s bad = h;
+        bad.header.index_size_extra = 1;
+        TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+        bad.header.index_size_extra = 3;
+        TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    }
+    h.name_hash1 = malloc(5);
+    h.index_bits = malloc(4);
+    if (h.name_hash1 == NULL || h.index_bits == NULL) {
+        free(h.name_hash1);
+        free(h.index_bits);
+        return 1;
+    }
+    memcpy(h.name_hash1, expected + 44, 5);
+    memset(h.index_bits, 0xff, 4);
+    for (i = 0; i < 5; ++i)
+        if (h.name_hash1[i] != 0 && libmpq__bit_set(h.index_bits, 4, i * 5, 3, indices[i]) != 0) {
+            free(h.name_hash1);
+            free(h.index_bits);
+            return 1;
+        }
+    memcpy(original, h.index_bits, 4);
+    TEST_CHECK(libmpq__het_serialize(&h, &wire, &size) == 0);
+    TEST_CHECK(size == sizeof(expected) && memcmp(wire, expected, size) == 0);
+    TEST_CHECK(libmpq__het_header_decode(wire, size, &header) == 0);
+    TEST_CHECK(header.table_size == 41 && header.envelope.data_size == 41);
+    TEST_CHECK(libmpq__het_view_init(wire, size, &view) == 0);
+    for (i = 0; i < 5; ++i) {
+        uint64_t index;
+        int32_t result = libmpq__het_slot_index(&view, (uint32_t)i, &index);
+        TEST_CHECK(
+            h.name_hash1[i] == 0 ? result == LIBMPQ_ERROR_EXIST
+                                 : (result == 0 && index == indices[i])
+        );
+    }
+    TEST_CHECK(libmpq__het_serialize(&h, &again, &again_size) == 0);
+    TEST_CHECK(again_size == size && memcmp(wire, again, size) == 0);
+    TEST_CHECK(memcmp(h.index_bits, original, 4) == 0);
+    TEST_CHECK(memcmp(h.name_hash1, expected + 44, 5) == 0);
+    free(wire);
+    free(again);
+
+    /* No BET bounds are known here: retain full-width indices even above entry_count. */
+    free(h.index_bits);
+    h.header.index_size = h.header.index_size_total = 64;
+    h.header.index_size_extra = 0;
+    h.header.index_table_size = 40;
+    h.header.indices.size = 40;
+    h.header.table_size = h.header.envelope.data_size = 77;
+    h.index_bits = malloc(40);
+    if (h.index_bits == NULL) {
+        free(h.name_hash1);
+        return 1;
+    }
+    memset(h.index_bits, 0xff, 40);
+    TEST_CHECK(libmpq__het_serialize(&h, &wire, &size) == 0);
+    TEST_CHECK(size == 89 && libmpq__het_view_init(wire, size, &view) == 0);
+    for (i = 0; i < 5; ++i) {
+        uint64_t index;
+        TEST_CHECK(libmpq__bit_get(view.index_bits, view.index_bits_size, i * 64, 64, &index) == 0);
+        TEST_CHECK(index == (h.name_hash1[i] == 0 ? 0 : UINT64_MAX));
+    }
+    free(wire);
+    libmpq__het_builder_free(&h);
+    return 0;
+}
+
+static int
+test_het_serialization_errors(void)
+{
+    mpq_ext_table_file_s file = { "errors", 1, 2, 3, 1 };
+    mpq_het_builder_s h = { 0 };
+    mpq_het_builder_s bad;
+    mpq_bet_builder_s b = { 0 };
+    uint8_t *wire = NULL;
+    size_t size = 1;
+    uint32_t slot;
+
+    TEST_CHECK(het_serialize_failure(NULL, LIBMPQ_ERROR_SIZE) == 0);
+    TEST_CHECK(het_serialize_failure(&h, LIBMPQ_ERROR_FORMAT) == 0);
+    TEST_CHECK(libmpq__ext_tables_build(&file, 1, &h, &b) == 0);
+    TEST_CHECK(libmpq__het_serialize(&h, NULL, &size) == LIBMPQ_ERROR_SIZE && size == 0);
+    TEST_CHECK(libmpq__het_serialize(&h, &wire, NULL) == LIBMPQ_ERROR_SIZE && wire == NULL);
+    bad = h;
+    bad.header.total_count = UINT32_MAX;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_SIZE) == 0);
+    bad = h;
+    bad.header.total_count = LIBMPQ_EXT_TABLE_MAX_SIZE;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_SIZE) == 0);
+    bad = h;
+    bad.header.entry_count = bad.header.total_count + 1;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad = h;
+    bad.header.name_hash_bit_size = 7;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad.header.name_hash_bit_size = 65;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad = h;
+    bad.header.index_size = 0;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad = h;
+    bad.header.index_size_total = 65;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad = h;
+    bad.header.index_size = bad.header.index_size_total + 1;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad = h;
+    bad.header.index_size_extra = 1;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad = h;
+    ++bad.header.table_size;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad = h;
+    ++bad.header.envelope.data_size;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad = h;
+    ++bad.header.index_table_size;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad = h;
+    bad.header.envelope.signature = LIBMPQ_BET_SIGNATURE;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad = h;
+    ++bad.header.envelope.version;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad = h;
+    --bad.header.name_hash1.size;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_SIZE) == 0);
+    bad = h;
+    bad.header.name_hash1.offset = SIZE_MAX;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_SIZE) == 0);
+    bad = h;
+    --bad.header.indices.size;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_SIZE) == 0);
+    bad = h;
+    bad.header.indices.offset = SIZE_MAX;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_SIZE) == 0);
+    bad = h;
+    bad.name_hash1 = NULL;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_SIZE) == 0);
+    bad = h;
+    bad.index_bits = NULL;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_SIZE) == 0);
+    bad = h;
+    bad.header.entry_count = 0;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    bad.header.entry_count = 2;
+    TEST_CHECK(het_serialize_failure(&bad, LIBMPQ_ERROR_FORMAT) == 0);
+    for (slot = 0; slot < h.header.total_count; ++slot)
+        if (h.name_hash1[slot] != LIBMPQ_HET_SLOT_FREE) {
+            uint8_t marker = h.name_hash1[slot];
+            h.name_hash1[slot] = 0x7f;
+            TEST_CHECK(libmpq__het_serialize(&h, &wire, &size) == 0);
+            TEST_CHECK(wire[h.header.name_hash1.offset + slot] == 0x7f);
+            free(wire);
+            wire = NULL;
+            h.name_hash1[slot] = LIBMPQ_HET_SLOT_FREE;
+            TEST_CHECK(het_serialize_failure(&h, LIBMPQ_ERROR_FORMAT) == 0);
+            h.name_hash1[slot] = marker;
+            break;
+        }
+    libmpq__het_builder_free(&h);
+    libmpq__bet_builder_free(&b);
+    return 0;
+}
+
 int
 main(void)
 {
@@ -473,5 +676,7 @@ main(void)
     TEST_CHECK(test_serialization_vector() == 0);
     TEST_CHECK(test_serialization_stride() == 0);
     TEST_CHECK(test_serialization_errors() == 0);
+    TEST_CHECK(test_het_serialization_vector() == 0);
+    TEST_CHECK(test_het_serialization_errors() == 0);
     return 0;
 }

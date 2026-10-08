@@ -502,8 +502,9 @@ table sizes respect the existing 1 MiB envelope-inclusive defensive limit.
 Builders own their allocations; failed builds preserve prior outputs and
 cleanup is safe for empty or partially built tables. Synthetic tests validate
 the builders against the existing parsers, HET lookup, and BET record decoder.
-HET serialization remains test-only. Archive serialization, encryption,
-compression, layout/finalization, and public v3 creation remain unimplemented.
+Both table serializers operate only on owned memory buffers. Archive
+serialization, encryption, compression, layout/finalization, and public v3
+creation remain unimplemented.
 
 ### Private BET wire serialization
 
@@ -534,6 +535,44 @@ publishing a partial buffer. Output starts zeroed for deterministic padding.
 Synthetic tests include an independent complete wire vector and round trips
 through the header, record, and NameHash2 readers. No tables are written into
 MPQ archives, and no public v3 writer option is enabled.
+
+### Private HET wire serialization
+
+`libmpq__het_serialize()` returns a caller-owned `uint8_t` buffer containing
+the complete plaintext, uncompressed HET table. The caller frees this allocation
+with `free()`; builder allocations remain separately owned and unchanged.
+Failures reset the output buffer/size to NULL/zero and free partial output.
+
+The layout is the 12-byte common envelope, eight little-endian `uint32_t`
+header fields (32 bytes), exactly `total_count` NameHash1 bytes, and the packed
+BET-index array. Both envelope `data_size` and HET `table_size` exclude the
+12-byte envelope. The serializer preserves the builder's capacity, widths,
+slot placement, and hash bytes without recomputing filename hashes. A nonzero
+NameHash1 of `0x80` is occupied, not a deleted marker.
+
+Slot indices use bit offset `slot * index_size_total` and effective width
+`index_size`. Extra bits are included in the stride, not used to shift the
+index value. Output starts zeroed; empty slots, extra bits, and final padding
+remain zero even when builder storage contains nonzero unused bits.
+Writer serialization requires `index_size_total == index_size + index_size_extra`:
+the total stride consists exactly of the effective index and extra bits.
+The reader's more permissive width validation remains unchanged for external
+tables. Any nonzero NameHash1 byte, including `0x7f` and `0x80`, is structurally
+occupied; only `0x00` is free.
+
+Before allocation, the serializer validates widths, exact packed storage,
+array ranges, envelope/table sizes, and occupied-slot count against
+`entry_count`. The existing envelope-inclusive 1 MiB limit bounds all size
+calculations. Occupied indices are decoded with the existing reader's checked
+bit access; this layer does not know BET bounds and does not require indices
+to be below HET `entry_count`.
+
+Synthetic tests cover a fixed complete wire vector, sparse slots, `0x80`,
+extra/non-byte-aligned strides, 64-bit indices, deterministic padding, and
+malformed states. Existing builder tests now use both production serializers
+before HET header/view decoding and filename lookup with BET NameHash2
+confirmation. No encryption, compression, archive layout/finalization, or
+public v3 writing is enabled.
 
 ## Internal files and integrity data
 

@@ -24,6 +24,115 @@
 #include <stdlib.h>
 #include <string.h>
 
+int32_t
+libmpq__het_serialize(const mpq_het_builder_s *builder, uint8_t **buffer, size_t *size)
+{
+    mpq_het_s view = { 0 };
+    mpq_het_header_s checked;
+    size_t index_bytes;
+    size_t total = LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE + LIBMPQ_HET_HEADER_WIRE_SIZE;
+    uint32_t occupied = 0;
+    uint32_t slot;
+    uint8_t *wire;
+    int32_t result;
+
+    if (buffer != NULL)
+        *buffer = NULL;
+    if (size != NULL)
+        *size = 0;
+    if (builder == NULL || buffer == NULL || size == NULL)
+        return LIBMPQ_ERROR_SIZE;
+    view.header = builder->header;
+    if (view.header.total_count == 0 || view.header.entry_count > view.header.total_count ||
+        view.header.name_hash_bit_size < 8 || view.header.name_hash_bit_size > 64 ||
+        view.header.index_size_total > 64 || view.header.index_size == 0 ||
+        view.header.index_size > view.header.index_size_total ||
+        view.header.index_size_extra != view.header.index_size_total - view.header.index_size)
+        return LIBMPQ_ERROR_FORMAT;
+    if (libmpq__bit_bytes(view.header.total_count, view.header.index_size_total, &index_bytes) !=
+            0 ||
+        view.header.total_count > LIBMPQ_EXT_TABLE_MAX_SIZE - total)
+        return LIBMPQ_ERROR_SIZE;
+    total += view.header.total_count;
+    if (index_bytes > LIBMPQ_EXT_TABLE_MAX_SIZE - total)
+        return LIBMPQ_ERROR_SIZE;
+    total += index_bytes;
+    if (view.header.envelope.signature != LIBMPQ_HET_SIGNATURE ||
+        view.header.envelope.version != LIBMPQ_EXT_TABLE_VERSION ||
+        view.header.table_size != total - LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE ||
+        view.header.envelope.data_size != view.header.table_size ||
+        view.header.index_table_size != index_bytes)
+        return LIBMPQ_ERROR_FORMAT;
+    if (view.header.name_hash1.offset !=
+            LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE + LIBMPQ_HET_HEADER_WIRE_SIZE ||
+        view.header.name_hash1.size != view.header.total_count ||
+        view.header.indices.offset != view.header.name_hash1.offset + view.header.total_count ||
+        view.header.indices.size != index_bytes || builder->name_hash1 == NULL ||
+        builder->index_bits == NULL)
+        return LIBMPQ_ERROR_SIZE;
+    view.name_hash1 = builder->name_hash1;
+    view.name_hash1_size = view.header.name_hash1.size;
+    view.index_bits = builder->index_bits;
+    view.index_bits_size = index_bytes;
+
+    /* Any nonzero hash byte is occupied; lookup normalization is not wire validation. */
+    for (slot = 0; slot < view.header.total_count; ++slot) {
+        if (view.name_hash1[slot] != LIBMPQ_HET_SLOT_FREE) {
+            uint64_t index;
+            result = libmpq__bit_get(
+                view.index_bits, index_bytes, (uint64_t)slot * view.header.index_size_total,
+                view.header.index_size, &index
+            );
+            if (result != 0)
+                return result;
+            ++occupied;
+        }
+    }
+    if (occupied != view.header.entry_count)
+        return LIBMPQ_ERROR_FORMAT;
+    wire = calloc(total, 1);
+    if (wire == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    {
+        uint32_t values[11] = { view.header.envelope.signature, view.header.envelope.version,
+                                view.header.envelope.data_size, view.header.table_size,
+                                view.header.entry_count,        view.header.total_count,
+                                view.header.name_hash_bit_size, view.header.index_size_total,
+                                view.header.index_size_extra,   view.header.index_size,
+                                view.header.index_table_size };
+        size_t i;
+        for (i = 0; i < 11; ++i)
+            libmpq__store_le32(wire + i * 4, values[i]);
+    }
+    result = libmpq__het_header_decode(wire, total, &checked);
+    if (result != 0)
+        goto fail;
+    memcpy(wire + checked.name_hash1.offset, view.name_hash1, checked.name_hash1.size);
+    for (slot = 0; slot < checked.total_count; ++slot) {
+        uint64_t index = 0;
+        if (view.name_hash1[slot] != LIBMPQ_HET_SLOT_FREE) {
+            result = libmpq__bit_get(
+                view.index_bits, index_bytes, (uint64_t)slot * view.header.index_size_total,
+                view.header.index_size, &index
+            );
+            if (result != 0)
+                goto fail;
+        }
+        result = libmpq__bit_set(
+            wire + checked.indices.offset, index_bytes, (uint64_t)slot * checked.index_size_total,
+            checked.index_size, index
+        );
+        if (result != 0)
+            goto fail;
+    }
+    *buffer = wire;
+    *size = total;
+    return 0;
+fail:
+    free(wire);
+    return result;
+}
+
 /* Emit only fixed-width little-endian metadata, never a native structure. */
 static void
 bet_header_encode(const mpq_bet_header_s *header, uint8_t *wire)

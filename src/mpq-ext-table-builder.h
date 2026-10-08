@@ -66,4 +66,11 @@ void libmpq__bet_builder_free(mpq_bet_builder_s *builder);
  */
 int32_t libmpq__bet_serialize(const mpq_bet_builder_s *builder, uint8_t **buffer, size_t *size);
 
+/*
+ * Serialize the existing HET slots to a complete plaintext, uncompressed table.
+ * Caller frees the returned buffer. Failure resets buffer/size to NULL/0.
+ * No placement or hashing is repeated; builders are never modified.
+ */
+int32_t libmpq__het_serialize(const mpq_het_builder_s *builder, uint8_t **buffer, size_t *size);
+
 #endif
