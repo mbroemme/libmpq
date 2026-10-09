@@ -522,7 +522,7 @@ patch_member_info(mpq_archive_s *archive, uint32_t number, mpq_patch_info_s *inf
 }
 
 int32_t
-libmpq__patch_payload_size(mpq_archive_s *archive, uint32_t number, libmpq__off_t *size)
+libmpq__patch_reader_payload_size(mpq_archive_s *archive, uint32_t number, libmpq__off_t *size)
 {
     mpq_patch_info_s info;
     int32_t status;
@@ -623,7 +623,7 @@ done:
 }
 
 int32_t
-libmpq__patch_payload_read(
+libmpq__patch_reader_payload_read(
     mpq_archive_s *archive, uint32_t number, const char *name, uint8_t *buffer,
     libmpq__off_t capacity, libmpq__off_t *transferred
 )
@@ -636,7 +636,7 @@ libmpq__patch_payload_read(
     if (transferred == NULL)
         return LIBMPQ_ERROR_EXIST;
     *transferred = 0;
-    status = libmpq__patch_payload_size(archive, number, &expected);
+    status = libmpq__patch_reader_payload_size(archive, number, &expected);
     if (status != 0)
         return status;
     if (capacity < 0 || capacity < expected || (expected != 0 && buffer == NULL))

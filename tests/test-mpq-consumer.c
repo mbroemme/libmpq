@@ -25,8 +25,17 @@ int
 main(int argc, char **argv)
 {
     const char *version = libmpq__version();
+    libmpq__off_t payload_size = -1;
+    libmpq__off_t transferred = -1;
 
     if (version == NULL || (argc != 2 && argc != 3) || strcmp(version, argv[1]) != 0)
+        return 1;
+
+    /* Exercise the import library, not private objects linked into native tests. */
+    if (libmpq__patch_payload_size(NULL, 0, &payload_size) != LIBMPQ_ERROR_EXIST ||
+        payload_size != 0 ||
+        libmpq__patch_payload_read(NULL, 0, NULL, NULL, 0, &transferred) != LIBMPQ_ERROR_EXIST ||
+        transferred != 0)
         return 1;
     if (argc == 3) {
         mpq_archive_s *archive = NULL;

@@ -34,6 +34,7 @@
 #include "mpq-compression.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
+#include "mpq-patch-reader.h"
 #include "mpq-patch-writer.h"
 #include "mpq-reader.h"
 #include "mpq-rsa.h"
@@ -375,6 +376,24 @@ int32_t
 libmpq__patch_begin(mpq_patch_s **patch, const char *base_archive, const char *output_patch)
 {
     return libmpq__patch_writer_begin(patch, base_archive, output_patch);
+}
+
+/* Keep public payload entry points in the Windows DLL-exporting translation unit. */
+int32_t
+libmpq__patch_payload_size(mpq_archive_s *archive, uint32_t file_number, libmpq__off_t *size)
+{
+    return libmpq__patch_reader_payload_size(archive, file_number, size);
+}
+
+int32_t
+libmpq__patch_payload_read(
+    mpq_archive_s *archive, uint32_t file_number, const char *filename, uint8_t *buffer,
+    libmpq__off_t capacity, libmpq__off_t *transferred
+)
+{
+    return libmpq__patch_reader_payload_read(
+        archive, file_number, filename, buffer, capacity, transferred
+    );
 }
 
 int32_t

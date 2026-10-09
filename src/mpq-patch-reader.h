@@ -74,6 +74,14 @@ int32_t libmpq__patch_view_close(mpq_patch_view_s *view);
 /* Decode the prefix preceding a stored MPQ patch member. */
 int32_t libmpq__patch_info_parse(const uint8_t *data, size_t size, mpq_patch_info_s *info);
 
+/* Private implementations behind the public DLL-exported payload wrappers. */
+int32_t
+libmpq__patch_reader_payload_size(mpq_archive_s *archive, uint32_t number, libmpq__off_t *size);
+int32_t libmpq__patch_reader_payload_read(
+    mpq_archive_s *archive, uint32_t number, const char *name, uint8_t *buffer,
+    libmpq__off_t capacity, libmpq__off_t *transferred
+);
+
 /* Apply a decoded PTCH payload and return a newly allocated logical file. */
 int32_t libmpq__patch_apply(
     const uint8_t *base, size_t base_size, const uint8_t *patch, size_t patch_size,
