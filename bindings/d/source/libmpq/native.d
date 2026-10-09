@@ -66,12 +66,16 @@ alias LIBMPQ_ARCHIVE_CREATE_LISTFILE = ARCHIVE_CREATE_LISTFILE;
 enum FILE_FLAG_IMPLODE = 0x00000100u;
 enum FILE_FLAG_COMPRESS = 0x00000200u;
 enum FILE_FLAG_ENCRYPTED = 0x00010000u;
+enum FILE_FLAG_PATCH_FILE = 0x00100000u;
+enum FILE_FLAG_DELETE_MARKER = 0x02000000u;
 enum FILE_FLAG_SINGLE = 0x01000000u;
 enum FILE_FLAG_SECTOR_CRC = 0x04000000u;
 enum FILE_FLAG_LOCALE = 0u;
 alias LIBMPQ_FILE_FLAG_IMPLODE = FILE_FLAG_IMPLODE;
 alias LIBMPQ_FILE_FLAG_COMPRESS = FILE_FLAG_COMPRESS;
 alias LIBMPQ_FILE_FLAG_ENCRYPTED = FILE_FLAG_ENCRYPTED;
+alias LIBMPQ_FILE_FLAG_PATCH_FILE = FILE_FLAG_PATCH_FILE;
+alias LIBMPQ_FILE_FLAG_DELETE_MARKER = FILE_FLAG_DELETE_MARKER;
 alias LIBMPQ_FILE_FLAG_SINGLE = FILE_FLAG_SINGLE;
 alias LIBMPQ_FILE_FLAG_SECTOR_CRC = FILE_FLAG_SECTOR_CRC;
 alias LIBMPQ_FILE_FLAG_LOCALE = FILE_FLAG_LOCALE;
@@ -376,6 +380,14 @@ extern(C) {
     /** Read one complete unpacked file into the caller's buffer. */
     int libmpq__file_read(mpq_archive_s* archive, uint number, ubyte* buffer,
                           off_t size, off_t* transferred);
+
+    /** Return decoded PTCH size, not final target size. */
+    int libmpq__patch_payload_size(mpq_archive_s* archive, uint number, off_t* size);
+
+    /** Decode and validate PTCH bytes; filename may be null for unnamed reads. */
+    int libmpq__patch_payload_read(mpq_archive_s* archive, uint number,
+                                  const(char)* filename, ubyte* buffer,
+                                  off_t capacity, off_t* transferred);
 
     int libmpq__stream_open(mpq_archive_s* archive, uint number, mpq_stream_s** stream);
     int libmpq__stream_open_name(mpq_archive_s* archive, const(char)* filename,

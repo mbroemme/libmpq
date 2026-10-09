@@ -201,6 +201,17 @@ borrowed only during begin. Both paths abort automatically without commit.
 
 ## Patch creation
 
+`File.patchPayloadSize()` returns decoded PTCH size, distinct from the final
+patched target size returned by `unpackedSize()`. `readPatchPayload()` or
+`readPatchPayload(filename)` returns a caller-owned `ubyte[]` beginning with
+`PTCH`, without the plaintext patch-info prefix or patch application. Supply
+the physical member filename when encryption requires a name-derived key.
+Native errors, including non-patch members and integrity failures, use
+`MPQException`; unrepresentable array sizes are rejected. The owning archive
+must remain open. Test `flags()` with `FILE_FLAG_PATCH_FILE` (`0x00100000`) and
+`FILE_FLAG_DELETE_MARKER` (`0x02000000`); the native-prefixed constants are also
+available.
+
 Create a patch without changing its base archive:
 
 ```d

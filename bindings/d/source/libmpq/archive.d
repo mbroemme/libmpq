@@ -533,6 +533,34 @@ class File {
         result.length = cast(size_t) transferred; return result;
     }
 
+    /** Return decoded PTCH size, distinct from the final patched target size. */
+    off_t patchPayloadSize() {
+        off_t size;
+        checkStatus(libmpq__patch_payload_size(archiveRef.nativeHandle(), number, &size),
+                    "libmpq__patch_payload_size");
+        return size;
+    }
+
+    /** Return caller-owned validated PTCH bytes, without its prefix or patch application.
+     * Supply the physical member filename when encryption needs a named key.
+     */
+    ubyte[] readPatchPayload(string filename = null) {
+        auto archive = archiveRef.nativeHandle();
+        auto expected = patchPayloadSize();
+        if (expected < 0 || cast(ulong) expected > size_t.max)
+            throw new MPQException("File.readPatchPayload", ERROR_SIZE);
+        ubyte[] result; result.length = cast(size_t) expected;
+        off_t transferred;
+        checkStatus(libmpq__patch_payload_read(archive, number,
+                    filename is null ? null : toStringz(filename),
+                    result.length == 0 ? null : result.ptr, expected, &transferred),
+                    "libmpq__patch_payload_read");
+        if (transferred < 0 || cast(ulong) transferred > result.length)
+            throw new MPQException("File.readPatchPayload", ERROR_SIZE);
+        result.length = cast(size_t) transferred;
+        return result;
+    }
+
     /** Return stored data bytes for one block, excluding offset/checksum tables. */
     off_t blockSizePacked(uint blockNumber) {
         off_t value;

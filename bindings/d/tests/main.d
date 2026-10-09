@@ -13,6 +13,7 @@ module libmpq.d_tests;
 import std.file : exists, mkdir, read, remove, rename, rmdir, write;
 import std.path : buildPath;
 import std.process : environment;
+import std.conv : hexString;
 import libmpq.mpq;
 import facade = libmpq.mpq;
 
@@ -670,7 +671,9 @@ private void testPatchCreation() {
     try { patch.remove("missing"); } catch (MPQException) { missing = true; }
     assert(missing);
     patch.replaceData("data", cast(const(ubyte)[])"replacement");
-    patch.replacePath("path", source, identity);
+    auto encryptedIdentity = identity;
+    encryptedIdentity.encrypted();
+    patch.replacePath("path", source, encryptedIdentity);
     patch.remove("remove");
     assert(!exists(output));
     patch.finish();
@@ -679,6 +682,16 @@ private void testPatchCreation() {
     assert(archive.file("data").read() == cast(const(ubyte)[])"original");
     archive.close();
     auto generated = Archive.open(output);
+    auto encryptedEntry = generated.file("path");
+    assert((encryptedEntry.flags() & FILE_FLAG_ENCRYPTED) != 0);
+    auto payload = encryptedEntry.readPatchPayload("path");
+    assert(payload.length == encryptedEntry.patchPayloadSize());
+    assert(payload[0 .. 4] == cast(const(ubyte)[]) "PTCH");
+    assert(payload[68 .. $] == cast(const(ubyte)[]) "from path");
+    bool wrongName;
+    try { encryptedEntry.readPatchPayload("wrong-name"); }
+    catch (MPQException) { wrongName = true; }
+    assert(wrongName);
     assert(generated.file("data").no() >= 0);
     assert(generated.file("path").no() >= 0);
     assert(generated.file("remove").no() >= 0);
@@ -852,7 +865,41 @@ private void testPatchSigning() {
     assert(!exists(output));
 }
 
+private void testPatchPayloadFixtures() {
+    const vectors = [
+        hexString!"505443485400000088010000100000004d44355f28000000f5e506c1646586cd587606b06204f1edbd9130574d913d6ccec47d341a29d0625846524d1c000000434f50595061746368206c61796572206f6e650a",
+        hexString!"505443485600000088010000120000004d44355f28000000f5e506c1646586cd587606b06204f1ed78a901df03758fa62e8d0471968d79345846524d1e000000434f505956657273696f6e2074776f2070617463680a"
+    ];
+    auto root = buildPath(environment.get("LIBMPQ_SOURCE_DIR", "."), "tests", "fixtures");
+    assert(FILE_FLAG_PATCH_FILE == 0x00100000u);
+    assert(FILE_FLAG_DELETE_MARKER == 0x02000000u);
+    assert(LIBMPQ_FILE_FLAG_PATCH_FILE == FILE_FLAG_PATCH_FILE);
+    assert(LIBMPQ_FILE_FLAG_DELETE_MARKER == FILE_FLAG_DELETE_MARKER);
+    foreach (index, name; ["mpq-v1-features-patch.mpq", "mpq-v2-features-patch.mpq"]) {
+        auto archive = Archive.open(buildPath(root, name));
+        scope(exit) archive.close();
+        auto entry = archive.file("overview.txt");
+        auto expected = cast(const(ubyte)[]) vectors[index];
+        assert((entry.flags() & FILE_FLAG_PATCH_FILE) != 0);
+        assert((archive.file("pkware.txt").flags() & FILE_FLAG_DELETE_MARKER) != 0);
+        assert(entry.patchPayloadSize() == expected.length);
+        assert(entry.patchPayloadSize() != entry.unpackedSize());
+        assert(entry.readPatchPayload() == expected);
+        assert(entry.readPatchPayload("overview.txt") == expected);
+        assert(entry.readPatchPayload()[0 .. 4] == cast(const(ubyte)[]) "PTCH");
+        bool rejected;
+        try { archive.file("patch-only.txt").patchPayloadSize(); }
+        catch (MPQException error) { rejected = error.code == ERROR_EXIST; }
+        assert(rejected);
+        rejected = false;
+        try { archive.file("patch-only.txt").readPatchPayload(); }
+        catch (MPQException error) { rejected = error.code == ERROR_EXIST; }
+        assert(rejected);
+    }
+}
+
 void main() {
+    testPatchPayloadFixtures();
     testVersionAndErrors();
     testCreateReadAndMetadata(ARCHIVE_VERSION_ONE);
     testCreateReadAndMetadata(ARCHIVE_VERSION_TWO);
