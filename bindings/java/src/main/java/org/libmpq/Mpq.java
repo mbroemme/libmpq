@@ -89,6 +89,10 @@ public final class Mpq {
     public static final int FILE_FLAG_COMPRESS = 0x00000200;
     /** MPQ flag for encrypted storage. */
     public static final int FILE_FLAG_ENCRYPTED = 0x00010000;
+    /** Member stores a PTCH payload rather than final target bytes. */
+    public static final int FILE_FLAG_PATCH_FILE = 0x00100000;
+    /** Member deletes a file in a patch view. */
+    public static final int FILE_FLAG_DELETE_MARKER = 0x02000000;
     /** MPQ flag for single-unit, non-sectorized storage. */
     public static final int FILE_FLAG_SINGLE = 0x01000000;
     /** Generate checksums for sectorized compressed/imploded files. */

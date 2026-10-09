@@ -34,6 +34,42 @@ import org.libmpq.ffi.LibmpqNative;
  */
 class LibmpqTest {
     @Test
+    void patchPayloadFixtures() throws Exception {
+        String[] vectors = {
+            "505443485400000088010000100000004d44355f28000000f5e506c1646586cd587606b06204f1edbd9130574d913d6ccec47d341a29d0625846524d1c000000434f50595061746368206c61796572206f6e650a",
+            "505443485600000088010000120000004d44355f28000000f5e506c1646586cd587606b06204f1ed78a901df03758fa62e8d0471968d79345846524d1e000000434f505956657273696f6e2074776f2070617463680a"
+        };
+        Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
+        assertEquals(0x00100000, Mpq.FILE_FLAG_PATCH_FILE);
+        assertEquals(0x02000000, Mpq.FILE_FLAG_DELETE_MARKER);
+        for (int version = 1; version <= 2; ++version) {
+            try (Archive archive = Archive.open(root.resolve("mpq-v" + version + "-features-patch.mpq"))) {
+                int number = archive.fileNumber("overview.txt");
+                byte[] expected = HexFormat.of().parseHex(vectors[version - 1]);
+                assertTrue((archive.fileFlags(number) & Mpq.FILE_FLAG_PATCH_FILE) != 0);
+                assertTrue((archive.fileFlags(archive.fileNumber("pkware.txt"))
+                        & Mpq.FILE_FLAG_DELETE_MARKER) != 0);
+                assertEquals(expected.length, archive.patchPayloadSize(number));
+                assertTrue(archive.patchPayloadSize(number) != archive.fileUnpackedSize(number));
+                assertArrayEquals(expected, archive.readPatchPayload(number));
+                assertArrayEquals(expected, archive.readPatchPayload(number, "overview.txt"));
+                assertEquals(expected.length, archive.readPatchPayload(number).length);
+                assertEquals("PTCH", new String(expected, 0, 4, StandardCharsets.US_ASCII));
+                int ordinary = archive.fileNumber("patch-only.txt");
+                assertEquals(Mpq.ERROR_EXIST, assertThrows(LibmpqException.class,
+                        () -> archive.patchPayloadSize(ordinary)).code());
+                assertThrows(LibmpqException.class, () -> archive.readPatchPayload(ordinary));
+                assertThrows(LibmpqException.class, () -> archive.patchPayloadSize(-1));
+                assertThrows(LibmpqException.class, () -> archive.readPatchPayload(-1));
+            }
+        }
+        assertEquals(0, Support.checkedArraySize(0));
+        assertThrows(IllegalArgumentException.class, () -> Support.checkedArraySize(-1));
+        assertThrows(IllegalArgumentException.class,
+                () -> Support.checkedArraySize((long) Integer.MAX_VALUE + 1));
+    }
+
+    @Test
     void patchCreation(@TempDir Path directory) throws Exception {
         Path base = directory.resolve("base.mpq");
         Path output = directory.resolve("changes.mpq");
@@ -54,7 +90,7 @@ class LibmpqTest {
                     () -> patch.replacePath("path", source, FileOptions.raw())).code());
             assertThrows(LibmpqException.class, () -> patch.remove("missing"));
             patch.replaceData("data", "replacement".getBytes(StandardCharsets.UTF_8));
-            patch.replacePath("path", source, identity);
+            patch.replacePath("path", source, identity.encrypted());
             patch.remove("remove");
             assertFalse(Files.exists(output));
             patch.finish();
@@ -67,6 +103,14 @@ class LibmpqTest {
                               archive.readFile(archive.fileNumber("data")));
         }
         try (Archive archive = Archive.open(output)) {
+            int number = archive.fileNumber("path");
+            assertTrue((archive.fileFlags(number) & Mpq.FILE_FLAG_ENCRYPTED) != 0);
+            byte[] payload = archive.readPatchPayload(number, "path");
+            assertEquals(archive.patchPayloadSize(number), payload.length);
+            assertEquals("PTCH", new String(payload, 0, 4, StandardCharsets.US_ASCII));
+            assertArrayEquals("from path".getBytes(StandardCharsets.UTF_8),
+                              java.util.Arrays.copyOfRange(payload, 68, payload.length));
+            assertThrows(LibmpqException.class, () -> archive.readPatchPayload(number, "wrong-name"));
             archive.fileNumber("data");
             archive.fileNumber("path");
             archive.fileNumber("remove");

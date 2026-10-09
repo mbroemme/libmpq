@@ -171,6 +171,17 @@ needed only during begin. Closing either active update aborts it.
 
 ## Patch creation
 
+`Archive.patchPayloadSize(number)` reports decoded PTCH size, not the final
+patched target size returned by `fileUnpackedSize(number)`.
+`readPatchPayload(number)` or `readPatchPayload(number, filename)` returns a
+caller-owned `byte[]` beginning with `PTCH`, excluding the plaintext patch-info
+prefix and without applying the patch. Supply the physical member filename
+when encryption needs a name-derived key. Native decoding/integrity errors and
+non-patch members throw `LibmpqException`; sizes outside the Java array range
+throw `IllegalArgumentException`. The archive must remain open.
+`Mpq.FILE_FLAG_PATCH_FILE` (`0x00100000`) and `Mpq.FILE_FLAG_DELETE_MARKER`
+(`0x02000000`) can be tested against `fileFlags(number)`.
+
 Create a patch artifact while leaving its base archive unchanged:
 
 ```java

@@ -118,6 +118,8 @@ public final class LibmpqNative {
     private static final MethodHandle FILE_HASH;
     private static final MethodHandle FILE_NUMBER_FROM_HASH;
     private static final MethodHandle FILE_READ;
+    private static final MethodHandle PATCH_PAYLOAD_SIZE;
+    private static final MethodHandle PATCH_PAYLOAD_READ;
     private static final MethodHandle STREAM_OPEN;
     private static final MethodHandle STREAM_OPEN_NAME;
     private static final MethodHandle STREAM_READ;
@@ -259,6 +261,11 @@ public final class LibmpqNative {
         ARCHIVE_FILES = uintMetadata(linker, lookup, "libmpq__archive_files");
         FILE_SIZE_PACKED = fileMetadata(linker, lookup, "libmpq__file_size_packed");
         FILE_SIZE_UNPACKED = fileMetadata(linker, lookup, "libmpq__file_size_unpacked");
+        PATCH_PAYLOAD_SIZE = fileMetadata(linker, lookup, "libmpq__patch_payload_size");
+        PATCH_PAYLOAD_READ = function(linker, lookup, "libmpq__patch_payload_read",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT,
+                                      ValueLayout.ADDRESS, ValueLayout.ADDRESS, C_LONG,
+                                      ValueLayout.ADDRESS));
         FILE_OFFSET = fileMetadata(linker, lookup, "libmpq__file_offset");
         FILE_BLOCKS = fileUintMetadata(linker, lookup, "libmpq__file_blocks");
         FILE_FLAGS = fileUintMetadata(linker, lookup, "libmpq__file_flags");
@@ -630,6 +637,13 @@ public final class LibmpqNative {
     public static int fileRead(MemorySegment archive, int number, MemorySegment output, long size,
                                MemorySegment transferred) {
         return callInt(FILE_READ, archive, number, output, size, transferred);
+    }
+    public static int patchPayloadSize(MemorySegment archive, int number, MemorySegment output) {
+        return callInt(PATCH_PAYLOAD_SIZE, archive, number, output);
+    }
+    public static int patchPayloadRead(MemorySegment archive, int number, MemorySegment name,
+                                      MemorySegment output, long size, MemorySegment transferred) {
+        return callInt(PATCH_PAYLOAD_READ, archive, number, name, output, size, transferred);
     }
     public static int streamOpen(MemorySegment archive, int number, MemorySegment output) {
         return callInt(STREAM_OPEN, archive, number, output);

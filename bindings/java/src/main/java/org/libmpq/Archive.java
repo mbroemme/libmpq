@@ -465,6 +465,44 @@ public final class Archive implements AutoCloseable {
         }
     }
 
+    /** Return decoded PTCH size, distinct from the final patched target size. */
+    public long patchPayloadSize(int number) throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment size = arena.allocate(ValueLayout.JAVA_LONG);
+            Support.check(LibmpqNative.patchPayloadSize(handle, number, size));
+            return size.get(ValueLayout.JAVA_LONG, 0);
+        }
+    }
+
+    /** Read validated PTCH bytes without applying the patch or including its prefix.
+     * filename may be null when encryption does not need a name-derived key.
+     * The returned array is caller-owned; native errors throw LibmpqException.
+     */
+    public byte[] readPatchPayload(int number, String filename) throws LibmpqException {
+        long size = patchPayloadSize(number);
+        int capacity = Support.checkedArraySize(size);
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment output = arena.allocate(capacity == 0 ? 1 : capacity, 1);
+            MemorySegment transferred = arena.allocate(ValueLayout.JAVA_LONG);
+            Support.check(LibmpqNative.patchPayloadRead(handle, number,
+                    filename == null ? MemorySegment.NULL : Support.text(arena, filename),
+                    capacity == 0 ? MemorySegment.NULL : output, size, transferred));
+            long count = transferred.get(ValueLayout.JAVA_LONG, 0);
+            if (count < 0 || count > size) {
+                throw new IllegalArgumentException("Invalid native PTCH byte count");
+            }
+            byte[] result = new byte[Support.checkedArraySize(count)];
+            Support.copyTo(output, result);
+            return result;
+        }
+    }
+
+    /** Read a payload that does not require an explicit encryption filename. */
+    public byte[] readPatchPayload(int number) throws LibmpqException {
+        return readPatchPayload(number, null);
+    }
+
     /** Open an independent incremental logical-member stream by file number. */
     public MpqStream openStream(int number) throws LibmpqException {
         checkOpen();
