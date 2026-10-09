@@ -77,37 +77,12 @@ write_at(FILE *fp, uint64_t offset, const void *data, size_t size)
     return 0;
 }
 
-/*
- * Calculate the MPQ file encryption key from a normalized file name.
- * Slash normalization matches MPQ's Windows-oriented name hashing while the
- * temporary normalized string remains private to this calculation.
- */
-static uint32_t
-file_key(const char *name)
-{
-    char *normalized = NULL;
-    size_t i;
-    size_t length = strlen(name);
-    uint32_t key;
-
-    normalized = malloc(length + 1);
-    if (normalized == NULL)
-        return 0;
-    for (i = 0; i < length; i++)
-        normalized[i] = name[i] == '/' ? '\\' : name[i];
-    normalized[length] = 0;
-    key = libmpq__crypto_hash_string(normalized, 0x300);
-    free(normalized);
-    return key;
-}
-
-/* V3 FIX_KEY uses the already-final payload position; legacy writing is unchanged. */
+/* FIX_KEY uses the basename key and the already-final archive-relative payload position. */
 static uint32_t
 writer_file_key(const mpq_writer_s *writer)
 {
-    uint32_t key = file_key(writer->name);
-    if (writer->archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE &&
-        (writer->options.flags & 0x00020000u) != 0)
+    uint32_t key = libmpq__crypto_file_key(writer->name);
+    if ((writer->options.flags & 0x00020000u) != 0)
         key = (key + (uint32_t)(writer->payload_offset - writer->prefix_size)) ^
               (writer->patch_file ? writer->patch_result_size : (uint32_t)writer->expected);
     return key;

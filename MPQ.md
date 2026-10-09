@@ -446,6 +446,10 @@ little-endian format version 2 at 0x0c, normal header length 0x44 at 0x04,
 or locally maintained callers of each library's public API to inspect the same
 archive and member names. For manual extraction, use separate temporary output
 directories outside the repository and compare lengths and `sha256sum` results.
+Include both flat and directory member names, especially encrypted and FIX_KEY
+members. Check missing-member errors, wrong MPQE authentication and truncated
+local copies without modifying the original archive. These checks remain manual;
+no real Blizzard archive validation is implied by the synthetic suite.
 Patch members require a matching base to compare the applied result; decoded
 PTCH payload access is not patch application. Do not
 copy Blizzard archive bytes, trimmed archives, extracted payloads, or derived
@@ -459,6 +463,12 @@ SIZE rather than truncating. V3 modification requires complete filename
 reconstruction. Creation and transactional rebuilding use
 the existing writer, preserving explicit source mappings and independently
 validated generated tables.
+
+Member encryption hashes only the basename after the final `/` or `\`, using
+the existing classic hash case normalization. FIX_KEY then adds the low
+uint32_t file position and XORs the uint32_t unpacked size. Filename lookup
+and table generation still hash the complete archive member path. The default
+crypto suite includes an independently keyed directory-member regression.
 
 ### In-memory extended-table writer builders
 
@@ -616,6 +626,9 @@ normalized name. Distinct complete names resolving to the same logical entry
 (including names indistinguishable after HET's hash-prefix limit) are ambiguous
 and return FORMAT. Empty CRLF/LF lines are ignored; embedded null bytes,
 unresolvable listed names and incomplete coverage reject reconstruction.
+Known source/listfile spellings take precedence over equivalent caller spellings;
+replacement retains that name so classic hashes do not change merely because
+the caller uses a different slash direction or ASCII case.
 Complete mixed and HET/BET-only sources are supported. A BET-only row with
 classic attributes, unresolved classic aliases/locale variants, embedded v3
 wrappers, unrelated trailing data, and patch/delete members are rejected.
@@ -632,6 +645,15 @@ preserving FIX_KEY and timestamps. As with legacy updates, rewritten
 multi-compression rename data uses zlib; replacement uses caller options or
 native defaults. Untouched CRC32/MD5/FILETIME metadata uses explicit classic
 provenance, not canonical indices; new/replaced attributes are regenerated.
+
+Legacy per-member staging encodes FIX_KEY at the final archive-relative copy
+position: the plaintext rebuild stream position minus the source archive start.
+The standalone staging archive starts at zero. For compact inputs, its reserved
+classic tables are moved after the payload so finalization cannot overwrite it.
+MPQE transactions use the same plaintext coordinates and re-encrypt the container
+only at publication; the MPQE cipher position is not a member-key input.
+When reading a patch payload past its plaintext prefix, FIX_KEY still uses the
+original member start and reconstructed size, not the shifted payload view.
 
 Modified weak signatures and strong trailers are removed, following existing
 update policy. They are never presented as valid after a rebuild. MPQE uses
@@ -867,6 +889,6 @@ a substitute for range validation.
 2. Implement v1 classic lookup and raw/single-unit file reading.
 3. Add table and sector encryption with known-name vectors.
 4. Add codecs incrementally with bounded output.
-5. Add v2 high offsets, then v3/v4 HET/BET and MD5 validation.
+5. Add v2 high offsets and v3 HET/BET. V4 and its header MD5 checks remain unsupported.
 6. Test collisions, deleted entries, embedded headers, mixed sectors, every
    codec, high offsets, malformed tables, and integer-overflow boundaries.

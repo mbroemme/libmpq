@@ -459,6 +459,7 @@ extern LIBMPQ_API int32_t libmpq__archive_close(mpq_archive_s *mpq_archive);
  * The sizes include packed payload bytes but exclude headers and tables.
  * Pass a valid opened archive and output pointer, initialized to zero when
  * the total alone is required.
+ * Unrepresentable totals return LIBMPQ_ERROR_SIZE without changing the accumulator.
  */
 extern LIBMPQ_API int32_t
 libmpq__archive_size_packed(mpq_archive_s *mpq_archive, libmpq__off_t *packed_size);
@@ -467,6 +468,7 @@ libmpq__archive_size_packed(mpq_archive_s *mpq_archive, libmpq__off_t *packed_si
  * Add the logical sizes of all extractable entries to *unpacked_size.
  * Pass a valid opened archive and output pointer, initialized to zero when
  * the total alone is required.
+ * Unrepresentable totals return LIBMPQ_ERROR_SIZE without changing the accumulator.
  */
 extern LIBMPQ_API int32_t
 libmpq__archive_size_unpacked(mpq_archive_s *mpq_archive, libmpq__off_t *unpacked_size);

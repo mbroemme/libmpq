@@ -229,14 +229,14 @@ libmpq__writer_timestamp(mpq_writer_s *writer, uint64_t filetime)
 const char *
 libmpq__strerror(int32_t return_code)
 {
+    uint32_t index = 0u - (uint32_t)return_code;
 
     /* Only negative libmpq error codes and zero are valid table indexes. */
-    if (-return_code < 0 ||
-        (size_t)-return_code >= sizeof(libmpq_error_strings) / sizeof(libmpq_error_strings[0]))
+    if (return_code > 0 || index >= sizeof(libmpq_error_strings) / sizeof(libmpq_error_strings[0]))
         return NULL;
 
     /* Return the static string owned by the library. */
-    return libmpq_error_strings[-return_code];
+    return libmpq_error_strings[index];
 }
 
 /*
@@ -647,10 +647,21 @@ libmpq__archive_size_packed(mpq_archive_s *mpq_archive, libmpq__off_t *packed_si
 
     /* Running total across all block-table entries. */
     uint32_t i;
+    libmpq__off_t total;
 
+    if (mpq_archive == NULL || packed_size == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    total = *packed_size;
     for (i = 0; i < mpq_archive->files; i++) {
-        *packed_size += mpq_archive->mpq_entry[mpq_archive->mpq_map[i].entry_index].packed_size;
+        uint64_t amount;
+        if (libmpq__reader_validate_file_number(mpq_archive, i) != 0)
+            return LIBMPQ_ERROR_EXIST;
+        amount = mpq_archive->mpq_entry[mpq_archive->mpq_map[i].entry_index].packed_size;
+        if (amount > INT64_MAX || total > INT64_MAX - (libmpq__off_t)amount)
+            return LIBMPQ_ERROR_SIZE;
+        total += (libmpq__off_t)amount;
     }
+    *packed_size = total;
 
     return 0;
 }
@@ -666,10 +677,21 @@ libmpq__archive_size_unpacked(mpq_archive_s *mpq_archive, libmpq__off_t *unpacke
 
     /* Running total across all block-table entries. */
     uint32_t i;
+    libmpq__off_t total;
 
+    if (mpq_archive == NULL || unpacked_size == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    total = *unpacked_size;
     for (i = 0; i < mpq_archive->files; i++) {
-        *unpacked_size += mpq_archive->mpq_entry[mpq_archive->mpq_map[i].entry_index].unpacked_size;
+        uint64_t amount;
+        if (libmpq__reader_validate_file_number(mpq_archive, i) != 0)
+            return LIBMPQ_ERROR_EXIST;
+        amount = mpq_archive->mpq_entry[mpq_archive->mpq_map[i].entry_index].unpacked_size;
+        if (amount > INT64_MAX || total > INT64_MAX - (libmpq__off_t)amount)
+            return LIBMPQ_ERROR_SIZE;
+        total += (libmpq__off_t)amount;
     }
+    *unpacked_size = total;
 
     return 0;
 }

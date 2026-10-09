@@ -1033,19 +1033,11 @@ libmpq__reader_validate_payload_range(
     return 0;
 }
 
-/* Named decryption must use the same slash normalization as the existing writer. */
+/* Named decryption shares the writer's basename-key derivation. */
 static int32_t
 reader_name_key(const char *name, uint32_t *key)
 {
-    size_t length = strlen(name);
-    char *normalized = malloc(length + 1);
-    if (normalized == NULL)
-        return LIBMPQ_ERROR_MALLOC;
-    for (size_t i = 0; i < length; ++i)
-        normalized[i] = name[i] == '/' ? '\\' : name[i];
-    normalized[length] = '\0';
-    *key = libmpq__crypto_hash_string(normalized, 0x300);
-    free(normalized);
+    *key = libmpq__crypto_file_key(name);
     return 0;
 }
 
@@ -1056,6 +1048,16 @@ reader_name_key(const char *name, uint32_t *key)
  */
 int32_t
 libmpq__reader_offsets_acquire(mpq_archive_s *mpq_archive, uint32_t file_number, const char *name)
+{
+    return libmpq__reader_offsets_acquire_key(mpq_archive, file_number, name, NULL);
+}
+
+/* Payload views can retain a key derived before changing offset/size metadata. */
+int32_t
+libmpq__reader_offsets_acquire_key(
+    mpq_archive_s *mpq_archive, uint32_t file_number, const char *name,
+    const uint32_t *provided_seed
+)
 {
 
     /* Packed block table state, file seed and read status. */
@@ -1082,15 +1084,20 @@ libmpq__reader_offsets_acquire(mpq_archive_s *mpq_archive, uint32_t file_number,
     if (mpq_archive->mpq_file[file_number]) {
 
         /* A named internal read can supply a key to an anonymous cached open. */
-        if (name != NULL && !mpq_archive->mpq_file[file_number]->seed_known) {
+        if ((name != NULL || provided_seed != NULL) &&
+            !mpq_archive->mpq_file[file_number]->seed_known) {
             uint32_t index = mpq_archive->mpq_map[file_number].entry_index;
             uint32_t seed;
-            result = reader_name_key(name, &seed);
-            if (result != 0)
-                return result;
-            if (mpq_archive->mpq_entry[index].flags & 0x00020000u)
-                seed = (seed + (uint32_t)mpq_archive->mpq_entry[index].offset) ^
-                       (uint32_t)mpq_archive->mpq_entry[index].unpacked_size;
+            if (provided_seed != NULL)
+                seed = *provided_seed;
+            else {
+                result = reader_name_key(name, &seed);
+                if (result != 0)
+                    return result;
+                if (mpq_archive->mpq_entry[index].flags & 0x00020000u)
+                    seed = (seed + (uint32_t)mpq_archive->mpq_entry[index].offset) ^
+                           (uint32_t)mpq_archive->mpq_entry[index].unpacked_size;
+            }
             mpq_archive->mpq_file[file_number]->seed = seed;
             mpq_archive->mpq_file[file_number]->seed_known = 1;
         }
@@ -1126,14 +1133,18 @@ libmpq__reader_offsets_acquire(mpq_archive_s *mpq_archive, uint32_t file_number,
     mpq_archive->mpq_file[file_number]->packed_offset_count = packed_offset_count;
     mpq_archive->mpq_file[file_number]->open_count = 1;
 
-    if (name != NULL) {
+    if (name != NULL || provided_seed != NULL) {
         uint32_t seed;
-        result = reader_name_key(name, &seed);
-        if (result != 0)
-            goto error;
-        if (mpq_archive->mpq_entry[entry_index].flags & 0x00020000u)
-            seed = (seed + (uint32_t)mpq_archive->mpq_entry[entry_index].offset) ^
-                   (uint32_t)mpq_archive->mpq_entry[entry_index].unpacked_size;
+        if (provided_seed != NULL)
+            seed = *provided_seed;
+        else {
+            result = reader_name_key(name, &seed);
+            if (result != 0)
+                goto error;
+            if (mpq_archive->mpq_entry[entry_index].flags & 0x00020000u)
+                seed = (seed + (uint32_t)mpq_archive->mpq_entry[entry_index].offset) ^
+                       (uint32_t)mpq_archive->mpq_entry[entry_index].unpacked_size;
+        }
         mpq_archive->mpq_file[file_number]->seed = seed;
         mpq_archive->mpq_file[file_number]->seed_known = 1;
     }

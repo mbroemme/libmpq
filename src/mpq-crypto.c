@@ -208,12 +208,23 @@ libmpq__crypto_hash_string(const char *key, uint32_t offset)
     uint32_t ch;
 
     while (*key != 0) {
-        ch = toupper(*key++);
+        ch = toupper((unsigned char)*key++);
         seed1 = crypt_buf[offset + ch] ^ (seed1 + seed2);
         seed2 = ch + seed1 + seed2 + (seed2 << 5) + 3;
     }
 
     return seed1;
+}
+
+/* Member keys exclude directories; lookup hashes continue to use the full name. */
+uint32_t
+libmpq__crypto_file_key(const char *name)
+{
+    const char *basename = name;
+    for (const char *cursor = name; *cursor != '\0'; ++cursor)
+        if (*cursor == '/' || *cursor == '\\')
+            basename = cursor + 1;
+    return libmpq__crypto_hash_string(basename, 0x300);
 }
 
 /*

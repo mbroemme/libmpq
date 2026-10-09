@@ -29,6 +29,9 @@
  */
 uint32_t libmpq__crypto_hash_string(const char *key, uint32_t offset);
 
+/* Hash the basename after the final '/' or '\\'; name is a non-NULL NUL-terminated string. */
+uint32_t libmpq__crypto_file_key(const char *name);
+
 /*
  * Encrypt complete little-endian words in place with the MPQ stream cipher.
  * The buffer is caller-owned and may contain a trailing partial word, which

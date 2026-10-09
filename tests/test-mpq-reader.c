@@ -1290,6 +1290,46 @@ test_v3_patch_payload(void)
     return 0;
 }
 
+/* Additive metadata queries must not wrap full-width values or alter failed accumulators. */
+static int
+test_size_accumulators(void)
+{
+    mpq_archive_s archive = { 0 };
+    mpq_entry_s entries[2] = { { 0 }, { 0 } };
+    mpq_map_s map[2] = { { 1 }, { 0 } };
+    int32_t (*queries[])(mpq_archive_s *, libmpq__off_t *) = { libmpq__archive_size_packed,
+                                                               libmpq__archive_size_unpacked };
+    archive.mpq_header.version = LIBMPQ_ARCHIVE_VERSION_THREE;
+    archive.mpq_entry = entries;
+    archive.mpq_map = map;
+    archive.files = archive.entry_count = 2;
+    for (size_t query = 0; query < 2; ++query) {
+        libmpq__off_t total = 0;
+        entries[0].packed_size = entries[0].unpacked_size = INT64_MAX - 1;
+        entries[1].packed_size = entries[1].unpacked_size = 1;
+        TEST_CHECK(queries[query](&archive, &total) == 0 && total == INT64_MAX);
+        total = 1;
+        TEST_CHECK(queries[query](&archive, &total) == LIBMPQ_ERROR_SIZE && total == 1);
+        total = -1;
+        TEST_CHECK(queries[query](&archive, &total) == 0 && total == INT64_MAX - 1);
+        entries[0].packed_size = entries[0].unpacked_size = INT64_MAX;
+        total = 0;
+        TEST_CHECK(queries[query](&archive, &total) == LIBMPQ_ERROR_SIZE && total == 0);
+        entries[0].packed_size = entries[0].unpacked_size = UINT64_MAX;
+        TEST_CHECK(queries[query](&archive, &total) == LIBMPQ_ERROR_SIZE && total == 0);
+        TEST_CHECK(queries[query](NULL, &total) == LIBMPQ_ERROR_EXIST && total == 0);
+        TEST_CHECK(queries[query](&archive, NULL) == LIBMPQ_ERROR_EXIST);
+        map[1].entry_index = 2;
+        TEST_CHECK(queries[query](&archive, &total) == LIBMPQ_ERROR_EXIST && total == 0);
+        map[1].entry_index = 0;
+        archive.files = 0;
+        total = 17;
+        TEST_CHECK(queries[query](&archive, &total) == 0 && total == 17);
+        archive.files = 2;
+    }
+    return 0;
+}
+
 /* Large metadata stays full-width; sector counts must not wrap at UINT32_MAX. */
 static int
 test_v3_size_conversions(void)
@@ -1837,6 +1877,7 @@ main(void)
     TEST_CHECK(test_v3_table_limit_boundary() == 0);
     TEST_CHECK(test_v3_signature_discovery() == 0);
     TEST_CHECK(test_v3_size_conversions() == 0);
+    TEST_CHECK(test_size_accumulators() == 0);
     TEST_CHECK(test_v3_patch_payload() == 0);
     TEST_CHECK(test_v3_transaction_setup() == 0);
     TEST_CHECK(test_v3_reserved_update() == 0);

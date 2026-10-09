@@ -152,6 +152,10 @@ printf '\x01\x0d\x02compressed encrypted writer payload' > "${writer_output}/v2-
 printf '\x01\x20\x02lzma writer payload with repeated bytes LLLLLLLLLLLLLLLLL' > \
 	"${writer_output}/v2-lzma"
 printf '\x00\x14\x03bzip2 single writer payload' > "${writer_output}/v1-bzip2-single"
+printf '\x02\x01\x02compressed v3 writer payload VVVVVVVVVVVVVVVVVVVVVVVVVVVV' > \
+	"${writer_output}/v3-zlib"
+printf '\x06\x20\x02mpqe v3 lzma writer payload LLLLLLLLLLLLLLLLLLLLLLLLLLLL' > \
+	"${writer_output}/v3-mpqe-lzma"
 
 # Select encrypted seed header, hash/block table, and known-key mutation offsets.
 printf '\x00' > "${encrypted_output}/unmodified-seed"

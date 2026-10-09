@@ -790,6 +790,7 @@ update_encode(
     uint64_t position;
     mpq_md5_s md5;
     uint32_t crc = 0;
+    uint8_t relocate_tables = 0;
     int32_t result;
 
     options.version = archive->mpq_header.version;
@@ -839,6 +840,23 @@ update_encode(
     temporary_file = NULL;
     if (result != 0)
         goto done;
+
+    /*
+     * output is plaintext (also for MPQE). Its current position is the copy
+     * destination; the standalone staging archive starts at zero, so subtract
+     * only the source archive's prefix. FIX_KEY must use this final relative
+     * position, not the staging writer's independently reserved payload start.
+     */
+    if ((file_options->flags & 0x00020000u) != 0) {
+        libmpq__off_t staging = libmpq__file_tell(writer->fp);
+        measured = libmpq__file_tell(output);
+        if (staging < 0 || measured < 0 || measured < archive->archive_offset ||
+            libmpq__file_seek(writer->fp, measured - archive->archive_offset, SEEK_SET) < 0) {
+            result = LIBMPQ_ERROR_SEEK;
+            goto done;
+        }
+        relocate_tables = measured - archive->archive_offset < staging;
+    }
     result =
         libmpq__writer_file_begin(writer, name, (libmpq__off_t)size, file_options, &file_writer);
     if (result != 0)
@@ -907,6 +925,30 @@ update_encode(
     }
     if (expected_size != NULL)
         *expected_size = size;
+
+    /* Compact inputs can put that payload inside the staging writer's reserved tables. */
+    if (relocate_tables) {
+        uint64_t hash_bytes = (uint64_t)writer->write_hash_capacity * LIBMPQ_HASH_ENTRY_WIRE_SIZE;
+        uint64_t block_bytes = (uint64_t)writer->write_capacity * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE;
+        uint64_t extra_bytes =
+            writer->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO
+                ? (uint64_t)writer->write_capacity * LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE
+                : 0;
+        if (libmpq__file_seek(writer->fp, 0, SEEK_END) < 0 ||
+            (measured = libmpq__file_tell(writer->fp)) < 0) {
+            result = LIBMPQ_ERROR_SEEK;
+            goto done;
+        }
+        if (hash_bytes + block_bytes + extra_bytes > UINT32_MAX ||
+            (uint64_t)measured > UINT32_MAX - (hash_bytes + block_bytes + extra_bytes)) {
+            result = LIBMPQ_ERROR_SIZE;
+            goto done;
+        }
+        writer->mpq_header.hash_table_offset = (uint32_t)measured;
+        writer->mpq_header.block_table_offset = (uint32_t)((uint64_t)measured + hash_bytes);
+        if (extra_bytes != 0)
+            writer->mpq_header_ex.extended_offset = (uint64_t)measured + hash_bytes + block_bytes;
+    }
     result = libmpq__archive_close(writer);
     writer = NULL;
     if (result != 0)
@@ -1218,7 +1260,7 @@ update_collect_names(mpq_update_s *update, mpq_archive_s *archive, const char *t
     names = calloc((size_t)archive->files + 1, sizeof(*names));
     if (names == NULL)
         return LIBMPQ_ERROR_MALLOC;
-    result = update_record_name(archive, names, target);
+    result = 0;
     for (size_t i = 0; result == 0 && i < sizeof(special) / sizeof(special[0]); ++i)
         result = update_record_name(archive, names, special[i]);
     for (uint32_t i = 0; result == 0 && i < update->known_count; ++i)
@@ -1253,6 +1295,10 @@ update_collect_names(mpq_update_s *update, mpq_archive_s *archive, const char *t
             result = update_record_name(archive, names, name);
         free(name);
     }
+
+    /* Known source spellings win over a caller's equivalent slash/case spelling. */
+    if (result == 0)
+        result = update_record_name(archive, names, target);
     for (uint32_t i = 0; result == 0 && i < archive->files; ++i)
         if (names[i] == NULL)
             result = LIBMPQ_ERROR_FORMAT;
@@ -1461,6 +1507,7 @@ update_rebuild_named(
         goto done;
     }
     if (action == LIBMPQ_UPDATE_ADD || action == LIBMPQ_UPDATE_REPLACE) {
+        const char *member_name = action == LIBMPQ_UPDATE_REPLACE ? names[target] : old_name;
         mpq_file_options_s options =
             replacement_options != NULL ? *replacement_options : (mpq_file_options_s){ 0 };
         if (action == LIBMPQ_UPDATE_REPLACE && target < count) {
@@ -1482,8 +1529,8 @@ update_rebuild_named(
             }
         }
         result = source_path != NULL
-                     ? libmpq__archive_add_path(writer, old_name, source_path, &options)
-                     : libmpq__archive_add_data(writer, old_name, data, size, &options);
+                     ? libmpq__archive_add_path(writer, member_name, source_path, &options)
+                     : libmpq__archive_add_data(writer, member_name, data, size, &options);
         if (result != 0)
             goto done;
     }
@@ -1674,6 +1721,7 @@ update_apply(
         goto done;
     }
 
+    /* Every v3 action exits here; the update_encode() calls below are legacy-only. */
     if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE ||
         (action == LIBMPQ_UPDATE_ADD && archive->files == 0)) {
         result = update_rebuild_named(
@@ -1883,7 +1931,7 @@ update_apply(
             uint32_t original_flags = archive->mpq_block[block].flags;
 
             options.flags = original_flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SINGLE |
-                                              LIBMPQ_FILE_FLAG_SECTOR_CRC);
+                                              LIBMPQ_FILE_FLAG_SECTOR_CRC | 0x00020000u);
             if ((original_flags & LIBMPQ_FLAG_COMPRESS_MULTI) != 0) {
                 options.flags |= LIBMPQ_FILE_FLAG_COMPRESS;
                 options.compression_first = LIBMPQ_COMPRESSION_ZLIB;

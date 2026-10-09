@@ -208,6 +208,8 @@ test_error_strings(void)
         TEST_CHECK(libmpq__strerror(code) != NULL);
     TEST_CHECK(libmpq__strerror(1) == NULL);
     TEST_CHECK(libmpq__strerror(LIBMPQ_ERROR_UNPACK - 1) == NULL);
+    TEST_CHECK(libmpq__strerror(INT32_MIN) == NULL);
+    TEST_CHECK(libmpq__strerror(INT32_MAX) == NULL);
     return 0;
 }
 

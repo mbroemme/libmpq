@@ -56,13 +56,13 @@ file_options(uint8_t selector, uint32_t version)
     uint32_t codec;
     mpq_file_options_s options = { 0, 0, 0, 0, 0 };
 
-    if (version == LIBMPQ_ARCHIVE_VERSION_TWO && (selector & 0x20U) != 0U)
+    if (version >= LIBMPQ_ARCHIVE_VERSION_TWO && (selector & 0x20U) != 0U)
         codec = LIBMPQ_COMPRESSION_LZMA;
     else
         codec = codecs[selector % (sizeof(codecs) / sizeof(codecs[0]))];
 
     /* MPQ v2 reserves serialized 0x12 for LZMA, not zlib plus bzip2. */
-    if (version == LIBMPQ_ARCHIVE_VERSION_TWO &&
+    if (version >= LIBMPQ_ARCHIVE_VERSION_TWO &&
         (codec & (LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) ==
             (LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) {
         codec = LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_PKZIP;
@@ -127,8 +127,11 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
 
     payload_size = size - 3U;
-    archive_options.version =
-        (data[0] & 1U) == 0U ? LIBMPQ_ARCHIVE_VERSION_ONE : LIBMPQ_ARCHIVE_VERSION_TWO;
+
+    /* Preserve v1/v2 seed selectors; the previously unused bit selects v3. */
+    archive_options.version = (data[0] & 2U) != 0U   ? LIBMPQ_ARCHIVE_VERSION_THREE
+                              : (data[0] & 1U) == 0U ? LIBMPQ_ARCHIVE_VERSION_ONE
+                                                     : LIBMPQ_ARCHIVE_VERSION_TWO;
     archive_options.max_files = 16;
     archive_options.sector_size =
         sector_sizes[data[2] % (sizeof(sector_sizes) / sizeof(sector_sizes[0]))];

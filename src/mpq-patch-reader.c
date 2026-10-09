@@ -440,7 +440,8 @@ patch_copy_range(mpq_archive_s *base, FILE *output, uint64_t offset, uint64_t re
 /* Read a member through current archive metadata, including adjusted patch blocks. */
 static int32_t
 patch_read_adjusted(
-    mpq_archive_s *archive, const char *name, uint32_t number, uint8_t **data, size_t *size
+    mpq_archive_s *archive, const char *name, uint32_t number, const uint32_t *seed, uint8_t **data,
+    size_t *size
 )
 {
     libmpq__off_t transferred = 0;
@@ -448,7 +449,7 @@ patch_read_adjusted(
     uint8_t *bytes = NULL;
     int32_t status;
 
-    status = libmpq__reader_offsets_acquire(archive, number, name);
+    status = libmpq__reader_offsets_acquire_key(archive, number, name, seed);
     if (status != 0)
         return status;
     status = libmpq__file_size_unpacked(archive, number, &logical_size);
@@ -491,7 +492,7 @@ patch_read_named(mpq_archive_s *archive, const char *name, uint8_t **data, size_
 
     if (status != 0)
         return status;
-    return patch_read_adjusted(archive, name, number, data, size);
+    return patch_read_adjusted(archive, name, number, NULL, data, size);
 }
 
 static int32_t
@@ -553,6 +554,8 @@ patch_read_incremental(
     uint32_t prefix_size;
     uint32_t physical;
     size_t body_size = 0;
+    uint32_t key = 0;
+    const uint32_t *seed = NULL;
     int32_t status;
 
     *data = NULL;
@@ -561,6 +564,8 @@ patch_read_incremental(
     if (status != 0)
         return status;
     prefix_size = info.length;
+
+    /* Reopen from wire metadata with empty member caches, even if the caller has live reads. */
     status = libmpq__archive_clone(&clone, archive);
     if (status != 0)
         goto done;
@@ -569,6 +574,14 @@ patch_read_incremental(
         goto done;
     physical = clone->mpq_map[number].entry_index;
     block = &clone->mpq_entry[physical];
+    if (name != NULL && (block->flags & (LIBMPQ_FLAG_ENCRYPTED | 0x00020000u)) ==
+                            (LIBMPQ_FLAG_ENCRYPTED | 0x00020000u)) {
+
+        /* The body view moves past the prefix; FIX_KEY still describes the original member. */
+        key = (libmpq__crypto_file_key(name) + (uint32_t)block->offset) ^
+              (uint32_t)block->unpacked_size;
+        seed = &key;
+    }
     shifted = block->offset + prefix_size;
     if (shifted > UINT32_MAX && clone->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE) {
         status = LIBMPQ_ERROR_FORMAT;
@@ -579,7 +592,7 @@ patch_read_incremental(
     block->unpacked_size = info.data_size;
     block->flags &= ~LIBMPQ_FILE_FLAG_PATCH_FILE;
     clone->attributes_error = LIBMPQ_ERROR_EXIST;
-    status = patch_read_adjusted(clone, name, number, &body, &body_size);
+    status = patch_read_adjusted(clone, name, number, seed, &body, &body_size);
     if (status != 0)
         goto done;
     if (body_size != info.data_size) {
@@ -1572,7 +1585,7 @@ patch_stage_hash(
     else
         status = patch_read_adjusted(
             patch, entry->physical_name == NULL ? entry->name : entry->physical_name, patch_number,
-            &payload, &payload_size
+            NULL, &payload, &payload_size
         );
     if (status != 0)
         goto done;
@@ -1581,7 +1594,7 @@ patch_stage_hash(
             status = LIBMPQ_ERROR_FORMAT;
             goto done;
         }
-        status = patch_read_adjusted(lower, entry->name, lower_number, &base, &base_size);
+        status = patch_read_adjusted(lower, entry->name, lower_number, NULL, &base, &base_size);
         if (status == 0) {
             borrowed_result =
                 payload_size > LIBMPQ_PATCH_HEADER_SIZE && memcmp(payload + 64, "COPY", 4) == 0;

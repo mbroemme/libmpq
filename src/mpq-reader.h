@@ -55,6 +55,11 @@ int32_t libmpq__reader_file_read(
  * A name supplies the known internal file key. Every success needs a release.
  */
 int32_t libmpq__reader_offsets_acquire(mpq_archive_s *archive, uint32_t number, const char *name);
+
+/* Optional caller-owned seed is already adjusted for the original member metadata. */
+int32_t libmpq__reader_offsets_acquire_key(
+    mpq_archive_s *archive, uint32_t number, const char *name, const uint32_t *seed
+);
 int32_t libmpq__reader_offsets_release(mpq_archive_s *archive, uint32_t number);
 
 /* Share block I/O; callers can supply one checksum and mismatch result. */

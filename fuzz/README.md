@@ -46,7 +46,7 @@ single-unit caching can require a full member allocation even for a small read.
 non-secret synthetic MPQE v1/v2/v3 fixtures and authentication code to exercise
 MPQE chunk decryption before the contained MPQ parser. `fuzz-file-read` starts from a
 valid generated archive and mutates filename and file-index read paths.
-`fuzz-writer-roundtrip` creates a bounded v1/v2 archive from fuzzed content,
+`fuzz-writer-roundtrip` creates a bounded v1/v2/v3 archive from fuzzed content,
 then reopens and verifies it. `fuzz-encrypted-archive` mutates a valid archive
 with encrypted files, hash/block tables, and known-key reads.
 
