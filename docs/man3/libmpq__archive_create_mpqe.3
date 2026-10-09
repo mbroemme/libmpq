@@ -54,7 +54,7 @@ FILETIME defaults to zero and patch bits are zero. Use
 timestamp. Path addition never imports filesystem timestamps.
 .SS "Temporary Storage and Publication"
 V3 uses the same authentication and mixed HET/BET plus classic table layout
-as ordinary v3 creation. V3 transactional updates remain unsupported.
+as ordinary v3 creation. V3 transactions require complete filename reconstruction.
 .PP
 The normal writer first finalizes a private temporary plaintext MPQ in the
 destination directory, then encrypts it for publication. The plaintext

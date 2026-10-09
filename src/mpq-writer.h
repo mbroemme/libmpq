@@ -20,6 +20,7 @@
 #ifndef LIBMPQ_WRITER_H
 #define LIBMPQ_WRITER_H
 
+#include "mpq-entry.h"
 #include "mpq-file.h"
 #include "mpq-md5.h"
 #include "mpq-mpqe.h"
@@ -55,6 +56,12 @@ struct mpq_writer
     mpq_file_attributes_s attributes; /* Metadata accumulated for this source file. */
     mpq_md5_s md5;                    /* Incremental source-byte digest when requested. */
 };
+
+/* Register an unchanged packed member already copied to its original position. */
+int32_t libmpq__writer_import_member(
+    mpq_archive_s *archive, const char *name, const mpq_entry_s *entry, uint16_t locale,
+    uint16_t platform, const mpq_file_attributes_s *attributes
+);
 
 /* Set caller-controlled FILETIME on an active writer with generation enabled. */
 int32_t libmpq__writer_file_timestamp(mpq_writer_s *writer, uint64_t filetime);

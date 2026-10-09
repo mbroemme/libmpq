@@ -1,0 +1,41 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__UPDATE_ADD_PATH 3 2026-10-12 "The MoPaQ archive library"
+.SH NAME
+libmpq__update_add_path \- stage a new MPQ member from a filesystem path
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__update_add_path(mpq_update_s *" "update,"
+.BI "        const char *" "filename, const char *" "source_path,"
+.BI "        const mpq_file_options_s *" "options);"
+.fi
+.SH DESCRIPTION
+Adds an absent filename using bytes read from the caller-owned source path.
+The source is not retained, modified or removed. Storage options, duplicate
+checks, rollback and v3 filename requirements are identical to
+libmpq__update_add_data(3). Remove-then-add is supported; replacement is not
+an upsert operation.
+.SH RETURN VALUE
+Returns zero on success or a negative libmpq error. A duplicate returns
+LIBMPQ_ERROR_EXIST; a source that cannot be opened returns LIBMPQ_ERROR_OPEN.
+Allocation, size, format, encoding and I/O errors may also be returned.
+.SH SEE ALSO
+.BR libmpq__update_add_data (3),
+.BR libmpq__update_replace_path (3),
+.BR libmpq__update_begin (3),
+.BR libmpq__update_commit (3),
+.BR libmpq__update_abort (3)

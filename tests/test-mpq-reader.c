@@ -1368,9 +1368,9 @@ test_v3_size_conversions(void)
     return 0;
 }
 
-/* Read-only boundaries include ordinary and authenticated transaction setup. */
+/* Transaction setup accepts readable v3 inputs without performing a reconstruction. */
 static int
-test_v3_read_only(void)
+test_v3_transaction_setup(void)
 {
     reader_v3_source_s source;
     reader_v3_source_s cipher;
@@ -1391,8 +1391,8 @@ test_v3_read_only(void)
     TEST_CHECK(fclose(file) == 0);
     TEST_CHECK(libmpq__archive_open(&archive, "reader-v3.mpq", 0) == 0);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
-    TEST_CHECK(libmpq__update_begin(&update, "reader-v3.mpq") == LIBMPQ_ERROR_FORMAT);
-    TEST_CHECK(update == NULL);
+    TEST_CHECK(libmpq__update_begin(&update, "reader-v3.mpq") == 0);
+    TEST_CHECK(libmpq__update_abort(update) == 0);
     TEST_CHECK(libmpq__mpqe_key(key, auth, sizeof(auth)) == 0);
     file = fopen("reader-v3.mpqe", "wb");
     TEST_CHECK(file != NULL);
@@ -1425,11 +1425,8 @@ test_v3_read_only(void)
     TEST_CHECK(transferred == sizeof(actual));
     TEST_CHECK(memcmp(actual, source.bytes + LIBMPQ_HEADER_V3_WIRE_SIZE, sizeof(actual)) == 0);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
-    TEST_CHECK(
-        libmpq__update_begin_mpqe(&update, "reader-v3.mpqe", auth, sizeof(auth)) ==
-        LIBMPQ_ERROR_FORMAT
-    );
-    TEST_CHECK(update == NULL);
+    TEST_CHECK(libmpq__update_begin_mpqe(&update, "reader-v3.mpqe", auth, sizeof(auth)) == 0);
+    TEST_CHECK(libmpq__update_abort(update) == 0);
     TEST_CHECK(remove("reader-v3.mpq") == 0);
     TEST_CHECK(remove("reader-v3.mpqe") == 0);
     return 0;
@@ -1748,6 +1745,50 @@ test_canonical_entries(uint32_t version)
     return 0;
 }
 
+/* Reserved BET values are readable but cannot be reproduced by the current writer. */
+static int
+test_v3_reserved_update(void)
+{
+    reader_v3_source_s source;
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    mpq_bet_entry_s record;
+    FILE *file;
+    uint8_t *table;
+    uint32_t key = libmpq__crypto_hash_string("(block table)", 0x300);
+    TEST_CHECK(reader_v3_fixture(&source, 0, 0, 0, 0, 0, 0, 0, 0) == 0);
+    table = source.bytes + source.bet_offset;
+    TEST_CHECK(
+        libmpq__crypto_decrypt_block(
+            table + 12, (uint32_t)(source.size - source.bet_offset - 12), key
+        ) == 0
+    );
+    TEST_CHECK(libmpq__bit_set(table + 96, 33, 129, 1, 1) == 0);
+    TEST_CHECK(
+        libmpq__crypto_encrypt_block(
+            table + 12, (uint32_t)(source.size - source.bet_offset - 12), key
+        ) == 0
+    );
+    file = fopen("reader-v3-reserved.mpq", "wb");
+    TEST_CHECK(
+        file != NULL && fwrite(source.bytes, 1, source.size, file) == source.size &&
+        fclose(file) == 0
+    );
+    TEST_CHECK(libmpq__archive_open(&archive, "reader-v3-reserved.mpq", 0) == 0);
+    TEST_CHECK(
+        libmpq__bet_record_decode(&archive->mpq_bet, 0, &record) == 0 && record.unknown == 1
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__update_begin(&update, "reader-v3-reserved.mpq") == 0);
+    TEST_CHECK(
+        libmpq__update_replace_data(update, "payload.bin", (const uint8_t *)"new", 3, NULL) ==
+        LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(libmpq__update_abort(update) == 0);
+    TEST_CHECK(remove("reader-v3-reserved.mpq") == 0);
+    return 0;
+}
+
 /* Validate fixture metadata and extraction through the reader-facing API. */
 int
 main(void)
@@ -1797,7 +1838,8 @@ main(void)
     TEST_CHECK(test_v3_signature_discovery() == 0);
     TEST_CHECK(test_v3_size_conversions() == 0);
     TEST_CHECK(test_v3_patch_payload() == 0);
-    TEST_CHECK(test_v3_read_only() == 0);
+    TEST_CHECK(test_v3_transaction_setup() == 0);
+    TEST_CHECK(test_v3_reserved_update() == 0);
     TEST_CHECK(test_canonical_entries(LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
     TEST_CHECK(test_canonical_entries(LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
 

@@ -46,6 +46,26 @@ public final class MpqUpdate implements AutoCloseable {
         }
     }
 
+    /** Stage a new member from bytes; duplicate names fail. */
+    public void addData(String name, byte[] data, FileOptions options) throws LibmpqException {
+        checkOpen();
+        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(data, "data");
+        try (Arena arena = Arena.ofConfined()) {
+            Support.check(LibmpqNative.updateAddData(handle, Support.text(arena, name),
+                    Support.bytes(arena, data), data.length, options(arena, options)));
+        }
+    }
+
+    /** Stage a new member from a caller-owned source path. */
+    public void addPath(String name, Path source, FileOptions options) throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            Support.check(LibmpqNative.updateAddPath(handle, Support.text(arena, name),
+                    Support.text(arena, source.toString()), options(arena, options)));
+        }
+    }
+
     /** Stage replacement from bytes; null options use native defaults. */
     public void replaceData(String name, byte[] data, FileOptions options) throws LibmpqException {
         checkOpen();

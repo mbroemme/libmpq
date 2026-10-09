@@ -26,7 +26,9 @@ The canonical release installation path is Maven Central:
 ## Basic archive usage
 
 Use `Mpq.ARCHIVE_VERSION_THREE` in existing `ArchiveCreateOptions` to create
-mixed HET/BET plus classic v3 archives. V3 updates/rebuilds remain unsupported.
+mixed HET/BET plus classic v3 archives. V3 transactions require complete filename reconstruction.
+`MpqUpdate.addData()` and `addPath()` add absent staged names; duplicate names
+fail and replacement remains existing-only. Remove-then-add is supported.
 
 The high-level API uses `Archive.open`, `Archive.openMpqe`, `Archive.create`,
 `Archive.createMpqe`, and `MpqFileWriter`. All negative libmpq return codes

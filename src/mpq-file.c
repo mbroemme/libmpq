@@ -329,15 +329,16 @@ libmpq__directory_file_open(mpq_directory_s *directory, const char *name, const 
     FILE *file = NULL;
 
     if (directory == NULL || name == NULL || name[0] == '\0' || mode == NULL ||
-        strcmp(mode, "rb") != 0) {
+        (strcmp(mode, "rb") != 0 && strcmp(mode, "r+b") != 0)) {
         errno = EINVAL;
         return NULL;
     }
     path = directory_path(directory, name);
     if (path != NULL) {
         handle = CreateFileW(
-            path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, NULL
+            path, GENERIC_READ | (strcmp(mode, "r+b") == 0 ? GENERIC_WRITE : 0),
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, NULL
         );
         if (handle != INVALID_HANDLE_VALUE) {
             BY_HANDLE_FILE_INFORMATION information;
@@ -681,13 +682,15 @@ libmpq__directory_file_open(mpq_directory_s *directory, const char *name, const 
     FILE *stream;
 
     if (directory == NULL || name == NULL || name[0] == '\0' || mode == NULL ||
-        strcmp(mode, "rb") != 0) {
+        (strcmp(mode, "rb") != 0 && strcmp(mode, "r+b") != 0)) {
         errno = EINVAL;
         return NULL;
     }
 #ifdef O_CLOEXEC
     flags |= O_CLOEXEC;
 #endif
+    if (strcmp(mode, "r+b") == 0)
+        flags |= O_RDWR;
 #ifdef O_NOFOLLOW
     flags |= O_NOFOLLOW;
 #endif

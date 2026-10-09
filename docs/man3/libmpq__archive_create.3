@@ -37,7 +37,7 @@ archive-creation defaults.
 .PP
 LIBMPQ_ARCHIVE_VERSION_THREE selects MPQ v3 with a 0x44-byte header,
 HET/BET and classic hash/block tables sharing the same logical rows.
-V3 transactional updates and rebuilds remain unsupported; v4 is rejected.
+V3 transactions require complete filenames; v4 is rejected.
 Defaults remain v1 with 4096-byte sectors. Explicit sector sizes are retained.
 .PP
 Compression defaults to STANDARD. Add

@@ -563,6 +563,37 @@ private void testMpqeUpdate() {
     after.close();
 }
 
+private void testV3AddUpdate(bool encrypted) {
+    auto path = temporaryArchive("v3-update");
+    auto source = path ~ ".source";
+    scope(exit) { remove(path); remove(source); }
+    immutable ubyte[] code = cast(immutable(ubyte)[])"LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+    write(source, cast(const(ubyte)[])"path");
+    auto options = ArchiveCreateOptions.v2();
+    options.version_ = ARCHIVE_VERSION_THREE;
+    options.flags = ARCHIVE_CREATE_LISTFILE;
+    auto archive = encrypted ? Archive.createMpqe(path, code, options) : Archive.create(path, options);
+    archive.add("keep", cast(const(ubyte)[])"keep");
+    archive.close();
+    auto update = encrypted ? Update.beginMpqe(path, code) : Update.begin(path);
+    update.addData("added", cast(const(ubyte)[])"added");
+    bool duplicate;
+    try { update.addData("ADDED", cast(const(ubyte)[])"duplicate"); }
+    catch (MPQException error) { duplicate = error.code == ERROR_EXIST; }
+    assert(duplicate);
+    update.addPath("from-path", source);
+    update.remove("added");
+    update.addData("added", cast(const(ubyte)[])"new");
+    update.rename("keep", "renamed");
+    update.commit();
+    archive = encrypted ? Archive.openMpqe(path, code, 0) : Archive.open(path);
+    assert(archive.version_() == 3);
+    assert(archive.file("renamed").read() == cast(const(ubyte)[])"keep");
+    assert(archive.file("added").read() == cast(const(ubyte)[])"new");
+    assert(archive.file("from-path").read() == cast(const(ubyte)[])"path");
+    archive.close();
+}
+
 private void testUpdateLocalizedDefaults() {
     auto path = temporaryArchive("localized");
     auto source = path ~ ".source";
@@ -837,6 +868,8 @@ void main() {
     testUpdate();
     testMpqeUpdate();
     testUpdateLocalizedDefaults();
+    testV3AddUpdate(false);
+    testV3AddUpdate(true);
     testPatchCreation();
     testMpqePatchCreation();
     testPatchSigning();

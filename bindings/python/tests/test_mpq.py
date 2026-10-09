@@ -79,13 +79,14 @@ def test_logical_stream_lifetime_seek_and_eof():
         stream.tell()
 
 
-def test_transactional_update_binding(tmp_path):
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO, mpq.ARCHIVE_VERSION_THREE])
+def test_transactional_update_binding(tmp_path, version):
     """All staged operations commit or abort without reusing consumed handles."""
     path = tmp_path / "update.mpq"
     source = tmp_path / "replacement.bin"
     source.write_bytes(b"from path")
     original = b"A" * 9000
-    with mpq.Writer(path, max_files=16, flags=mpq.ARCHIVE_CREATE_LISTFILE,
+    with mpq.Writer(path, version=version, max_files=16, flags=mpq.ARCHIVE_CREATE_LISTFILE,
                     attributes=mpq.ATTRIBUTE_CRC32 | mpq.ATTRIBUTE_MD5) as writer:
         writer.add("data", original)
         writer.add("path", b"old path")
@@ -97,6 +98,12 @@ def test_transactional_update_binding(tmp_path):
     options = mpq.FileCreateOptions.compressed(mpq.COMPRESSION_ZLIB,
                                                 mpq.COMPRESSION_BZIP2)
     with mpq.Update.begin(path) as update:
+        update.add_data("added", b"added")
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            update.add_data("ADDED", b"duplicate")
+        update.add_path("added-path", source)
+        update.remove("added")
+        update.add_data("added", b"re-added")
         update.replace_data("data", memoryview(b"B" * 9000), options)
         update.replace_path("path", source,
                             mpq.FileCreateOptions.raw().encrypted())
@@ -108,6 +115,9 @@ def test_transactional_update_binding(tmp_path):
         update.commit()
     with mpq.Archive(path) as archive:
         assert archive["data"].read() == b"B" * 9000
+        assert archive.version == version + 1
+        assert archive["added"].read() == b"re-added"
+        assert archive["added-path"].read() == b"from path"
         assert archive["data"].block_compression(0) == mpq.COMPRESSION_ZLIB
         assert archive["data"].block_compression(1) == mpq.COMPRESSION_BZIP2
         with archive.open_stream("path") as stream:
@@ -196,13 +206,15 @@ def test_update_localized_member_defaults(tmp_path):
         update.abort()
 
 
-def test_authenticated_mpqe_update(tmp_path):
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO, mpq.ARCHIVE_VERSION_THREE])
+def test_authenticated_mpqe_update(tmp_path, version):
     """MPQE uses the ordinary Update operations and consuming lifecycle."""
     path = tmp_path / "update.mpqe"
     source = tmp_path / "replacement.bin"
     source.write_bytes(b"from path")
     code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
-    with mpq.Writer.create_mpqe(path, code, max_files=16) as writer:
+    with mpq.Writer.create_mpqe(path, code, version=version, max_files=16,
+                                flags=mpq.ARCHIVE_CREATE_LISTFILE) as writer:
         writer.add("data", b"original")
         writer.add("path", b"old path")
         writer.add("remove", b"remove me")

@@ -86,6 +86,10 @@ archive.add("hello.txt", cast(const(ubyte)[])"hello\n");
 authentication bytes. It finalizes a private plaintext temporary file before
 atomically replacing the destination. Use `Update.beginMpqe` for changes to
 an existing MPQE archive. Crash cleanup is best effort.
+`Update.addData` and `addPath` add absent staged names, with optional
+`FileOptions`; duplicates fail and replacement remains existing-only.
+V3 updates require complete filenames and supported metadata. Remove-then-add
+uses the same ordinary or authenticated transaction.
 
 ### Compression policy
 

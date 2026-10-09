@@ -294,6 +294,12 @@ extern(C) {
     int libmpq__update_replace_data(mpq_update_s* update, const(char)* filename,
                                     const(ubyte)* data, off_t size,
                                     const(mpq_file_options_s)* options);
+    int libmpq__update_add_data(mpq_update_s* update, const(char)* filename,
+                              const(ubyte)* data, off_t size,
+                              const(mpq_file_options_s)* options);
+    int libmpq__update_add_path(mpq_update_s* update, const(char)* filename,
+                              const(char)* source_path,
+                              const(mpq_file_options_s)* options);
     int libmpq__update_replace_path(mpq_update_s* update, const(char)* filename,
                                     const(char)* source_path,
                                     const(mpq_file_options_s)* options);

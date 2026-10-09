@@ -117,7 +117,7 @@ typedef int32_t (*libmpq_read_at_fn)(
 /*
  * On-disk archive format versions (not combinable flags). Creation accepts
  * ONE, TWO, and THREE. V3 creation emits both HET/BET and classic tables;
- * v3 transactional updates/rebuilds and v4 remain unsupported.
+ * V3 updates require complete filename reconstruction; v4 remains unsupported.
  * libmpq__archive_version() reports the corresponding one-based generation.
  */
 #define LIBMPQ_ARCHIVE_VERSION_ONE 0
@@ -813,6 +813,19 @@ extern LIBMPQ_API int32_t libmpq__update_begin(mpq_update_s **update, const char
  */
 extern LIBMPQ_API int32_t libmpq__update_begin_mpqe(
     mpq_update_s **update, const char *archive_path, const uint8_t *auth_code, size_t auth_code_size
+);
+
+/*
+ * Stage addition of an absent named member. Data/options are borrowed only
+ * during this call; duplicate staged names return LIBMPQ_ERROR_EXIST.
+ */
+extern LIBMPQ_API int32_t libmpq__update_add_data(
+    mpq_update_s *update, const char *filename, const uint8_t *data, libmpq__off_t size,
+    const mpq_file_options_s *options
+);
+extern LIBMPQ_API int32_t libmpq__update_add_path(
+    mpq_update_s *update, const char *filename, const char *source_path,
+    const mpq_file_options_s *options
 );
 
 /*

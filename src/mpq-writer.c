@@ -355,6 +355,58 @@ stream_finish(mpq_writer_s *writer)
     return LIBMPQ_ERROR_SIZE;
 }
 
+/* Retained compressed/encrypted bytes stay at their original offset and keep their key. */
+int32_t
+libmpq__writer_import_member(
+    mpq_archive_s *archive, const char *name, const mpq_entry_s *entry, uint16_t locale,
+    uint16_t platform, const mpq_file_attributes_s *attributes
+)
+{
+    uint32_t index = archive->write_next_block;
+    uint32_t hash[3];
+    uint32_t i;
+    char *copy;
+    if (index >= archive->write_capacity || entry->offset >> 32 > UINT16_MAX ||
+        entry->packed_size > UINT32_MAX || entry->unpacked_size > UINT32_MAX)
+        return LIBMPQ_ERROR_SIZE;
+    copy = malloc(strlen(name) + 1);
+    if (copy == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    memcpy(copy, name, strlen(name) + 1);
+    if (attributes != NULL && archive->write_attributes == NULL) {
+        if ((uint64_t)archive->write_capacity * sizeof(*archive->write_attributes) > SIZE_MAX) {
+            free(copy);
+            return LIBMPQ_ERROR_SIZE;
+        }
+        archive->write_attributes =
+            calloc(archive->write_capacity, sizeof(*archive->write_attributes));
+        if (archive->write_attributes == NULL) {
+            free(copy);
+            return LIBMPQ_ERROR_MALLOC;
+        }
+    }
+    libmpq__file_hash(name, &hash[0], &hash[1], &hash[2]);
+    for (i = 0; i < archive->write_hash_capacity; ++i) {
+        uint32_t slot = (hash[0] + i) & (archive->write_hash_capacity - 1);
+        if (archive->mpq_hash[slot].block_table_index != LIBMPQ_HASH_FREE)
+            continue;
+        archive->mpq_hash[slot] = (mpq_hash_s){ hash[1], hash[2], locale, platform, index };
+        archive->mpq_block[index] =
+            (mpq_block_s){ (uint32_t)entry->offset, (uint32_t)entry->packed_size,
+                           (uint32_t)entry->unpacked_size, entry->flags };
+        archive->mpq_block_ex[index].offset_high = (uint16_t)(entry->offset >> 32);
+        archive->write_names[index] = copy;
+        archive->write_locales[index] = locale;
+        archive->write_platforms[index] = platform;
+        if (attributes != NULL)
+            archive->write_attributes[index] = *attributes;
+        archive->files = ++archive->write_next_block;
+        return 0;
+    }
+    free(copy);
+    return LIBMPQ_ERROR_SIZE;
+}
+
 /* Advance one archive-relative range without overflowing multiplication or signed I/O. */
 static int32_t
 writer_layout_advance(uint64_t *position, uint64_t count, uint64_t entry_size)

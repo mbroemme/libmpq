@@ -294,6 +294,12 @@ Use a separate `mpq_update_s` handle to stage changes to an existing,
 filesystem-backed MPQ. Each operation rebuilds the private working copy; the
 original path changes only on commit. For example:
 
+`libmpq__update_add_data()` and `libmpq__update_add_path()` require an absent
+staged filename. They support remove-then-add; replacement remains strictly
+replacement-only. Python `Update.add_data/add_path`, Java
+`MpqUpdate.addData/addPath`, and D `Update.addData/addPath` expose the same
+operations. V3 filename and metadata requirements are described in MPQ.md.
+
 ```c
 mpq_update_s *update = NULL;
 const uint8_t replacement[] = "new contents";

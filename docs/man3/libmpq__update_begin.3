@@ -28,6 +28,17 @@ until commit. Embedded container prefixes and unrelated trailing bytes are
 preserved; stale weak and strong signatures are removed on modification. On
 failure, \fI*update\fP is NULL. MPQE archives require
 \fBlibmpq__update_begin_mpqe\fP(3). The handle is consumed by commit or abort.
+.SH COMPATIBILITY
+V3 mutations require complete filenames from the listfile, supplied member
+names, or earlier successful operations. Unknown retained files, unresolved
+aliases, BET-only classic attributes, embedded v3 wrappers and patch members
+are rejected without modifying the staged archive. Supported v3 rebuilds
+retain v3 and regenerate mixed HET/BET and classic tables. Invalidated
+signatures are removed. Unchanged commits and aborts require no reconstruction.
+Repeated names differing only by ASCII case or slash direction are accepted.
+Ambiguous names, embedded null bytes, unresolvable listfile entries and incomplete
+filename coverage reject reconstruction. A staged close failure prevents further
+mutation or publication; abort remains safe and attempts cleanup.
 .SH RETURN VALUE
 Returns \fBLIBMPQ_SUCCESS\fP on success, or a negative libmpq error.
 .SH ERRORS

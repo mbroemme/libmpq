@@ -816,6 +816,24 @@ class LibmpqTest {
                 assertArrayEquals(payload, archive.readFile(archive.fileNumber("payload")));
                 assertEquals(0, archive.verify(archive.fileNumber("payload")));
             }
+            Path source = directory.resolve("v3-add-source");
+            Files.write(source, new byte[] {4, 5, 6});
+            try (MpqUpdate update = encrypted ? MpqUpdate.beginMpqe(path, code) : MpqUpdate.begin(path)) {
+                update.addData("added", new byte[] {7, 8}, null);
+                assertEquals(Mpq.ERROR_EXIST, assertThrows(LibmpqException.class,
+                    () -> update.addData("ADDED", new byte[] {9}, null)).code());
+                update.addPath("from-path", source, null);
+                update.remove("added");
+                update.addData("added", new byte[] {9}, null);
+                update.rename("payload", "renamed");
+                update.commit();
+            }
+            try (Archive archive = encrypted ? Archive.openMpqe(path, code, 0) : Archive.open(path, 0)) {
+                assertEquals(3, archive.version());
+                assertArrayEquals(payload, archive.readFile(archive.fileNumber("renamed")));
+                assertArrayEquals(new byte[] {9}, archive.readFile(archive.fileNumber("added")));
+                assertArrayEquals(new byte[] {4, 5, 6}, archive.readFile(archive.fileNumber("from-path")));
+            }
         }
     }
 

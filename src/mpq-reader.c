@@ -1033,6 +1033,22 @@ libmpq__reader_validate_payload_range(
     return 0;
 }
 
+/* Named decryption must use the same slash normalization as the existing writer. */
+static int32_t
+reader_name_key(const char *name, uint32_t *key)
+{
+    size_t length = strlen(name);
+    char *normalized = malloc(length + 1);
+    if (normalized == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    for (size_t i = 0; i < length; ++i)
+        normalized[i] = name[i] == '/' ? '\\' : name[i];
+    normalized[length] = '\0';
+    *key = libmpq__crypto_hash_string(normalized, 0x300);
+    free(normalized);
+    return 0;
+}
+
 /*
  * Open a file entry and cache its packed block offset table for block operations.
  * Compressed entries load and decrypt their serialized offsets, while raw or
@@ -1068,7 +1084,10 @@ libmpq__reader_offsets_acquire(mpq_archive_s *mpq_archive, uint32_t file_number,
         /* A named internal read can supply a key to an anonymous cached open. */
         if (name != NULL && !mpq_archive->mpq_file[file_number]->seed_known) {
             uint32_t index = mpq_archive->mpq_map[file_number].entry_index;
-            uint32_t seed = libmpq__crypto_hash_string(name, 0x300);
+            uint32_t seed;
+            result = reader_name_key(name, &seed);
+            if (result != 0)
+                return result;
             if (mpq_archive->mpq_entry[index].flags & 0x00020000u)
                 seed = (seed + (uint32_t)mpq_archive->mpq_entry[index].offset) ^
                        (uint32_t)mpq_archive->mpq_entry[index].unpacked_size;
@@ -1108,7 +1127,10 @@ libmpq__reader_offsets_acquire(mpq_archive_s *mpq_archive, uint32_t file_number,
     mpq_archive->mpq_file[file_number]->open_count = 1;
 
     if (name != NULL) {
-        uint32_t seed = libmpq__crypto_hash_string(name, 0x300);
+        uint32_t seed;
+        result = reader_name_key(name, &seed);
+        if (result != 0)
+            goto error;
         if (mpq_archive->mpq_entry[entry_index].flags & 0x00020000u)
             seed = (seed + (uint32_t)mpq_archive->mpq_entry[entry_index].offset) ^
                    (uint32_t)mpq_archive->mpq_entry[entry_index].unpacked_size;

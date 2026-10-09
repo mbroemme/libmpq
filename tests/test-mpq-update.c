@@ -1556,6 +1556,511 @@ fail:
     return 1;
 }
 
+/* The same staged namespace and publication rules apply to every supported version. */
+static int
+test_generic_add(uint32_t version, int mpqe, int metadata)
+{
+    mpq_archive_create_options_s create = { version, 16, 512, LIBMPQ_ARCHIVE_CREATE_LISTFILE,
+                                            LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 |
+                                                LIBMPQ_ATTRIBUTE_FILETIME };
+    mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED,
+                                   LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    uint8_t payload[2000];
+    uint32_t number;
+    uint32_t generation;
+    int32_t result;
+    char path[128];
+    FILE *input;
+    memset(payload, 'X', sizeof(payload));
+    if (!metadata) {
+        create.flags = 0;
+        create.attributes = 0;
+    }
+    if (version == LIBMPQ_ARCHIVE_VERSION_THREE)
+        storage.flags |= 0x00020000u;
+    TEST_CHECK(test_temp_path(path, sizeof(path), "generic-add") == 0);
+    TEST_CHECK(
+        (mpqe ? libmpq__archive_create_mpqe(
+                    &archive, path, auth_code, sizeof(auth_code) - 1, &create
+                )
+              : libmpq__archive_create(&archive, path, &create)) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(
+        (mpqe ? libmpq__update_begin_mpqe(&update, path, auth_code, sizeof(auth_code) - 1)
+              : libmpq__update_begin(&update, path)) == 0
+    );
+    TEST_CHECK(libmpq__update_abort(update) == 0);
+    TEST_CHECK(
+        (mpqe ? libmpq__update_begin_mpqe(&update, path, auth_code, sizeof(auth_code) - 1)
+              : libmpq__update_begin(&update, path)) == 0
+    );
+    TEST_CHECK(libmpq__update_commit(update) == 0);
+    TEST_CHECK(
+        (mpqe ? libmpq__update_begin_mpqe(&update, path, auth_code, sizeof(auth_code) - 1)
+              : libmpq__update_begin(&update, path)) == 0
+    );
+    TEST_CHECK(
+        libmpq__update_replace_data(update, "missing", payload, sizeof(payload), NULL) ==
+        LIBMPQ_ERROR_EXIST
+    );
+    result = libmpq__update_add_data(update, "folder/secret", payload, sizeof(payload), &storage);
+    if (result != 0)
+        fprintf(stderr, "add version=%u mpqe=%d error=%d\n", version, mpqe, result);
+    TEST_CHECK(result == 0);
+    TEST_CHECK(
+        libmpq__update_add_data(update, "FOLDER/SECRET", payload, sizeof(payload), NULL) ==
+        LIBMPQ_ERROR_EXIST
+    );
+    input = fopen("update-add-input.bin", "wb");
+    TEST_CHECK(input != NULL && fwrite("path", 1, 4, input) == 4 && fclose(input) == 0);
+    TEST_CHECK(libmpq__update_add_path(update, "from-path", "update-add-input.bin", NULL) == 0);
+    TEST_CHECK(libmpq__update_add_data(update, "zero", NULL, 0, NULL) == 0);
+    TEST_CHECK(libmpq__update_rename(update, "folder/secret", "folder/renamed-secret") == 0);
+    TEST_CHECK(libmpq__update_remove(update, "from-path") == 0);
+    TEST_CHECK(libmpq__update_remove(update, "from-path") == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__update_add_data(update, "from-path", (const uint8_t *)"new", 3, NULL) == 0);
+    TEST_CHECK(
+        libmpq__update_replace_data(update, "from-path", (const uint8_t *)"replaced", 8, NULL) == 0
+    );
+    TEST_CHECK(
+        libmpq__update_add_path(update, "failed", "does-not-exist", NULL) == LIBMPQ_ERROR_OPEN
+    );
+    TEST_CHECK(libmpq__update_commit(update) == 0);
+    TEST_CHECK(
+        (mpqe ? libmpq__archive_open_mpqe(&archive, path, 0, auth_code, sizeof(auth_code) - 1)
+              : libmpq__archive_open(&archive, path, 0)) == 0
+    );
+    TEST_CHECK(libmpq__archive_version(archive, &generation) == 0 && generation == version + 1);
+    TEST_CHECK(check_named(archive, "folder/renamed-secret", payload, sizeof(payload)) == 0);
+    TEST_CHECK(check_named(archive, "from-path", (const uint8_t *)"replaced", 8) == 0);
+    TEST_CHECK(check_named(archive, "zero", (const uint8_t *)"", 0) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "folder/secret", &number) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__file_number(archive, "failed", &number) == LIBMPQ_ERROR_EXIST);
+    for (uint32_t i = 0; version == LIBMPQ_ARCHIVE_VERSION_THREE && i < archive->files; ++i) {
+        mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[i].entry_index];
+        TEST_CHECK(entry->source_mask == (LIBMPQ_ENTRY_SOURCE_CLASSIC | LIBMPQ_ENTRY_SOURCE_BET));
+        TEST_CHECK(
+            archive->classic_entry_indices[entry->classic_source_index] ==
+            archive->bet_entry_indices[entry->bet_source_index]
+        );
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(remove(path) == 0);
+    TEST_CHECK(remove("update-add-input.bin") == 0);
+    return 0;
+}
+
+/* A dense legacy block table grows without needing names for retained payloads. */
+static int
+test_add_dense(uint32_t version)
+{
+    mpq_archive_create_options_s create = { version, 1, 512, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    const char *path = "update-dense-add.mpq";
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "first", (const uint8_t *)"first", 5, NULL) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+    TEST_CHECK(libmpq__update_add_path(update, "bad", NULL, NULL) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__update_add_data(update, "second", (const uint8_t *)"second", 6, NULL) == 0);
+    TEST_CHECK(libmpq__update_commit(update) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(archive->mpq_header.block_table_count == 2);
+    TEST_CHECK(check_named(archive, "first", (const uint8_t *)"first", 5) == 0);
+    TEST_CHECK(check_named(archive, "second", (const uint8_t *)"second", 6) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(remove(path) == 0);
+    return 0;
+}
+
+/* Strip only synthetic classic tables, retaining the independently decoded HET/BET bytes. */
+static int
+strip_classic_tables(const char *path)
+{
+    uint8_t *bytes;
+    size_t size;
+    uint32_t end;
+    TEST_CHECK(read_bytes(path, &bytes, &size) == 0);
+    TEST_CHECK(size >= LIBMPQ_HEADER_V3_WIRE_SIZE);
+    end = libmpq__load_le32(bytes + 16);
+    TEST_CHECK(end >= LIBMPQ_HEADER_V3_WIRE_SIZE && end < size);
+    memset(bytes + 16, 0, 16);
+    memset(bytes + 32, 0, 12);
+    libmpq__store_le32(bytes + 8, end);
+    libmpq__store_le64(bytes + 44, end);
+    TEST_CHECK(write_bytes(path, bytes, end) == 0);
+    free(bytes);
+    return 0;
+}
+
+static int
+test_v3_reconstruction(int complete)
+{
+    const char *path = "update-v3-bet-only.mpq";
+    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_THREE, 8, 512, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    uint32_t count;
+    create.flags = complete ? LIBMPQ_ARCHIVE_CREATE_LISTFILE : 0;
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "known", (const uint8_t *)"known", 5, NULL) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, "unknown", (const uint8_t *)"unknown", 7, NULL) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(strip_classic_tables(path) == 0);
+    TEST_CHECK(copy_file(path, "update-v3-bet-reference.mpq") == 0);
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+    if (complete) {
+        TEST_CHECK(libmpq__update_remove(update, "known") == 0);
+        TEST_CHECK(libmpq__update_add_data(update, "new", (const uint8_t *)"new", 3, NULL) == 0);
+        TEST_CHECK(libmpq__update_commit(update) == 0);
+        TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+        TEST_CHECK(check_named(archive, "unknown", (const uint8_t *)"unknown", 7) == 0);
+        TEST_CHECK(check_named(archive, "new", (const uint8_t *)"new", 3) == 0);
+        TEST_CHECK(libmpq__archive_files(archive, &count) == 0 && count == 3);
+        TEST_CHECK(archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE);
+        TEST_CHECK(archive->mpq_header.block_table_count == archive->mpq_bet.header.entry_count);
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+    } else {
+        TEST_CHECK(libmpq__update_remove(update, "known") == LIBMPQ_ERROR_FORMAT);
+        TEST_CHECK(
+            libmpq__update_add_data(update, "new", (const uint8_t *)"new", 3, NULL) ==
+            LIBMPQ_ERROR_FORMAT
+        );
+        TEST_CHECK(libmpq__update_abort(update) == 0);
+        TEST_CHECK(same_file(path, "update-v3-bet-reference.mpq"));
+    }
+    TEST_CHECK(remove(path) == 0);
+    TEST_CHECK(remove("update-v3-bet-reference.mpq") == 0);
+    return 0;
+}
+
+/* Retained codec/cipher bytes and timestamps survive; signatures and failed publication do not. */
+static int
+test_v3_metadata_rollback(void)
+{
+    const char *path = "update-v3-metadata.mpq";
+    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_THREE, 8, 512,
+                                            LIBMPQ_ARCHIVE_CREATE_LISTFILE,
+                                            LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 |
+                                                LIBMPQ_ATTRIBUTE_FILETIME };
+    mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
+                                       0x00020000u,
+                                   LIBMPQ_COMPRESSION_LZMA, LIBMPQ_COMPRESSION_LZMA, 0, 0 };
+    mpq_update_ops_s ops = { fflush, fclose, fail_publish };
+    mpq_archive_s *archive = NULL;
+    mpq_writer_s *writer = NULL;
+    mpq_update_s *update = NULL;
+    mpq_file_attributes_s attributes;
+    uint8_t strong_key[sizeof(test_strong_signature_public_key)];
+    uint8_t payload[1500];
+    uint8_t *before;
+    uint8_t *after;
+    size_t before_size;
+    size_t after_size;
+    uint32_t number;
+    uint32_t signatures;
+    libmpq__off_t offset;
+    libmpq__off_t packed;
+    memset(payload, 'M', sizeof(payload));
+    test_strong_signature_private_key(strong_key);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    TEST_CHECK(
+        libmpq__archive_sign(
+            archive, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+            sizeof(test_signature_private_key)
+        ) == 0
+    );
+    TEST_CHECK(
+        libmpq__archive_sign(archive, LIBMPQ_SIGNATURE_STRONG, strong_key, sizeof(strong_key)) == 0
+    );
+    TEST_CHECK(libmpq__writer_begin(archive, "keep", sizeof(payload), &storage, &writer) == 0);
+    TEST_CHECK(libmpq__writer_timestamp(writer, 77) == 0);
+    TEST_CHECK(libmpq__writer_write(writer, payload, sizeof(payload)) == 0);
+    TEST_CHECK(libmpq__writer_finish(writer) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(read_bytes(path, &before, &before_size) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "keep", &number) == 0);
+    TEST_CHECK(libmpq__file_offset(archive, number, &offset) == 0);
+    TEST_CHECK(libmpq__file_size_packed(archive, number, &packed) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+    TEST_CHECK(libmpq__update_add_data(update, "fresh", (const uint8_t *)"fresh", 5, NULL) == 0);
+    TEST_CHECK(libmpq__update_commit(update) == 0);
+    TEST_CHECK(read_bytes(path, &after, &after_size) == 0);
+    TEST_CHECK(
+        (uint64_t)offset + (uint64_t)packed <= before_size &&
+        (uint64_t)offset + (uint64_t)packed <= after_size
+    );
+    TEST_CHECK(memcmp(before + (size_t)offset, after + (size_t)offset, (size_t)packed) == 0);
+    free(before);
+    free(after);
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(check_named(archive, "keep", payload, sizeof(payload)) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "keep", &number) == 0);
+    TEST_CHECK(
+        libmpq__file_attributes(archive, number, &attributes) == 0 && attributes.filetime == 77
+    );
+    TEST_CHECK(
+        libmpq__file_verify(
+            archive, number, LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5, &signatures
+        ) == 0 &&
+        signatures == 0
+    );
+    TEST_CHECK(libmpq__archive_signatures(archive, &signatures) == 0 && signatures == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(copy_file(path, "update-v3-metadata-reference.mpq") == 0);
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+    TEST_CHECK(libmpq__update_add_data(update, "unpublished", payload, sizeof(payload), NULL) == 0);
+    libmpq__update_set_ops(update, &ops);
+    TEST_CHECK(libmpq__update_commit(update) == LIBMPQ_ERROR_WRITE);
+    TEST_CHECK(same_file(path, "update-v3-metadata-reference.mpq"));
+    TEST_CHECK(remove(path) == 0);
+    TEST_CHECK(remove("update-v3-metadata-reference.mpq") == 0);
+    return 0;
+}
+
+/* Each operation must preserve unrelated codec/cipher members, not just their names. */
+static int
+test_v3_retained_operations(void)
+{
+    const char *path = "update-v3-retained.mpq";
+    const char *keep[] = { "single", "encrypted", "fixed-sector" };
+    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_THREE, 16, 512,
+                                            LIBMPQ_ARCHIVE_CREATE_LISTFILE, 0 };
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS, LIBMPQ_COMPRESSION_ZLIB,
+                                   LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    uint8_t payload[1800];
+    size_t lengths[] = { 512, 512, sizeof(payload) };
+    libmpq__off_t packed[3];
+    uint32_t flags[3];
+    uint32_t counts[] = { 6, 6, 5, 5, 5 };
+    uint32_t number;
+    uint32_t count;
+    for (size_t i = 0; i < sizeof(payload); ++i)
+        payload[i] = (uint8_t)(i % 19);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    for (size_t i = 0; i < 3; ++i) {
+        options.flags = LIBMPQ_FILE_FLAG_COMPRESS;
+        if (i < 2)
+            options.flags |= LIBMPQ_FILE_FLAG_SINGLE;
+        if (i != 0)
+            options.flags |= LIBMPQ_FILE_FLAG_ENCRYPTED;
+        if (i == 2)
+            options.flags |= 0x00020000u;
+        TEST_CHECK(
+            libmpq__archive_add_data(
+                archive, keep[i], payload, (libmpq__off_t)lengths[i], &options
+            ) == 0
+        );
+    }
+    TEST_CHECK(libmpq__archive_add_data(archive, "edit", (const uint8_t *)"old", 3, NULL) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    for (size_t i = 0; i < 3; ++i) {
+        TEST_CHECK(libmpq__file_number(archive, keep[i], &number) == 0);
+        TEST_CHECK(libmpq__file_size_packed(archive, number, &packed[i]) == 0);
+        TEST_CHECK(libmpq__file_flags(archive, number, &flags[i]) == 0);
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    for (unsigned operation = 0; operation < 5; ++operation) {
+        TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+        if (operation == 0)
+            TEST_CHECK(
+                libmpq__update_add_data(update, "added", payload, sizeof(payload), NULL) == 0
+            );
+        else if (operation == 1)
+            TEST_CHECK(
+                libmpq__update_replace_data(update, "edit", payload, sizeof(payload), NULL) == 0
+            );
+        else if (operation == 2)
+            TEST_CHECK(libmpq__update_remove(update, "added") == 0);
+        else if (operation == 3)
+            TEST_CHECK(libmpq__update_rename(update, "edit", "renamed") == 0);
+        else {
+            TEST_CHECK(libmpq__update_remove(update, "renamed") == 0);
+            TEST_CHECK(
+                libmpq__update_add_data(update, "renamed", payload, sizeof(payload), NULL) == 0
+            );
+            TEST_CHECK(
+                libmpq__update_replace_data(update, "renamed", (const uint8_t *)"new", 3, NULL) == 0
+            );
+            TEST_CHECK(libmpq__update_rename(update, "renamed", "final") == 0);
+        }
+        TEST_CHECK(libmpq__update_commit(update) == 0);
+        TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+        TEST_CHECK(libmpq__archive_files(archive, &count) == 0 && count == counts[operation]);
+        for (size_t i = 0; i < 3; ++i) {
+            uint8_t *het = archive->het_data;
+            uint32_t classic_number;
+            uint32_t actual_flags;
+            libmpq__off_t actual_packed;
+            libmpq__off_t unpacked;
+            TEST_CHECK(check_named(archive, keep[i], payload, lengths[i]) == 0);
+            TEST_CHECK(libmpq__file_number(archive, keep[i], &number) == 0);
+            archive->het_data = NULL;
+            TEST_CHECK(libmpq__file_number(archive, keep[i], &classic_number) == 0);
+            archive->het_data = het;
+            TEST_CHECK(number == classic_number);
+            TEST_CHECK(
+                libmpq__file_flags(archive, number, &actual_flags) == 0 && actual_flags == flags[i]
+            );
+            TEST_CHECK(
+                libmpq__file_size_packed(archive, number, &actual_packed) == 0 &&
+                actual_packed == packed[i]
+            );
+            TEST_CHECK(
+                libmpq__file_size_unpacked(archive, number, &unpacked) == 0 &&
+                unpacked == (libmpq__off_t)lengths[i]
+            );
+        }
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+    }
+    TEST_CHECK(remove(path) == 0);
+    return 0;
+}
+
+/* Hand-written listfiles exercise reconstruction independently of writer-generated lists. */
+static int
+test_v3_list_names(unsigned variant)
+{
+    const char *path = "update-v3-list-names.mpq";
+    static const char equivalent_names[] = "\r\nfolder/name\n"
+                                           "FOLDER/NAME\r\nfolder\\name\nfolder/name\nother\r\n";
+    static const char *lists[] = { equivalent_names, "folder/name\nother\nmissing\n",
+                                   "folder/name\n", "folder/name\nother\ninvalid\0name\n" };
+    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_THREE, 8, 512, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    char long_name[267];
+    char list[600];
+    const char *name = "folder/name";
+    const char *bytes = variant < 4 ? lists[variant] : list;
+    size_t length = variant == 3 ? sizeof("folder/name\nother\ninvalid\0name\n") - 1
+                                 : (variant < 4 ? strlen(bytes) : 0);
+    if (variant == 4) {
+        memset(long_name, 'a', 264);
+        long_name[264] = 'x';
+        long_name[265] = '\0';
+        name = long_name;
+        length = (size_t)snprintf(list, sizeof(list), "%s\n", name);
+        long_name[264] = 'y';
+        length += (size_t)snprintf(list + length, sizeof(list) - length, "%s\nother\n", name);
+        long_name[264] = 'x';
+    }
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, name, (const uint8_t *)"first", 5, NULL) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "other", (const uint8_t *)"second", 6, NULL) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(
+            archive, "(listfile)", (const uint8_t *)bytes, (libmpq__off_t)length, NULL
+        ) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(strip_classic_tables(path) == 0);
+    TEST_CHECK(copy_file(path, "update-v3-list-reference.mpq") == 0);
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+    if (variant == 0) {
+        TEST_CHECK(
+            libmpq__update_add_data(update, "added", (const uint8_t *)"third", 5, NULL) == 0
+        );
+        TEST_CHECK(libmpq__update_commit(update) == 0);
+        TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+        TEST_CHECK(check_named(archive, "folder\\name", (const uint8_t *)"first", 5) == 0);
+        TEST_CHECK(check_named(archive, "other", (const uint8_t *)"second", 6) == 0);
+        TEST_CHECK(check_named(archive, "added", (const uint8_t *)"third", 5) == 0);
+        TEST_CHECK(archive->mpq_header.block_table_count == archive->mpq_bet.header.entry_count);
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+    } else {
+        TEST_CHECK(
+            libmpq__update_add_data(update, "added", (const uint8_t *)"third", 5, NULL) ==
+            LIBMPQ_ERROR_FORMAT
+        );
+        TEST_CHECK(libmpq__update_abort(update) == 0);
+        TEST_CHECK(same_file(path, "update-v3-list-reference.mpq"));
+    }
+    TEST_CHECK(remove(path) == 0);
+    TEST_CHECK(remove("update-v3-list-reference.mpq") == 0);
+    return 0;
+}
+
+/* Faults after validation must not publish a rebuild or leave a consumed stream owned. */
+static int
+test_adoption_failure(update_fault_e fault, int commit, int mpqe, uint32_t version)
+{
+    const char *path = "update-v3-adoption.mpq";
+    mpq_archive_create_options_s create = { version, 8, 512, LIBMPQ_ARCHIVE_CREATE_LISTFILE, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    mpq_update_ops_s ops = { fflush, fclose, fail_publish };
+    char *previous;
+    FILE *probe;
+    int missing;
+    TEST_CHECK(
+        (mpqe ? libmpq__archive_create_mpqe(
+                    &archive, path, auth_code, sizeof(auth_code) - 1, &create
+                )
+              : libmpq__archive_create(&archive, path, &create)) == 0
+    );
+    TEST_CHECK(libmpq__archive_add_data(archive, "keep", (const uint8_t *)"keep", 4, NULL) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(copy_file(path, "update-v3-adoption-reference.mpq") == 0);
+    TEST_CHECK(
+        (mpqe ? libmpq__update_begin_mpqe(&update, path, auth_code, sizeof(auth_code) - 1)
+              : libmpq__update_begin(&update, path)) == 0
+    );
+    previous = libmpq__string_duplicate(libmpq__update_path(update));
+    TEST_CHECK(previous != NULL);
+    if (fault == UPDATE_FAULT_FLUSH)
+        ops.flush = fail_flush;
+    else if (fault == UPDATE_FAULT_CLOSE)
+        ops.close = fail_close;
+    libmpq__update_set_ops(update, &ops);
+    TEST_CHECK(
+        libmpq__update_add_data(update, "added", (const uint8_t *)"added", 5, NULL) ==
+        (fault == UPDATE_FAULT_FLUSH ? LIBMPQ_ERROR_WRITE : LIBMPQ_ERROR_CLOSE)
+    );
+    TEST_CHECK(strcmp(previous, libmpq__update_path(update)) == 0);
+    if (fault == UPDATE_FAULT_CLOSE)
+        TEST_CHECK(libmpq__update_remove(update, "keep") == LIBMPQ_ERROR_EXIST);
+    else {
+        TEST_CHECK(libmpq__archive_open(&archive, previous, 0) == 0);
+        TEST_CHECK(check_named(archive, "keep", (const uint8_t *)"keep", 4) == 0);
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+    }
+    if (commit)
+        TEST_CHECK(
+            libmpq__update_commit(update) ==
+            (fault == UPDATE_FAULT_FLUSH ? LIBMPQ_ERROR_WRITE : LIBMPQ_ERROR_EXIST)
+        );
+    else {
+        libmpq__update_set_ops(update, &(mpq_update_ops_s){ fflush, fclose, fail_publish });
+        if (fault == UPDATE_FAULT_FLUSH)
+            TEST_CHECK(
+                libmpq__update_add_data(update, "added", (const uint8_t *)"added", 5, NULL) == 0
+            );
+        TEST_CHECK(libmpq__update_abort(update) == 0);
+    }
+    TEST_CHECK(same_file(path, "update-v3-adoption-reference.mpq"));
+    probe = fopen(previous, "rb");
+    missing = probe == NULL;
+    if (probe != NULL)
+        (void)fclose(probe);
+    TEST_CHECK(missing);
+    free(previous);
+    TEST_CHECK(remove(path) == 0);
+    TEST_CHECK(remove("update-v3-adoption-reference.mpq") == 0);
+    return 0;
+}
+
 int
 main(void)
 {
@@ -1597,5 +2102,27 @@ main(void)
 #endif
     TEST_CHECK(test_mpqe_noop() == 0);
     TEST_CHECK(test_public_mpqe_updates() == 0);
+    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_THREE;
+         ++version) {
+        TEST_CHECK(test_generic_add(version, 0, 1) == 0);
+        TEST_CHECK(test_generic_add(version, 1, 1) == 0);
+    }
+    TEST_CHECK(test_generic_add(LIBMPQ_ARCHIVE_VERSION_THREE, 0, 0) == 0);
+    TEST_CHECK(test_generic_add(LIBMPQ_ARCHIVE_VERSION_THREE, 1, 0) == 0);
+    TEST_CHECK(test_v3_reconstruction(0) == 0);
+    TEST_CHECK(test_v3_reconstruction(1) == 0);
+    TEST_CHECK(test_v3_metadata_rollback() == 0);
+    TEST_CHECK(test_v3_retained_operations() == 0);
+    for (unsigned variant = 0; variant < 5; ++variant)
+        TEST_CHECK(test_v3_list_names(variant) == 0);
+    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_THREE;
+         ++version)
+        for (int mpqe = 0; mpqe < 2; ++mpqe)
+            for (int commit = 0; commit < 2; ++commit) {
+                TEST_CHECK(test_adoption_failure(UPDATE_FAULT_FLUSH, commit, mpqe, version) == 0);
+                TEST_CHECK(test_adoption_failure(UPDATE_FAULT_CLOSE, commit, mpqe, version) == 0);
+            }
+    TEST_CHECK(test_add_dense(LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
+    TEST_CHECK(test_add_dense(LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
     return 0;
 }

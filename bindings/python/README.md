@@ -91,7 +91,10 @@ Creation defaults to `COMPRESSION_POLICY_STANDARD`. Pass
 Use `mpq.archive_compression_allowed(version, mask, policy)` to query whether
 a compression selection is allowed by the writer policy. Version uses
 `ARCHIVE_VERSION_ONE`, `ARCHIVE_VERSION_TWO`, or `ARCHIVE_VERSION_THREE`.
-V3 emits HET/BET plus classic tables; v3 updates/rebuilds remain unsupported.
+V3 emits HET/BET plus classic tables; v3 transactions require complete filename reconstruction.
+`Update.add_data()` and `Update.add_path()` add absent staged names; duplicates
+fail and replacement remains existing-only. Removal followed by addition is
+supported. V3 updates use complete listfiles or names learned during staging.
 Readers remain permissive
 regardless of the creation policy.
 

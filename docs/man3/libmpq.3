@@ -189,6 +189,14 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        const mpq_file_options_s *" "options"
 .BI ");"
 .sp
+.BI "int32_t libmpq__update_add_data(mpq_update_s *" "update,"
+.BI "        const char *" "filename, const uint8_t *" "data,"
+.BI "        libmpq__off_t " "size, const mpq_file_options_s *" "options);"
+.sp
+.BI "int32_t libmpq__update_add_path(mpq_update_s *" "update,"
+.BI "        const char *" "filename, const char *" "source_path,"
+.BI "        const mpq_file_options_s *" "options);"
+.sp
 .BI "int32_t libmpq__update_replace_path("
 .BI "        mpq_update_s *" "update,"
 .BI "        const char *" "filename,"
@@ -419,7 +427,7 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .SH DESCRIPTION
 \fIlibmpq\fP reads and creates MPQ v1, v2, and v3 archives, including embedded
 MPQ containers. V3 creation emits both HET/BET and classic tables.
-V3 transactional updates/rebuilding and MPQ v4 remain unsupported.
+V3 transactions require complete filenames; MPQ v4 remains unsupported.
 .SS "Archive Opening and Custom I/O"
 Open filesystem archives with \fBlibmpq__archive_open\fP(3) or provide a
 borrowed random-access callback through \fBlibmpq__archive_open_io\fP(3).
@@ -443,9 +451,12 @@ archive handle. Encrypted random-access writing is not supported.
 .SS "Transactional Updates"
 \fBlibmpq__update_begin\fP(3) stages modifications to ordinary or
 embedded MPQs in a distinct handle. Authenticated MPQE updates use
-\fBlibmpq__update_begin_mpqe\fP(3). Replace, remove, and rename affect
+\fBlibmpq__update_begin_mpqe\fP(3). Add, replace, remove, and rename affect
 only the working copy until commit atomically publishes it; abort
 discards it. Both commit and abort consume the update handle.
+Addition requires an absent staged filename; replacement remains existing-only.
+V3 rebuilds require complete filenames and supported metadata; unsupported
+inputs fail rather than silently omit files. Modified signatures are removed.
 .SS "Patch Archives"
 The patch creation API stages replacement and deletion entries without
 changing the base archive. Finish publishes a new patch artifact; abort
@@ -508,6 +519,8 @@ lossy ADPCM may legitimately differ from source-byte checksums.
 .BR libmpq__update_remove (3),
 .BR libmpq__update_rename (3),
 .BR libmpq__update_replace_data (3),
+.BR libmpq__update_add_data (3),
+.BR libmpq__update_add_path (3),
 .BR libmpq__update_replace_path (3)
 .SS "Patch Archives"
 .BR libmpq__patch_abort (3),

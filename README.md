@@ -38,7 +38,7 @@ MPQ v2+ LZMA method.
 | --- | --- | --- | --- |
 | MPQ v1 (wire version 0) | Supported | Supported | Supported |
 | MPQ v2 (wire version 1) | Supported | Supported | Supported |
-| MPQ v3 (wire version 2) | Classic, HET/BET, mixed tables | Mixed HET/BET + classic tables | Not supported |
+| MPQ v3 (wire version 2) | Classic, HET/BET, mixed tables | Mixed HET/BET + classic tables | Supported with complete filenames |
 | MPQ v4 (wire version 3) | Not supported | Not supported | Not supported |
 
 V3 coverage uses synthetic archives. Extended tables have a defensive 1 MiB
@@ -365,8 +365,9 @@ headers, tables, encryption, sectors, and compression, see the
 ## Limitations
 
 * Seekable MPQ v3 creation emits HET/BET plus classic tables with shared row
-  identity. V3 transactional update/rebuild remains unsupported; MPQ v4 is
-  unsupported. V1/v2 creation defaults are unchanged.
+  identity. V3 transactions require complete filename reconstruction;
+  unsupported aliases, wrappers and metadata layouts are rejected without
+  losing files. MPQ v4 is unsupported. V1/v2 defaults are unchanged.
 * Encrypted random-access writing is not supported. MPQE modification uses
   transactional decoding and re-encryption instead.
 * MPQE creation and updates use private plaintext staging files. Cleanup is

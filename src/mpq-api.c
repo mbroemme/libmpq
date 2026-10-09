@@ -294,6 +294,26 @@ libmpq__update_begin_mpqe(
 }
 
 int32_t
+libmpq__update_add_data(
+    mpq_update_s *update, const char *filename, const uint8_t *data, libmpq__off_t size,
+    const mpq_file_options_s *options
+)
+{
+    return libmpq__update_transaction_add(update, filename, data, size, NULL, options);
+}
+
+int32_t
+libmpq__update_add_path(
+    mpq_update_s *update, const char *filename, const char *source_path,
+    const mpq_file_options_s *options
+)
+{
+    if (source_path == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    return libmpq__update_transaction_add(update, filename, NULL, 0, source_path, options);
+}
+
+int32_t
 libmpq__update_replace_data(
     mpq_update_s *update, const char *filename, const uint8_t *data, libmpq__off_t size,
     const mpq_file_options_s *options

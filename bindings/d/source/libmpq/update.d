@@ -37,6 +37,41 @@ final class Update {
         return new Update(result);
     }
 
+    /** Stage a new member with native defaults; duplicate names fail. */
+    void addData(string name, const(ubyte)[] data) {
+        addDataImpl(name, data, null);
+    }
+
+    /** Stage a new member with explicit storage options. */
+    void addData(string name, const(ubyte)[] data, FileOptions options) {
+        auto nativeOptions = options.nativeOptions();
+        addDataImpl(name, data, &nativeOptions);
+    }
+
+    private void addDataImpl(string name, const(ubyte)[] data,
+                            const(mpq_file_options_s)* options) {
+        ensureOpen();
+        if (data.length > cast(size_t)long.max)
+            throw new MPQException("Update.addData", ERROR_SIZE);
+        checkStatus(libmpq__update_add_data(handle, toStringz(name),
+                    data.length == 0 ? null : data.ptr, cast(off_t)data.length,
+                    options), "libmpq__update_add_data");
+    }
+
+    /** Stage a new member from a caller-owned source path. */
+    void addPath(string name, string sourcePath) {
+        ensureOpen();
+        checkStatus(libmpq__update_add_path(handle, toStringz(name), toStringz(sourcePath), null),
+                    "libmpq__update_add_path");
+    }
+
+    void addPath(string name, string sourcePath, FileOptions options) {
+        ensureOpen();
+        auto nativeOptions = options.nativeOptions();
+        checkStatus(libmpq__update_add_path(handle, toStringz(name), toStringz(sourcePath), &nativeOptions),
+                    "libmpq__update_add_path");
+    }
+
     /** Stage replacement using native defaults and preserving member identity. */
     void replaceData(string name, const(ubyte)[] data) {
         replaceDataImpl(name, data, null);

@@ -1,0 +1,47 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__UPDATE_ADD_DATA 3 2026-10-12 "The MoPaQ archive library"
+.SH NAME
+libmpq__update_add_data \- add an absent member to a staged MPQ update
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__update_add_data(mpq_update_s *" "update,"
+.BI "        const char *" "filename, const uint8_t *" "data,"
+.BI "        libmpq__off_t " "size, const mpq_file_options_s *" "options);"
+.fi
+.SH DESCRIPTION
+Adds a new filename to the current staged namespace. Data and options are
+borrowed only during the call; NULL options select native storage defaults.
+NULL data is permitted for a zero-byte member. Removal followed by addition
+of the same filename is supported. Replacement APIs remain replacement-only.
+The original archive is unchanged until commit. Failures before staged ownership
+transfer leave the previous stage available. If closing the previous stage fails
+after rebuild validation, further mutation and commit are rejected; abort remains
+safe and attempts temporary-file cleanup.
+V3 rebuilds require complete filename reconstruction; see libmpq__update_begin(3).
+.SH RETURN VALUE
+Returns zero on success or a negative libmpq error.
+.SH ERRORS
+Duplicate filenames return LIBMPQ_ERROR_EXIST. Reserved internal filenames or
+unsupported source layouts return LIBMPQ_ERROR_FORMAT. Size, table-capacity,
+allocation, encoding and I/O errors may also be returned.
+.SH SEE ALSO
+.BR libmpq__update_add_path (3),
+.BR libmpq__update_replace_data (3),
+.BR libmpq__update_begin (3),
+.BR libmpq__update_commit (3),
+.BR libmpq__update_abort (3)

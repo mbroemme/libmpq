@@ -89,6 +89,8 @@ public final class LibmpqNative {
     private static final MethodHandle UPDATE_BEGIN;
     private static final MethodHandle UPDATE_BEGIN_MPQE;
     private static final MethodHandle UPDATE_REPLACE_DATA;
+    private static final MethodHandle UPDATE_ADD_DATA;
+    private static final MethodHandle UPDATE_ADD_PATH;
     private static final MethodHandle UPDATE_REPLACE_PATH;
     private static final MethodHandle UPDATE_REMOVE;
     private static final MethodHandle UPDATE_RENAME;
@@ -211,6 +213,12 @@ public final class LibmpqNative {
         UPDATE_REPLACE_DATA = function(linker, lookup, "libmpq__update_replace_data",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                       ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS));
+        UPDATE_ADD_DATA = function(linker, lookup, "libmpq__update_add_data",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS));
+        UPDATE_ADD_PATH = function(linker, lookup, "libmpq__update_add_path",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS, ValueLayout.ADDRESS));
         UPDATE_REPLACE_PATH = function(linker, lookup, "libmpq__update_replace_path",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                       ValueLayout.ADDRESS, ValueLayout.ADDRESS));
@@ -531,6 +539,14 @@ public final class LibmpqNative {
     public static int updateReplaceData(MemorySegment update, MemorySegment name,
                                         MemorySegment data, long size, MemorySegment options) {
         return callInt(UPDATE_REPLACE_DATA, update, name, data, size, options);
+    }
+    public static int updateAddData(MemorySegment update, MemorySegment name,
+                                    MemorySegment data, long size, MemorySegment options) {
+        return callInt(UPDATE_ADD_DATA, update, name, data, size, options);
+    }
+    public static int updateAddPath(MemorySegment update, MemorySegment name,
+                                    MemorySegment path, MemorySegment options) {
+        return callInt(UPDATE_ADD_PATH, update, name, path, options);
     }
     public static int updateReplacePath(MemorySegment update, MemorySegment name,
                                         MemorySegment path, MemorySegment options) {

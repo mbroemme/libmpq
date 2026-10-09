@@ -249,6 +249,8 @@ _configure("libmpq__update_begin", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ct
 _configure("libmpq__update_begin_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p,
            _BYTE_PTR, ctypes.c_size_t)
 _configure("libmpq__update_replace_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE_PTR, _OFF_T, _VOID_PTR)
+_configure("libmpq__update_add_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE_PTR, _OFF_T, _VOID_PTR)
+_configure("libmpq__update_add_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__update_replace_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__update_remove", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p)
 _configure("libmpq__update_rename", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p)
@@ -409,6 +411,13 @@ class Update:
 
     def replace_data(self, name, data, options=None):
         """Stage bytes-like replacement; None uses native storage defaults."""
+        self._stage_data(name, data, options, libmpq.libmpq__update_replace_data)
+
+    def add_data(self, name, data, options=None):
+        """Stage a new member; duplicate names fail without changing the transaction."""
+        self._stage_data(name, data, options, libmpq.libmpq__update_add_data)
+
+    def _stage_data(self, name, data, options, operation):
         self._ensure_open()
         native_options = self._options(options)
         view = memoryview(data)
@@ -418,7 +427,7 @@ class Update:
                 buffer = (ctypes.c_uint8 * len(view)).from_buffer_copy(view)
             else:
                 buffer = (ctypes.c_uint8 * len(view)).from_buffer(view)
-            libmpq.libmpq__update_replace_data(
+            operation(
                 self._update, _as_bytes(name), buffer if len(view) else None,
                 len(view), native_options
             )
@@ -432,6 +441,13 @@ class Update:
         libmpq.libmpq__update_replace_path(
             self._update, _as_bytes(name), _as_bytes(source_path),
             native_options
+        )
+
+    def add_path(self, name, source_path, options=None):
+        """Stage a new member from a caller-owned source path."""
+        self._ensure_open()
+        libmpq.libmpq__update_add_path(
+            self._update, _as_bytes(name), _as_bytes(source_path), self._options(options)
         )
 
     def remove(self, name):

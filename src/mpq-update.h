@@ -22,7 +22,10 @@
 
 #include "mpq-file.h"
 
-/* Private operations permit deterministic transaction finalization tests. */
+/*
+ * Private operations permit deterministic adoption/finalization tests.
+ * close consumes its stream even when it reports failure, just like fclose.
+ */
 typedef struct mpq_update_ops
 {
     int (*flush)(FILE *file);
@@ -38,6 +41,10 @@ const char *libmpq__update_path(const mpq_update_s *update);
 int32_t libmpq__update_transaction_commit(mpq_update_s *update);
 int32_t libmpq__update_transaction_abort(mpq_update_s *update);
 int32_t libmpq__update_transaction_replace(
+    mpq_update_s *update, const char *filename, const uint8_t *data, libmpq__off_t size,
+    const char *source_path, const mpq_file_options_s *options
+);
+int32_t libmpq__update_transaction_add(
     mpq_update_s *update, const char *filename, const uint8_t *data, libmpq__off_t size,
     const char *source_path, const mpq_file_options_s *options
 );
