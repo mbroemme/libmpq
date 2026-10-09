@@ -14,6 +14,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import os
+import sys
 import threading
 from dataclasses import dataclass
 
@@ -52,7 +53,9 @@ COMPRESSION_POLICY_EXTENDED = 1
 FILE_FLAG_IMPLODE = 0x00000100
 FILE_FLAG_COMPRESS = 0x00000200
 FILE_FLAG_ENCRYPTED = 0x00010000
+FILE_FLAG_PATCH_FILE = 0x00100000
 FILE_FLAG_SINGLE = 0x01000000
+FILE_FLAG_DELETE_MARKER = 0x02000000
 FILE_FLAG_SECTOR_CRC = 0x04000000
 COMPRESSION_HUFFMAN = 0x01
 COMPRESSION_ZLIB = 0x02
@@ -282,6 +285,8 @@ _configure("libmpq__archive_version", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(
 _configure("libmpq__archive_files", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_size_packed", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_OFF_T))
 _configure("libmpq__file_size_unpacked", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_OFF_T))
+_configure("libmpq__patch_payload_size", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_OFF_T))
+_configure("libmpq__patch_payload_read", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_char_p, _BYTE_PTR, _OFF_T, ctypes.POINTER(_OFF_T))
 _configure("libmpq__file_offset", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_OFF_T))
 for _name in ("blocks", "flags"):
     _configure("libmpq__file_" + _name, ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
@@ -1080,6 +1085,32 @@ class File:
         buffer = _native_buffer(self.unpacked_size)
         transferred = _OFF_T()
         libmpq.libmpq__file_read(self._archive._mpq, self.number, None if not self.unpacked_size else buffer, self.unpacked_size, ctypes.byref(transferred))
+        return bytes(buffer[:transferred.value])
+
+    @property
+    def patch_payload_size(self):
+        """Decoded PTCH size, not the final patched target size."""
+        self._archive._ensure_open()
+        return _read_value(libmpq.libmpq__patch_payload_size, _OFF_T,
+                           self._archive._mpq, self.number)
+
+    def read_patch_payload(self, filename=None):
+        """Return validated PTCH bytes without applying the patch or its prefix.
+
+        Pass the physical member filename when encryption requires a named key.
+        Native errors raise; the returned bytes are owned by the caller.
+        """
+        size = self.patch_payload_size
+        if size < 0 or size > sys.maxsize:
+            raise LibmpqSizeError(ERROR_SIZE, "PTCH payload size cannot fit in Python memory")
+        buffer = _native_buffer(size)
+        transferred = _OFF_T()
+        libmpq.libmpq__patch_payload_read(
+            self._archive._mpq, self.number,
+            None if filename is None else _as_bytes(filename),
+            None if size == 0 else buffer, size, ctypes.byref(transferred))
+        if transferred.value < 0 or transferred.value > size:
+            raise LibmpqSizeError(ERROR_SIZE, "Invalid native PTCH byte count")
         return bytes(buffer[:transferred.value])
 
     def read_block(self, block):

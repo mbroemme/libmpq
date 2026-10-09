@@ -49,6 +49,69 @@ STRONG_PRIVATE_KEY = STRONG_PUBLIC_KEY[:256] + bytes.fromhex(
 )
 
 
+@pytest.mark.parametrize("version,wire", [
+    (1, "505443485400000088010000100000004d44355f28000000f5e506c1646586cd587606b06204f1edbd9130574d913d6ccec47d341a29d0625846524d1c000000434f50595061746368206c61796572206f6e650a"),
+    (2, "505443485600000088010000120000004d44355f28000000f5e506c1646586cd587606b06204f1ed78a901df03758fa62e8d0471968d79345846524d1e000000434f505956657273696f6e2074776f2070617463680a"),
+])
+def test_patch_payload_fixtures(version, wire):
+    expected = bytes.fromhex(wire)
+    with mpq.Archive(FIXTURES / f"mpq-v{version}-features-patch.mpq") as archive:
+        entry = archive["overview.txt"]
+        assert entry.flags & mpq.FILE_FLAG_PATCH_FILE
+        assert archive["pkware.txt"].flags & mpq.FILE_FLAG_DELETE_MARKER
+        assert mpq.FILE_FLAG_PATCH_FILE == 0x00100000
+        assert mpq.FILE_FLAG_DELETE_MARKER == 0x02000000
+        assert entry.patch_payload_size == len(expected)
+        assert entry.patch_payload_size != entry.unpacked_size
+        assert entry.read_patch_payload() == expected
+        assert archive[entry.number].read_patch_payload("overview.txt") == expected
+        assert expected[:4] == b"PTCH"
+        for action in (lambda: archive["patch-only.txt"].patch_payload_size,
+                       lambda: archive["patch-only.txt"].read_patch_payload()):
+            with pytest.raises(mpq.LibmpqNotFoundError):
+                action()
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            mpq.libmpq.libmpq__patch_payload_size(
+                archive._mpq, 0xffffffff, ctypes.byref(mpq._OFF_T()))
+    with pytest.raises(mpq.LibmpqStateError):
+        entry.read_patch_payload()
+
+
+def test_patch_payload_integrity():
+    wire = bytearray((FIXTURES / "mpq-v1-features-patch.mpq").read_bytes())
+    payload_start = wire.index(b"PTCH")
+    wire[payload_start - 16] ^= 1  # Patch-info MD5, not PTCH contents.
+    with mpq.Archive.open_io(io.BytesIO(wire), len(wire)) as archive:
+        entry = archive["overview.txt"]
+        assert entry.patch_payload_size == 84
+        with pytest.raises(mpq.LibmpqFormatError):
+            entry.read_patch_payload()
+
+
+def test_patch_payload_allocation_bounds(monkeypatch):
+    with mpq.Archive(FIXTURES / "mpq-v1-features-patch.mpq") as archive:
+        entry = archive["overview.txt"]
+        for size in (-1, sys.maxsize + 1):
+            monkeypatch.setattr(mpq.File, "patch_payload_size", property(lambda self: size))
+            with pytest.raises(mpq.LibmpqSizeError):
+                entry.read_patch_payload()
+        monkeypatch.setattr(mpq.File, "patch_payload_size", property(lambda self: 0))
+
+        def empty_read(handle, number, name, buffer, capacity, transferred):
+            assert buffer is None and capacity == 0 and name is None
+            ctypes.cast(transferred, ctypes.POINTER(mpq._OFF_T))[0] = 0
+
+        monkeypatch.setattr(mpq.libmpq, "libmpq__patch_payload_read", empty_read)
+        assert entry.read_patch_payload() == b""
+
+        def invalid_count(*args):
+            ctypes.cast(args[-1], ctypes.POINTER(mpq._OFF_T))[0] = 1
+
+        monkeypatch.setattr(mpq.libmpq, "libmpq__patch_payload_read", invalid_count)
+        with pytest.raises(mpq.LibmpqSizeError):
+            entry.read_patch_payload()
+
+
 def test_strong_signature():
     """Verify independently signed test data through the public signature selector."""
     assert len(STRONG_PUBLIC_KEY) == 512
@@ -282,6 +345,7 @@ def test_patch_creation_binding(tmp_path):
     options = mpq.FileCreateOptions.compressed(mpq.COMPRESSION_ZLIB,
                                                 mpq.COMPRESSION_BZIP2)
     options.locale, options.platform = identity.locale, identity.platform
+    options = options.encrypted()
     with mpq.Patch.begin(base, output) as patch:
         with pytest.raises(mpq.LibmpqFormatError):
             patch.replace_data("data", b"wrong", mpq.FileCreateOptions.raw())
@@ -301,6 +365,13 @@ def test_patch_creation_binding(tmp_path):
         assert archive["remove"].read() == b"remove me"
     with mpq.Archive(output) as archive:
         assert "data" in archive and "path" in archive and "remove" in archive
+        entry = archive["path"]
+        assert entry.flags & mpq.FILE_FLAG_ENCRYPTED
+        payload = entry.read_patch_payload("path")
+        assert payload[:4] == b"PTCH" and payload[68:] == b"from path"
+        assert len(payload) == entry.patch_payload_size
+        with pytest.raises(mpq.LibmpqError):
+            entry.read_patch_payload("wrong-name")
     with pytest.raises(mpq.LibmpqStateError):
         patch.replace_data("data", b"again")
     with pytest.raises(mpq.LibmpqStateError):

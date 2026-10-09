@@ -196,6 +196,17 @@ is needed only during begin. Both paths abort automatically without commit.
 
 ## Patch creation
 
+Read a patch member without applying it with `File.patch_payload_size` and
+`File.read_patch_payload(filename=None)`. The latter returns caller-owned
+`bytes` containing the validated decoded PTCH body, beginning with `PTCH`,
+without the plaintext patch-info prefix. Its size is distinct from
+`File.unpacked_size`, which describes the final patched target. Supply the
+physical member filename when encryption requires a name-derived key; numeric
+selection does not invent a name. Native errors, including non-patch members
+and integrity failures, raise the existing `LibmpqError` subclasses. Closed
+archives cannot be used. `FILE_FLAG_PATCH_FILE` (`0x00100000`) and
+`FILE_FLAG_DELETE_MARKER` (`0x02000000`) are available through `File.flags`.
+
 Create a separate patch artifact without modifying its base archive:
 
 ```python
