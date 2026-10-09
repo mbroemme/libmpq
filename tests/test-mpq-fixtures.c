@@ -28,6 +28,7 @@
 #include "mpq-signature.h"
 #include "test-mpq-helper.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -914,6 +915,154 @@ test_v3_fixture(const char *path, int mixed)
     return 0;
 }
 
+typedef struct
+{
+    FILE *file;
+    uint64_t corrupt_offset;
+} patch_fixture_source_s;
+
+/* Corrupt only the borrowed patch-info digest, never the fixture on disk. */
+static int32_t
+patch_fixture_read_at(void *context, libmpq__off_t offset, uint8_t *buffer, size_t size)
+{
+    patch_fixture_source_s *source = context;
+
+    if (offset < 0 || (uint64_t)offset > LONG_MAX ||
+        fseek(source->file, (long)offset, SEEK_SET) != 0)
+        return LIBMPQ_ERROR_SEEK;
+    if (fread(buffer, 1, size, source->file) != size)
+        return LIBMPQ_ERROR_READ;
+    if ((uint64_t)offset <= source->corrupt_offset &&
+        source->corrupt_offset - (uint64_t)offset < size)
+        buffer[source->corrupt_offset - (uint64_t)offset] ^= 1;
+    return 0;
+}
+
+/* Validate digest failure through a borrowed source owned by the caller. */
+static int
+test_patch_fixture_integrity(FILE *file, const char *path, uint64_t member_offset)
+{
+    patch_fixture_source_s source = { file, member_offset + 12 };
+    mpq_archive_s *archive = NULL;
+    uint8_t payload[86];
+    uint32_t number;
+    libmpq__off_t size;
+    libmpq__off_t transferred = -1;
+    long source_size;
+
+    TEST_CHECK(fseek(file, 0, SEEK_END) == 0);
+    source_size = ftell(file);
+    TEST_CHECK(source_size > 0);
+    TEST_CHECK(
+        libmpq__archive_open_io(&archive, &source, patch_fixture_read_at, source_size, 0, path) == 0
+    );
+    TEST_CHECK(libmpq__file_number(archive, "overview.txt", &number) == 0);
+    TEST_CHECK(libmpq__patch_payload_size(archive, number, &size) == 0);
+    TEST_CHECK(
+        libmpq__patch_payload_read(archive, number, NULL, payload, sizeof(payload), &transferred) ==
+        LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(transferred == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    return 0;
+}
+
+/* Exercise public PTCH access against unchanged committed COPY fixtures. */
+static int
+test_patch_fixture(uint32_t version)
+{
+    static const uint8_t expected[2][86] = {
+        { 0x50, 0x54, 0x43, 0x48, 0x54, 0x00, 0x00, 0x00, 0x88, 0x01, 0x00, 0x00, 0x10, 0x00,
+          0x00, 0x00, 0x4d, 0x44, 0x35, 0x5f, 0x28, 0x00, 0x00, 0x00, 0xf5, 0xe5, 0x06, 0xc1,
+          0x64, 0x65, 0x86, 0xcd, 0x58, 0x76, 0x06, 0xb0, 0x62, 0x04, 0xf1, 0xed, 0xbd, 0x91,
+          0x30, 0x57, 0x4d, 0x91, 0x3d, 0x6c, 0xce, 0xc4, 0x7d, 0x34, 0x1a, 0x29, 0xd0, 0x62,
+          0x58, 0x46, 0x52, 0x4d, 0x1c, 0x00, 0x00, 0x00, 0x43, 0x4f, 0x50, 0x59, 0x50, 0x61,
+          0x74, 0x63, 0x68, 0x20, 0x6c, 0x61, 0x79, 0x65, 0x72, 0x20, 0x6f, 0x6e, 0x65, 0x0a },
+        { 0x50, 0x54, 0x43, 0x48, 0x56, 0x00, 0x00, 0x00, 0x88, 0x01, 0x00, 0x00, 0x12, 0x00, 0x00,
+          0x00, 0x4d, 0x44, 0x35, 0x5f, 0x28, 0x00, 0x00, 0x00, 0xf5, 0xe5, 0x06, 0xc1, 0x64, 0x65,
+          0x86, 0xcd, 0x58, 0x76, 0x06, 0xb0, 0x62, 0x04, 0xf1, 0xed, 0x78, 0xa9, 0x01, 0xdf, 0x03,
+          0x75, 0x8f, 0xa6, 0x2e, 0x8d, 0x04, 0x71, 0x96, 0x8d, 0x79, 0x34, 0x58, 0x46, 0x52, 0x4d,
+          0x1e, 0x00, 0x00, 0x00, 0x43, 0x4f, 0x50, 0x59, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e,
+          0x20, 0x74, 0x77, 0x6f, 0x20, 0x70, 0x61, 0x74, 0x63, 0x68, 0x0a }
+    };
+    char path[512];
+    mpq_archive_s *archive = NULL;
+    uint32_t number;
+    uint32_t flags;
+    libmpq__off_t size;
+    libmpq__off_t target_size;
+    libmpq__off_t member_offset;
+    libmpq__off_t transferred = -1;
+    uint8_t payload[86];
+    size_t expected_size = version == 1 ? 84 : 86;
+
+    TEST_CHECK(
+        snprintf(path, sizeof(path), "%s/mpq-v%u-features-patch.mpq", FIXTURE_DIR, version) > 0
+    );
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "overview.txt", &number) == 0);
+    TEST_CHECK(libmpq__file_offset(archive, number, &member_offset) == 0);
+    TEST_CHECK(libmpq__file_flags(archive, number, &flags) == 0);
+    TEST_CHECK((flags & LIBMPQ_FILE_FLAG_PATCH_FILE) != 0);
+    TEST_CHECK(libmpq__patch_payload_size(archive, number, &size) == 0);
+    TEST_CHECK((uint64_t)size == expected_size);
+    TEST_CHECK(libmpq__file_size_unpacked(archive, number, &target_size) == 0);
+    TEST_CHECK(target_size != size);
+    TEST_CHECK(
+        libmpq__patch_payload_read(archive, number, NULL, payload, size - 1, &transferred) ==
+        LIBMPQ_ERROR_SIZE
+    );
+    TEST_CHECK(transferred == 0);
+    TEST_CHECK(
+        libmpq__patch_payload_read(
+            archive, number, "overview.txt", payload, sizeof(payload), &transferred
+        ) == 0
+    );
+    TEST_CHECK(transferred == size && memcmp(payload, expected[version - 1], expected_size) == 0);
+    TEST_CHECK(memcmp(payload, "PTCH", 4) == 0);
+    TEST_CHECK(
+        libmpq__patch_payload_read(archive, number, NULL, NULL, size, &transferred) ==
+        LIBMPQ_ERROR_SIZE
+    );
+    TEST_CHECK(transferred == 0);
+    TEST_CHECK(libmpq__patch_payload_size(archive, number, NULL) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(
+        libmpq__patch_payload_read(archive, number, NULL, payload, size, NULL) == LIBMPQ_ERROR_EXIST
+    );
+    TEST_CHECK(libmpq__patch_payload_size(archive, UINT32_MAX, &size) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(size == 0);
+    TEST_CHECK(
+        libmpq__patch_payload_read(
+            archive, UINT32_MAX, NULL, payload, sizeof(payload), &transferred
+        ) == LIBMPQ_ERROR_EXIST
+    );
+    TEST_CHECK(transferred == 0);
+    TEST_CHECK(libmpq__file_number(archive, "patch-only.txt", &number) == 0);
+    TEST_CHECK(libmpq__patch_payload_size(archive, number, &size) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(
+        libmpq__patch_payload_read(archive, number, NULL, payload, sizeof(payload), &transferred) ==
+        LIBMPQ_ERROR_EXIST
+    );
+    TEST_CHECK(transferred == 0);
+    TEST_CHECK(libmpq__file_number(archive, "pkware.txt", &number) == 0);
+    TEST_CHECK(libmpq__file_flags(archive, number, &flags) == 0);
+    TEST_CHECK((flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) != 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+
+    /* A digest mismatch must fail public reads without escaping decoded bytes. */
+    {
+        FILE *file = fopen(path, "rb");
+        int result;
+        int close_status;
+
+        TEST_CHECK(file != NULL);
+        result = test_patch_fixture_integrity(file, path, (uint64_t)member_offset);
+        close_status = fclose(file);
+        TEST_CHECK(result == 0 && close_status == 0);
+    }
+    return 0;
+}
+
 /* Verify both deterministic fixture formats against the embedded manifest. */
 int
 main(int argc, char **argv)
@@ -942,6 +1091,7 @@ main(int argc, char **argv)
             continue;
         }
         TEST_CHECK(test_fixture(path, (uint32_t)(i + 1), i) == 0);
+        TEST_CHECK(test_patch_fixture((uint32_t)(i + 1)) == 0);
     }
     if (argc == 1) {
         TEST_CHECK(test_v3_fixture("fixture-v3-mixed.mpq", 1) == 0);

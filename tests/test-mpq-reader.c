@@ -1472,7 +1472,7 @@ test_v3_transaction_setup(void)
     return 0;
 }
 
-/* Extra aligned DWORDs before the first compressed sector are not encryption. */
+/* Extra aligned uint32_t entries before the first compressed sector are not encryption. */
 static int
 test_extended_sector_offsets(void)
 {
