@@ -7,8 +7,8 @@ The deterministic `mpq-v1-features-patch.mpq`,
 `test-patch-reader --refresh` in a disposable checkout. They contain a PTCH COPY
 replacement, a delete marker, and a patch-only member. The `.w3x` variant
 has a 512-byte container prefix and no HM3W-specific semantics. The v2
-fixture carries a PATCH_BIT attributes array with zero values; no fixture
-writes PATCH_BIT=true. These are synthetic tests, not Blizzard archives.
+fixture carries a PATCH_BIT attributes array with zero values; neither legacy
+MPQ patch fixture writes PATCH_BIT=true. These are synthetic tests, not Blizzard archives.
 Normal test runs read but never regenerate them.
 
 | Fixture | SHA-256 |
@@ -16,6 +16,48 @@ Normal test runs read but never regenerate them.
 | `mpq-v1-features-patch.mpq` | `3bfedc1ef08745b9dca37dfc5daca70ec54ffb8f0cfcbe5235d4aa5de46451de` |
 | `mpq-v1-features-patch.w3x` | `6c3d45c2b0339bda90c687371c8fc77f0227cec86d14a753001d6e52146bbff0` |
 | `mpq-v2-features-patch.mpq` | `d18803a69560195efa09caade732fb027250711289073d88c274458947a574e9` |
+| `mpq-v3-features-patch.mpq` | `031ae2155f0c126f02711f8078b259b2b23f2607fcbfbfe02e1ae1956a1885e5` |
+
+### MPQ v3 patch fixture
+
+`mpq-v3-features-patch.mpq` is a 1,611-byte synthetic layer targeting the
+unchanged `mpq-v3-features.mpq`. It contains:
+
+- `overview.txt`: COPY replacement with `Version three patch` and LF.
+- `zlib.txt`: BSD0 replacement, changing byte 17 by XOR with `0x5a`.
+- `encrypted-compress.txt`: compressed, FIX_KEY-encrypted COPY replacement,
+  with `Encrypted synthetic v3 patch member.` and LF repeated 32 times.
+- `zero.bin`: deletion of the BET-only tail whose name is absent from the
+  original listfile. The explicit marker permits complete name reconstruction.
+- `folder/reference.bin`: patch-only addition of 32 `B` bytes, stored as a
+  FIX_KEY-encrypted single unit.
+
+The normal v3 writer produces a 0x44-byte header and unified HET/BET and classic
+tables. The recipe reuses the private fixture/PTCH writers and BSD0 encoder:
+the public dedicated patch writer cannot add new members or request FIX_KEY.
+No public API is extended for fixture generation. CRC32/MD5 describe the final
+replacement bytes; replacement/addition timestamps are fixed at
+`132537600000000000 + index * 10000000`. Internal and deletion timestamps are zero.
+Patch rows have PATCH_BIT set; materialized ordinary rows do not.
+
+Regenerate only this fixture in a disposable build, using the existing
+patch-reader fixture executable (run from `tests` with Autotools, or use the
+executable in the CMake build directory):
+
+```sh
+./test-patch-reader --v3-output /tmp/v3-patch-first.mpq
+./test-patch-reader --v3-output /tmp/v3-patch-second.mpq
+cmp /tmp/v3-patch-first.mpq /tmp/v3-patch-second.mpq
+sha256sum /tmp/v3-patch-first.mpq
+```
+
+Normal tests compare the regenerated recipe against the committed bytes and
+validate public PTCH size/read/integrity behavior. Materialization produces
+17 logical entries: replacements and the addition are exact, `zero.bin` and
+stale signatures are absent, and unchanged members retain their storage.
+Tests cover streams, HET/classic row identity, and independently calculated
+FIX_KEY ciphertext before and after relocation. Legacy patch fixtures and all
+canonical bases remain unchanged. The fixture also seeds archive-open fuzzing.
 
 ## Signature feature fixtures
 

@@ -66,6 +66,7 @@ mkdir -p \
 cp "${project_root}/tests/fixtures/mpq-v1-features.mpq" "${archive_output}/fixture-v1.mpq"
 cp "${project_root}/tests/fixtures/mpq-v2-features.mpq" "${archive_output}/fixture-v2.mpq"
 cp "${project_root}/tests/fixtures/mpq-v3-features.mpq" "${archive_output}/fixture-v3.mpq"
+cp "${project_root}/tests/fixtures/mpq-v3-features-patch.mpq" "${archive_output}/fixture-v3-patch.mpq"
 
 # Already-decoded synthetic tables reach structural parsers without encryption.
 {

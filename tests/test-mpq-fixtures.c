@@ -17,7 +17,7 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-/* Verify every checked-in v1 and v2 fixture archive and extracted payload. */
+/* Verify checked-in synthetic feature and patch archives and extracted payloads. */
 #include "mpq-archive.h"
 #include "mpq-attributes.h"
 #include "mpq-bit.h"
@@ -944,7 +944,7 @@ test_patch_fixture_integrity(FILE *file, const char *path, uint64_t member_offse
 {
     patch_fixture_source_s source = { file, member_offset + 12 };
     mpq_archive_s *archive = NULL;
-    uint8_t payload[86];
+    uint8_t payload[128];
     uint32_t number;
     libmpq__off_t size;
     libmpq__off_t transferred = -1;
@@ -1063,6 +1063,113 @@ test_patch_fixture(uint32_t version)
     return 0;
 }
 
+/* Validate the committed v3 patch through public metadata and decoded PTCH APIs. */
+static int
+test_v3_patch_fixture(void)
+{
+    const char *path = FIXTURE_DIR "/mpq-v3-features-patch.mpq";
+    static const char *const names[] = { "overview.txt", "zlib.txt", "encrypted-compress.txt" };
+    mpq_archive_s *archive = NULL;
+    uint8_t *wire = NULL;
+    size_t wire_size;
+    libmpq__off_t overview_offset;
+    uint32_t number;
+    uint32_t flags;
+    TEST_CHECK(test_read_path(path, &wire, &wire_size) == 0);
+    TEST_CHECK(wire_size == 1611 && crc32(0, wire, (uInt)wire_size) == 0x7bea88dau);
+    TEST_CHECK(
+        wire_size >= 68 && libmpq__load_le32(wire + 4) == 0x44 && libmpq__load_le16(wire + 12) == 2
+    );
+    TEST_CHECK(libmpq__load_le64(wire + 44) == wire_size);
+    free(wire);
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE && archive->files == 7);
+    TEST_CHECK(
+        archive->mpq_het.header.entry_count == 7 && archive->mpq_bet.header.entry_count == 7
+    );
+    for (size_t i = 0; i < 3; i++) {
+        uint8_t *payload;
+        libmpq__off_t size;
+        libmpq__off_t transferred;
+        libmpq__off_t target;
+        TEST_CHECK(libmpq__file_number(archive, names[i], &number) == 0);
+        {
+            uint32_t hashes[3];
+            uint32_t classic;
+            libmpq__file_hash(names[i], &hashes[0], &hashes[1], &hashes[2]);
+            TEST_CHECK(
+                libmpq__file_number_from_hash(archive, hashes[0], hashes[1], hashes[2], &classic) ==
+                    0 &&
+                classic == number
+            );
+        }
+        TEST_CHECK(
+            libmpq__file_flags(archive, number, &flags) == 0 &&
+            (flags & LIBMPQ_FILE_FLAG_PATCH_FILE) != 0
+        );
+        TEST_CHECK(
+            libmpq__patch_payload_size(archive, number, &size) == 0 && size >= 68 && size <= 4096
+        );
+        TEST_CHECK(libmpq__file_size_unpacked(archive, number, &target) == 0 && target != size);
+        payload = malloc((size_t)size);
+        TEST_CHECK(payload != NULL);
+        TEST_CHECK(
+            libmpq__patch_payload_read(
+                archive, number, names[i], payload, size - 1, &transferred
+            ) == LIBMPQ_ERROR_SIZE &&
+            transferred == 0
+        );
+        TEST_CHECK(
+            libmpq__patch_payload_read(archive, number, names[i], payload, size, &transferred) ==
+                0 &&
+            transferred == size
+        );
+        TEST_CHECK(
+            memcmp(payload, "PTCH", 4) == 0 &&
+            memcmp(payload + 64, i == 1 ? "BSD0" : "COPY", 4) == 0
+        );
+        if (i == 0) {
+            static const uint8_t expected[] = "Version three patch\n";
+            TEST_CHECK(size == 68 + sizeof(expected) - 1 && target == sizeof(expected) - 1);
+            TEST_CHECK(memcmp(payload + 68, expected, sizeof(expected) - 1) == 0);
+            TEST_CHECK(libmpq__file_offset(archive, number, &overview_offset) == 0);
+        }
+        if (i == 2)
+            TEST_CHECK(
+                (flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u)) ==
+                (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u)
+            );
+        if (i != 0) {
+            libmpq__off_t packed;
+            TEST_CHECK(
+                libmpq__file_size_packed(archive, number, &packed) == 0 && packed < size + 28
+            );
+        }
+        free(payload);
+    }
+    TEST_CHECK(libmpq__file_number(archive, "zero.bin", &number) == 0);
+    TEST_CHECK(
+        libmpq__file_flags(archive, number, &flags) == 0 &&
+        (flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) != 0
+    );
+    TEST_CHECK(libmpq__file_number(archive, "folder/reference.bin", &number) == 0);
+    TEST_CHECK(
+        libmpq__file_flags(archive, number, &flags) == 0 &&
+        (flags & LIBMPQ_FILE_FLAG_PATCH_FILE) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    {
+        FILE *file = fopen(path, "rb");
+        int result;
+        int close_status;
+        TEST_CHECK(file != NULL);
+        result = test_patch_fixture_integrity(file, path, (uint64_t)overview_offset);
+        close_status = fclose(file);
+        TEST_CHECK(result == 0 && close_status == 0);
+    }
+    return 0;
+}
+
 /* Verify both deterministic fixture formats against the embedded manifest. */
 int
 main(int argc, char **argv)
@@ -1094,6 +1201,7 @@ main(int argc, char **argv)
         TEST_CHECK(test_patch_fixture((uint32_t)(i + 1)) == 0);
     }
     if (argc == 1) {
+        TEST_CHECK(test_v3_patch_fixture() == 0);
         TEST_CHECK(test_v3_fixture("fixture-v3-mixed.mpq", 1) == 0);
         TEST_CHECK(test_v3_fixture("fixture-v3-bet.mpq", 0) == 0);
     }
