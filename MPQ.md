@@ -1,12 +1,13 @@
 # MPQ archive format guide
 
 MPQ (Mo'PaQ, "Mike O'Brien Pack") is a little-endian random-access archive
-format used by Blizzard games. This document is a practical starting point for
-implementing a reader or writer from scratch.
+format used by Blizzard games. This guide describes its wire structures,
+algorithms, and libmpq's reading, validation, and writing behavior.
 
 This is not a normative Blizzard specification. Game families contain format
 variations, so validate every offset, size, count, and arithmetic operation
-before using it.
+before using it. For practical API examples and development workflows, see
+[DEVELOPER.md](DEVELOPER.md).
 
 ## Conventions and archive location
 
@@ -20,29 +21,6 @@ the real header and contains a user-data size and header offset. Locate and
 validate the actual `MPQ\x1A` header before resolving archive-relative values.
 Table placement is not fixed; do not infer it from file order.
 
-## MPQE-wrapped streams
-
-Some installer archives encrypt the complete outer byte stream in 64-byte MPQE
-chunks before the usual `MPQ\x1A` header. MPQE is a stream provider, not a
-new MPQ header version: decrypt it first, then parse the contained MPQ using
-the normal header and table rules. The chunk transform depends on a
-caller-supplied authentication code and the absolute chunk position. Keep
-authentication-code provisioning outside archive parsing; libmpq's C API does
-not embed, discover, log, or persist such codes. A missing or too-short code
-buffer is rejected as a decryption error. MPQE has no authentication check, so
-a well-formed but incorrect code is parsed as ordinary invalid MPQ data and
-can produce a format or another parser error.
-
-## Patch namespace paths
-
-A patch layer can store a physical member such as `Base\Foo` below a `Base\`
-prefix. Removing that prefix gives the logical identity `Foo` used to match
-the base archive and other layers. A `(patch_metadata)` path is a namespace
-marker, not a rich metadata structure: if its plaintext path is available,
-typically through `(listfile)`, the directory portion can identify the prefix.
-When only irreversible MPQ filename hashes are available, a prefix cannot be
-inferred generically from them.
-
 ## Header versions
 
 The common 32-byte prefix is:
@@ -50,14 +28,14 @@ The common 32-byte prefix is:
 | Offset | Field | Meaning |
 | --- | --- | --- |
 | `00` | `char[4]` | Signature `MPQ\x1A` |
-| `04` | `u32` | Header size |
-| `08` | `u32` | Legacy archive size |
-| `0C` | `u16` | Format version: 0 through 3 |
-| `0E` | `u16` | Sector shift; sector size is `512 << shift` |
-| `10` | `u32` | Low hash-table position |
-| `14` | `u32` | Low block-table position |
-| `18` | `u32` | Hash-table capacity (power of two) |
-| `1C` | `u32` | Classic block-table entry count |
+| `04` | `uint32_t` | Header size |
+| `08` | `uint32_t` | Legacy archive size |
+| `0C` | `uint16_t` | Format version: 0 through 3 |
+| `0E` | `uint16_t` | Sector shift; sector size is `512 << shift` |
+| `10` | `uint32_t` | Low hash-table position |
+| `14` | `uint32_t` | Low block-table position |
+| `18` | `uint32_t` | Hash-table capacity (power of two) |
+| `1C` | `uint32_t` | Classic block-table entry count |
 
 | MPQ | Version | Header size | Additional fields |
 | --- | ---: | ---: | --- |
@@ -67,29 +45,58 @@ The common 32-byte prefix is:
 | v4 | 3 | `0xD0` | 64-bit table sizes, raw-chunk size, table and header MD5 digests |
 
 For v2 combine a classic table position as `(high16 << 32) | low32`. The
-hi-block table is a `u16` array indexed by classic block index and supplies
+hi-block table is a `uint16_t` array indexed by classic block index and supplies
 bits 32-47 of file positions. v4 records raw-table MD5 values; verify them
 only after normal structural bounds checks.
 
 The reader supports MPQ v3 (on-disk version 2) through classic hash/block
-tables or HET/BET. Its normal `0x44`-byte header adds three little-endian `u64` fields
-after the v2 extension: archive size at `0x2C`, BET position at `0x34`, and
-HET position at `0x3C`. The 64-bit size is authoritative, including when the
-legacy size differs. Classic high table/file offsets retain the v2 layout.
+tables or HET/BET. Its normal `0x44`-byte header adds three little-endian
+`uint64_t` fields after the v2 extension: archive size at `0x2C`, BET position
+at `0x34`, and HET position at `0x3C`. The 64-bit size is authoritative,
+including when the legacy size differs. Classic high table/file offsets retain
+the v2 layout.
 
-For compatibility, a base-only `0x20`-byte v3 header or a declared header
-from `0x2C` through `0x43` uses the legacy archive size and absent/zero HET/BET
+For compatibility, a base-only `0x20`-byte v3 header or a declared header from
+`0x2C` through `0x43` uses the legacy archive size and absent/zero HET/BET
 positions; no partial extension is read. Rejecting partial v2 extensions
-(`0x21` through `0x2B`) is an intentional libmpq validation choice rather
-than accepting arbitrary short sizes for StormLib compatibility. A declared
-full header must contain all `0x44` bytes. HET/BET
-positions and stored extents are bounded by the archive extent.
-Mixed-table archives can use classic lookup when a classic hash entry maps
-to a live block; other live blocks need not be hash-referenced. This does not
-assert equivalence with HET/BET. Declared extended tables must form a valid
-pair; malformed tables fail opening rather than downgrading to classic lookup.
-Compressed classic tables and MPQ v4 remain
-outside the current implementation.
+(`0x21` through `0x2B`) is an intentional libmpq validation choice rather than
+accepting arbitrary short sizes for StormLib compatibility. A declared full
+header must contain all `0x44` bytes. HET/BET positions and stored extents are
+bounded by the archive extent. Mixed-table archives can use classic lookup
+when a classic hash entry maps to a live block; other live blocks need not be
+hash-referenced. This does not assert equivalence with HET/BET. Declared
+extended tables must form a valid pair; malformed tables fail opening rather
+than downgrading to classic lookup. Compressed classic tables and MPQ v4
+remain outside the current implementation.
+
+### Creation and finalization
+
+V3 output reserves a 68-byte (`0x44`) header, writes file payloads at
+their final archive-relative positions, then appends HET, BET, classic hash,
+classic block, and (when file positions require it) hi-block tables. Stored
+tables are adjacent, without padding. The existing in-memory builders,
+serializers, and compress/encrypt encoder run only after payloads and generated
+internal files are finished.
+
+BET row N and classic block row N come from the same completed writer metadata
+and retain insertion order. Classic block count is the completed row count,
+not reserved capacity. Corresponding offsets, sizes, and flags must match;
+reader precedence is not used to repair writer inconsistencies. Classic
+`uint32_t` size limits remain enforced. File positions retain their high
+`uint16_t` word in the optional hi-block table and their full `uint64_t` BET
+value. Table positions are checked before narrowing into low/high header words.
+Every table range advances through checked `uint64_t` multiplication and
+addition bounded by `INT64_MAX`. Both classic hash/block offsets are checked
+against their 48-bit low/high representation; HET/BET and hi-block offsets
+remain full-width. Legacy v1/v2 finalization still serializes reserved block
+capacity, while v3 uses completed rows, including the valid zero-row case.
+
+Finalization rewrites the base, v2 extension, and v3 extension using the
+canonical little-endian header encoders, then follows existing flush/signature
+handling. The v3 archive-size field is authoritative; the legacy size word
+stores its low 32 bits explicitly. V3 FIX_KEY encryption uses the final file
+offset and unpacked size, and payloads are never moved afterward. Legacy v1/v2
+writer behavior remains unchanged.
 
 ## Classic tables
 
@@ -97,131 +104,58 @@ Classic hash and block tables are encrypted streams of 32-bit words. Decrypt
 the hash table with `HashString("(hash table)", FILE_KEY)` and the block table
 with `HashString("(block table)", FILE_KEY)` before parsing.
 
-Each 16-byte hash entry contains `u32 name_hash_a`, `u32 name_hash_b`, `u16
-locale`, `u16 platform`, and `u32 block_index`. `0xffffffff` means never used;
-`0xfffffffe` means deleted. Lookup uses open addressing: initial slot is
+Each 16-byte hash entry contains these fields, in wire order:
+
+| Field | Type |
+| --- | --- |
+| `name_hash_a` | `uint32_t` |
+| `name_hash_b` | `uint32_t` |
+| `locale` | `uint16_t` |
+| `platform` | `uint16_t` |
+| `block_index` | `uint32_t` |
+
+For `block_index`, `0xffffffff` means never used; `0xfffffffe` means deleted.
+Lookup uses open addressing: initial slot is
 `HashString(path, TABLE_OFFSET) & (capacity - 1)`, followed by linear probing.
 An empty entry stops lookup; a deleted entry does not. A file is identified by
 path, locale, and platform, although zero is the usual default for both.
 
-Each 16-byte block entry contains `u32 file_pos`, `u32 compressed_size`, `u32
-file_size`, and `u32 flags`. Common flags are `0x80000000` exists,
-`0x01000000` single unit, `0x00010000` encrypted, `0x00020000` adjusted key,
-`0x00000200` compressed, and `0x00000100` PKWARE-imploded. Later games add
-sector-CRC, patch, deletion, and signature flags; preserve unknown flags when
-rewriting an archive.
+Each 16-byte block entry contains these fields, in wire order:
+
+| Field | Type |
+| --- | --- |
+| `file_pos` | `uint32_t` |
+| `compressed_size` | `uint32_t` |
+| `file_size` | `uint32_t` |
+| `flags` | `uint32_t` |
+
+Common flags are `0x80000000` exists, `0x01000000` single unit, `0x00010000`
+encrypted, `0x00020000` adjusted key, `0x00000200` compressed, and
+`0x00000100` PKWARE-imploded. Later games add sector-CRC, patch, deletion, and
+signature flags; preserve unknown flags when rewriting an archive.
 
 Internally, decoded classic rows populate archive-owned `mpq_entry_s` metadata
 with 64-bit positions and sizes. Public file numbers map to these entries;
 reader, stream, metadata, and verification paths consume them rather than the
 classic block table. Classic hash rows translate through an explicit
-classic-row-to-entry mapping; canonical entry ordering is independent.
-Source provenance distinguishes classic rows from uninitialized entries.
-Classic attributes remain indexed and sized by block-table rows, not canonical
-entries. Writers and rebuild serialization still own classic wire
-tables. Isolated BET decoding also produces canonical entries with explicit
-BET provenance; archive loading owns both producers and their explicit maps. Sector offset
-and codec-length limits remain unchanged.
+classic-row-to-entry mapping; canonical entry ordering is independent. Source
+provenance distinguishes classic rows from uninitialized entries. Classic
+attributes remain indexed and sized by block-table rows, not canonical
+entries. Writers and rebuild serialization still own classic wire tables.
+Isolated BET decoding also produces canonical entries with explicit BET
+provenance; archive loading owns both producers and their explicit maps.
+Sector offset and codec-length limits remain unchanged.
 
-## File sectors, encryption, and compression
+### Classic hashing and table cipher
 
-Unless marked single-unit, a file has `ceil(file_size / sector_size)` sectors.
-A compressed or imploded multi-sector file starts with `u32[sector_count + 1]`
-offsets relative to its payload. The final value is the stored-data end. Raw
-multi-sector files usually omit the table because their offsets are calculable.
-Require monotonic, in-range offsets before reading a sector.
-
-For an encrypted file, hash the basename, not its directory, with the file-key
-hash. If the adjusted-key flag is set, use `(base_key + file_pos) ^ file_size`.
-Decrypt the offset table with `key - 1` and sector *i* with `key + i`.
-Encryption processes little-endian 32-bit words; use explicit `uint32_t`
-wraparound. A filename is normally required to decrypt file data.
-
-A multi-compressed sector starts with a method/mask byte. Reverse the selected
-transforms when decoding; a sector may instead be stored raw when compression
-loses. The table lists every codec, all MPQ v2+ STANDARD combinations, and
-additional SPARSE combinations covered by libmpq tests. Combined masks are
-codec chains, not separate codecs; `+` below does not specify decoding order.
-
-The policy columns apply to MPQ v2+ writing. STANDARD is the default,
-interoperability-oriented policy. EXTENDED permits additional valid
-libmpq-supported compression forms that other MPQ implementations may not
-accept. Neither policy restricts decoding.
-
-| Method/mask | Codec or combination | STANDARD | EXTENDED |
-| ---: | --- | :---: | :---: |
-| `0x01` | Blizzard Huffman | - | X |
-| `0x02` | zlib deflate | X | X |
-| `0x08` | PKWARE DCL implode | X | X |
-| `0x10` | bzip2 | X | X |
-| `0x12` | LZMA (exclusive method) | X | X |
-| `0x20` | SPARSE lossless zero-run transform | X | X |
-| `0x21` | SPARSE + Huffman | - | X |
-| `0x22` | SPARSE + zlib | X | X |
-| `0x28` | SPARSE + PKWARE | - | X |
-| `0x30` | SPARSE + bzip2 | X | X |
-| `0x40` | IMA ADPCM mono | - | X |
-| `0x41` | Huffman + IMA ADPCM mono | X | X |
-| `0x80` | IMA ADPCM stereo | - | X |
-| `0x81` | Huffman + IMA ADPCM stereo | X | X |
-
-MPQ v1 permits ordinary masks under either policy, including the combinations
-above except LZMA: `0x12` means bzip2 + zlib in v1. Other combinations are
-formed by OR-ing stage bits, subject to the rules below; the table is not an
-exhaustive list of every possible mask. Neither policy allows unknown bits,
-both ADPCM channel bits together, or SPARSE with ADPCM. MPQ v2+ additionally
-rejects writer masks containing both zlib and bzip2. Input-specific WAVE and
-file-storage constraints still apply.
-
-Raw storage has no method byte; `libmpq__block_compression()` reports zero for
-it. Standalone IMPLODE storage also has no method byte; that API reports
-`0x08` for an actually imploded block and zero for its raw fallback.
-
-For MPQ v1, `0x12` retains its legacy BZIP2 + zlib chain meaning. For MPQ v2+,
-it is LZMA and its payload is `useFilter` zero, five LZMA1 property bytes, an
-advisory little-endian 64-bit original size, and raw LZMA1 data normally
-without an end marker. StormLib normally writes those no-EOPM streams; libmpq
-writes LZMA1 streams with an EOPM and accepts both forms when reading. libmpq
-also rejects LZMA properties that require more than 64 MiB of decoder memory.
-Bound every decoder by the expected unpacked sector length.
-
-Writer compatibility is separate from permissive decoder support. STANDARD is
-the default and, in MPQ v2+, follows the fixed method set: `0x02`, `0x08`,
-`0x10`, `0x12`, `0x20`, `0x22`, `0x30`, `0x41`, and `0x81`. Its fixed SPARSE
-forms are alone (`0x20`), with zlib (`0x22`), and with bzip2 (`0x30`). MPQ v1
-retains normal compression-mask semantics under either policy, allowing other
-valid combinations such as SPARSE with Huffman (`0x21`) or PKWARE (`0x28`). In
-MPQ v2+, EXTENDED permits the broader valid lossless SPARSE combinations and
-standalone Huffman; these may be less interoperable with other readers.
-Neither policy permits v2 chains containing both zlib and bzip2, since stage
-omission could emit reserved method `0x12`. The reader has no compatibility
-setting and is unchanged.
-
-SPARSE is a lossless zero-run stage applied before other compression stages
-and decoded last. Its payload starts with a four-byte **big-endian** unpacked
-length, unlike MPQ header/table fields. Tokens `0x00..0x7f` emit 3..130 zeros;
-tokens `0x80..0xff` copy 1..128 literal bytes. The outer method byte includes
-`0x20`, for example `0x22` with zlib or `0x30` with bzip2. Other combinations
-follow the version and policy rules above.
-
-The decoder checks the declared length against caller-owned output storage
-without allocating from that length. Oversized final tokens are clipped to
-the remaining declared output for Storm-style streams; all required literal
-bytes must exist. Missing output, truncated literals, and trailing input
-are rejected. The writer emits exact token lengths and retains SPARSE only
-when it reduces the stage size. Both writer policies reject SPARSE with
-either WAVE ADPCM bit: ADPCM would lossily transform the SPARSE control stream.
-
-## Hashing and the table cipher
-
-The traditional algorithm builds a 0x500-word crypt table from seed
+The traditional algorithm builds a 0x500-entry crypt table from seed
 `0x00100001`. Hashing starts with `0x7fed7fed` and `0xeeeeeeee`, uppercases
 input bytes, and uses crypt-table pages for table offset, name A, name B, and
 file key. The cipher uses page four and evolves a key and seed per word.
 Implement it with fixed-width unsigned arithmetic, never native `long`, and
 test known hash/table-key/cipher vectors.
 
-## v3/v4 HET and BET tables
+## HET/BET extended tables
 
 HET (`HET\x1A`) and BET (`BET\x1A`) provide compact, bit-packed replacements
 for classic lookup and file metadata. Their common prefix is signature,
@@ -233,22 +167,20 @@ size, flag-array index, and an unknown field.
 Private structural decoders and HET candidate lookup accept already-decrypted/
 decompressed table bytes. Archive opening loads the tables and populates BET
 canonical entries. Normal filename lookup tries HET/BET first and falls back
-to classic lookup only on a valid miss, not a malformed table or mapping.
-MPQ v4 remains unsupported.
-Loading retains the plaintext common envelope and decrypts/decompresses its
-contained data before structural decoding.
+to classic lookup only on a valid miss, not a malformed table or mapping. MPQ
+v4 remains unsupported. Loading retains the plaintext common envelope and
+decrypts/decompresses its contained data before structural decoding.
 
-The common envelope is three little-endian DWORDs: signature at byte 0,
-version at byte 4 (supported value 1), and `data_size` at byte 8. `data_size`
-excludes this 12-byte envelope but includes the table-specific header and
-arrays. A valid HET or BET requires table-specific `dwTableSize` to equal
-`ExtHdr.dwDataSize` (`table_size == envelope.data_size`); both exclude the
-12-byte common envelope. Declared data must fit the supplied buffer; bytes
-beyond the declared payload are not interpreted as table data. The parsers
-allocate nothing and report byte ranges relative to the beginning of the
-complete decoded envelope.
+The common envelope is three little-endian `uint32_t` values: signature at
+byte 0, version at byte 4 (supported value 1), and `data_size` at byte 8.
+`data_size` excludes this 12-byte envelope but includes the table-specific
+header and arrays. A valid HET or BET requires
+`table_size == envelope.data_size`; both exclude the 12-byte common envelope.
+Declared data must fit the supplied buffer; bytes beyond the declared payload
+are not interpreted as table data. The parsers allocate nothing and report
+byte ranges relative to the beginning of the complete decoded envelope.
 
-The HET-specific header contains eight DWORDs, in wire order:
+The HET-specific header contains eight `uint32_t` values, in wire order:
 
 ```text
 table_size, entry_count, total_count, name_hash_bit_size,
@@ -264,7 +196,8 @@ exactly `ceil(total_count * index_size_total / 8)` bytes, with no padding.
 Header, slots, and declared index storage must account for `table_size`
 exactly.
 
-The BET-specific header contains nineteen DWORDs (76 bytes), in wire order:
+The BET-specific header contains nineteen `uint32_t` values (76 bytes), in
+wire order:
 
 ```text
 table_size, entry_count, unknown, table_entry_size,
@@ -276,7 +209,7 @@ name_hash2_total, name_hash2_extra, name_hash2_size,
 name_hash_array_size, flag_count
 ```
 
-The header is followed by `flag_count` little-endian DWORD flags, packed file
+The header is followed by `flag_count` little-endian `uint32_t` flags, packed file
 records, then packed NameHash2 values. Reserved fields are preserved rather
 than interpreted. Each record field is at most 64 bits, fits its nonzero
 record width, and cannot overlap another nonempty field. The flag index is
@@ -349,7 +282,7 @@ For an index below `entry_count`, record fields start at
 Positions, packed/unpacked sizes, and the uninterpreted unknown field remain
 64-bit values; zero-width fields yield zero. Checked bit access bounds every
 read. A record's flag index must be below `flag_count`, then selects a
-little-endian DWORD from the flags array.
+little-endian `uint32_t` from the flags array.
 
 NameHash2 starts at `index * name_hash2_total`; only `name_hash2_size` low
 bits are extracted. Extra bits are high stride bits, not a start adjustment.
@@ -374,30 +307,31 @@ source before I/O. Each stored and decoded extended table has an inclusive
 defensive limit of `0x00100000` bytes (1 MiB), including its 12-byte common
 envelope. Oversized stored extents are rejected before reading the envelope;
 oversized decoded lengths are rejected after reading only the envelope, before
-payload allocation, reading, or decompression. Size arithmetic remains checked.
-The HET and BET entry counts must match exactly.
-An empty pair has zero entries in both tables; the HET runtime view still needs
-a nonzero slot count and index width. Zero-slot HET headers may be structurally
-decoded but are not usable archive lookup tables. Empty classic-only archives
-remain valid without extended tables.
+payload allocation, reading, or decompression. Size arithmetic remains
+checked. The HET and BET entry counts must match exactly. An empty pair has
+zero entries in both tables; the HET runtime view still needs a nonzero slot
+count and index width. Zero-slot HET headers may be structurally decoded but
+are not usable archive lookup tables. Empty classic-only archives remain valid
+without extended tables.
 
 The common 12-byte envelope is plaintext. The contained payload is decrypted
 with the existing `(hash table)` key for HET (`0xC3AF3770`) or `(block table)`
-key for BET (`0xEC83B3A3`); trailing partial DWORDs retain their cipher semantics.
-If the stored payload is shorter than `data_size`, production MPQ compression
-dispatch decompresses it and must produce exactly `data_size` bytes. Framed
-zlib/bzip2 stages reject trailing input; existing LZMA validation also requires
-complete input consumption. Structural parsing follows transformation.
-There is no heuristic plaintext fallback for a damaged encrypted payload.
+key for BET (`0xEC83B3A3`); trailing partial `uint32_t` values retain their
+cipher semantics. If the stored payload is shorter than `data_size`,
+production MPQ compression dispatch decompresses it and must produce exactly
+`data_size` bytes. Framed zlib/bzip2 stages reject trailing input; existing
+LZMA validation also requires complete input consumption. Structural parsing
+follows transformation. There is no heuristic plaintext fallback for a damaged
+encrypted payload.
 
 The archive owns decoded HET/BET buffers, borrowed views, and explicit classic
 and BET source-row-to-entry mappings. Normal, non-defragmented mixed archives
 use StormLib-compatible unified rows: classic row N and BET row N represent
-the same canonical row.
-The canonical row count is the maximum of the two source counts, not their sum.
-BET initializes metadata; a live classic row then overlays offset, sizes, and
-flags. An unused classic row does not erase live BET metadata. Matching metadata
-on different row numbers never causes heuristic deduplication.
+the same canonical row. The canonical row count is the maximum of the two
+source counts, not their sum. BET initializes metadata; a live classic row
+then overlays offset, sizes, and flags. An unused classic row does not erase
+live BET metadata. Matching metadata on different row numbers never causes
+heuristic deduplication.
 
 Each canonical entry records a `source_mask` and separate `classic_source_index`
 and `bet_source_index` values; an absent source index is `UINT32_MAX`. Both
@@ -408,150 +342,13 @@ Classic `(attributes)` remain indexed by `classic_source_index` and sized by
 classic block count, including shared rows; BET-only entries have no classic
 attributes row. HET/BET hash information remains in the table views.
 
-Transactional HET/BET updates rebuild through the normal writer when every
-retained logical file can be reconstructed. Ordered v3 patch views use
-the same archive writer to rebuild a complete named logical file set.
-Public v3 creation emits mixed HET/BET and classic tables; MPQ v4 remains unsupported.
-
-The dedicated patch writer can create MPQ v3 patch archives from standalone v3
-bases with classic-backed, mixed, or BET-only replacement/deletion targets
-when their filenames are supplied by the caller. Classic-backed targets retain
-their unambiguous classic locale/platform identity; BET-only targets use zero
-for both because BET carries neither field. Filenames are never reconstructed
-from hashes. Physical metadata and encryption/FIX_KEY reads use canonical
-entries and validated source mappings, without fabricating classic rows.
-The existing v3 writer emits the 0x44-byte header, HET/BET and classic tables
-with shared row identity, patch-info prefixes, PTCH bodies, and delete markers.
-Existing compression, encryption and signature options retain their meanings.
-Ordered patch-view materialization supports v3 bases with classic-backed,
-mixed, or BET-only members. Names come from `(listfile)`, recognized internal
-names, and the patch's logical namespace; hashes are never inverted into names.
-Incomplete coverage, ambiguous aliases/locales, unresolved listed names, and
-nonzero reserved BET metadata are rejected instead of dropping information.
-Patch prefixes, COPY/BSD0 transforms, normal replacements, additions and delete
-markers retain their existing semantics and integrity checks.
-
-Unchanged packed members retain their original archive-relative offsets,
-compression and encryption. Modified contents pass through the normal writer,
-including basename-derived keys and FIX_KEY adjustment at final output offsets.
-Representable compression masks and classic locale/platform identities are
-preserved; modified files requiring lossy recompression or incompatible
-later-sector compression masks are rejected. Existing writer size limits also
-apply, including its single-unit sector-size limit. Classic attributes are
-read only for classic-backed rows; output checksums and supported timestamps
-are regenerated or retained as appropriate. Modified views omit stale signature
-members and trailers. A metadata-only layer leaves the original private view
-unchanged.
-
-Materialized output is a private standalone v3 archive with newly generated
-HET/BET and classic tables sharing row identity. It is reopened before replacing
-the private view; failed opens attempt to remove temporary output without
-modifying either source. Input container prefixes/suffixes are not carried into
-rebuilt v3 views.
-An open failure is terminal and leaves the returned view pointer NULL, not a
-partially usable or retryable view. Archive close consumes its handle even when
-it reports an error; cleanup never closes that handle again. If removal of the
-old private placeholder fails after the source has closed, the candidate is
-discarded and outer cleanup retries removal of the placeholder. Private-file
-deletion is best effort: persistent filesystem refusal can leave temporary
-files, but no partial view is returned and the original sources remain unchanged.
-Multiple layers are applied in caller-specified order. Each changed layer
-rebuilds a complete v3 intermediate through the same writer; subsequent COPY
-or BSD0 transforms use the preceding layer's contents. No-op layers retain
-the current intermediate unchanged. Generated listfiles carry the known
-logical namespace forward, subject to the same conservative naming and
-metadata requirements at every layer. Failure at any layer is terminal:
-no partial chain is returned, and intermediate cleanup is best effort.
-
-Internal patch-view source descriptors accept plain MPQ or MPQE independently
-for the base and each layer, including mixed chains. Each MPQE source requires
-its own authentication code; path-only composition cannot authenticate wrapped
-patch layers. Authentication failure returns no view. Materialized views are
-private decoded MPQ archives, not newly published MPQE containers. The patch-view
-composition entry points remain private; public patch creation accepts a
-standalone plain MPQ base and may produce MPQE output.
-
-Encrypted PTCH reads reopen independent member caches and derive FIX_KEY from
-the original member before shifting past its plaintext patch-info prefix.
-Modified output members use basename keys and final archive-relative offsets,
-including when input archives have container prefixes. The public dedicated
-patch writer accepts normal encryption but not explicit FIX_KEY storage options;
-FIX_KEY patch members remain readable through the existing decoder.
-
-Signature presence is not proof of validity. Callers must explicitly verify
-input archives with the required public key; patch-view composition does not
-enforce signature verification. Supported weak/strong signatures on plain v3
-inputs and weak signatures on MPQE inputs use the ordinary archive verifier.
-Changed intermediates and final views omit old signatures and are unsigned:
-composition has no signing configuration and does not regenerate signatures.
-Strong-signature creation and trailer detection remain unsupported for MPQE.
-No-op chains preserve unchanged input signatures without claiming verification.
-Corrupt PTCH integrity metadata is rejected independently of archive signature
-policy.
-
-### Read interoperability checks
-
-The checked-in v3 feature archive is generated only from project-owned synthetic
-payloads. Normal tests cover all native codecs through BET entries, special-file
-discovery, weak verification with a caller-supplied test key, zero-length members,
-small sequential reads, deterministic seeks, and mixed-row lookup equivalence.
-Separate reader tests cover FIX_KEY encryption, 64-bit positions, classic-only
-tails, malformed mappings, strict table limits, keys, and table ordering.
-
-Automated compatibility coverage is entirely self-contained: deterministic
-synthetic v3 fixtures, independently verified fixed HET hash vectors, malformed
-archive tests, fuzzing, and reader/stream/integrity tests. The library and its
-native tests remain C-only. StormLib is an external reference, not a build,
-test, vendored, or CI dependency; no installation or download is required.
-
-Independent implementations such as StormLib may be used manually for local
-comparison. Compare archive-open success, live file enumeration/count, filename
-lookup hits/misses, flags, packed/unpacked sizes, offsets, and extracted payload
-bytes/checksums. Public file numbers need not equal another implementation's
-physical table indices. Standalone Huffman and Huffman+zlib EXTENDED masks are
-known reference limitations: StormLib's v2+ dispatcher rejects them, while
-libmpq's synthetic tests verify them. For lossy WAVE members, compare decoded
-bytes between readers rather than requiring equality with source PCM.
-
-For manual/local testing only, use a legally obtained real v3 archive, such as
-a historical World of Warcraft Cataclysm Beta MPQ. Keep it and all extracted
-data outside the repository and CI. Inspect its header with a hex viewer:
-little-endian format version 2 at 0x0c, normal header length 0x44 at 0x04,
-64-bit archive extent at 0x2c, BET offset at 0x34, and HET offset at 0x3c
-(relative to the MPQ header, which may be embedded). Use separate applications
-or locally maintained callers of each library's public API to inspect the same
-archive and member names. For manual extraction, use separate temporary output
-directories outside the repository and compare lengths and `sha256sum` results.
-Include both flat and directory member names, especially encrypted and FIX_KEY
-members. Check missing-member errors, wrong MPQE authentication and truncated
-local copies without modifying the original archive. These checks remain manual;
-no real Blizzard archive validation is implied by the synthetic suite.
-Patch members require a matching base to compare the applied result; decoded
-PTCH payload access is not patch application. Do not
-copy Blizzard archive bytes, trimmed archives, extracted payloads, or derived
-binary fixtures into the repository. Repository and CI fixtures must be
-synthetic only. Successful synthetic tests are not a claim that every historical
-protected/defragmented archive is supported.
-
-Current sector/codec lengths are 32-bit even though canonical BET metadata and
-positions are 64-bit. Unrepresentable member reads and block counts fail with
-SIZE rather than truncating. V3 modification requires complete filename
-reconstruction. Creation and transactional rebuilding use
-the existing writer, preserving explicit source mappings and independently
-validated generated tables.
-
-Member encryption hashes only the basename after the final `/` or `\`, using
-the existing classic hash case normalization. FIX_KEY then adds the low
-uint32_t file position and XORs the uint32_t unpacked size. Filename lookup
-and table generation still hash the complete archive member path. The default
-crypto suite includes an independently keyed directory-member regression.
-
 ### In-memory extended-table writer builders
 
-Private owned HET/BET builders accept completed logical writer records with
-filenames and full-width positions/sizes. They do not use classic block rows or
-directly enable creation. Building alone does not serialize a common envelope
-or write archive bytes.
+The private `libmpq__ext_tables_build(files, count, het, bet)` builds
+separately owned HET/BET tables from completed logical writer records with
+filenames and full-width positions/sizes. The builders do not depend on
+classic block rows. Building alone does not serialize a common envelope or
+write archive bytes.
 
 BET fields use consecutive position, unpacked-size, packed-size, flag-index,
 and reserved-field ordering. Each width is the minimum needed by the input;
@@ -585,12 +382,14 @@ is not merely duplicate filename rejection.
 
 Identical inputs generate identical headers and packed arrays. Both decoded
 table sizes respect the existing 1 MiB envelope-inclusive defensive limit.
-Builders own their allocations; failed builds preserve prior outputs and
-cleanup is safe for empty or partially built tables. Synthetic tests validate
-the builders against the existing parsers, HET lookup, and BET record decoder.
-Both table serializers operate only on owned memory buffers. A separate
-private encoder compresses/encrypts these buffers; the shared public writer
-places them during v3 archive finalization.
+Zero-initialize builder outputs before their first use. Successful builds
+replace prior outputs; failures preserve them. `libmpq__het_builder_free()`
+and `libmpq__bet_builder_free()` release their allocations safely, including
+empty or partially built tables. Synthetic tests validate the builders against
+the existing parsers, HET lookup, and BET record decoder. Both table
+serializers operate only on owned memory buffers. A separate private encoder
+compresses/encrypts these buffers; the shared public writer places them during
+v3 archive finalization.
 
 ### Private BET wire serialization
 
@@ -682,184 +481,93 @@ callers cannot supply an arbitrary key. Encryption uses complete little-endian
 Stored buffers decode through the existing table loader's decrypt/decompress
 path. Tests include independent fixed encrypted vectors, fallback boundaries,
 deterministic output, and synthetic archive-loader/read/stream round trips.
-This encoder does not perform archive I/O or enable public v3 creation/update.
+This encoder performs no archive I/O; creation and rebuilding place its output
+through the shared writer.
 
-### Transactional reconstruction
+## File sectors and compression
 
-Add, replace, rename and remove operate on the private staged namespace.
-Add rejects duplicate names with EXIST; replacement still requires an existing
-member. Valid remove-then-add sequences are supported. Legacy classic updates
-retain their existing raw-copy path and may extend the block table while hash
-slots remain available; a full hash table returns SIZE rather than losing files.
+Unless marked single-unit, a file has `ceil(file_size / sector_size)` sectors.
+A compressed or imploded multi-sector file starts with `uint32_t[sector_count + 1]`
+offsets relative to its payload. The final value is the stored-data end. Raw
+multi-sector files usually omit the table because their offsets are calculable.
+Require monotonic, in-range offsets before reading a sector.
 
-V3 operations resolve every live public file number to an actual filename from
-`(listfile)`, the operation's source name, internal-file names, or names learned
-by earlier successful operations in the same transaction. Hash values are not
-filenames. Incomplete coverage returns FORMAT without changing the previous
-staged archive. Begin/abort and unchanged commits do not require reconstruction.
-Repeated identical names and ASCII case or slash/backslash variants are one
-normalized name. Distinct complete names resolving to the same logical entry
-(including names indistinguishable after HET's hash-prefix limit) are ambiguous
-and return FORMAT. Empty CRLF/LF lines are ignored; embedded null bytes,
-unresolvable listed names and incomplete coverage reject reconstruction.
-Known source/listfile spellings take precedence over equivalent caller spellings;
-replacement retains that name so classic hashes do not change merely because
-the caller uses a different slash direction or ASCII case.
-Complete mixed and HET/BET-only sources are supported. A BET-only row with
-classic attributes, unresolved classic aliases/locale variants, embedded v3
-wrappers, unrelated trailing data, and patch/delete members are rejected.
-Extra header extensions, nonzero reserved BET record values and retained
-payload positions that overlap the new full header are also unsupported.
-Legacy embedded updates and patch handling remain unchanged. Public file
-numbers may change after a rebuild.
+A multi-compressed sector starts with a method/mask byte. Reverse the selected
+transforms when decoding; a sector may instead be stored raw when compression
+loses. The table lists every codec, all MPQ v2+ STANDARD combinations, and
+additional SPARSE combinations covered by libmpq tests. Combined masks are
+codec chains, not separate codecs; `+` below does not specify decoding order.
 
-Untouched packed members retain their original positions, exact codec bytes,
-flags and encryption keys, including FIX_KEY. Tables are regenerated by the
-normal writer from the final rows: classic row N and BET row N agree. Encrypted
-rename decodes and rewrites with the new name/key at the final position,
-preserving FIX_KEY and timestamps. As with legacy updates, rewritten
-multi-compression rename data uses zlib; replacement uses caller options or
-native defaults. Untouched CRC32/MD5/FILETIME metadata uses explicit classic
-provenance, not canonical indices; new/replaced attributes are regenerated.
+The policy columns apply to MPQ v2+ writing. STANDARD is the default,
+interoperability-oriented policy. EXTENDED permits additional valid
+libmpq-supported compression forms that other MPQ implementations may not
+accept. Neither policy restricts decoding.
 
-Legacy per-member staging encodes FIX_KEY at the final archive-relative copy
-position: the plaintext rebuild stream position minus the source archive start.
-The standalone staging archive starts at zero. For compact inputs, its reserved
-classic tables are moved after the payload so finalization cannot overwrite it.
-MPQE transactions use the same plaintext coordinates and re-encrypt the container
-only at publication; the MPQE cipher position is not a member-key input.
-When reading a patch payload past its plaintext prefix, FIX_KEY still uses the
-original member start and reconstructed size, not the shifted payload view.
+| Method/mask | Codec or combination | STANDARD | EXTENDED |
+| ---: | --- | :---: | :---: |
+| `0x01` | Blizzard Huffman | - | X |
+| `0x02` | zlib deflate | X | X |
+| `0x08` | PKWARE DCL implode | X | X |
+| `0x10` | bzip2 | X | X |
+| `0x12` | LZMA (exclusive method) | X | X |
+| `0x20` | SPARSE lossless zero-run transform | X | X |
+| `0x21` | SPARSE + Huffman | - | X |
+| `0x22` | SPARSE + zlib | X | X |
+| `0x28` | SPARSE + PKWARE | - | X |
+| `0x30` | SPARSE + bzip2 | X | X |
+| `0x40` | IMA ADPCM mono | - | X |
+| `0x41` | Huffman + IMA ADPCM mono | X | X |
+| `0x80` | IMA ADPCM stereo | - | X |
+| `0x81` | Huffman + IMA ADPCM stereo | X | X |
 
-Modified weak signatures and strong trailers are removed, following existing
-update policy. They are never presented as valid after a rebuild. MPQE uses
-the existing authenticated staging and atomic rewrapping path. Rebuild or
-publication failure preserves the original destination. Failures before staged
-ownership transfer preserve the previous stage. If closing the previous staged
-stream fails after validation, the stream is consumed and cleared: further
-mutations/commit cannot publish it, and abort safely removes tracked temporary
-files. Flush failures leave the previous stage available. Close callbacks follow
-`fclose` ownership semantics even on failure. No in-place modification or
-separate v3 transaction engine is used. MPQ v4 remains unsupported.
+MPQ v1 permits ordinary masks under either policy, including the combinations
+above except LZMA: `0x12` means bzip2 + zlib in v1. Other combinations are
+formed by OR-ing stage bits, subject to the rules below; the table is not an
+exhaustive list of every possible mask. Neither policy allows unknown bits,
+both ADPCM channel bits together, or SPARSE with ADPCM. MPQ v2+ additionally
+rejects writer masks containing both zlib and bzip2. Input-specific WAVE and
+file-storage constraints still apply.
 
-Private fault hooks cover staged flush/close and final publication, including
-the handoff after rebuild validation. Writer/source I/O still uses the existing
-error paths, not per-write transaction callbacks. Tests cover malformed
-reconstruction, failed path input and the injectable handoff/publication
-boundaries; they do not simulate every filesystem failure. Temporary cleanup
-is attempted on handled failures and is not a crash-recovery guarantee.
+Raw storage has no method byte; `libmpq__block_compression()` reports zero for
+it. Standalone IMPLODE storage also has no method byte; that API reports
+`0x08` for an actually imploded block and zero for its raw fallback.
 
-### V3 archive creation and finalization
+For MPQ v1, `0x12` retains its legacy BZIP2 + zlib chain meaning. For MPQ v2+,
+it is LZMA and its payload is `useFilter` zero, five LZMA1 property bytes, an
+advisory little-endian 64-bit original size, and raw LZMA1 data normally
+without an end marker. StormLib normally writes those no-EOPM streams; libmpq
+writes LZMA1 streams with an EOPM and accepts both forms when reading. libmpq
+also rejects LZMA properties that require more than 64 MiB of decoder memory.
+Bound every decoder by the expected unpacked sector length.
 
-The existing public creation APIs accept `LIBMPQ_ARCHIVE_VERSION_THREE` (2).
-The default remains v1, 1024 entries, and 4096-byte sectors; explicit capacity,
-sector size, compression policy, listfile, attributes, timestamps, and signing
-options retain their meanings. MPQE creation uses the same v3 writer and
-unchanged authentication/wrapping. V3 transactions use this same writer;
-MPQ v4 remains unsupported.
-No v3-specific public API or output-format switch is introduced.
+Writer compatibility is separate from permissive decoder support. STANDARD is
+the default and, in MPQ v2+, follows the fixed method set: `0x02`, `0x08`,
+`0x10`, `0x12`, `0x20`, `0x22`, `0x30`, `0x41`, and `0x81`. Its fixed SPARSE
+forms are alone (`0x20`), with zlib (`0x22`), and with bzip2 (`0x30`). MPQ v1
+retains normal compression-mask semantics under either policy, allowing other
+valid combinations such as SPARSE with Huffman (`0x21`) or PKWARE (`0x28`). In
+MPQ v2+, EXTENDED permits the broader valid lossless SPARSE combinations and
+standalone Huffman; these may be less interoperable with other readers.
+Neither policy permits v2 chains containing both zlib and bzip2, since stage
+omission could emit reserved method `0x12`. The reader has no compatibility
+setting and is unchanged.
 
-The v3 `max_files` ceiling of `0x04000000` is an implementation limit, not
-an MPQ format maximum. The classic hash capacity is the next power of two
-at least twice the requested capacity. At this ceiling its wire storage is
-2 GiB; the next capacity step needs 4 GiB, which cannot fit the classic
-cipher's `uint32_t` length. Validation itself does not allocate these tables.
-Actual creation still requires memory for reserved tables and can fail with
-an allocation error. Completed HET/BET tables must also fit the separate
-1 MiB limit, so this ceiling is not a promise of that many writable files.
+SPARSE is a lossless zero-run stage applied before other compression stages
+and decoded last. Its payload starts with a four-byte **big-endian** unpacked
+length, unlike MPQ header/table fields. Tokens `0x00..0x7f` emit 3..130 zeros;
+tokens `0x80..0xff` copy 1..128 literal bytes. The outer method byte includes
+`0x20`, for example `0x22` with zlib or `0x30` with bzip2. Other combinations
+follow the version and policy rules above.
 
-V3 uses the same compression policies and codec selection as v2, including
-the exclusive LZMA selector and STANDARD versus EXTENDED mask restrictions.
-Compression stages may fall back to raw storage when they do not save space;
-the emitted method mask records the stages actually retained.
+The decoder checks the declared length against caller-owned output storage
+without allocating from that length. Oversized final tokens are clipped to
+the remaining declared output for Storm-style streams; all required literal
+bytes must exist. Missing output, truncated literals, and trailing input
+are rejected. The writer emits exact token lengths and retains SPARSE only
+when it reduces the stage size. Both writer policies reject SPARSE with
+either WAVE ADPCM bit: ADPCM would lossily transform the SPARSE control stream.
 
-Weak and strong signatures stream their entire signed range using `uint64_t`
-positions and bounded read buffers. Sparse holes are hashed too: signing a
-large sparse archive is linear in its logical extent, not its allocated disk
-size. High-offset regression tests cover range/lookup and I/O failure handling;
-they do not substitute for a complete multi-gigabyte sign/verify operation.
-
-V3 output reserves a 68-byte (`0x44`) header, writes file payloads at
-their final archive-relative positions, then appends HET, BET, classic hash,
-classic block, and (when file positions require it) hi-block tables. Stored
-tables are adjacent, without padding. The existing in-memory builders,
-serializers, and compress/encrypt encoder run only after payloads and generated
-internal files are finished.
-
-BET row N and classic block row N come from the same completed writer metadata
-and retain insertion order. Classic block count is the completed row count,
-not reserved capacity. Corresponding offsets, sizes, and flags must match;
-reader precedence is not used to repair writer inconsistencies. Classic
-`uint32_t` size limits remain enforced. File positions retain their high
-`uint16_t` word in the optional hi-block table and their full `uint64_t` BET
-value. Table positions are checked before narrowing into low/high header words.
-Every table range advances through checked `uint64_t` multiplication and
-addition bounded by `INT64_MAX`. Both classic hash/block offsets are checked
-against their 48-bit low/high representation; HET/BET and hi-block offsets
-remain full-width. Legacy v1/v2 finalization still serializes reserved block
-capacity, while v3 uses completed rows, including the valid zero-row case.
-
-Finalization rewrites the base, v2 extension, and v3 extension using the
-canonical little-endian header encoders, then follows existing flush/signature
-handling. The v3 archive-size field is authoritative; the legacy size word
-stores its low 32 bits explicitly. The public API/ABI is unchanged. V3
-FIX_KEY encryption uses the final file offset and unpacked size, and payloads
-are never moved afterward. Legacy v1/v2 writer behavior remains unchanged.
-
-Synthetic tests reopen public writer output through normal reader APIs, compare
-classic and BET metadata and lookups, exercise streaming and encrypted files,
-and check exact table boundaries. A sparse file tests positions above 4 GiB
-and hi-block output without allocating a huge payload. Where stream cookies
-are available, write failures are injected at payload/table writes and final
-header rewrite; unsuccessful output retains no valid committed header.
-
-## Internal files and integrity data
-
-`(listfile)` is optional text metadata containing names separated by CR/LF or
-semicolons; it is not a complete inventory. `(attributes)` can hold parallel
-per-block CRC32, Windows FILETIME, MD5, and patch-bit arrays. Its payload
-version is 100, independent of the MPQ archive version; it is valid in v1 too.
-The little-endian header contains a 32-bit version and flags. Flags 1, 2,
-4, and 8 select CRC32 (LE32), FILETIME (LE64), MD5 (16 bytes), and patch bits,
-in that order. Rows use physical block-table indices, including unused slots,
-not the public compact file numbering. Patch bits are most-significant-bit
-first within each byte.
-
-libmpq loads this optional file lazily through normal file decoding. Absence
-returns EXIST; malformed metadata returns FORMAT when explicitly queried, while
-ordinary extraction skips unusable optional metadata. The reader accepts full
-arrays and recognized legacy layouts:
-one-entry-short arrays, omitted self patch bits, missing patch arrays, and
-all-zero legacy DWORD patch regions. Unavailable rows/patch values have their
-availability flags cleared rather than inventing checksum values. Unknown
-versions/flags and other payload sizes are rejected when queried.
-
-Creation is opt-in with `LIBMPQ_ATTRIBUTE_*` bits in `options.attributes`.
-The native creation-options structure is 20 bytes: `version`, `max_files`,
-`sector_size`, `flags`, and `attributes` occupy offsets 0, 4, 8, 12, and 16.
-The native per-file result is 40 bytes: `flags`, `crc32`, `filetime`, `md5`,
-and `patch_bit` begin at offsets 0, 4, 8, 16, and 32. Explicit `reserved[4]`
-bytes at offset 36 are always returned as zero. These naturally aligned,
-host-endian API structures are separate from the little-endian disk payload.
-
-Zero disables generation; any nonzero combination creates one `(attributes)`
-file and consumes one reserved slot. Unknown attribute bits are rejected. The
-separate `options.flags` field still selects listfile and compression policy.
-CRC32 and MD5 cover source bytes before compression, including lossy ADPCM,
-not stored ciphertext. FILETIME defaults to zero and is set explicitly on a
-file writer; filesystem timestamps are never imported. Finalization adds the
-listfile, then attributes, then serializes the final tables. Unused rows and
-the attributes entry itself are zero. Ordinary archive creation emits zero
-patch bits; the patch writer sets them for patch-file entries. Checksums are
-metadata, not cryptographic authentication. Complete lossless file reads
-automatically compare available CRC32 and MD5 values against decoded contents;
-an all-zero MD5 row is an unavailable placeholder, not a digest to compare.
-FILETIME and PATCH_BIT remain
-metadata only. Lossy ADPCM decoded bytes can differ from source-byte metadata,
-so those members are not automatically compared. Complete file reads also
-verify available sector Adler-32 values over decrypted packed sectors before
-decoding, including ADPCM. Unusable optional sector tables are skipped during
-ordinary extraction.
+### Sector checksums
 
 `libmpq__file_verify()` explicitly compares sector checksums and file CRC32/MD5.
 MPQ sector CRCs are Adler-32 checksums over decrypted packed sectors, before
@@ -877,6 +585,203 @@ points past the checksum table. The table is never encrypted and uses zlib
 only when this reduces its size. Empty, raw, and single-unit files ignore the
 flag. Ordinary writing without this flag and normal extraction are unchanged.
 
+## File encryption and FIX_KEY
+
+For an encrypted file, the file-key hash uses only the basename after the
+final `/` or `\`, with classic hash case normalization. Directory components
+do not participate. If FIX_KEY is set, use
+`(base_key + (uint32_t)file_pos) ^ (uint32_t)file_size`. Decrypt the offset
+table with `key - 1` and sector *i* with `key + i`. Encryption processes
+little-endian 32-bit words; use explicit `uint32_t` wraparound. A filename is
+normally required to decrypt file data.
+
+Filename lookup and table generation still hash the complete archive member path.
+
+Encrypted PTCH bodies retain the original member's key before the plaintext
+patch-info prefix is excluded; see the patch section below.
+
+## Patch archives and PTCH/BSD0
+
+A patch layer can store a physical member such as `Base\Foo` below a `Base\`
+prefix. Removing that prefix gives the logical identity `Foo` used to match
+the base archive and other layers. A `(patch_metadata)` path is a namespace
+marker, not a rich metadata structure: if its plaintext path is available,
+typically through `(listfile)`, the directory portion can identify the prefix.
+When only irreversible MPQ filename hashes are available, a prefix cannot be
+inferred generically from them.
+
+### Payload representation
+
+A PATCH_FILE member begins with a plaintext patch-info prefix: little-endian
+`uint32_t` length, flags (including `0x80000000`), decoded PTCH data size, and
+16-byte MD5 of the decoded PTCH body. The fixed prefix is 28 bytes; its declared
+length may include extensions and must fit the stored member extent. The
+block's unpacked size describes the final patched target, not the PTCH body.
+
+The decoded PTCH header is 68 bytes:
+
+| Offset | Field |
+| --- | --- |
+| `0x00` | `PTCH` tag |
+| `0x04` | `uint32_t` complete size after any inner RLE expansion |
+| `0x08`, `0x0C` | `uint32_t` before/after target sizes |
+| `0x10`, `0x14` | `MD5_` tag and `uint32_t` block size (40) |
+| `0x18`, `0x28` | 16-byte before/after target MD5 values |
+| `0x38`, `0x3C` | `XFRM` tag and `uint32_t` transform block size |
+| `0x40` | `COPY` or `BSD0` tag |
+| `0x44` | Transform data |
+
+COPY supplies the complete replacement. BSD0 uses a `BSDIFF40` header with
+little-endian `uint64_t` control-block length, delta-block length and target
+length, followed by controls, deltas and extra bytes. libmpq's controls are
+12-byte tuples: `uint32_t` add count, copy count and sign-magnitude source move.
+Add combines base and delta bytes modulo 256; copy takes literal extra bytes.
+An inner zero-skipping RLE wrapper may compress the transform. All ranges,
+output lengths and before/after MD5 values are checked during application.
+The writer validates each BSD0 candidate with this decoder before selecting
+it over COPY; compatibility with generic bsdiff encodings is not implied.
+
+`libmpq__patch_payload_size()` reports decoded PTCH body size;
+`libmpq__patch_payload_read()` returns that body beginning with `PTCH`, excludes
+the plaintext prefix and verifies its MD5. Neither API applies the patch or
+returns the final target. The caller supplies output storage and, when needed
+for decryption, the actual member filename. Delete markers (`0x02000000`) hide
+lower-layer names; patch members carry `0x00100000`.
+
+### Creation and ordered materialization
+
+The dedicated patch writer can create MPQ v3 patch archives from standalone v3
+bases with classic-backed, mixed, or BET-only replacement/deletion targets
+when their filenames are supplied by the caller. Classic-backed targets retain
+their unambiguous classic locale/platform identity; BET-only targets use zero
+for both because BET carries neither field. Filenames are never reconstructed
+from hashes. Physical metadata and encryption/FIX_KEY reads use canonical
+entries and validated source mappings, without fabricating classic rows.
+The existing v3 writer emits the 0x44-byte header, HET/BET and classic tables
+with shared row identity, patch-info prefixes, PTCH bodies, and delete markers.
+Existing compression, encryption and signature options retain their meanings.
+Ordered patch-view materialization supports v3 bases with classic-backed,
+mixed, or BET-only members. Names come from `(listfile)`, recognized internal
+names, and the patch's logical namespace; hashes are never inverted into names.
+Incomplete coverage, ambiguous aliases/locales, unresolved listed names, and
+nonzero reserved BET metadata are rejected instead of dropping information.
+Patch prefixes, COPY/BSD0 transforms, normal replacements, additions and delete
+markers retain their existing semantics and integrity checks.
+
+Unchanged packed members retain their original archive-relative offsets,
+compression and encryption. Modified contents pass through the normal writer,
+including basename-derived keys and FIX_KEY adjustment at final output offsets.
+Representable compression masks and classic locale/platform identities are
+preserved; modified files requiring lossy recompression or incompatible
+later-sector compression masks are rejected. Existing writer size limits also
+apply, including its single-unit sector-size limit. Classic attributes are
+read only for classic-backed rows; output checksums and supported timestamps
+are regenerated or retained as appropriate. Modified views omit stale signature
+members and trailers. A metadata-only layer leaves the original private view
+unchanged.
+
+Materialized output is a private standalone v3 archive with newly generated
+HET/BET and classic tables sharing row identity. It is reopened before
+replacing the private view; failed opens attempt to remove temporary output
+without modifying either source. Input container prefixes/suffixes are not
+carried into rebuilt v3 views. An open failure is terminal and leaves the
+returned view pointer NULL, not a partially usable or retryable view. Archive
+close consumes its handle even when it reports an error; cleanup never closes
+that handle again. If removal of the old private placeholder fails after the
+source has closed, the candidate is discarded and outer cleanup retries
+removal of the placeholder. Private-file deletion is best effort: persistent
+filesystem refusal can leave temporary files, but no partial view is returned
+and the original sources remain unchanged. Multiple layers are applied in
+caller-specified order. Each changed layer rebuilds a complete v3 intermediate
+through the same writer; subsequent COPY or BSD0 transforms use the preceding
+layer's contents. No-op layers retain the current intermediate unchanged.
+Generated listfiles carry the known logical namespace forward, subject to the
+same conservative naming and metadata requirements at every layer. Failure at
+any layer is terminal: no partial chain is returned, and intermediate cleanup
+is best effort.
+
+Internal patch-view source descriptors accept plain MPQ or MPQE independently
+for the base and each layer, including mixed chains. Each MPQE source requires
+its own authentication code; path-only composition cannot authenticate wrapped
+patch layers. Authentication failure returns no view. Materialized views are
+private decoded MPQ archives, not newly published MPQE containers. The patch-view
+composition entry points remain private; public patch creation accepts a
+standalone plain MPQ base and may produce MPQE output.
+
+Encrypted PTCH reads reopen independent member caches and derive FIX_KEY from
+the original member before shifting past its plaintext patch-info prefix.
+Modified output members use basename keys and final archive-relative offsets,
+including when input archives have container prefixes. The public dedicated
+patch writer accepts normal encryption but not explicit FIX_KEY storage options;
+FIX_KEY patch members remain readable through the existing decoder.
+
+Signature presence is not proof of validity. Callers must explicitly verify
+input archives with the required public key; patch-view composition does not
+enforce signature verification. Supported weak/strong signatures on plain v3
+inputs and weak signatures on MPQE inputs use the ordinary archive verifier.
+Changed intermediates and final views omit old signatures and are unsigned:
+composition has no signing configuration and does not regenerate signatures.
+Strong-signature creation and trailer detection remain unsupported for MPQE.
+No-op chains preserve unchanged input signatures without claiming verification.
+Corrupt PTCH integrity metadata is rejected independently of archive signature
+policy.
+
+## MPQE-wrapped streams
+
+Some installer archives encrypt the complete outer byte stream in 64-byte MPQE
+chunks before the usual `MPQ\x1A` header. MPQE is a stream provider, not a
+new MPQ header version: decrypt it first, then parse the contained MPQ using
+the normal header and table rules. The chunk transform depends on a
+caller-supplied authentication code and the absolute chunk position. Keep
+authentication-code provisioning outside archive parsing; libmpq's C API does
+not embed, discover, log, or persist such codes. A missing or too-short code
+buffer is rejected as a decryption error. MPQE has no authentication check, so
+a well-formed but incorrect code is parsed as ordinary invalid MPQ data and
+can produce a format or another parser error.
+
+## Attributes, signatures and integrity
+
+### Internal files and attributes
+
+`(listfile)` is optional text metadata containing names separated by CR/LF or
+semicolons; it is not a complete inventory. `(attributes)` can hold parallel
+per-block CRC32, Windows FILETIME, MD5, and patch-bit arrays. Its payload
+version is 100, independent of the MPQ archive version; it is valid in v1 too.
+The little-endian header contains a 32-bit version and flags. Flags 1, 2,
+4, and 8 select CRC32 (LE32), FILETIME (LE64), MD5 (16 bytes), and patch bits,
+in that order. Rows use physical block-table indices, including unused slots,
+not the public compact file numbering. Patch bits are most-significant-bit
+first within each byte.
+
+libmpq loads this optional file lazily through normal file decoding. Absence
+returns EXIST; malformed metadata returns FORMAT when explicitly queried,
+while ordinary extraction skips unusable optional metadata. The reader accepts
+full arrays and recognized legacy layouts: one-entry-short arrays, omitted
+self patch bits, missing patch arrays, and all-zero legacy `uint32_t` patch
+regions. Unavailable rows/patch values have their availability flags cleared
+rather than inventing checksum values. Unknown versions/flags and other
+payload sizes are rejected when queried.
+
+Creation is opt-in with `LIBMPQ_ATTRIBUTE_*` bits in `options.attributes`.
+
+Zero disables generation; any nonzero combination creates one `(attributes)`
+file and consumes one reserved slot. Unknown attribute bits are rejected. The
+separate `options.flags` field still selects listfile and compression policy.
+CRC32 and MD5 cover source bytes before compression, including lossy ADPCM,
+not stored ciphertext. FILETIME defaults to zero and is set explicitly on a
+file writer; filesystem timestamps are never imported. Finalization adds the
+listfile, then attributes, then serializes the final tables. Unused rows and
+the attributes entry itself are zero. Ordinary archive creation emits zero
+patch bits; the patch writer sets them for patch-file entries. Checksums are
+metadata, not cryptographic authentication. Complete lossless file reads
+automatically compare available CRC32 and MD5 values against decoded contents;
+an all-zero MD5 row is an unavailable placeholder, not a digest to compare.
+FILETIME and PATCH_BIT remain metadata only. Lossy ADPCM decoded bytes can
+differ from source-byte metadata, so those members are not automatically
+compared. Complete file reads also verify available sector Adler-32 values
+over decrypted packed sectors before decoding, including ADPCM. Unusable
+optional sector tables are skipped during ordinary extraction.
+
 File CRC32/MD5 cover complete extracted contents. These requests require
 `(attributes)`; unavailable requested row values are skipped.
 `LIBMPQ_VERIFY_ALL` requests sector checks and both file checks. The mismatch
@@ -892,15 +797,17 @@ and hash table. This avoids StormLib's malformed-map heuristic, which skips
 attributes when a table begins exactly at the end of the v1 header. Writers
 without attributes retain their existing layout.
 
+### Archive signatures
+
 Weak `(signature)` files contain exactly 72 uncompressed, unencrypted bytes:
-eight zero bytes followed by a little-endian RSA-512 signature integer.
-libmpq hashes from the archive offset through the v1 declared archive size or
-the v2 metadata-derived required extent, treating all 72 signature bytes as
-zero, and checks the complete PKCS#1 v1.5 MD5 DigestInfo encoding. Bytes before
-or after that MPQ range are not hashed. For archives physically beginning with
-`HM3W`, weak and strong signature hashing starts at physical offset zero and
-ends at the logical MPQ end; weak hashing still excludes the internal
-`(signature)` file.
+eight zero bytes followed by a little-endian RSA-512 signature integer. libmpq
+hashes from the archive offset through the v1 declared archive size or the v2
+metadata-derived required extent or authoritative v3 archive size, treating
+all 72 signature bytes as zero, and checks the complete PKCS#1 v1.5 MD5
+DigestInfo encoding. Bytes before or after that MPQ range are not hashed. For
+archives physically beginning with `HM3W`, weak and strong signature hashing
+starts at physical offset zero and ends at the logical MPQ end; weak hashing
+still excludes the internal `(signature)` file.
 
 For MPQ v2 archives, libmpq derives the weak-signature extent from the parsed
 64-bit archive structures rather than using the deprecated 32-bit
@@ -928,12 +835,11 @@ outside the MPQ extent. libmpq defines no external strong-trailer
 representation for the encrypted MPQE transport, so MPQE weak signing and
 verification are supported but external strong MPQE signatures are not.
 
-Weak public and private keys are exactly 128 bytes: a 64-byte unsigned big-endian
-modulus followed by a 64-byte zero-padded unsigned big-endian exponent value.
-Use a public key to verify a
-signature and a private key to create one. The modulus must be full-width and
-odd; the exponent must be odd, at least 3, and less than the modulus. These
-checks validate representation,
+Weak public and private keys are exactly 128 bytes: a 64-byte unsigned
+big-endian modulus followed by a 64-byte zero-padded unsigned big-endian
+exponent value. Use a public key to verify a signature and a private key to
+create one. The modulus must be full-width and odd; the exponent must be odd,
+at least 3, and less than the modulus. These checks validate representation,
 not the mathematical validity of the caller's RSA key pair. No PEM,
 certificates, ASN.1 parser, default public key, or private key is built in.
 libmpq does not ship Blizzard- or product-specific verification or signing
@@ -959,12 +865,49 @@ not a general-purpose hardened cryptographic service. Strong verification
 also uses historical cryptography. Never treat a matching signature as
 a substitute for range validation.
 
-## Implementation order
+Weak and strong signatures stream their entire signed range using `uint64_t`
+positions and bounded read buffers. Sparse holes are hashed too: signing a
+large sparse archive is linear in its logical extent, not its allocated disk
+size. High-offset regression tests cover range/lookup and I/O failure handling;
+they do not substitute for a complete multi-gigabyte sign/verify operation.
 
-1. Locate and range-check the header with checked 64-bit arithmetic.
-2. Implement v1 classic lookup and raw/single-unit file reading.
-3. Add table and sector encryption with known-name vectors.
-4. Add codecs incrementally with bounded output.
-5. Add v2 high offsets and v3 HET/BET. V4 and its header MD5 checks remain unsupported.
-6. Test collisions, deleted entries, embedded headers, mixed sectors, every
-   codec, high offsets, malformed tables, and integer-overflow boundaries.
+## Compatibility and implementation limits
+
+Automated compatibility coverage is entirely self-contained: deterministic
+synthetic v3 fixtures, independently verified fixed HET hash vectors, malformed
+archive tests, fuzzing, and reader/stream/integrity tests. The library and its
+native tests remain C-only. StormLib is an external reference, not a build,
+test, vendored, or CI dependency; no installation or download is required.
+
+Independent implementations such as StormLib may be used manually for local
+comparison. Compare archive-open success, live file enumeration/count, filename
+lookup hits/misses, flags, packed/unpacked sizes, offsets, and extracted payload
+bytes/checksums. Public file numbers need not equal another implementation's
+physical table indices. Standalone Huffman and Huffman+zlib EXTENDED masks are
+known reference limitations: StormLib's v2+ dispatcher rejects them, while
+libmpq's synthetic tests verify them. For lossy WAVE members, compare decoded
+bytes between readers rather than requiring equality with source PCM.
+
+Current sector/codec lengths are 32-bit even though canonical BET metadata and
+positions are 64-bit. Unrepresentable member reads and block counts fail with
+SIZE rather than truncating. V3 modification requires complete filename
+reconstruction. Creation and transactional rebuilding use
+the existing writer, preserving explicit source mappings and independently
+validated generated tables.
+
+The v3 `max_files` ceiling of `0x04000000` is an implementation limit, not
+an MPQ format maximum. The classic hash capacity is the next power of two
+at least twice the requested capacity. At this ceiling its wire storage is
+2 GiB; the next capacity step needs 4 GiB, which cannot fit the classic
+cipher's `uint32_t` length. Validation itself does not allocate these tables.
+Actual creation still requires memory for reserved tables and can fail with
+an allocation error. Completed HET/BET tables must also fit the separate
+1 MiB limit, so this ceiling is not a promise of that many writable files.
+
+Creation supports MPQ v1/v2/v3, including MPQE wrapping; MPQ v4 and compressed
+classic tables remain unsupported. The v3 writer emits mixed HET/BET and classic
+tables, not BET-only output. V3 transactional reconstruction requires a complete,
+unambiguous named file set and representable metadata. It rebuilds all tables
+through the same writer; incomplete source information is rejected rather than
+silently losing members. Practical transaction rules and supported source
+boundaries are described in [DEVELOPER.md](DEVELOPER.md#transactional-modification).

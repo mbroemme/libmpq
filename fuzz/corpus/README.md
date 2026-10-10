@@ -1,23 +1,34 @@
-# Reviewed fuzz regression seeds
+# Fuzz corpus management
 
-This directory holds minimized, reviewed crash reproducers. The corpus
-generator copies them into the matching target directory before adding its
-generated baseline inputs, so CI replays every retained seed.
+Checked-in files are reviewed regression seeds. Generated runtime corpora
+combine these seeds with deterministic baseline inputs and belong outside
+the source tree, normally under `/tmp`.
 
-CI automatically minimizes crash, leak, and timeout artifacts. Download its
-`minimized/` output, reproduce it locally, and use this command if further
-minimization is useful:
+| Retained seed | Purpose |
+| --- | --- |
+| `writer-roundtrip/pkware-short-runs.txt` | Writer round-trip regression with short repeated byte runs |
+
+`scripts/generate-fuzz-corpus.sh` first copies this directory into the output,
+preserving target subdirectories, then adds synthetic MPQ v1/v2/v3 archives,
+the v3 patch archive, MPQE v1/v2/v3 archives, and framed structural/codec
+inputs. Generated cases include malformed headers/offsets, truncation,
+COPY/BSD0, SPARSE zero runs, clipped literals and oversized lengths, malformed
+LZMA headers, and zero-rich SPARSE/combined-codec writer inputs. Fixture
+contents, checksums and regeneration belong in
+[tests/fixtures/README.md](../../tests/fixtures/README.md). Build/run commands
+and input contracts are in [the fuzzing guide](../README.md).
+
+To retain a failure, reproduce it with the matching target, minimize it,
+review its expected behavior, and save it under that target's corpus directory.
+From the repository root, for a single crash input:
 
 ```bash
 scripts/minimize-fuzz-crash.sh fuzz-archive-open crash-* \
   fuzz/corpus/archive-open/descriptive-name
 ```
 
-Review the minimized input and its expected behavior before committing it.
-CI never commits untrusted fuzz inputs automatically.
-
-The corpus generator also seeds SPARSE decoding with a zero run, a clipped
-terminal literal, and an oversized declared length. It seeds LZMA decoding
-with malformed headers and LZMA writing with a v2 input. Writer seeds contain
-zero-rich data for SPARSE, SPARSE + zlib, and SPARSE + bzip2. Archive targets
-reuse the public v1/v2 MPQ and MPQE fixtures containing UTF-32LE text entries.
+Use a descriptive name and include the seed in `fuzz/Makefile.am`'s
+`EXTRA_DIST` when committing it. CI minimizes crash, leak and timeout artifacts
+under `minimized/`; if minimization cannot reproduce a failure, it retains the
+original input there. Download and review artifacts before adding them.
+CI never commits untrusted inputs automatically.

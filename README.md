@@ -24,27 +24,13 @@ MPQ is a proprietary archive format created by Mike O'Brien in 1996. It is
 used by Blizzard games including Diablo, Diablo II, StarCraft, Warcraft II:
 Battle.net Edition, Warcraft III, and World of Warcraft.
 
-libmpq provides a C API for applications that need to inspect, create, modify,
-and extract MPQ archives. Creation supports seekable v1, v2, and v3 archives,
-streaming or buffer/path file addition, encrypted tables and payloads,
-optional listfiles,
-raw and single-unit files, PKWARE implode, multi-compression sectors using
-Huffman, zlib, PKWARE, bzip2, or mono/stereo WAVE ADPCM, and the exclusive
-MPQ v2+ LZMA method.
+libmpq reads, creates, and modifies MPQ v1, v2, and v3 archives, including
+HET/BET extended tables, MPQE wrapping, compression, encryption, and signatures.
+Its C API supports transactional add, replace, remove, and rename operations
+and patch archive creation. Internal patch views apply ordered multi-layer
+patch chains. Python, Java, and D bindings expose the public C API.
 
 ## Features
-
-| Format | Read | Create | Update/rebuild |
-| --- | --- | --- | --- |
-| MPQ v1 (wire version 0) | Supported | Supported | Supported |
-| MPQ v2 (wire version 1) | Supported | Supported | Supported |
-| MPQ v3 (wire version 2) | Classic, HET/BET, mixed tables | Mixed HET/BET + classic tables | Supported with complete filenames |
-| MPQ v4 (wire version 3) | Not supported | Not supported | Not supported |
-
-V3 coverage uses synthetic archives. Extended tables have a defensive 1 MiB
-limit; current file decoding requires packed/unpacked member lengths to fit
-32 bits. Wide file positions and metadata are preserved. See [MPQ.md](MPQ.md)
-for compatibility constraints and manual interoperability checks.
 
 * Read, inspect, and extract MPQ archives, including archives embedded at a
   non-zero file offset.
@@ -52,31 +38,25 @@ for compatibility constraints and manual interoperability checks.
   file buffer.
 * Open MPQ and MPQE archives from filesystem paths or caller-provided
   random-access I/O callbacks.
-* Create seekable MPQ v1, v2, and v3 archives with configurable file-table capacity,
-  sector size, optional `(listfile)` and `(attributes)` metadata, encrypted
-  tables, and encrypted file payloads.
+* Create seekable archives with configurable capacity, sector size, optional
+  listfiles and attributes, and encrypted file payloads.
 * Add raw, single-unit, sectorized, and multi-sector files through streaming,
   memory-buffer, and filesystem-path APIs.
 * Modify filesystem MPQs, embedded MPQ containers, and authenticated MPQE
-  archives transactionally with named-file replace, remove, and rename operations.
+  archives transactionally with named-file add, replace, remove, and rename.
 * Create MPQ or MPQE-wrapped replacement and deletion patch archives without
-  changing the base MPQ; optionally sign patches with caller-supplied keys.
+  changing the base MPQ; apply COPY/BSD0 multi-layer chains through internal
+  patch views.
 * Read and create MPQE-wrapped MPQ archives using a caller-supplied
   authentication code.
 * Read and write PKWARE implode, Huffman, zlib, bzip2, SPARSE, and mono or
-  stereo WAVE ADPCM compression. MPQ v2+ also supports the exclusive LZMA
-  method, and readers accept Blizzard multi-compression payloads.
-* Provide STANDARD and EXTENDED writer compression policies to balance
-  interoperability with broader implemented compression combinations.
+  stereo WAVE ADPCM compression, plus LZMA and multi-compression payloads.
 * Inspect archive, file, and block metadata, including names, sizes, flags,
   packed block sizes, compression methods, and stored attributes.
-* Read and create version-100 `(attributes)` metadata with CRC32, explicit
-  FILETIME, MD5, and PATCH_BIT information.
-* Generate and explicitly verify sector Adler-32 checksums and file-level
-  CRC32/MD5 attributes. Complete reads automatically verify available sector
-  checksums and, for lossless data, available CRC32/MD5 attributes.
+* Read and create attributes, including CRC32, MD5 and timestamps; generate
+  and verify sector checksums and file integrity metadata.
 * Detect, verify, and create weak MD5/RSA-512 internal signatures and strong
-  SHA-1/RSA-2048 external `NGIS` signatures using caller-supplied keys. Both
+  SHA-1/RSA-2048 external signatures using caller-supplied keys. Both
   mechanisms are legacy compatibility features, not modern authenticity
   protection.
 * Support little- and big-endian hosts through explicit little-endian MPQ
@@ -88,9 +68,10 @@ for compatibility constraints and manual interoperability checks.
 See the [developer guide](DEVELOPER.md) for API examples, optional metadata,
 checksum verification, archive signatures, and writer compression policies.
 
-For lossy WAVE ADPCM members, automatic file-level `(attributes)` CRC32/MD5
-comparison is intentionally skipped: decoded PCM cannot reproduce the original
-source bytes byte-for-byte. Packed-sector integrity checks remain available.
+Security note: MPQE creation and updates use private plaintext staging files.
+Cleanup is best effort; abnormal process or system termination may leave them
+behind. See [transactional modification](DEVELOPER.md#transactional-modification)
+for staging and publication details.
 
 ## Requirements
 
@@ -324,12 +305,12 @@ available through `man 3 libmpq`.
 ## Native C SDK packages
 
 Individual release downloads provide prebuilt native C SDKs for Linux glibc
-and musl (both x86_64 and aarch64), macOS arm64 and x86_64, Windows MSVC
-x64 and ARM64, and Windows MinGW-w64 x86_64 and aarch64 (MSYS2 CLANGARM64).
-Each SDK includes public headers, a shared library, platform-appropriate
-import libraries or development
-metadata, licenses, and documentation. The macOS SDKs are relocatable,
-architecture-specific `.tar.gz` development archives, not application installers.
+and musl (both x86_64 and aarch64), macOS arm64 and x86_64, Windows MSVC x64
+and ARM64, and Windows MinGW-w64 x86_64 and aarch64 (MSYS2 CLANGARM64). Each
+SDK includes public headers, a shared library, platform-appropriate import
+libraries or development metadata, licenses, and documentation. The macOS SDKs
+are relocatable, architecture-specific `.tar.gz` development archives, not
+application installers.
 
 Linux and macOS SDKs use their relevant system runtime and codec dependencies.
 Windows SDK ZIPs bundle the required non-system runtime DLLs under `bin/`;
@@ -358,20 +339,13 @@ required to use libmpq.
 
 See the [developer guide](DEVELOPER.md) for API integration and the
 [release guide](RELEASING.md) for release workflows. For an
-implementation-oriented overview of MPQ v1 through v4
-headers, tables, encryption, sectors, and compression, see the
-[MPQ format guide](MPQ.md).
+implementation-oriented overview of MPQ v1 through v4 headers, tables,
+encryption, sectors, and compression, see the [MPQ format guide](MPQ.md).
 
 ## Limitations
 
-* Seekable MPQ v3 creation emits HET/BET plus classic tables with shared row
-  identity. V3 transactions require complete filename reconstruction;
-  unsupported aliases, wrappers and metadata layouts are rejected without
-  losing files. MPQ v4 is unsupported. V1/v2 defaults are unchanged.
-* Encrypted random-access writing is not supported. MPQE modification uses
-  transactional decoding and re-encryption instead.
-* MPQE creation and updates use private plaintext staging files. Cleanup is
-  best effort, so abnormal process or system termination may leave one behind.
+* MPQ v4 archives are not yet supported.
+* Encrypted random-access writing is not supported.
 
 See [MPQ.md](MPQ.md) for MPQE signatures and patch namespace format behavior,
 and [DEVELOPER.md](DEVELOPER.md) for authentication and prefix-discovery policy.
@@ -409,7 +383,7 @@ Thanks to the contributors whose earlier work helped make libmpq possible:
 ## Licensing
 
 libmpq is licensed under the GNU Lesser General Public License, version 2.1
-or later. See [`COPYING.LESSER`](COPYING.LESSER) for the library license and
-[`COPYING`](COPYING) for the corresponding GNU GPL license text. The
+or later. See [COPYING.LESSER](COPYING.LESSER) for the library license and
+[COPYING](COPYING) for the corresponding GNU GPL license text. The
 relicensing history and approval record are available in
-[`RELICENSING.md`](RELICENSING.md).
+[RELICENSING.md](RELICENSING.md).

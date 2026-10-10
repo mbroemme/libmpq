@@ -255,17 +255,16 @@ big-endian modulus followed by a 256-byte zero-padded unsigned big-endian
 public exponent. Strong signing uses the same layout with the private exponent
 and emits only the plain SHA-1 archive-range variant. Weak signatures are
 supported inside MPQE-wrapped MPQs. External strong signatures are not defined
-for MPQE transport streams.
-Use `Archive.sign(privateKey)` for weak signing or
-`Archive.sign(privateKey, SIGNATURE_STRONG)` for strong signing before writer close, and
-`Archive.signatures()` / `Archive.verify(publicKey)` on reopened archives.
-Verification returns mismatch bits; malformed keys/archives raise normal binding
-errors. Weak keys are exactly 128 bytes: 64-byte big-endian modulus followed by a
-64-byte big-endian exponent. Signing supports v1, v2, and v3. libmpq does not
-ship Blizzard- or product-specific public verification keys or private signing
-keys; all signature key material is supplied explicitly by the caller.
-MD5/RSA-512 is legacy compatibility, not modern authenticity protection.
-See [the format guide](../../MPQ.md) for details.
+for MPQE transport streams. Use `Archive.sign(privateKey)` for weak signing or
+`Archive.sign(privateKey, SIGNATURE_STRONG)` for strong signing before writer
+close, and `Archive.signatures()` / `Archive.verify(publicKey)` on reopened
+archives. Verification returns mismatch bits; malformed keys/archives raise
+normal binding errors. Weak keys are exactly 128 bytes: 64-byte big-endian
+modulus followed by a 64-byte big-endian exponent. Signing supports v1, v2,
+and v3. libmpq does not ship Blizzard- or product-specific public verification
+keys or private signing keys; all signature key material is supplied
+explicitly by the caller. MD5/RSA-512 is legacy compatibility, not modern
+authenticity protection. See [the format guide](../../MPQ.md) for details.
 
 `Archive.signatures()` reports weak MD5/RSA-512 internal signatures and strong
 SHA-1/RSA-2048 external `NGIS` trailers. `Archive.verify` accepts a signature
@@ -296,17 +295,17 @@ LIBRARY_PATH="$PWD/src/.libs" LD_LIBRARY_PATH="$PWD/src/.libs" \
 
 Release downloads also provide compiler-specific binary packages. They contain
 the D interface files, a precompiled static D archive, and the native shared
-library (`libmpq.so` on Linux, `libmpq.dylib` on macOS, `libmpq.dll` on Windows).
-Unix packages preserve the shared-library symlinks.
-The binary package supplies the bundled native library to the linker.
-At runtime, its library directory must be available through the platform's
-loader search mechanism: `LD_LIBRARY_PATH` on Linux, `DYLD_LIBRARY_PATH` on
-macOS, or `PATH` on Windows (using the package's `bin/` directory). The
-compiler and native build metadata, including the libc build version, build
-environment, and maximum required glibc symbol version, is recorded in
-`BUILDINFO`; use the source package when the recorded compiler or platform does
-not match the consumer environment. Binary packages are built and tested
-for the following compiler/architecture matrix:
+library (`libmpq.so` on Linux, `libmpq.dylib` on macOS, `libmpq.dll` on
+Windows). Unix packages preserve the shared-library symlinks. The binary
+package supplies the bundled native library to the linker. At runtime, its
+library directory must be available through the platform's loader search
+mechanism: `LD_LIBRARY_PATH` on Linux, `DYLD_LIBRARY_PATH` on macOS, or `PATH`
+on Windows (using the package's `bin/` directory). The compiler and native
+build metadata, including the libc build version, build environment, and
+maximum required glibc symbol version, is recorded in `BUILDINFO`; use the
+source package when the recorded compiler or platform does not match the
+consumer environment. Binary packages are built and tested for the following
+compiler/architecture matrix:
 
 | Compiler | Linux glibc (Ubuntu 24.04) | Linux musl (Alpine 3.22) | macOS | Windows |
 | --- | --- | --- | --- | --- |
@@ -316,9 +315,9 @@ for the following compiler/architecture matrix:
 Archives are named
 `libmpq-d-X.Y.Z-<compiler>-linux-<libc>-<architecture>.tar.gz`, for example
 `libmpq-d-X.Y.Z-ldc-linux-glibc-aarch64.tar.gz` and
-`libmpq-d-X.Y.Z-ldc-linux-musl-aarch64.tar.gz`. DMD remains x86_64-only because
-the existing release toolchains do not provide native Linux aarch64 DMD
-packages. Linux builds and tests run natively without emulation.
+`libmpq-d-X.Y.Z-ldc-linux-musl-aarch64.tar.gz`. DMD remains x86_64-only
+because the existing release toolchains do not provide native Linux aarch64
+DMD packages. Linux builds and tests run natively without emulation.
 
 macOS archives use these names:
 
@@ -336,8 +335,8 @@ through `DYLD_LIBRARY_PATH`.
 Stable DMD 2.113.0 does not provide the required macOS ARM64 `-marm64` target.
 The DMD arm64 binary package is not published until a stable DMD release
 provides that support. LDC remains supported and runs natively on macOS arm64.
-The x86_64 DUB suffix is
-`osx-x86_64-<compiler>`; LDC arm64 uses `osx-aarch64-ldc`.
+The x86_64 DUB suffix is `osx-x86_64-<compiler>`; LDC arm64 uses
+`osx-aarch64-ldc`.
 
 Windows archives are `libmpq-d-X.Y.Z-dmd-windows-x86_64.zip` and
 `libmpq-d-X.Y.Z-ldc-windows-x86_64.zip`. Each contains a single
@@ -352,8 +351,8 @@ extracted-package consumer with no vcpkg or native build directories on
 the runtime `PATH`.
 
 Windows ARM64 is supported by LDC only, as
-`libmpq-d-X.Y.Z-ldc-windows-arm64.zip`. It uses the MSVC ARM64 native SDK
-and `arm64-windows` dependencies. All D compilation uses the explicit target
+`libmpq-d-X.Y.Z-ldc-windows-arm64.zip`. It uses the MSVC ARM64 native SDK and
+`arm64-windows` dependencies. All D compilation uses the explicit target
 `aarch64-windows-msvc` (`dub --arch=aarch64-windows-msvc`), with validated
 `windows-aarch64-ldc` binary metadata. The release token is `arm64`; DUB's
 internal architecture is `aarch64`. The LDC multilib compiler executable may

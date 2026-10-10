@@ -1,7 +1,11 @@
 # libFuzzer targets
 
-The fuzzers are opt-in and do not change ordinary library or release builds.
-Build them with Clang and sanitizers:
+Fuzzers are opt-in, non-installed targets and are not part of `make check`.
+Run the following commands from a disposable source copy.
+
+## Build and run
+
+Build with Clang and ASan/UBSan, then generate the runtime corpora:
 
 ```bash
 sh autogen.sh
@@ -12,61 +16,46 @@ make -j"$(nproc)"
 scripts/generate-fuzz-corpus.sh /tmp/libmpq-fuzz-corpus
 ```
 
-Run bounded campaigns for the archive, API, and codec targets:
+Choose a target suffix and the input limit from the table below:
 
 ```bash
-fuzz/fuzz-archive-open -max_total_time=60 /tmp/libmpq-fuzz-corpus/archive-open
-fuzz/fuzz-attributes -max_total_time=60 /tmp/libmpq-fuzz-corpus/attributes
-fuzz/fuzz-patch-apply -max_total_time=60 /tmp/libmpq-fuzz-corpus/patch-apply
-fuzz/fuzz-mpqe-open -max_total_time=60 /tmp/libmpq-fuzz-corpus/mpqe-open
-fuzz/fuzz-file-read -max_total_time=60 /tmp/libmpq-fuzz-corpus/file-read
-fuzz/fuzz-writer-roundtrip -max_total_time=60 /tmp/libmpq-fuzz-corpus/writer-roundtrip
-fuzz/fuzz-encrypted-archive -max_total_time=60 /tmp/libmpq-fuzz-corpus/encrypted-archive
-fuzz/fuzz-sector-decode -max_total_time=60 /tmp/libmpq-fuzz-corpus/sector-decode
-fuzz/fuzz-ext-table -max_total_time=60 /tmp/libmpq-fuzz-corpus/ext-table
-fuzz/fuzz-pkware-decode -max_total_time=60 /tmp/libmpq-fuzz-corpus/pkware-decode
-fuzz/fuzz-huffman-decode -max_total_time=60 /tmp/libmpq-fuzz-corpus/huffman-decode
-fuzz/fuzz-zlib-decode -max_total_time=60 /tmp/libmpq-fuzz-corpus/zlib-decode
-fuzz/fuzz-bzip2-decode -max_total_time=60 /tmp/libmpq-fuzz-corpus/bzip2-decode
-fuzz/fuzz-lzma-decode -max_total_time=60 \
-    /tmp/libmpq-fuzz-corpus/lzma-decode
-fuzz/fuzz-sparse-decode -max_total_time=60 /tmp/libmpq-fuzz-corpus/sparse-decode
-fuzz/fuzz-wave-decode -max_total_time=60 /tmp/libmpq-fuzz-corpus/wave-decode
+target=archive-open
+max_len=1048576
+fuzz/fuzz-${target} -max_total_time=60 -max_len=${max_len} \
+  -rss_limit_mb=1024 -timeout=5 /tmp/libmpq-fuzz-corpus/${target}
 ```
 
-`fuzz-archive-open` writes each input to a temporary file and exercises
-direct/embedded v3 loading through the normal archive reader. The synthetic v3
-seed also reaches HET lookup and a bounded stream read. `fuzz-ext-table` accepts
-already-decoded bytes so encryption does not obstruct envelope/HET/BET geometry,
-bounded probing, packed-record, flags, NameHash2, and canonical-entry fuzzing.
+Every target uses its suffix as the corpus directory name. See
+[corpus management](corpus/README.md) for generated inputs and retained seeds.
 
-The extra stream read is bounded by both packed and unpacked metadata, because
-single-unit caching can require a full member allocation even for a small read.
-`fuzz-mpqe-open` uses the public,
-non-secret synthetic MPQE v1/v2/v3 fixtures and authentication code to exercise
-MPQE chunk decryption before the contained MPQ parser. `fuzz-file-read` starts from a
-valid generated archive and mutates filename and file-index read paths.
-`fuzz-writer-roundtrip` creates a bounded v1/v2/v3 archive from fuzzed content,
-then reopens and verifies it. `fuzz-encrypted-archive` mutates a valid archive
-with encrypted files, hash/block tables, and known-key reads.
+## Targets and input contracts
 
-`fuzz-patch-apply` uses a bounded two-byte frame split into base and patch
-bytes, and exercises private patch-prefix parsing and PTCH/COPY/BSD0
-application. It caps declared output and decoded-stream sizes before patch
-application.
+Input limits below match CI. Framed lengths are little-endian; decoder
+output allocations are capped at 64 KiB unless stated otherwise.
 
-`fuzz-sector-decode` remains the multi-codec integration target. The focused
-PKWARE, Huffman, zlib, bzip2, LZMA, SPARSE, and ADPCM WAVE targets use a
-little-endian 16-bit output-size-minus-one frame and reject output allocations
-above 64 KiB.
-The WAVE frame begins with a mono/stereo selector byte. This keeps malformed
-codec state easy to isolate without removing integration coverage.
+| Subsystem | Targets | Input / behavior | CI input limit |
+| --- | --- | --- | --- |
+| Archive readers | `fuzz-archive-open`, `fuzz-mpqe-open` | Raw MPQ/MPQE bytes; direct/embedded opening and authenticated MPQE chunk decoding | 1 MiB |
+| Encrypted archives | `fuzz-encrypted-archive` | Mutations of a valid encrypted archive, including hash/block tables and known-key reads | 1 MiB |
+| File API | `fuzz-file-read` | Names/index selectors against a generated valid archive; names capped at 255 bytes | 64 KiB |
+| Writer API | `fuzz-writer-roundtrip` | Three selector bytes for archive options, file storage and sector size, then payload; creates/reopens/verifies v1/v2/v3 MPQ or MPQE | 64 KiB |
+| Attributes | `fuzz-attributes` | Two count/self selector bytes, then serialized attributes; at most 32 rows | 4 KiB |
+| Extended tables | `fuzz-ext-table` | Decoded HET/BET wire bytes, bypassing encryption; envelope/geometry, bounded probing, records, flags, NameHash2 and canonical entries | 1 MiB |
+| Patches | `fuzz-patch-apply` | `uint16_t` base-length selector modulo `input_size - 1`, then base and PTCH bytes; prefix parsing and COPY/BSD0 application | 8 KiB |
+| Sector integration | `fuzz-sector-decode` | Mode/version byte, `uint16_t` output-size-minus-one, then sector data; PKWARE or multi-codec decoding with v1/v2 semantics | 128 KiB |
+| Focused codecs | `fuzz-pkware-decode`, `fuzz-huffman-decode`, `fuzz-zlib-decode`, `fuzz-bzip2-decode`, `fuzz-lzma-decode`, `fuzz-sparse-decode` | `uint16_t` output-size-minus-one, then codec data; LZMA uses MPQ multi-compression framing with v2 semantics | 128 KiB |
+| ADPCM | `fuzz-wave-decode` | Mono/stereo selector byte, `uint16_t` output-size-minus-one, then WAVE codec data | 128 KiB |
 
-The corpus generator copies checked-in synthetic v1/v2/v3 fixtures and creates
-structured v1/v2 headers, table offsets, truncation, oversized-field,
-encrypted-mutation, and codec frame inputs. It also replays reviewed seeds from
-`fuzz/corpus/`.
-On failure, CI minimizes crash, leak, and timeout inputs before uploading them
-under `minimized/`; if minimization cannot reproduce the failure, it preserves
-the original input there. A maintainer must review and commit an accepted seed.
-CI never commits untrusted inputs.
+Archive-open member reads require both packed and unpacked sizes at most
+64 KiB: even small stream reads may cache a whole single-unit member.
+Patch members use public PTCH reads with a separate 64 KiB payload cap.
+Patch-apply caps declared target and decoded-transform sizes at 64 KiB.
+Encrypted-archive extraction permits up to 1 MiB of output.
+
+## CI
+
+[The fuzz workflow](../.github/workflows/fuzz.yml) shares a bounded time budget
+across all 16 targets, with the limits above, a 1024 MiB RSS limit and a
+five-second input timeout. It runs ASan/UBSan with leak detection and uploads
+failure artifacts. Reproduction, minimization and seed retention are documented
+in the corpus guide; CI never adds inputs to the repository automatically.

@@ -26,9 +26,10 @@ The canonical release installation path is Maven Central:
 ## Basic archive usage
 
 Use `Mpq.ARCHIVE_VERSION_THREE` in existing `ArchiveCreateOptions` to create
-mixed HET/BET plus classic v3 archives. V3 transactions require complete filename reconstruction.
-`MpqUpdate.addData()` and `addPath()` add absent staged names; duplicate names
-fail and replacement remains existing-only. Remove-then-add is supported.
+mixed HET/BET plus classic v3 archives. V3 transactions require complete
+filename reconstruction. `MpqUpdate.addData()` and `addPath()` add absent
+staged names; duplicate names fail and replacement remains existing-only.
+Remove-then-add is supported.
 
 The high-level API uses `Archive.open`, `Archive.openMpqe`, `Archive.create`,
 `Archive.createMpqe`, and `MpqFileWriter`. All negative libmpq return codes
@@ -211,12 +212,12 @@ only during begin; closing without finish aborts instead of publishing.
 discards it, and closing an unfinished patch aborts automatically. Omitted
 `FileOptions` pass native NULL and use native patch defaults; explicit options
 configure patch-member storage. Patch add and rename are not supported.
-Explicit locale/platform must match the base member.
-Signing configures the active patch without consuming it; an ordinary MPQ
-patch may configure weak and strong signatures separately. MPQE-wrapped
-patches support weak signing; external strong signatures are not defined for
-MPQE transport streams. After `finish()`, use `Archive.signatures()` and
-`Archive.verify()` on the finished artifact.
+Explicit locale/platform must match the base member. Signing configures the
+active patch without consuming it; an ordinary MPQ patch may configure weak
+and strong signatures separately. MPQE-wrapped patches support weak signing;
+external strong signatures are not defined for MPQE transport streams. After
+`finish()`, use `Archive.signatures()` and `Archive.verify()` on the finished
+artifact.
 
 ## Signatures
 
@@ -226,17 +227,16 @@ big-endian modulus followed by a 256-byte zero-padded unsigned big-endian
 public exponent. Strong signing uses the same layout with the private exponent
 and emits only the plain SHA-1 archive-range variant. Weak signatures are
 supported inside MPQE-wrapped MPQs. External strong signatures are not defined
-for MPQE transport streams.
-Use `Archive.sign(privateKey)` for weak signing or
-`Archive.sign(SIGNATURE_STRONG, privateKey)` for strong signing before writer close, and
-`Archive.signatures()` / `Archive.verify(publicKey)` on reopened archives.
-Verification returns mismatch bits; malformed keys/archives raise normal binding
-errors. Weak keys are exactly 128 bytes: 64-byte big-endian modulus followed by a
-64-byte big-endian exponent. Signing supports v1, v2, and v3. libmpq does not
-ship Blizzard- or product-specific public verification keys or private signing
-keys; all signature key material is supplied explicitly by the caller.
-MD5/RSA-512 is legacy compatibility, not modern authenticity protection.
-See [the format guide](../../MPQ.md) for details.
+for MPQE transport streams. Use `Archive.sign(privateKey)` for weak signing or
+`Archive.sign(SIGNATURE_STRONG, privateKey)` for strong signing before writer
+close, and `Archive.signatures()` / `Archive.verify(publicKey)` on reopened
+archives. Verification returns mismatch bits; malformed keys/archives raise
+normal binding errors. Weak keys are exactly 128 bytes: 64-byte big-endian
+modulus followed by a 64-byte big-endian exponent. Signing supports v1, v2,
+and v3. libmpq does not ship Blizzard- or product-specific public verification
+keys or private signing keys; all signature key material is supplied
+explicitly by the caller. MD5/RSA-512 is legacy compatibility, not modern
+authenticity protection. See [the format guide](../../MPQ.md) for details.
 
 `Archive.signatures()` reports weak MD5/RSA-512 internal signatures and strong
 SHA-1/RSA-2048 external `NGIS` trailers. `Archive.verify(byte[])` remains the

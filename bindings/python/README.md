@@ -90,13 +90,12 @@ Creation defaults to `COMPRESSION_POLICY_STANDARD`. Pass
 `Writer.create_mpqe` for additional, potentially less interoperable methods.
 Use `mpq.archive_compression_allowed(version, mask, policy)` to query whether
 a compression selection is allowed by the writer policy. Version uses
-`ARCHIVE_VERSION_ONE`, `ARCHIVE_VERSION_TWO`, or `ARCHIVE_VERSION_THREE`.
-V3 emits HET/BET plus classic tables; v3 transactions require complete filename reconstruction.
-`Update.add_data()` and `Update.add_path()` add absent staged names; duplicates
-fail and replacement remains existing-only. Removal followed by addition is
-supported. V3 updates use complete listfiles or names learned during staging.
-Readers remain permissive
-regardless of the creation policy.
+`ARCHIVE_VERSION_ONE`, `ARCHIVE_VERSION_TWO`, or `ARCHIVE_VERSION_THREE`. V3
+emits HET/BET plus classic tables; v3 transactions require complete filename
+reconstruction. `Update.add_data()` and `Update.add_path()` add absent staged
+names; duplicates fail and replacement remains existing-only. Removal followed
+by addition is supported. V3 updates use complete listfiles or names learned
+during staging. Readers remain permissive regardless of the creation policy.
 
 `COMPRESSION_SPARSE` selects lossless zero-run compression. In MPQ v2+,
 STANDARD allows the fixed SPARSE forms: alone (`0x20`), with
@@ -231,16 +230,16 @@ same code to open the result; unfinished patches are aborted on cleanup, not
 published.
 
 `replace_path` accepts a filesystem source. `finish()` publishes the patch;
-`abort()` discards it, and leaving the context unfinished aborts automatically.
-Omitting replacement options passes native NULL and uses native patch defaults;
-pass `FileCreateOptions` explicitly to configure patch-member storage. Patch
-options must match the base member's locale/platform identity. Patch add and
-rename are not supported.
-Signing configures the active patch without consuming it; an ordinary MPQ
-patch may configure weak and strong signatures separately. MPQE-wrapped
-patches support weak signing; external strong signatures are not defined for
-MPQE transport streams. After `finish()`, use `Archive.signatures()` and
-`Archive.verify()` on the finished artifact, as for any other archive.
+`abort()` discards it, and leaving the context unfinished aborts
+automatically. Omitting replacement options passes native NULL and uses native
+patch defaults; pass `FileCreateOptions` explicitly to configure patch-member
+storage. Patch options must match the base member's locale/platform identity.
+Patch add and rename are not supported. Signing configures the active patch
+without consuming it; an ordinary MPQ patch may configure weak and strong
+signatures separately. MPQE-wrapped patches support weak signing; external
+strong signatures are not defined for MPQE transport streams. After
+`finish()`, use `Archive.signatures()` and `Archive.verify()` on the finished
+artifact, as for any other archive.
 
 ## Signatures
 
@@ -250,17 +249,16 @@ big-endian modulus followed by a 256-byte zero-padded unsigned big-endian
 public exponent. Strong signing uses the same layout with the private exponent
 and emits only the plain SHA-1 archive-range variant. Weak signatures are
 supported inside MPQE-wrapped MPQs. External strong signatures are not defined
-for MPQE transport streams.
-Use `Writer.sign(privateKey)` for weak signing or
-`Writer.sign(privateKey, SIGNATURE_STRONG)` for strong signing before writer close, and
-`Archive.signatures()` / `Archive.verify(publicKey)` on reopened archives.
-Verification returns mismatch bits; malformed keys/archives raise normal binding
-errors. Weak keys are exactly 128 bytes: 64-byte big-endian modulus followed by a
-64-byte big-endian exponent. Signing supports v1, v2, and v3. libmpq does not
-ship Blizzard- or product-specific public verification keys or private signing
-keys; all signature key material is supplied explicitly by the caller.
-MD5/RSA-512 is legacy compatibility, not modern authenticity protection.
-See [the format guide](../../MPQ.md) for details.
+for MPQE transport streams. Use `Writer.sign(privateKey)` for weak signing or
+`Writer.sign(privateKey, SIGNATURE_STRONG)` for strong signing before writer
+close, and `Archive.signatures()` / `Archive.verify(publicKey)` on reopened
+archives. Verification returns mismatch bits; malformed keys/archives raise
+normal binding errors. Weak keys are exactly 128 bytes: 64-byte big-endian
+modulus followed by a 64-byte big-endian exponent. Signing supports v1, v2,
+and v3. libmpq does not ship Blizzard- or product-specific public verification
+keys or private signing keys; all signature key material is supplied
+explicitly by the caller. MD5/RSA-512 is legacy compatibility, not modern
+authenticity protection. See [the format guide](../../MPQ.md) for details.
 
 `Archive.signatures()` reports weak MD5/RSA-512 internal signatures and strong
 SHA-1/RSA-2048 external `NGIS` trailers. `Archive.verify(key)` remains the
@@ -283,12 +281,11 @@ LIBMPQ_LIBRARY="$PWD/src/.libs/libmpq.so" python -m pytest bindings/python/tests
 
 ## Distribution packages
 
-Linux release wheels target `manylinux_2_17_x86_64`,
-`manylinux_2_17_aarch64`, `musllinux_1_2_x86_64`, and
-`musllinux_1_2_aarch64`. Windows release wheels target `win_amd64` and
-`win_arm64`. macOS wheels target `macosx_11_0_x86_64` and
-`macosx_11_0_arm64`, with native Intel and Apple Silicon builds. All
-eight wheels use the `py3-none` ABI.
+Linux release wheels target `manylinux_2_17_x86_64`, `manylinux_2_17_aarch64`,
+`musllinux_1_2_x86_64`, and `musllinux_1_2_aarch64`. Windows release wheels
+target `win_amd64` and `win_arm64`. macOS wheels target `macosx_11_0_x86_64`
+and `macosx_11_0_arm64`, with native Intel and Apple Silicon builds. All eight
+wheels use the `py3-none` ABI.
 
 Linux release wheels contain a private native library at `mpq_libs/libmpq.so`. It
 is loaded by its exact package path through `ctypes`, intentionally has no ELF
@@ -299,8 +296,8 @@ canonical C and header sources and is free of native build products.
 
 Windows wheels bundle `mpq_libs/libmpq.dll` and its required non-system
 runtime DLLs, so no separately installed libmpq SDK is needed. Local Windows
-wheel builds must set `LIBMPQ_LIBRARY` to a prebuilt shared CMake DLL; the backend does
-not compile Windows sources itself.
+wheel builds must set `LIBMPQ_LIBRARY` to a prebuilt shared CMake DLL; the
+backend does not compile Windows sources itself.
 
 macOS wheels contain `mpq_libs/libmpq.dylib` and any required non-system
 dylibs bundled by delocate. No separately installed libmpq SDK is needed.

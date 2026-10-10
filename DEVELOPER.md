@@ -3,14 +3,18 @@
 This guide covers native API usage, SDK integration, and binding development.
 See [README.md](README.md) for requirements, building, and limitations,
 [MPQ.md](MPQ.md) for the archive-format reference, and
-[RELEASING.md](RELEASING.md) for release packaging, validation, and publication.
+[RELEASING.md](RELEASING.md) for release packaging, validation, and
+publication.
 
-## Native API usage
+## Getting started
 
 ### Native API example
 
 The public header is installed as `libmpq/mpq.h`. The following example opens
-an archive, reads the first file into memory, and reports library errors:
+an archive, reads file number zero into memory, and reports library errors.
+Empty archives have no file zero. Encrypted members requiring a
+filename-derived key should instead be opened by name; see the
+[streaming example](#logical-member-streams) below.
 
 ```c
 #include <stdint.h>
@@ -24,8 +28,10 @@ main(int argc, char **argv)
 {
     mpq_archive_s *archive = NULL;
     libmpq__off_t file_size = 0;
+    libmpq__off_t transferred = 0;
     uint8_t *file_data = NULL;
     int32_t result;
+    int32_t close_result;
 
     if (argc != 2) {
         fprintf(stderr, "usage: %s ARCHIVE\n", argv[0]);
@@ -33,35 +39,36 @@ main(int argc, char **argv)
     }
 
     result = libmpq__archive_open(&archive, argv[1], -1);
-    if (result < 0) {
-        fprintf(stderr, "archive_open: %s\n", libmpq__strerror(result));
-        return EXIT_FAILURE;
-    }
-
+    if (result < 0)
+        goto done;
     result = libmpq__file_size_unpacked(archive, 0, &file_size);
-    if (result < 0) {
-        fprintf(stderr, "file_size_unpacked: %s\n", libmpq__strerror(result));
-        libmpq__archive_close(archive);
-        return EXIT_FAILURE;
+    if (result < 0)
+        goto done;
+    if (file_size < 0 || (uint64_t)file_size > SIZE_MAX) {
+        result = LIBMPQ_ERROR_SIZE;
+        goto done;
     }
 
-    file_data = malloc((size_t)file_size);
-    if (file_data == NULL && file_size != 0) {
-        libmpq__archive_close(archive);
-        return EXIT_FAILURE;
+    /* Keep a valid buffer even for an empty member. */
+    file_data = malloc(file_size == 0 ? 1 : (size_t)file_size);
+    if (file_data == NULL) {
+        result = LIBMPQ_ERROR_MALLOC;
+        goto done;
     }
+    result = libmpq__file_read(archive, 0, file_data, file_size, &transferred);
+    if (result == 0 && transferred != file_size)
+        result = LIBMPQ_ERROR_READ;
 
-    result = libmpq__file_read(archive, 0, file_data, file_size, NULL);
-    if (result < 0) {
-        fprintf(stderr, "file_read: %s\n", libmpq__strerror(result));
-        free(file_data);
-        libmpq__archive_close(archive);
-        return EXIT_FAILURE;
-    }
-
+done:
     free(file_data);
-    libmpq__archive_close(archive);
-    return EXIT_SUCCESS;
+    if (archive != NULL) {
+        close_result = libmpq__archive_close(archive);
+        if (result == 0)
+            result = close_result;
+    }
+    if (result < 0)
+        fprintf(stderr, "libmpq: %s\n", libmpq__strerror(result));
+    return result == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 ```
 
@@ -79,6 +86,8 @@ The legacy `libmpq-config` helper is also available:
 cc -std=c99 -Wall -Wextra mpq-example.c -o mpq-example \
   $(libmpq-config --cflags) $(libmpq-config --libs)
 ```
+
+## Reading and writing archives
 
 ### Custom random-access I/O
 
@@ -99,6 +108,9 @@ plain and `ARCHIVE` variants remain available. Clones preserve that name or
 anonymous state. `libmpq__archive_open_mpqe_io()` applies the same rules below
 the existing MPQE transform.
 
+Include `<string.h>` for `memcpy()`; this callback requires a valid
+`memory_source_s` context and backing storage for nonempty reads.
+
 ```c
 typedef struct
 {
@@ -111,37 +123,45 @@ memory_read_at(void *context, libmpq__off_t offset, uint8_t *buffer, size_t size
 {
     const memory_source_s *source = context;
 
-    if (offset < 0 || (uint64_t)offset > source->size ||
+    if (source == NULL || (buffer == NULL && size != 0) ||
+        (source->data == NULL && size != 0) ||
+        offset < 0 || (uint64_t)offset > source->size ||
         size > source->size - (size_t)offset)
         return LIBMPQ_ERROR_READ;
-    memcpy(buffer, source->data + (size_t)offset, size);
+    if (size != 0)
+        memcpy(buffer, source->data + (size_t)offset, size);
     return 0;
 }
 ```
 
 ### Logical member streams
 
-`libmpq__stream_open()` and `libmpq__stream_open_name()` provide
-incremental logical-member reads and seeks without a complete file buffer.
-An archive source is the backing MPQ or MPQE byte source; a logical member
-stream is a decoded logical archive member.
-The handle owns a private archive clone, so the source archive may close after
-opening the stream. For custom I/O, the caller must retain its callback context
-until every derived logical member stream is closed. Ordinary sectorized
-members retain one decoded sector; a single-unit member can require its
-complete logical unit.
+`libmpq__stream_open()` and `libmpq__stream_open_name()` provide incremental
+logical-member reads and seeks without a complete file buffer. An archive
+source is the backing MPQ or MPQE byte source; a logical member stream is a
+decoded logical archive member. The handle owns a private archive clone, so
+the source archive may close after opening the stream. For custom I/O, the
+caller must retain its callback context until every derived logical member
+stream is closed. Ordinary sectorized members retain one decoded sector; a
+single-unit member can require its complete logical unit.
 
 ```c
 mpq_stream_s *stream = NULL;
 uint8_t buffer[4096];
 libmpq__off_t transferred;
+int32_t status;
 
 if (libmpq__stream_open_name(archive, "data/file.bin", &stream) == 0) {
-    while (libmpq__stream_read(stream, buffer, sizeof(buffer), &transferred) == 0 &&
+    while ((status = libmpq__stream_read(stream, buffer, sizeof(buffer),
+                                        &transferred)) == 0 &&
            transferred != 0) {
         /* Consume buffer[0..transferred). */
     }
-    (void)libmpq__stream_close(stream);
+    if (status < 0)
+        fprintf(stderr, "stream_read: %s\n", libmpq__strerror(status));
+    status = libmpq__stream_close(stream);
+    if (status < 0)
+        fprintf(stderr, "stream_close: %s\n", libmpq__strerror(status));
 }
 ```
 
@@ -152,6 +172,12 @@ implicitly verify whole-file CRC32/MD5 attributes; use `libmpq__file_verify()`
 when that verification is required.
 
 ### Streaming and one-shot writers
+
+The existing public creation APIs accept `LIBMPQ_ARCHIVE_VERSION_THREE` (2).
+The default remains v1, 1024 entries, and 4096-byte sectors; explicit capacity,
+sector size, compression policy, listfile, attributes, timestamps, and signing
+options retain their meanings. MPQE creation uses the same v3 writer and
+unchanged authentication/wrapping. MPQ v4 remains unsupported.
 
 `libmpq__writer_begin()` starts an archive member and returns `mpq_writer_s`.
 Use `libmpq__writer_write()`, `libmpq__writer_timestamp()`, and
@@ -187,6 +213,8 @@ SPARSE control bytes. If skipped stages leave a method disallowed by the
 selected policy, the original sector is stored raw. The first WAVE sector
 stays lossless (zlib for STANDARD v2).
 
+## Advanced API workflows
+
 ### Optional attributes
 
 Select optional metadata separately from archive creation flags:
@@ -205,6 +233,12 @@ Use `libmpq__archive_attributes()` to query available arrays and
 `libmpq__file_attributes()` to read a file's stored values. FILETIME is
 explicit/default-zero; set it through `libmpq__writer_timestamp()` using Windows
 FILETIME, not Unix time.
+
+These are host-endian API structures, not disk layouts. Creation options occupy
+20 bytes: `version`, `max_files`, `sector_size`, `flags` and `attributes` begin
+at offsets 0, 4, 8, 12 and 16. The 40-byte per-file attributes result places
+`flags`, `crc32`, `filetime`, `md5` and `patch_bit` at offsets 0, 4, 8, 16 and 32;
+the four reserved bytes at offset 36 are always zero.
 
 ### Explicit checksum verification and block metadata
 
@@ -225,8 +259,8 @@ Sector checks cover decrypted packed bytes before decompression; absent tables
 and unavailable entries are skipped. Use `LIBMPQ_VERIFY_SECTOR_CRC` alone to
 verify sectors without requiring `(attributes)`.
 
-Use `libmpq__block_verify(archive, file_number, block_number, &checksum,
-&mismatches)` to verify one sector and retrieve its stored Adler-32.
+Use `libmpq__block_verify()` to verify one sector and retrieve its stored Adler-32:
+`libmpq__block_verify(archive, file_number, block_number, &checksum, &mismatches)`.
 It returns `LIBMPQ_ERROR_EXIST` for unavailable checksums; success returns
 zero or `LIBMPQ_VERIFY_SECTOR_CRC` in `mismatches`. Both outputs stay zero
 on errors. No calculated checksum is exposed.
@@ -270,20 +304,21 @@ a missing signature returns `LIBMPQ_ERROR_EXIST`. Strong signatures use external
 SHA-1 archive-range variant. Basename and `ARCHIVE` variants are accepted
 during verification only.
 
-To sign, call `libmpq__archive_sign` on a v1 or v2 writer with the
+To sign, call `libmpq__archive_sign` on a v1, v2 or v3 writer with the
 corresponding private key before close. Weak signing reserves one file
 slot for `(signature)`; strong signing appends an external `NGIS` trailer
 after finalization.
 
-The weak 128-byte raw key is two 64-byte unsigned big-endian integers: a modulus
-followed by a zero-padded exponent value. Use a public key to verify a signature and a private key to
-create one. There are no built-in keys. See [MPQ.md](MPQ.md) for storage,
-hashing, error, and key-format details. Weak signatures use
-obsolete MD5/RSA-512 and must not be used for modern trust decisions.
-Strong public and private keys contain a 256-byte unsigned big-endian modulus
-and a 256-byte zero-padded unsigned big-endian exponent (512 bytes total).
-The writer accepts the private exponent and emits only the plain SHA-1 range variant.
-External strong trailers are not defined for MPQE, so strong signing is rejected there.
+The weak 128-byte raw key is two 64-byte unsigned big-endian integers: a
+modulus followed by a zero-padded exponent value. Use a public key to verify a
+signature and a private key to create one. There are no built-in keys. See
+[MPQ.md](MPQ.md) for storage, hashing, error, and key-format details. Weak
+signatures use obsolete MD5/RSA-512 and must not be used for modern trust
+decisions. Strong public and private keys contain a 256-byte unsigned
+big-endian modulus and a 256-byte zero-padded unsigned big-endian exponent
+(512 bytes total). The writer accepts the private exponent and emits only the
+plain SHA-1 range variant. External strong trailers are not defined for MPQE,
+so strong signing is rejected there.
 
 For files beginning with `HM3W`, weak and strong hashing
 starts at physical offset zero; weak hashing still excludes `(signature)`.
@@ -294,26 +329,30 @@ Use a separate `mpq_update_s` handle to stage changes to an existing,
 filesystem-backed MPQ. Each operation rebuilds the private working copy; the
 original path changes only on commit. For example:
 
-`libmpq__update_add_data()` and `libmpq__update_add_path()` require an absent
-staged filename. They support remove-then-add; replacement remains strictly
-replacement-only. Python `Update.add_data/add_path`, Java
-`MpqUpdate.addData/addPath`, and D `Update.addData/addPath` expose the same
-operations. V3 filename and metadata requirements are described in MPQ.md.
+`libmpq__update_add_data()` and `libmpq__update_add_path()`
+require an absent staged filename. They support remove-then-add;
+replacement remains strictly replacement-only. MPQ v3 filename
+and metadata requirements are described in [MPQ.md](MPQ.md).
 
 ```c
 mpq_update_s *update = NULL;
 const uint8_t replacement[] = "new contents";
 
-if (libmpq__update_begin(&update, "data.mpq") == LIBMPQ_SUCCESS) {
-    if (libmpq__update_replace_data(update, "data/file.bin", replacement,
-                                    sizeof(replacement) - 1, NULL) == LIBMPQ_SUCCESS)
-        (void)libmpq__update_commit(update);
+int32_t status = libmpq__update_begin(&update, "data.mpq");
+
+if (status == 0) {
+    status = libmpq__update_replace_data(update, "data/file.bin", replacement,
+                                        sizeof(replacement) - 1, NULL);
+    if (status == 0)
+        status = libmpq__update_commit(update);
     else
         (void)libmpq__update_abort(update);
+    update = NULL; /* Commit and abort consume the handle, including on error. */
 }
+/* Report status using libmpq__strerror() when negative. */
 ```
 
-Embedded HM3W-style containers use the same scanner and update operations,
+Legacy embedded HM3W-style containers use the same scanner and update operations,
 regardless of `.w3x` or `.w3m` extension. Rebuilding retains the prefix and
 unrelated trailing bytes; stale weak and external strong signatures are
 removed. For an MPQE archive, use `libmpq__update_begin_mpqe()` with an explicit
@@ -324,51 +363,106 @@ container byte-identical. Only the first 32 authentication bytes needed for
 the existing MPQE key derivation are copied into private state, then cleared
 on every consuming path. A crash may leave owner-only plaintext staging data.
 
-`libmpq__update_replace_path()` reads replacement data from a filesystem
-path. `libmpq__update_remove()` and `libmpq__update_rename()` affect
-existing named entries only; rename rejects an existing destination name.
-Replacement accepts the same optional `mpq_file_options_s` as
-`libmpq__archive_add_data()` and `libmpq__archive_add_path()`, including
-separate `compression_first` and `compression_next` masks. A NULL options
-pointer uses default storage options. When options are supplied, their
-`locale` and `platform` must match the existing member; replacement cannot
-move a member to a different hash identity.
-When multiple names share one physical block, removing or renaming an
-unencrypted name leaves the other names intact. Replacing that block, or
-renaming it when encrypted, returns `LIBMPQ_ERROR_FORMAT` until block splitting
-is supported. Modification also rejects shared `(listfile)`, `(attributes)`, or
-`(signature)` blocks when those internal entries must be rewritten or removed.
-Commit and abort both consume the update handle, including on error. Commit
-rechecks the destination's filesystem identity immediately before atomic
-replacement, but this is best effort and does not lock out a concurrent change
-between check and publication.
+`libmpq__update_replace_path()` reads replacement data from a filesystem path.
+`libmpq__update_remove()` and `libmpq__update_rename()` affect existing named
+entries only; rename rejects an existing destination name. Replacement accepts
+the same optional `mpq_file_options_s` as `libmpq__archive_add_data()` and
+`libmpq__archive_add_path()`, including separate `compression_first` and
+`compression_next` masks. A NULL options pointer uses default storage options.
+When options are supplied, their `locale` and `platform` must match the
+existing member; replacement cannot move a member to a different hash
+identity. When multiple names share one physical block, removing or renaming
+an unencrypted name leaves the other names intact. Replacing that block, or
+renaming it when encrypted, returns `LIBMPQ_ERROR_FORMAT` until block
+splitting is supported. Modification also rejects shared `(listfile)`,
+`(attributes)`, or `(signature)` blocks when those internal entries must be
+rewritten or removed. Commit and abort both consume the update handle,
+including on error. Commit rechecks the destination's filesystem identity
+immediately before atomic replacement, but this is best effort and does not
+lock out a concurrent change between check and publication.
 
-Unchanged physical entries, including entries absent from `(listfile)`, retain
-their packed representation. Encrypted rename decodes using the old plaintext
-name and re-encodes using the new name. Existing `(listfile)` and valid
-`(attributes)` metadata are updated. Replacement resets FILETIME to the normal
-writer default of zero; rename retains the existing FILETIME. Weak
-`(signature)` entries and external
-`NGIS` trailers are removed after mutation because this API takes no signing
-key. A no-op transaction preserves all original bytes. Embedded MPQs use the
-ordinary update entry point; MPQE uses the authenticated entry point described
-above. Ordinary updates do not write PATCH_BIT=true; the separate patch writer
-sets it for patch-file entries. The current rebuild rejects an archive extent
-that cannot fit the 32-bit MPQ archive-size field.
+Legacy v1/v2 updates retain unchanged packed entries even without `(listfile)`
+names, and preserve embedded prefixes and unrelated trailing bytes. Their
+rebuilt archive extent must fit the legacy 32-bit size field. V3 uses a named
+rebuild instead, with the requirements below.
+
+V3 operations resolve every live public file number to an actual filename from
+`(listfile)`, the operation's source name, internal-file names, or names learned
+by earlier successful operations in the same transaction. Hash values are not
+filenames. Incomplete coverage returns FORMAT without changing the previous
+staged archive. Begin/abort and unchanged commits do not require reconstruction.
+Repeated identical names and ASCII case or slash/backslash variants are one
+normalized name. Distinct complete names resolving to the same logical entry
+(including names indistinguishable after HET's hash-prefix limit) are ambiguous
+and return FORMAT. Empty CRLF/LF lines are ignored; embedded null bytes,
+unresolvable listed names and incomplete coverage reject reconstruction.
+Known source/listfile spellings take precedence over equivalent caller spellings;
+replacement retains that name so classic hashes do not change merely because
+the caller uses a different slash direction or ASCII case.
+Complete mixed and HET/BET-only sources are supported. A BET-only row with
+classic attributes, unresolved classic aliases/locale variants, embedded v3
+wrappers, unrelated trailing data, and patch/delete members are rejected.
+Extra header extensions, nonzero reserved BET record values and retained
+payload positions that overlap the new full header are also unsupported.
+Legacy embedded updates and patch handling remain unchanged. Public file
+numbers may change after a rebuild.
+
+Untouched packed members retain their original positions, exact codec bytes,
+flags and encryption keys, including FIX_KEY. Tables are regenerated by the
+normal writer from the final rows: classic row N and BET row N agree. Encrypted
+rename decodes and rewrites with the new name/key at the final position,
+preserving FIX_KEY and timestamps. As with legacy updates, rewritten
+multi-compression rename data uses zlib; replacement uses caller options or
+native defaults. Untouched CRC32/MD5/FILETIME metadata uses explicit classic
+provenance, not canonical indices; new/replaced attributes are regenerated.
+Replacement resets FILETIME to the writer default of zero; rename retains it.
+
+Legacy per-member staging encodes FIX_KEY at the final archive-relative copy
+position: the plaintext rebuild stream position minus the source archive start.
+The standalone staging archive starts at zero. For compact inputs, its reserved
+classic tables are moved after the payload so finalization cannot overwrite it.
+MPQE transactions use the same plaintext coordinates and re-encrypt the container
+only at publication; the MPQE cipher position is not a member-key input.
+When reading a patch payload past its plaintext prefix, FIX_KEY still uses the
+original member start and reconstructed size, not the shifted payload view.
+
+Modified weak signatures and strong trailers are removed, following existing
+update policy. They are never presented as valid after a rebuild. MPQE uses
+the existing authenticated staging and atomic rewrapping path. Rebuild or
+publication failure preserves the original destination. Failures before staged
+ownership transfer preserve the previous stage. If closing the previous staged
+stream fails after validation, the stream is consumed and cleared: further
+mutations/commit cannot publish it, and abort safely removes tracked temporary
+files. Flush failures leave the previous stage available. Close callbacks follow
+`fclose` ownership semantics even on failure. No in-place modification or
+separate v3 transaction engine is used.
+
+A no-op transaction preserves original bytes and signatures. Ordinary updates
+do not create true PATCH_BIT values; the dedicated patch writer does.
 
 ### Patch archive creation
 
-The public patch handle creates a new MPQ v1/v2 patch artifact without modifying
+The public patch handle creates a new MPQ v1/v2/v3 patch artifact without modifying
 the base archive:
 
 ```c
 mpq_patch_s *patch = NULL;
 
-libmpq__patch_begin(&patch, "base.mpq", "changes.mpq");
-libmpq__patch_replace_data(patch, "file.txt", data, data_size, NULL);
-libmpq__patch_remove(patch, "obsolete.txt");
-libmpq__patch_sign(patch, LIBMPQ_SIGNATURE_WEAK, private_key, key_size);
-libmpq__patch_finish(patch);
+int32_t status = libmpq__patch_begin(&patch, "base.mpq", "changes.mpq");
+
+if (status == 0) {
+    status = libmpq__patch_replace_data(patch, "file.txt", data, data_size, NULL);
+    if (status == 0)
+        status = libmpq__patch_remove(patch, "obsolete.txt");
+    if (status == 0)
+        status = libmpq__patch_sign(patch, LIBMPQ_SIGNATURE_WEAK, private_key, key_size);
+    if (status == 0)
+        status = libmpq__patch_finish(patch);
+    else
+        (void)libmpq__patch_abort(patch);
+    patch = NULL; /* Finish and abort consume the handle, including on error. */
+}
+/* Report status using libmpq__strerror() when negative. */
 ```
 
 `libmpq__patch_begin()` creates an ordinary MPQ patch. To create an
@@ -384,43 +478,33 @@ support weak signatures only. A finished patch is inspected and verified with
 Replacement options control storage of the patch member inside the patch
 archive, not storage of the resulting file in the patched view.
 
-The private `mpq-patch-writer` module stages a same-directory temporary archive.
-It writes named replacements as PTCH BSD0
-members when a deterministic binary delta is smaller than PTCH COPY, and uses
-COPY otherwise. Deletions are delete markers. It publishes only on finish;
-abort discards the temporary output. Finish and abort consume the handle even
-when they report an error; the pointer must not be reused. Patch creation
-does not add or rename members. Public patch creation currently requires an
-ordinary filesystem MPQ base; this restriction does not apply to private patch
-view composition, which accepts authenticated MPQE sources.
-The BSD0 splice candidate uses the existing libmpq decoder's control tuples:
-literal extra-block copies for unchanged prefix and suffix bytes, and base-byte
-differences plus optional inserted literals for the changed middle. Every BSD0
-candidate is decoded and compared with the target before size-based selection.
-This guarantees compatibility with libmpq's reader, not generic bsdiff or
-external StormLib compatibility. Testing against independently generated
-StormLib patches remains a private validation step.
-Existing base members are read with their plaintext names, so encrypted
-members can supply their filename-derived keys.
+The private `mpq-patch-writer` module stages a same-directory temporary
+archive. It writes named replacements as PTCH BSD0 members when a
+deterministic binary delta is smaller than PTCH COPY, and uses COPY otherwise.
+Deletions are delete markers. It publishes only on finish; abort discards the
+temporary output. Finish and abort consume the handle even when they report an
+error; the pointer must not be reused. Patch creation does not add or rename
+members. Public patch creation currently requires an ordinary filesystem MPQ
+base; this restriction does not apply to private patch view composition, which
+accepts authenticated MPQE sources. PTCH COPY/BSD0 encoding and validation are
+described in [MPQ.md](MPQ.md#patch-archives-and-ptchbsd0). Existing base
+members are read with their plaintext names, so encrypted members can supply
+their filename-derived keys.
 
 The patch writer emits a generated `(listfile)` and `(attributes)` with
 PATCH_BIT=true only for patch-file replacements, not delete markers. It does
 not emit a Blizzard `(patch_metadata)` marker; the private patch reader
 identifies these archives from patch-file and delete-marker flags.
 Game-specific Blizzard patch-prefix autodetection heuristics are deliberately
-outside the game-neutral core.
-Patch-file block sizes describe the resulting logical file, while the patch
-prefix describes the PTCH data size. The reader validates the fixed patch
-prefix against the stored member extent before using its declared body size;
-optional prefix extensions do not require a separate allocation. The
-attributes MD5 records the resulting file; CRC32 covers the plaintext patch
-prefix and decoded PTCH body. FILETIME is
-omitted, allowing the patched view to retain the base member's timestamp.
-PATCH_BIT marks stored patch entries; materialized ordinary members retain
-their lower-layer bit instead of inheriting the patch artifact's marker.
-Ordinary archive creation still rejects true PATCH_BIT values. The
+outside the game-neutral core. Patch artifacts record target MD5 and plaintext
+patch CRC32; FILETIME is omitted so materialization can retain base
+timestamps. PATCH_BIT marks patch entries, not delete markers. Materialized
+members keep lower-layer PATCH_BIT metadata rather than inheriting the
+artifact's marker. Ordinary creation rejects true PATCH_BIT values. The
 patch-writer tests generate temporary archives and apply them through the
-private patch view; no repository fixture needs to change. Patch creation can
+private patch view. Checked-in synthetic patch fixtures provide complementary
+regression coverage; their inventory and regeneration recipes are documented
+in [tests/fixtures/README.md](tests/fixtures/README.md). Patch creation can
 use the existing archive signer but does not write embedded patch containers.
 The public patch API supports replacement and removal, but not addition or
 rename.
@@ -433,37 +517,45 @@ MPQE source requires its own explicit authentication code. It materializes a
 temporary read-only archive view; later layers override earlier ones, delete
 markers hide lower-layer names, and `PTCH` COPY or BSD0 payloads are checked
 against their before/after MD5 values. Existing archive and logical stream
-read APIs operate on the resulting private view.
-No public patch-composition API is exposed yet.
+read APIs operate on the resulting private view. No public patch-composition
+API is exposed yet.
 
 Patch matching primarily uses each entry's MPQ hash identity, including locale
 and platform. `(listfile)` is optional metadata that enriches entries with
-plaintext names. An unnamed patch entry can replace an existing hash identity
-when its payload can be decoded without a name-derived key. A new patch-only
-member requires a recoverable plaintext name so its hash-table probe position
-can be computed. Otherwise that entry is rejected rather than
-silently omitted. Unnamed base members and their packed data remain intact.
-MPQE inputs use the existing source decoder before patch composition; their
-credentials are independent and are not retained by the view. A `.w3x` input is treated only as an MPQ
-container; its prefix and unrelated trailing bytes are retained while a
-stale external strong-signature trailer is removed after a content change.
-This layer does not perform HM3W map-header hashing.
-Each patch layer may supply an independent namespace prefix. Physical names
-such as `Base\\Foo` are read from the patch using their original names, while
-the prefix-stripped logical name `Foo` identifies the lower-layer member and
-the materialized result. A single `(patch_metadata)` path in `(listfile)`
-deterministically discovers the prefix; conflicting paths are rejected.
-An explicit private prefix takes precedence, but must agree with discovered
+plaintext names. For legacy v1/v2 materialization, an unnamed patch entry can
+replace an existing hash identity when its payload can be decoded without a
+name-derived key. A new patch-only member requires a recoverable plaintext
+name so its hash-table probe position can be computed. Otherwise that entry is
+rejected rather than silently omitted. Unnamed legacy base members and their
+packed data remain intact. V3 materialization requires complete, unambiguous
+names for every retained member and rejects missing coverage, aliases/locales
+or reserved metadata it cannot represent. Its intermediates remain v3 and
+regenerate HET/BET plus classic tables through the existing writer; modified
+encrypted members use their final output offsets. MPQE inputs use the existing
+source decoder before patch composition; their credentials are independent and
+are not retained by the view. A `.w3x` input is treated only as an MPQ
+container; legacy materialization retains its prefix and unrelated trailing
+bytes while a stale external strong-signature trailer is removed after a
+content change. Rebuilt v3 views are standalone and do not retain container
+prefixes/suffixes. This layer does not perform HM3W map-header hashing. Each
+patch layer may supply an independent namespace prefix. Physical names such as
+`Base\\Foo` are read from the patch using their original names, while the
+prefix-stripped logical name `Foo` identifies the lower-layer member and the
+materialized result. A single `(patch_metadata)` path in `(listfile)`
+deterministically discovers the prefix; conflicting paths are rejected. An
+explicit private prefix takes precedence, but must agree with discovered
 metadata. Unnamed entries requiring prefix removal are rejected because their
 logical identity cannot be recovered. Game-specific prefix discovery
-heuristics are deliberately outside the game-neutral core.
-The view retains usable `(listfile)` names, merges known patch-only names, and
-maps available `(attributes)` rows to resulting file entries by MPQ hash
-identity. Existing PATCH_BIT values, including true values from input
-metadata, remain readable; the patch view does not create new true values.
-A content change invalidates the base archive's signatures, so the temporary
-view omits stale weak and strong signatures. Patch-view composition remains
-private.
+heuristics are deliberately outside the game-neutral core. The view retains
+usable `(listfile)` names, merges known patch-only names, and maps available
+`(attributes)` rows to resulting file entries by MPQ hash identity. Existing
+PATCH_BIT values, including true values from input metadata, remain readable;
+the patch view does not create new true values. A content change invalidates
+the base archive's signatures, so the temporary view omits stale weak and
+strong signatures. Patch-view composition remains private. Opening failure is
+terminal and returns no partially usable view; consumed handles are never
+closed twice. Temporary-file deletion is best effort when the filesystem
+refuses removal. Source archives remain unchanged.
 
 ### Game-neutral authentication and namespace policy
 
@@ -482,6 +574,44 @@ key material, including public verification keys or private signing keys. All
 signature keys are supplied explicitly by the caller. This leaves trust
 decisions with applications, avoids maintaining a product-specific key database,
 and reduces legal/distribution risk from bundling product-specific material.
+
+## Development, testing and benchmarks
+
+Build and test in a disposable checkout or build environment. See
+[README.md](README.md) for native build requirements and
+[tests/fixtures/README.md](tests/fixtures/README.md) for synthetic fixture
+inventory and regeneration. Fuzzing instructions and input contracts are in
+[fuzz/README.md](fuzz/README.md).
+
+### Transaction failure coverage
+
+Private fault hooks cover staged flush/close and final publication, including
+the handoff after rebuild validation. Writer/source I/O still uses the existing
+error paths, not per-write transaction callbacks. Tests cover malformed
+reconstruction, failed path input and the injectable handoff/publication
+boundaries; they do not simulate every filesystem failure. Temporary cleanup
+is attempted on handled failures and is not a crash-recovery guarantee.
+
+### Manual interoperability checks
+
+For manual/local testing only, use a legally obtained real v3 archive, such as
+a historical World of Warcraft Cataclysm Beta MPQ. Keep it and all extracted
+data outside the repository and CI. Inspect its header with a hex viewer using
+the [header layouts in MPQ.md](MPQ.md#header-versions), accounting for any
+embedded archive prefix. Use separate applications or locally maintained
+callers of each library's public API to inspect the same archive and member
+names. For manual extraction, use separate temporary output directories
+outside the repository and compare lengths and `sha256sum` results. Include
+both flat and directory member names, especially encrypted and FIX_KEY
+members. Check missing-member errors, wrong MPQE authentication and truncated
+local copies without modifying the original archive. These checks remain
+manual; no real Blizzard archive validation is implied by the synthetic suite.
+Patch members require a matching base to compare the applied result; decoded
+PTCH payload access is not patch application. Do not copy Blizzard archive
+bytes, trimmed archives, extracted payloads, or derived binary fixtures into
+the repository. Repository and CI fixtures must be synthetic only. Successful
+synthetic tests are not a claim that every historical protected/defragmented
+archive is supported.
 
 ### Developer benchmarks
 
@@ -532,13 +662,14 @@ practical. These benchmarks are not part of `make check`. Compare before and
 after results on the same machine and build configuration; the timings are not
 portable performance guarantees.
 
-## SDK integration and binding development
+## SDK integration and language bindings
 
 ### Native C SDK packages
 
 Prebuilt SDKs provide public headers, a shared library, development metadata,
 licenses, and documentation. Choose the package matching your platform and
-compiler; see the [release package summary](RELEASING.md#release-package-summary) for the
+compiler; see the
+[release package summary](RELEASING.md#release-package-summary) for the
 complete download list.
 
 #### Linux
@@ -606,11 +737,11 @@ linking, for example `-Wl,-rpath,"${LIBMPQ_ROOT}/lib"`.
 #### Windows MSVC
 
 Extract `libmpq-X.Y.Z-windows-msvc-x64.zip` for x64 or
-`libmpq-X.Y.Z-windows-msvc-arm64.zip` for ARM64. Both are built and tested
-on native Windows runners. The SDK contains
-`bin/libmpq.dll`, the `lib/libmpq.lib` import library, and the public header
-`include/libmpq/mpq.h`. Required non-system runtime DLLs are bundled under
-`bin/`, together with `libmpq.pdb` when available.
+`libmpq-X.Y.Z-windows-msvc-arm64.zip` for ARM64. Both are built and tested on
+native Windows runners. The SDK contains `bin/libmpq.dll`, the
+`lib/libmpq.lib` import library, and the public header `include/libmpq/mpq.h`.
+Required non-system runtime DLLs are bundled under `bin/`, together with
+`libmpq.pdb` when available.
 
 Add the SDK's `include/` directory to your compiler's include search path and
 link against `lib/libmpq.lib`. Put the SDK's `bin/` directory on `PATH` when
@@ -620,27 +751,23 @@ required.
 #### Windows MinGW-w64
 
 Extract `libmpq-X.Y.Z-windows-mingw-x86_64.zip` for MINGW64 x86_64 or
-`libmpq-X.Y.Z-windows-mingw-aarch64.zip` for native Windows ARM64 using
-MSYS2 CLANGARM64. The SDK contains
-`bin/libmpq*.dll`, the `lib/libmpq.dll.a` import library, and the public header
-`include/libmpq/mpq.h`. Required non-system runtime DLLs are bundled under
-`bin/`. No libmpq-specific consumer preprocessor define is required.
+`libmpq-X.Y.Z-windows-mingw-aarch64.zip` for native Windows ARM64 using MSYS2
+CLANGARM64. The SDK contains `bin/libmpq*.dll`, the `lib/libmpq.dll.a` import
+library, and the public header `include/libmpq/mpq.h`. Required non-system
+runtime DLLs are bundled under `bin/`. No libmpq-specific consumer
+preprocessor define is required.
 
 Add `lib/pkgconfig/` to `PKG_CONFIG_PATH` and use
-`pkg-config --cflags --libs libmpq` for compiler and linker flags. The SDK also
-provides `bin/libmpq-config` for use from a shell such as MSYS2 Bash. Put the
-SDK's `bin/` directory on `PATH` when running applications.
+`pkg-config --cflags --libs libmpq` for compiler and linker flags. The SDK
+also provides `bin/libmpq-config` for use from a shell such as MSYS2 Bash. Put
+the SDK's `bin/` directory on `PATH` when running applications.
 
 ### Binding development
 
-The source tree contains bindings for the public C API. Each binding has its
-own package metadata and tests. Release packaging and registry publication are
+The in-tree Python, Java and D bindings are maintained and released alongside
+the corresponding libmpq version. Each binding has its own package metadata,
+tests and API documentation. Release packaging and registry publication are
 covered in [RELEASING.md](RELEASING.md).
-
-Python exposes `Writer.sign(private_key, signature_type=SIGNATURE_WEAK)`, `Archive.signatures()`, and
-`Archive.verify(public_key)`. D and Java expose equivalent `Archive.sign`,
-`signatures`, and `verify` methods taking raw key byte arrays. All wrappers
-preserve mismatch bits and raise their normal exceptions for native errors.
 
 #### Python
 
@@ -661,13 +788,13 @@ LIBMPQ_LIBRARY="$PWD/src/.libs/libmpq.so" \
     python -m pytest bindings/python/tests
 ```
 
-See [`bindings/python/README.md`](bindings/python/README.md) for API examples,
+See [bindings/python/README.md](bindings/python/README.md) for API examples,
 package installation, native-library behavior, and test instructions.
 
 #### D
 
 The D binding is a DUB package named `libmpq`. The manifest is
-[`dub.sdl`](dub.sdl), and the modules are under `bindings/d/source/libmpq`.
+[dub.sdl](dub.sdl), and the modules are under `bindings/d/source/libmpq`.
 Import the high-level API with:
 
 ```d
@@ -688,7 +815,7 @@ LIBRARY_PATH="$PWD/src/.libs" LD_LIBRARY_PATH="$PWD/src/.libs" \
     dub run --config=tests --compiler=ldc2
 ```
 
-See [`bindings/d/README.md`](bindings/d/README.md) for DUB usage, compiler
+See [bindings/d/README.md](bindings/d/README.md) for DUB usage, compiler
 requirements, binary package details, and examples.
 
 #### Java
@@ -716,6 +843,6 @@ LD_LIBRARY_PATH="$PWD/src/.libs" \
     -Dlibmpq.sourceDir="$PWD"
 ```
 
-See [`bindings/java/README.md`](bindings/java/README.md) and
-[`bindings/java/pom.xml`](bindings/java/pom.xml) for Maven configuration,
+See [bindings/java/README.md](bindings/java/README.md) and
+[bindings/java/pom.xml](bindings/java/pom.xml) for Maven configuration,
 project metadata, and API information.

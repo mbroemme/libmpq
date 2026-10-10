@@ -62,15 +62,14 @@ extraction location. macOS packages do not bundle system codec libraries.
 
 MSVC x64 and ARM64 use CMake; MinGW x86_64 and aarch64 use Autotools with
 MINGW64 and CLANGARM64 respectively. Windows SDKs contain shared libraries
-only; MSVC includes the Release PDB when available.
-Bash packaging helpers inspect PE imports recursively with `dumpbin` or
-`objdump`. Non-system DLLs are bundled from the selected toolchain. Their
-licenses are copied using vcpkg ownership metadata or MSYS2 `pacman` package
-records. Windows packaging checks the PE architecture of libmpq and every
-bundled runtime DLL against the requested architecture. Windows system DLLs
-and API sets are excluded.
-A final dependency scan resolves non-system imports only from the staged SDK,
-not the toolchain or `PATH`.
+only; MSVC includes the Release PDB when available. Bash packaging helpers
+inspect PE imports recursively with `dumpbin` or `objdump`. Non-system DLLs
+are bundled from the selected toolchain. Their licenses are copied using vcpkg
+ownership metadata or MSYS2 `pacman` package records. Windows packaging checks
+the PE architecture of libmpq and every bundled runtime DLL against the
+requested architecture. Windows system DLLs and API sets are excluded. A final
+dependency scan resolves non-system imports only from the staged SDK, not the
+toolchain or `PATH`.
 
 CLANGARM64 builds use native Clang and LLVM tools from `/clangarm64/bin`.
 Runtime DLLs come only from `/clangarm64`, not `/mingw64`. Both MinGW targets
@@ -88,14 +87,14 @@ layout checks run before upload. The Bash helper tests also run in normal CI.
 
 The release wheels are built with cibuildwheel and repaired for
 `manylinux_2_17_x86_64`, `manylinux_2_17_aarch64`, `musllinux_1_2_x86_64`,
-`musllinux_1_2_aarch64`, `win_amd64`, `win_arm64`, `macosx_11_0_x86_64`,
-and `macosx_11_0_arm64`. Builds and
-bundled-library tests run natively on each architecture using CPython 3.11,
-while wheel tags remain `py3-none`. Linux wheels contain a private
-native library at `mpq_libs/libmpq.so`, loaded directly by package path; the
-wheel does not require a separately installed libmpq library. This private
-library intentionally has no ELF SONAME. The Python release archive,
-`libmpq-python-X.Y.Z.zip`, contains one sdist and all eight Linux/Windows/macOS wheels.
+`musllinux_1_2_aarch64`, `win_amd64`, `win_arm64`, `macosx_11_0_x86_64`, and
+`macosx_11_0_arm64`. Builds and bundled-library tests run natively on each
+architecture using CPython 3.11, while wheel tags remain `py3-none`. Linux
+wheels contain a private native library at `mpq_libs/libmpq.so`, loaded
+directly by package path; the wheel does not require a separately installed
+libmpq library. This private library intentionally has no ELF SONAME. The
+Python release archive, `libmpq-python-X.Y.Z.zip`, contains one sdist and all
+eight Linux/Windows/macOS wheels.
 
 Windows wheels reuse the shared MSVC/CMake build with matching `x64-windows`
 or `arm64-windows` vcpkg dependencies. The backend receives `LIBMPQ_LIBRARY`
@@ -119,23 +118,23 @@ required, and no universal2 wheel is produced.
 
 Inline macOS wheel checks validate tags, every dylib's architecture,
 signatures, and obvious absolute build/Homebrew runtime paths. Native Intel
-and Apple Silicon jobs install the repaired wheel
-into a clean virtual environment and run all Python tests without build
-overrides, Homebrew paths, or dynamic-library search environment variables.
+and Apple Silicon jobs install the repaired wheel into a clean virtual
+environment and run all Python tests without build overrides, Homebrew paths,
+or dynamic-library search environment variables.
 
 ### D
 
 The D release archive is `libmpq-d-X.Y.Z.zip`. It contains the D source
-package and compiler-specific binary packages for DMD and LDC on Linux
-x86_64, plus LDC on Linux aarch64, with separate glibc and musl variants.
-DMD remains Linux x86_64-only in the existing release toolchains. Linux packages
-are built and tested natively, using Ubuntu 24.04 for glibc and Alpine 3.22 for
-musl. Linux binary archives use
-`libmpq-d-X.Y.Z-<compiler>-linux-<libc>-<architecture>.tar.gz`. Binary packages
-include the precompiled D archive and the complete `libmpq.so` SONAME chain.
-Their bundled library directory is supplied automatically at link time; runtime loading may
-still require `LD_LIBRARY_PATH`. `BUILDINFO` records compiler and native build
-metadata.
+package and compiler-specific binary packages for DMD and LDC on Linux x86_64,
+plus LDC on Linux aarch64, with separate glibc and musl variants. DMD remains
+Linux x86_64-only in the existing release toolchains. Linux packages are built
+and tested natively, using Ubuntu 24.04 for glibc and Alpine 3.22 for musl.
+Linux binary archives use
+`libmpq-d-X.Y.Z-<compiler>-linux-<libc>-<architecture>.tar.gz`. Binary
+packages include the precompiled D archive and the complete `libmpq.so` SONAME
+chain. Their bundled library directory is supplied automatically at link time;
+runtime loading may still require `LD_LIBRARY_PATH`. `BUILDINFO` records
+compiler and native build metadata.
 
 macOS adds `libmpq-d-X.Y.Z-<compiler>-macos-<architecture>.tar.gz` for
 `dmd` on `x86_64` and `ldc` on `x86_64` and `arm64`. Intel uses `macos-15-intel` and
@@ -146,27 +145,26 @@ reused; only its dylib/symlink chain is copied into the D package. The macOS
 
 Stable DMD 2.113.0 does not provide the required macOS ARM64 `-marm64` target.
 The DMD arm64 binary package is not published until a stable DMD release
-provides that support. LDC remains supported on macOS arm64.
-DUB's internal ARM platform token is `aarch64`,
-while macOS archive names use `arm64`. LDC uses the native Apple Silicon slice.
-All generated Mach-O artifacts must be single-architecture. Extracted consumers
-run with the requested native architecture, check the version, and trace loading
-of the packaged dylib. Compiler versions remain selected by
-`dlang-community/setup-dlang@v2` and recorded in each package's `BUILDINFO`.
+provides that support. LDC remains supported on macOS arm64. DUB's internal
+ARM platform token is `aarch64`, while macOS archive names use `arm64`. LDC
+uses the native Apple Silicon slice. All generated Mach-O artifacts must be
+single-architecture. Extracted consumers run with the requested native
+architecture, check the version, and trace loading of the packaged dylib.
+Compiler versions remain selected by `dlang-community/setup-dlang@v2` and
+recorded in each package's `BUILDINFO`.
 
-Windows adds `libmpq-d-X.Y.Z-<compiler>-windows-x86_64.zip` for DMD and LDC
-on `windows-latest`. The existing MSVC x64 CMake/vcpkg shared build runs CTest
+Windows adds `libmpq-d-X.Y.Z-<compiler>-windows-x86_64.zip` for DMD and LDC on
+`windows-latest`. The existing MSVC x64 CMake/vcpkg shared build runs CTest
 before installation. The Windows SDK helper supplies recursive runtime DLL
 discovery, architecture validation, and dependency licenses. Each D package
 contains `bin/libmpq.dll` and its non-system dependencies, `lib/libmpq.lib`,
-and the precompiled `lib/libmpq-<compiler>.lib` in MS-COFF format.
-DUB's `windows-x86_64-<compiler>` configuration selects both packaged libraries.
+and the precompiled `lib/libmpq-<compiler>.lib` in MS-COFF format. DUB's
+`windows-x86_64-<compiler>` configuration selects both packaged libraries.
 PE/COFF checks require the package architecture for every DLL, library object,
-and consumer.
-The extracted-package consumer executes with only package and Windows system
-directories on `PATH`, excluding vcpkg and native build paths. `BUILDINFO`
-records the compiler version, Windows architecture, MSVC native toolchain,
-and `x64-windows` triplet, without libc or macOS fields.
+and consumer. The extracted-package consumer executes with only package and
+Windows system directories on `PATH`, excluding vcpkg and native build paths.
+`BUILDINFO` records the compiler version, Windows architecture, MSVC native
+toolchain, and `x64-windows` triplet, without libc or macOS fields.
 
 LDC additionally produces `libmpq-d-X.Y.Z-ldc-windows-arm64.zip` on
 `windows-11-vs2026-arm`, reusing MSVC ARM64 and `arm64-windows` dependencies.
@@ -176,11 +174,11 @@ native ARM64, always targeting ARM64. DUB receives
 `--arch=aarch64-windows-msvc`, which passes LDC's explicit `-mtriple` option
 to target probing and compilation; direct interface generation uses the same
 triple. DUB must report `windows`, `aarch64`, and `ldc`. Release filenames
-retain `arm64`, while the binary selector is `windows-aarch64-ldc`.
-All packaged PE/COFF members and the native extracted consumer must be AA64,
-not x64. `BUILDINFO` additionally records `d_target` and the actual
-`compiler_host_architecture`. Windows ARM64 does not support DMD packages.
-The source recipe remains `libs "mpq"`: only source-tree builds see a temporary
+retain `arm64`, while the binary selector is `windows-aarch64-ldc`. All
+packaged PE/COFF members and the native extracted consumer must be AA64, not
+x64. `BUILDINFO` additionally records `d_target` and the actual
+`compiler_host_architecture`. Windows ARM64 does not support DMD packages. The
+source recipe remains `libs "mpq"`: only source-tree builds see a temporary
 `mpq.lib` compatibility copy. Binary recipes select `libmpq.lib` explicitly,
 and extracted consumers restore the original MSVC `LIB` before linking.
 
@@ -201,18 +199,18 @@ gzip and bzip2 archives, and runs CMake/CTest from an extracted source archive.
 
 ## Source release publication
 
-The configure-ready source distributions are
-`libmpq-X.Y.Z.tar.gz` and `libmpq-X.Y.Z.tar.bz2`. Both are included in
-the signed GitHub Release after the validation above.
+The configure-ready source distributions are `libmpq-X.Y.Z.tar.gz` and
+`libmpq-X.Y.Z.tar.bz2`. Both are included in the signed GitHub Release after
+the validation above.
 
 ## Binary release publication
 
 The final job requires all archives listed above and generates one
 filename-sorted `SHA256SUMS` covering them. The existing `GPG_PRIVATE_KEY` and
 `GPG_PASSPHRASE` secrets sign that manifest; publication fails rather than
-falling back to unsigned checksums.
-The release includes `SHA256SUMS`, its detached signature `SHA256SUMS.asc`, and
-the exported public key `libmpq-release-signing-key.asc`.
+falling back to unsigned checksums. The release includes `SHA256SUMS`, its
+detached signature `SHA256SUMS.asc`, and the exported public key
+`libmpq-release-signing-key.asc`.
 
 After verifying the checksums and signature, the final job creates a draft
 release with all archives and signing assets, using `--notes-from-tag`, then
@@ -240,12 +238,12 @@ and consumer-validation script.
 
 D `validate` may run from a branch or tag and validates the complete D release
 package set: source and the compiler-specific Linux, macOS, and Windows
-packages described above. It performs
-no registry activity. D `release` requires an exact `v*` tag where the tag,
-native project, and DUB versions agree; code.dlang.org independently discovers
-that tag, and the workflow waits until the exact package version appears. It
-does not upload anything to code.dlang.org. Both modes reuse the canonical D
-package pipeline used by the signed GitHub Release.
+packages described above. It performs no registry activity. D `release`
+requires an exact `v*` tag where the tag, native project, and DUB versions
+agree; code.dlang.org independently discovers that tag, and the workflow waits
+until the exact package version appears. It does not upload anything to
+code.dlang.org. Both modes reuse the canonical D package pipeline used by the
+signed GitHub Release.
 
 ## Registry publication dispatch
 
