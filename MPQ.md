@@ -413,6 +413,15 @@ retained logical file can be reconstructed. Classic patch materialization
 still rejects v3 inputs rather than omit BET-only members.
 Public v3 creation emits mixed HET/BET and classic tables; MPQ v4 remains unsupported.
 
+The dedicated patch writer can create MPQ v3 patch archives from standalone v3
+bases when each replacement or deletion target has classic block-table
+provenance and an unambiguous classic hash identity. It uses the existing v3
+writer to emit the 0x44-byte header, HET/BET and classic tables with shared row
+identity, patch-info prefixes, PTCH bodies, and delete markers. Existing
+compression, encryption and signature options retain their meanings.
+BET-only source targets are rejected; support is deferred to Phase 9.10.2.
+MPQ v3 patch-view materialization and multi-layer application remain unsupported.
+
 ### Read interoperability checks
 
 The checked-in v3 feature archive is generated only from project-owned synthetic

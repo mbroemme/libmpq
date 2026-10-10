@@ -273,7 +273,10 @@ patch_writer_member(
     uint32_t hash_a;
     uint32_t hash_b;
     uint32_t block;
+    uint32_t canonical;
+    uint32_t translated;
     uint32_t found = UINT32_MAX;
+    const mpq_entry_s *entry;
     int32_t result;
 
     if (name == NULL || name[0] == '\0')
@@ -281,7 +284,14 @@ patch_writer_member(
     result = libmpq__file_number(state->base, name, number);
     if (result != 0)
         return result;
-    block = state->base->mpq_entry[state->base->mpq_map[*number].entry_index].classic_source_index;
+    canonical = state->base->mpq_map[*number].entry_index;
+    entry = &state->base->mpq_entry[canonical];
+    if ((entry->source_mask & LIBMPQ_ENTRY_SOURCE_CLASSIC) == 0)
+        return LIBMPQ_ERROR_FORMAT;
+    block = entry->classic_source_index;
+    if (libmpq__entry_index_from_classic(state->base, block, &translated) != 0 ||
+        translated != canonical)
+        return LIBMPQ_ERROR_FORMAT;
     libmpq__file_hash(name, &hash1, &hash_a, &hash_b);
     for (uint32_t i = 0; i < state->base->mpq_header.hash_table_count; i++) {
         const mpq_hash_s *entry = &state->base->mpq_hash[i];
@@ -572,7 +582,7 @@ patch_writer_begin_internal(
     if (result != 0)
         goto fail;
     if (state->base->archive_offset != 0 ||
-        state->base->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_TWO) {
+        state->base->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_THREE) {
         result = LIBMPQ_ERROR_FORMAT;
         goto fail;
     }

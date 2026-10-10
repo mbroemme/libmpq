@@ -1334,9 +1334,8 @@ test_v3_writer(uint32_t count, bool compress_tables, uint64_t position)
         snprintf(patch_path, sizeof(patch_path), "%s.patch", path);
         TEST_CHECK(libmpq__update_begin(&update, path) == 0 && update != NULL);
         TEST_CHECK(libmpq__update_abort(update) == 0);
-        TEST_CHECK(
-            libmpq__patch_begin(&patch, path, patch_path) == LIBMPQ_ERROR_FORMAT && patch == NULL
-        );
+        TEST_CHECK(libmpq__patch_begin(&patch, path, patch_path) == 0 && patch != NULL);
+        TEST_CHECK(libmpq__patch_abort(patch) == 0);
     }
     TEST_CHECK(fp != NULL && fread(header, 1, sizeof(header), fp) == sizeof(header));
     TEST_CHECK(fclose(fp) == 0);
