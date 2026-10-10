@@ -675,6 +675,7 @@ test_delta_selection(uint8_t kind, uint32_t version)
         TEST_CHECK(libmpq__patch_view_open(&view, base_path, chain, 2) == 0);
         TEST_CHECK(check_file(libmpq__patch_view_archive(view), name, final, after_size) == 0);
         TEST_CHECK(libmpq__patch_view_close(view) == 0);
+
         /* Reversing the chain cannot pass the preceding-content MD5 check. */
         chain[0] = next_path;
         chain[1] = patch_path;
@@ -1023,6 +1024,7 @@ test_v3_signed_chain(void)
             TEST_CHECK(libmpq__file_number(archive, "folder/reference.bin", &number) == 0);
             offset = archive->mpq_entry[archive->mpq_map[number].entry_index].offset + 12;
             TEST_CHECK(libmpq__archive_close(archive) == 0);
+
             /* Invalid input signatures are not implicitly verified by composition. */
             TEST_CHECK(libmpq__patch_view_open(&view, base_path, layers, 2) == 0);
             TEST_CHECK(

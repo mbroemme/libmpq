@@ -103,15 +103,33 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         libmpq__off_t unpacked;
         libmpq__off_t packed;
         uint32_t number;
+        uint32_t flags;
 
         /* Streams cache a whole single-unit member, even for a tiny read. */
         if (libmpq__file_number(archive, "overview.txt", &number) == 0 &&
             libmpq__file_size_unpacked(archive, number, &unpacked) == 0 &&
             libmpq__file_size_packed(archive, number, &packed) == 0 && unpacked >= 0 &&
             unpacked <= 65536 && packed >= 0 && packed <= 65536 &&
-            libmpq__stream_open_name(archive, "overview.txt", &stream) == 0) {
-            (void)libmpq__stream_read(stream, output, sizeof(output), &transferred);
-            libmpq__stream_close(stream);
+            libmpq__file_flags(archive, number, &flags) == 0) {
+            if ((flags & LIBMPQ_FILE_FLAG_PATCH_FILE) != 0) {
+                libmpq__off_t payload_size;
+
+                /* Bound decoded PTCH allocation independently of the patched target size. */
+                if (libmpq__patch_payload_size(archive, number, &payload_size) == 0 &&
+                    payload_size >= 0 && payload_size <= 65536) {
+                    uint8_t *payload = malloc(payload_size == 0 ? 1 : (size_t)payload_size);
+
+                    if (payload != NULL) {
+                        (void)libmpq__patch_payload_read(
+                            archive, number, "overview.txt", payload, payload_size, &transferred
+                        );
+                        free(payload);
+                    }
+                }
+            } else if (libmpq__stream_open_name(archive, "overview.txt", &stream) == 0) {
+                (void)libmpq__stream_read(stream, output, sizeof(output), &transferred);
+                libmpq__stream_close(stream);
+            }
         }
         libmpq__archive_close(archive);
     }

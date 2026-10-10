@@ -38,6 +38,7 @@
 #include <zlib.h>
 
 #ifdef LIBMPQ_TEST_PATCH_IO_WRAP
+
 /* Linker wrappers affect only this regression executable, not the installed library. */
 typedef enum
 {
@@ -103,6 +104,7 @@ __wrap_libmpq__archive_open(mpq_archive_s **archive, const char *path, libmpq__o
             (patch_fault.fault == PATCH_FAULT_EXPOSE &&
              patch_fault.candidate_opens ==
                  (patch_fault.fail_open == 0 ? 2u : patch_fault.fail_open))) {
+
             /* A failed open owns no handle, even when late validation consumed one. */
             status = __real_libmpq__archive_close(*archive);
             for (size_t i = 0; i < 8; i++)
@@ -142,6 +144,7 @@ __wrap_libmpq__archive_close(mpq_archive_s *archive)
     if (writing && ++patch_fault.writer_closes == patch_fault.fail_open &&
         patch_fault.fault == PATCH_FAULT_FINALIZE && status == 0)
         return LIBMPQ_ERROR_CLOSE;
+
     /* Close consumes the real archive before reporting an injected failure. */
     return lower && patch_fault.fault == PATCH_FAULT_CLOSE_LOWER && status == 0 ? LIBMPQ_ERROR_CLOSE
                                                                                 : status;
@@ -612,6 +615,7 @@ generate_v3_patch_fixture(const char *path)
         free(after);
         free(before);
     }
+
     /* Naming the unlisted BET-only tail allows complete base reconstruction. */
     TEST_CHECK(libmpq__file_number(base, "zero.bin", &number) == 0);
     TEST_CHECK(
@@ -2567,6 +2571,7 @@ check_relocated_patch_cipher(
     TEST_CHECK((flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE)) == 0);
     TEST_CHECK(libmpq__load_le16(header + 14) <= 15);
     sector_size = 512u << libmpq__load_le16(header + 14);
+
     /* Independently fixed basename hash for reference.bin, excluding its directory. */
     key = (0xa25af234u + (uint32_t)offset) ^ (uint32_t)size;
     memcpy(expected, plain, size);
@@ -2627,6 +2632,7 @@ test_v3_committed_patch(void)
     TEST_CHECK(libmpq__archive_open(&patch, path, 0) == 0);
     TEST_CHECK(libmpq__file_number(patch, "folder/reference.bin", &number) == 0);
     added_offset = patch->mpq_entry[patch->mpq_map[number].entry_index].offset;
+
     /* Independently checked basename key and wire ciphertext for the directory addition. */
     TEST_CHECK(check_relocated_patch_cipher(patch, added, sizeof(added), UINT64_MAX) == 0);
     TEST_CHECK(libmpq__archive_close(patch) == 0);
@@ -2881,6 +2887,7 @@ test_v3_chain(uint32_t flags, uint8_t bet_only)
     }
     {
         const char *interleaved[] = { paths[0], paths[3], paths[1], paths[2] };
+
         /* An absent deletion between transforms must not reset the current contents. */
         TEST_CHECK(libmpq__patch_view_open(&view, base_path, interleaved, 4) == 0);
         TEST_CHECK(
@@ -2922,6 +2929,7 @@ test_v3_chain(uint32_t flags, uint8_t bet_only)
                 TEST_CHECK(libmpq__archive_close(writer) == 0);
             }
         }
+
         /* Each source independently selects its container and authentication code. */
         for (uint32_t mask = 0; mask < 8; mask++) {
             base_source =
@@ -2985,6 +2993,7 @@ test_v3_chain(uint32_t flags, uint8_t bet_only)
             free(current);
             free(snapshot);
         }
+
         /* Path-only callers cannot supply per-layer MPQE credentials. */
         layers[0] = wrapped[1];
         TEST_CHECK(libmpq__patch_view_open(&view, base_path, layers, 3) != 0 && view == NULL);
@@ -3070,6 +3079,7 @@ test_v3_chain(uint32_t flags, uint8_t bet_only)
     }
     memset(&patch_fault, 0, sizeof(patch_fault));
 #endif
+
     /* A later incomplete namespace fails after earlier candidates have been adopted. */
     create.flags = 0;
     TEST_CHECK(libmpq__archive_create(&writer, paths[3], &create) == 0);
@@ -3110,6 +3120,7 @@ test_v3_chain(uint32_t flags, uint8_t bet_only)
             TEST_CHECK(file != NULL && libmpq__file_seek(file, offset + 12, SEEK_SET) == 0);
             byte = fgetc(file);
             TEST_CHECK(byte != EOF && libmpq__file_seek(file, offset + 12, SEEK_SET) == 0);
+
             /* Restore valid integrity metadata, then corrupt the encrypted body itself. */
             TEST_CHECK(fputc(byte ^ 1, file) != EOF);
             TEST_CHECK(libmpq__file_seek(file, offset + LIBMPQ_PATCH_INFO_SIZE, SEEK_SET) == 0);

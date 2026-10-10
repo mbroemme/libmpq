@@ -1739,6 +1739,7 @@ patch_named_entries(mpq_archive_s *archive, mpq_patch_entry_s **out)
     entries = calloc(archive->files == 0 ? 1 : archive->files, sizeof(*entries));
     if (entries == NULL)
         return LIBMPQ_ERROR_MALLOC;
+
     /* The caller owns partial names as well as the successful result. */
     *out = entries;
     for (uint32_t i = 0; i < archive->files; i++) {
@@ -1886,6 +1887,7 @@ patch_named_storage(
             continue;
         if (mask == LIBMPQ_COMPRESSION_LZMA_METHOD)
             mask = LIBMPQ_COMPRESSION_LZMA;
+
         /* Reapplying a lossy stage cannot preserve the validated target bytes. */
         if ((mask & (LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO)) != 0) {
             status = LIBMPQ_ERROR_FORMAT;
@@ -1983,6 +1985,7 @@ patch_materialize_named(
     status = patch_named_entries(lower, &base_entries);
     if (status != 0)
         goto done;
+
     /* Logical patch names also provide known names for unlisted base members. */
     for (uint32_t i = 0; i < patch->files; i++) {
         if (!entries[i].live || entries[i].internal)
@@ -2032,6 +2035,7 @@ patch_materialize_named(
     output = NULL;
     if (status != 0)
         goto done;
+
     /* Imported encrypted members keep their original relative offsets and keys. */
     if (extent < writer->mpq_header.header_size || extent > INT64_MAX ||
         libmpq__file_seek(writer->fp, (libmpq__off_t)(extent - 1), SEEK_SET) != 0 ||
@@ -2194,6 +2198,7 @@ patch_materialize_named(
     check = NULL;
     if (status != 0)
         goto done;
+
     /* Close the old view before unlinking it, including on platforms denying open-file removal. */
     status = libmpq__archive_close(lower);
     *lower_handle = NULL;
@@ -2576,6 +2581,7 @@ libmpq__patch_view_open_sources(
     }
     state->archive_offset = base->archive_offset;
     if (base->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE) {
+
         /* Rebuild directly from the opened sources, without a full intermediate base copy. */
         if (fclose(temporary) != 0) {
             temporary = NULL;
@@ -2584,6 +2590,7 @@ libmpq__patch_view_open_sources(
         }
         temporary = NULL;
         for (size_t i = 0; i < patch_count; i++) {
+
             /* Adoption consumes the lower handle; no-op layers leave it available. */
             if (base == NULL) {
                 status = libmpq__archive_open(&base, state->path, state->archive_offset);
@@ -2610,6 +2617,7 @@ libmpq__patch_view_open_sources(
                     goto error;
                 goto expose;
             }
+
             /* No-op layers keep every original byte, including signatures and wrappers. */
             temporary = libmpq__directory_file_open(state->directory, state->temporary, "r+b");
             if (temporary == NULL) {

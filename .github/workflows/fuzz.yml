@@ -112,6 +112,7 @@ jobs:
             'fuzz-encrypted-archive:encrypted-archive:1048576'
             'fuzz-sector-decode:sector-decode:131072'
             'fuzz-ext-table:ext-table:1048576'
+            'fuzz-patch-apply:patch-apply:8192'
             'fuzz-pkware-decode:pkware-decode:131072'
             'fuzz-huffman-decode:huffman-decode:131072'
             'fuzz-zlib-decode:zlib-decode:131072'
