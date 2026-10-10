@@ -262,7 +262,7 @@ patch_writer_cleanup(mpq_patch_writer_s *state, uint8_t publish)
     return result;
 }
 
-/* Resolve a unique named base identity, retaining its locale and platform. */
+/* Resolve the supplied name; only classic hash identities carry locale/platform. */
 static int32_t
 patch_writer_member(
     mpq_patch_writer_s *state, const char *name, uint32_t *number, uint16_t *locale,
@@ -284,8 +284,21 @@ patch_writer_member(
     result = libmpq__file_number(state->base, name, number);
     if (result != 0)
         return result;
+    if (libmpq__reader_validate_file_number(state->base, *number) != 0)
+        return LIBMPQ_ERROR_FORMAT;
     canonical = state->base->mpq_map[*number].entry_index;
     entry = &state->base->mpq_entry[canonical];
+    if ((entry->source_mask & LIBMPQ_ENTRY_SOURCE_BET) != 0) {
+        if (state->base->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_THREE ||
+            libmpq__entry_index_from_bet(state->base, entry->bet_source_index, &translated) != 0 ||
+            translated != canonical)
+            return LIBMPQ_ERROR_FORMAT;
+        if ((entry->source_mask & LIBMPQ_ENTRY_SOURCE_CLASSIC) == 0) {
+            *locale = 0;
+            *platform = 0;
+            return 0;
+        }
+    }
     if ((entry->source_mask & LIBMPQ_ENTRY_SOURCE_CLASSIC) == 0)
         return LIBMPQ_ERROR_FORMAT;
     block = entry->classic_source_index;
