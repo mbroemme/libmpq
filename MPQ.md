@@ -409,8 +409,8 @@ classic block count, including shared rows; BET-only entries have no classic
 attributes row. HET/BET hash information remains in the table views.
 
 Transactional HET/BET updates rebuild through the normal writer when every
-retained logical file can be reconstructed. Classic patch materialization
-still rejects v3 inputs rather than omit BET-only members.
+retained logical file can be reconstructed. Single-layer v3 patch views use
+the same archive writer to rebuild a complete named logical file set.
 Public v3 creation emits mixed HET/BET and classic tables; MPQ v4 remains unsupported.
 
 The dedicated patch writer can create MPQ v3 patch archives from standalone v3
@@ -423,8 +423,39 @@ entries and validated source mappings, without fabricating classic rows.
 The existing v3 writer emits the 0x44-byte header, HET/BET and classic tables
 with shared row identity, patch-info prefixes, PTCH bodies, and delete markers.
 Existing compression, encryption and signature options retain their meanings.
-MPQ v3 patch-view materialization and multi-layer patch application
-are not currently supported.
+Single-layer patch-view materialization supports v3 bases with classic-backed,
+mixed, or BET-only members. Names come from `(listfile)`, recognized internal
+names, and the patch's logical namespace; hashes are never inverted into names.
+Incomplete coverage, ambiguous aliases/locales, unresolved listed names, and
+nonzero reserved BET metadata are rejected instead of dropping information.
+Patch prefixes, COPY/BSD0 transforms, normal replacements, additions and delete
+markers retain their existing semantics and integrity checks.
+
+Unchanged packed members retain their original archive-relative offsets,
+compression and encryption. Modified contents pass through the normal writer,
+including basename-derived keys and FIX_KEY adjustment at final output offsets.
+Representable compression masks and classic locale/platform identities are
+preserved; modified files requiring lossy recompression or incompatible
+later-sector compression masks are rejected. Existing writer size limits also
+apply, including its single-unit sector-size limit. Classic attributes are
+read only for classic-backed rows; output checksums and supported timestamps
+are regenerated or retained as appropriate. Modified views omit stale signature
+members and trailers. A metadata-only layer leaves the original private view
+unchanged.
+
+Materialized output is a private standalone v3 archive with newly generated
+HET/BET and classic tables sharing row identity. It is reopened before replacing
+the private view; failed opens attempt to remove temporary output without
+modifying either source. Input container prefixes/suffixes are not carried into
+rebuilt v3 views.
+An open failure is terminal and leaves the returned view pointer NULL, not a
+partially usable or retryable view. Archive close consumes its handle even when
+it reports an error; cleanup never closes that handle again. If removal of the
+old private placeholder fails after the source has closed, the candidate is
+discarded and outer cleanup retries removal of the placeholder. Private-file
+deletion is best effort: persistent filesystem refusal can leave temporary
+files, but no partial view is returned and the original sources remain unchanged.
+Multi-layer v3 patch application is not currently supported.
 
 ### Read interoperability checks
 

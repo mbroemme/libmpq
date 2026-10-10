@@ -157,6 +157,19 @@ if(BUILD_TESTING)
             FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         )
         target_link_libraries(test-${module} PRIVATE mpq mpq-core)
+        if(module STREQUAL "patch-reader" AND NOT WIN32)
+            include(CheckLinkerFlag)
+            set(patch_reader_wrap_options
+                "-Wl,--wrap=libmpq__archive_open"
+                "-Wl,--wrap=libmpq__archive_close"
+                "-Wl,--wrap=libmpq__directory_remove"
+            )
+            check_linker_flag(C "${patch_reader_wrap_options}" LIBMPQ_TEST_PATCH_IO_WRAP)
+            if(LIBMPQ_TEST_PATCH_IO_WRAP)
+                target_compile_definitions(test-${module} PRIVATE LIBMPQ_TEST_PATCH_IO_WRAP=1)
+                target_link_options(test-${module} PRIVATE ${patch_reader_wrap_options})
+            endif()
+        endif()
 
         set(test_work_dir "${CMAKE_CURRENT_BINARY_DIR}/test-work/${module}")
         file(MAKE_DIRECTORY "${test_work_dir}")
