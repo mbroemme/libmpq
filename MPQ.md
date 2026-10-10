@@ -463,6 +463,32 @@ logical namespace forward, subject to the same conservative naming and
 metadata requirements at every layer. Failure at any layer is terminal:
 no partial chain is returned, and intermediate cleanup is best effort.
 
+Internal patch-view source descriptors accept plain MPQ or MPQE independently
+for the base and each layer, including mixed chains. Each MPQE source requires
+its own authentication code; path-only composition cannot authenticate wrapped
+patch layers. Authentication failure returns no view. Materialized views are
+private decoded MPQ archives, not newly published MPQE containers. The patch-view
+composition entry points remain private; public patch creation accepts a
+standalone plain MPQ base and may produce MPQE output.
+
+Encrypted PTCH reads reopen independent member caches and derive FIX_KEY from
+the original member before shifting past its plaintext patch-info prefix.
+Modified output members use basename keys and final archive-relative offsets,
+including when input archives have container prefixes. The public dedicated
+patch writer accepts normal encryption but not explicit FIX_KEY storage options;
+FIX_KEY patch members remain readable through the existing decoder.
+
+Signature presence is not proof of validity. Callers must explicitly verify
+input archives with the required public key; patch-view composition does not
+enforce signature verification. Supported weak/strong signatures on plain v3
+inputs and weak signatures on MPQE inputs use the ordinary archive verifier.
+Changed intermediates and final views omit old signatures and are unsigned:
+composition has no signing configuration and does not regenerate signatures.
+Strong-signature creation and trailer detection remain unsupported for MPQE.
+No-op chains preserve unchanged input signatures without claiming verification.
+Corrupt PTCH integrity metadata is rejected independently of archive signature
+policy.
+
 ### Read interoperability checks
 
 The checked-in v3 feature archive is generated only from project-owned synthetic

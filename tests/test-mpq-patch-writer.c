@@ -486,6 +486,7 @@ check_splice_layout(
 static int
 test_delta_selection(uint8_t kind, uint32_t version)
 {
+    const char *name = version == LIBMPQ_ARCHIVE_VERSION_THREE ? "folder/delta.bin" : "delta.bin";
     mpq_archive_create_options_s options = {
         version, 8, 4096,
         version == LIBMPQ_ARCHIVE_VERSION_THREE ? LIBMPQ_ARCHIVE_CREATE_LISTFILE : 0, 0
@@ -536,13 +537,13 @@ test_delta_selection(uint8_t kind, uint32_t version)
     TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "patch-delta-base") == 0);
     TEST_CHECK(test_temp_path(patch_path, sizeof(patch_path), "patch-delta-output") == 0);
     TEST_CHECK(libmpq__archive_create(&base, base_path, &options) == 0);
-    TEST_CHECK(libmpq__archive_add_data(base, "delta.bin", before, sizeof(before), &storage) == 0);
+    TEST_CHECK(libmpq__archive_add_data(base, name, before, sizeof(before), &storage) == 0);
     TEST_CHECK(libmpq__archive_close(base) == 0);
     TEST_CHECK(libmpq__patch_writer_begin(&writer, base_path, patch_path) == 0);
-    TEST_CHECK(libmpq__patch_writer_replace(writer, "delta.bin", after, after_size, NULL) == 0);
+    TEST_CHECK(libmpq__patch_writer_replace(writer, name, after, after_size, NULL) == 0);
     TEST_CHECK(libmpq__patch_writer_finish(writer) == 0);
     TEST_CHECK(libmpq__archive_open(&patch, patch_path, 0) == 0);
-    TEST_CHECK(libmpq__file_number(patch, "delta.bin", &number) == 0);
+    TEST_CHECK(libmpq__file_number(patch, name, &number) == 0);
     TEST_CHECK(
         patch->mpq_entry[patch->mpq_map[number].entry_index].source_mask ==
         (version == LIBMPQ_ARCHIVE_VERSION_THREE
@@ -602,12 +603,16 @@ test_delta_selection(uint8_t kind, uint32_t version)
     free(stored);
     TEST_CHECK(libmpq__archive_close(patch) == 0);
     TEST_CHECK(libmpq__patch_view_open(&view, base_path, layers, 1) == 0);
-    TEST_CHECK(check_file(libmpq__patch_view_archive(view), "delta.bin", after, after_size) == 0);
+    TEST_CHECK(check_file(libmpq__patch_view_archive(view), name, after, after_size) == 0);
     TEST_CHECK(libmpq__patch_view_close(view) == 0);
     if (version == LIBMPQ_ARCHIVE_VERSION_THREE) {
         char stage_path[1024];
         char next_path[1024];
         uint8_t final[sizeof(after)];
+        mpq_file_options_s encrypted = { LIBMPQ_FILE_FLAG_ENCRYPTED |
+                                             (kind ? LIBMPQ_FILE_FLAG_COMPRESS
+                                                   : LIBMPQ_FILE_FLAG_SINGLE),
+                                         LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
         const char *chain[] = { patch_path, next_path };
 
         TEST_CHECK(test_temp_path(stage_path, sizeof(stage_path), "patch-delta-stage") == 0);
@@ -617,39 +622,58 @@ test_delta_selection(uint8_t kind, uint32_t version)
         final[6072] ^= 0x71u;
         TEST_CHECK(libmpq__archive_create(&base, stage_path, &options) == 0);
         TEST_CHECK(
-            libmpq__archive_add_data(
-                base, "delta.bin", after, (libmpq__off_t)after_size, &storage
-            ) == 0
+            libmpq__archive_add_data(base, name, after, (libmpq__off_t)after_size, &storage) == 0
         );
         TEST_CHECK(libmpq__archive_close(base) == 0);
         TEST_CHECK(libmpq__patch_writer_begin(&writer, stage_path, next_path) == 0);
         TEST_CHECK(
             libmpq__patch_writer_replace(
-                writer, "delta.bin", final, (libmpq__off_t)after_size, NULL
+                writer, name, final, (libmpq__off_t)after_size, &encrypted
             ) == 0
         );
         TEST_CHECK(libmpq__patch_writer_finish(writer) == 0);
         TEST_CHECK(libmpq__archive_open(&patch, next_path, 0) == 0);
-        TEST_CHECK(libmpq__file_number(patch, "delta.bin", &number) == 0);
+        TEST_CHECK(libmpq__file_number(patch, name, &number) == 0);
         {
             libmpq__off_t size;
             libmpq__off_t transferred;
+            uint32_t seed_before = 0;
+            uint32_t seed_after;
+            if (!kind) {
+                TEST_CHECK(libmpq__reader_offsets_acquire(patch, number, name) == 0);
+                TEST_CHECK(libmpq__reader_get_block_seed(patch, number, 0, &seed_before) == 0);
+            }
             TEST_CHECK(libmpq__patch_payload_size(patch, number, &size) == 0 && size >= 68);
             decoded = malloc((size_t)size);
             TEST_CHECK(decoded != NULL);
             TEST_CHECK(
-                libmpq__patch_payload_read(
-                    patch, number, "delta.bin", decoded, size, &transferred
-                ) == 0
+                libmpq__patch_payload_read(patch, number, name, decoded, size, &transferred) == 0
             );
             TEST_CHECK(transferred == size && memcmp(decoded + 64, "BSD0", 4) == 0);
+            libmpq__md5_init(&md5);
+            libmpq__md5_update(&md5, decoded, (size_t)size);
+            libmpq__md5_final(&md5, digest);
+            for (size_t read = 0; read < 2; read++) {
+                uint8_t repeated[16];
+                TEST_CHECK(
+                    libmpq__patch_payload_read(patch, number, name, decoded, size, &transferred) ==
+                    0
+                );
+                libmpq__md5_init(&md5);
+                libmpq__md5_update(&md5, decoded, (size_t)size);
+                libmpq__md5_final(&md5, repeated);
+                TEST_CHECK(transferred == size && memcmp(digest, repeated, sizeof(digest)) == 0);
+            }
+            if (!kind) {
+                TEST_CHECK(libmpq__reader_get_block_seed(patch, number, 0, &seed_after) == 0);
+                TEST_CHECK(seed_after == seed_before);
+                TEST_CHECK(libmpq__reader_offsets_release(patch, number) == 0);
+            }
             free(decoded);
         }
         TEST_CHECK(libmpq__archive_close(patch) == 0);
         TEST_CHECK(libmpq__patch_view_open(&view, base_path, chain, 2) == 0);
-        TEST_CHECK(
-            check_file(libmpq__patch_view_archive(view), "delta.bin", final, after_size) == 0
-        );
+        TEST_CHECK(check_file(libmpq__patch_view_archive(view), name, final, after_size) == 0);
         TEST_CHECK(libmpq__patch_view_close(view) == 0);
         /* Reversing the chain cannot pass the preceding-content MD5 check. */
         chain[0] = next_path;
@@ -842,6 +866,184 @@ check_patch_signatures(const char *path, uint32_t expected, uint8_t mpqe)
         TEST_CHECK(mismatches == 0);
     }
     TEST_CHECK(libmpq__archive_close(archive) == 0);
+    return 0;
+}
+
+/* Signature verification is explicit; rebuilt chains must never inherit stale signatures. */
+static int
+test_v3_signed_chain(void)
+{
+    static const uint8_t final[] = "independent final signed-chain contents";
+    char base_path[1024];
+    char stage_path[1024];
+    char first_path[1024];
+    char second_path[1024];
+    const char *layers[] = { first_path, second_path };
+    uint8_t strong_private[512];
+    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_THREE, 16, 4096,
+                                            LIBMPQ_ARCHIVE_CREATE_LISTFILE, 0 };
+    mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_patch_s *patch = NULL;
+    mpq_patch_view_s *view = NULL;
+    uint32_t signatures;
+    uint32_t number;
+    uint32_t classic;
+    uint32_t hashes[3];
+    uint32_t mismatches;
+
+    TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "signed-chain-base") == 0);
+    TEST_CHECK(test_temp_path(stage_path, sizeof(stage_path), "signed-chain-stage") == 0);
+    TEST_CHECK(test_temp_path(first_path, sizeof(first_path), "signed-chain-first") == 0);
+    TEST_CHECK(test_temp_path(second_path, sizeof(second_path), "signed-chain-second") == 0);
+    test_strong_signature_private_key(strong_private);
+    for (uint32_t scenario = 0; scenario < 3; scenario++) {
+        uint32_t base_signatures =
+            scenario == 1 ? 0 : LIBMPQ_SIGNATURE_WEAK | LIBMPQ_SIGNATURE_STRONG;
+        uint32_t patch_signatures =
+            scenario == 0 ? 0 : LIBMPQ_SIGNATURE_WEAK | LIBMPQ_SIGNATURE_STRONG;
+        for (size_t i = 0; i < 2; i++) {
+            TEST_CHECK(libmpq__archive_create(&archive, i ? stage_path : base_path, &create) == 0);
+            TEST_CHECK(
+                libmpq__archive_add_data(
+                    archive, "folder/reference.bin", i ? new_data : old_data,
+                    (libmpq__off_t)(i ? sizeof(new_data) - 1 : sizeof(old_data) - 1), &storage
+                ) == 0
+            );
+            TEST_CHECK(
+                libmpq__archive_add_data(
+                    archive, "keep.txt", retained_data, sizeof(retained_data) - 1, &storage
+                ) == 0
+            );
+            if (i == 0 && base_signatures != 0) {
+                TEST_CHECK(
+                    libmpq__archive_sign(
+                        archive, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+                        sizeof(test_signature_private_key)
+                    ) == 0
+                );
+                TEST_CHECK(
+                    libmpq__archive_sign(
+                        archive, LIBMPQ_SIGNATURE_STRONG, strong_private, sizeof(strong_private)
+                    ) == 0
+                );
+            }
+            TEST_CHECK(libmpq__archive_close(archive) == 0);
+        }
+        TEST_CHECK(check_patch_signatures(base_path, base_signatures, 0) == 0);
+        for (size_t i = 0; i < 2; i++) {
+            TEST_CHECK(libmpq__patch_begin(&patch, i ? stage_path : base_path, layers[i]) == 0);
+            TEST_CHECK(
+                libmpq__patch_replace_data(
+                    patch, "folder/reference.bin", i ? final : new_data,
+                    (libmpq__off_t)(i ? sizeof(final) - 1 : sizeof(new_data) - 1), NULL
+                ) == 0
+            );
+            if (patch_signatures != 0) {
+                TEST_CHECK(
+                    libmpq__patch_sign(
+                        patch, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+                        sizeof(test_signature_private_key)
+                    ) == 0
+                );
+                TEST_CHECK(
+                    libmpq__patch_sign(
+                        patch, LIBMPQ_SIGNATURE_STRONG, strong_private, sizeof(strong_private)
+                    ) == 0
+                );
+            }
+            TEST_CHECK(libmpq__patch_finish(patch) == 0);
+            TEST_CHECK(check_patch_signatures(layers[i], patch_signatures, 0) == 0);
+        }
+        for (size_t count = 1; count <= 2; count++) {
+            TEST_CHECK(libmpq__patch_view_open(&view, base_path, layers, count) == 0);
+            archive = libmpq__patch_view_archive(view);
+            TEST_CHECK(
+                archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE &&
+                archive->mpq_header.header_size == 0x44
+            );
+            TEST_CHECK(
+                check_file(
+                    archive, "folder/reference.bin", count == 1 ? new_data : final,
+                    count == 1 ? sizeof(new_data) - 1 : sizeof(final) - 1
+                ) == 0
+            );
+            TEST_CHECK(
+                check_file(archive, "keep.txt", retained_data, sizeof(retained_data) - 1) == 0
+            );
+            TEST_CHECK(libmpq__archive_signatures(archive, &signatures) == 0 && signatures == 0);
+            TEST_CHECK(libmpq__file_number(archive, "(signature)", &number) == LIBMPQ_ERROR_EXIST);
+            TEST_CHECK(libmpq__file_number(archive, "folder/reference.bin", &number) == 0);
+            libmpq__file_hash("folder/reference.bin", &hashes[0], &hashes[1], &hashes[2]);
+            TEST_CHECK(
+                libmpq__file_number_from_hash(archive, hashes[0], hashes[1], hashes[2], &classic) ==
+                    0 &&
+                classic == number
+            );
+            TEST_CHECK(archive->files == 4);
+            TEST_CHECK(libmpq__file_number(archive, "(attributes)", &number) == 0);
+            TEST_CHECK(libmpq__patch_view_close(view) == 0);
+        }
+        if (scenario == 2) {
+            FILE *file;
+            uint64_t offset;
+            int byte;
+            TEST_CHECK(libmpq__archive_open(&archive, second_path, 0) == 0);
+            TEST_CHECK(
+                libmpq__archive_verify(archive, LIBMPQ_SIGNATURE_WEAK, NULL, 0, &mismatches) ==
+                LIBMPQ_ERROR_FORMAT
+            );
+            TEST_CHECK(libmpq__file_number(archive, "(signature)", &number) == 0);
+            offset = archive->mpq_entry[archive->mpq_map[number].entry_index].offset + 8;
+            TEST_CHECK(libmpq__archive_close(archive) == 0);
+            file = libmpq__file_open(second_path, "r+b");
+            TEST_CHECK(file != NULL && libmpq__file_seek(file, offset, SEEK_SET) == 0);
+            byte = fgetc(file);
+            TEST_CHECK(byte != EOF && libmpq__file_seek(file, offset, SEEK_SET) == 0);
+            TEST_CHECK(fputc(byte ^ 1, file) != EOF && fclose(file) == 0);
+            TEST_CHECK(libmpq__archive_open(&archive, second_path, 0) == 0);
+            TEST_CHECK(
+                libmpq__archive_signatures(archive, &signatures) == 0 &&
+                signatures == (LIBMPQ_SIGNATURE_WEAK | LIBMPQ_SIGNATURE_STRONG)
+            );
+            TEST_CHECK(
+                libmpq__archive_verify(
+                    archive, LIBMPQ_SIGNATURE_WEAK, test_signature_public_key,
+                    sizeof(test_signature_public_key), &mismatches
+                ) == 0 &&
+                mismatches == LIBMPQ_SIGNATURE_WEAK
+            );
+            TEST_CHECK(
+                libmpq__archive_verify(
+                    archive, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
+                    sizeof(test_strong_signature_public_key), &mismatches
+                ) == 0 &&
+                mismatches == LIBMPQ_SIGNATURE_STRONG
+            );
+            TEST_CHECK(libmpq__file_number(archive, "folder/reference.bin", &number) == 0);
+            offset = archive->mpq_entry[archive->mpq_map[number].entry_index].offset + 12;
+            TEST_CHECK(libmpq__archive_close(archive) == 0);
+            /* Invalid input signatures are not implicitly verified by composition. */
+            TEST_CHECK(libmpq__patch_view_open(&view, base_path, layers, 2) == 0);
+            TEST_CHECK(
+                libmpq__archive_signatures(libmpq__patch_view_archive(view), &signatures) == 0 &&
+                signatures == 0
+            );
+            TEST_CHECK(libmpq__patch_view_close(view) == 0);
+            file = libmpq__file_open(second_path, "r+b");
+            TEST_CHECK(file != NULL && libmpq__file_seek(file, offset, SEEK_SET) == 0);
+            byte = fgetc(file);
+            TEST_CHECK(byte != EOF && libmpq__file_seek(file, offset, SEEK_SET) == 0);
+            TEST_CHECK(fputc(byte ^ 1, file) != EOF && fclose(file) == 0);
+            TEST_CHECK(libmpq__patch_view_open(&view, base_path, layers, 2) != 0 && view == NULL);
+            TEST_CHECK(check_patch_signatures(base_path, base_signatures, 0) == 0);
+        }
+        TEST_CHECK(remove(second_path) == 0);
+        TEST_CHECK(remove(first_path) == 0);
+        TEST_CHECK(remove(stage_path) == 0);
+        TEST_CHECK(remove(base_path) == 0);
+    }
+    memset(strong_private, 0, sizeof(strong_private));
     return 0;
 }
 
@@ -1897,6 +2099,7 @@ main(void)
     );
     TEST_CHECK(test_public_mpqe_patch() == 0);
     TEST_CHECK(test_public_mpqe_patch_chain() == 0);
+    TEST_CHECK(test_v3_signed_chain() == 0);
     TEST_CHECK(test_public_patch_path_abort() == 0);
     TEST_CHECK(test_public_patch_storage(0) == 0);
     TEST_CHECK(test_public_patch_storage(LIBMPQ_FILE_FLAG_COMPRESS) == 0);
