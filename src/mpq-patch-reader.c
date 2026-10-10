@@ -2540,6 +2540,7 @@ libmpq__patch_view_open_sources(
     FILE *temporary = NULL;
     char *absolute = NULL;
     char *destination = NULL;
+    uint8_t materialized = 0;
     int32_t status;
 
     if (view == NULL)
@@ -2554,10 +2555,6 @@ libmpq__patch_view_open_sources(
     status = patch_source_open(&base, base_source);
     if (status != 0)
         goto error;
-    if (base->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE && patch_count != 1) {
-        status = LIBMPQ_ERROR_FORMAT;
-        goto error;
-    }
     absolute = patch_temporary_anchor();
     if (absolute == NULL) {
         status = LIBMPQ_ERROR_MALLOC;
@@ -2586,16 +2583,33 @@ libmpq__patch_view_open_sources(
             goto error;
         }
         temporary = NULL;
-        status = patch_source_open(&patch, &patch_sources[0]);
-        if (status == 0)
-            status = patch_materialize_named(state, &base, patch, &patch_sources[0]);
-        if (status != 0)
-            goto error;
-        status = libmpq__archive_close(patch);
-        patch = NULL;
-        if (status != 0)
-            goto error;
+        for (size_t i = 0; i < patch_count; i++) {
+            /* Adoption consumes the lower handle; no-op layers leave it available. */
+            if (base == NULL) {
+                status = libmpq__archive_open(&base, state->path, state->archive_offset);
+                if (status != 0)
+                    goto error;
+            }
+            status = patch_source_open(&patch, &patch_sources[i]);
+            if (status == 0)
+                status = patch_materialize_named(state, &base, patch, &patch_sources[i]);
+            if (status != 0)
+                goto error;
+            if (base == NULL)
+                materialized = 1;
+            status = libmpq__archive_close(patch);
+            patch = NULL;
+            if (status != 0)
+                goto error;
+        }
         if (base != NULL) {
+            if (materialized) {
+                status = libmpq__archive_close(base);
+                base = NULL;
+                if (status != 0)
+                    goto error;
+                goto expose;
+            }
             /* No-op layers keep every original byte, including signatures and wrappers. */
             temporary = libmpq__directory_file_open(state->directory, state->temporary, "r+b");
             if (temporary == NULL) {

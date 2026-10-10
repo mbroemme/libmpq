@@ -604,6 +604,61 @@ test_delta_selection(uint8_t kind, uint32_t version)
     TEST_CHECK(libmpq__patch_view_open(&view, base_path, layers, 1) == 0);
     TEST_CHECK(check_file(libmpq__patch_view_archive(view), "delta.bin", after, after_size) == 0);
     TEST_CHECK(libmpq__patch_view_close(view) == 0);
+    if (version == LIBMPQ_ARCHIVE_VERSION_THREE) {
+        char stage_path[1024];
+        char next_path[1024];
+        uint8_t final[sizeof(after)];
+        const char *chain[] = { patch_path, next_path };
+
+        TEST_CHECK(test_temp_path(stage_path, sizeof(stage_path), "patch-delta-stage") == 0);
+        TEST_CHECK(test_temp_path(next_path, sizeof(next_path), "patch-delta-next") == 0);
+        memcpy(final, after, after_size);
+        final[37] ^= 0x25u;
+        final[6072] ^= 0x71u;
+        TEST_CHECK(libmpq__archive_create(&base, stage_path, &options) == 0);
+        TEST_CHECK(
+            libmpq__archive_add_data(
+                base, "delta.bin", after, (libmpq__off_t)after_size, &storage
+            ) == 0
+        );
+        TEST_CHECK(libmpq__archive_close(base) == 0);
+        TEST_CHECK(libmpq__patch_writer_begin(&writer, stage_path, next_path) == 0);
+        TEST_CHECK(
+            libmpq__patch_writer_replace(
+                writer, "delta.bin", final, (libmpq__off_t)after_size, NULL
+            ) == 0
+        );
+        TEST_CHECK(libmpq__patch_writer_finish(writer) == 0);
+        TEST_CHECK(libmpq__archive_open(&patch, next_path, 0) == 0);
+        TEST_CHECK(libmpq__file_number(patch, "delta.bin", &number) == 0);
+        {
+            libmpq__off_t size;
+            libmpq__off_t transferred;
+            TEST_CHECK(libmpq__patch_payload_size(patch, number, &size) == 0 && size >= 68);
+            decoded = malloc((size_t)size);
+            TEST_CHECK(decoded != NULL);
+            TEST_CHECK(
+                libmpq__patch_payload_read(
+                    patch, number, "delta.bin", decoded, size, &transferred
+                ) == 0
+            );
+            TEST_CHECK(transferred == size && memcmp(decoded + 64, "BSD0", 4) == 0);
+            free(decoded);
+        }
+        TEST_CHECK(libmpq__archive_close(patch) == 0);
+        TEST_CHECK(libmpq__patch_view_open(&view, base_path, chain, 2) == 0);
+        TEST_CHECK(
+            check_file(libmpq__patch_view_archive(view), "delta.bin", final, after_size) == 0
+        );
+        TEST_CHECK(libmpq__patch_view_close(view) == 0);
+        /* Reversing the chain cannot pass the preceding-content MD5 check. */
+        chain[0] = next_path;
+        chain[1] = patch_path;
+        TEST_CHECK(libmpq__patch_view_open(&view, base_path, chain, 2) != 0);
+        TEST_CHECK(view == NULL);
+        TEST_CHECK(remove(next_path) == 0);
+        TEST_CHECK(remove(stage_path) == 0);
+    }
     TEST_CHECK(remove(patch_path) == 0);
     TEST_CHECK(remove(base_path) == 0);
     return 0;

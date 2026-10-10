@@ -409,7 +409,7 @@ classic block count, including shared rows; BET-only entries have no classic
 attributes row. HET/BET hash information remains in the table views.
 
 Transactional HET/BET updates rebuild through the normal writer when every
-retained logical file can be reconstructed. Single-layer v3 patch views use
+retained logical file can be reconstructed. Ordered v3 patch views use
 the same archive writer to rebuild a complete named logical file set.
 Public v3 creation emits mixed HET/BET and classic tables; MPQ v4 remains unsupported.
 
@@ -423,7 +423,7 @@ entries and validated source mappings, without fabricating classic rows.
 The existing v3 writer emits the 0x44-byte header, HET/BET and classic tables
 with shared row identity, patch-info prefixes, PTCH bodies, and delete markers.
 Existing compression, encryption and signature options retain their meanings.
-Single-layer patch-view materialization supports v3 bases with classic-backed,
+Ordered patch-view materialization supports v3 bases with classic-backed,
 mixed, or BET-only members. Names come from `(listfile)`, recognized internal
 names, and the patch's logical namespace; hashes are never inverted into names.
 Incomplete coverage, ambiguous aliases/locales, unresolved listed names, and
@@ -455,7 +455,13 @@ old private placeholder fails after the source has closed, the candidate is
 discarded and outer cleanup retries removal of the placeholder. Private-file
 deletion is best effort: persistent filesystem refusal can leave temporary
 files, but no partial view is returned and the original sources remain unchanged.
-Multi-layer v3 patch application is not currently supported.
+Multiple layers are applied in caller-specified order. Each changed layer
+rebuilds a complete v3 intermediate through the same writer; subsequent COPY
+or BSD0 transforms use the preceding layer's contents. No-op layers retain
+the current intermediate unchanged. Generated listfiles carry the known
+logical namespace forward, subject to the same conservative naming and
+metadata requirements at every layer. Failure at any layer is terminal:
+no partial chain is returned, and intermediate cleanup is best effort.
 
 ### Read interoperability checks
 
