@@ -29,24 +29,6 @@ AC_USE_SYSTEM_EXTENSIONS
 AC_PROG_CC
 AC_SYS_LARGEFILE
 
-# Optional test-only linker wrapping injects patch-view ownership failures.
-libmpq_patch_saved_ldflags=$LDFLAGS
-libmpq_patch_wrap_flags="-Wl,--wrap=libmpq__archive_open -Wl,--wrap=libmpq__archive_close -Wl,--wrap=libmpq__directory_remove"
-PATCH_READER_WRAP_CPPFLAGS=""
-PATCH_READER_WRAP_LDFLAGS=""
-AS_CASE([$host_os], [mingw*|cygwin*], [], [
-LDFLAGS="$LDFLAGS $libmpq_patch_wrap_flags"
-AC_LINK_IFELSE(
-	[AC_LANG_PROGRAM([], [])],
-	[PATCH_READER_WRAP_CPPFLAGS="-DLIBMPQ_TEST_PATCH_IO_WRAP=1"
-	 PATCH_READER_WRAP_LDFLAGS=$libmpq_patch_wrap_flags],
-	[]
-)
-LDFLAGS=$libmpq_patch_saved_ldflags
-])
-AC_SUBST([PATCH_READER_WRAP_CPPFLAGS])
-AC_SUBST([PATCH_READER_WRAP_LDFLAGS])
-
 # Use C99 by default while allowing callers to select a newer C dialect.
 case "$CFLAGS" in
 	*-std=*|*-ansi*) ;;

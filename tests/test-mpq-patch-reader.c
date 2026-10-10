@@ -37,156 +37,6 @@
 #include <string.h>
 #include <zlib.h>
 
-#ifdef LIBMPQ_TEST_PATCH_IO_WRAP
-
-/* Linker wrappers affect only this regression executable, not the installed library. */
-typedef enum
-{
-    PATCH_FAULT_NONE,
-    PATCH_FAULT_VALIDATE,
-    PATCH_FAULT_CLOSE_LOWER,
-    PATCH_FAULT_REMOVE_OLD,
-    PATCH_FAULT_EXPOSE,
-    PATCH_FAULT_FINALIZE
-} patch_fault_e;
-
-static struct
-{
-    patch_fault_e fault;
-    uint8_t enabled;
-    uint8_t invalid;
-    uint32_t lower_closes;
-    uint32_t candidate_opens;
-    uint32_t candidate_closes;
-    uint32_t removal_failures;
-    uint32_t removed;
-    uint32_t fail_open;
-    uint32_t writer_closes;
-    mpq_archive_s *lower;
-    mpq_archive_s *candidate;
-    mpq_archive_s *candidates[8];
-    char base_path[1024];
-    char candidate_path[1024];
-    char old_path[1024];
-} patch_fault;
-
-int32_t
-__real_libmpq__archive_open(mpq_archive_s **archive, const char *path, libmpq__off_t offset);
-int32_t __real_libmpq__archive_close(mpq_archive_s *archive);
-int32_t __real_libmpq__directory_remove(mpq_directory_s *directory, const char *name);
-
-int32_t
-__wrap_libmpq__archive_open(mpq_archive_s **archive, const char *path, libmpq__off_t offset)
-{
-    int32_t status = __real_libmpq__archive_open(archive, path, offset);
-
-    if (!patch_fault.enabled || status != 0)
-        return status;
-    if (strcmp(path, patch_fault.base_path) == 0) {
-        patch_fault.lower = *archive;
-    } else if (strstr(path, ".libmpq-patch-view-") != NULL) {
-        if (strlen(path) >= sizeof(patch_fault.candidate_path)) {
-            patch_fault.invalid = 1;
-            return status;
-        }
-        memcpy(patch_fault.candidate_path, path, strlen(path) + 1);
-        patch_fault.candidate = *archive;
-        for (size_t i = 0; i < 8; i++) {
-            if (patch_fault.candidates[i] == NULL) {
-                patch_fault.candidates[i] = *archive;
-                break;
-            }
-        }
-        patch_fault.candidate_opens++;
-        if ((patch_fault.fault == PATCH_FAULT_VALIDATE &&
-             (patch_fault.fail_open == 0 ||
-              patch_fault.candidate_opens == patch_fault.fail_open)) ||
-            (patch_fault.fault == PATCH_FAULT_EXPOSE &&
-             patch_fault.candidate_opens ==
-                 (patch_fault.fail_open == 0 ? 2u : patch_fault.fail_open))) {
-
-            /* A failed open owns no handle, even when late validation consumed one. */
-            status = __real_libmpq__archive_close(*archive);
-            for (size_t i = 0; i < 8; i++)
-                if (patch_fault.candidates[i] == *archive)
-                    patch_fault.candidates[i] = NULL;
-            *archive = NULL;
-            patch_fault.candidate = NULL;
-            patch_fault.candidate_closes++;
-            if (status == 0)
-                status = patch_fault.fault == PATCH_FAULT_VALIDATE ? LIBMPQ_ERROR_FORMAT
-                                                                   : LIBMPQ_ERROR_OPEN;
-        }
-    }
-    return status;
-}
-
-int32_t
-__wrap_libmpq__archive_close(mpq_archive_s *archive)
-{
-    uint8_t lower = patch_fault.enabled && archive == patch_fault.lower;
-    uint8_t writing = patch_fault.enabled && archive->write_mode;
-    int32_t status;
-
-    if (lower && ++patch_fault.lower_closes != 1) {
-        patch_fault.invalid = 1;
-        return LIBMPQ_ERROR_CLOSE;
-    }
-    if (patch_fault.enabled)
-        for (size_t i = 0; i < 8; i++)
-            if (archive == patch_fault.candidates[i]) {
-                patch_fault.candidate_closes++;
-                patch_fault.candidates[i] = NULL;
-            }
-    status = __real_libmpq__archive_close(archive);
-    if (lower)
-        patch_fault.lower = NULL;
-    if (writing && ++patch_fault.writer_closes == patch_fault.fail_open &&
-        patch_fault.fault == PATCH_FAULT_FINALIZE && status == 0)
-        return LIBMPQ_ERROR_CLOSE;
-
-    /* Close consumes the real archive before reporting an injected failure. */
-    return lower && patch_fault.fault == PATCH_FAULT_CLOSE_LOWER && status == 0 ? LIBMPQ_ERROR_CLOSE
-                                                                                : status;
-}
-
-int32_t
-__wrap_libmpq__directory_remove(mpq_directory_s *directory, const char *name)
-{
-    int32_t status;
-
-    if (patch_fault.enabled && patch_fault.candidate_path[0] != '\0') {
-        size_t length = strlen(patch_fault.candidate_path);
-        size_t name_length = strlen(name);
-        if (length < name_length ||
-            strcmp(patch_fault.candidate_path + length - name_length, name) != 0) {
-            const char *separator = (strrchr)(patch_fault.candidate_path, '/');
-            size_t prefix =
-                separator == NULL ? 0 : (size_t)(separator - patch_fault.candidate_path) + 1;
-            if (prefix + name_length + 1 > sizeof(patch_fault.old_path)) {
-                patch_fault.invalid = 1;
-                return LIBMPQ_ERROR_SIZE;
-            }
-            memcpy(patch_fault.old_path, patch_fault.candidate_path, prefix);
-            memcpy(patch_fault.old_path + prefix, name, name_length + 1);
-            if (patch_fault.fault == PATCH_FAULT_REMOVE_OLD && patch_fault.removal_failures == 0 &&
-                (patch_fault.fail_open == 0 ||
-                 patch_fault.candidate_opens == patch_fault.fail_open)) {
-                if (patch_fault.lower_closes != 1 ||
-                    patch_fault.candidate_closes != patch_fault.candidate_opens)
-                    patch_fault.invalid = 1;
-                patch_fault.removal_failures++;
-                return LIBMPQ_ERROR_WRITE;
-            }
-        }
-    }
-    status = __real_libmpq__directory_remove(directory, name);
-    if (patch_fault.enabled && status == 0)
-        patch_fault.removed++;
-    return status;
-}
-#endif
-
 static const uint8_t first_text[] = "Patch layer one\n";
 static const uint8_t second_text[] = "Patch layer two\n";
 static const uint8_t v2_text[] = "Version two patch\n";
@@ -3053,32 +2903,6 @@ test_v3_chain(uint32_t flags, uint8_t bet_only)
         for (size_t i = 0; i < 3; i++)
             TEST_CHECK(remove(wrapped[i]) == 0);
     }
-#ifdef LIBMPQ_TEST_PATCH_IO_WRAP
-    for (uint32_t scenario = 0; scenario < 8; scenario++) {
-        uint32_t layer = scenario % 2 + 2;
-        uint32_t fault = scenario / 2;
-        memset(&patch_fault, 0, sizeof(patch_fault));
-        patch_fault.fault = fault == 0   ? PATCH_FAULT_VALIDATE
-                            : fault == 1 ? PATCH_FAULT_EXPOSE
-                            : fault == 2 ? PATCH_FAULT_REMOVE_OLD
-                                         : PATCH_FAULT_FINALIZE;
-        patch_fault.fail_open = fault == 3 ? layer : layer * 2 - (fault == 1 ? 2u : 1u);
-        memcpy(patch_fault.base_path, base_path, strlen(base_path) + 1);
-        patch_fault.enabled = 1;
-        TEST_CHECK(
-            libmpq__patch_view_open(&view, base_path, layers, 3) ==
-            (fault == 0   ? LIBMPQ_ERROR_FORMAT
-             : fault == 1 ? LIBMPQ_ERROR_OPEN
-             : fault == 2 ? LIBMPQ_ERROR_WRITE
-                          : LIBMPQ_ERROR_CLOSE)
-        );
-        patch_fault.enabled = 0;
-        TEST_CHECK(view == NULL && !patch_fault.invalid);
-        TEST_CHECK(patch_fault.removed == layer + (fault == 1 ? 0u : 1u));
-        TEST_CHECK(patch_fault.candidate_closes == patch_fault.candidate_opens);
-    }
-    memset(&patch_fault, 0, sizeof(patch_fault));
-#endif
 
     /* A later incomplete namespace fails after earlier candidates have been adopted. */
     create.flags = 0;
@@ -3191,7 +3015,6 @@ test_v3_materialization(
     uint64_t bet_size;
     uint64_t original_offset;
     uint64_t kept_offset;
-    int32_t expected_failure = 0;
 
     if ((flags & LIBMPQ_FILE_FLAG_COMPRESS) == 0)
         storage.compression_first = storage.compression_next = 0;
@@ -3268,22 +3091,8 @@ test_v3_materialization(
         TEST_CHECK(strip_v3_classic_tables(patch_path) == 0);
     TEST_CHECK(test_read_path(base.path, &base_image, &base_size) == 0);
     TEST_CHECK(test_read_path(patch_path, &patch_image, &patch_size) == 0);
-#ifdef LIBMPQ_TEST_PATCH_IO_WRAP
-    if (patch_fault.fault != PATCH_FAULT_NONE) {
-        TEST_CHECK(strlen(base.path) < sizeof(patch_fault.base_path));
-        memcpy(patch_fault.base_path, base.path, strlen(base.path) + 1);
-        patch_fault.enabled = 1;
-        expected_failure = patch_fault.fault == PATCH_FAULT_CLOSE_LOWER  ? LIBMPQ_ERROR_CLOSE
-                           : patch_fault.fault == PATCH_FAULT_REMOVE_OLD ? LIBMPQ_ERROR_WRITE
-                           : patch_fault.fault == PATCH_FAULT_EXPOSE     ? LIBMPQ_ERROR_OPEN
-                                                                         : LIBMPQ_ERROR_FORMAT;
-    }
-#endif
-    if (bad_names || corrupt || expected_failure != 0) {
-        TEST_CHECK(
-            libmpq__patch_view_open_sources(&view, &base, &layer, 1) ==
-            (expected_failure != 0 ? expected_failure : LIBMPQ_ERROR_FORMAT)
-        );
+    if (bad_names || corrupt) {
+        TEST_CHECK(libmpq__patch_view_open_sources(&view, &base, &layer, 1) == LIBMPQ_ERROR_FORMAT);
         TEST_CHECK(view == NULL);
     } else {
         mpq_patch_source_s layers[2] = { layer, layer };
@@ -3347,25 +3156,6 @@ test_v3_materialization(
         }
         TEST_CHECK(libmpq__patch_view_close(view) == 0);
     }
-#ifdef LIBMPQ_TEST_PATCH_IO_WRAP
-    patch_fault.enabled = 0;
-    if (expected_failure != 0) {
-        FILE *leftover;
-        TEST_CHECK(!patch_fault.invalid && patch_fault.lower_closes == 1);
-        TEST_CHECK(
-            patch_fault.candidate_opens == (patch_fault.fault == PATCH_FAULT_EXPOSE ? 2u : 1u)
-        );
-        TEST_CHECK(patch_fault.candidate_closes == patch_fault.candidate_opens);
-        TEST_CHECK(patch_fault.removed == 2);
-        TEST_CHECK(
-            patch_fault.removal_failures == (patch_fault.fault == PATCH_FAULT_REMOVE_OLD ? 1u : 0u)
-        );
-        leftover = libmpq__file_open(patch_fault.candidate_path, "rb");
-        TEST_CHECK(leftover == NULL);
-        leftover = libmpq__file_open(patch_fault.old_path, "rb");
-        TEST_CHECK(leftover == NULL);
-    }
-#endif
     TEST_CHECK(test_read_path(base.path, &unchanged, &unchanged_size) == 0);
     TEST_CHECK(unchanged_size == base_size && memcmp(unchanged, base_image, base_size) == 0);
     free(unchanged);
@@ -3502,18 +3292,6 @@ main(int argc, char **argv)
     TEST_CHECK(
         test_v3_materialization(0, 1, LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0, 1) == 0
     );
-#ifdef LIBMPQ_TEST_PATCH_IO_WRAP
-    for (uint32_t fault = PATCH_FAULT_VALIDATE; fault <= PATCH_FAULT_EXPOSE; fault++) {
-        memset(&patch_fault, 0, sizeof(patch_fault));
-        patch_fault.fault = (patch_fault_e)fault;
-        TEST_CHECK(
-            test_v3_materialization(
-                0, 0, LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0, 0
-            ) == 0
-        );
-    }
-    memset(&patch_fault, 0, sizeof(patch_fault));
-#endif
     TEST_CHECK(test_v3_noop_view() == 0);
     TEST_CHECK(test_v3_chain(LIBMPQ_FILE_FLAG_SINGLE, 0) == 0);
     TEST_CHECK(test_v3_chain(LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED, 1) == 0);

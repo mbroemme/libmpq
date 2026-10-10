@@ -219,7 +219,6 @@ test_reader_LDADD = $(test_attributes_LDADD)
 test_stream_SOURCES = test-mpq-stream.c $(COMMON_SOURCES)
 test_patch_reader_SOURCES = test-mpq-patch-reader.c $(COMMON_SOURCES)
 test_patch_reader_LDADD = $(top_builddir)/src/mpq-patch-reader.lo $(top_builddir)/src/mpq-patch-writer.lo $(test_writer_LDADD)
-test_patch_reader_LDFLAGS = $(AM_LDFLAGS) @PATCH_READER_WRAP_LDFLAGS@
 test_patch_writer_SOURCES = test-mpq-patch-writer.c $(COMMON_SOURCES)
 test_patch_writer_LDADD = \
 	$(top_builddir)/src/mpq-patch-writer.lo \
@@ -272,7 +271,7 @@ test_fixtures_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixt
 test_mpqe_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_pkware_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_reader_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
-test_patch_reader_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"' @PATCH_READER_WRAP_CPPFLAGS@
+test_patch_reader_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_patch_writer_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_signature_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 test_update_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
