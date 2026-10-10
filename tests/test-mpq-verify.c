@@ -31,13 +31,13 @@
 #include <string.h>
 #include <zlib.h>
 
-#define REQUIRE(condition)                                                                         \
-    do {                                                                                           \
-        if (!(condition)) {                                                                        \
-            test_failure(__FILE__, __LINE__, #condition);                                          \
-            result = 1;                                                                            \
-            goto cleanup;                                                                          \
-        }                                                                                          \
+#define REQUIRE(condition)                                \
+    do {                                                  \
+        if (!(condition)) {                               \
+            test_failure(__FILE__, __LINE__, #condition); \
+            result = 1;                                   \
+            goto cleanup;                                 \
+        }                                                 \
     } while (0)
 
 /* Each test archive borrows its own mock context; no process-global test mode. */

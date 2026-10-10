@@ -211,7 +211,7 @@ static const uint8_t huffman_initial_weights[] = {
 };
 
 #define HUFFMAN_INITIAL_WEIGHT_BLOCK_SIZE 258U
-#define HUFFMAN_INITIAL_WEIGHT_TYPES                                                               \
+#define HUFFMAN_INITIAL_WEIGHT_TYPES \
     (sizeof(huffman_initial_weights) / HUFFMAN_INITIAL_WEIGHT_BLOCK_SIZE)
 
 /*

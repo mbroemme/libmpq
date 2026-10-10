@@ -243,7 +243,7 @@ enum
 #define LIBMPQ_VERIFY_SECTOR_CRC 0x00000001u
 #define LIBMPQ_VERIFY_FILE_CRC32 0x00000002u
 #define LIBMPQ_VERIFY_FILE_MD5 0x00000004u
-#define LIBMPQ_VERIFY_ALL                                                                          \
+#define LIBMPQ_VERIFY_ALL \
     (LIBMPQ_VERIFY_SECTOR_CRC | LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5)
 
 /*

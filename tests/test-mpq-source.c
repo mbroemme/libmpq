@@ -33,13 +33,13 @@ typedef struct
     unsigned fail_after;
 } memory_source_s;
 
-#define REQUIRE(condition)                                                                         \
-    do {                                                                                           \
-        if (!(condition)) {                                                                        \
-            test_failure(__FILE__, __LINE__, #condition);                                          \
-            failed = 1;                                                                            \
-            goto done;                                                                             \
-        }                                                                                          \
+#define REQUIRE(condition)                                \
+    do {                                                  \
+        if (!(condition)) {                               \
+            test_failure(__FILE__, __LINE__, #condition); \
+            failed = 1;                                   \
+            goto done;                                    \
+        }                                                 \
     } while (0)
 
 /* Implement the exact read-at callback contract over caller-owned memory. */

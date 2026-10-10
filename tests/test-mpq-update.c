@@ -43,12 +43,12 @@
 
 static const uint8_t auth_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
 
-#define UPDATE_CHECK(condition)                                                                    \
-    do {                                                                                           \
-        if (!(condition)) {                                                                        \
-            test_failure(__FILE__, __LINE__, #condition);                                          \
-            goto fail;                                                                             \
-        }                                                                                          \
+#define UPDATE_CHECK(condition)                           \
+    do {                                                  \
+        if (!(condition)) {                               \
+            test_failure(__FILE__, __LINE__, #condition); \
+            goto fail;                                    \
+        }                                                 \
     } while (0)
 
 static int

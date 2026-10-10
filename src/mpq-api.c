@@ -53,10 +53,10 @@
  * C99-compatible compile-time checks of native public value layouts.
  * These describe host-side structs, not the little-endian disk format.
  */
-#define LIBMPQ_ABI_SIZE(type, bytes)                                                               \
+#define LIBMPQ_ABI_SIZE(type, bytes) \
     typedef char type##_size_check[sizeof(type) == (bytes) ? 1 : -1]
-#define LIBMPQ_ABI_FIELD(type, field, offset, bytes)                                               \
-    typedef char type##_##field##_layout_check                                                     \
+#define LIBMPQ_ABI_FIELD(type, field, offset, bytes) \
+    typedef char type##_##field##_layout_check       \
         [offsetof(type, field) == (offset) && sizeof(((type *)0)->field) == (bytes) ? 1 : -1]
 
 LIBMPQ_ABI_SIZE(mpq_archive_create_options_s, 20);

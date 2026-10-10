@@ -704,12 +704,12 @@ test_splice_candidate(void)
     mpq_md5_s md5;
     int status = 1;
 
-#define SPLICE_CHECK(condition)                                                                    \
-    do {                                                                                           \
-        if (!(condition)) {                                                                        \
-            test_failure(__FILE__, __LINE__, #condition);                                          \
-            goto done;                                                                             \
-        }                                                                                          \
+#define SPLICE_CHECK(condition)                           \
+    do {                                                  \
+        if (!(condition)) {                               \
+            test_failure(__FILE__, __LINE__, #condition); \
+            goto done;                                    \
+        }                                                 \
     } while (0)
 
     for (size_t i = 0; i < sizeof(before); i++) {

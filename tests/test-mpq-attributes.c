@@ -28,13 +28,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define REQUIRE(condition)                                                                         \
-    do {                                                                                           \
-        if (!(condition)) {                                                                        \
-            test_failure(__FILE__, __LINE__, #condition);                                          \
-            result = 1;                                                                            \
-            goto cleanup;                                                                          \
-        }                                                                                          \
+#define REQUIRE(condition)                                \
+    do {                                                  \
+        if (!(condition)) {                               \
+            test_failure(__FILE__, __LINE__, #condition); \
+            result = 1;                                   \
+            goto cleanup;                                 \
+        }                                                 \
     } while (0)
 
 static const uint8_t code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";

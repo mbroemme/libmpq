@@ -104,12 +104,12 @@ static const uint8_t test_strong_signature_public_key[512] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01
 };
 
-#define TEST_CHECK(condition)                                                                      \
-    do {                                                                                           \
-        if (!(condition)) {                                                                        \
-            test_failure(__FILE__, __LINE__, #condition);                                          \
-            return 1;                                                                              \
-        }                                                                                          \
+#define TEST_CHECK(condition)                             \
+    do {                                                  \
+        if (!(condition)) {                               \
+            test_failure(__FILE__, __LINE__, #condition); \
+            return 1;                                     \
+        }                                                 \
     } while (0)
 
 void test_failure(const char *file, unsigned line, const char *condition);
