@@ -123,6 +123,7 @@ typedef int32_t (*libmpq_read_at_fn)(
 #define LIBMPQ_ARCHIVE_VERSION_ONE 0
 #define LIBMPQ_ARCHIVE_VERSION_TWO 1
 #define LIBMPQ_ARCHIVE_VERSION_THREE 2
+#define LIBMPQ_ARCHIVE_VERSION_FOUR 3
 
 /*
  * Archive-creation flags accepted by mpq_archive_create_options_s.flags.

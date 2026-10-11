@@ -156,6 +156,236 @@ test_v3_vector(void)
     return 0;
 }
 
+/* Independent complete v4 wire vector; digest bytes are synthetic, not computed. */
+static const uint8_t test_v4_wire[208] = {
+    0x4d, 0x50, 0x51, 0x1a, 0xd0, 0x00, 0x00, 0x00, 0x78, 0x56, 0x34, 0x12, 0x03, 0x00, 0x03, 0x00,
+    0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05, 0x0c, 0x0b, 0x0a, 0x09, 0x10, 0x0f, 0x0e, 0x0d,
+    0x18, 0x17, 0x16, 0x15, 0x14, 0x13, 0x12, 0x11, 0x1a, 0x19, 0x1c, 0x1b, 0x28, 0x27, 0x26, 0x25,
+    0x24, 0x23, 0x22, 0x21, 0x38, 0x37, 0x36, 0x35, 0x34, 0x33, 0x32, 0x31, 0x48, 0x47, 0x46, 0x45,
+    0x44, 0x43, 0x42, 0x41, 0x58, 0x57, 0x56, 0x55, 0x54, 0x53, 0x52, 0x51, 0x68, 0x67, 0x66, 0x65,
+    0x64, 0x63, 0x62, 0x61, 0x78, 0x77, 0x76, 0x75, 0x74, 0x73, 0x72, 0x71, 0x88, 0x87, 0x86, 0x85,
+    0x84, 0x83, 0x82, 0x81, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x04, 0x03, 0x02, 0x01,
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+    0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
+    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f,
+    0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
+    0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f,
+};
+
+/* Check all layers, large sizes, unaligned storage and digest boundaries. */
+static int
+test_v4_vectors(void)
+{
+    mpq_header_s base = {
+        LIBMPQ_HEADER, 208,         0x12345678u, LIBMPQ_ARCHIVE_VERSION_FOUR, 3, 0x01020304u,
+        0x05060708u,   0x090a0b0cu, 0x0d0e0f10u
+    };
+    mpq_header_ex_s ex = { UINT64_C(0x1112131415161718), 0x191au, 0x1b1cu };
+    mpq_header_v3_s v3 = { UINT64_C(0x2122232425262728), UINT64_C(0x3132333435363738),
+                           UINT64_C(0x4142434445464748) };
+    mpq_header_v4_s v4 = { 0 };
+    mpq_header_s decoded;
+    mpq_header_ex_s decoded_ex;
+    mpq_header_v3_s decoded_v3;
+    mpq_header_v4_s decoded_v4;
+    uint8_t output[210];
+    uint8_t repeated[208];
+
+    v4.hash_table_size = UINT64_C(0x5152535455565758);
+    v4.block_table_size = UINT64_C(0x6162636465666768);
+    v4.hi_block_table_size = UINT64_C(0x7172737475767778);
+    v4.het_table_size = UINT64_C(0x8182838485868788);
+    v4.bet_table_size = UINT64_MAX;
+    v4.raw_chunk_size = 0x01020304u;
+    for (size_t i = 0; i < 16; ++i) {
+        v4.block_table_md5[i] = (uint8_t)i;
+        v4.hash_table_md5[i] = (uint8_t)(i + 16);
+        v4.hi_block_table_md5[i] = (uint8_t)(i + 32);
+        v4.bet_table_md5[i] = (uint8_t)(i + 48);
+        v4.het_table_md5[i] = (uint8_t)(i + 64);
+        v4.header_md5[i] = (uint8_t)(i + 80);
+    }
+    TEST_CHECK(LIBMPQ_HEADER_V4_WIRE_SIZE == 0xd0u);
+    TEST_CHECK(LIBMPQ_HEADER_V4_EX_WIRE_SIZE == 0x8cu);
+    TEST_CHECK(LIBMPQ_HEADER_V3_WIRE_SIZE + LIBMPQ_HEADER_V4_EX_WIRE_SIZE == 208u);
+    TEST_CHECK(LIBMPQ_HEADER_V4_MD5_INPUT_SIZE == 0xc0u);
+    TEST_CHECK(LIBMPQ_HEADER_V4_MD5_OFFSET + LIBMPQ_HEADER_V4_MD5_SIZE == 208u);
+    memset(output, 0xa5, sizeof(output));
+    TEST_CHECK(libmpq__header_v4_full_encode(&base, &ex, &v3, &v4, output + 1, 208) == 0);
+    TEST_CHECK(output[0] == 0xa5 && output[209] == 0xa5);
+    TEST_CHECK(memcmp(output + 1, test_v4_wire, 208) == 0);
+    TEST_CHECK(
+        libmpq__header_v4_full_encode(&base, &ex, &v3, &v4, repeated, sizeof(repeated)) == 0
+    );
+    TEST_CHECK(memcmp(repeated, test_v4_wire, 208) == 0);
+    TEST_CHECK(
+        libmpq__header_v4_full_decode(
+            &decoded, &decoded_ex, &decoded_v3, &decoded_v4, output + 1, 208
+        ) == 0
+    );
+    TEST_CHECK(decoded.mpq_magic == LIBMPQ_HEADER && decoded.header_size == 208u);
+    TEST_CHECK(decoded.version == 3 && decoded.block_size == 3);
+    TEST_CHECK(decoded.archive_size == 0x12345678u);
+    TEST_CHECK(
+        decoded.hash_table_offset == 0x01020304u && decoded.block_table_offset == 0x05060708u
+    );
+    TEST_CHECK(decoded.hash_table_count == 0x090a0b0cu && decoded.block_table_count == 0x0d0e0f10u);
+    TEST_CHECK(decoded_ex.extended_offset == ex.extended_offset);
+    TEST_CHECK(decoded_ex.hash_table_offset_high == ex.hash_table_offset_high);
+    TEST_CHECK(decoded_ex.block_table_offset_high == ex.block_table_offset_high);
+    TEST_CHECK(decoded_v3.archive_size == v3.archive_size);
+    TEST_CHECK(decoded_v3.bet_table_offset == v3.bet_table_offset);
+    TEST_CHECK(decoded_v3.het_table_offset == v3.het_table_offset);
+    TEST_CHECK(decoded_v4.hash_table_size == v4.hash_table_size);
+    TEST_CHECK(decoded_v4.block_table_size == v4.block_table_size);
+    TEST_CHECK(decoded_v4.hi_block_table_size == v4.hi_block_table_size);
+    TEST_CHECK(decoded_v4.het_table_size == v4.het_table_size);
+    TEST_CHECK(decoded_v4.bet_table_size == UINT64_MAX);
+    TEST_CHECK(decoded_v4.raw_chunk_size == v4.raw_chunk_size);
+    TEST_CHECK(memcmp(decoded_v4.block_table_md5, v4.block_table_md5, 16) == 0);
+    TEST_CHECK(memcmp(decoded_v4.hash_table_md5, v4.hash_table_md5, 16) == 0);
+    TEST_CHECK(memcmp(decoded_v4.hi_block_table_md5, v4.hi_block_table_md5, 16) == 0);
+    TEST_CHECK(memcmp(decoded_v4.bet_table_md5, v4.bet_table_md5, 16) == 0);
+    TEST_CHECK(memcmp(decoded_v4.het_table_md5, v4.het_table_md5, 16) == 0);
+    TEST_CHECK(memcmp(decoded_v4.header_md5, v4.header_md5, 16) == 0);
+    TEST_CHECK(
+        libmpq__header_v4_full_encode(
+            &decoded, &decoded_ex, &decoded_v3, &decoded_v4, repeated, sizeof(repeated)
+        ) == 0
+    );
+    TEST_CHECK(memcmp(repeated, test_v4_wire, 208) == 0);
+
+    /* Extension-only helpers start at byte 0x44, not at the archive signature. */
+    TEST_CHECK(libmpq__header_v4_encode(&v4, output + 1, 140) == 0);
+    TEST_CHECK(memcmp(output + 1, test_v4_wire + 68, 140) == 0);
+    TEST_CHECK(libmpq__header_v4_decode(&decoded_v4, output + 1, 140) == 0);
+    TEST_CHECK(decoded_v4.bet_table_size == UINT64_MAX);
+
+    /* A supplied header digest is outside the defined MD5 input range. */
+    memset(v4.header_md5, 0xff, sizeof(v4.header_md5));
+    TEST_CHECK(libmpq__header_v4_full_encode(&base, &ex, &v3, &v4, repeated, 208) == 0);
+    TEST_CHECK(memcmp(repeated, test_v4_wire, LIBMPQ_HEADER_V4_MD5_INPUT_SIZE) == 0);
+    for (size_t i = LIBMPQ_HEADER_V4_MD5_OFFSET; i < 208; ++i)
+        TEST_CHECK(repeated[i] == 0xff);
+
+    /* No default chunk size or nonzero digest requirement is imposed. */
+    memset(&v4, 0, sizeof(v4));
+    TEST_CHECK(libmpq__header_v4_full_encode(&base, &ex, &v3, &v4, repeated, 208) == 0);
+    TEST_CHECK(
+        libmpq__header_v4_full_decode(
+            &decoded, &decoded_ex, &decoded_v3, &decoded_v4, repeated, 208
+        ) == 0
+    );
+    TEST_CHECK(decoded_v4.raw_chunk_size == 0);
+    for (size_t i = 68; i < 208; ++i)
+        TEST_CHECK(repeated[i] == 0);
+    return 0;
+}
+
+/* Short or malformed headers preserve every output; overlong buffers keep their tail. */
+static int
+test_v4_errors(void)
+{
+    mpq_header_s base;
+    mpq_header_ex_s ex;
+    mpq_header_v3_s v3;
+    mpq_header_v4_s v4;
+    uint8_t output[209];
+    uint8_t changed[208];
+
+    memset(&base, 0xa5, sizeof(base));
+    memset(&ex, 0xa5, sizeof(ex));
+    memset(&v3, 0xa5, sizeof(v3));
+    memset(&v4, 0xa5, sizeof(v4));
+    for (size_t size = 0; size < 208; ++size) {
+        TEST_CHECK(
+            libmpq__header_v4_full_decode(&base, &ex, &v3, &v4, test_v4_wire, size) ==
+            LIBMPQ_ERROR_SIZE
+        );
+        memset(output, 0xa5, sizeof(output));
+        TEST_CHECK(
+            libmpq__header_v4_full_encode(&base, &ex, &v3, &v4, output, size) == LIBMPQ_ERROR_SIZE
+        );
+        for (size_t i = 0; i < sizeof(output); ++i)
+            TEST_CHECK(output[i] == 0xa5);
+    }
+    TEST_CHECK(base.mpq_magic == 0xa5a5a5a5u);
+    TEST_CHECK(ex.extended_offset == UINT64_C(0xa5a5a5a5a5a5a5a5));
+    TEST_CHECK(v3.archive_size == UINT64_C(0xa5a5a5a5a5a5a5a5));
+    TEST_CHECK(v4.hash_table_size == UINT64_C(0xa5a5a5a5a5a5a5a5));
+    for (size_t size = 0; size < 140; ++size) {
+        TEST_CHECK(libmpq__header_v4_decode(&v4, test_v4_wire + 68, size) == LIBMPQ_ERROR_SIZE);
+        TEST_CHECK(libmpq__header_v4_encode(&v4, output, size) == LIBMPQ_ERROR_SIZE);
+    }
+    TEST_CHECK(v4.hash_table_size == UINT64_C(0xa5a5a5a5a5a5a5a5));
+    for (size_t i = 0; i < sizeof(output); ++i)
+        TEST_CHECK(output[i] == 0xa5);
+
+    TEST_CHECK(
+        libmpq__header_v4_full_decode(NULL, &ex, &v3, &v4, test_v4_wire, 208) == LIBMPQ_ERROR_SIZE
+    );
+    TEST_CHECK(
+        libmpq__header_v4_full_decode(&base, NULL, &v3, &v4, test_v4_wire, 208) == LIBMPQ_ERROR_SIZE
+    );
+    TEST_CHECK(
+        libmpq__header_v4_full_decode(&base, &ex, NULL, &v4, test_v4_wire, 208) == LIBMPQ_ERROR_SIZE
+    );
+    TEST_CHECK(
+        libmpq__header_v4_full_decode(&base, &ex, &v3, NULL, test_v4_wire, 208) == LIBMPQ_ERROR_SIZE
+    );
+    TEST_CHECK(libmpq__header_v4_full_decode(&base, &ex, &v3, &v4, NULL, 208) == LIBMPQ_ERROR_SIZE);
+    TEST_CHECK(
+        libmpq__header_v4_full_encode(NULL, &ex, &v3, &v4, output, 208) == LIBMPQ_ERROR_SIZE
+    );
+    TEST_CHECK(
+        libmpq__header_v4_full_encode(&base, NULL, &v3, &v4, output, 208) == LIBMPQ_ERROR_SIZE
+    );
+    TEST_CHECK(
+        libmpq__header_v4_full_encode(&base, &ex, NULL, &v4, output, 208) == LIBMPQ_ERROR_SIZE
+    );
+    TEST_CHECK(
+        libmpq__header_v4_full_encode(&base, &ex, &v3, NULL, output, 208) == LIBMPQ_ERROR_SIZE
+    );
+    TEST_CHECK(libmpq__header_v4_full_encode(&base, &ex, &v3, &v4, NULL, 208) == LIBMPQ_ERROR_SIZE);
+    TEST_CHECK(libmpq__header_v4_decode(NULL, test_v4_wire + 68, 140) == LIBMPQ_ERROR_SIZE);
+    TEST_CHECK(libmpq__header_v4_decode(&v4, NULL, 140) == LIBMPQ_ERROR_SIZE);
+    TEST_CHECK(libmpq__header_v4_encode(NULL, output, 140) == LIBMPQ_ERROR_SIZE);
+    TEST_CHECK(libmpq__header_v4_encode(&v4, NULL, 140) == LIBMPQ_ERROR_SIZE);
+
+    /* Wrong version, wrong declared size and wrong magic are structural errors. */
+    for (unsigned int field = 0; field < 3; ++field) {
+        memcpy(changed, test_v4_wire, 208);
+        changed[field == 0 ? 12 : field == 1 ? 4 : 0] ^= 1;
+        TEST_CHECK(
+            libmpq__header_v4_full_decode(&base, &ex, &v3, &v4, changed, 208) == LIBMPQ_ERROR_FORMAT
+        );
+        TEST_CHECK(base.mpq_magic == 0xa5a5a5a5u);
+        TEST_CHECK(ex.extended_offset == UINT64_C(0xa5a5a5a5a5a5a5a5));
+        TEST_CHECK(v3.archive_size == UINT64_C(0xa5a5a5a5a5a5a5a5));
+        TEST_CHECK(v4.hash_table_size == UINT64_C(0xa5a5a5a5a5a5a5a5));
+    }
+    TEST_CHECK(libmpq__header_v4_full_decode(&base, &ex, &v3, &v4, test_v4_wire, 208) == 0);
+    for (unsigned int field = 0; field < 3; ++field) {
+        mpq_header_s invalid = base;
+        if (field == 0)
+            invalid.version = LIBMPQ_ARCHIVE_VERSION_THREE;
+        else if (field == 1)
+            invalid.header_size = 207;
+        else
+            invalid.mpq_magic = 0;
+        TEST_CHECK(
+            libmpq__header_v4_full_encode(&invalid, &ex, &v3, &v4, output, 208) ==
+            LIBMPQ_ERROR_FORMAT
+        );
+        for (size_t i = 0; i < sizeof(output); ++i)
+            TEST_CHECK(output[i] == 0xa5);
+    }
+    TEST_CHECK(libmpq__header_v4_full_encode(&base, &ex, &v3, &v4, output, sizeof(output)) == 0);
+    TEST_CHECK(output[208] == 0xa5 && memcmp(output, test_v4_wire, 208) == 0);
+    return 0;
+}
+
 /* A compact synthetic archive can be placed beyond 4 GiB by sparse read_at. */
 typedef struct
 {
@@ -370,7 +600,7 @@ test_v3_rejection(void)
     TEST_CHECK(archive == NULL);
     TEST_CHECK(v3_fixture(&source, 68, 0, 0) == 0);
     TEST_CHECK(libmpq__header_decode(&header, source.bytes, 32) == 0);
-    header.version = 3; /* MPQ v4 is still unsupported. */
+    header.version = LIBMPQ_ARCHIVE_VERSION_FOUR; /* MPQ v4 opening is still unsupported. */
     TEST_CHECK(libmpq__header_encode(&header, source.bytes, 32) == 0);
     TEST_CHECK(
         libmpq__archive_open_io(
@@ -399,6 +629,32 @@ test_v3_rejection(void)
         libmpq__archive_open_io(
             &archive, &source, v3_read_at, (libmpq__off_t)source.source_size, 0, NULL
         ) == LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(archive == NULL);
+    return 0;
+}
+
+/* Structural wire support must not enable public archive opening or creation. */
+static int
+test_v4_disabled(void)
+{
+    v3_source_s source = { 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_archive_create_options_s options = { 0 };
+
+    memcpy(source.bytes, test_v4_wire, sizeof(test_v4_wire));
+    source.header_size = sizeof(test_v4_wire);
+    source.length = sizeof(test_v4_wire);
+    source.source_size = sizeof(test_v4_wire);
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &archive, &source, v3_read_at, (libmpq__off_t)source.source_size, 0, NULL
+        ) == LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(archive == NULL);
+    options.version = LIBMPQ_ARCHIVE_VERSION_FOUR;
+    TEST_CHECK(
+        libmpq__archive_create(&archive, "unsupported-v4.mpq", &options) == LIBMPQ_ERROR_FORMAT
     );
     TEST_CHECK(archive == NULL);
     return 0;
@@ -570,7 +826,8 @@ main(void)
         test_v3_classic(44, 0, 0, 0) != 0 || test_v3_classic(60, 0, 512, 0) != 0 ||
         test_v3_classic(68, UINT64_C(0x100000000), 512, 0) != 0 ||
         test_v3_classic(68, UINT64_C(0x100000000), 512, 1) != 0 || test_v3_rejection() != 0 ||
-        test_v3_optional_tables() != 0 || test_v3_mixed_tables() != 0)
+        test_v3_optional_tables() != 0 || test_v3_mixed_tables() != 0 || test_v4_vectors() != 0 ||
+        test_v4_errors() != 0 || test_v4_disabled() != 0)
         return 1;
     return 0;
 }

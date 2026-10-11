@@ -66,10 +66,47 @@ bounded by the archive extent. Mixed-table archives can use classic lookup
 when a classic hash entry maps to a live block; other live blocks need not be
 hash-referenced. This does not assert equivalence with HET/BET. Declared
 extended tables must form a valid pair; malformed tables fail opening rather
-than downgrading to classic lookup. Compressed classic tables and MPQ v4
-remain outside the current implementation.
+than downgrading to classic lookup. Compressed classic tables remain unsupported.
+MPQ v4 support currently covers structural header encoding and decoding,
+not full archive reading or writing.
 
-### Creation and finalization
+### MPQ v4 header
+
+MPQ v4 uses on-disk version 3 and a `0xD0`-byte header. Its `0x8C`-byte
+extension follows the complete v3 header; offsets below are archive-relative
+header byte positions. Table sizes describe stored table bytes, not entry counts.
+
+| Offset | Type | Field |
+| --- | --- | --- |
+| `0x44` | `uint64_t` | Hash-table size |
+| `0x4C` | `uint64_t` | Block-table size |
+| `0x54` | `uint64_t` | Hi-block-table size |
+| `0x5C` | `uint64_t` | HET size |
+| `0x64` | `uint64_t` | BET size |
+| `0x6C` | `uint32_t` | Raw chunk size, including zero when unused |
+| `0x70` | `uint8_t[16]` | Block-table MD5 |
+| `0x80` | `uint8_t[16]` | Hash-table MD5 |
+| `0x90` | `uint8_t[16]` | Hi-block-table MD5 |
+| `0xA0` | `uint8_t[16]` | BET MD5 |
+| `0xB0` | `uint8_t[16]` | HET MD5 |
+| `0xC0` | `uint8_t[16]` | Header MD5 |
+
+The header MD5 input is `[0x00, 0xC0)`; `[0xC0, 0xD0)` stores the digest itself.
+The private `mpq_header_v4_s` keeps these fields separate from v3 metadata.
+
+`libmpq__header_v4_decode()` and `libmpq__header_v4_encode()` process the v4
+extension using explicit little-endian integers and exact digest-byte copies.
+The private full-header helpers, `libmpq__header_v4_full_decode()` and
+`libmpq__header_v4_full_encode()`, combine the header generations and validate
+the signature, version and declared header size. They do not calculate or
+verify MD5 digests.
+
+libmpq currently supports structural v4 header encoding and decoding only.
+Raw chunk metadata is preserved without selecting a default or verifying chunks;
+archive-level table validation is not implemented. Normal MPQ v4 archive reading
+and writing remain unsupported.
+
+## Archive creation and finalization
 
 V3 output reserves a 68-byte (`0x44`) header, writes file payloads at
 their final archive-relative positions, then appends HET, BET, classic hash,

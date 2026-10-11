@@ -31,6 +31,13 @@
 #define LIBMPQ_HEADER_EX_WIRE_SIZE 12u
 #define LIBMPQ_HEADER_V3_EX_WIRE_SIZE 24u
 #define LIBMPQ_HEADER_V3_WIRE_SIZE 68u
+#define LIBMPQ_HEADER_V4_EX_WIRE_SIZE 140u
+#define LIBMPQ_HEADER_V4_WIRE_SIZE 208u
+
+/* Header MD5 covers [0, 0xC0); the digest itself occupies [0xC0, 0xD0). */
+#define LIBMPQ_HEADER_V4_MD5_OFFSET 192u
+#define LIBMPQ_HEADER_V4_MD5_INPUT_SIZE LIBMPQ_HEADER_V4_MD5_OFFSET
+#define LIBMPQ_HEADER_V4_MD5_SIZE 16u
 
 /* Native representation of the fixed MPQ archive header. */
 typedef struct
@@ -62,6 +69,23 @@ typedef struct
     uint64_t het_table_offset; /* Archive-relative HET table offset, or zero if absent. */
 } mpq_header_v3_s;
 
+/* Version 4 extension following the complete version 3 header. */
+typedef struct
+{
+    uint64_t hash_table_size;
+    uint64_t block_table_size;
+    uint64_t hi_block_table_size;
+    uint64_t het_table_size;
+    uint64_t bet_table_size;
+    uint32_t raw_chunk_size;
+    uint8_t block_table_md5[16];
+    uint8_t hash_table_md5[16];
+    uint8_t hi_block_table_md5[16];
+    uint8_t bet_table_md5[16];
+    uint8_t het_table_md5[16];
+    uint8_t header_md5[16];
+} mpq_header_v4_s;
+
 /*
  * Convert one fixed-size little-endian wire header to or from native fields.
  * Callers own both buffers and perform archive-level semantic validation.
@@ -73,6 +97,24 @@ int32_t libmpq__header_v3_decode(mpq_header_v3_s *header, const uint8_t *wire, s
 int32_t libmpq__header_encode(const mpq_header_s *header, uint8_t *wire, size_t size);
 int32_t libmpq__header_ex_encode(const mpq_header_ex_s *header, uint8_t *wire, size_t size);
 int32_t libmpq__header_v3_encode(const mpq_header_v3_s *header, uint8_t *wire, size_t size);
+int32_t libmpq__header_v4_decode(mpq_header_v4_s *header, const uint8_t *wire, size_t size);
+int32_t libmpq__header_v4_encode(const mpq_header_v4_s *header, uint8_t *wire, size_t size);
+
+/*
+ * Compose the existing layers with the v4 extension in a complete 0xD0 header.
+ * Require the MPQ signature, wire version 3 and declared size 0xD0. SIZE rejects
+ * NULL or short buffers; FORMAT rejects invalid declarations. Failure preserves
+ * outputs. No allocations, digest calculation or archive-level validation occur.
+ * Normal archive opening and creation still reject v4.
+ */
+int32_t libmpq__header_v4_full_decode(
+    mpq_header_s *header, mpq_header_ex_s *ex, mpq_header_v3_s *v3, mpq_header_v4_s *v4,
+    const uint8_t *wire, size_t size
+);
+int32_t libmpq__header_v4_full_encode(
+    const mpq_header_s *header, const mpq_header_ex_s *ex, const mpq_header_v3_s *v3,
+    const mpq_header_v4_s *v4, uint8_t *wire, size_t size
+);
 
 /* Full v3 headers use the 64-bit size; short v3 headers retain the legacy size. */
 uint64_t libmpq__header_archive_size(const mpq_header_s *header, const mpq_header_v3_s *v3);
