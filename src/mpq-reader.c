@@ -28,6 +28,7 @@
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
 #include "mpq-file.h"
+#include "mpq-md5.h"
 #include "mpq-reader.h"
 #include "mpq-source.h"
 
@@ -94,6 +95,28 @@ libmpq__entry_index_from_bet(
 
 static int32_t table_size(uint32_t count, size_t item_size, size_t *size);
 
+/* A zero digest denotes unavailable structural integrity metadata. */
+static int
+md5_present(const uint8_t expected[LIBMPQ_MD5_SIZE])
+{
+    static const uint8_t zero[LIBMPQ_MD5_SIZE] = { 0 };
+    return memcmp(expected, zero, sizeof(zero)) != 0;
+}
+
+/* Check supplied digests against original stored bytes without modifying either. */
+static int32_t
+verify_md5(const uint8_t *data, size_t size, const uint8_t expected[LIBMPQ_MD5_SIZE])
+{
+    mpq_md5_s context;
+    uint8_t actual[LIBMPQ_MD5_SIZE];
+    if (!md5_present(expected))
+        return 0;
+    libmpq__md5_init(&context);
+    libmpq__md5_update(&context, data, size);
+    libmpq__md5_final(&context, actual);
+    return memcmp(actual, expected, sizeof(actual)) == 0 ? 0 : LIBMPQ_ERROR_FORMAT;
+}
+
 /* Validate a v4 stored extent before allocation or archive-relative I/O translation. */
 static int32_t
 validate_table_extent(
@@ -133,6 +156,8 @@ validate_v4_header(const mpq_archive_s *archive)
                               archive->mpq_header_v3.bet_table_offset };
     uint64_t sizes[5] = { v4->hash_table_size, v4->block_table_size, v4->hi_block_table_size,
                           v4->het_table_size, v4->bet_table_size };
+    const uint8_t *digests[5] = { v4->hash_table_md5, v4->block_table_md5, v4->hi_block_table_md5,
+                                  v4->het_table_md5, v4->bet_table_md5 };
     size_t decoded[3];
     uint32_t hashes = archive->mpq_header.hash_table_count;
     uint32_t blocks = archive->mpq_header.block_table_count;
@@ -156,6 +181,8 @@ validate_v4_header(const mpq_archive_s *archive)
         );
         if (result != 0)
             return result;
+        if (positions[i] == 0 && md5_present(digests[i]))
+            return LIBMPQ_ERROR_FORMAT;
     }
     for (size_t i = 0; i < 3; ++i) {
         if (i == 2 && positions[i] == 0)
@@ -287,10 +314,12 @@ ext_table_load(
 {
     uint8_t envelope[LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE];
     uint8_t *stored = NULL;
+    uint8_t *payload;
     uint8_t *decoded = NULL;
     uint32_t data_size;
     uint64_t decoded_size;
     size_t payload_size;
+    int v4 = archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR;
     int32_t result;
     *output = NULL;
     *output_size = 0;
@@ -302,11 +331,29 @@ ext_table_load(
     if (stored_size < sizeof(envelope) || stored_size > LIBMPQ_EXT_TABLE_MAX_SIZE ||
         stored_size - sizeof(envelope) > INT32_MAX)
         return LIBMPQ_ERROR_FORMAT;
-    result = libmpq__source_read_at(
-        archive->source, (uint64_t)archive->archive_offset + offset, envelope, sizeof(envelope)
-    );
-    if (result != 0)
-        return result;
+    if (v4) {
+        stored = malloc((size_t)stored_size);
+        if (stored == NULL)
+            return LIBMPQ_ERROR_MALLOC;
+        result = libmpq__source_read_at(
+            archive->source, (uint64_t)archive->archive_offset + offset, stored, (size_t)stored_size
+        );
+        if (result == 0)
+            result = verify_md5(
+                stored, (size_t)stored_size,
+                signature == LIBMPQ_HET_SIGNATURE ? archive->mpq_header_v4.het_table_md5
+                                                  : archive->mpq_header_v4.bet_table_md5
+            );
+        if (result != 0)
+            goto done;
+        memcpy(envelope, stored, sizeof(envelope));
+    } else {
+        result = libmpq__source_read_at(
+            archive->source, (uint64_t)archive->archive_offset + offset, envelope, sizeof(envelope)
+        );
+        if (result != 0)
+            return result;
+    }
     data_size = libmpq__load_le32(envelope + 8);
     decoded_size = (uint64_t)data_size + sizeof(envelope);
     if (libmpq__load_le32(envelope) != signature ||
@@ -315,28 +362,36 @@ ext_table_load(
         decoded_size > SIZE_MAX ||
         (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
          data_size < (signature == LIBMPQ_HET_SIGNATURE ? LIBMPQ_HET_HEADER_WIRE_SIZE
-                                                        : LIBMPQ_BET_HEADER_WIRE_SIZE)))
-        return LIBMPQ_ERROR_FORMAT;
+                                                        : LIBMPQ_BET_HEADER_WIRE_SIZE))) {
+        result = LIBMPQ_ERROR_FORMAT;
+        goto done;
+    }
     payload_size = (size_t)(stored_size - sizeof(envelope));
-    if (payload_size == 0 || payload_size > data_size)
-        return LIBMPQ_ERROR_FORMAT;
-    stored = malloc(payload_size);
+    if (payload_size == 0 || payload_size > data_size) {
+        result = LIBMPQ_ERROR_FORMAT;
+        goto done;
+    }
+    if (!v4)
+        stored = malloc(payload_size);
     decoded = malloc(sizeof(envelope) + data_size);
     if (stored == NULL || decoded == NULL) {
         result = LIBMPQ_ERROR_MALLOC;
         goto done;
     }
+    payload = stored + (v4 ? sizeof(envelope) : 0);
     memcpy(decoded, envelope, sizeof(envelope));
-    result = libmpq__source_read_at(
-        archive->source, (uint64_t)archive->archive_offset + offset + sizeof(envelope), stored,
-        payload_size
-    );
-    if (result != 0)
-        goto done;
-    libmpq__crypto_decrypt_block(stored, (uint32_t)payload_size, key);
+    if (!v4) {
+        result = libmpq__source_read_at(
+            archive->source, (uint64_t)archive->archive_offset + offset + sizeof(envelope), payload,
+            payload_size
+        );
+        if (result != 0)
+            goto done;
+    }
+    libmpq__crypto_decrypt_block(payload, (uint32_t)payload_size, key);
     if (payload_size < data_size) {
         result = libmpq__compression_decompress_table(
-            stored, (uint32_t)payload_size, decoded + sizeof(envelope), data_size,
+            payload, (uint32_t)payload_size, decoded + sizeof(envelope), data_size,
             archive->mpq_header.version
         );
         if (result != (int32_t)data_size) {
@@ -344,7 +399,7 @@ ext_table_load(
             goto done;
         }
     } else {
-        memcpy(decoded + sizeof(envelope), stored, payload_size);
+        memcpy(decoded + sizeof(envelope), payload, payload_size);
     }
     *output = decoded;
     *output_size = sizeof(envelope) + data_size;
@@ -1714,6 +1769,11 @@ libmpq__reader_archive_open_source(
             source, (uint64_t)archive_offset, header_v4_data, sizeof(header_v4_data)
         );
         if (result == 0)
+            result = verify_md5(
+                header_v4_data, LIBMPQ_HEADER_V4_MD5_INPUT_SIZE,
+                header_v4_data + LIBMPQ_HEADER_V4_MD5_OFFSET
+            );
+        if (result == 0)
             result = libmpq__header_v4_full_decode(
                 &(*mpq_archive)->mpq_header, &(*mpq_archive)->mpq_header_ex,
                 &(*mpq_archive)->mpq_header_v3, &(*mpq_archive)->mpq_header_v4, header_v4_data,
@@ -1765,6 +1825,15 @@ libmpq__reader_archive_open_source(
         goto error;
     }
 
+    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+        result = verify_md5(
+            table_data, (size_t)(*mpq_archive)->mpq_header_v4.hash_table_size,
+            (*mpq_archive)->mpq_header_v4.hash_table_md5
+        );
+        if (result != 0)
+            goto error;
+    }
+
     /* MPQ stores the hash table encrypted with the fixed "(hash table)" key. */
     libmpq__crypto_decrypt_block(
         table_data, (uint32_t)table_bytes, libmpq__crypto_hash_string("(hash table)", 0x300)
@@ -1798,6 +1867,15 @@ libmpq__reader_archive_open_source(
              table_data, table_bytes
          )) < 0) {
         goto error;
+    }
+
+    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+        result = verify_md5(
+            table_data, (size_t)(*mpq_archive)->mpq_header_v4.block_table_size,
+            (*mpq_archive)->mpq_header_v4.block_table_md5
+        );
+        if (result != 0)
+            goto error;
     }
 
     /* MPQ stores the block table encrypted with the fixed "(block table)" key. */
@@ -1835,6 +1913,14 @@ libmpq__reader_archive_open_source(
             if (result == LIBMPQ_ERROR_READ)
                 result = LIBMPQ_ERROR_FORMAT;
             goto error;
+        }
+        if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+            result = verify_md5(
+                table_data, (size_t)(*mpq_archive)->mpq_header_v4.hi_block_table_size,
+                (*mpq_archive)->mpq_header_v4.hi_block_table_md5
+            );
+            if (result != 0)
+                goto error;
         }
         result = libmpq__block_ex_table_decode(
             table_data, table_bytes, (*mpq_archive)->mpq_block_ex,

@@ -99,7 +99,16 @@ extension using explicit little-endian integers and exact digest-byte copies.
 The private full-header helpers, `libmpq__header_v4_full_decode()` and
 `libmpq__header_v4_full_encode()`, combine the header generations and validate
 the signature, version and declared header size. They do not calculate or
-verify MD5 digests.
+verify MD5 digests; normal archive opening performs verification separately.
+
+V4 structural MD5 checks are automatic. A zero digest means no checksum is
+supplied; a nonzero digest must match or opening fails with
+`LIBMPQ_ERROR_FORMAT`. The header is checked over its original bytes before
+trusting table extents. Each of the five table digests covers its exact declared
+stored extent, including any extended-table envelope, before decryption,
+decompression or endian conversion. Absent tables must have zero digests.
+These checks use logical MPQ bytes after MPQE transport decryption and are
+independent of the public file-content verification flags.
 
 Normal v4 opening uses the full-header decoder and retains the five explicit
 stored-table sizes. Each position/size pair is checked independently against the
@@ -115,9 +124,10 @@ the remaining representation permits lookup; malformed present tables do not
 disappear behind fallback.
 
 V4 archive access is read-only: creation, transactional updates and patch-view
-rebuilds remain unsupported. Table/header MD5 fields and raw chunk metadata are
-retained but not verified; no default raw chunk size is selected. Existing member
-compression and encryption decoding is reused without enabling v4 writer codecs.
+rebuilds remain unsupported. Raw chunk metadata is retained, but raw file-data
+chunk MD5 verification is unsupported; no default raw chunk size is selected.
+Existing member compression and encryption decoding is reused without enabling
+v4 writer codecs.
 
 ## Archive creation and finalization
 

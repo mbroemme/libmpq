@@ -1882,6 +1882,16 @@ reader_v4_header(reader_v4_source_s *source)
 static int
 test_v4_independent_layout(void)
 {
+
+    /* Fixed Python hashlib.md5 vectors: hash, block, hi-block, then header. */
+    static const uint8_t digests[4][16] = { { 0xd6, 0xaf, 0x60, 0x70, 0x22, 0x46, 0xc6, 0x9f, 0x30,
+                                              0x9c, 0x44, 0xe7, 0x4e, 0x14, 0x5c, 0x36 },
+                                            { 0x5c, 0x00, 0x66, 0xcc, 0x66, 0x2e, 0x35, 0xf2, 0xa1,
+                                              0xe5, 0x7c, 0x81, 0x59, 0x2c, 0xfb, 0xa2 },
+                                            { 0xc4, 0x10, 0x3f, 0x12, 0x2d, 0x27, 0x67, 0x7c, 0x9d,
+                                              0xb1, 0x44, 0xca, 0xe1, 0x39, 0x4a, 0x66 },
+                                            { 0x88, 0x7a, 0xf8, 0x3a, 0xcd, 0x64, 0x2b, 0xd9, 0x08,
+                                              0xe6, 0x7e, 0xda, 0x9e, 0x12, 0xa1, 0x2a } };
     reader_v4_source_s source = { 0 };
     mpq_archive_s *archive = NULL;
     mpq_hash_s hashes[4];
@@ -1924,8 +1934,15 @@ test_v4_independent_layout(void)
     );
     TEST_CHECK(libmpq__block_ex_table_encode(&high, 1, source.bytes + 224, 2) == 0);
     memcpy(source.bytes + 288, "hello", sizeof(actual));
-    for (unsigned int embedded = 0; embedded < 2; ++embedded) {
-        source.base = embedded ? 512 : 0;
+    for (unsigned int variant = 0; variant < 4; ++variant) {
+        if (variant == 2) {
+            memcpy(source.v4.hash_table_md5, digests[0], 16);
+            memcpy(source.v4.block_table_md5, digests[1], 16);
+            memcpy(source.v4.hi_block_table_md5, digests[2], 16);
+            memcpy(source.v4.header_md5, digests[3], 16);
+            TEST_CHECK(reader_v4_header(&source) == 0);
+        }
+        source.base = (variant & 1u) ? 512 : 0;
         TEST_CHECK(
             libmpq__archive_open_io(
                 &archive, &source, reader_v4_read_at, (libmpq__off_t)(source.base + source.size),
@@ -2021,7 +2038,7 @@ reader_v4_fixture(
     source->header.hash_table_offset = (uint32_t)positions[3];
     source->v3.het_table_offset = positions[4];
     source->v3.archive_size = source->size;
-    memset(&source->v4, 0xa5, sizeof(source->v4));
+    memset(&source->v4, 0, sizeof(source->v4));
     source->v4.block_table_size = sizes[0];
     source->v4.hi_block_table_size = sizes[1];
     source->v4.bet_table_size = sizes[2];
@@ -2043,6 +2060,185 @@ reader_v4_fixture(
         }
     }
     return reader_v4_header(source);
+}
+
+/* Test-side digest construction; fixed independent vectors are checked above. */
+static void
+reader_v4_digest(const uint8_t *data, size_t size, uint8_t digest[16])
+{
+    mpq_md5_s context;
+    libmpq__md5_init(&context);
+    libmpq__md5_update(&context, data, size);
+    libmpq__md5_final(&context, digest);
+}
+
+/* Re-sign only the header so table-specific failures remain isolated. */
+static int
+reader_v4_header_md5(reader_v4_source_s *source)
+{
+    TEST_CHECK(reader_v4_header(source) == 0);
+    reader_v4_digest(source->bytes, 192, source->v4.header_md5);
+    return reader_v4_header(source);
+}
+
+/* Hash exact declared stored extents, including plaintext extended-table envelopes. */
+static int
+reader_v4_table_md5(reader_v4_source_s *source)
+{
+    uint64_t positions[5] = { source->header.hash_table_offset, source->header.block_table_offset,
+                              source->ex.extended_offset, source->v3.het_table_offset,
+                              source->v3.bet_table_offset };
+    uint64_t sizes[5] = { source->v4.hash_table_size, source->v4.block_table_size,
+                          source->v4.hi_block_table_size, source->v4.het_table_size,
+                          source->v4.bet_table_size };
+    uint8_t *digests[5] = { source->v4.hash_table_md5, source->v4.block_table_md5,
+                            source->v4.hi_block_table_md5, source->v4.het_table_md5,
+                            source->v4.bet_table_md5 };
+    for (size_t i = 0; i < 5; ++i) {
+        memset(digests[i], 0, 16);
+        if (positions[i] == 0)
+            continue;
+        TEST_CHECK(positions[i] <= source->size && sizes[i] <= source->size - positions[i]);
+        reader_v4_digest(source->bytes + (size_t)positions[i], (size_t)sizes[i], digests[i]);
+    }
+    return reader_v4_header_md5(source);
+}
+
+/* Failed opens expose no handle; valid metadata must still permit exact member reads. */
+static int
+reader_v4_expect(reader_v4_source_s *source, int32_t expected)
+{
+    mpq_archive_s *archive = NULL;
+    mpq_stream_s *stream = NULL;
+    uint8_t actual[9000];
+    uint32_t files;
+    libmpq__off_t transferred;
+    source->reads = 0;
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &archive, source, reader_v4_read_at, (libmpq__off_t)(source->base + source->size),
+            source->base == 512 ? -1 : (libmpq__off_t)source->base, NULL
+        ) == expected
+    );
+    if (expected != 0) {
+        TEST_CHECK(archive == NULL);
+        return 0;
+    }
+    TEST_CHECK(libmpq__archive_files(archive, &files) == 0 && files == 3);
+    TEST_CHECK(libmpq__stream_open_name(archive, "folder/payload.bin", &stream) == 0);
+    TEST_CHECK(
+        libmpq__stream_read(stream, actual, sizeof(actual), &transferred) == 0 &&
+        transferred == sizeof(actual)
+    );
+    for (size_t i = 0; i < sizeof(actual); ++i)
+        TEST_CHECK(actual[i] == (uint8_t)(i % 17));
+    TEST_CHECK(libmpq__stream_close(stream) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    return 0;
+}
+
+/* Verify stored-byte integrity independently for every present or absent table. */
+static int
+test_v4_md5(int representation, int compressed)
+{
+    reader_v4_source_s original;
+    reader_v4_source_s source;
+    mpq_archive_s *archive = NULL;
+    uint64_t positions[5];
+    uint64_t sizes[5];
+    uint8_t *digests[6] = { source.v4.hash_table_md5,     source.v4.block_table_md5,
+                            source.v4.hi_block_table_md5, source.v4.het_table_md5,
+                            source.v4.bet_table_md5,      source.v4.header_md5 };
+    TEST_CHECK(reader_v4_fixture(&original, representation, compressed, 2, 0) == 0);
+    TEST_CHECK(reader_v4_table_md5(&original) == 0);
+    positions[0] = original.header.hash_table_offset;
+    positions[1] = original.header.block_table_offset;
+    positions[2] = original.ex.extended_offset;
+    positions[3] = original.v3.het_table_offset;
+    positions[4] = original.v3.bet_table_offset;
+    sizes[0] = original.v4.hash_table_size;
+    sizes[1] = original.v4.block_table_size;
+    sizes[2] = original.v4.hi_block_table_size;
+    sizes[3] = original.v4.het_table_size;
+    sizes[4] = original.v4.bet_table_size;
+    for (unsigned int embedded = 0; embedded < 3; ++embedded) {
+        source = original;
+        source.base = embedded == 0 ? 0 : embedded == 1 ? 512 : UINT64_C(0x100000000);
+        TEST_CHECK(reader_v4_expect(&source, 0) == 0);
+    }
+    source = original;
+    for (size_t i = 0; i < 5; ++i)
+        memset(digests[i], 0, 16);
+    TEST_CHECK(reader_v4_header_md5(&source) == 0);
+    TEST_CHECK(reader_v4_expect(&source, 0) == 0);
+    for (size_t i = 0; i < 6; ++i) {
+        source = original;
+        digests[i][0] ^= 1;
+        TEST_CHECK((i == 5 ? reader_v4_header(&source) : reader_v4_header_md5(&source)) == 0);
+        TEST_CHECK(reader_v4_expect(&source, LIBMPQ_ERROR_FORMAT) == 0);
+        if (i == 5 || positions[i] == 0)
+            TEST_CHECK(source.reads == 2);
+
+        /* A missing digest is allowed even when other fields provide digests. */
+        source = original;
+        memset(digests[i], 0, 16);
+        TEST_CHECK((i == 5 ? reader_v4_header(&source) : reader_v4_header_md5(&source)) == 0);
+        TEST_CHECK(reader_v4_expect(&source, 0) == 0);
+        if (i == 5 || positions[i] == 0)
+            continue;
+        source = original;
+        source.bytes[(size_t)(positions[i] + sizes[i] - 1)] ^= 0x80;
+        TEST_CHECK(reader_v4_expect(&source, LIBMPQ_ERROR_FORMAT) == 0);
+        source = original;
+        source.fail_at = positions[i] + sizes[i] - 1;
+        TEST_CHECK(
+            reader_v4_expect(&source, i == 2 ? LIBMPQ_ERROR_FORMAT : LIBMPQ_ERROR_READ) == 0
+        );
+    }
+
+    /* Header verification precedes trusting new counts or allocating their tables. */
+    source = original;
+    source.header.block_table_count = UINT32_MAX;
+    TEST_CHECK(reader_v4_header(&source) == 0);
+    TEST_CHECK(reader_v4_expect(&source, LIBMPQ_ERROR_FORMAT) == 0 && source.reads == 2);
+    source = original;
+    reader_v4_digest(source.bytes, LIBMPQ_HEADER_V4_WIRE_SIZE, source.v4.header_md5);
+    TEST_CHECK(reader_v4_header(&source) == 0);
+    TEST_CHECK(reader_v4_expect(&source, LIBMPQ_ERROR_FORMAT) == 0 && source.reads == 2);
+    source = original;
+    source.fail_at = LIBMPQ_HEADER_V4_MD5_OFFSET;
+    TEST_CHECK(reader_v4_expect(&source, LIBMPQ_ERROR_READ) == 0);
+
+    /* Digests over decrypted or decompressed representations must not match. */
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &archive, &original, reader_v4_read_at, (libmpq__off_t)original.size, 0, NULL
+        ) == 0
+    );
+    for (size_t i = 0; i < 5; ++i) {
+        uint8_t plain[256];
+        if (i == 2 || positions[i] == 0)
+            continue;
+        source = original;
+        if (i < 2) {
+            TEST_CHECK(sizes[i] <= sizeof(plain));
+            memcpy(plain, source.bytes + (size_t)positions[i], (size_t)sizes[i]);
+            TEST_CHECK(
+                libmpq__crypto_decrypt_block(
+                    plain, (uint32_t)sizes[i],
+                    libmpq__crypto_hash_string(i == 0 ? "(hash table)" : "(block table)", 0x300)
+                ) == 0
+            );
+            reader_v4_digest(plain, (size_t)sizes[i], digests[i]);
+        } else {
+            const uint8_t *decoded = i == 3 ? archive->het_data : archive->bet_data;
+            reader_v4_digest(decoded, 12u + libmpq__load_le32(decoded + 8), digests[i]);
+        }
+        TEST_CHECK(reader_v4_header_md5(&source) == 0);
+        TEST_CHECK(reader_v4_expect(&source, LIBMPQ_ERROR_FORMAT) == 0);
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    return 0;
 }
 
 /* Real APIs must agree on rows and bytes regardless of table order or archive base. */
@@ -2357,6 +2553,7 @@ test_v4_mpqe_read_only(void)
     libmpq__off_t transferred;
     FILE *file;
     TEST_CHECK(reader_v4_fixture(&source, 2, 1, 2, 0) == 0);
+    TEST_CHECK(reader_v4_table_md5(&source) == 0);
     file = fopen("reader-v4.mpq", "wb");
     TEST_CHECK(
         file != NULL && fwrite(source.bytes, 1, source.size, file) == source.size &&
@@ -2416,6 +2613,15 @@ test_v4_mpqe_read_only(void)
             LIBMPQ_ERROR_FORMAT &&
         update == NULL
     );
+    cipher.bytes[(size_t)source.v3.het_table_offset + 12] ^= 1;
+    TEST_CHECK(
+        libmpq__archive_open_mpqe_io(
+            &archive, &cipher, reader_v4_read_at, (libmpq__off_t)cipher.size, 0, auth, sizeof(auth),
+            NULL
+        ) == LIBMPQ_ERROR_FORMAT &&
+        archive == NULL
+    );
+    cipher.bytes[(size_t)source.v3.het_table_offset + 12] ^= 1;
     auth[0] ^= 1;
     TEST_CHECK(
         libmpq__archive_open_mpqe_io(
@@ -2493,6 +2699,8 @@ main(void)
     TEST_CHECK(test_v3_reserved_update() == 0);
     TEST_CHECK(test_v4_independent_layout() == 0);
     for (int representation = 0; representation < 3; ++representation) {
+        TEST_CHECK(test_v4_md5(representation, 0) == 0);
+        TEST_CHECK(test_v4_md5(representation, 1) == 0);
         TEST_CHECK(test_v4_read(representation, 0, 0, 0, 0) == 0);
         TEST_CHECK(test_v4_read(representation, 0, 1, 0, 0) == 0);
         TEST_CHECK(test_v4_read(representation, 1, 1, 0, 512) == 0);
