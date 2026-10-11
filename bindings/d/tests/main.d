@@ -170,7 +170,9 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
     catch (MPQException error) { noChecksum = error.code == ERROR_EXIST; }
     assert(noChecksum);
     static assert(VERIFY_SECTOR_CRC == 1 && VERIFY_FILE_CRC32 == 2 && VERIFY_FILE_MD5 == 4);
-    static assert(VERIFY_ALL == 7);
+    static assert(VERIFY_RAW_MD5 == 8 && LIBMPQ_VERIFY_RAW_MD5 == 8);
+    static assert(VERIFY_ALL == 15);
+    assert(reopened.file("stream.bin").verify(VERIFY_RAW_MD5) == 0);
     static assert(FILE_FLAG_SECTOR_CRC == 0x04000000u);
     auto attributes = reopened.file("stream.bin").attributes();
     assert(attributes.flags == 15);

@@ -123,16 +123,21 @@ file CRC32/MD5. For one sector,
 `BlockVerification` with `checksum` (stored Adler-32) and `mismatches` (zero
 or `VERIFY_SECTOR_CRC`). Unavailable checksums throw `ERROR_EXIST`.
 
-Use `VERIFY_SECTOR_CRC`, `VERIFY_FILE_CRC32`, or `VERIFY_FILE_MD5` to select
-checks. Sector checks cover decrypted packed bytes; file hashes cover
-extracted bytes. Missing values/tables are skipped. File checksum requests
-require attributes; sector-only requests do not. `VERIFY_ALL` selects all
+Use `VERIFY_SECTOR_CRC`, `VERIFY_FILE_CRC32`, `VERIFY_FILE_MD5`, or
+`VERIFY_RAW_MD5` to select checks. Sector checks cover decrypted packed bytes;
+file hashes cover extracted bytes. Missing values/tables are skipped. File checksum requests
+require attributes; sector/raw-only requests do not. `VERIFY_ALL` selects all
 checks. The returned mismatch mask uses the same `VERIFY_*` bits and is a
 subset of the request. Set bits mean available checksums mismatched; clear
 bits mean matched or unavailable/skipped. Operation errors throw existing
 exceptions. Zero does not prove availability. Complete lossless reads
 automatically compare available CRC32/MD5 values; lossy ADPCM is not compared
 because decoded bytes may differ from source hashes.
+
+`VERIFY_RAW_MD5` hashes v4 stored member chunks before file decryption or
+decompression, after MPQE transport decoding. It is skipped for older versions,
+disabled raw chunks and empty stored payloads. It checks physical patch members,
+not reconstructed patch-view output.
 
 `file.flags()` returns the stored block-table flags. Inspect `FILE_FLAG_*`
 bits; metadata convenience booleans are derived from these flags.

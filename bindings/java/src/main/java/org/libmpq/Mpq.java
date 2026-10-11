@@ -40,8 +40,11 @@ public final class Mpq {
     public static final int VERIFY_FILE_CRC32 = 0x2;
     /** Request comparison of the stored MD5, or report its mismatch. */
     public static final int VERIFY_FILE_MD5 = 0x4;
-    /** Request all implemented file checksum comparisons. */
-    public static final int VERIFY_ALL = VERIFY_SECTOR_CRC | VERIFY_FILE_CRC32 | VERIFY_FILE_MD5;
+    /** Request raw stored MPQ v4 member chunk MD5 comparison. */
+    public static final int VERIFY_RAW_MD5 = 0x8;
+    /** All available sector, logical-file and raw-member checks. */
+    public static final int VERIFY_ALL =
+        VERIFY_SECTOR_CRC | VERIFY_FILE_CRC32 | VERIFY_FILE_MD5 | VERIFY_RAW_MD5;
     public static final int SIGNATURE_WEAK = 0x00000001;
     public static final int SIGNATURE_STRONG = 0x00000002;
     /** Native failure while opening or creating a file. */

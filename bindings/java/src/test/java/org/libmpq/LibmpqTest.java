@@ -640,7 +640,9 @@ class LibmpqTest {
             assertEquals(1, Mpq.VERIFY_SECTOR_CRC);
             assertEquals(2, Mpq.VERIFY_FILE_CRC32);
             assertEquals(4, Mpq.VERIFY_FILE_MD5);
-            assertEquals(7, Mpq.VERIFY_ALL);
+            assertEquals(8, Mpq.VERIFY_RAW_MD5);
+            assertEquals(15, Mpq.VERIFY_ALL);
+            assertEquals(0, archive.verify(number, Mpq.VERIFY_RAW_MD5));
             assertEquals(0x04000000, Mpq.FILE_FLAG_SECTOR_CRC);
             // The (attributes) self-MD5 is an absent, all-zero placeholder.
             assertEquals(0,

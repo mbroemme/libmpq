@@ -45,7 +45,8 @@ ATTRIBUTE_PATCH_BIT = 0x08
 VERIFY_SECTOR_CRC = 0x01
 VERIFY_FILE_CRC32 = 0x02
 VERIFY_FILE_MD5 = 0x04
-VERIFY_ALL = VERIFY_SECTOR_CRC | VERIFY_FILE_CRC32 | VERIFY_FILE_MD5
+VERIFY_RAW_MD5 = 0x08
+VERIFY_ALL = VERIFY_SECTOR_CRC | VERIFY_FILE_CRC32 | VERIFY_FILE_MD5 | VERIFY_RAW_MD5
 SIGNATURE_WEAK = 0x01
 SIGNATURE_STRONG = 0x02
 COMPRESSION_POLICY_STANDARD = 0
@@ -1046,7 +1047,7 @@ class File:
     def verify(self, flags=VERIFY_ALL):
         """Return mismatches as a subset of the requested VERIFY_* flags.
 
-        File checks require attributes; sector-only checks do not.
+        File checks require attributes; sector/raw-only checks do not.
         Unavailable checksums are skipped, so zero does not prove availability.
         Operation errors raise instead of returning a mismatch mask.
         """

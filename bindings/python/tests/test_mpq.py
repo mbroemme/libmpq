@@ -687,7 +687,8 @@ def test_version_errors_and_hashes():
     verify = mpq.libmpq.libmpq__file_verify
     assert verify.restype == ctypes.c_int32
     assert (mpq.VERIFY_SECTOR_CRC, mpq.VERIFY_FILE_CRC32, mpq.VERIFY_FILE_MD5) == (1, 2, 4)
-    assert mpq.VERIFY_ALL == 7
+    assert mpq.VERIFY_RAW_MD5 == 8
+    assert mpq.VERIFY_ALL == 15
     assert mpq.FILE_FLAG_SECTOR_CRC == 0x04000000
     assert verify.argtypes == [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
                                ctypes.POINTER(ctypes.c_uint32)]
@@ -915,6 +916,51 @@ def test_explicit_verification_mismatches(tmp_path, corrupt):
             assert entry.read() == payload
 
 
+@pytest.mark.parametrize("chunk_size", [0, 1, 2, 3])
+def test_v4_raw_md5(tmp_path, chunk_size):
+    """Reuse writer-produced classic tables; independently hash raw v4 bytes."""
+    path = tmp_path / "raw-md5.mpq"
+    with mpq.Writer(path, version=mpq.ARCHIVE_VERSION_TWO, max_files=8) as writer:
+        writer.add("raw", b"abc")
+    with mpq.Archive(path, offset=0) as archive:
+        offset = archive["raw"].offset
+    original = path.read_bytes()
+    _, _, _, _, shift, hash_pos, block_pos, hashes, blocks = struct.unpack_from(
+        "<IIIHHIIII", original)
+    hash_table = original[hash_pos:hash_pos + hashes * 16]
+    block_table = original[block_pos:block_pos + blocks * 16]
+    assert offset >= 0xd0 and original[offset:offset + 3] == b"abc"
+    image = bytearray(original[:offset + 3])
+    digest_pos = len(image)
+    if chunk_size:
+        for start in range(0, 3, chunk_size):
+            image.extend(hashlib.md5(b"abc"[start:start + chunk_size]).digest())
+    hash_pos = len(image)
+    image.extend(hash_table)
+    block_pos = len(image)
+    image.extend(block_table)
+    struct.pack_into("<IIIHHIIII", image, 0, 0x1a51504d, 0xd0, 1, 3, shift,
+                     hash_pos, block_pos, hashes, blocks)
+    struct.pack_into("<QHHQQQ", image, 32, 0, 0, 0, len(image), 0, 0)
+    struct.pack_into("<QQQQQI", image, 68, len(hash_table), len(block_table),
+                     0, 0, 0, chunk_size)
+    image[112:208] = bytes(96)
+    image[112:128] = hashlib.md5(block_table).digest()
+    image[128:144] = hashlib.md5(hash_table).digest()
+    image[192:208] = hashlib.md5(image[:192]).digest()
+    path.write_bytes(image)
+    with mpq.Archive(path, offset=0) as archive:
+        assert archive.version == 4
+        assert archive["raw"].verify(mpq.VERIFY_RAW_MD5) == 0
+        assert archive["raw"].read() == b"abc"
+    if chunk_size:
+        image[digest_pos] ^= 1
+        path.write_bytes(image)
+        with mpq.Archive(path, offset=0) as archive:
+            assert archive["raw"].read() == b"abc"
+            assert archive["raw"].verify(mpq.VERIFY_RAW_MD5) == mpq.VERIFY_RAW_MD5
+
+
 def test_errors_and_lifecycle(tmp_path):
     """Missing entries, oversized writes, and post-close use expose typed errors."""
     path = tmp_path / "errors.mpq"
@@ -926,10 +972,11 @@ def test_errors_and_lifecycle(tmp_path):
     with mpq.Archive(path, offset=0) as archive:
         assert archive["raw"].verify(0) == 0
         assert archive["raw"].verify(mpq.VERIFY_SECTOR_CRC) == 0
+        assert archive["raw"].verify(mpq.VERIFY_RAW_MD5) == 0
         with pytest.raises(mpq.LibmpqNotFoundError):
             archive["raw"].verify()
         with pytest.raises(mpq.LibmpqError) as invalid:
-            archive["raw"].verify(8)
+            archive["raw"].verify(16)
         assert invalid.value.code == mpq.ERROR_FORMAT
         with pytest.raises(mpq.LibmpqNotFoundError) as error:
             archive["missing"]

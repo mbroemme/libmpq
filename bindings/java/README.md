@@ -91,16 +91,21 @@ returns `Archive.BlockVerification` with `checksum()` (unsigned stored
 Adler-32 as `long`) and `mismatches()` (zero or `Mpq.VERIFY_SECTOR_CRC`).
 Unavailable checksums throw `LibmpqException` with `Mpq.ERROR_EXIST`.
 
-Use `Mpq.VERIFY_SECTOR_CRC`, `Mpq.VERIFY_FILE_CRC32`, or
-`Mpq.VERIFY_FILE_MD5` to select checks. Sector checks cover decrypted packed
+Use `Mpq.VERIFY_SECTOR_CRC`, `Mpq.VERIFY_FILE_CRC32`, `Mpq.VERIFY_FILE_MD5`, or
+`Mpq.VERIFY_RAW_MD5` to select checks. Sector checks cover decrypted packed
 bytes; file hashes cover extracted bytes. Missing values/tables are skipped.
-File checksum requests require attributes; sector-only requests do not.
+File checksum requests require attributes; sector/raw-only requests do not.
 `Mpq.VERIFY_ALL` selects all checks. The returned mismatch mask uses the same
 `Mpq.VERIFY_*` bits and is a subset of the request. Set bits mean available
 checksums mismatched; clear bits mean matched or unavailable/skipped.
 Operation errors throw existing exceptions. Zero does not prove availability.
 Complete lossless reads automatically compare available CRC32/MD5 values;
 lossy ADPCM is not compared because decoded bytes may differ from source hashes.
+
+`Mpq.VERIFY_RAW_MD5` hashes v4 stored member chunks before file decryption or
+decompression, after MPQE transport decoding. It is skipped for older versions,
+disabled raw chunks and empty stored payloads. It checks physical patch members,
+not reconstructed patch-view output.
 
 `archive.fileFlags(fileNumber)` returns the unsigned stored block-table flags
 as a `long`. Inspect `Mpq.FILE_FLAG_*` bits; convenience booleans use this
