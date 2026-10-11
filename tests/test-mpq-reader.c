@@ -1838,6 +1838,7 @@ typedef struct
     uint64_t base;
     uint64_t fail_at;
     unsigned int reads;
+    size_t max_read;
     mpq_header_s header;
     mpq_header_ex_s ex;
     mpq_header_v3_s v3;
@@ -1851,6 +1852,8 @@ reader_v4_read_at(void *context, libmpq__off_t offset, uint8_t *buffer, size_t s
     uint64_t start;
     uint64_t end = source->base + source->size;
     ++source->reads;
+    if (size > source->max_read)
+        source->max_read = size;
     if (offset < 0 || (uint64_t)offset > end || size > end - (uint64_t)offset)
         return LIBMPQ_ERROR_READ;
     start = (uint64_t)offset;
@@ -1968,7 +1971,8 @@ test_v4_independent_layout(void)
 /* Keep payload offsets final, then reorder/gap the stored tables independently. */
 static int
 reader_v4_fixture(
-    reader_v4_source_s *source, int representation, int compressed, int encrypted, int single
+    reader_v4_source_s *source, int representation, int compressed, int encrypted, int single,
+    int attributes
 )
 {
     mpq_archive_s *writer = NULL;
@@ -1982,6 +1986,8 @@ reader_v4_fixture(
     size_t sizes[5];
     size_t length = single ? 256 : sizeof(payload);
     memset(source, 0, sizeof(*source));
+    if (attributes)
+        options.attributes = LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5;
     for (size_t i = 0; i < sizeof(payload); ++i)
         payload[i] = (uint8_t)(i % 17);
     file_options.flags = compressed ? LIBMPQ_FILE_FLAG_COMPRESS : 0;
@@ -1991,6 +1997,8 @@ reader_v4_fixture(
         file_options.flags |= 0x00020000u;
     if (single)
         file_options.flags |= LIBMPQ_FILE_FLAG_SINGLE;
+    if (attributes && compressed && !single)
+        file_options.flags |= LIBMPQ_FILE_FLAG_SECTOR_CRC;
     file_options.compression_first = LIBMPQ_COMPRESSION_ZLIB;
     file_options.compression_next = LIBMPQ_COMPRESSION_ZLIB;
     TEST_CHECK(libmpq__archive_create(&writer, "reader-v4-input.mpq", &options) == 0);
@@ -2149,7 +2157,7 @@ test_v4_md5(int representation, int compressed)
     uint8_t *digests[6] = { source.v4.hash_table_md5,     source.v4.block_table_md5,
                             source.v4.hi_block_table_md5, source.v4.het_table_md5,
                             source.v4.bet_table_md5,      source.v4.header_md5 };
-    TEST_CHECK(reader_v4_fixture(&original, representation, compressed, 2, 0) == 0);
+    TEST_CHECK(reader_v4_fixture(&original, representation, compressed, 2, 0, 0) == 0);
     TEST_CHECK(reader_v4_table_md5(&original) == 0);
     positions[0] = original.header.hash_table_offset;
     positions[1] = original.header.block_table_offset;
@@ -2241,6 +2249,283 @@ test_v4_md5(int representation, int compressed)
     return 0;
 }
 
+/* Add raw arrays to a classic-only image; ordinary encrypted bytes can move unchanged. */
+static int
+reader_v4_raw_fixture(
+    reader_v4_source_s *source, uint32_t chunk_size, int compressed, int encrypted, int single
+)
+{
+    reader_v4_source_s original;
+    mpq_block_s blocks[8];
+    uint8_t wire[8 * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE];
+    size_t table_size;
+    TEST_CHECK(reader_v4_fixture(source, 1, compressed, encrypted, single, 1) == 0);
+    original = *source;
+    table_size = (size_t)source->v4.block_table_size;
+    TEST_CHECK(table_size <= sizeof(wire));
+    memcpy(wire, source->bytes + source->header.block_table_offset, table_size);
+    TEST_CHECK(
+        libmpq__crypto_decrypt_block(
+            wire, (uint32_t)table_size, libmpq__crypto_hash_string("(block table)", 0x300)
+        ) == 0
+    );
+    TEST_CHECK(
+        libmpq__block_table_decode(wire, table_size, blocks, source->header.block_table_count) == 0
+    );
+    for (uint32_t i = 0; i < source->header.block_table_count; ++i) {
+        uint32_t offset = blocks[i].offset;
+        uint32_t size = blocks[i].packed_size;
+        uint32_t position = 0;
+        if (size == 0)
+            continue;
+        TEST_CHECK((blocks[i].flags & 0x00020000u) == 0);
+        TEST_CHECK(offset <= original.size && size <= original.size - offset);
+        TEST_CHECK(size <= sizeof(source->bytes) - source->size);
+        blocks[i].offset = (uint32_t)source->size;
+        memcpy(source->bytes + source->size, original.bytes + offset, size);
+        source->size += size;
+        while (chunk_size != 0 && position < size) {
+            uint32_t take = size - position < chunk_size ? size - position : chunk_size;
+            TEST_CHECK(16 <= sizeof(source->bytes) - source->size);
+            reader_v4_digest(
+                original.bytes + offset + position, take, source->bytes + source->size
+            );
+            source->size += 16;
+            position += take;
+        }
+    }
+    TEST_CHECK(
+        libmpq__block_table_encode(
+            blocks, source->header.block_table_count,
+            source->bytes + source->header.block_table_offset, table_size
+        ) == 0
+    );
+    TEST_CHECK(
+        libmpq__crypto_encrypt_block(
+            source->bytes + source->header.block_table_offset, (uint32_t)table_size,
+            libmpq__crypto_hash_string("(block table)", 0x300)
+        ) == 0
+    );
+    source->v4.raw_chunk_size = chunk_size;
+    source->v3.archive_size = source->size;
+    return reader_v4_table_md5(source);
+}
+
+/* Raw verification uses stored bytes, requires no filename key and combines with attributes. */
+static int
+test_v4_raw_md5(uint32_t chunk_size, int compressed, int encrypted, int single, uint64_t base)
+{
+    reader_v4_source_s source;
+    mpq_archive_s *archive = NULL;
+    mpq_entry_s saved;
+    mpq_entry_s *entry;
+    mpq_stream_s *stream = NULL;
+    uint8_t actual[9000];
+    libmpq__off_t transferred;
+    uint32_t number;
+    uint32_t empty;
+    uint32_t bits;
+    uint64_t chunks;
+    uint64_t digest_offset;
+    TEST_CHECK(reader_v4_raw_fixture(&source, chunk_size, compressed, encrypted, single) == 0);
+    source.base = base;
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &archive, &source, reader_v4_read_at, (libmpq__off_t)(base + source.size),
+            (libmpq__off_t)base, NULL
+        ) == 0
+    );
+    TEST_CHECK(libmpq__file_number(archive, "folder/payload.bin", &number) == 0);
+    entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+    saved = *entry;
+    digest_offset = entry->offset + entry->packed_size;
+
+    /* Independent hashlib.md5 vectors over the fixed i % 17 plaintext pattern. */
+    if (!compressed && !encrypted && single && chunk_size == 256) {
+        static const uint8_t expected[16] = { 0x9b, 0x50, 0x46, 0x47, 0x18, 0x63, 0x54, 0xd9,
+                                              0x4e, 0xd0, 0x2f, 0xfa, 0xd1, 0x77, 0xb5, 0x7e };
+        memcpy(source.bytes + (size_t)digest_offset, expected, sizeof(expected));
+    }
+    if (!compressed && !encrypted && !single && chunk_size == 4096) {
+        static const uint8_t expected[16] = { 0xdb, 0xc9, 0x89, 0x29, 0x27, 0x97, 0x26, 0x94,
+                                              0x0f, 0xb7, 0x3f, 0xe4, 0xa3, 0xc5, 0xf8, 0xc7 };
+        memcpy(source.bytes + (size_t)digest_offset + 32, expected, sizeof(expected));
+    }
+    TEST_CHECK(
+        libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) == 0 && bits == 0
+    );
+    TEST_CHECK(libmpq__stream_open_name(archive, "folder/payload.bin", &stream) == 0);
+
+    /* Named streams own independent clones; logical checks need this archive's key cache. */
+    TEST_CHECK(libmpq__reader_offsets_acquire(archive, number, "folder/payload.bin") == 0);
+    TEST_CHECK(libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &bits) == 0 && bits == 0);
+    if (chunk_size != 0) {
+        source.bytes[(size_t)digest_offset] ^= 1;
+        TEST_CHECK(
+            libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &bits) == 0 &&
+            bits == LIBMPQ_VERIFY_RAW_MD5
+        );
+        source.bytes[(size_t)digest_offset] ^= 1;
+    }
+    TEST_CHECK(libmpq__reader_offsets_release(archive, number) == 0);
+    TEST_CHECK(
+        libmpq__stream_read(stream, actual, (libmpq__off_t)entry->unpacked_size, &transferred) ==
+            0 &&
+        transferred == (libmpq__off_t)entry->unpacked_size
+    );
+    for (size_t i = 0; i < (size_t)transferred; ++i)
+        TEST_CHECK(actual[i] == (uint8_t)(i % 17));
+    TEST_CHECK(libmpq__stream_close(stream) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "zero.bin", &empty) == 0);
+    {
+        unsigned int reads = source.reads;
+        TEST_CHECK(
+            libmpq__file_verify(archive, empty, LIBMPQ_VERIFY_RAW_MD5, &bits) == 0 && bits == 0
+        );
+        TEST_CHECK(source.reads == reads);
+    }
+    if (chunk_size == 0) {
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+        return 0;
+    }
+    chunks = (entry->packed_size - 1) / chunk_size + 1;
+    digest_offset = entry->offset + entry->packed_size;
+    {
+        uint8_t stored[16];
+        memcpy(stored, source.bytes + (size_t)digest_offset, sizeof(stored));
+        memset(source.bytes + (size_t)digest_offset, 0, sizeof(stored));
+        TEST_CHECK(
+            libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) == 0 &&
+            bits == LIBMPQ_VERIFY_RAW_MD5
+        );
+        memcpy(source.bytes + (size_t)digest_offset, stored, sizeof(stored));
+    }
+    for (unsigned int i = 0; i < 4; ++i) {
+        size_t position = (size_t)(i == 0   ? entry->offset
+                                   : i == 1 ? entry->offset + entry->packed_size / 2
+                                   : i == 2 ? digest_offset - 1
+                                            : digest_offset + (chunks - 1) * 16);
+        source.bytes[position] ^= 1;
+        TEST_CHECK(
+            libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) == 0 &&
+            bits == LIBMPQ_VERIFY_RAW_MD5
+        );
+        if (i == 3)
+            TEST_CHECK(
+                libmpq__file_verify(
+                    archive, number, LIBMPQ_VERIFY_RAW_MD5 | LIBMPQ_VERIFY_SECTOR_CRC, &bits
+                ) == 0 &&
+                bits == LIBMPQ_VERIFY_RAW_MD5
+            );
+        source.bytes[position] ^= 1;
+    }
+    source.fail_at = base + digest_offset;
+    bits = UINT32_MAX;
+    TEST_CHECK(
+        libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) == LIBMPQ_ERROR_READ &&
+        bits == 0
+    );
+    source.fail_at = base + entry->offset;
+    TEST_CHECK(
+        libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) == LIBMPQ_ERROR_READ &&
+        bits == 0
+    );
+    source.fail_at = 0;
+    if (chunks > 1) {
+        source.bytes[(size_t)digest_offset] ^= 1;
+        source.fail_at = base + digest_offset + (chunks - 1) * 16;
+        TEST_CHECK(
+            libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) ==
+                LIBMPQ_ERROR_READ &&
+            bits == 0
+        );
+        source.fail_at = 0;
+        source.bytes[(size_t)digest_offset] ^= 1;
+    }
+    {
+        uint64_t extent = archive->mpq_header_v3.archive_size;
+        uint64_t physical = archive->file_size;
+        archive->mpq_header_v3.archive_size = digest_offset + chunks * 16 - 1;
+        TEST_CHECK(
+            libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) ==
+                LIBMPQ_ERROR_FORMAT &&
+            bits == 0
+        );
+        archive->mpq_header_v3.archive_size = extent;
+        archive->file_size = base + digest_offset + chunks * 16 - 1;
+        TEST_CHECK(
+            libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) ==
+                LIBMPQ_ERROR_READ &&
+            bits == 0
+        );
+        archive->file_size = physical;
+    }
+    {
+        uint64_t extent = archive->mpq_header_v3.archive_size;
+        uint64_t physical = archive->file_size;
+        archive->mpq_header_v3.archive_size = UINT64_MAX;
+        archive->file_size = UINT64_MAX;
+        entry->offset = 0;
+        if (base == 0) {
+            unsigned int reads = source.reads;
+            entry->packed_size = UINT64_MAX;
+            archive->mpq_header_v4.raw_chunk_size = 1;
+            TEST_CHECK(
+                libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) ==
+                    LIBMPQ_ERROR_FORMAT &&
+                bits == 0
+            );
+            TEST_CHECK(source.reads == reads);
+        }
+        if (source.size >= 16384) {
+            entry->packed_size = UINT32_MAX;
+            archive->mpq_header_v4.raw_chunk_size = UINT32_MAX;
+            source.fail_at = base + 1;
+            source.max_read = 0;
+            TEST_CHECK(
+                libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) ==
+                    LIBMPQ_ERROR_READ &&
+                bits == 0
+            );
+            TEST_CHECK(source.max_read == 16384);
+            source.fail_at = 0;
+        }
+        *entry = saved;
+        archive->mpq_header_v4.raw_chunk_size = chunk_size;
+        archive->mpq_header_v3.archive_size = extent;
+        archive->file_size = physical;
+    }
+    entry->unpacked_size = 0;
+    TEST_CHECK(
+        libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) == 0 && bits == 0
+    );
+    *entry = saved;
+    entry->offset = UINT64_MAX;
+    TEST_CHECK(
+        libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) == LIBMPQ_ERROR_FORMAT &&
+        bits == 0
+    );
+    *entry = saved;
+    entry->packed_size = UINT64_MAX;
+    TEST_CHECK(
+        libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) == LIBMPQ_ERROR_FORMAT &&
+        bits == 0
+    );
+    *entry = saved;
+    entry->flags |= LIBMPQ_FILE_FLAG_DELETE_MARKER;
+    TEST_CHECK(
+        libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) == 0 && bits == 0
+    );
+    *entry = saved;
+    entry->flags |= LIBMPQ_FILE_FLAG_PATCH_FILE;
+    TEST_CHECK(
+        libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) == 0 && bits == 0
+    );
+    *entry = saved;
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    return 0;
+}
+
 /* Real APIs must agree on rows and bytes regardless of table order or archive base. */
 static int
 test_v4_read(int representation, int compressed, int encrypted, int single, uint64_t base)
@@ -2263,7 +2548,7 @@ test_v4_read(int representation, int compressed, int encrypted, int single, uint
     libmpq__off_t packed;
     libmpq__off_t offset;
     size_t length = single ? 256 : sizeof(actual);
-    TEST_CHECK(reader_v4_fixture(&source, representation, compressed, encrypted, single) == 0);
+    TEST_CHECK(reader_v4_fixture(&source, representation, compressed, encrypted, single, 0) == 0);
     source.base = base;
     TEST_CHECK(
         libmpq__archive_open_io(
@@ -2345,7 +2630,7 @@ test_v4_extents(void)
     reader_v4_source_s original;
     reader_v4_source_s source;
     mpq_archive_s *archive = NULL;
-    TEST_CHECK(reader_v4_fixture(&original, 2, 0, 0, 0) == 0);
+    TEST_CHECK(reader_v4_fixture(&original, 2, 0, 0, 0, 0) == 0);
     for (unsigned int which = 0; which < 21; ++which) {
         int32_t expected = LIBMPQ_ERROR_FORMAT;
         source = original;
@@ -2537,7 +2822,7 @@ test_v4_extents(void)
 
 /* Plain/MPQE path opening remains read-only and rejected transactions preserve sources. */
 static int
-test_v4_mpqe_read_only(void)
+test_v4_mpqe_read_only(int raw)
 {
     reader_v4_source_s source;
     reader_v4_source_s cipher;
@@ -2552,7 +2837,10 @@ test_v4_mpqe_read_only(void)
     uint32_t number;
     libmpq__off_t transferred;
     FILE *file;
-    TEST_CHECK(reader_v4_fixture(&source, 2, 1, 2, 0) == 0);
+    if (raw)
+        TEST_CHECK(reader_v4_raw_fixture(&source, 31, 1, 1, 0) == 0);
+    else
+        TEST_CHECK(reader_v4_fixture(&source, 2, 1, 2, 0, 0) == 0);
     TEST_CHECK(reader_v4_table_md5(&source) == 0);
     file = fopen("reader-v4.mpq", "wb");
     TEST_CHECK(
@@ -2598,6 +2886,15 @@ test_v4_mpqe_read_only(void)
     );
     TEST_CHECK(libmpq__file_number(archive, "folder/payload.bin", &number) == 0);
     TEST_CHECK(libmpq__stream_open_name(archive, "folder/payload.bin", &stream) == 0);
+    if (raw) {
+        uint32_t bits = UINT32_MAX;
+        TEST_CHECK(
+            libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) == 0 && bits == 0
+        );
+        TEST_CHECK(
+            libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &bits) == 0 && bits == 0
+        );
+    }
     TEST_CHECK(
         libmpq__stream_read(stream, actual, sizeof(actual), &transferred) == 0 &&
         transferred == sizeof(actual)
@@ -2613,15 +2910,17 @@ test_v4_mpqe_read_only(void)
             LIBMPQ_ERROR_FORMAT &&
         update == NULL
     );
-    cipher.bytes[(size_t)source.v3.het_table_offset + 12] ^= 1;
-    TEST_CHECK(
-        libmpq__archive_open_mpqe_io(
-            &archive, &cipher, reader_v4_read_at, (libmpq__off_t)cipher.size, 0, auth, sizeof(auth),
-            NULL
-        ) == LIBMPQ_ERROR_FORMAT &&
-        archive == NULL
-    );
-    cipher.bytes[(size_t)source.v3.het_table_offset + 12] ^= 1;
+    if (!raw) {
+        cipher.bytes[(size_t)source.v3.het_table_offset + 12] ^= 1;
+        TEST_CHECK(
+            libmpq__archive_open_mpqe_io(
+                &archive, &cipher, reader_v4_read_at, (libmpq__off_t)cipher.size, 0, auth,
+                sizeof(auth), NULL
+            ) == LIBMPQ_ERROR_FORMAT &&
+            archive == NULL
+        );
+        cipher.bytes[(size_t)source.v3.het_table_offset + 12] ^= 1;
+    }
     auth[0] ^= 1;
     TEST_CHECK(
         libmpq__archive_open_mpqe_io(
@@ -2698,6 +2997,15 @@ main(void)
     TEST_CHECK(test_v3_transaction_setup() == 0);
     TEST_CHECK(test_v3_reserved_update() == 0);
     TEST_CHECK(test_v4_independent_layout() == 0);
+    TEST_CHECK(test_v4_raw_md5(0, 0, 0, 1, 0) == 0);
+    TEST_CHECK(test_v4_raw_md5(256, 0, 0, 1, 0) == 0);
+    TEST_CHECK(test_v4_raw_md5(64, 0, 0, 1, 512) == 0);
+    TEST_CHECK(test_v4_raw_md5(100, 0, 1, 1, 0) == 0);
+    TEST_CHECK(test_v4_raw_md5(4096, 0, 0, 0, UINT64_C(0x100000000)) == 0);
+    TEST_CHECK(test_v4_raw_md5(31, 1, 0, 0, 0) == 0);
+    TEST_CHECK(test_v4_raw_md5(31, 1, 1, 0, 512) == 0);
+    TEST_CHECK(test_v4_raw_md5(1, 1, 1, 1, 0) == 0);
+    TEST_CHECK(test_v4_raw_md5(UINT32_MAX, 1, 0, 0, 0) == 0);
     for (int representation = 0; representation < 3; ++representation) {
         TEST_CHECK(test_v4_md5(representation, 0) == 0);
         TEST_CHECK(test_v4_md5(representation, 1) == 0);
@@ -2708,7 +3016,8 @@ main(void)
         TEST_CHECK(test_v4_read(representation, 1, 2, 1, UINT64_C(0x100000000)) == 0);
     }
     TEST_CHECK(test_v4_extents() == 0);
-    TEST_CHECK(test_v4_mpqe_read_only() == 0);
+    TEST_CHECK(test_v4_mpqe_read_only(0) == 0);
+    TEST_CHECK(test_v4_mpqe_read_only(1) == 0);
     TEST_CHECK(test_canonical_entries(LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
     TEST_CHECK(test_canonical_entries(LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
 
