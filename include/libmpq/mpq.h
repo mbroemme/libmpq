@@ -117,7 +117,7 @@ typedef int32_t (*libmpq_read_at_fn)(
 /*
  * On-disk archive format versions (not combinable flags). Creation accepts
  * ONE, TWO, and THREE. V3 creation emits both HET/BET and classic tables;
- * V3 updates require complete filename reconstruction; v4 remains unsupported.
+ * V3 updates require complete filename reconstruction; v4 access is read-only.
  * libmpq__archive_version() reports the corresponding one-based generation.
  */
 #define LIBMPQ_ARCHIVE_VERSION_ONE 0

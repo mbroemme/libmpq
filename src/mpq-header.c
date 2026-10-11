@@ -208,14 +208,16 @@ libmpq__header_v4_full_encode(
     return 0;
 }
 
-/* Select the declared size without truncating the full v3 archive extent. */
+/* Select the declared size without truncating the full v3/v4 archive extent. */
 uint64_t
 libmpq__header_archive_size(const mpq_header_s *header, const mpq_header_v3_s *v3)
 {
     if (header == NULL)
         return 0;
-    if (header->version == LIBMPQ_ARCHIVE_VERSION_THREE &&
-        header->header_size >= LIBMPQ_HEADER_V3_WIRE_SIZE)
+    if ((header->version == LIBMPQ_ARCHIVE_VERSION_THREE &&
+         header->header_size >= LIBMPQ_HEADER_V3_WIRE_SIZE) ||
+        (header->version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
+         header->header_size >= LIBMPQ_HEADER_V4_WIRE_SIZE))
         return v3 == NULL ? 0 : v3->archive_size;
     return header->archive_size;
 }

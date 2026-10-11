@@ -67,8 +67,8 @@ when a classic hash entry maps to a live block; other live blocks need not be
 hash-referenced. This does not assert equivalence with HET/BET. Declared
 extended tables must form a valid pair; malformed tables fail opening rather
 than downgrading to classic lookup. Compressed classic tables remain unsupported.
-MPQ v4 support currently covers structural header encoding and decoding,
-not full archive reading or writing.
+MPQ v4 supports read-only loading with explicit stored-table extents;
+creation and updates remain unsupported.
 
 ### MPQ v4 header
 
@@ -101,10 +101,23 @@ The private full-header helpers, `libmpq__header_v4_full_decode()` and
 the signature, version and declared header size. They do not calculate or
 verify MD5 digests.
 
-libmpq currently supports structural v4 header encoding and decoding only.
-Raw chunk metadata is preserved without selecting a default or verifying chunks;
-archive-level table validation is not implemented. Normal MPQ v4 archive reading
-and writing remain unsupported.
+Normal v4 opening uses the full-header decoder and retains the five explicit
+stored-table sizes. Each position/size pair is checked independently against the
+declared 64-bit archive extent and physical source, including embedded archive
+origins, before table I/O or allocation. Tables need not be adjacent or ordered.
+Classic decoded lengths still come from entry counts. Equal stored and decoded
+lengths use the existing uncompressed hash/block/hi-block readers. Shorter stored
+extents may indicate compression or another unsupported/malformed encoding;
+size alone does not identify compression. They return UNPACK because the loader
+cannot decode them. HET/BET reuse the existing decrypt/decompress loaders, with
+the envelope-inclusive 1 MiB limit unchanged. Missing tables are allowed when
+the remaining representation permits lookup; malformed present tables do not
+disappear behind fallback.
+
+V4 archive access is read-only: creation, transactional updates and patch-view
+rebuilds remain unsupported. Table/header MD5 fields and raw chunk metadata are
+retained but not verified; no default raw chunk size is selected. Existing member
+compression and encryption decoding is reused without enabling v4 writer codecs.
 
 ## Archive creation and finalization
 
@@ -204,8 +217,9 @@ size, flag-array index, and an unknown field.
 Private structural decoders and HET candidate lookup accept already-decrypted/
 decompressed table bytes. Archive opening loads the tables and populates BET
 canonical entries. Normal filename lookup tries HET/BET first and falls back
-to classic lookup only on a valid miss, not a malformed table or mapping. MPQ
-v4 remains unsupported. Loading retains the plaintext common envelope and
+to classic lookup only on a valid miss, not a malformed table or mapping.
+V4 supplies explicit stored extents; v3 derives them from table order.
+Loading retains the plaintext common envelope and
 decrypts/decompresses its contained data before structural decoding.
 
 The common envelope is three little-endian `uint32_t` values: signature at
@@ -336,7 +350,7 @@ BET decoding remains isolated from classic tables and attributes.
 ### Archive-level HET/BET reading
 
 Present v3 structures must follow HET, BET, classic hash, classic block,
-hi-block, archive end. Missing structures are skipped. Each extended table's
+hi-block, archive end. Missing structures are skipped. Each v3 extended table's
 stored extent ends at the next present structure, or the effective 64-bit
 archive end; fixed-size classic tables must not overlap that next structure.
 All relative positions are checked against the declared archive and backing
@@ -941,9 +955,9 @@ Actual creation still requires memory for reserved tables and can fail with
 an allocation error. Completed HET/BET tables must also fit the separate
 1 MiB limit, so this ceiling is not a promise of that many writable files.
 
-Creation supports MPQ v1/v2/v3, including MPQE wrapping; MPQ v4 and compressed
-classic tables remain unsupported. The v3 writer emits mixed HET/BET and classic
-tables, not BET-only output. V3 transactional reconstruction requires a complete,
+Creation supports MPQ v1/v2/v3, including MPQE wrapping. V4 is read-only;
+compressed classic tables and v4 modifications remain unsupported. The v3 writer
+emits mixed HET/BET and classic tables, not BET-only output. V3 transactional reconstruction requires a complete,
 unambiguous named file set and representable metadata. It rebuilds all tables
 through the same writer; incomplete source information is rejected rather than
 silently losing members. Practical transaction rules and supported source

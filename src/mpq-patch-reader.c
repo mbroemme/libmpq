@@ -1663,16 +1663,23 @@ done:
 static int32_t
 patch_source_open(mpq_archive_s **archive, const mpq_patch_source_s *source)
 {
+    int32_t result;
     if (archive == NULL)
         return LIBMPQ_ERROR_EXIST;
     *archive = NULL;
     if (source == NULL || source->path == NULL)
         return LIBMPQ_ERROR_EXIST;
-    return source->auth_code == NULL
-               ? libmpq__archive_open(archive, source->path, -1)
-               : libmpq__archive_open_mpqe(
-                     archive, source->path, -1, source->auth_code, source->auth_code_size
-                 );
+    result = source->auth_code == NULL
+                 ? libmpq__archive_open(archive, source->path, -1)
+                 : libmpq__archive_open_mpqe(
+                       archive, source->path, -1, source->auth_code, source->auth_code_size
+                   );
+    if (result == 0 && (*archive)->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_THREE) {
+        (void)libmpq__archive_close(*archive);
+        *archive = NULL;
+        return LIBMPQ_ERROR_FORMAT;
+    }
+    return result;
 }
 
 /* Compare full names, not possibly truncated filename hashes. */

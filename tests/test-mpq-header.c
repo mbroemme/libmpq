@@ -237,6 +237,7 @@ test_v4_vectors(void)
     TEST_CHECK(decoded_v3.archive_size == v3.archive_size);
     TEST_CHECK(decoded_v3.bet_table_offset == v3.bet_table_offset);
     TEST_CHECK(decoded_v3.het_table_offset == v3.het_table_offset);
+    TEST_CHECK(libmpq__header_archive_size(&decoded, &decoded_v3) == v3.archive_size);
     TEST_CHECK(decoded_v4.hash_table_size == v4.hash_table_size);
     TEST_CHECK(decoded_v4.block_table_size == v4.block_table_size);
     TEST_CHECK(decoded_v4.hi_block_table_size == v4.hi_block_table_size);
@@ -634,7 +635,7 @@ test_v3_rejection(void)
     return 0;
 }
 
-/* Structural wire support must not enable public archive opening or creation. */
+/* A header vector alone is not a valid archive; public v4 creation remains disabled. */
 static int
 test_v4_disabled(void)
 {

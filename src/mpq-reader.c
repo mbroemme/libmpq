@@ -92,7 +92,85 @@ libmpq__entry_index_from_bet(
     return 0;
 }
 
-/* Absent structures are skipped, not used as zero boundaries. Classic sizes stay fixed. */
+static int32_t table_size(uint32_t count, size_t item_size, size_t *size);
+
+/* Validate a v4 stored extent before allocation or archive-relative I/O translation. */
+static int32_t
+validate_table_extent(
+    const mpq_archive_s *archive, uint64_t position, uint64_t stored_size, uint64_t minimum,
+    uint64_t maximum
+)
+{
+    uint64_t extent = libmpq__header_archive_size(&archive->mpq_header, &archive->mpq_header_v3);
+    uint64_t base;
+    if (archive->archive_offset < 0)
+        return LIBMPQ_ERROR_FORMAT;
+    base = (uint64_t)archive->archive_offset;
+    if (base > archive->file_size || extent < archive->mpq_header.header_size ||
+        extent > (uint64_t)INT64_MAX - base || extent > archive->file_size - base)
+        return LIBMPQ_ERROR_FORMAT;
+    if (position == 0)
+        return stored_size == 0 && minimum == 0 ? 0 : LIBMPQ_ERROR_FORMAT;
+    if (stored_size < minimum || stored_size > maximum || stored_size > SIZE_MAX ||
+        position < archive->mpq_header.header_size || position > extent ||
+        stored_size > extent - position || position > (uint64_t)INT64_MAX - base ||
+        base + position > archive->file_size || stored_size > archive->file_size - base - position)
+        return LIBMPQ_ERROR_FORMAT;
+    return 0;
+}
+
+/* V4 table positions are independent; decoded classic geometry remains count-based. */
+static int32_t
+validate_v4_header(const mpq_archive_s *archive)
+{
+    const mpq_header_v4_s *v4 = &archive->mpq_header_v4;
+    uint64_t positions[5] = { archive->mpq_header.hash_table_offset |
+                                  ((uint64_t)archive->mpq_header_ex.hash_table_offset_high << 32),
+                              archive->mpq_header.block_table_offset |
+                                  ((uint64_t)archive->mpq_header_ex.block_table_offset_high << 32),
+                              archive->mpq_header_ex.extended_offset,
+                              archive->mpq_header_v3.het_table_offset,
+                              archive->mpq_header_v3.bet_table_offset };
+    uint64_t sizes[5] = { v4->hash_table_size, v4->block_table_size, v4->hi_block_table_size,
+                          v4->het_table_size, v4->bet_table_size };
+    size_t decoded[3];
+    uint32_t hashes = archive->mpq_header.hash_table_count;
+    uint32_t blocks = archive->mpq_header.block_table_count;
+    int32_t result;
+    if ((hashes != 0 && (hashes & (hashes - 1u)) != 0) ||
+        (blocks != 0 && hashes == 0 && positions[3] == 0) ||
+        ((positions[3] == 0) != (positions[4] == 0)) || ((positions[3] == 0) != (sizes[3] == 0)) ||
+        ((positions[4] == 0) != (sizes[4] == 0)) ||
+        table_size(hashes, LIBMPQ_HASH_ENTRY_WIRE_SIZE, &decoded[0]) != 0 ||
+        table_size(blocks, LIBMPQ_BLOCK_ENTRY_WIRE_SIZE, &decoded[1]) != 0 ||
+        table_size(blocks, LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE, &decoded[2]) != 0 ||
+        (blocks != 0 &&
+         (SIZE_MAX / blocks < sizeof(mpq_entry_s) || SIZE_MAX / blocks < sizeof(mpq_map_s) ||
+          SIZE_MAX / blocks < sizeof(mpq_file_s *))))
+        return LIBMPQ_ERROR_FORMAT;
+    for (size_t i = 0; i < 5; ++i) {
+        uint64_t minimum = i < 3 ? (decoded[i] != 0 && (i != 2 || positions[i] != 0))
+                                 : (positions[i] != 0 ? LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE + 1 : 0);
+        result = validate_table_extent(
+            archive, positions[i], sizes[i], minimum, i < 3 ? UINT32_MAX : LIBMPQ_EXT_TABLE_MAX_SIZE
+        );
+        if (result != 0)
+            return result;
+    }
+    for (size_t i = 0; i < 3; ++i) {
+        if (i == 2 && positions[i] == 0)
+            continue;
+        if (sizes[i] > decoded[i] || (decoded[i] != 0 && sizes[i] == 0))
+            return LIBMPQ_ERROR_FORMAT;
+
+        /* A shorter extent may be compressed or malformed; neither can be decoded here. */
+        if (sizes[i] < decoded[i])
+            return LIBMPQ_ERROR_UNPACK;
+    }
+    return 0;
+}
+
+/* V3 skips absent structures when deriving bounds; v4 uses explicit stored sizes. */
 int32_t
 libmpq__reader_ext_table_sizes(const mpq_archive_s *archive, uint64_t *het_size, uint64_t *bet_size)
 {
@@ -103,6 +181,27 @@ libmpq__reader_ext_table_sizes(const mpq_archive_s *archive, uint64_t *het_size,
     if (het_size == NULL || bet_size == NULL || archive == NULL)
         return LIBMPQ_ERROR_FORMAT;
     *het_size = *bet_size = 0;
+    if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+        int32_t result = validate_table_extent(
+            archive, archive->mpq_header_v3.het_table_offset, archive->mpq_header_v4.het_table_size,
+            archive->mpq_header_v3.het_table_offset != 0 ? LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE + 1
+                                                         : 0,
+            LIBMPQ_EXT_TABLE_MAX_SIZE
+        );
+        if (result == 0)
+            result = validate_table_extent(
+                archive, archive->mpq_header_v3.bet_table_offset,
+                archive->mpq_header_v4.bet_table_size,
+                archive->mpq_header_v3.bet_table_offset != 0 ? LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE + 1
+                                                             : 0,
+                LIBMPQ_EXT_TABLE_MAX_SIZE
+            );
+        if (result != 0)
+            return result;
+        *het_size = archive->mpq_header_v4.het_table_size;
+        *bet_size = archive->mpq_header_v4.bet_table_size;
+        return 0;
+    }
     positions[0] = archive->mpq_header_v3.het_table_offset;
     positions[1] = archive->mpq_header_v3.bet_table_offset;
     positions[2] = archive->mpq_header.hash_table_count == 0
@@ -195,6 +294,11 @@ ext_table_load(
     int32_t result;
     *output = NULL;
     *output_size = 0;
+    if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
+        validate_table_extent(
+            archive, offset, stored_size, sizeof(envelope) + 1, LIBMPQ_EXT_TABLE_MAX_SIZE
+        ) != 0)
+        return LIBMPQ_ERROR_FORMAT;
     if (stored_size < sizeof(envelope) || stored_size > LIBMPQ_EXT_TABLE_MAX_SIZE ||
         stored_size - sizeof(envelope) > INT32_MAX)
         return LIBMPQ_ERROR_FORMAT;
@@ -208,7 +312,10 @@ ext_table_load(
     if (libmpq__load_le32(envelope) != signature ||
         libmpq__load_le32(envelope + 4) != LIBMPQ_EXT_TABLE_VERSION || data_size == 0 ||
         data_size > INT32_MAX || decoded_size > LIBMPQ_EXT_TABLE_MAX_SIZE ||
-        decoded_size > SIZE_MAX)
+        decoded_size > SIZE_MAX ||
+        (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
+         data_size < (signature == LIBMPQ_HET_SIGNATURE ? LIBMPQ_HET_HEADER_WIRE_SIZE
+                                                        : LIBMPQ_BET_HEADER_WIRE_SIZE)))
         return LIBMPQ_ERROR_FORMAT;
     payload_size = (size_t)(stored_size - sizeof(envelope));
     if (payload_size == 0 || payload_size > data_size)
@@ -230,7 +337,7 @@ ext_table_load(
     if (payload_size < data_size) {
         result = libmpq__compression_decompress_table(
             stored, (uint32_t)payload_size, decoded + sizeof(envelope), data_size,
-            LIBMPQ_ARCHIVE_VERSION_THREE
+            archive->mpq_header.version
         );
         if (result != (int32_t)data_size) {
             result = LIBMPQ_ERROR_FORMAT;
@@ -359,7 +466,7 @@ libmpq__archive_required_extent(const mpq_archive_s *archive, uint64_t *size)
         *size = 0;
     if (archive == NULL || size == NULL)
         return LIBMPQ_ERROR_EXIST;
-    if (archive->archive_offset < 0 || archive->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_THREE ||
+    if (archive->archive_offset < 0 || archive->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_FOUR ||
         (archive->entry_count != 0 && archive->mpq_entry == NULL))
         return LIBMPQ_ERROR_FORMAT;
     extent = archive->mpq_header.header_size;
@@ -368,25 +475,35 @@ libmpq__archive_required_extent(const mpq_archive_s *archive, uint64_t *size)
          extent < LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE) ||
         (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE &&
          extent != LIBMPQ_HEADER_WIRE_SIZE &&
-         extent < LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE))
+         extent < LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE) ||
+        (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
+         extent != LIBMPQ_HEADER_V4_WIRE_SIZE))
         return LIBMPQ_ERROR_FORMAT;
     hash = archive->mpq_header.hash_table_offset |
            ((uint64_t)archive->mpq_header_ex.hash_table_offset_high << 32);
     block = archive->mpq_header.block_table_offset |
             ((uint64_t)archive->mpq_header_ex.block_table_offset_high << 32);
     if (extend_extent(
-            hash, (uint64_t)archive->mpq_header.hash_table_count * LIBMPQ_HASH_ENTRY_WIRE_SIZE,
+            hash,
+            archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR
+                ? archive->mpq_header_v4.hash_table_size
+                : (uint64_t)archive->mpq_header.hash_table_count * LIBMPQ_HASH_ENTRY_WIRE_SIZE,
             &extent
         ) != 0 ||
         extend_extent(
-            block, (uint64_t)archive->mpq_header.block_table_count * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE,
+            block,
+            archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR
+                ? archive->mpq_header_v4.block_table_size
+                : (uint64_t)archive->mpq_header.block_table_count * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE,
             &extent
         ) != 0)
         return LIBMPQ_ERROR_FORMAT;
     if (archive->mpq_header_ex.extended_offset != 0 &&
         extend_extent(
             archive->mpq_header_ex.extended_offset,
-            (uint64_t)archive->mpq_header.block_table_count * LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE,
+            archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR
+                ? archive->mpq_header_v4.hi_block_table_size
+                : (uint64_t)archive->mpq_header.block_table_count * LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE,
             &extent
         ) != 0)
         return LIBMPQ_ERROR_FORMAT;
@@ -1008,7 +1125,8 @@ libmpq__reader_validate_payload_range(
     }
 
     payload_offset = mpq_archive->mpq_entry[entry_index].offset;
-    if (mpq_archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE) {
+    if (mpq_archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE ||
+        mpq_archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
         uint64_t extent =
             libmpq__header_archive_size(&mpq_archive->mpq_header, &mpq_archive->mpq_header_v3);
 
@@ -1358,9 +1476,9 @@ error:
 }
 
 /*
- * Calculate a serialized table size while rejecting arithmetic overflow.
- * MPQ table lengths are stored in 32-bit fields, so both native allocation
- * size and on-disk representation must fit before the caller proceeds.
+ * Calculate a decoded classic table size from its entry count. Both native
+ * allocation size and the classic cipher's uint32_t length must fit. V4 stored
+ * extents are validated independently before using these decoded lengths.
  */
 static int32_t
 table_size(uint32_t count, size_t item_size, size_t *size)
@@ -1408,6 +1526,7 @@ libmpq__reader_archive_open_source(
     uint8_t header_data[LIBMPQ_HEADER_WIRE_SIZE];
     uint8_t header_ex_data[LIBMPQ_HEADER_EX_WIRE_SIZE];
     uint8_t header_v3_data[LIBMPQ_HEADER_V3_EX_WIRE_SIZE];
+    uint8_t header_v4_data[LIBMPQ_HEADER_V4_WIRE_SIZE];
     uint8_t *table_data = NULL;
     size_t table_bytes = 0;
 
@@ -1501,7 +1620,10 @@ libmpq__reader_archive_open_source(
                 goto error;
             }
 
-            if ((*mpq_archive)->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_THREE) {
+            if ((*mpq_archive)->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_FOUR ||
+                ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
+                 ((*mpq_archive)->mpq_header.header_size != LIBMPQ_HEADER_V4_WIRE_SIZE ||
+                  sizeof(header_v4_data) > (*mpq_archive)->file_size - (uint64_t)archive_offset))) {
                 result = LIBMPQ_ERROR_FORMAT;
                 goto error;
             }
@@ -1528,14 +1650,16 @@ libmpq__reader_archive_open_source(
     (*mpq_archive)->block_size = 512U << (*mpq_archive)->mpq_header.block_size;
     (*mpq_archive)->archive_offset = archive_offset;
 
-    if (table_size(
-            (*mpq_archive)->mpq_header.hash_table_count, LIBMPQ_HASH_ENTRY_WIRE_SIZE, &table_bytes
-        ) < 0 ||
-        (uint64_t)table_bytes > (*mpq_archive)->file_size ||
-        table_size(
-            (*mpq_archive)->mpq_header.block_table_count, LIBMPQ_BLOCK_ENTRY_WIRE_SIZE, &table_bytes
-        ) < 0 ||
-        (uint64_t)table_bytes > (*mpq_archive)->file_size) {
+    if ((*mpq_archive)->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_FOUR &&
+        (table_size(
+             (*mpq_archive)->mpq_header.hash_table_count, LIBMPQ_HASH_ENTRY_WIRE_SIZE, &table_bytes
+         ) < 0 ||
+         (uint64_t)table_bytes > (*mpq_archive)->file_size ||
+         table_size(
+             (*mpq_archive)->mpq_header.block_table_count, LIBMPQ_BLOCK_ENTRY_WIRE_SIZE,
+             &table_bytes
+         ) < 0 ||
+         (uint64_t)table_bytes > (*mpq_archive)->file_size)) {
         result = LIBMPQ_ERROR_FORMAT;
         goto error;
     }
@@ -1581,6 +1705,22 @@ libmpq__reader_archive_open_source(
                 goto error;
         }
         result = validate_v3_header(*mpq_archive);
+        if (result != 0)
+            goto error;
+    }
+
+    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+        result = libmpq__source_read_at(
+            source, (uint64_t)archive_offset, header_v4_data, sizeof(header_v4_data)
+        );
+        if (result == 0)
+            result = libmpq__header_v4_full_decode(
+                &(*mpq_archive)->mpq_header, &(*mpq_archive)->mpq_header_ex,
+                &(*mpq_archive)->mpq_header_v3, &(*mpq_archive)->mpq_header_v4, header_v4_data,
+                sizeof(header_v4_data)
+            );
+        if (result == 0)
+            result = validate_v4_header(*mpq_archive);
         if (result != 0)
             goto error;
     }
@@ -1716,7 +1856,8 @@ libmpq__reader_archive_open_source(
         );
     }
 
-    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE) {
+    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE ||
+        (*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
         uint64_t extent;
 
         result = load_het_bet(*mpq_archive);

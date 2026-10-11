@@ -32,7 +32,7 @@ int32_t libmpq__entry_index_from_bet(
     const mpq_archive_s *archive, uint64_t bet_index, uint32_t *entry_index
 );
 
-/* Validate v3 table ordering and infer each present extended table's stored size. */
+/* Infer v3 stored sizes from ordering, or use independently bounded v4 extents. */
 int32_t libmpq__reader_ext_table_sizes(
     const mpq_archive_s *archive, uint64_t *het_size, uint64_t *bet_size
 );

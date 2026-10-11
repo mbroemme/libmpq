@@ -44,7 +44,7 @@ typedef struct
 {
     uint32_t mpq_magic;          /* MPQ signature. */
     uint32_t header_size;        /* Serialized header size in bytes. */
-    uint32_t archive_size;       /* Legacy size; a full v3 header supplies the effective size. */
+    uint32_t archive_size;       /* Legacy size; a full v3/v4 header supplies the effective size. */
     uint16_t version;            /* Archive format version. */
     uint16_t block_size;         /* File sector size exponent: 512 * 2 ^ block_size. */
     uint32_t hash_table_offset;  /* Offset of the hash table from the archive start. */
@@ -116,7 +116,7 @@ int32_t libmpq__header_v4_full_encode(
     const mpq_header_v4_s *v4, uint8_t *wire, size_t size
 );
 
-/* Full v3 headers use the 64-bit size; short v3 headers retain the legacy size. */
+/* Full v3/v4 headers use the 64-bit size; short v3 headers retain the legacy size. */
 uint64_t libmpq__header_archive_size(const mpq_header_s *header, const mpq_header_v3_s *v3);
 
 #endif /* LIBMPQ_MPQ_HEADER_H */

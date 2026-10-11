@@ -281,7 +281,13 @@ libmpq__update_transaction_begin(mpq_update_s **update, const char *path)
 
     /* Generic transaction setup historically accepts nonarchives; keep that contract. */
     if (libmpq__reader_archive_open_path(&check, (*update)->working_path, -1) == 0) {
+        uint8_t unsupported = check->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_THREE;
         (void)libmpq__archive_close(check);
+        if (unsupported) {
+            (void)update_cleanup(*update, 1);
+            *update = NULL;
+            return LIBMPQ_ERROR_FORMAT;
+        }
     }
     return 0;
 }
@@ -315,6 +321,10 @@ libmpq__update_transaction_begin_mpqe(
     result = libmpq__reader_archive_open_mpqe(&source, path, -1, auth_code, auth_code_size);
     if (result != 0)
         goto fail;
+    if (source->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_THREE) {
+        result = LIBMPQ_ERROR_FORMAT;
+        goto fail;
+    }
     result = libmpq__source_file_identity(source->source, &device, &inode);
     if (result != 0)
         goto fail;
