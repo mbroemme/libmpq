@@ -187,7 +187,7 @@ test_roundtrip(uint32_t version, uint32_t flags, int mpqe)
     );
     REQUIRE(found == 0);
     REQUIRE(libmpq__file_verify(archive, number, 0, &found) == 0 && found == 0);
-    REQUIRE(libmpq__file_verify(archive, number, 8, &found) == LIBMPQ_ERROR_FORMAT && found == 0);
+    REQUIRE(libmpq__file_verify(archive, number, 16, &found) == LIBMPQ_ERROR_FORMAT && found == 0);
     REQUIRE(libmpq__file_read(archive, number, output, sizeof(output), &transferred) == 0);
     REQUIRE(transferred == 9 && memcmp(output, "123456789", 9) == 0);
     REQUIRE(libmpq__file_number(archive, "empty.txt", &number) == 0);

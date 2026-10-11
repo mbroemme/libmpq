@@ -244,8 +244,10 @@ enum
 #define LIBMPQ_VERIFY_SECTOR_CRC 0x00000001u
 #define LIBMPQ_VERIFY_FILE_CRC32 0x00000002u
 #define LIBMPQ_VERIFY_FILE_MD5 0x00000004u
-#define LIBMPQ_VERIFY_ALL \
-    (LIBMPQ_VERIFY_SECTOR_CRC | LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5)
+#define LIBMPQ_VERIFY_RAW_MD5 0x00000008u
+#define LIBMPQ_VERIFY_ALL                                                           \
+    (LIBMPQ_VERIFY_SECTOR_CRC | LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5 | \
+     LIBMPQ_VERIFY_RAW_MD5)
 
 /*
  * Signature type bits returned by libmpq__archive_signatures() and accepted
@@ -609,13 +611,17 @@ extern LIBMPQ_API int32_t libmpq__file_attributes(
 );
 
 /*
- * Verify requested available sector Adler-32 and file CRC32/MD5 checksums.
+ * Verify requested available sector Adler-32, file CRC32/MD5, and raw MD5 checksums.
  * Sector checks use decrypted packed bytes; file checks use extracted bytes.
+ * V4 raw checks hash stored member bytes, including any patch-info prefix,
+ * before file decryption/decompression, after MPQE transport decoding.
  * Returns success with mismatch bits in *mismatches, or a negative operation error.
  * The output is a subset of verify_flags: set bits denote available mismatches;
  * clear bits denote matching or unavailable/skipped checksums.
- * File checks require attributes (EXIST if absent); sector checks do not.
+ * File checks require attributes (EXIST if absent); sector/raw checks do not.
  * Missing individual values or sector tables are skipped.
+ * Raw checks are skipped outside v4, when raw_chunk_size is zero, for empty
+ * stored payloads, or for delete markers. They do not verify patch-view results.
  * A zero request is a no-op on a valid reader/file. Unknown bits return FORMAT.
  * *mismatches is zero on errors. Zero bits do not imply values were present.
  * Lossy ADPCM output can differ from the writer's source-byte checksums.

@@ -23,6 +23,7 @@
 #include "mpq-block.h"
 #include "mpq-md5.h"
 #include "mpq-reader.h"
+#include "mpq-source.h"
 
 #include <limits.h>
 #include <stdlib.h>
@@ -108,8 +109,76 @@ cleanup:
     return status;
 }
 
+/* Verify raw chunks with fixed memory, independent of file encryption or codecs. */
+static int32_t
+verify_raw_md5(mpq_archive_s *archive, uint32_t entry_index, uint32_t *mismatches)
+{
+    const mpq_entry_s *entry = &archive->mpq_entry[entry_index];
+    uint32_t chunk_size = archive->mpq_header_v4.raw_chunk_size;
+    uint64_t chunks;
+    uint64_t digest_size;
+    uint64_t extent;
+    uint64_t base;
+    uint64_t position;
+    uint64_t digest_position;
+    uint64_t remaining = entry->packed_size;
+    uint8_t buffer[16384];
+    uint8_t actual[LIBMPQ_MD5_SIZE];
+    uint8_t expected[LIBMPQ_MD5_SIZE];
+    mpq_md5_s md5;
+    int32_t status;
+    if (archive->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_FOUR || chunk_size == 0 ||
+        remaining == 0 || (entry->flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) != 0)
+        return 0;
+    status = libmpq__reader_validate_payload_range(archive, entry_index, 0, remaining);
+    if (status != 0)
+        return status;
+    chunks = (remaining - 1) / chunk_size + 1;
+    if (chunks > UINT64_MAX / LIBMPQ_MD5_SIZE)
+        return LIBMPQ_ERROR_FORMAT;
+    digest_size = chunks * LIBMPQ_MD5_SIZE;
+    extent = libmpq__header_archive_size(&archive->mpq_header, &archive->mpq_header_v3);
+    base = (uint64_t)archive->archive_offset;
+
+    /* Payload validation bounds the sum; the trailing digest array is separate. */
+    position = entry->offset;
+    digest_position = position + remaining;
+    if (digest_size > extent - digest_position || base > (uint64_t)INT64_MAX ||
+        digest_position > (uint64_t)INT64_MAX - base ||
+        digest_size > (uint64_t)INT64_MAX - base - digest_position)
+        return LIBMPQ_ERROR_FORMAT;
+    if (base > archive->file_size || digest_position > archive->file_size - base ||
+        digest_size > archive->file_size - base - digest_position)
+        return LIBMPQ_ERROR_READ;
+    position += base;
+    digest_position += base;
+    while (remaining != 0) {
+        uint64_t in_chunk = remaining < chunk_size ? remaining : chunk_size;
+        remaining -= in_chunk;
+        libmpq__md5_init(&md5);
+        while (in_chunk != 0) {
+            size_t take = in_chunk < sizeof(buffer) ? (size_t)in_chunk : sizeof(buffer);
+            status = libmpq__source_read_at(archive->source, position, buffer, take);
+            if (status != 0)
+                return status;
+            libmpq__md5_update(&md5, buffer, take);
+            position += take;
+            in_chunk -= take;
+        }
+        libmpq__md5_final(&md5, actual);
+        status =
+            libmpq__source_read_at(archive->source, digest_position, expected, sizeof(expected));
+        if (status != 0)
+            return status;
+        if (memcmp(actual, expected, sizeof(actual)) != 0)
+            *mismatches |= LIBMPQ_VERIFY_RAW_MD5;
+        digest_position += sizeof(expected);
+    }
+    return 0;
+}
+
 /*
- * Hash logical blocks through the existing reader without changing extraction.
+ * Hash requested physical chunks and logical blocks without changing extraction.
  * Publish mismatch bits only after the entire verification operation succeeds.
  */
 int32_t
@@ -144,6 +213,16 @@ libmpq__verify_file(
         return LIBMPQ_ERROR_FORMAT;
     if (verify_flags == 0)
         return 0;
+    if ((verify_flags & LIBMPQ_VERIFY_RAW_MD5) != 0) {
+        status = verify_raw_md5(archive, archive->mpq_map[file_number].entry_index, &mismatch_mask);
+        if (status != 0)
+            return status;
+        verify_flags &= ~LIBMPQ_VERIFY_RAW_MD5;
+        if (verify_flags == 0) {
+            *mismatches = mismatch_mask;
+            return 0;
+        }
+    }
     memset(&attributes, 0, sizeof(attributes));
     if ((verify_flags & (LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5)) != 0) {
         status = libmpq__file_attributes(archive, file_number, &attributes);
@@ -158,8 +237,10 @@ libmpq__verify_file(
     if ((storage & LIBMPQ_FLAG_CRC) == 0 || (storage & LIBMPQ_FLAG_SINGLE) != 0 ||
         (storage & (LIBMPQ_FLAG_COMPRESSED | LIBMPQ_FLAG_COMPRESS_PKZIP)) == 0)
         verify_flags &= ~LIBMPQ_VERIFY_SECTOR_CRC;
-    if (verify_flags == 0)
+    if (verify_flags == 0) {
+        *mismatches = mismatch_mask;
         return 0;
+    }
     status = libmpq__file_size_unpacked(archive, file_number, &expected);
     if (status < 0)
         return status;

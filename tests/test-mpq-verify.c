@@ -759,7 +759,8 @@ main(void)
     for (version = 0; version <= 1; ++version)
         for (encrypted = 0; encrypted <= 1; ++encrypted)
             for (compressed = 0; compressed <= 1; ++compressed)
-                for (corrupt = 0; corrupt <= LIBMPQ_VERIFY_ALL; ++corrupt)
+                for (corrupt = 0; corrupt <= (LIBMPQ_VERIFY_ALL & ~LIBMPQ_VERIFY_RAW_MD5);
+                     ++corrupt)
                     TEST_CHECK(test_sectors(version, encrypted, compressed, corrupt, 1, 0) == 0);
     for (absent = 0; absent <= 2; ++absent)
         TEST_CHECK(test_sectors(1, 1, 1, LIBMPQ_VERIFY_SECTOR_CRC, 0, absent) == 0);
