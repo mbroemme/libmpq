@@ -27,7 +27,7 @@ libmpq__file_verify \- explicitly compare stored file checksums
 .BI ");"
 .fi
 .SH DESCRIPTION
-Explicitly verify requested file CRC32, file MD5, and sector Adler-32
+Explicitly verify requested file CRC32, file MD5, raw chunk MD5, and sector Adler-32
 checksums for an archive member. Complete file reads automatically check usable
 sector Adler-32 values, and complete lossless reads automatically check
 available CRC32/MD5 metadata. This interface lets callers select checks and
@@ -35,9 +35,19 @@ returns mismatches as bits. Verification is independent of writer policy.
 .SS "Requested Checks"
 LIBMPQ_VERIFY_FILE_CRC32 requests CRC32 and LIBMPQ_VERIFY_FILE_MD5 requests
 MD5. LIBMPQ_VERIFY_SECTOR_CRC requests sector checksums, and
-LIBMPQ_VERIFY_ALL requests all three. These bits also identify mismatches;
+LIBMPQ_VERIFY_RAW_MD5 requests raw v4 chunk checks. LIBMPQ_VERIFY_ALL requests
+all four. These bits also identify mismatches;
 they are not LIBMPQ_ATTRIBUTE_* presence flags. Unknown request bits are
 rejected. A zero request is a no-op after validating the reader and file number.
+.SS "Raw stored chunks"
+For v4 with nonzero raw_chunk_size, compare each raw stored payload chunk
+with its MD5 in the array immediately following the payload. This hashes
+compressed/encrypted MPQ bytes after MPQE transport decoding, not extracted
+contents. The final chunk may be shorter. Raw checks require neither attributes
+nor a filename key. Older versions, zero raw chunk size, zero stored length and
+delete markers are skipped. Missing/out-of-range arrays are errors. These
+checks apply to the physical member, including patch-info prefixes, not a
+materialized patch-view result. Structural v4 header/table checks remain automatic.
 .SS "File CRC32 and MD5"
 Available values from (attributes) are compared against the complete logical
 uncompressed file contents, not compressed or encrypted storage.
@@ -61,7 +71,7 @@ tables are skipped during normal extraction. This explicit interface continues
 to report sector metadata errors and per-check mismatches.
 .SS "Missing Metadata"
 Missing (attributes) is an error when either file checksum is requested.
-Sector-only requests do not require (attributes). Requested file checksums
+Sector/raw-only requests do not require (attributes). Requested file checksums
 absent from the selected row are skipped, including omitted legacy rows.
 Zero mismatch bits mean no mismatch was detected, not that checksums existed.
 Use \fBlibmpq__file_attributes\fP() to inspect per-file availability when
@@ -69,7 +79,8 @@ required. Checksums are not cryptographic authentication.
 .SH RETURN VALUE
 Returns LIBMPQ_SUCCESS when the operation completes, even on mismatch.
 The output in *mismatches is a subset of verify_flags, using the same
-LIBMPQ_VERIFY_SECTOR_CRC, LIBMPQ_VERIFY_FILE_CRC32, and LIBMPQ_VERIFY_FILE_MD5
+LIBMPQ_VERIFY_SECTOR_CRC, LIBMPQ_VERIFY_FILE_CRC32, LIBMPQ_VERIFY_FILE_MD5,
+and LIBMPQ_VERIFY_RAW_MD5
 bits. A set bit means a requested, available checksum mismatched.
 A clear bit means the checksum matched or was unavailable/skipped.
 .PP

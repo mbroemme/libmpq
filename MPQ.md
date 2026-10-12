@@ -124,8 +124,8 @@ the remaining representation permits lookup; malformed present tables do not
 disappear behind fallback.
 
 V4 archive access is read-only: creation, transactional updates and patch-view
-rebuilds remain unsupported. Raw chunk metadata is retained, but raw file-data
-chunk MD5 verification is unsupported; no default raw chunk size is selected.
+rebuilds remain unsupported. Raw file-data chunk MD5 verification is explicitly
+requested with `LIBMPQ_VERIFY_RAW_MD5`; no default raw chunk size is selected.
 Existing member compression and encryption decoding is reused without enabling
 v4 writer codecs.
 
@@ -845,13 +845,31 @@ optional sector tables are skipped during ordinary extraction.
 
 File CRC32/MD5 cover complete extracted contents. These requests require
 `(attributes)`; unavailable requested row values are skipped.
-`LIBMPQ_VERIFY_ALL` requests sector checks and both file checks. The mismatch
+`LIBMPQ_VERIFY_ALL` requests sector, file and raw-chunk checks. The mismatch
 mask uses the same bits and is a subset of the request: set means available
 and mismatched, while clear means matched or unavailable/skipped. Negative
 operation errors leave the result zero; mismatch bits are published only after
 complete success. Zero bits do not establish checksum availability. Lossy
 ADPCM can legitimately differ from the writer's source-byte checksums.
 FILETIME and PATCH_BIT are not verified, and normal extraction is unchanged.
+
+For v4, a nonzero `raw_chunk_size` divides each member's stored payload into
+chunks. With stored length `S` and chunk size `C`, there are `S / C + (S % C != 0)`
+consecutive 16-byte MD5 values immediately after the payload. Each covers its
+raw stored chunk, with a possibly shorter final chunk. The array is excluded
+from `packed_size` and is separate from sector CRC data. Stored bytes include
+file encryption, compression and any patch-info prefix; MPQE transport decoding
+is applied before hashing. Logical/unpacked size does not determine this layout.
+
+`LIBMPQ_VERIFY_RAW_MD5` checks these arrays with bounded memory and validates
+the complete payload and digest extent before reading. Unlike automatic v4
+header/table MD5 checks, raw checks are opt-in through `libmpq__file_verify()`.
+Older archives, zero chunk size, zero stored length and delete markers have no
+raw check to perform and are skipped. A nonempty stored representation is
+checked even when logical size is zero. Missing/out-of-range arrays are errors;
+digest mismatches set the raw mismatch bit, including all-zero stored digests.
+Raw checks require no attributes or filename encryption key and apply to the
+physical patch member, not reconstructed patch-view contents.
 
 For v1 creation with attributes enabled, a 16-byte gap separates the header
 and hash table. This avoids StormLib's malformed-map heuristic, which skips

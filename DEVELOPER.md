@@ -251,13 +251,20 @@ int32_t status = libmpq__file_verify(archive, file_number,
 /* status < 0: operation failed; otherwise inspect the requested VERIFY_* bits. */
 ```
 
-`LIBMPQ_VERIFY_ALL` requests sector Adler-32 and file CRC32/MD5 checks.
+`LIBMPQ_VERIFY_ALL` requests sector Adler-32, file CRC32/MD5 and v4 raw-chunk MD5.
 The returned mismatch mask uses those same bits and is a subset of the request.
 A set bit means an available checksum mismatched; a clear bit means it matched
 or was unavailable/skipped. Operational errors leave the mask zero.
 Sector checks cover decrypted packed bytes before decompression; absent tables
 and unavailable entries are skipped. Use `LIBMPQ_VERIFY_SECTOR_CRC` alone to
 verify sectors without requiring `(attributes)`.
+
+Use `LIBMPQ_VERIFY_RAW_MD5` alone to check v4 stored member chunks without
+attributes or a filename encryption key. It hashes compressed/encrypted MPQ
+bytes after MPQE transport decoding. Older versions, disabled raw chunks and
+empty stored members are skipped; zero mismatch bits do not prove availability.
+For patch archives this checks the physical member, not a materialized result.
+File CRC32/MD5 requests, including `LIBMPQ_VERIFY_ALL`, still require attributes.
 
 Use `libmpq__block_verify()` to verify one sector and retrieve its stored Adler-32:
 `libmpq__block_verify(archive, file_number, block_number, &checksum, &mismatches)`.
