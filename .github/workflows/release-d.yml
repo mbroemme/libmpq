@@ -47,14 +47,11 @@ jobs:
       package_version: ${{ steps.metadata.outputs.package_version }}
     steps:
       - name: Install metadata dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends autoconf automake build-essential libbz2-dev liblzma-dev libtool zlib1g-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends autoconf automake build-essential dub ldc libbz2-dev liblzma-dev libtool zlib1g-dev
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: dlang-community/setup-dlang@v2
-        with:
-          compiler: dmd
       - id: metadata
         name: Validate versions and inputs
         run: |
@@ -72,7 +69,7 @@ jobs:
           test -n "${project_version}"
           describe="$(mktemp)"
           trap 'rm -f -- "${describe}"' EXIT
-          dub describe > "${describe}"
+          dub describe --compiler=ldc2 > "${describe}"
           read -r package_name dub_version < <(
             python - "${describe}" <<'PY'
           import json
