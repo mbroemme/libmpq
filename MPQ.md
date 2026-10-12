@@ -19,6 +19,9 @@ An archive can be embedded after a stub or a user-data block and commonly
 starts on a 512-byte boundary. An optional `MPQ\x1B` user-data header precedes
 the real header and contains a user-data size and header offset. Locate and
 validate the actual `MPQ\x1A` header before resolving archive-relative values.
+Automatic discovery follows a validated user-data offset even when the target
+is not 512-byte aligned; otherwise it scans at 512-byte intervals. Explicit
+origins identify the actual MPQ header. Malformed user-data pointers are rejected.
 Table placement is not fixed; do not infer it from file order.
 
 ## Header versions
@@ -123,9 +126,10 @@ the envelope-inclusive 1 MiB limit unchanged. Missing tables are allowed when
 the remaining representation permits lookup; malformed present tables do not
 disappear behind fallback.
 
-V4 archive access is read-only: creation, transactional updates and patch-view
-rebuilds remain unsupported. Raw file-data chunk MD5 verification is explicitly
-requested with `LIBMPQ_VERIFY_RAW_MD5`; no default raw chunk size is selected.
+V4 archive access is read-only: creation and transactional updates remain
+unsupported. Patch composition can consume v4 inputs using private v3 views.
+Raw file-data chunk MD5 verification is explicitly requested with
+`LIBMPQ_VERIFY_RAW_MD5`; no default raw chunk size is selected.
 Existing member compression and encryption decoding is reused without enabling
 v4 writer codecs.
 
@@ -721,13 +725,21 @@ entries and validated source mappings, without fabricating classic rows.
 The existing v3 writer emits the 0x44-byte header, HET/BET and classic tables
 with shared row identity, patch-info prefixes, PTCH bodies, and delete markers.
 Existing compression, encryption and signature options retain their meanings.
-Ordered patch-view materialization supports v3 bases with classic-backed,
+Ordered patch-view materialization supports v3/v4 bases with classic-backed,
 mixed, or BET-only members. Names come from `(listfile)`, recognized internal
 names, and the patch's logical namespace; hashes are never inverted into names.
 Incomplete coverage, ambiguous aliases/locales, unresolved listed names, and
 nonzero reserved BET metadata are rejected instead of dropping information.
 Patch prefixes, COPY/BSD0 transforms, normal replacements, additions and delete
 markers retain their existing semantics and integrity checks.
+
+V4 inputs may be base or patch layers, including MPQE sources and mixed-version
+chains. Any chain using v4 materialization follows the named rebuild path and
+requires complete, unambiguous filenames and writer-representable metadata.
+Changed views are private v3 archives, not v4 writes or transactions. Compact
+legacy retained members that would overlap the v3 header are re-encoded at new
+positions. Physical raw-chunk checks remain attached to the original source
+member, not the reconstructed contents; v3 intermediates have no raw MD5 arrays.
 
 Unchanged packed members retain their original archive-relative offsets,
 compression and encryption. Modified contents pass through the normal writer,

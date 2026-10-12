@@ -1641,6 +1641,24 @@ libmpq__reader_archive_open_source(
              )) < 0)
             goto error;
 
+        /* Follow a validated user-data pointer once, without permissive header recovery. */
+        if (header_search && libmpq__load_le32(header_data) == LIBMPQ_USER_DATA_HEADER) {
+            uint32_t data_size = libmpq__load_le32(header_data + 4);
+            uint32_t header_offset = libmpq__load_le32(header_data + 8);
+            uint32_t data_header_size = libmpq__load_le32(header_data + 12);
+            uint64_t available = (*mpq_archive)->file_size - (uint64_t)archive_offset;
+            if (data_header_size < LIBMPQ_USER_DATA_HEADER_WIRE_SIZE ||
+                data_size < data_header_size || header_offset < data_size ||
+                header_offset > available || sizeof(header_data) > available - header_offset ||
+                (uint64_t)archive_offset > (uint64_t)INT64_MAX - header_offset) {
+                result = LIBMPQ_ERROR_FORMAT;
+                goto error;
+            }
+            archive_offset += header_offset;
+            header_search = 0;
+            continue;
+        }
+
         if ((result = libmpq__header_decode(
                  &(*mpq_archive)->mpq_header, header_data, sizeof(header_data)
              )) < 0)

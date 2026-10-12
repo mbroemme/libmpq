@@ -25,6 +25,8 @@
 
 /* MPQ archive signature stored as the little-endian bytes "MPQ\x1A". */
 #define LIBMPQ_HEADER 0x1A51504D
+#define LIBMPQ_USER_DATA_HEADER 0x1B51504D
+#define LIBMPQ_USER_DATA_HEADER_WIRE_SIZE 16u
 
 /* Serialized MPQ header sizes, independent of native structure alignment. */
 #define LIBMPQ_HEADER_WIRE_SIZE 32u

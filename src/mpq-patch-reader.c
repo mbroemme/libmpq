@@ -1674,7 +1674,7 @@ patch_source_open(mpq_archive_s **archive, const mpq_patch_source_s *source)
                  : libmpq__archive_open_mpqe(
                        archive, source->path, -1, source->auth_code, source->auth_code_size
                    );
-    if (result == 0 && (*archive)->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_THREE) {
+    if (result == 0 && (*archive)->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_FOUR) {
         (void)libmpq__archive_close(*archive);
         *archive = NULL;
         return LIBMPQ_ERROR_FORMAT;
@@ -1923,7 +1923,7 @@ patch_named_storage(
     return status;
 }
 
-/* Rebuild a named v3 view with the ordinary writer and publish only validated output. */
+/* Rebuild a named view with the ordinary v3 writer and publish only validated output. */
 static int32_t
 patch_materialize_named(
     mpq_patch_view_s *view, mpq_archive_s **lower_handle, mpq_archive_s *patch,
@@ -2044,7 +2044,9 @@ patch_materialize_named(
         goto done;
 
     /* Imported encrypted members keep their original relative offsets and keys. */
-    if (extent < writer->mpq_header.header_size || extent > INT64_MAX ||
+    if (extent < writer->mpq_header.header_size)
+        extent = writer->mpq_header.header_size;
+    if (extent > INT64_MAX ||
         libmpq__file_seek(writer->fp, (libmpq__off_t)(extent - 1), SEEK_SET) != 0 ||
         fputc(0, writer->fp) == EOF) {
         status = LIBMPQ_ERROR_WRITE;
@@ -2111,12 +2113,16 @@ patch_materialize_named(
                 if ((patch_attributes.flags & LIBMPQ_ATTRIBUTE_FILETIME) != 0)
                     attributes.filetime = patch_attributes.filetime;
             }
-            if (change == NULL) {
+            if (change == NULL &&
+                (lower->mpq_entry[lower->mpq_map[i].entry_index].flags &
+                 (LIBMPQ_FILE_FLAG_PATCH_FILE | LIBMPQ_FILE_FLAG_DELETE_MARKER)) != 0) {
+                status = LIBMPQ_ERROR_FORMAT;
+                goto done;
+            }
+            if (change == NULL && lower->mpq_entry[lower->mpq_map[i].entry_index].offset >=
+                                      writer->mpq_header.header_size) {
                 const mpq_entry_s *canonical = &lower->mpq_entry[lower->mpq_map[i].entry_index];
-                if ((canonical->flags &
-                     (LIBMPQ_FILE_FLAG_PATCH_FILE | LIBMPQ_FILE_FLAG_DELETE_MARKER)) != 0 ||
-                    canonical->offset < writer->mpq_header.header_size ||
-                    canonical->offset > extent ||
+                if (canonical->offset > extent ||
                     canonical->packed_size > extent - canonical->offset ||
                     canonical->offset > INT64_MAX) {
                     status = LIBMPQ_ERROR_FORMAT;
@@ -2150,7 +2156,11 @@ patch_materialize_named(
                     goto done;
                 continue;
             }
-            if ((flags & LIBMPQ_FILE_FLAG_PATCH_FILE) != 0) {
+            if (change == NULL) {
+                status = patch_read_adjusted(
+                    lower, name, base_entry->number, NULL, &result, &result_size
+                );
+            } else if ((flags & LIBMPQ_FILE_FLAG_PATCH_FILE) != 0) {
                 if (base_entry == NULL) {
                     status = LIBMPQ_ERROR_FORMAT;
                     goto done;
@@ -2267,6 +2277,14 @@ patch_apply_layer(mpq_patch_view_s *view, const mpq_patch_source_s *source)
     status = patch_source_open(&patch, source);
     if (status != 0)
         return status;
+    status = libmpq__archive_open(&lower, view->path, view->archive_offset);
+    if (status != 0)
+        goto done;
+    if (lower->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_THREE ||
+        patch->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+        status = patch_materialize_named(view, &lower, patch, source);
+        goto done;
+    }
     if (libmpq__file_number(patch, "(patch_metadata)", &metadata_number) == 0) {
         libmpq__off_t metadata_size = 0;
 
@@ -2298,9 +2316,6 @@ patch_apply_layer(mpq_patch_view_s *view, const mpq_patch_source_s *source)
         status = LIBMPQ_ERROR_FORMAT;
         goto done;
     }
-    status = libmpq__archive_open(&lower, view->path, view->archive_offset);
-    if (status != 0)
-        goto done;
 
     /* Legacy table rewriting applies only to v1/v2 archive headers. */
     if (lower->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_TWO) {
@@ -2587,7 +2602,7 @@ libmpq__patch_view_open_sources(
         goto error;
     }
     state->archive_offset = base->archive_offset;
-    if (base->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE) {
+    if (base->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_THREE) {
 
         /* Rebuild directly from the opened sources, without a full intermediate base copy. */
         if (fclose(temporary) != 0) {

@@ -177,7 +177,7 @@ The existing public creation APIs accept `LIBMPQ_ARCHIVE_VERSION_THREE` (2).
 The default remains v1, 1024 entries, and 4096-byte sectors; explicit capacity,
 sector size, compression policy, listfile, attributes, timestamps, and signing
 options retain their meanings. MPQE creation uses the same v3 writer and
-unchanged authentication/wrapping. MPQ v4 remains unsupported.
+unchanged authentication/wrapping. MPQ v4 creation remains unsupported.
 
 `libmpq__writer_begin()` starts an archive member and returns `mpq_writer_s`.
 Use `libmpq__writer_write()`, `libmpq__writer_timestamp()`, and
@@ -534,18 +534,21 @@ replace an existing hash identity when its payload can be decoded without a
 name-derived key. A new patch-only member requires a recoverable plaintext
 name so its hash-table probe position can be computed. Otherwise that entry is
 rejected rather than silently omitted. Unnamed legacy base members and their
-packed data remain intact. V3 materialization requires complete, unambiguous
-names for every retained member and rejects missing coverage, aliases/locales
-or reserved metadata it cannot represent. Its intermediates remain v3 and
-regenerate HET/BET plus classic tables through the existing writer; modified
-encrypted members use their final output offsets. MPQE inputs use the existing
-source decoder before patch composition; their credentials are independent and
-are not retained by the view. A `.w3x` input is treated only as an MPQ
-container; legacy materialization retains its prefix and unrelated trailing
-bytes while a stale external strong-signature trailer is removed after a
-content change. Rebuilt v3 views are standalone and do not retain container
-prefixes/suffixes. This layer does not perform HM3W map-header hashing. Each
-patch layer may supply an independent namespace prefix. Physical names such as
+packed data remain intact. V3/v4 named materialization requires complete,
+unambiguous names for every retained member and rejects missing coverage,
+aliases/locales or reserved metadata it cannot represent. V4 bases and patch
+layers are read-only inputs, including authenticated MPQE and mixed-version
+chains. Changed intermediates are v3 and regenerate HET/BET plus classic tables
+through the existing writer; modified encrypted members use their final output
+offsets. Raw MD5 verifies a physical source member; it is unavailable on
+reconstructed v3 output. MPQE inputs use the existing source decoder before
+patch composition; their credentials are independent and are not retained by
+the view. A `.w3x` input is treated only as an MPQ container; legacy
+materialization retains its prefix and unrelated trailing bytes while a stale
+external strong-signature trailer is removed after a content change. Rebuilt
+v3 views are standalone and do not retain container prefixes/suffixes. This
+layer does not perform HM3W map-header hashing. Each patch layer may supply an
+independent namespace prefix. Physical names such as
 `Base\\Foo` are read from the patch using their original names, while the
 prefix-stripped logical name `Foo` identifies the lower-layer member and the
 materialized result. A single `(patch_metadata)` path in `(listfile)`
