@@ -38,7 +38,7 @@ output allocations are capped at 64 KiB unless stated otherwise.
 | Archive readers | `fuzz-archive-open`, `fuzz-mpqe-open` | Raw MPQ/MPQE bytes; direct/embedded opening and authenticated MPQE chunk decoding | 1 MiB |
 | Encrypted archives | `fuzz-encrypted-archive` | Mutations of a valid encrypted archive, including hash/block tables and known-key reads | 1 MiB |
 | File API | `fuzz-file-read` | Names/index selectors against a generated valid archive; names capped at 255 bytes | 64 KiB |
-| Writer API | `fuzz-writer-roundtrip` | Three selector bytes for archive options, file storage and sector size, then payload; creates/reopens/verifies v1/v2/v3 MPQ or MPQE | 64 KiB |
+| Writer API | `fuzz-writer-roundtrip` | Three selector bytes for archive options, file storage and sector size, then payload; creates/reopens/verifies v1/v2/v3/v4 MPQ or MPQE | 64 KiB |
 | Attributes | `fuzz-attributes` | Two count/self selector bytes, then serialized attributes; at most 32 rows | 4 KiB |
 | Extended tables | `fuzz-ext-table` | Decoded HET/BET wire bytes, bypassing encryption; envelope/geometry, bounded probing, records, flags, NameHash2 and canonical entries | 1 MiB |
 | Patches | `fuzz-patch-apply` | `uint16_t` base-length selector modulo `input_size - 1`, then base and PTCH bytes; prefix parsing and COPY/BSD0 application | 8 KiB |

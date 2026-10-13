@@ -27,6 +27,8 @@
 #include <libmpq/mpq.h>
 #include <stdio.h>
 
+#define LIBMPQ_WRITER_V4_RAW_CHUNK_SIZE 0x4000u
+
 /*
  * A live writer owns the state for one file being streamed into an archive.
  * It buffers at most one archive sector, applies the selected compression and
@@ -87,7 +89,7 @@ int32_t libmpq__writer_archive_create_file(
 );
 
 /*
- * Private v4 initialization; adopts file like create_file, with no public default.
+ * Private v4 initialization; adopts file like create_file with an explicit chunk size.
  * Nonzero raw_chunk_size requires readable, seekable output. The chunk size
  * is fixed before the first member and must remain unchanged.
  */

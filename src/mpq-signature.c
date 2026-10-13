@@ -432,6 +432,8 @@ libmpq__signature_configure(mpq_archive_s *a, uint32_t type, const uint8_t *key,
     int32_t result;
     if (a == NULL)
         return LIBMPQ_ERROR_EXIST;
+    if (a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR && a->write_error != 0)
+        return a->write_error;
     if (!a->write_mode || a->write_finalized || a->write_current)
         return LIBMPQ_ERROR_NOT_INITIALIZED;
     if (type == LIBMPQ_SIGNATURE_STRONG) {
@@ -442,6 +444,10 @@ libmpq__signature_configure(mpq_archive_s *a, uint32_t type, const uint8_t *key,
         a->write_strong_signature = 1;
         return 0;
     }
+    /* Weak signing rewrites a member after its raw digests have been stored. */
+    if (type == LIBMPQ_SIGNATURE_WEAK && a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
+        a->mpq_header_v4.raw_chunk_size != 0)
+        return LIBMPQ_ERROR_FORMAT;
     if (type != LIBMPQ_SIGNATURE_WEAK || a->write_signature ||
         libmpq__rsa_weak_key_validate(key, key_size) != 0)
         return LIBMPQ_ERROR_FORMAT;

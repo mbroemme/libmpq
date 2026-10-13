@@ -815,7 +815,8 @@ def test_mpqe_fixture_metadata_extraction_and_clone(name, version, offset):
         mpq.Archive.open_mpqe(FIXTURES / name, code[:-1], offset)
 
 
-@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_TWO, mpq.ARCHIVE_VERSION_THREE])
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_TWO, mpq.ARCHIVE_VERSION_THREE,
+                                     mpq.ARCHIVE_VERSION_FOUR])
 def test_mpqe_creation_replaces_destination(tmp_path, version):
     """MPQE creation publishes a complete archive over an existing target."""
     path = tmp_path / "created.mpqe"
@@ -828,6 +829,7 @@ def test_mpqe_creation_replaces_destination(tmp_path, version):
         assert archive.version == version + 1
         assert archive.attributes() == mpq.ATTRIBUTE_CRC32
         assert archive["payload.txt"].read() == b"Python MPQE writer regression\n"
+        assert archive["payload.txt"].verify(mpq.VERIFY_RAW_MD5) == 0
     with pytest.raises(mpq.LibmpqDecryptError):
         mpq.Writer.create_mpqe(path, code[:-1])
     with pytest.raises(mpq.LibmpqFormatError):
@@ -836,7 +838,8 @@ def test_mpqe_creation_replaces_destination(tmp_path, version):
         mpq.Writer(tmp_path / "invalid.mpq", attributes=0x10)
 
 
-@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_TWO, mpq.ARCHIVE_VERSION_THREE])
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_TWO, mpq.ARCHIVE_VERSION_THREE,
+                                     mpq.ARCHIVE_VERSION_FOUR])
 def test_creation_streaming_compression_clone_and_blocks(tmp_path, version):
     """Creation APIs round-trip raw, compressed, path, stream, clone, and blocks."""
     archive_path = tmp_path / "created.mpq"
@@ -864,7 +867,14 @@ def test_creation_streaming_compression_clone_and_blocks(tmp_path, version):
             stream.write(streamed[:1000])
             stream.write(streamed[1000:])
 
+    if version == mpq.ARCHIVE_VERSION_FOUR:
+        wire = archive_path.read_bytes()
+        assert struct.unpack_from("<I", wire, 4)[0] == 0xd0
+        assert struct.unpack_from("<H", wire, 12)[0] == 3
+        assert struct.unpack_from("<I", wire, 0x6c)[0] == 0x4000
+        assert wire[0xc0:0xd0] == hashlib.md5(wire[:0xc0]).digest()
     with mpq.Archive(archive_path, offset=0) as archive:
+        assert archive.version == version + 1
         clone = archive.clone()
         try:
             assert clone["raw.bin"].read() == b"raw payload"

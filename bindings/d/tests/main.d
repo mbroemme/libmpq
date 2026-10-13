@@ -402,6 +402,7 @@ private void testMpqeCreate(uint archiveVersion = ARCHIVE_VERSION_TWO) {
     scope(exit) { reopened.close(); remove(path); }
     assert(reopened.version_() == archiveVersion + 1);
     assert(reopened.attributes().get() == ATTRIBUTE_CRC32);
+    assert(reopened.file("payload.txt").verify(VERIFY_RAW_MD5) == 0);
     assert(reopened.file("payload.txt").read() ==
            cast(const(ubyte)[])"D MPQE writer regression\n");
 }
@@ -906,7 +907,9 @@ void main() {
     testCreateReadAndMetadata(ARCHIVE_VERSION_ONE);
     testCreateReadAndMetadata(ARCHIVE_VERSION_TWO);
     testCreateReadAndMetadata(ARCHIVE_VERSION_THREE);
+    testCreateReadAndMetadata(ARCHIVE_VERSION_FOUR);
     testMpqeCreate(ARCHIVE_VERSION_THREE);
+    testMpqeCreate(ARCHIVE_VERSION_FOUR);
     testFixture();
     testStrongSignature();
     testStrongSigning();

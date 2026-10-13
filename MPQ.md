@@ -70,8 +70,8 @@ when a classic hash entry maps to a live block; other live blocks need not be
 hash-referenced. This does not assert equivalence with HET/BET. Declared
 extended tables must form a valid pair; malformed tables fail opening rather
 than downgrading to classic lookup. Compressed classic tables remain unsupported.
-MPQ v4 supports read-only loading with explicit stored-table extents;
-creation and updates remain unsupported.
+MPQ v4 supports reading and creation with explicit stored-table extents;
+transactional updates remain unsupported.
 
 ### MPQ v4 header
 
@@ -126,12 +126,11 @@ the envelope-inclusive 1 MiB limit unchanged. Missing tables are allowed when
 the remaining representation permits lookup; malformed present tables do not
 disappear behind fallback.
 
-V4 archive access is read-only: creation and transactional updates remain
-unsupported. Patch composition can consume v4 inputs using private v3 views.
-Raw file-data chunk MD5 verification is explicitly requested with
-`LIBMPQ_VERIFY_RAW_MD5`; no default raw chunk size is selected.
-Existing member compression and encryption decoding is reused without enabling
-v4 writer codecs.
+V4 reading and creation are supported; transactional updates and patch writing
+remain unsupported. Patch composition can consume v4 inputs using private v3
+views. Raw file-data chunk MD5 verification is explicitly requested with
+`LIBMPQ_VERIFY_RAW_MD5`. Existing member compression and encryption codecs are
+shared with earlier versions.
 
 ## Archive creation and finalization
 
@@ -162,25 +161,29 @@ stores its low 32 bits explicitly. V3 FIX_KEY encryption uses the final file
 offset and unpacked size, and payloads are never moved afterward. Legacy v1/v2
 writer behavior remains unchanged.
 
-The private v4 initializer reuses this writer with a `0xD0` header. It records
+Public v4 creation reuses this writer with a `0xD0` header. It records
 actual stored table lengths and hashes the exact encrypted classic tables and
 complete encoded HET/BET envelopes before writing them. Absent tables have zero
 positions, sizes and digests; output still uses the existing mixed-table layout.
 After all offsets and the 64-bit archive size are final, the v4 header encoder
 serializes the metadata, MD5 covers bytes `[0x00, 0xC0)`, and the completed header
-is written and flushed. Public v4 creation, patch writing and transactional
-updates remain unsupported.
+is written and flushed. MPQE creation uses the same logical v4 serialization
+before transport encryption. V4 patch writing and transactional updates remain
+unsupported.
 
-The private initializer takes an explicit raw-chunk size; zero emits no
-checksums and no public default is selected. Nonzero settings append MD5 arrays
-after each finalized compressed/encrypted member, using bounded rereads of the
-readable, seekable output stream. These arrays occupy physical space but do not
-increase member packed sizes. Members are not subsequently relocated, so
-FIX_KEY uses the final output offset before raw hashing. Raw-enabled packed
-imports and weak signing are rejected: weak signing would rewrite an already
-hashed member. Strong signature trailers do not change those stored ranges.
-V4 flush, member-finish and finalization errors remain terminal for that
-handle; cleanup retains the existing writer guarantees.
+Public v4 creation uses a raw-chunk size of `0x4000` (16 KiB), without a
+public configuration option. The private initializer also permits alternative
+sizes; zero emits no checksums. Nonzero settings append MD5 arrays after each
+finalized compressed/encrypted member, using bounded rereads of the readable,
+seekable output stream. These arrays occupy physical space but do not increase
+member packed sizes. Members are not subsequently relocated, so FIX_KEY uses
+the final output offset before raw hashing. Raw-enabled packed imports are
+rejected because their contract registers packed bytes already placed at their
+original offsets without reserving trailing digest space. Weak signing is
+rejected before modifying a raw-enabled writer because it would rewrite an
+already hashed member. Strong signature trailers do not change those stored
+ranges. V4 flush, member-finish and finalization errors remain terminal for
+that handle; cleanup retains the existing writer guarantees.
 
 ## Classic tables
 
@@ -961,14 +964,17 @@ big-endian modulus followed by a 256-byte zero-padded unsigned big-endian
 exponent. Use the public exponent for verification and the private exponent
 for creation. The writer emits only the plain SHA-1 archive-range variant.
 
-On a new v1, v2, or v3 writer, call `libmpq__archive_sign` once for each requested
-signature type before closing, with no active file writer. It copies the private
-key. Weak signing reserves one file-table slot and a zero signature payload
-immediately. Close finalizes listfile, attributes, tables, and header before
-hashing, overwriting the weak signature bytes, then appending any strong trailer.
-The signature entry's generated attribute values remain zero; retained keys are
-cleared on close, including error paths. Other files may be added after
-configuring signing. Readers do not impose the writer's version restriction.
+On a new writer, call `libmpq__archive_sign` once for each supported signature
+type before closing, with no active file writer. Public v4 creation supports
+strong signing on plain MPQ output; weak signing is rejected because the
+mandatory raw-chunk default conflicts with rewriting the signature member. It
+copies the private key. Weak signing reserves one file-table slot and a zero
+signature payload immediately. Close finalizes listfile, attributes, tables,
+and header before hashing, overwriting the weak signature bytes, then
+appending any strong trailer. The signature entry's generated attribute values
+remain zero; retained keys are cleared on close, including error paths. Other
+files may be added after configuring signing. Readers do not impose these
+signing restrictions.
 
 MD5 and RSA-512 are obsolete and unsuitable for modern authentication. The
 private fixed-width RSA code is deliberately limited to this legacy format,
@@ -1015,10 +1021,11 @@ Actual creation still requires memory for reserved tables and can fail with
 an allocation error. Completed HET/BET tables must also fit the separate
 1 MiB limit, so this ceiling is not a promise of that many writable files.
 
-Creation supports MPQ v1/v2/v3, including MPQE wrapping. V4 is read-only;
-compressed classic tables and v4 modifications remain unsupported. The v3 writer
-emits mixed HET/BET and classic tables, not BET-only output. V3 transactional reconstruction requires a complete,
-unambiguous named file set and representable metadata. It rebuilds all tables
-through the same writer; incomplete source information is rejected rather than
-silently losing members. Practical transaction rules and supported source
-boundaries are described in [DEVELOPER.md](DEVELOPER.md#transactional-modification).
+Creation supports MPQ v1/v2/v3/v4, including MPQE wrapping. Compressed classic
+tables, v4 transactional updates and v4 patch writing remain unsupported. The
+v3/v4 writer emits mixed HET/BET and classic tables, not BET-only output. V3
+transactional reconstruction requires a complete, unambiguous named file set
+and representable metadata. It rebuilds all tables through the same writer;
+incomplete source information is rejected rather than silently losing members.
+Practical transaction rules and supported source boundaries are described in
+[DEVELOPER.md](DEVELOPER.md#transactional-modification).

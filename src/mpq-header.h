@@ -107,7 +107,6 @@ int32_t libmpq__header_v4_encode(const mpq_header_v4_s *header, uint8_t *wire, s
  * Require the MPQ signature, wire version 3 and declared size 0xD0. SIZE rejects
  * NULL or short buffers; FORMAT rejects invalid declarations. Failure preserves
  * outputs. No allocations, digest calculation or archive-level validation occur.
- * Normal archive opening and creation still reject v4.
  */
 int32_t libmpq__header_v4_full_decode(
     mpq_header_s *header, mpq_header_ex_s *ex, mpq_header_v3_s *v3, mpq_header_v4_s *v4,

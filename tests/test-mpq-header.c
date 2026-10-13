@@ -601,7 +601,7 @@ test_v3_rejection(void)
     TEST_CHECK(archive == NULL);
     TEST_CHECK(v3_fixture(&source, 68, 0, 0) == 0);
     TEST_CHECK(libmpq__header_decode(&header, source.bytes, 32) == 0);
-    header.version = LIBMPQ_ARCHIVE_VERSION_FOUR; /* MPQ v4 opening is still unsupported. */
+    header.version = LIBMPQ_ARCHIVE_VERSION_FOUR; /* A v4 declaration requires its full header. */
     TEST_CHECK(libmpq__header_encode(&header, source.bytes, 32) == 0);
     TEST_CHECK(
         libmpq__archive_open_io(
@@ -653,9 +653,9 @@ test_v4_disabled(void)
         ) == LIBMPQ_ERROR_FORMAT
     );
     TEST_CHECK(archive == NULL);
-    options.version = LIBMPQ_ARCHIVE_VERSION_FOUR;
+    options.version = LIBMPQ_ARCHIVE_VERSION_FOUR + 1;
     TEST_CHECK(
-        libmpq__archive_create(&archive, "unsupported-v4.mpq", &options) == LIBMPQ_ERROR_FORMAT
+        libmpq__archive_create(&archive, "unsupported-version.mpq", &options) == LIBMPQ_ERROR_FORMAT
     );
     TEST_CHECK(archive == NULL);
     return 0;

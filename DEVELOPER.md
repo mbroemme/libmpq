@@ -173,11 +173,14 @@ when that verification is required.
 
 ### Streaming and one-shot writers
 
-The existing public creation APIs accept `LIBMPQ_ARCHIVE_VERSION_THREE` (2).
+The public creation APIs accept versions through `LIBMPQ_ARCHIVE_VERSION_FOUR`
+(3), including `LIBMPQ_ARCHIVE_VERSION_THREE` (2).
 The default remains v1, 1024 entries, and 4096-byte sectors; explicit capacity,
 sector size, compression policy, listfile, attributes, timestamps, and signing
-options retain their meanings. MPQE creation uses the same v3 writer and
-unchanged authentication/wrapping. MPQ v4 creation remains unsupported.
+options retain their meanings. MPQE creation uses the same writer and unchanged
+authentication/wrapping. Public v4 creation uses 16 KiB (`0x4000`) raw chunks
+and generates structural and raw-chunk MD5 digests automatically. V4
+transactional updates and patch writing remain unsupported.
 
 `libmpq__writer_begin()` starts an archive member and returns `mpq_writer_s`.
 Use `libmpq__writer_write()`, `libmpq__writer_timestamp()`, and
@@ -311,10 +314,11 @@ a missing signature returns `LIBMPQ_ERROR_EXIST`. Strong signatures use external
 SHA-1 archive-range variant. Basename and `ARCHIVE` variants are accepted
 during verification only.
 
-To sign, call `libmpq__archive_sign` on a v1, v2 or v3 writer with the
-corresponding private key before close. Weak signing reserves one file
-slot for `(signature)`; strong signing appends an external `NGIS` trailer
-after finalization.
+To sign, call `libmpq__archive_sign` on a writer with the corresponding
+private key before close. Public v4 writers support strong signing on plain
+MPQ output; weak signing is rejected before mutation because it conflicts with
+raw-chunk digests. Weak signing reserves one file slot for `(signature)`;
+strong signing appends an external `NGIS` trailer after finalization.
 
 The weak 128-byte raw key is two 64-byte unsigned big-endian integers: a
 modulus followed by a zero-padded exponent value. Use a public key to verify a

@@ -26,10 +26,11 @@ The canonical release installation path is Maven Central:
 ## Basic archive usage
 
 Use `Mpq.ARCHIVE_VERSION_THREE` in existing `ArchiveCreateOptions` to create
-mixed HET/BET plus classic v3 archives. V3 transactions require complete
-filename reconstruction. `MpqUpdate.addData()` and `addPath()` add absent
-staged names; duplicate names fail and replacement remains existing-only.
-Remove-then-add is supported.
+mixed HET/BET plus classic v3 archives, or `Mpq.ARCHIVE_VERSION_FOUR` for v4.
+V4 MPQ and MPQE creation uses 16 KiB raw chunks; v4 updates and patch writing
+remain unsupported. V3 transactions require complete filename reconstruction.
+`MpqUpdate.addData()` and `addPath()` add absent staged names; duplicate names
+fail and replacement remains existing-only. Remove-then-add is supported.
 
 The high-level API uses `Archive.open`, `Archive.openMpqe`, `Archive.create`,
 `Archive.createMpqe`, and `MpqFileWriter`. All negative libmpq return codes
@@ -130,8 +131,8 @@ Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
 `ArchiveCreateOptions`. Constants live on `Mpq`. Zero disables generation; any
 nonzero combination creates one `(attributes)` file and consumes one reserved
 slot. Unknown bits are rejected. Creation flags remain separate. These options
-work for MPQ v1, v2, and v3, including MPQE creation. Payload version 100 is
-independent of the archive format version.
+work for MPQ v1, v2, v3, and v4, including MPQE creation. Payload version 100
+is independent of the archive format version.
 
 Per-file flags distinguish unavailable fields from zero. Complete lossless
 reads automatically verify available CRC32 and MD5 metadata against decoded
@@ -237,11 +238,12 @@ for MPQE transport streams. Use `Archive.sign(privateKey)` for weak signing or
 close, and `Archive.signatures()` / `Archive.verify(publicKey)` on reopened
 archives. Verification returns mismatch bits; malformed keys/archives raise
 normal binding errors. Weak keys are exactly 128 bytes: 64-byte big-endian
-modulus followed by a 64-byte big-endian exponent. Signing supports v1, v2,
-and v3. libmpq does not ship Blizzard- or product-specific public verification
-keys or private signing keys; all signature key material is supplied
-explicitly by the caller. MD5/RSA-512 is legacy compatibility, not modern
-authenticity protection. See [the format guide](../../MPQ.md) for details.
+modulus followed by a 64-byte big-endian exponent. Weak signing supports v1,
+v2, and v3; plain MPQ v4 creation supports strong signing only. libmpq does
+not ship Blizzard- or product-specific public verification keys or private
+signing keys; all signature key material is supplied explicitly by the caller.
+MD5/RSA-512 is legacy compatibility, not modern authenticity protection. See
+[the format guide](../../MPQ.md) for details.
 
 `Archive.signatures()` reports weak MD5/RSA-512 internal signatures and strong
 SHA-1/RSA-2048 external `NGIS` trailers. `Archive.verify(byte[])` remains the

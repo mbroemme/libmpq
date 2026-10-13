@@ -839,46 +839,54 @@ class LibmpqTest {
         }
     }
 
-    /** Public v3 creation shares metadata, stream and MPQE paths with legacy versions. */
+    /** Extended-table creation shares metadata, stream and MPQE paths. */
     @Test
-    void createsV3Archives(@TempDir Path directory) throws Exception {
-        byte[] payload = new byte[12000];
-        java.util.Arrays.fill(payload, (byte) 'V');
-        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
-        ArchiveCreateOptions options = new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_THREE,
-            8, 512, Mpq.ARCHIVE_CREATE_LISTFILE, Mpq.ATTRIBUTE_CRC32 | Mpq.ATTRIBUTE_FILETIME);
-        for (boolean encrypted : new boolean[] {false, true}) {
-            Path path = directory.resolve(encrypted ? "v3.mpqe" : "v3.mpq");
-            try (Archive archive = encrypted ? Archive.createMpqe(path, code, options)
-                                             : Archive.create(path, options)) {
-                archive.add("payload", payload, FileOptions.compressed(Mpq.COMPRESSION_ZLIB, Mpq.COMPRESSION_ZLIB));
-                try (MpqFileWriter writer = archive.begin("stamp", 3, FileOptions.raw())) {
-                    writer.timestamp(123456789L);
-                    writer.write(new byte[] {1, 2, 3});
+    void createsExtendedArchives(@TempDir Path directory) throws Exception {
+        for (int version : new int[] {Mpq.ARCHIVE_VERSION_THREE, Mpq.ARCHIVE_VERSION_FOUR}) {
+            byte[] payload = new byte[12000];
+            java.util.Arrays.fill(payload, (byte) 'V');
+            byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
+            ArchiveCreateOptions options = new ArchiveCreateOptions(version,
+                8, 512, Mpq.ARCHIVE_CREATE_LISTFILE, Mpq.ATTRIBUTE_CRC32 | Mpq.ATTRIBUTE_FILETIME);
+            for (boolean encrypted : new boolean[] {false, true}) {
+                Path path = directory.resolve(encrypted ? "v3.mpqe" : "v3.mpq");
+                try (Archive archive = encrypted ? Archive.createMpqe(path, code, options)
+                                                 : Archive.create(path, options)) {
+                    archive.add("payload", payload, FileOptions.compressed(Mpq.COMPRESSION_ZLIB, Mpq.COMPRESSION_ZLIB));
+                    try (MpqFileWriter writer = archive.begin("stamp", 3, FileOptions.raw())) {
+                        writer.timestamp(123456789L);
+                        writer.write(new byte[] {1, 2, 3});
+                    }
                 }
-            }
-            try (Archive archive = encrypted ? Archive.openMpqe(path, code, 0) : Archive.open(path, 0)) {
-                assertEquals(3, archive.version());
-                assertArrayEquals(payload, archive.readFile(archive.fileNumber("payload")));
-                assertEquals(0, archive.verify(archive.fileNumber("payload")));
-            }
-            Path source = directory.resolve("v3-add-source");
-            Files.write(source, new byte[] {4, 5, 6});
-            try (MpqUpdate update = encrypted ? MpqUpdate.beginMpqe(path, code) : MpqUpdate.begin(path)) {
-                update.addData("added", new byte[] {7, 8}, null);
-                assertEquals(Mpq.ERROR_EXIST, assertThrows(LibmpqException.class,
-                    () -> update.addData("ADDED", new byte[] {9}, null)).code());
-                update.addPath("from-path", source, null);
-                update.remove("added");
-                update.addData("added", new byte[] {9}, null);
-                update.rename("payload", "renamed");
-                update.commit();
-            }
-            try (Archive archive = encrypted ? Archive.openMpqe(path, code, 0) : Archive.open(path, 0)) {
-                assertEquals(3, archive.version());
-                assertArrayEquals(payload, archive.readFile(archive.fileNumber("renamed")));
-                assertArrayEquals(new byte[] {9}, archive.readFile(archive.fileNumber("added")));
-                assertArrayEquals(new byte[] {4, 5, 6}, archive.readFile(archive.fileNumber("from-path")));
+                try (Archive archive = encrypted ? Archive.openMpqe(path, code, 0) : Archive.open(path, 0)) {
+                    assertEquals(version + 1, archive.version());
+                    assertArrayEquals(payload, archive.readFile(archive.fileNumber("payload")));
+                    assertEquals(0, archive.verify(archive.fileNumber("payload")));
+                }
+                if (version == Mpq.ARCHIVE_VERSION_FOUR) {
+                    assertEquals(Mpq.ERROR_FORMAT, assertThrows(LibmpqException.class,
+                        () -> { try (MpqUpdate unused = encrypted ? MpqUpdate.beginMpqe(path, code)
+                                                                  : MpqUpdate.begin(path)) {} }).code());
+                    continue;
+                }
+                Path source = directory.resolve("v3-add-source");
+                Files.write(source, new byte[] {4, 5, 6});
+                try (MpqUpdate update = encrypted ? MpqUpdate.beginMpqe(path, code) : MpqUpdate.begin(path)) {
+                    update.addData("added", new byte[] {7, 8}, null);
+                    assertEquals(Mpq.ERROR_EXIST, assertThrows(LibmpqException.class,
+                        () -> update.addData("ADDED", new byte[] {9}, null)).code());
+                    update.addPath("from-path", source, null);
+                    update.remove("added");
+                    update.addData("added", new byte[] {9}, null);
+                    update.rename("payload", "renamed");
+                    update.commit();
+                }
+                try (Archive archive = encrypted ? Archive.openMpqe(path, code, 0) : Archive.open(path, 0)) {
+                    assertEquals(version + 1, archive.version());
+                    assertArrayEquals(payload, archive.readFile(archive.fileNumber("renamed")));
+                    assertArrayEquals(new byte[] {9}, archive.readFile(archive.fileNumber("added")));
+                    assertArrayEquals(new byte[] {4, 5, 6}, archive.readFile(archive.fileNumber("from-path")));
+                }
             }
         }
     }

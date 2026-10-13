@@ -128,10 +128,8 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     payload_size = size - 3U;
 
-    /* Preserve v1/v2 seed selectors; the previously unused bit selects v3. */
-    archive_options.version = (data[0] & 2U) != 0U   ? LIBMPQ_ARCHIVE_VERSION_THREE
-                              : (data[0] & 1U) == 0U ? LIBMPQ_ARCHIVE_VERSION_ONE
-                                                     : LIBMPQ_ARCHIVE_VERSION_TWO;
+    /* Select all four supported public archive generations. */
+    archive_options.version = data[0] & 3U;
     archive_options.max_files = 16;
     archive_options.sector_size =
         sector_sizes[data[2] % (sizeof(sector_sizes) / sizeof(sector_sizes[0]))];

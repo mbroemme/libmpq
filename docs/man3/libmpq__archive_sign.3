@@ -27,10 +27,13 @@ libmpq__archive_sign \- configure weak signing before writer close
 .BI ");"
 .fi
 .SH DESCRIPTION
-Configures \fIarchive\fP, an active MPQ v1, v2, or v3 writer, to generate one
+Configures \fIarchive\fP, an active MPQ v1, v2, v3, or v4 writer, to generate one
 \fIsignature_type\fP: \fBLIBMPQ_SIGNATURE_WEAK\fP or
 \fBLIBMPQ_SIGNATURE_STRONG\fP. A file writer must not be active. Each
-type may be configured once; ordinary MPQ archives may use both.
+type may be configured once; ordinary MPQ v1/v2/v3 archives may use both.
+Public v4 writers support strong signing on plain MPQ output; weak signing
+returns LIBMPQ_ERROR_FORMAT without modifying the writer because signing would
+rewrite a member whose raw-chunk MD5 digests have already been stored.
 Configuration is non-consuming and copies the caller's
 \fIprivate_key\fP. Final signing occurs when
 \fBlibmpq__archive_close\fP(3) finalizes the archive; reopen it to
@@ -46,7 +49,7 @@ product-specific keys are built in.
 .PP
 Weak signing creates an internal \fB(signature)\fP member and consumes a
 file slot. Strong signing appends an external NGIS trailer using the plain
-SHA-1 archive-range variant. MPQE writers support internal weak signing
+SHA-1 archive-range variant. MPQE v1/v2/v3 writers support internal weak signing
 but reject external strong signing because no MPQE transport
 representation is defined for it. Both algorithms are legacy
 compatibility mechanisms, not modern trust primitives.

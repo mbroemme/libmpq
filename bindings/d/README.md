@@ -82,6 +82,9 @@ scope(exit) archive.close();
 archive.add("hello.txt", cast(const(ubyte)[])"hello\n");
 ```
 
+Use `ARCHIVE_VERSION_FOUR` with the same creation APIs for v4 MPQ or MPQE
+output with 16 KiB raw chunks. V4 updates and patch writing remain unsupported.
+
 `Archive.createMpqe` creates a new encrypted MPQE stream from borrowed
 authentication bytes. It finalizes a private plaintext temporary file before
 atomically replacing the destination. Use `Update.beginMpqe` for changes to
@@ -158,8 +161,8 @@ Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
 `ArchiveCreateOptions`. Zero disables generation; any nonzero combination
 creates one `(attributes)` file and consumes one reserved slot. Unknown bits
 are rejected. Creation flags remain separate. These options work for both MPQ
-v1, v2, and v3, including MPQE creation. Payload version 100 is independent of the
-archive format version.
+v1, v2, v3, and v4, including MPQE creation. Payload version 100 is
+independent of the archive format version.
 
 Per-file flags distinguish unavailable fields from zero. Complete lossless
 reads automatically verify available CRC32 and MD5 metadata against decoded
@@ -265,11 +268,12 @@ for MPQE transport streams. Use `Archive.sign(privateKey)` for weak signing or
 close, and `Archive.signatures()` / `Archive.verify(publicKey)` on reopened
 archives. Verification returns mismatch bits; malformed keys/archives raise
 normal binding errors. Weak keys are exactly 128 bytes: 64-byte big-endian
-modulus followed by a 64-byte big-endian exponent. Signing supports v1, v2,
-and v3. libmpq does not ship Blizzard- or product-specific public verification
-keys or private signing keys; all signature key material is supplied
-explicitly by the caller. MD5/RSA-512 is legacy compatibility, not modern
-authenticity protection. See [the format guide](../../MPQ.md) for details.
+modulus followed by a 64-byte big-endian exponent. Weak signing supports v1,
+v2, and v3; plain MPQ v4 creation supports strong signing only. libmpq does
+not ship Blizzard- or product-specific public verification keys or private
+signing keys; all signature key material is supplied explicitly by the caller.
+MD5/RSA-512 is legacy compatibility, not modern authenticity protection. See
+[the format guide](../../MPQ.md) for details.
 
 `Archive.signatures()` reports weak MD5/RSA-512 internal signatures and strong
 SHA-1/RSA-2048 external `NGIS` trailers. `Archive.verify` accepts a signature

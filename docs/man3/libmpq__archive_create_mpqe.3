@@ -28,11 +28,14 @@ libmpq__archive_create_mpqe \- create an MPQE-wrapped MPQ archive
 .BI ");"
 .fi
 .SH DESCRIPTION
-Creates a new MPQE stream at \fImpqe_filename\fP containing an MPQ v1, v2, or v3
+Creates a new MPQE stream at \fImpqe_filename\fP containing an MPQ v1, v2, v3, or v4
 archive. On success, \fI*mpq_archive\fP is a caller-owned writer handle. The caller
 supplies at least 32 authentication-code bytes. Add members using the
 ordinary writer APIs; \fBlibmpq__archive_close\fP() finalizes the archive,
 encrypts it, and atomically publishes the result on success.
+.PP
+V4 creation uses 0x4000-byte raw chunks and generates header, table and raw-chunk
+MD5 digests before MPQE transport encryption. V4 updates remain unsupported.
 .SS "Creation Options"
 NULL \fIoptions\fP uses the built-in archive-creation defaults.
 Compression defaults to STANDARD. Add
@@ -43,8 +46,8 @@ Set options.attributes to a combination of LIBMPQ_ATTRIBUTE_CRC32,
 LIBMPQ_ATTRIBUTE_FILETIME, LIBMPQ_ATTRIBUTE_MD5, and
 LIBMPQ_ATTRIBUTE_PATCH_BIT. Zero disables generation; any nonzero
 combination creates one (attributes) file and consumes one reserved slot.
-Unknown attribute bits are rejected. Version-100 attributes work in both
-MPQ v1, v2, and v3, independently of the archive format version.
+Unknown attribute bits are rejected. Version-100 attributes work in
+MPQ v1, v2, v3, and v4, independently of the archive format version.
 .PP
 Capacity includes the attributes entry and listfile if enabled; the internal
 attributes name is reserved. Finalization writes the listfile, attributes,

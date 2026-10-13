@@ -37,7 +37,7 @@ test_policies(void)
     TEST_CHECK(libmpq__archive_compression_allowed(1, 0, INT32_MIN) == 0);
     TEST_CHECK(libmpq__archive_compression_allowed(1, 0, INT32_MAX) == 0);
 
-    for (version = 0; version <= LIBMPQ_ARCHIVE_VERSION_THREE; ++version) {
+    for (version = 0; version <= LIBMPQ_ARCHIVE_VERSION_FOUR; ++version) {
         for (policy = 0; policy <= 1; ++policy) {
             for (mask = 0; mask < 512; ++mask) {
                 int expected = (mask & ~0xfbU) == 0 && (mask & 0xc0U) != 0xc0U &&
@@ -55,7 +55,7 @@ test_policies(void)
             }
         }
     }
-    TEST_CHECK(libmpq__archive_compression_allowed(3, 0, 0) == 0);
+    TEST_CHECK(libmpq__archive_compression_allowed(4, 0, 0) == 0);
     TEST_CHECK(libmpq__archive_compression_allowed(UINT32_MAX, 0, 0) == 0);
     TEST_CHECK(libmpq__archive_compression_allowed(1, UINT32_MAX, 0) == 0);
     TEST_CHECK(libmpq__archive_compression_allowed(1, 0, -1) == 0);
@@ -278,7 +278,7 @@ main(void)
     TEST_CHECK(
         test_policy_writer(LIBMPQ_ARCHIVE_VERSION_THREE, LIBMPQ_COMPRESSION_POLICY_EXTENDED, 0) == 0
     );
-    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_THREE;
+    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_FOUR;
          ++version) {
         for (libmpq_compression_policy_t policy = LIBMPQ_COMPRESSION_POLICY_STANDARD;
              policy <= LIBMPQ_COMPRESSION_POLICY_EXTENDED; ++policy) {

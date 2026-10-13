@@ -116,8 +116,8 @@ typedef int32_t (*libmpq_read_at_fn)(
 
 /*
  * On-disk archive format versions (not combinable flags). Creation accepts
- * ONE, TWO, and THREE. V3 creation emits both HET/BET and classic tables;
- * V3 updates require complete filename reconstruction; v4 access is read-only.
+ * ONE, TWO, THREE, and FOUR. V3/v4 creation emits HET/BET and classic tables;
+ * V3 updates require complete filename reconstruction; v4 updates remain unsupported.
  * libmpq__archive_version() reports the corresponding one-based generation.
  */
 #define LIBMPQ_ARCHIVE_VERSION_ONE 0
@@ -341,7 +341,7 @@ extern LIBMPQ_API const char *libmpq__strerror(int32_t return_code);
 /*
  * Return 1 if the compression selection is allowed for the archive version
  * and policy, otherwise 0. archive_version uses
- * LIBMPQ_ARCHIVE_VERSION_* selectors (0=v1, 1=v2, 2=v3), not the one-based value
+ * LIBMPQ_ARCHIVE_VERSION_* selectors (0=v1, 1=v2, 2=v3, 3=v4), not the one-based value
  * returned by libmpq__archive_version. Zero means raw storage. LZMA requires
  * the exclusive LIBMPQ_COMPRESSION_LZMA selector, not on-disk method 0x12.
  * WAVE input and file-storage constraints still apply when adding a file.
@@ -410,7 +410,8 @@ extern LIBMPQ_API int32_t libmpq__archive_open_mpqe_io(
 );
 
 /*
- * Create a seekable MPQ v1, v2, or v3 archive at mpq_filename.
+ * Create a seekable MPQ v1, v2, v3, or v4 archive at mpq_filename.
+ * V4 creation uses 16 KiB raw chunks; v4 transactional updates remain unsupported.
  * The options determine the format, reserved table capacity, sector size, and
  * optional internal files; zero options select documented writer defaults.
  * The returned handle remains in write mode until close finalizes its tables,
@@ -422,7 +423,7 @@ extern LIBMPQ_API int32_t libmpq__archive_create(
 );
 
 /*
- * Create a new MPQE-encrypted stream containing an MPQ v1, v2, or v3 archive.
+ * Create a new MPQE-encrypted stream containing an MPQ v1, v2, v3, or v4 archive.
  * The archive is first finalized in a private temporary file, then encrypted
  * and atomically published at mpqe_filename when libmpq__archive_close()
  * succeeds. auth_code is borrowed only during this call; at least
@@ -486,7 +487,7 @@ extern LIBMPQ_API int32_t libmpq__archive_offset(mpq_archive_s *mpq_archive, lib
 
 /*
  * Return the public MPQ format version of an opened archive.
- * The result identifies the supported v1, v2 or v3 layout rather than the raw
+ * The result identifies the supported v1, v2, v3 or v4 layout rather than the raw
  * on-disk version field. Pass a valid opened archive and output pointer.
  */
 extern LIBMPQ_API int32_t libmpq__archive_version(mpq_archive_s *mpq_archive, uint32_t *version);
@@ -521,7 +522,8 @@ extern LIBMPQ_API int32_t libmpq__archive_verify(
 /*
  * Configure weak or strong signing on a writable archive using a copied key.
  * Signing occurs during archive close; this call does not consume the handle.
- * MPQE-wrapped archives support weak, but not external strong, signatures.
+ * Public v4 writers reject weak signing because it conflicts with raw digests.
+ * MPQE writers reject external strong signing.
  */
 extern LIBMPQ_API int32_t libmpq__archive_sign(
     mpq_archive_s *archive, uint32_t signature_type, const uint8_t *private_key,
@@ -811,6 +813,7 @@ extern LIBMPQ_API int32_t libmpq__archive_add_path(
  * Embedded MPQs retain their container prefix and unrelated trailing bytes.
  * Stale weak and strong signatures are removed on modification. MPQE archives
  * require the explicit authenticated update_begin_mpqe() entry point.
+ * V4 transactional updates remain unsupported.
  */
 extern LIBMPQ_API int32_t libmpq__update_begin(mpq_update_s **update, const char *path);
 

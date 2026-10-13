@@ -2958,7 +2958,7 @@ test_v4_mpqe_read_only(int raw, int embedded)
             LIBMPQ_ERROR_FORMAT &&
         patch == NULL
     );
-    options.version = LIBMPQ_ARCHIVE_VERSION_FOUR;
+    options.version = LIBMPQ_ARCHIVE_VERSION_FOUR + 1;
     TEST_CHECK(
         libmpq__archive_create(&archive, "reader-v4-output.mpq", &options) == LIBMPQ_ERROR_FORMAT &&
         archive == NULL

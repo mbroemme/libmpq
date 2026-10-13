@@ -894,6 +894,10 @@ libmpq__writer_finalize_mpqe(mpq_archive_s *a)
 
     if (a == NULL || !a->write_mpqe)
         return LIBMPQ_ERROR_EXIST;
+    if (a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR && a->write_error != 0)
+        return a->write_error;
+    if (a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR && a->write_finalized)
+        return 0;
     ops = a->write_mpqe_ops;
     if (ops == NULL)
         return LIBMPQ_ERROR_EXIST;
@@ -902,18 +906,24 @@ libmpq__writer_finalize_mpqe(mpq_archive_s *a)
         result = LIBMPQ_ERROR_CLOSE;
     a->fp = NULL;
     if (result != 0)
-        return result;
-    if (libmpq__directory_remove(a->write_mpqe_directory, a->filename) != 0)
-        return LIBMPQ_ERROR_WRITE;
+        goto done;
+    if (libmpq__directory_remove(a->write_mpqe_directory, a->filename) != 0) {
+        result = LIBMPQ_ERROR_WRITE;
+        goto done;
+    }
     if (ops->close_output(a->write_mpqe_output) != 0) {
         a->write_mpqe_output = NULL;
-        return LIBMPQ_ERROR_CLOSE;
+        result = LIBMPQ_ERROR_CLOSE;
+        goto done;
     }
     a->write_mpqe_output = NULL;
     result =
         ops->publish(a->write_mpqe_directory, a->write_mpqe_output_path, a->write_mpqe_destination);
     if (result == 0)
         a->write_finalized = 1;
+done:
+    if (result != 0 && a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+        a->write_error = result;
     return result;
 }
 
@@ -947,10 +957,10 @@ libmpq__writer_validate_options(const mpq_archive_create_options_s *options)
     if (options == NULL)
         return 0;
 
-    /* The next v3 capacity step would require a 4 GiB classic cipher buffer. */
-    if (options->version > LIBMPQ_ARCHIVE_VERSION_THREE || options->max_files == UINT32_MAX ||
+    /* The next extended-table capacity step would require a 4 GiB classic cipher buffer. */
+    if (options->version > LIBMPQ_ARCHIVE_VERSION_FOUR || options->max_files == UINT32_MAX ||
         (options->max_files && options->max_files > 0x40000000u) ||
-        (options->version == LIBMPQ_ARCHIVE_VERSION_THREE && options->max_files > 0x04000000u))
+        (options->version >= LIBMPQ_ARCHIVE_VERSION_THREE && options->max_files > 0x04000000u))
         return LIBMPQ_ERROR_FORMAT;
     if (options->sector_size &&
         (options->sector_size < 512 || (options->sector_size & (options->sector_size - 1)) != 0))
@@ -966,11 +976,9 @@ libmpq__writer_validate_options(const mpq_archive_create_options_s *options)
 /* Allocate the writer before opening ordinary output, or adopt a private stream. */
 static int32_t
 writer_archive_create_handle(
-    mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options,
-    bool internal_v4
+    mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options
 )
 {
-    mpq_archive_create_options_s validation;
     mpq_archive_create_options_s defaults = { LIBMPQ_ARCHIVE_VERSION_ONE, 1024, 4096, 0, 0 };
     mpq_archive_s *a;
     uint32_t i;
@@ -985,11 +993,7 @@ writer_archive_create_handle(
     if (options == NULL)
         options = &defaults;
 
-    /* Only the dedicated private initializer can admit the v4 version. */
-    validation = *options;
-    if (internal_v4 && validation.version == LIBMPQ_ARCHIVE_VERSION_FOUR)
-        validation.version = LIBMPQ_ARCHIVE_VERSION_THREE;
-    if (libmpq__writer_validate_options(&validation) != 0) {
+    if (libmpq__writer_validate_options(options) != 0) {
         if (file != NULL)
             (void)fclose(file);
         return LIBMPQ_ERROR_FORMAT;
@@ -1122,7 +1126,7 @@ libmpq__writer_archive_create(
     *out = NULL;
     if (libmpq__writer_validate_options(options) != 0)
         return LIBMPQ_ERROR_FORMAT;
-    return writer_archive_create_handle(out, path, NULL, options, false);
+    return libmpq__writer_archive_create_file(out, path, NULL, options);
 }
 
 int32_t
@@ -1130,10 +1134,14 @@ libmpq__writer_archive_create_file(
     mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options
 )
 {
-    return writer_archive_create_handle(out, path, file, options, false);
+    if (options != NULL && options->version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+        return libmpq__writer_archive_create_v4(
+            out, path, file, options, LIBMPQ_WRITER_V4_RAW_CHUNK_SIZE
+        );
+    return writer_archive_create_handle(out, path, file, options);
 }
 
-/* Initialize only private v4 serialization; public constructors retain their version guard. */
+/* Allow private callers to select raw-chunk sizes without a public configuration option. */
 int32_t
 libmpq__writer_archive_create_v4(
     mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options,
@@ -1149,7 +1157,7 @@ libmpq__writer_archive_create_v4(
             (void)fclose(file);
         return LIBMPQ_ERROR_FORMAT;
     }
-    result = writer_archive_create_handle(out, path, file, options, true);
+    result = writer_archive_create_handle(out, path, file, options);
     if (result == 0)
         (*out)->mpq_header_v4.raw_chunk_size = raw_chunk_size;
     return result;
@@ -1195,7 +1203,7 @@ libmpq__writer_archive_create_mpqe(
             &encrypted
         );
     if (result == 0) {
-        result = writer_archive_create_handle(out, raw_path, raw, options, false);
+        result = libmpq__writer_archive_create_file(out, raw_path, raw, options);
         raw = NULL;
     }
     if (result != 0) {
@@ -1723,7 +1731,8 @@ libmpq__writer_finalize(mpq_archive_s *a)
             return 0;
         if (a->write_current != NULL)
             return LIBMPQ_ERROR_SIZE;
-        result = finalize_archive(a);
+        result = a->write_mpqe && a->write_mpqe_ops != NULL ? a->write_mpqe_ops->finalize(a)
+                                                            : finalize_archive(a);
         if (result != 0)
             a->write_error = result;
         return result;
