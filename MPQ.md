@@ -162,6 +162,26 @@ stores its low 32 bits explicitly. V3 FIX_KEY encryption uses the final file
 offset and unpacked size, and payloads are never moved afterward. Legacy v1/v2
 writer behavior remains unchanged.
 
+The private v4 initializer reuses this writer with a `0xD0` header. It records
+actual stored table lengths and hashes the exact encrypted classic tables and
+complete encoded HET/BET envelopes before writing them. Absent tables have zero
+positions, sizes and digests; output still uses the existing mixed-table layout.
+After all offsets and the 64-bit archive size are final, the v4 header encoder
+serializes the metadata, MD5 covers bytes `[0x00, 0xC0)`, and the completed header
+is written and flushed. Public v4 creation, patch writing and transactional
+updates remain unsupported.
+
+The private initializer takes an explicit raw-chunk size; zero emits no
+checksums and no public default is selected. Nonzero settings append MD5 arrays
+after each finalized compressed/encrypted member, using bounded rereads of the
+readable, seekable output stream. These arrays occupy physical space but do not
+increase member packed sizes. Members are not subsequently relocated, so
+FIX_KEY uses the final output offset before raw hashing. Raw-enabled packed
+imports and weak signing are rejected: weak signing would rewrite an already
+hashed member. Strong signature trailers do not change those stored ranges.
+V4 flush, member-finish and finalization errors remain terminal for that
+handle; cleanup retains the existing writer guarantees.
+
 ## Classic tables
 
 Classic hash and block tables are encrypted streams of 32-bit words. Decrypt

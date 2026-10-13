@@ -86,6 +86,16 @@ int32_t libmpq__writer_archive_create_file(
     mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options
 );
 
+/*
+ * Private v4 initialization; adopts file like create_file, with no public default.
+ * Nonzero raw_chunk_size requires readable, seekable output. The chunk size
+ * is fixed before the first member and must remain unchanged.
+ */
+int32_t libmpq__writer_archive_create_v4(
+    mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options,
+    uint32_t raw_chunk_size
+);
+
 int32_t libmpq__writer_archive_create_mpqe(
     mpq_archive_s **out, const char *path, const uint8_t *auth_code, size_t auth_code_size,
     const mpq_archive_create_options_s *options
