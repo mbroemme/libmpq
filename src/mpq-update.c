@@ -26,6 +26,7 @@
 #include "mpq-attributes.h"
 #include "mpq-bet.h"
 #include "mpq-block.h"
+#include "mpq-compression.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
 #include "mpq-mpqe.h"
@@ -281,7 +282,7 @@ libmpq__update_transaction_begin(mpq_update_s **update, const char *path)
 
     /* Generic transaction setup historically accepts nonarchives; keep that contract. */
     if (libmpq__reader_archive_open_path(&check, (*update)->working_path, -1) == 0) {
-        uint8_t unsupported = check->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_THREE;
+        uint8_t unsupported = check->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_FOUR;
         (void)libmpq__archive_close(check);
         if (unsupported) {
             (void)update_cleanup(*update, 1);
@@ -321,7 +322,7 @@ libmpq__update_transaction_begin_mpqe(
     result = libmpq__reader_archive_open_mpqe(&source, path, -1, auth_code, auth_code_size);
     if (result != 0)
         goto fail;
-    if (source->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_THREE) {
+    if (source->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_FOUR) {
         result = LIBMPQ_ERROR_FORMAT;
         goto fail;
     }
@@ -1323,6 +1324,104 @@ update_collect_names(mpq_update_s *update, mpq_archive_s *archive, const char *t
     return result;
 }
 
+/* Re-encode retained v4 members at their final offsets, preserving representable codecs. */
+static int32_t
+update_reencode_member(
+    mpq_archive_s *archive, mpq_archive_s *writer, uint32_t number, const char *old_name,
+    const char *new_name, mpq_file_options_s *options, const mpq_file_attributes_s *attributes
+)
+{
+    const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+    const uint32_t flags = LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SINGLE |
+                           LIBMPQ_FILE_FLAG_SECTOR_CRC | LIBMPQ_FILE_FLAG_COMPRESS |
+                           LIBMPQ_FILE_FLAG_IMPLODE | 0x00020000u;
+    mpq_stream_s *input = NULL;
+    mpq_writer_s *output = NULL;
+    uint8_t buffer[LIBMPQ_UPDATE_COPY_SIZE];
+    uint32_t blocks;
+    uint32_t mismatches;
+    int32_t result;
+    if ((entry->flags & ~(flags | LIBMPQ_FLAG_EXISTS)) != 0)
+        return LIBMPQ_ERROR_FORMAT;
+    if (entry->unpacked_size > UINT32_MAX || entry->packed_size > UINT32_MAX)
+        return LIBMPQ_ERROR_SIZE;
+    options->flags = entry->flags & flags;
+    result = libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &mismatches);
+    if (result != 0 || mismatches != 0)
+        return result != 0 ? result : LIBMPQ_ERROR_READ;
+    result = libmpq__reader_offsets_acquire(archive, number, old_name);
+    if (result != 0)
+        return result;
+    result = libmpq__file_blocks(archive, number, &blocks);
+    for (uint32_t i = 0;
+         result == 0 && i < blocks && (options->flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0; ++i) {
+        uint32_t mask;
+        result = libmpq__block_compression(archive, number, i, &mask);
+        if (result != 0)
+            break;
+        if (mask == 0)
+            continue;
+        if (mask == LIBMPQ_COMPRESSION_LZMA_METHOD)
+            mask = LIBMPQ_COMPRESSION_LZMA;
+        if ((mask & (LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO)) != 0) {
+            result = LIBMPQ_ERROR_FORMAT;
+            break;
+        }
+        if (i == 0)
+            options->compression_first = mask;
+        else if (options->compression_next != 0 && options->compression_next != mask)
+            result = LIBMPQ_ERROR_FORMAT;
+        else
+            options->compression_next = mask;
+    }
+    update_result(&result, libmpq__reader_offsets_release(archive, number));
+    if (result != 0)
+        return result;
+    if ((options->flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0) {
+        if (options->compression_first == 0)
+            options->compression_first = options->compression_next;
+        if (options->compression_first == 0)
+            options->compression_first = LIBMPQ_COMPRESSION_ZLIB;
+        if (options->compression_next == 0)
+            options->compression_next = options->compression_first;
+    }
+    result = libmpq__stream_open_name(archive, old_name, &input);
+    if (result == 0 && libmpq__file_seek(writer->fp, 0, SEEK_END) < 0)
+        result = LIBMPQ_ERROR_SEEK;
+    if (result == 0)
+        result = libmpq__writer_file_begin(
+            writer, new_name, (libmpq__off_t)entry->unpacked_size, options, &output
+        );
+    while (result == 0) {
+        libmpq__off_t transferred;
+        result = libmpq__stream_read(input, buffer, sizeof(buffer), &transferred);
+        if (result != 0 || transferred == 0)
+            break;
+        result = libmpq__writer_file_write(output, buffer, transferred);
+    }
+    if (input != NULL)
+        update_result(&result, libmpq__stream_close(input));
+    if (result == 0)
+        result = libmpq__writer_file_finish(output);
+    else if (output != NULL) {
+        if (writer->write_error == 0 && output->packed_total != 0)
+            writer->write_error = result;
+        libmpq__writer_file_abort(output);
+    }
+    if (result == 0 && writer->write_attributes != NULL) {
+        const mpq_file_attributes_s *actual =
+            &writer->write_attributes[writer->write_next_block - 1];
+        if (((attributes->flags & LIBMPQ_ATTRIBUTE_CRC32) != 0 &&
+             actual->crc32 != attributes->crc32) ||
+            ((attributes->flags & LIBMPQ_ATTRIBUTE_MD5) != 0 &&
+             memcmp(actual->md5, attributes->md5, sizeof(actual->md5)) != 0)) {
+            result = LIBMPQ_ERROR_READ;
+            writer->write_error = result;
+        }
+    }
+    return result;
+}
+
 /* Rebuild named logical entries using the ordinary writer and transaction publication. */
 static int32_t
 update_rebuild_named(
@@ -1348,7 +1447,10 @@ update_rebuild_named(
 
     /* Embedded wrappers and unrelated trailers must not be silently discarded. */
     if (archive->archive_offset != 0 || archive->file_size < extent ||
-        archive->mpq_header.header_size > LIBMPQ_HEADER_V3_WIRE_SIZE)
+        archive->mpq_header.header_size >
+            (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR
+                 ? LIBMPQ_HEADER_V4_WIRE_SIZE
+                 : LIBMPQ_HEADER_V3_WIRE_SIZE))
         return LIBMPQ_ERROR_FORMAT;
     if (archive->file_size != extent) {
         uint32_t signatures;
@@ -1381,7 +1483,8 @@ update_rebuild_named(
     else if (result != LIBMPQ_ERROR_EXIST)
         goto done;
     if ((attribute_flags & ~LIBMPQ_ATTRIBUTES_ALL) != 0 ||
-        (attribute_flags & LIBMPQ_ATTRIBUTE_PATCH_BIT) != 0) {
+        (archive->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_FOUR &&
+         (attribute_flags & LIBMPQ_ATTRIBUTE_PATCH_BIT) != 0)) {
         result = LIBMPQ_ERROR_FORMAT;
         goto done;
     }
@@ -1401,15 +1504,21 @@ update_rebuild_named(
         result = LIBMPQ_ERROR_MALLOC;
         goto done;
     }
-    result = libmpq__writer_archive_create_file(&writer, path, file, &create);
+    result = archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR
+                 ? libmpq__writer_archive_create_v4(
+                       &writer, path, file, &create, archive->mpq_header_v4.raw_chunk_size
+                   )
+                 : libmpq__writer_archive_create_file(&writer, path, file, &create);
     file = NULL;
     if (result != 0)
         goto done;
 
     /* Reserve the source extent so rewritten payloads cannot overlap retained members. */
-    if (extent > INT64_MAX || extent == 0 ||
-        libmpq__file_seek(writer->fp, (libmpq__off_t)(extent - 1), SEEK_SET) < 0 ||
-        fputc(0, writer->fp) == EOF) {
+    if ((archive->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_FOUR ||
+         archive->mpq_header_v4.raw_chunk_size == 0) &&
+        (extent > INT64_MAX || extent == 0 ||
+         libmpq__file_seek(writer->fp, (libmpq__off_t)(extent - 1), SEEK_SET) < 0 ||
+         fputc(0, writer->fp) == EOF)) {
         result = LIBMPQ_ERROR_WRITE;
         goto done;
     }
@@ -1462,12 +1571,27 @@ update_rebuild_named(
             result = LIBMPQ_ERROR_FORMAT;
             goto done;
         }
+        if (attributes.patch_bit) {
+            result = LIBMPQ_ERROR_FORMAT;
+            goto done;
+        }
         if (i == target && action == LIBMPQ_UPDATE_REMOVE)
             continue;
         if (i == target && action == LIBMPQ_UPDATE_REPLACE)
             continue;
-        if (i == target && action == LIBMPQ_UPDATE_RENAME &&
-            (entry->flags & LIBMPQ_FILE_FLAG_ENCRYPTED)) {
+        if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
+            (archive->mpq_header_v4.raw_chunk_size != 0 ||
+             (i == target && action == LIBMPQ_UPDATE_RENAME &&
+              (entry->flags & LIBMPQ_FILE_FLAG_ENCRYPTED) != 0))) {
+            result =
+                update_reencode_member(archive, writer, i, names[i], name, &options, &attributes);
+            if (result != 0)
+                goto done;
+            if (writer->write_attributes != NULL)
+                writer->write_attributes[writer->write_next_block - 1].filetime =
+                    attributes.filetime;
+        } else if (i == target && action == LIBMPQ_UPDATE_RENAME &&
+                   (entry->flags & LIBMPQ_FILE_FLAG_ENCRYPTED)) {
             uint8_t *decoded = NULL;
             size_t decoded_size;
             options.flags = entry->flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SINGLE |
@@ -1726,13 +1850,13 @@ update_apply(
     if (result != 0)
         return result;
 
-    if (archive->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_THREE) {
+    if (archive->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_FOUR) {
         result = LIBMPQ_ERROR_FORMAT;
         goto done;
     }
 
-    /* Every v3 action exits here; the update_encode() calls below are legacy-only. */
-    if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE ||
+    /* Extended-table actions exit here; update_encode() below remains legacy-only. */
+    if (archive->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_THREE ||
         (action == LIBMPQ_UPDATE_ADD && archive->files == 0)) {
         result = update_rebuild_named(
             update, &archive, action, old_name, new_name, data, size, source_path,

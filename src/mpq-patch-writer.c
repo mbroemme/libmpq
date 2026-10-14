@@ -289,7 +289,8 @@ patch_writer_member(
     canonical = state->base->mpq_map[*number].entry_index;
     entry = &state->base->mpq_entry[canonical];
     if ((entry->source_mask & LIBMPQ_ENTRY_SOURCE_BET) != 0) {
-        if (state->base->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_THREE ||
+        if ((state->base->mpq_header.version < LIBMPQ_ARCHIVE_VERSION_THREE ||
+             state->base->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_FOUR) ||
             libmpq__entry_index_from_bet(state->base, entry->bet_source_index, &translated) != 0 ||
             translated != canonical)
             return LIBMPQ_ERROR_FORMAT;
@@ -595,7 +596,7 @@ patch_writer_begin_internal(
     if (result != 0)
         goto fail;
     if (state->base->archive_offset != 0 ||
-        state->base->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_THREE) {
+        state->base->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_FOUR) {
         result = LIBMPQ_ERROR_FORMAT;
         goto fail;
     }
@@ -733,7 +734,9 @@ libmpq__patch_writer_replace(
         if (options->locale != locale || options->platform != platform ||
             (options->flags &
              ~(LIBMPQ_FILE_FLAG_IMPLODE | LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-               LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_SECTOR_CRC)) != 0)
+               LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_SECTOR_CRC |
+               (state->archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR ? 0x00020000u
+                                                                                  : 0u))) != 0)
             return LIBMPQ_ERROR_FORMAT;
         storage = *options;
     } else {

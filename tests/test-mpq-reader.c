@@ -2950,14 +2950,14 @@ test_v4_mpqe_read_only(int raw, int embedded)
     );
     TEST_CHECK(libmpq__archive_open(&archive, "reader-v4.mpq", -1) == 0);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
-    TEST_CHECK(
-        libmpq__update_begin(&update, "reader-v4.mpq") == LIBMPQ_ERROR_FORMAT && update == NULL
-    );
+    TEST_CHECK(libmpq__update_begin(&update, "reader-v4.mpq") == 0 && update != NULL);
+    TEST_CHECK(libmpq__update_abort(update) == 0);
     TEST_CHECK(
         libmpq__patch_begin(&patch, "reader-v4.mpq", "reader-v4-patch.mpq") ==
-            LIBMPQ_ERROR_FORMAT &&
-        patch == NULL
+        (embedded ? LIBMPQ_ERROR_FORMAT : 0)
     );
+    if (!embedded)
+        TEST_CHECK(libmpq__patch_abort(patch) == 0);
     options.version = LIBMPQ_ARCHIVE_VERSION_FOUR + 1;
     TEST_CHECK(
         libmpq__archive_create(&archive, "reader-v4-output.mpq", &options) == LIBMPQ_ERROR_FORMAT &&
@@ -3007,10 +3007,10 @@ test_v4_mpqe_read_only(int raw, int embedded)
     TEST_CHECK(libmpq__archive_open_mpqe(&archive, "reader-v4.mpqe", -1, auth, sizeof(auth)) == 0);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     TEST_CHECK(
-        libmpq__update_begin_mpqe(&update, "reader-v4.mpqe", auth, sizeof(auth)) ==
-            LIBMPQ_ERROR_FORMAT &&
-        update == NULL
+        libmpq__update_begin_mpqe(&update, "reader-v4.mpqe", auth, sizeof(auth)) == 0 &&
+        update != NULL
     );
+    TEST_CHECK(libmpq__update_abort(update) == 0);
     if (!raw) {
         cipher.bytes[(size_t)source.v3.het_table_offset + (embedded ? 96 : 0) + 12] ^= 1;
         TEST_CHECK(

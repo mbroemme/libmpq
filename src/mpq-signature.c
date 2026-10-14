@@ -444,6 +444,7 @@ libmpq__signature_configure(mpq_archive_s *a, uint32_t type, const uint8_t *key,
         a->write_strong_signature = 1;
         return 0;
     }
+
     /* Weak signing rewrites a member after its raw digests have been stored. */
     if (type == LIBMPQ_SIGNATURE_WEAK && a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
         a->mpq_header_v4.raw_chunk_size != 0)

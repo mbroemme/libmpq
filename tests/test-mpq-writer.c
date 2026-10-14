@@ -1975,14 +1975,14 @@ test_v4_public(int mpqe, int empty)
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     TEST_CHECK(
         (mpqe ? libmpq__update_begin_mpqe(&update, path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1)
-              : libmpq__update_begin(&update, path)) == LIBMPQ_ERROR_FORMAT &&
-        update == NULL
+              : libmpq__update_begin(&update, path)) == 0 &&
+        update != NULL
     );
-    if (!mpqe)
-        TEST_CHECK(
-            libmpq__patch_begin(&patch, path, "unused-v4-patch.mpq") == LIBMPQ_ERROR_FORMAT &&
-            patch == NULL
-        );
+    TEST_CHECK(libmpq__update_abort(update) == 0);
+    if (!mpqe) {
+        TEST_CHECK(libmpq__patch_begin(&patch, path, "unused-v4-patch.mpq") == 0);
+        TEST_CHECK(libmpq__patch_abort(patch) == 0);
+    }
     TEST_CHECK(remove(path) == 0);
     return 0;
 }
@@ -2136,7 +2136,8 @@ test_v4_writer(uint32_t chunk_size, int empty, uint64_t position)
         }
     }
     TEST_CHECK(libmpq__archive_close(archive) == 0);
-    TEST_CHECK(libmpq__update_begin(&update, path) == LIBMPQ_ERROR_FORMAT && update == NULL);
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0 && update != NULL);
+    TEST_CHECK(libmpq__update_abort(update) == 0);
     TEST_CHECK(remove(path) == 0);
     return 0;
 }

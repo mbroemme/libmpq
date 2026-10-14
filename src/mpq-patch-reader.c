@@ -2204,6 +2204,12 @@ patch_materialize_named(
                 goto done;
         }
     }
+
+    /* Packed imports can leave the cursor before a rewritten member's end. */
+    if (libmpq__file_seek(writer->fp, 0, SEEK_END) != 0) {
+        status = LIBMPQ_ERROR_SEEK;
+        goto done;
+    }
     status = libmpq__archive_close(writer);
     writer = NULL;
     if (status != 0)
