@@ -863,12 +863,6 @@ class LibmpqTest {
                     assertArrayEquals(payload, archive.readFile(archive.fileNumber("payload")));
                     assertEquals(0, archive.verify(archive.fileNumber("payload")));
                 }
-                if (version == Mpq.ARCHIVE_VERSION_FOUR) {
-                    assertEquals(Mpq.ERROR_FORMAT, assertThrows(LibmpqException.class,
-                        () -> { try (MpqUpdate unused = encrypted ? MpqUpdate.beginMpqe(path, code)
-                                                                  : MpqUpdate.begin(path)) {} }).code());
-                    continue;
-                }
                 Path source = directory.resolve("v3-add-source");
                 Files.write(source, new byte[] {4, 5, 6});
                 try (MpqUpdate update = encrypted ? MpqUpdate.beginMpqe(path, code) : MpqUpdate.begin(path)) {
@@ -878,6 +872,7 @@ class LibmpqTest {
                     update.addPath("from-path", source, null);
                     update.remove("added");
                     update.addData("added", new byte[] {9}, null);
+                    update.replaceData("from-path", new byte[] {6, 5, 4}, null);
                     update.rename("payload", "renamed");
                     update.commit();
                 }
@@ -885,7 +880,32 @@ class LibmpqTest {
                     assertEquals(version + 1, archive.version());
                     assertArrayEquals(payload, archive.readFile(archive.fileNumber("renamed")));
                     assertArrayEquals(new byte[] {9}, archive.readFile(archive.fileNumber("added")));
-                    assertArrayEquals(new byte[] {4, 5, 6}, archive.readFile(archive.fileNumber("from-path")));
+                    assertArrayEquals(new byte[] {6, 5, 4}, archive.readFile(archive.fileNumber("from-path")));
+                }
+                byte[] original = Files.readAllBytes(path);
+                try (MpqUpdate update = encrypted ? MpqUpdate.beginMpqe(path, code) : MpqUpdate.begin(path)) {
+                    update.remove("added");
+                    update.abort();
+                }
+                assertArrayEquals(original, Files.readAllBytes(path));
+                if (!encrypted) {
+                    for (boolean wrapped : new boolean[] {false, true}) {
+                        Path output = directory.resolve(wrapped ? "patch.mpqe" : "patch.mpq");
+                        try (MpqPatch patch = wrapped ? MpqPatch.beginMpqe(path, output, code)
+                                                      : MpqPatch.begin(path, output)) {
+                            patch.replaceData("renamed", new byte[] {1, 2, 3});
+                            patch.remove("added");
+                            patch.finish();
+                        }
+                        try (Archive patch = wrapped ? Archive.openMpqe(output, code, 0)
+                                                     : Archive.open(output, 0)) {
+                            assertEquals(version + 1, patch.version());
+                            int number = patch.fileNumber("renamed");
+                            assertEquals("PTCH", new String(patch.readPatchPayload(number, "renamed"),
+                                0, 4, StandardCharsets.US_ASCII));
+                            assertEquals(0, patch.verify(number, Mpq.VERIFY_RAW_MD5));
+                        }
+                    }
                 }
             }
         }

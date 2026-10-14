@@ -567,14 +567,14 @@ private void testMpqeUpdate() {
     after.close();
 }
 
-private void testV3AddUpdate(bool encrypted) {
+private void testExtendedAddUpdate(bool encrypted, uint archiveVersion = ARCHIVE_VERSION_THREE) {
     auto path = temporaryArchive("v3-update");
     auto source = path ~ ".source";
     scope(exit) { remove(path); remove(source); }
     immutable ubyte[] code = cast(immutable(ubyte)[])"LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
     write(source, cast(const(ubyte)[])"path");
     auto options = ArchiveCreateOptions.v2();
-    options.version_ = ARCHIVE_VERSION_THREE;
+    options.version_ = archiveVersion;
     options.flags = ARCHIVE_CREATE_LISTFILE;
     auto archive = encrypted ? Archive.createMpqe(path, code, options) : Archive.create(path, options);
     archive.add("keep", cast(const(ubyte)[])"keep");
@@ -588,14 +588,20 @@ private void testV3AddUpdate(bool encrypted) {
     update.addPath("from-path", source);
     update.remove("added");
     update.addData("added", cast(const(ubyte)[])"new");
+    update.replaceData("from-path", cast(const(ubyte)[])"replaced");
     update.rename("keep", "renamed");
     update.commit();
     archive = encrypted ? Archive.openMpqe(path, code, 0) : Archive.open(path);
-    assert(archive.version_() == 3);
+    assert(archive.version_() == archiveVersion + 1);
     assert(archive.file("renamed").read() == cast(const(ubyte)[])"keep");
     assert(archive.file("added").read() == cast(const(ubyte)[])"new");
-    assert(archive.file("from-path").read() == cast(const(ubyte)[])"path");
+    assert(archive.file("from-path").read() == cast(const(ubyte)[])"replaced");
     archive.close();
+    auto original = read(path);
+    update = encrypted ? Update.beginMpqe(path, code) : Update.begin(path);
+    update.remove("added");
+    update.abort();
+    assert(read(path) == original);
 }
 
 private void testUpdateLocalizedDefaults() {
@@ -642,7 +648,7 @@ private void testUpdateLocalizedDefaults() {
     update.abort();
 }
 
-private void testPatchCreation() {
+private void testPatchCreation(uint archiveVersion = ARCHIVE_VERSION_ONE) {
     auto base = temporaryArchive("patch-base");
     auto output = temporaryArchive("patch-output");
     auto source = base ~ ".source";
@@ -655,7 +661,9 @@ private void testPatchCreation() {
     auto identity = FileOptions.raw();
     identity.locale = 0x409;
     identity.platform = 1;
-    auto archive = Archive.create(base, ArchiveCreateOptions.v1());
+    auto options = ArchiveCreateOptions.v1();
+    options.version_ = archiveVersion;
+    auto archive = Archive.create(base, options);
     archive.add("data", cast(const(ubyte)[])"original", identity);
     archive.add("path", cast(const(ubyte)[])"old path", identity);
     archive.add("remove", cast(const(ubyte)[])"remove me");
@@ -685,6 +693,7 @@ private void testPatchCreation() {
     assert(archive.file("data").read() == cast(const(ubyte)[])"original");
     archive.close();
     auto generated = Archive.open(output);
+    assert(generated.version_() == archiveVersion + 1);
     auto encryptedEntry = generated.file("path");
     assert((encryptedEntry.flags() & FILE_FLAG_ENCRYPTED) != 0);
     auto payload = encryptedEntry.readPatchPayload("path");
@@ -736,7 +745,7 @@ private void testPatchCreation() {
     rmdir(output);
 }
 
-private void testMpqePatchCreation() {
+private void testMpqePatchCreation(uint archiveVersion = ARCHIVE_VERSION_ONE) {
     auto base = temporaryArchive("mpqe-patch-base");
     auto output = temporaryArchive("mpqe-patch-output");
     immutable ubyte[] authCode =
@@ -745,7 +754,9 @@ private void testMpqePatchCreation() {
         remove(base);
         if (exists(output)) remove(output);
     }
-    auto archive = Archive.create(base, ArchiveCreateOptions.v1());
+    auto options = ArchiveCreateOptions.v1();
+    options.version_ = archiveVersion;
+    auto archive = Archive.create(base, options);
     archive.add("replace", cast(const(ubyte)[])"old");
     archive.add("remove", cast(const(ubyte)[])"old");
     archive.close();
@@ -920,10 +931,14 @@ void main() {
     testUpdate();
     testMpqeUpdate();
     testUpdateLocalizedDefaults();
-    testV3AddUpdate(false);
-    testV3AddUpdate(true);
+    testExtendedAddUpdate(false);
+    testExtendedAddUpdate(true);
+    testExtendedAddUpdate(false, ARCHIVE_VERSION_FOUR);
+    testExtendedAddUpdate(true, ARCHIVE_VERSION_FOUR);
     testPatchCreation();
+    testPatchCreation(ARCHIVE_VERSION_FOUR);
     testMpqePatchCreation();
+    testMpqePatchCreation(ARCHIVE_VERSION_FOUR);
     testPatchSigning();
     testFailures();
 }

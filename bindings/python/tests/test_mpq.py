@@ -142,7 +142,8 @@ def test_logical_stream_lifetime_seek_and_eof():
         stream.tell()
 
 
-@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO, mpq.ARCHIVE_VERSION_THREE])
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO, mpq.ARCHIVE_VERSION_THREE,
+                                     mpq.ARCHIVE_VERSION_FOUR])
 def test_transactional_update_binding(tmp_path, version):
     """All staged operations commit or abort without reusing consumed handles."""
     path = tmp_path / "update.mpq"
@@ -269,7 +270,8 @@ def test_update_localized_member_defaults(tmp_path):
         update.abort()
 
 
-@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO, mpq.ARCHIVE_VERSION_THREE])
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO, mpq.ARCHIVE_VERSION_THREE,
+                                     mpq.ARCHIVE_VERSION_FOUR])
 def test_authenticated_mpqe_update(tmp_path, version):
     """MPQE uses the ordinary Update operations and consuming lifecycle."""
     path = tmp_path / "update.mpqe"
@@ -329,7 +331,8 @@ def test_authenticated_mpqe_update(tmp_path, version):
     assert path.read_bytes() == committed
 
 
-def test_patch_creation_binding(tmp_path):
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_FOUR])
+def test_patch_creation_binding(tmp_path, version):
     """Patch creation stages replacements and deletion without changing the base."""
     base = tmp_path / "base.mpq"
     output = tmp_path / "changes.mpq"
@@ -337,7 +340,7 @@ def test_patch_creation_binding(tmp_path):
     source.write_bytes(b"from path")
     identity = mpq.FileCreateOptions.raw()
     identity.locale, identity.platform = 0x409, 1
-    with mpq.Writer(base, max_files=8, flags=mpq.ARCHIVE_CREATE_LISTFILE) as writer:
+    with mpq.Writer(base, version=version, max_files=8, flags=mpq.ARCHIVE_CREATE_LISTFILE) as writer:
         writer.add("data", b"original", identity)
         writer.add("path", b"old path", identity)
         writer.add("remove", b"remove me")
@@ -364,6 +367,7 @@ def test_patch_creation_binding(tmp_path):
         assert archive["path"].read() == b"old path"
         assert archive["remove"].read() == b"remove me"
     with mpq.Archive(output) as archive:
+        assert archive.version == version + 1
         assert "data" in archive and "path" in archive and "remove" in archive
         entry = archive["path"]
         assert entry.flags & mpq.FILE_FLAG_ENCRYPTED
@@ -403,12 +407,13 @@ def test_patch_creation_binding(tmp_path):
         patch.remove("data")
 
 
-def test_mpqe_patch_creation_binding(tmp_path):
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_FOUR])
+def test_mpqe_patch_creation_binding(tmp_path, version):
     """The MPQE factory retains the ordinary Patch lifecycle and borrows auth bytes."""
     base = tmp_path / "base.mpq"
     output = tmp_path / "changes.mpqe"
     code = b"LIBMPQ-MPQE-PATCH-AUTH-CODE-00002"
-    with mpq.Writer(base, max_files=8) as writer:
+    with mpq.Writer(base, version=version, max_files=8) as writer:
         writer.add("replace", b"old")
         writer.add("remove", b"old")
 
