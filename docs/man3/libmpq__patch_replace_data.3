@@ -35,6 +35,9 @@ whole-file PTCH COPY payload. NULL \fIoptions\fP selects patch-writer
 defaults. Explicit options control storage of the patch member, not the final
 patched file; locale and platform must match the base member. Add and rename
 operations are not supported.
+.PP
+V4 patch output accepts FIX_KEY encryption, using the final archive-relative
+member offset and reconstructed target size for key adjustment.
 .SH RETURN VALUE
 Returns \fBLIBMPQ_SUCCESS\fP or a negative libmpq error.
 .SH ERRORS

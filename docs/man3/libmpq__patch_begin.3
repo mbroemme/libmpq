@@ -27,11 +27,12 @@ libmpq__patch_begin \- begin creating a new MPQ patch archive
 .fi
 .SH DESCRIPTION
 Creates a staged patch artifact at \fIoutput_patch\fP using an existing
-ordinary filesystem MPQ at \fIbase_archive\fP. The base is read-only and is
+ordinary filesystem MPQ v1, v2, v3, or v4 at \fIbase_archive\fP. The base is read-only and is
 never modified. On failure, a valid \fIpatch\fP output is set to NULL. Finish
 publishes the artifact; abort discards it. This creation API does not accept
 embedded or MPQE base archives. Signing can be configured with
-libmpq__patch_sign(3) before finish.
+libmpq__patch_sign(3) before finish. Output retains the base version; v4
+uses 0x4000-byte raw chunks and regenerates structural and member MD5 digests.
 This entry point creates an ordinary MPQ patch. Use
 libmpq__patch_begin_mpqe(3) to create an MPQE-wrapped patch instead.
 .SH RETURN VALUE

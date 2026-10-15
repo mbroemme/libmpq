@@ -83,16 +83,16 @@ archive.add("hello.txt", cast(const(ubyte)[])"hello\n");
 ```
 
 Use `ARCHIVE_VERSION_FOUR` with the same creation APIs for v4 MPQ or MPQE
-output with 16 KiB raw chunks. V4 updates and patch writing remain unsupported.
+output with 16 KiB raw chunks. V4 updates preserve the source raw-chunk size.
 
 `Archive.createMpqe` creates a new encrypted MPQE stream from borrowed
 authentication bytes. It finalizes a private plaintext temporary file before
-atomically replacing the destination. Use `Update.beginMpqe` for changes to
-an existing MPQE archive. Crash cleanup is best effort.
-`Update.addData` and `addPath` add absent staged names, with optional
-`FileOptions`; duplicates fail and replacement remains existing-only.
-V3 updates require complete filenames and supported metadata. Remove-then-add
-uses the same ordinary or authenticated transaction.
+atomically replacing the destination. Use `Update.beginMpqe` for changes to an
+existing MPQE archive. Crash cleanup is best effort. `Update.addData` and
+`addPath` add absent staged names, with optional `FileOptions`; duplicates
+fail and replacement remains existing-only. V3/v4 updates require complete
+filenames and supported metadata. Remove-then-add uses the same ordinary or
+authenticated transaction.
 
 ### Compression policy
 

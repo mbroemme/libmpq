@@ -117,7 +117,7 @@ typedef int32_t (*libmpq_read_at_fn)(
 /*
  * On-disk archive format versions (not combinable flags). Creation accepts
  * ONE, TWO, THREE, and FOUR. V3/v4 creation emits HET/BET and classic tables;
- * V3 updates require complete filename reconstruction; v4 updates remain unsupported.
+ * V3/v4 updates require complete filename reconstruction.
  * libmpq__archive_version() reports the corresponding one-based generation.
  */
 #define LIBMPQ_ARCHIVE_VERSION_ONE 0
@@ -411,7 +411,7 @@ extern LIBMPQ_API int32_t libmpq__archive_open_mpqe_io(
 
 /*
  * Create a seekable MPQ v1, v2, v3, or v4 archive at mpq_filename.
- * V4 creation uses 16 KiB raw chunks; v4 transactional updates remain unsupported.
+ * V4 creation uses 16 KiB raw chunks; updates preserve the source chunk size.
  * The options determine the format, reserved table capacity, sector size, and
  * optional internal files; zero options select documented writer defaults.
  * The returned handle remains in write mode until close finalizes its tables,
@@ -813,7 +813,7 @@ extern LIBMPQ_API int32_t libmpq__archive_add_path(
  * Embedded MPQs retain their container prefix and unrelated trailing bytes.
  * Stale weak and strong signatures are removed on modification. MPQE archives
  * require the explicit authenticated update_begin_mpqe() entry point.
- * V4 transactional updates remain unsupported.
+ * V3/v4 updates require complete filenames and representable metadata.
  */
 extern LIBMPQ_API int32_t libmpq__update_begin(mpq_update_s **update, const char *path);
 

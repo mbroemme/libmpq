@@ -39,7 +39,7 @@ LIBMPQ_ARCHIVE_VERSION_THREE selects MPQ v3 with a 0x44-byte header,
 HET/BET and classic hash/block tables sharing the same logical rows.
 LIBMPQ_ARCHIVE_VERSION_FOUR selects MPQ v4 with a 0xD0-byte header,
 explicit stored-table sizes, structural MD5 and 0x4000-byte raw chunks.
-V3 transactions require complete filenames; v4 transactions remain unsupported.
+V3/v4 transactions require complete filenames; v4 preserves the source raw-chunk size.
 Defaults remain v1 with 4096-byte sectors. Explicit sector sizes are retained.
 .PP
 Compression defaults to STANDARD. Add

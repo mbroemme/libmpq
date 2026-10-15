@@ -29,12 +29,15 @@ preserved; stale weak and strong signatures are removed on modification. On
 failure, \fI*update\fP is NULL. MPQE archives require
 \fBlibmpq__update_begin_mpqe\fP(3). The handle is consumed by commit or abort.
 .SH COMPATIBILITY
-V3 mutations require complete filenames from the listfile, supplied member
+V3/v4 mutations require complete filenames from the listfile, supplied member
 names, or earlier successful operations. Unknown retained files, unresolved
-aliases, BET-only classic attributes, embedded v3 wrappers and patch members
-are rejected without modifying the staged archive. Supported v3 rebuilds
-retain v3 and regenerate mixed HET/BET and classic tables. Invalidated
+aliases, BET-only classic attributes, embedded v3/v4 wrappers and patch members
+are rejected without modifying the staged archive. Supported v3/v4 rebuilds
+retain their version and regenerate mixed HET/BET and classic tables. Invalidated
 signatures are removed. Unchanged commits and aborts require no reconstruction.
+V4 preserves the source raw-chunk size, including zero, and regenerates
+structural and member MD5 digests. Raw-enabled members are re-encoded at final
+offsets; lossy recompression and unrepresentable sector-codec policies are rejected.
 Repeated names differing only by ASCII case or slash direction are accepted.
 Ambiguous names, embedded null bytes, unresolvable listfile entries and incomplete
 filename coverage reject reconstruction. A staged close failure prevents further

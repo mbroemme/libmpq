@@ -35,7 +35,7 @@ ordinary writer APIs; \fBlibmpq__archive_close\fP() finalizes the archive,
 encrypts it, and atomically publishes the result on success.
 .PP
 V4 creation uses 0x4000-byte raw chunks and generates header, table and raw-chunk
-MD5 digests before MPQE transport encryption. V4 updates remain unsupported.
+MD5 digests before MPQE transport encryption. V4 updates preserve the source raw-chunk size.
 .SS "Creation Options"
 NULL \fIoptions\fP uses the built-in archive-creation defaults.
 Compression defaults to STANDARD. Add
@@ -56,8 +56,8 @@ FILETIME defaults to zero and patch bits are zero. Use
 \fBlibmpq__writer_timestamp\fP() on an active writer for an explicit
 timestamp. Path addition never imports filesystem timestamps.
 .SS "Temporary Storage and Publication"
-V3 uses the same authentication and mixed HET/BET plus classic table layout
-as ordinary v3 creation. V3 transactions require complete filename reconstruction.
+V3/v4 use the same authentication and mixed HET/BET plus classic table layout
+as ordinary creation. Transactions require complete filename reconstruction.
 .PP
 The normal writer first finalizes a private temporary plaintext MPQ in the
 destination directory, then encrypts it for publication. The plaintext

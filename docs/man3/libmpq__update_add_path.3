@@ -26,7 +26,7 @@ libmpq__update_add_path \- stage a new MPQ member from a filesystem path
 .SH DESCRIPTION
 Adds an absent filename using bytes read from the caller-owned source path.
 The source is not retained, modified or removed. Storage options, duplicate
-checks, rollback and v3 filename requirements are identical to
+checks, rollback and v3/v4 filename requirements are identical to
 libmpq__update_add_data(3). Remove-then-add is supported; replacement is not
 an upsert operation.
 .SH RETURN VALUE

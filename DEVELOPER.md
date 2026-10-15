@@ -174,13 +174,13 @@ when that verification is required.
 ### Streaming and one-shot writers
 
 The public creation APIs accept versions through `LIBMPQ_ARCHIVE_VERSION_FOUR`
-(3), including `LIBMPQ_ARCHIVE_VERSION_THREE` (2).
-The default remains v1, 1024 entries, and 4096-byte sectors; explicit capacity,
-sector size, compression policy, listfile, attributes, timestamps, and signing
-options retain their meanings. MPQE creation uses the same writer and unchanged
+(3), including `LIBMPQ_ARCHIVE_VERSION_THREE` (2). The default remains v1,
+1024 entries, and 4096-byte sectors; explicit capacity, sector size,
+compression policy, listfile, attributes, timestamps, and signing options
+retain their meanings. MPQE creation uses the same writer and unchanged
 authentication/wrapping. Public v4 creation uses 16 KiB (`0x4000`) raw chunks
-and generates structural and raw-chunk MD5 digests automatically. V4
-transactional updates and patch writing remain unsupported.
+and generates structural and raw-chunk MD5 digests automatically. Transactions
+preserve the source raw-chunk size, including zero.
 
 `libmpq__writer_begin()` starts an archive member and returns `mpq_writer_s`.
 Use `libmpq__writer_write()`, `libmpq__writer_timestamp()`, and
@@ -340,10 +340,10 @@ Use a separate `mpq_update_s` handle to stage changes to an existing,
 filesystem-backed MPQ. Each operation rebuilds the private working copy; the
 original path changes only on commit. For example:
 
-`libmpq__update_add_data()` and `libmpq__update_add_path()`
-require an absent staged filename. They support remove-then-add;
-replacement remains strictly replacement-only. MPQ v3 filename
-and metadata requirements are described in [MPQ.md](MPQ.md).
+`libmpq__update_add_data()` and `libmpq__update_add_path()` require an absent
+staged filename. They support remove-then-add; replacement remains strictly
+replacement-only. MPQ v3/v4 filename and metadata requirements are described
+in [MPQ.md](MPQ.md).
 
 ```c
 mpq_update_s *update = NULL;
@@ -394,39 +394,40 @@ lock out a concurrent change between check and publication.
 
 Legacy v1/v2 updates retain unchanged packed entries even without `(listfile)`
 names, and preserve embedded prefixes and unrelated trailing bytes. Their
-rebuilt archive extent must fit the legacy 32-bit size field. V3 uses a named
-rebuild instead, with the requirements below.
+rebuilt archive extent must fit the legacy 32-bit size field. V3/v4 use a
+named rebuild instead, with the requirements below.
 
-V3 operations resolve every live public file number to an actual filename from
-`(listfile)`, the operation's source name, internal-file names, or names learned
-by earlier successful operations in the same transaction. Hash values are not
-filenames. Incomplete coverage returns FORMAT without changing the previous
-staged archive. Begin/abort and unchanged commits do not require reconstruction.
-Repeated identical names and ASCII case or slash/backslash variants are one
-normalized name. Distinct complete names resolving to the same logical entry
-(including names indistinguishable after HET's hash-prefix limit) are ambiguous
-and return FORMAT. Empty CRLF/LF lines are ignored; embedded null bytes,
-unresolvable listed names and incomplete coverage reject reconstruction.
-Known source/listfile spellings take precedence over equivalent caller spellings;
-replacement retains that name so classic hashes do not change merely because
-the caller uses a different slash direction or ASCII case.
-Complete mixed and HET/BET-only sources are supported. A BET-only row with
-classic attributes, unresolved classic aliases/locale variants, embedded v3
-wrappers, unrelated trailing data, and patch/delete members are rejected.
-Extra header extensions, nonzero reserved BET record values and retained
-payload positions that overlap the new full header are also unsupported.
-Legacy embedded updates and patch handling remain unchanged. Public file
-numbers may change after a rebuild.
+V3/v4 operations resolve every live public file number to an actual filename
+from `(listfile)`, the operation's source name, internal-file names, or names
+learned by earlier successful operations in the same transaction. Hash values
+are not filenames. Incomplete coverage returns FORMAT without changing the
+previous staged archive. Begin/abort and unchanged commits do not require
+reconstruction. Repeated identical names and ASCII case or slash/backslash
+variants are one normalized name. Distinct complete names resolving to the
+same logical entry (including names indistinguishable after HET's hash-prefix
+limit) are ambiguous and return FORMAT. Empty CRLF/LF lines are ignored;
+embedded null bytes, unresolvable listed names and incomplete coverage reject
+reconstruction. Known source/listfile spellings take precedence over
+equivalent caller spellings; replacement retains that name so classic hashes
+do not change merely because the caller uses a different slash direction or
+ASCII case. Complete mixed and HET/BET-only sources are supported. A BET-only
+row with classic attributes, unresolved classic aliases/locale variants,
+embedded v3/v4 wrappers, unrelated trailing data, and patch/delete members are
+rejected. Extra header extensions, nonzero reserved BET record values and
+retained payload positions that overlap the new full header are also
+unsupported. Legacy embedded updates and patch handling remain unchanged.
+Public file numbers may change after a rebuild.
 
-Untouched packed members retain their original positions, exact codec bytes,
-flags and encryption keys, including FIX_KEY. Tables are regenerated by the
-normal writer from the final rows: classic row N and BET row N agree. Encrypted
-rename decodes and rewrites with the new name/key at the final position,
-preserving FIX_KEY and timestamps. As with legacy updates, rewritten
-multi-compression rename data uses zlib; replacement uses caller options or
-native defaults. Untouched CRC32/MD5/FILETIME metadata uses explicit classic
-provenance, not canonical indices; new/replaced attributes are regenerated.
-Replacement resets FILETIME to the writer default of zero; rename retains it.
+In v3 and raw-disabled v4 rebuilds, untouched packed members retain their
+original positions, exact codec bytes, flags and encryption keys, including
+FIX_KEY. Tables are regenerated by the normal writer from the final rows:
+classic row N and BET row N agree. Encrypted rename decodes and rewrites with
+the new name/key at the final position, preserving FIX_KEY and timestamps. As
+with legacy updates, rewritten v3 multi-compression rename data uses zlib;
+replacement uses caller options or native defaults. Untouched
+CRC32/MD5/FILETIME metadata uses explicit classic provenance, not canonical
+indices; new/replaced attributes are regenerated. Replacement resets FILETIME
+to the writer default of zero; rename retains it.
 
 Legacy per-member staging encodes FIX_KEY at the final archive-relative copy
 position: the plaintext rebuild stream position minus the source archive start.
@@ -446,15 +447,21 @@ stream fails after validation, the stream is consumed and cleared: further
 mutations/commit cannot publish it, and abort safely removes tracked temporary
 files. Flush failures leave the previous stage available. Close callbacks follow
 `fclose` ownership semantics even on failure. No in-place modification or
-separate v3 transaction engine is used.
+separate transaction engine is used.
 
 A no-op transaction preserves original bytes and signatures. Ordinary updates
 do not create true PATCH_BIT values; the dedicated patch writer does.
 
+V4 reconstruction retains the source raw-chunk size and regenerates header,
+table and member digests. Raw-enabled retained members are re-encoded with
+final offsets; lossy recompression and unsupported sector-codec policies are
+rejected. MPQE updates use the same plaintext reconstruction before encrypted
+publication.
+
 ### Patch archive creation
 
-The public patch handle creates a new MPQ v1/v2/v3 patch artifact without modifying
-the base archive:
+The public patch handle creates a new MPQ v1/v2/v3/v4 patch artifact without
+modifying the base archive:
 
 ```c
 mpq_patch_s *patch = NULL;

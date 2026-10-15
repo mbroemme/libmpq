@@ -32,7 +32,7 @@ The original archive is unchanged until commit. Failures before staged ownership
 transfer leave the previous stage available. If closing the previous stage fails
 after rebuild validation, further mutation and commit are rejected; abort remains
 safe and attempts temporary-file cleanup.
-V3 rebuilds require complete filename reconstruction; see libmpq__update_begin(3).
+V3/v4 rebuilds require complete filename reconstruction; see libmpq__update_begin(3).
 .SH RETURN VALUE
 Returns zero on success or a negative libmpq error.
 .SH ERRORS

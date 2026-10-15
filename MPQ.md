@@ -69,9 +69,9 @@ bounded by the archive extent. Mixed-table archives can use classic lookup
 when a classic hash entry maps to a live block; other live blocks need not be
 hash-referenced. This does not assert equivalence with HET/BET. Declared
 extended tables must form a valid pair; malformed tables fail opening rather
-than downgrading to classic lookup. Compressed classic tables remain unsupported.
-MPQ v4 supports reading and creation with explicit stored-table extents;
-transactional updates remain unsupported.
+than downgrading to classic lookup. Compressed classic tables remain
+unsupported. MPQ v4 uses explicit stored-table extents for reading and
+creation.
 
 ### MPQ v4 header
 
@@ -126,9 +126,9 @@ the envelope-inclusive 1 MiB limit unchanged. Missing tables are allowed when
 the remaining representation permits lookup; malformed present tables do not
 disappear behind fallback.
 
-V4 reading and creation are supported; transactional updates and patch writing
-remain unsupported. Patch composition can consume v4 inputs using private v3
-views. Raw file-data chunk MD5 verification is explicitly requested with
+V4 reading, creation, transactional reconstruction and patch writing are
+supported. Patch composition can consume v4 inputs using private v3 views. Raw
+file-data chunk MD5 verification is explicitly requested with
 `LIBMPQ_VERIFY_RAW_MD5`. Existing member compression and encryption codecs are
 shared with earlier versions.
 
@@ -161,29 +161,37 @@ stores its low 32 bits explicitly. V3 FIX_KEY encryption uses the final file
 offset and unpacked size, and payloads are never moved afterward. Legacy v1/v2
 writer behavior remains unchanged.
 
-Public v4 creation reuses this writer with a `0xD0` header. It records
-actual stored table lengths and hashes the exact encrypted classic tables and
-complete encoded HET/BET envelopes before writing them. Absent tables have zero
-positions, sizes and digests; output still uses the existing mixed-table layout.
-After all offsets and the 64-bit archive size are final, the v4 header encoder
-serializes the metadata, MD5 covers bytes `[0x00, 0xC0)`, and the completed header
-is written and flushed. MPQE creation uses the same logical v4 serialization
-before transport encryption. V4 patch writing and transactional updates remain
-unsupported.
+Public v4 creation reuses this writer with a `0xD0` header. It records actual
+stored table lengths and hashes the exact encrypted classic tables and
+complete encoded HET/BET envelopes before writing them. Absent tables have
+zero positions, sizes and digests; output still uses the existing mixed-table
+layout. After all offsets and the 64-bit archive size are final, the v4 header
+encoder serializes the metadata, MD5 covers bytes `[0x00, 0xC0)`, and the
+completed header is written and flushed. MPQE creation uses the same logical
+v4 serialization before transport encryption. Public patch archives retain the
+base archive version.
 
-Public v4 creation uses a raw-chunk size of `0x4000` (16 KiB), without a
-public configuration option. The private initializer also permits alternative
-sizes; zero emits no checksums. Nonzero settings append MD5 arrays after each
-finalized compressed/encrypted member, using bounded rereads of the readable,
-seekable output stream. These arrays occupy physical space but do not increase
-member packed sizes. Members are not subsequently relocated, so FIX_KEY uses
-the final output offset before raw hashing. Raw-enabled packed imports are
-rejected because their contract registers packed bytes already placed at their
-original offsets without reserving trailing digest space. Weak signing is
-rejected before modifying a raw-enabled writer because it would rewrite an
-already hashed member. Strong signature trailers do not change those stored
-ranges. V4 flush, member-finish and finalization errors remain terminal for
-that handle; cleanup retains the existing writer guarantees.
+Public v4 creation, including patch writing, uses a raw-chunk size of `0x4000`
+(16 KiB), without a public configuration option. The private initializer also
+permits alternative sizes; zero emits no checksums. Nonzero settings append
+MD5 arrays after each finalized compressed/encrypted member, using bounded
+rereads of the readable, seekable output stream. These arrays occupy physical
+space but do not increase member packed sizes. Members are not subsequently
+relocated, so FIX_KEY uses the final output offset before raw hashing.
+Raw-enabled packed imports are rejected because their contract registers
+packed bytes already placed at their original offsets without reserving
+trailing digest space. Weak signing is rejected before modifying a raw-enabled
+writer because it would rewrite an already hashed member. Strong signature
+trailers do not change those stored ranges. V4 transactional rebuilds preserve
+the source `raw_chunk_size`, including zero. With raw chunks enabled, retained
+members are streamed through the writer at their final offsets instead of
+importing packed bytes, regenerating FIX_KEY ciphertext and trailing digests.
+Retained raw digests and logical CRC32/MD5 attributes are checked
+before publication. Lossy recompression, unsupported flags and unrepresentable
+sector-codec policies are rejected. With raw chunks disabled, unchanged packed
+members retain the existing import path. V4 flush, member-finish and
+finalization errors remain terminal for that handle; cleanup retains the
+existing writer guarantees.
 
 ## Classic tables
 
@@ -738,23 +746,26 @@ lower-layer names; patch members carry `0x00100000`.
 
 ### Creation and ordered materialization
 
-The dedicated patch writer can create MPQ v3 patch archives from standalone v3
-bases with classic-backed, mixed, or BET-only replacement/deletion targets
-when their filenames are supplied by the caller. Classic-backed targets retain
-their unambiguous classic locale/platform identity; BET-only targets use zero
-for both because BET carries neither field. Filenames are never reconstructed
-from hashes. Physical metadata and encryption/FIX_KEY reads use canonical
-entries and validated source mappings, without fabricating classic rows.
-The existing v3 writer emits the 0x44-byte header, HET/BET and classic tables
-with shared row identity, patch-info prefixes, PTCH bodies, and delete markers.
-Existing compression, encryption and signature options retain their meanings.
-Ordered patch-view materialization supports v3/v4 bases with classic-backed,
-mixed, or BET-only members. Names come from `(listfile)`, recognized internal
-names, and the patch's logical namespace; hashes are never inverted into names.
-Incomplete coverage, ambiguous aliases/locales, unresolved listed names, and
-nonzero reserved BET metadata are rejected instead of dropping information.
-Patch prefixes, COPY/BSD0 transforms, normal replacements, additions and delete
-markers retain their existing semantics and integrity checks.
+The dedicated patch writer can create MPQ v3/v4 patch archives from standalone
+v3/v4 bases with classic-backed, mixed, or BET-only replacement/deletion
+targets when their filenames are supplied by the caller. Classic-backed
+targets retain their unambiguous classic locale/platform identity; BET-only
+targets use zero for both because BET carries neither field. Filenames are
+never reconstructed from hashes. Physical metadata and encryption/FIX_KEY
+reads use canonical entries and validated source mappings, without fabricating
+classic rows. The existing writer emits the version-appropriate header,
+HET/BET and classic tables with shared row identity, patch-info prefixes, PTCH
+bodies and delete markers. V4 patch output also generates structural and
+raw-chunk MD5; FIX_KEY patch encryption uses the final member offset and
+reconstructed target size. Existing compression, encryption and signature
+options retain their meanings. Ordered patch-view materialization supports
+v3/v4 bases with classic-backed, mixed, or BET-only members. Names come from
+`(listfile)`, recognized internal names, and the patch's logical namespace;
+hashes are never inverted into names. Incomplete coverage, ambiguous
+aliases/locales, unresolved listed names, and nonzero reserved BET metadata
+are rejected instead of dropping information. Patch prefixes, COPY/BSD0
+transforms, normal replacements, additions and delete markers retain their
+existing semantics and integrity checks.
 
 V4 inputs may be base or patch layers, including MPQE sources and mixed-version
 chains. Any chain using v4 materialization follows the named rebuild path and
@@ -1007,23 +1018,23 @@ bytes between readers rather than requiring equality with source PCM.
 
 Current sector/codec lengths are 32-bit even though canonical BET metadata and
 positions are 64-bit. Unrepresentable member reads and block counts fail with
-SIZE rather than truncating. V3 modification requires complete filename
-reconstruction. Creation and transactional rebuilding use
-the existing writer, preserving explicit source mappings and independently
-validated generated tables.
+SIZE rather than truncating. V3/v4 modification requires complete filename
+reconstruction. Creation and transactional rebuilding use the existing writer,
+preserving explicit source mappings and independently validated generated
+tables.
 
-The v3 `max_files` ceiling of `0x04000000` is an implementation limit, not
-an MPQ format maximum. The classic hash capacity is the next power of two
-at least twice the requested capacity. At this ceiling its wire storage is
-2 GiB; the next capacity step needs 4 GiB, which cannot fit the classic
-cipher's `uint32_t` length. Validation itself does not allocate these tables.
-Actual creation still requires memory for reserved tables and can fail with
-an allocation error. Completed HET/BET tables must also fit the separate
-1 MiB limit, so this ceiling is not a promise of that many writable files.
+The v3/v4 `max_files` ceiling of `0x04000000` is an implementation limit, not
+an MPQ format maximum. The classic hash capacity is the next power of two at
+least twice the requested capacity. At this ceiling its wire storage is 2 GiB;
+the next capacity step needs 4 GiB, which cannot fit the classic cipher's
+`uint32_t` length. Validation itself does not allocate these tables. Actual
+creation still requires memory for reserved tables and can fail with an
+allocation error. Completed HET/BET tables must also fit the separate 1 MiB
+limit, so this ceiling is not a promise of that many writable files.
 
-Creation supports MPQ v1/v2/v3/v4, including MPQE wrapping. Compressed classic
-tables, v4 transactional updates and v4 patch writing remain unsupported. The
-v3/v4 writer emits mixed HET/BET and classic tables, not BET-only output. V3
+Creation, transactional updates and patch writing support MPQ v1/v2/v3/v4,
+including MPQE output. Compressed classic tables remain unsupported. The v3/v4
+writer emits mixed HET/BET and classic tables, not BET-only output. V3/v4
 transactional reconstruction requires a complete, unambiguous named file set
 and representable metadata. It rebuilds all tables through the same writer;
 incomplete source information is rejected rather than silently losing members.

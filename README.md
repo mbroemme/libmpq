@@ -24,10 +24,10 @@ MPQ is a proprietary archive format created by Mike O'Brien in 1996. It is
 used by Blizzard games including Diablo, Diablo II, StarCraft, Warcraft II:
 Battle.net Edition, Warcraft III, and World of Warcraft.
 
-libmpq reads and creates MPQ v1, v2, v3, and v4 archives, including HET/BET
-extended tables, MPQE wrapping, compression, encryption, and signatures. Its C
-API supports transactional add, replace, remove, and rename operations and
-patch archive creation for MPQ v1/v2/v3. Internal patch views apply ordered
+libmpq reads, creates, and modifies MPQ v1, v2, v3, and v4 archives, including
+HET/BET extended tables, MPQE wrapping, compression, encryption, and
+signatures. Its C API supports transactional add, replace, remove, and rename
+operations and patch archive creation. Internal patch views apply ordered
 multi-layer patch chains. Python, Java, and D bindings expose the public C
 API.
 
@@ -345,7 +345,6 @@ encryption, sectors, and compression, see the [MPQ format guide](MPQ.md).
 
 ## Limitations
 
-* MPQ v4 transactional updates and patch archive creation are not yet supported.
 * Encrypted random-access writing is not supported.
 
 See [MPQ.md](MPQ.md) for MPQE signatures and patch namespace format behavior,
