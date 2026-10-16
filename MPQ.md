@@ -134,6 +134,11 @@ shared with earlier versions.
 
 ## Archive creation and finalization
 
+Finalization appends generated internal members after existing payloads and
+reserved legacy table space, independently of the current stream position.
+Single-unit writes must fit the configured sector size; larger generated
+listfiles use sector-based storage.
+
 V3 output reserves a 68-byte (`0x44`) header, writes file payloads at
 their final archive-relative positions, then appends HET, BET, classic hash,
 classic block, and (when file positions require it) hi-block tables. Stored
@@ -975,17 +980,19 @@ big-endian modulus followed by a 256-byte zero-padded unsigned big-endian
 exponent. Use the public exponent for verification and the private exponent
 for creation. The writer emits only the plain SHA-1 archive-range variant.
 
-On a new writer, call `libmpq__archive_sign` once for each supported signature
-type before closing, with no active file writer. Public v4 creation supports
-strong signing on plain MPQ output; weak signing is rejected because the
-mandatory raw-chunk default conflicts with rewriting the signature member. It
-copies the private key. Weak signing reserves one file-table slot and a zero
-signature payload immediately. Close finalizes listfile, attributes, tables,
-and header before hashing, overwriting the weak signature bytes, then
-appending any strong trailer. The signature entry's generated attribute values
-remain zero; retained keys are cleared on close, including error paths. Other
-files may be added after configuring signing. Readers do not impose these
-signing restrictions.
+On a new writer, call `libmpq__archive_sign` once for each supported
+signature type before closing, with no active file writer. Weak-signature
+creation is unsupported for MPQ v4 output with raw-chunk MD5 enabled:
+signing rewrites an already hashed member. The private writer supports weak
+signing when `raw_chunk_size` is zero. Public v4 creation enables raw
+chunks, so it supports strong signing on plain MPQ output only.
+Configuration copies the private key. Weak signing reserves one file-table
+slot and a zero signature payload immediately. Close finalizes listfile,
+attributes, tables, and header before hashing, overwriting the weak
+signature bytes, then appending any strong trailer. The signature entry's
+generated attribute values remain zero; retained keys are cleared on close,
+including error paths. Other files may be added after configuring signing.
+Readers do not impose these signing restrictions.
 
 MD5 and RSA-512 are obsolete and unsuitable for modern authentication. The
 private fixed-width RSA code is deliberately limited to this legacy format,

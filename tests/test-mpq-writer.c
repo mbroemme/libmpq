@@ -1705,10 +1705,10 @@ test_v4_failures(void)
         clearerr(fp);
         TEST_CHECK(libmpq__archive_close(archive) == LIBMPQ_ERROR_WRITE && fault.closed);
     }
-    for (unsigned int which = 0; which < 4; ++which) {
+    for (unsigned int which = 0; which < 5; ++which) {
         writer_v3_fault_s fault = { { 0 }, 0, 0, SIZE_MAX, 0, 0 };
         int32_t expected = which == 0   ? LIBMPQ_ERROR_READ
-                           : which == 3 ? LIBMPQ_ERROR_SEEK
+                           : which >= 3 ? LIBMPQ_ERROR_SEEK
                                         : LIBMPQ_ERROR_SIZE;
         fp = fopencookie(&fault, "w+b", ops);
         TEST_CHECK(fp != NULL && setvbuf(fp, NULL, _IONBF, 0) == 0);
@@ -1731,7 +1731,7 @@ test_v4_failures(void)
         } else if (which == 1) {
             fault.end_override = INT64_MAX;
             TEST_CHECK(libmpq__writer_finalize(archive) == expected);
-        } else {
+        } else if (which == 2) {
 
             /* A canonical member cannot exceed the uint32_t classic size representation. */
             mpq_writer_s *writer = NULL;
@@ -1741,6 +1741,13 @@ test_v4_failures(void)
                 ) == expected
             );
             archive->write_hash_capacity = UINT32_MAX;
+            TEST_CHECK(libmpq__writer_finalize(archive) == expected);
+        } else {
+            TEST_CHECK(libmpq__archive_add_data(archive, "payload", data, sizeof(data), NULL) == 0);
+            fault.end_override = UINT64_MAX;
+            TEST_CHECK(libmpq__writer_finalize(archive) == expected);
+            TEST_CHECK(archive->write_error == expected);
+            fault.end_override = 0;
             TEST_CHECK(libmpq__writer_finalize(archive) == expected);
         }
         TEST_CHECK(!archive->write_finalized && fault.bytes[0] == 0);
@@ -2334,9 +2341,130 @@ test_v4_determinism_and_signing(void)
     return 0;
 }
 
+/* Finalization appends generated members even when imports or reads moved the cursor. */
+static int
+test_finalize_cursor(uint32_t version, unsigned metadata, int mpqe, int empty)
+{
+    mpq_archive_create_options_s create = {
+        version, empty ? 1024 : 8, 512, (metadata & 1) != 0 ? LIBMPQ_ARCHIVE_CREATE_LISTFILE : 0,
+        (metadata & 2) != 0 ? LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 : 0
+    };
+    mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_stream_s *stream = NULL;
+    char path[512];
+    uint8_t payload[901];
+    uint8_t actual[901];
+    uint32_t number;
+    uint32_t mismatch;
+    uint32_t files;
+    libmpq__off_t transferred;
+    TEST_CHECK(test_temp_path(path, sizeof(path), "finalize-cursor") == 0);
+    test_payload(payload, sizeof(payload), 42);
+    TEST_CHECK(
+        (mpqe ? libmpq__archive_create_mpqe(
+                    &archive, path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1, &create
+                )
+              : libmpq__archive_create(&archive, path, &create)) == 0
+    );
+    if (!empty) {
+        TEST_CHECK(
+            libmpq__archive_add_data(
+                archive, "folder/retained.bin", payload, sizeof(payload), &storage
+            ) == 0
+        );
+        TEST_CHECK(libmpq__archive_add_data(archive, "tail.bin", payload, 47, NULL) == 0);
+    }
+    TEST_CHECK(libmpq__file_seek(archive->fp, 0, SEEK_SET) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+    TEST_CHECK(
+        (mpqe ? libmpq__archive_open_mpqe(
+                    &archive, path, 0, mpqe_auth_code, sizeof(mpqe_auth_code) - 1
+                )
+              : libmpq__archive_open(&archive, path, 0)) == 0
+    );
+    TEST_CHECK(archive->mpq_header.version == version);
+    TEST_CHECK(
+        libmpq__archive_files(archive, &files) == 0 &&
+        files == (empty ? 0u : 2u) + ((metadata & 1) != 0) + ((metadata & 2) != 0)
+    );
+    if (!empty) {
+        TEST_CHECK(libmpq__stream_open_name(archive, "folder/retained.bin", &stream) == 0);
+        TEST_CHECK(libmpq__stream_read(stream, actual, sizeof(actual), &transferred) == 0);
+        TEST_CHECK(transferred == sizeof(payload) && memcmp(payload, actual, sizeof(payload)) == 0);
+        TEST_CHECK(libmpq__stream_close(stream) == 0);
+        TEST_CHECK(libmpq__file_number(archive, "tail.bin", &number) == 0);
+        TEST_CHECK(
+            libmpq__file_read(archive, number, actual, sizeof(actual), &transferred) == 0 &&
+            transferred == 47
+        );
+        TEST_CHECK(memcmp(payload, actual, 47) == 0);
+        TEST_CHECK(libmpq__file_number(archive, "folder/retained.bin", &number) == 0);
+        TEST_CHECK(libmpq__reader_offsets_acquire(archive, number, "folder/retained.bin") == 0);
+        TEST_CHECK(
+            libmpq__file_verify(
+                archive, number, (metadata & 2) != 0 ? LIBMPQ_VERIFY_ALL : LIBMPQ_VERIFY_RAW_MD5,
+                &mismatch
+            ) == 0 &&
+            mismatch == 0
+        );
+        TEST_CHECK(libmpq__reader_offsets_release(archive, number) == 0);
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(remove(path) == 0);
+    return 0;
+}
+
+/* Generated listfiles can span sectors without requesting oversized single-unit writes. */
+static int
+test_large_listfile(uint32_t version)
+{
+    mpq_archive_create_options_s create = { version, 48, 512, LIBMPQ_ARCHIVE_CREATE_LISTFILE, 0 };
+    mpq_archive_s *archive = NULL;
+    char path[512];
+    char name[64];
+    uint8_t expected[2048];
+    uint8_t *actual = NULL;
+    size_t total = 0;
+    size_t size;
+    uint32_t number;
+    TEST_CHECK(test_temp_path(path, sizeof(path), "large-listfile") == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    for (unsigned i = 0; i < 40; ++i) {
+        int length = snprintf(name, sizeof(name), "directory/synthetic-member-%03u.bin", i);
+        TEST_CHECK(length > 0 && (size_t)length < sizeof(name));
+        TEST_CHECK((size_t)length + 1 <= sizeof(expected) - total);
+        memcpy(expected + total, name, (size_t)length);
+        total += (size_t)length;
+        expected[total++] = '\n';
+        TEST_CHECK(libmpq__archive_add_data(archive, name, (const uint8_t *)"x", 1, NULL) == 0);
+    }
+    TEST_CHECK(total > create.sector_size);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(libmpq__file_number(archive, LIBMPQ_LISTFILE_NAME, &number) == 0);
+    TEST_CHECK(test_archive_read(archive, number, &actual, &size) == 0);
+    TEST_CHECK(size == total && memcmp(actual, expected, size) == 0);
+    free(actual);
+    TEST_CHECK(libmpq__file_number(archive, name, &number) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(remove(path) == 0);
+    return 0;
+}
+
 int
 main(void)
 {
+    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_FOUR;
+         ++version)
+        TEST_CHECK(test_large_listfile(version) == 0);
+    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_FOUR;
+         ++version)
+        for (unsigned metadata = 0; metadata < 4; ++metadata)
+            for (int empty = 0; empty < 2; ++empty)
+                TEST_CHECK(test_finalize_cursor(version, metadata, 0, empty) == 0);
+    TEST_CHECK(test_finalize_cursor(LIBMPQ_ARCHIVE_VERSION_FOUR, 3, 1, 0) == 0);
 #ifdef __GLIBC__
     for (unsigned int which = 0; which < 4; ++which)
         TEST_CHECK(test_v4_error_state(which) == 0);

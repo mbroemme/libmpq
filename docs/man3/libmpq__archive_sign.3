@@ -14,7 +14,7 @@
 .\" along with this file; if not, see <https://www.gnu.org/licenses/>.
 .TH LIBMPQ__ARCHIVE_SIGN 3 2026-09-18 "The MoPaQ archive library"
 .SH NAME
-libmpq__archive_sign \- configure weak signing before writer close
+libmpq__archive_sign \- configure archive signing before writer close
 .SH SYNOPSIS
 .nf
 .B #include <libmpq/mpq.h>
@@ -31,9 +31,11 @@ Configures \fIarchive\fP, an active MPQ v1, v2, v3, or v4 writer, to generate on
 \fIsignature_type\fP: \fBLIBMPQ_SIGNATURE_WEAK\fP or
 \fBLIBMPQ_SIGNATURE_STRONG\fP. A file writer must not be active. Each
 type may be configured once; ordinary MPQ v1/v2/v3 archives may use both.
-Public v4 writers support strong signing on plain MPQ output; weak signing
-returns LIBMPQ_ERROR_FORMAT without modifying the writer because signing would
-rewrite a member whose raw-chunk MD5 digests have already been stored.
+Weak-signature creation is unsupported for MPQ v4 output with raw-chunk MD5
+enabled and returns \fBLIBMPQ_ERROR_FORMAT\fP without modifying the writer.
+Signing would rewrite an already hashed member. The private writer supports
+weak signing when raw_chunk_size is zero. Public v4 creation enables raw
+chunks, so it supports strong signing on plain MPQ output only.
 Configuration is non-consuming and copies the caller's
 \fIprivate_key\fP. Final signing occurs when
 \fBlibmpq__archive_close\fP(3) finalizes the archive; reopen it to
@@ -49,10 +51,10 @@ product-specific keys are built in.
 .PP
 Weak signing creates an internal \fB(signature)\fP member and consumes a
 file slot. Strong signing appends an external NGIS trailer using the plain
-SHA-1 archive-range variant. MPQE v1/v2/v3 writers support internal weak signing
-but reject external strong signing because no MPQE transport
-representation is defined for it. Both algorithms are legacy
-compatibility mechanisms, not modern trust primitives.
+SHA-1 archive-range variant. MPQE-wrapped v1/v2/v3 output supports internal
+weak signing. MPQE output rejects external strong signing regardless of
+version because no MPQE transport representation is defined for it. Both
+algorithms are legacy compatibility mechanisms, not modern trust primitives.
 .SH RETURN VALUE
 Returns \fBLIBMPQ_SUCCESS\fP after configuration, or a negative libmpq
 error. A failed request does not consume the writer handle.

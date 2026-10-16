@@ -140,6 +140,8 @@ if(BUILD_TESTING)
         api
         pkware
         reader
+        source
+        stream
         patch-reader
         patch-writer
         update

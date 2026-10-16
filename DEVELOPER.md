@@ -315,10 +315,12 @@ SHA-1 archive-range variant. Basename and `ARCHIVE` variants are accepted
 during verification only.
 
 To sign, call `libmpq__archive_sign` on a writer with the corresponding
-private key before close. Public v4 writers support strong signing on plain
-MPQ output; weak signing is rejected before mutation because it conflicts with
-raw-chunk digests. Weak signing reserves one file slot for `(signature)`;
-strong signing appends an external `NGIS` trailer after finalization.
+private key before close. Weak-signature creation is unsupported for MPQ v4
+output with raw-chunk MD5 enabled. The private writer supports weak signing
+with raw chunks disabled; public v4 creation enables them and supports only
+strong signing on plain MPQ output. Weak signing reserves one file slot for
+`(signature)`; strong signing appends an external `NGIS` trailer after
+finalization.
 
 The weak 128-byte raw key is two 64-byte unsigned big-endian integers: a
 modulus followed by a zero-padded exponent value. Use a public key to verify a
@@ -488,9 +490,13 @@ MPQE-wrapped patch instead, call `libmpq__patch_begin_mpqe()` with a
 caller-supplied authentication code; replacement, removal, finish, and abort
 then follow the same lifecycle. Authenticated patch readers can consume the
 result using that patch layer's own code. Signing is optional and configured
-with `libmpq__patch_sign()` before finish. It delegates to the existing archive
-writer: ordinary patches may use weak, strong, or both signatures; MPQE patches
-support weak signatures only. A finished patch is inspected and verified with
+with `libmpq__patch_sign()` before finish. It delegates to the existing
+archive writer: v1/v2/v3 plain patches may use weak, strong, or both
+signatures; their MPQE variants support weak signatures only. Public v4
+patch creation enables raw-chunk MD5, preventing weak signing. Plain v4
+patches therefore support strong signing only; MPQE-wrapped v4 patches
+cannot be signed through this API because MPQE also excludes strong signing.
+A finished patch is inspected and verified with
 `libmpq__archive_signatures()` and `libmpq__archive_verify()`.
 
 Replacement options control storage of the patch member inside the patch

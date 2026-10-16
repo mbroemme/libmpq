@@ -217,14 +217,15 @@ only during begin; closing without finish aborts instead of publishing.
 
 `replacePath` is also available. `finish()` publishes the patch; `abort()`
 discards it, and closing an unfinished patch aborts automatically. Omitted
-`FileOptions` pass native NULL and use native patch defaults; explicit options
-configure patch-member storage. Patch add and rename are not supported.
-Explicit locale/platform must match the base member. Signing configures the
-active patch without consuming it; an ordinary MPQ patch may configure weak
-and strong signatures separately. MPQE-wrapped patches support weak signing;
-external strong signatures are not defined for MPQE transport streams. After
-`finish()`, use `Archive.signatures()` and `Archive.verify()` on the finished
-artifact.
+`FileOptions` pass native NULL and use native patch defaults; explicit
+options configure patch-member storage. Patch add and rename are not
+supported. Explicit locale/platform must match the base member. Signing
+configures the active patch without consuming it. Plain v1/v2/v3 patches may
+configure weak and strong signatures separately; their MPQE variants support
+weak signing only. Public v4 patch creation enables raw-chunk MD5,
+preventing weak signing. Plain v4 patches support strong signing only; MPQE
+excludes strong signing as well. After `finish()`, use
+`Archive.signatures()` and `Archive.verify()` on the finished artifact.
 
 ## Signatures
 
@@ -239,10 +240,13 @@ for MPQE transport streams. Use `Archive.sign(privateKey)` for weak signing or
 close, and `Archive.signatures()` / `Archive.verify(publicKey)` on reopened
 archives. Verification returns mismatch bits; malformed keys/archives raise
 normal binding errors. Weak keys are exactly 128 bytes: 64-byte big-endian
-modulus followed by a 64-byte big-endian exponent. Weak signing supports v1,
-v2, and v3; plain MPQ v4 creation supports strong signing only. libmpq does
-not ship Blizzard- or product-specific public verification keys or private
-signing keys; all signature key material is supplied explicitly by the caller.
+modulus followed by a 64-byte big-endian exponent. Weak-signature creation is
+unsupported for MPQ v4 output with raw-chunk MD5 enabled. Public v4 creation
+uses raw chunks, so it supports strong signing on plain MPQ output only.
+The private native writer also supports weak signing with raw chunks disabled.
+libmpq does not ship Blizzard- or product-specific public verification keys
+or private signing keys; all signature key material is supplied explicitly
+by the caller.
 MD5/RSA-512 is legacy compatibility, not modern authenticity protection. See
 [the format guide](../../MPQ.md) for details.
 

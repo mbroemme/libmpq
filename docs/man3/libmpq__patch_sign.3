@@ -30,14 +30,19 @@ libmpq__patch_sign \- configure signing for a staged patch archive
 Configures \fBLIBMPQ_SIGNATURE_WEAK\fP or \fBLIBMPQ_SIGNATURE_STRONG\fP
 signing on an active patch writer. The operation delegates to the ordinary
 archive signing implementation. Configure each type at most once before
-libmpq__patch_finish(3); ordinary MPQ patches may configure both types.
+libmpq__patch_finish(3); plain MPQ v1/v2/v3 patches may configure both types.
+Public v4 patch creation enables raw-chunk MD5. Weak-signature creation is
+unsupported for this output and returns \fBLIBMPQ_ERROR_FORMAT\fP.
+Plain v4 patches therefore support strong signing only.
 The existing archive writer generates signatures during finalization.
 All signing keys are caller-supplied; no default or product-specific keys are
 built in.
 .PP
-MPQE-wrapped patches support internal weak signatures. No external strong
-signature representation is defined for MPQE transport, so requesting one
-returns \fBLIBMPQ_ERROR_FORMAT\fP, matching archive signing behavior.
+MPQE-wrapped v1/v2/v3 patches support internal weak signatures. Public v4
+MPQE patch creation enables raw chunks and does not support signing.
+No external strong signature representation is defined for MPQE transport,
+so requesting one returns \fBLIBMPQ_ERROR_FORMAT\fP, matching archive
+signing behavior.
 This call does not consume the patch handle, including when configuration
 fails. It does not modify the base archive.
 .PP

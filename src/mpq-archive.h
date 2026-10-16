@@ -99,6 +99,7 @@ struct mpq_archive
     uint8_t write_strong_signature_key[LIBMPQ_RSA_STRONG_KEY_SIZE]; /* Cleared on close. */
     uint32_t write_capacity;      /* Reserved number of block-table entries. */
     uint32_t write_hash_capacity; /* Reserved number of hash-table entries. */
+    uint64_t write_data_offset;   /* First payload position, beyond reserved legacy tables. */
     uint32_t write_sector_size;   /* Sector size used while buffering and packing files. */
     uint32_t write_flags;         /* Archive-creation flags, including listfile generation. */
     uint32_t write_next_block;    /* Next block-table slot assigned to a completed file. */

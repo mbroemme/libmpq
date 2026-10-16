@@ -67,6 +67,8 @@ cp "${project_root}/tests/fixtures/mpq-v1-features.mpq" "${archive_output}/fixtu
 cp "${project_root}/tests/fixtures/mpq-v2-features.mpq" "${archive_output}/fixture-v2.mpq"
 cp "${project_root}/tests/fixtures/mpq-v3-features.mpq" "${archive_output}/fixture-v3.mpq"
 cp "${project_root}/tests/fixtures/mpq-v3-features-patch.mpq" "${archive_output}/fixture-v3-patch.mpq"
+cp "${project_root}/tests/fixtures/mpq-v4-features.mpq" "${archive_output}/fixture-v4.mpq"
+cp "${project_root}/tests/fixtures/mpq-v4-features-patch.mpq" "${archive_output}/fixture-v4-patch.mpq"
 
 # Already-decoded synthetic tables reach structural parsers without encryption.
 {
@@ -140,10 +142,11 @@ write_v2_header > "${archive_output}/minimal-v2-empty.mpq"
 write_v1_empty_tables_header > "${archive_output}/v1-empty-tables.mpq"
 write_v1_oversized_tables_header > "${archive_output}/v1-oversized-tables.mpq"
 
-# Seed authenticated MPQE parsing with public synthetic v1/v2/v3 streams.
+# Seed authenticated MPQE parsing with public synthetic v1/v2/v3/v4 streams.
 cp "${project_root}/tests/fixtures/mpq-v1-features.mpqe" "${mpqe_output}/fixture-v1.mpqe"
 cp "${project_root}/tests/fixtures/mpq-v2-features.mpqe" "${mpqe_output}/fixture-v2.mpqe"
 cp "${project_root}/tests/fixtures/mpq-v3-features.mpqe" "${mpqe_output}/fixture-v3.mpqe"
+cp "${project_root}/tests/fixtures/mpq-v4-features.mpqe" "${mpqe_output}/fixture-v4.mpqe"
 printf '\x00' > "${mpqe_output}/truncated.mpqe"
 dd if=/dev/zero bs=512 count=1 status=none > "${archive_output}/embedded-v1-header.bin"
 write_v1_header >> "${archive_output}/embedded-v1-header.bin"

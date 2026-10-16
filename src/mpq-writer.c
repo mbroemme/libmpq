@@ -628,6 +628,18 @@ finalize_archive(mpq_archive_s *a)
     if (a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
         a->mpq_header_v4.raw_chunk_size != 0 && a->write_signature)
         return LIBMPQ_ERROR_FORMAT;
+
+    /* Append beyond existing payloads and any sparse legacy table reservation. */
+    {
+        libmpq__off_t position;
+        if (libmpq__file_seek(a->fp, 0, SEEK_END) < 0 || (position = libmpq__file_tell(a->fp)) < 0)
+            return LIBMPQ_ERROR_SEEK;
+        if (a->write_data_offset > INT64_MAX)
+            return LIBMPQ_ERROR_SIZE;
+        if ((uint64_t)position < a->write_data_offset &&
+            libmpq__file_seek(a->fp, (libmpq__off_t)a->write_data_offset, SEEK_SET) < 0)
+            return LIBMPQ_ERROR_SEEK;
+    }
     a->write_internal = 1;
     if (libmpq__attributes_write_flags(a) != 0 && a->write_attributes == NULL) {
         a->write_attributes = calloc(a->write_capacity, sizeof(*a->write_attributes));
@@ -654,7 +666,8 @@ finalize_archive(mpq_archive_s *a)
             total += sizeof(LIBMPQ_ATTRIBUTES_NAME);
         }
         {
-            mpq_file_options_s o = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
+            mpq_file_options_s o = { total <= a->write_sector_size ? LIBMPQ_FILE_FLAG_SINGLE : 0, 0,
+                                     0, 0, 0 };
             int32_t r =
                 libmpq__writer_file_add(a, LIBMPQ_LISTFILE_NAME, list, (libmpq__off_t)total, &o);
             free(list);
@@ -1111,6 +1124,7 @@ writer_archive_create_handle(
         free(a);
         return LIBMPQ_ERROR_SEEK;
     }
+    a->write_data_offset = offset;
     *out = a;
     return 0;
 }

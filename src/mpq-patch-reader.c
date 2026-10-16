@@ -2187,8 +2187,10 @@ patch_materialize_named(
             free(payload);
             if (status == 0) {
                 status = patch_named_storage(storage_archive, storage_entry, &options);
+#if SIZE_MAX > INT64_MAX
                 if (status == 0 && result_size > INT64_MAX)
                     status = LIBMPQ_ERROR_SIZE;
+#endif
                 if (status == 0 && libmpq__file_seek(writer->fp, 0, SEEK_END) != 0)
                     status = LIBMPQ_ERROR_SEEK;
                 if (status == 0)
