@@ -999,3 +999,148 @@ def test_errors_and_lifecycle(tmp_path):
         archive.close()
         with pytest.raises(mpq.LibmpqStateError):
             archive[0]
+
+
+def _v4_stored_layout(wire):
+    """Check committed wire bytes with hashlib and an independent table decoder."""
+    assert wire[:4] == b"MPQ\x1a"
+    assert struct.unpack_from("<I", wire, 4)[0] == 0xd0
+    assert struct.unpack_from("<H", wire, 12)[0] == 3
+    assert struct.unpack_from("<Q", wire, 44)[0] == len(wire)
+    assert hashlib.md5(wire[:0xc0]).digest() == wire[0xc0:0xd0]
+    chunk_size = struct.unpack_from("<I", wire, 108)[0]
+    assert chunk_size == 0x4000
+    positions = [struct.unpack_from("<I", wire, 16)[0] |
+                 (struct.unpack_from("<H", wire, 40)[0] << 32),
+                 struct.unpack_from("<I", wire, 20)[0] |
+                 (struct.unpack_from("<H", wire, 42)[0] << 32),
+                 struct.unpack_from("<Q", wire, 32)[0],
+                 struct.unpack_from("<Q", wire, 60)[0],
+                 struct.unpack_from("<Q", wire, 52)[0]]
+    sizes = struct.unpack_from("<5Q", wire, 68)
+    digest_offsets = [128, 112, 144, 176, 160]
+    ranges = [(0, 0xd0)]
+    for position, size, digest_offset in zip(positions, sizes, digest_offsets):
+        digest = wire[digest_offset:digest_offset + 16]
+        if size == 0:
+            assert position == 0 and digest == bytes(16)
+        else:
+            assert 0xd0 <= position < position + size <= len(wire)
+            assert hashlib.md5(wire[position:position + size]).digest() == digest
+            ranges.append((position, position + size))
+    assert all(sizes[i] > 0 for i in (0, 1, 3, 4))
+    count = struct.unpack_from("<I", wire, 28)[0]
+    assert sizes[1] == count * 16
+    # Decode the encrypted classic block table independently of native code.
+    table = [0] * 0x500
+    seed = 0x100001
+    for low in range(256):
+        for high in range(5):
+            seed = (seed * 125 + 3) % 0x2aaaab
+            upper = (seed & 0xffff) << 16
+            seed = (seed * 125 + 3) % 0x2aaaab
+            table[low + high * 256] = upper | (seed & 0xffff)
+    key, seed = 0xec83b3a3, 0xeeeeeeee
+    decoded = []
+    for (word,) in struct.iter_unpack("<I", wire[positions[1]:positions[1] + sizes[1]]):
+        seed = (seed + table[0x400 + (key & 0xff)]) & 0xffffffff
+        value = word ^ ((key + seed) & 0xffffffff)
+        key = (((~key & 0xffffffff) << 21) + 0x11111111 | (key >> 11)) & 0xffffffff
+        seed = (value + seed + (seed << 5) + 3) & 0xffffffff
+        decoded.append(value)
+    entries = []
+    for i in range(0, len(decoded), 4):
+        position, size, logical, flags = decoded[i:i + 4]
+        if not flags & 0x80000000:
+            continue
+        entries.append((position, size, logical, flags))
+        if size == 0:
+            continue
+        chunks = (size + chunk_size - 1) // chunk_size
+        end = position + size + 16 * chunks
+        assert 0xd0 <= position < end <= len(wire)
+        for chunk in range(chunks):
+            start = position + chunk * chunk_size
+            stop = min(start + chunk_size, position + size)
+            offset = position + size + chunk * 16
+            assert hashlib.md5(wire[start:stop]).digest() == wire[offset:offset + 16]
+        ranges.append((position, end))
+    ranges.sort()
+    assert all(left[1] <= right[0] for left, right in zip(ranges, ranges[1:]))
+    return positions, entries
+
+
+@pytest.mark.parametrize("name", ["mpq-v4-features.mpq", "mpq-v4-features-patch.mpq"])
+def test_v4_fixture_wire_integrity(name):
+    positions, entries = _v4_stored_layout((FIXTURES / name).read_bytes())
+    assert positions and entries
+    if name == "mpq-v4-features.mpq":
+        assert any(size == 16421 and logical == size for _, size, logical, _ in entries)
+
+
+@pytest.mark.parametrize("encrypted", [False, True])
+def test_v4_fixture_read_update(tmp_path, encrypted):
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    source = FIXTURES / ("mpq-v4-features.mpqe" if encrypted else "mpq-v4-features.mpq")
+    expected = {
+        "overview.txt": b"Synthetic MPQ v4 overview.\n",
+        "large.bin": bytes((i * 37 + 11) & 255 for i in range(16421)),
+        "folder/sector.txt": bytes(65 + i % 23 for i in range(8192)),
+        "remove.txt": b"Delete this synthetic member.\n",
+        "empty.bin": b"",
+    }
+    opener = (lambda path: mpq.Archive.open_mpqe(path, code)) if encrypted else mpq.Archive
+    with opener(source) as archive:
+        assert archive.version == 4 and archive.files == 7
+        for name, payload in expected.items():
+            entry = archive[name]
+            with archive.open_stream(name) as stream:
+                assert stream.read() == payload
+                assert entry.verify(mpq.VERIFY_RAW_MD5 if entry.encrypted else mpq.VERIFY_ALL) == 0
+        assert archive["large.bin"].flags & 0x00020000
+        with archive.open_stream("folder/sector.txt") as stream:
+            stream.seek(4090)
+            assert stream.read(32) == expected["folder/sector.txt"][4090:4122]
+    path = tmp_path / source.name
+    path.write_bytes(source.read_bytes())
+    begin = (lambda: mpq.Update.begin_mpqe(path, code)) if encrypted else lambda: mpq.Update.begin(path)
+    with begin() as update:
+        update.remove("large.bin")
+        update.abort()
+    assert path.read_bytes() == source.read_bytes()
+    with begin() as update:
+        update.replace_data("overview.txt", b"fixture update\n")
+        update.add_data("added.txt", b"added\n")
+        update.rename("empty.bin", "renamed.bin")
+        update.remove("remove.txt")
+        update.commit()
+    with opener(path) as archive:
+        assert archive.version == 4
+        assert archive["overview.txt"].read() == b"fixture update\n"
+        assert archive["added.txt"].read() == b"added\n"
+        assert archive["renamed.bin"].read() == b"" and "remove.txt" not in archive
+        with archive.open_stream("large.bin") as stream:
+            assert stream.read() == expected["large.bin"]
+            assert archive["large.bin"].verify(mpq.VERIFY_RAW_MD5) == 0
+    if not encrypted:
+        _v4_stored_layout(path.read_bytes())
+
+
+@pytest.mark.parametrize("target", ["header", "hash", "block", "het", "bet"])
+def test_v4_fixture_corrupt_metadata(target):
+    wire = bytearray((FIXTURES / "mpq-v4-features.mpq").read_bytes())
+    positions, _ = _v4_stored_layout(wire)
+    offset = 0xc0 if target == "header" else positions[{"hash": 0, "block": 1, "het": 3, "bet": 4}[target]]
+    wire[offset] ^= 1
+    with pytest.raises(mpq.LibmpqFormatError):
+        mpq.Archive.open_io(io.BytesIO(wire), len(wire))
+
+
+@pytest.mark.parametrize("digest", [False, True])
+def test_v4_fixture_corrupt_raw(digest):
+    wire = bytearray((FIXTURES / "mpq-v4-features.mpq").read_bytes())
+    _, entries = _v4_stored_layout(wire)
+    position, size, _, _ = next(entry for entry in entries if entry[1] == 16421)
+    wire[position + size if digest else position + 0x4000] ^= 1
+    with mpq.Archive.open_io(io.BytesIO(wire), len(wire)) as archive:
+        assert archive["large.bin"].verify(mpq.VERIFY_RAW_MD5) == mpq.VERIFY_RAW_MD5

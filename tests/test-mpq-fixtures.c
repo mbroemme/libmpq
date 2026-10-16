@@ -26,6 +26,7 @@
 #include "mpq-endian.h"
 #include "mpq-reader.h"
 #include "mpq-signature.h"
+#include "mpq-source.h"
 #include "test-mpq-helper.h"
 
 #include <limits.h>
@@ -1170,12 +1171,235 @@ test_v3_patch_fixture(void)
     return 0;
 }
 
+/* Generate the same small v4 feature set through the public plain/MPQE writers. */
+static int
+build_v4_fixture(const char *path, int mpqe)
+{
+    static const uint8_t auth[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+    static const char *const names[] = { "overview.txt", "large.bin", "folder/sector.txt",
+                                         "remove.txt", "empty.bin" };
+    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_FOUR, 16, 4096,
+                                            LIBMPQ_ARCHIVE_CREATE_LISTFILE,
+                                            LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 |
+                                                LIBMPQ_ATTRIBUTE_FILETIME };
+    mpq_archive_s *writer = NULL;
+    uint8_t large[16421];
+    uint8_t sector[8192];
+    const uint8_t *payloads[] = { (const uint8_t *)"Synthetic MPQ v4 overview.\n", large, sector,
+                                  (const uint8_t *)"Delete this synthetic member.\n", NULL };
+    const size_t sizes[] = { 27, sizeof(large), sizeof(sector), 30, 0 };
+    for (size_t i = 0; i < sizeof(large); ++i)
+        large[i] = (uint8_t)(i * 37 + 11);
+    for (size_t i = 0; i < sizeof(sector); ++i)
+        sector[i] = (uint8_t)('A' + i % 23);
+    if (mpqe)
+        TEST_CHECK(
+            libmpq__archive_create_mpqe(&writer, path, auth, sizeof(auth) - 1, &create) == 0
+        );
+    else
+        TEST_CHECK(libmpq__archive_create(&writer, path, &create) == 0);
+    for (size_t i = 0; i < 5; ++i) {
+        mpq_writer_s *file = NULL;
+        mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
+        if (i == 1)
+            storage.flags = LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u;
+        if (i == 2) {
+            storage.flags = LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
+                            LIBMPQ_FILE_FLAG_SECTOR_CRC;
+            storage.compression_first = storage.compression_next = LIBMPQ_COMPRESSION_ZLIB;
+        }
+        TEST_CHECK(
+            libmpq__writer_begin(writer, names[i], (libmpq__off_t)sizes[i], &storage, &file) == 0
+        );
+        TEST_CHECK(
+            libmpq__writer_timestamp(file, UINT64_C(132537600000000000) + i * 10000000) == 0
+        );
+        if (sizes[i] != 0)
+            TEST_CHECK(libmpq__writer_write(file, payloads[i], (libmpq__off_t)sizes[i]) == 0);
+        TEST_CHECK(libmpq__writer_finish(file) == 0);
+    }
+    TEST_CHECK(libmpq__archive_close(writer) == 0);
+    return 0;
+}
+
+/* Reproduce committed v4 bytes before checking contents, metadata and raw integrity. */
+static int
+test_v4_fixture(const char *path, int mpqe)
+{
+    static const uint8_t auth[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+    static const char *const names[] = { "overview.txt", "large.bin", "folder/sector.txt",
+                                         "remove.txt", "empty.bin" };
+    const size_t sizes[] = { 27, 16421, 8192, 30, 0 };
+    mpq_archive_s *archive = NULL;
+    uint32_t files;
+
+    {
+        char generated_path[512];
+        uint8_t *committed = NULL;
+        uint8_t *generated = NULL;
+        size_t committed_size = 0;
+        size_t generated_size = 0;
+        int reproduced;
+
+        TEST_CHECK(
+            test_temp_path(
+                generated_path, sizeof(generated_path), mpqe ? "v4-mpqe-recipe" : "v4-mpq-recipe"
+            ) == 0
+        );
+        reproduced = build_v4_fixture(generated_path, mpqe) == 0 &&
+                     test_read_path(path, &committed, &committed_size) == 0 &&
+                     test_read_path(generated_path, &generated, &generated_size) == 0 &&
+                     committed_size == generated_size &&
+                     memcmp(committed, generated, committed_size) == 0;
+        free(committed);
+        free(generated);
+        if (remove(generated_path) != 0)
+            reproduced = 0;
+        TEST_CHECK(reproduced);
+    }
+    if (mpqe)
+        TEST_CHECK(libmpq__archive_open_mpqe(&archive, path, 0, auth, sizeof(auth) - 1) == 0);
+    else
+        TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR);
+    TEST_CHECK(
+        archive->mpq_header.header_size == 0xd0 && archive->mpq_header_v4.raw_chunk_size == 0x4000
+    );
+    TEST_CHECK(archive->mpq_het.header.entry_count == archive->mpq_bet.header.entry_count);
+    TEST_CHECK(libmpq__archive_files(archive, &files) == 0 && files == 7);
+    for (size_t i = 0; i < 5; ++i) {
+        uint32_t number;
+        uint32_t mismatch = UINT32_MAX;
+        uint8_t *data = NULL;
+        size_t size;
+        mpq_file_attributes_s attributes;
+        mpq_entry_s *entry;
+        TEST_CHECK(libmpq__file_number(archive, names[i], &number) == 0);
+        entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+        {
+            uint32_t hashes[3];
+            uint32_t classic;
+            libmpq__file_hash(names[i], &hashes[0], &hashes[1], &hashes[2]);
+            TEST_CHECK(
+                libmpq__file_number_from_hash(archive, hashes[0], hashes[1], hashes[2], &classic) ==
+                0
+            );
+            TEST_CHECK(classic == number);
+        }
+
+        TEST_CHECK(entry->source_mask == (LIBMPQ_ENTRY_SOURCE_CLASSIC | LIBMPQ_ENTRY_SOURCE_BET));
+        TEST_CHECK(entry->classic_source_index == entry->bet_source_index);
+        TEST_CHECK(libmpq__reader_offsets_acquire(archive, number, names[i]) == 0);
+        TEST_CHECK(test_archive_read(archive, number, &data, &size) == 0 && size == sizes[i]);
+        TEST_CHECK(
+            libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &mismatch) == 0 && mismatch == 0
+        );
+        TEST_CHECK(libmpq__file_attributes(archive, number, &attributes) == 0);
+        TEST_CHECK(attributes.filetime == UINT64_C(132537600000000000) + i * 10000000);
+        if (i == 0)
+            TEST_CHECK(memcmp(data, "Synthetic MPQ v4 overview.\n", size) == 0);
+        if (i == 3)
+            TEST_CHECK(memcmp(data, "Delete this synthetic member.\n", size) == 0);
+        for (size_t j = 0; j < size && (i == 1 || i == 2); ++j)
+            TEST_CHECK(data[j] == (i == 1 ? (uint8_t)(j * 37 + 11) : (uint8_t)('A' + j % 23)));
+        if (i == 1)
+            TEST_CHECK(
+                (entry->flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u)) ==
+                (LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u)
+            );
+        if (i == 2)
+            TEST_CHECK(
+                (entry->flags & LIBMPQ_FILE_FLAG_SECTOR_CRC) != 0 && entry->packed_size < size
+            );
+        free(data);
+        TEST_CHECK(libmpq__reader_offsets_release(archive, number) == 0);
+    }
+    if (mpqe) {
+        uint8_t *plain = NULL;
+        uint8_t *logical;
+        size_t length;
+        TEST_CHECK(test_read_path(FIXTURE_DIR "/mpq-v4-features.mpq", &plain, &length) == 0);
+        logical = malloc(length);
+        TEST_CHECK(logical != NULL);
+        TEST_CHECK(libmpq__source_read_at(archive->source, 0, logical, length) == 0);
+        TEST_CHECK(memcmp(plain, logical, length) == 0);
+        free(logical);
+        free(plain);
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    return 0;
+}
+
+/* Transactions operate on a fixture copy and preserve its bytes on abort. */
+static int
+test_v4_fixture_update(void)
+{
+    const char *path = "fixture-v4-update.mpq";
+    uint8_t *original = NULL;
+    uint8_t *actual = NULL;
+    size_t original_size;
+    size_t actual_size;
+    FILE *file;
+    mpq_update_s *update = NULL;
+    mpq_archive_s *archive = NULL;
+    uint32_t number;
+    uint32_t mismatch;
+    TEST_CHECK(test_read_path(FIXTURE_DIR "/mpq-v4-features.mpq", &original, &original_size) == 0);
+    file = fopen(path, "wb");
+    TEST_CHECK(file != NULL);
+    TEST_CHECK(fwrite(original, 1, original_size, file) == original_size && fclose(file) == 0);
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+    TEST_CHECK(libmpq__update_remove(update, "large.bin") == 0);
+    TEST_CHECK(libmpq__update_abort(update) == 0);
+    TEST_CHECK(test_read_path(path, &actual, &actual_size) == 0);
+    TEST_CHECK(actual_size == original_size && memcmp(actual, original, original_size) == 0);
+    free(actual);
+    free(original);
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+    TEST_CHECK(
+        libmpq__update_replace_data(
+            update, "overview.txt", (const uint8_t *)"updated\n", 8, NULL
+        ) == 0
+    );
+    TEST_CHECK(
+        libmpq__update_add_data(update, "added.txt", (const uint8_t *)"added\n", 6, NULL) == 0
+    );
+    TEST_CHECK(libmpq__update_remove(update, "remove.txt") == 0);
+    TEST_CHECK(libmpq__update_rename(update, "empty.bin", "renamed.bin") == 0);
+    TEST_CHECK(libmpq__update_commit(update) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(
+        archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
+        archive->mpq_header_v4.raw_chunk_size == 0x4000
+    );
+    TEST_CHECK(libmpq__file_number(archive, "large.bin", &number) == 0);
+    TEST_CHECK(libmpq__reader_offsets_acquire(archive, number, "large.bin") == 0);
+    TEST_CHECK(
+        libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &mismatch) == 0 && mismatch == 0
+    );
+    TEST_CHECK(libmpq__reader_offsets_release(archive, number) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "remove.txt", &number) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__file_number(archive, "renamed.bin", &number) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "overview.txt", &number) == 0);
+    actual = NULL;
+    TEST_CHECK(test_archive_read(archive, number, &actual, &actual_size) == 0);
+    TEST_CHECK(actual_size == 8 && memcmp(actual, "updated\n", 8) == 0);
+    free(actual);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(remove(path) == 0);
+    return 0;
+}
+
 /* Verify both deterministic fixture formats against the embedded manifest. */
 int
 main(int argc, char **argv)
 {
     char path[512];
     size_t i;
+
+    if (argc == 3 &&
+        (strcmp(argv[1], "--v4-output") == 0 || strcmp(argv[1], "--v4-mpqe-output") == 0))
+        return build_v4_fixture(argv[2], strcmp(argv[1], "--v4-mpqe-output") == 0);
 
     if (argc == 3 &&
         (strcmp(argv[1], "--v3-output") == 0 || strcmp(argv[1], "--v3-only-output") == 0 ||
@@ -1201,6 +1425,9 @@ main(int argc, char **argv)
         TEST_CHECK(test_patch_fixture((uint32_t)(i + 1)) == 0);
     }
     if (argc == 1) {
+        TEST_CHECK(test_v4_fixture(FIXTURE_DIR "/mpq-v4-features.mpq", 0) == 0);
+        TEST_CHECK(test_v4_fixture(FIXTURE_DIR "/mpq-v4-features.mpqe", 1) == 0);
+        TEST_CHECK(test_v4_fixture_update() == 0);
         TEST_CHECK(test_v3_patch_fixture() == 0);
         TEST_CHECK(test_v3_fixture("fixture-v3-mixed.mpq", 1) == 0);
         TEST_CHECK(test_v3_fixture("fixture-v3-bet.mpq", 0) == 0);

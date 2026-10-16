@@ -912,7 +912,49 @@ private void testPatchPayloadFixtures() {
     }
 }
 
+/** Read and update copies of the committed v4 plain and MPQE fixtures. */
+private void testV4FeatureFixtures() {
+    auto root = buildPath(environment.get("LIBMPQ_SOURCE_DIR", "."), "tests", "fixtures");
+    auto code = cast(const(ubyte)[]) "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+    auto expected = new ubyte[16421];
+    foreach (i, ref value; expected) value = cast(ubyte)(i * 37 + 11);
+    foreach (encrypted; [false, true]) {
+        auto source = buildPath(root, encrypted ? "mpq-v4-features.mpqe" : "mpq-v4-features.mpq");
+        auto path = temporaryArchive("v4-fixture");
+        scope(exit) remove(path);
+        write(path, read(source));
+        auto archive = encrypted ? Archive.openMpqe(path, code, 0) : Archive.open(path);
+        assert(archive.version_() == 4 && archive.fileCount() == 7);
+        {
+            auto stream = archive.openStream("large.bin");
+            scope(exit) stream.close();
+            auto actual = new ubyte[expected.length];
+            assert(stream.read(actual) == actual.length && actual == expected);
+        }
+        assert(archive.file("large.bin").verify(VERIFY_RAW_MD5) == 0);
+        archive.close();
+        auto update = encrypted ? Update.beginMpqe(path, code) : Update.begin(path);
+        update.remove("large.bin");
+        update.abort();
+        assert(read(path) == read(source));
+        update = encrypted ? Update.beginMpqe(path, code) : Update.begin(path);
+        update.replaceData("overview.txt", cast(const(ubyte)[]) "updated\n");
+        update.commit();
+        archive = encrypted ? Archive.openMpqe(path, code, 0) : Archive.open(path);
+        assert(archive.version_() == 4);
+        assert(archive.file("overview.txt").read() == cast(const(ubyte)[]) "updated\n");
+        {
+            auto stream = archive.openStream("large.bin");
+            scope(exit) stream.close();
+            auto actual = new ubyte[expected.length];
+            assert(stream.read(actual) == actual.length && actual == expected);
+        }
+        archive.close();
+    }
+}
+
 void main() {
+    testV4FeatureFixtures();
     testPatchPayloadFixtures();
     testVersionAndErrors();
     testCreateReadAndMetadata(ARCHIVE_VERSION_ONE);

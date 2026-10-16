@@ -45,6 +45,7 @@ TESTS = $(check_PROGRAMS)
 # The update regression creates working archives in the build directory.
 # Remove them during clean so source-release distcheck leaves no artifacts.
 CLEANFILES = \
+	fixture-v4-update.mpq \
 	update-abort-reference.mpq \
 	update-abort.mpq \
 	update-close.bin \
@@ -314,3 +315,5 @@ EXTRA_DIST = \
 	fixtures/mpq-v2-features.mpqe
 
 EXTRA_DIST += fixtures/mpq-v3-features.mpq fixtures/mpq-v3-features.mpqe fixtures/mpq-v3-features-patch.mpq
+
+EXTRA_DIST += fixtures/mpq-v4-features.mpq fixtures/mpq-v4-features.mpqe fixtures/mpq-v4-features-patch.mpq

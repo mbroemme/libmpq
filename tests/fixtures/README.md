@@ -278,6 +278,109 @@ and base recipe; they are runtime-only archives, not inventory entries:
 ./test-fixtures --v3-packed-output /tmp/synthetic-v3-packed.mpq
 ```
 
+## MPQ v4 fixtures
+
+### Fixture inventory
+
+| Fixture | Purpose | SHA-256 |
+| --- | --- | --- |
+| `mpq-v4-features.mpq` | Mixed classic/HET-BET tables, structural/raw MD5, encryption and attributes | `1e93a765f0fd6dd2b6777e012a1b68a597ac1dbdde67596ac2aa8632f8c42632` |
+| `mpq-v4-features.mpqe` | Public MPQE creation of the same logical v4 bytes | `2328d01e337fd549273eeac1ac46b4d959d4e36e49c9445ce1678a62babb254f` |
+| `mpq-v4-features-patch.mpq` | V4 COPY/BSD0 replacements, deletion and encrypted addition | `1a30dc1cbda3a501dbc85bca44985bbb51eb7f565358067da4abe4373e8ea537` |
+
+### Base archive
+
+`mpq-v4-features.mpq` is an 18,032-byte archive created through the public
+writer, with a 0xD0-byte header and on-disk version 3. Classic and HET/BET
+rows describe the same seven live entries. The five user members below are
+followed by generated `(listfile)` and `(attributes)` members; no signature
+is present. The attributes contain CRC32, MD5 and FILETIME arrays.
+
+| Member | Exact logical content and storage |
+| --- | --- |
+| `overview.txt` | `Synthetic MPQ v4 overview.\n`, 27 bytes, raw single-unit |
+| `large.bin` | 16,421 bytes; byte `i` is `(i * 37 + 11) & 255`, uncompressed sector-based encryption with FIX_KEY |
+| `folder/sector.txt` | 8,192 bytes; byte `i` is `65 + i % 23`, zlib-compressed encrypted sectors with sector Adler-32 checksums |
+| `remove.txt` | `Delete this synthetic member.\n`, 30 bytes, raw single-unit |
+| `empty.bin` | Zero bytes, single-unit |
+
+User FILETIME values are `132537600000000000 + index * 10000000` in table
+order; generated special-member timestamps are zero. Sectors are 4096 bytes.
+The raw-chunk size is 0x4000. `large.bin` has one full stored chunk and a
+37-byte final chunk; its two trailing MD5 values cover ciphertext. Each
+present metadata table has an explicit stored length and MD5; the absent
+hi-block table has zero position, size and digest. The header MD5 covers
+bytes [0x00, 0xC0).
+
+### MPQE variant
+
+`mpq-v4-features.mpqe` is also 18,032 bytes. Its recipe uses the public MPQE
+creation API with the shared authentication code below. Decrypted logical
+bytes match the plain v4 fixture exactly, including attributes and all MD5
+metadata. Temporary plaintext storage uses the existing writer lifecycle;
+no staging files are retained in the fixture directory.
+
+### Patch archive
+
+`mpq-v4-features-patch.mpq` is a 1,847-byte, unsigned v4 archive targeting
+this base. It uses the existing fixture/PTCH recipe, BSD0 encoder and v4
+writer, including structural and trailing raw-chunk MD5. No new patch format
+or public interface is involved.
+
+| Member | Operation / expected materialized bytes |
+| --- | --- |
+| `overview.txt` | COPY -> `Version four patch\n` |
+| `folder/sector.txt` | BSD0 -> original 8,192 bytes with byte 17 XORed by `0x5a` |
+| `large.bin` | Compressed FIX_KEY COPY -> `Encrypted synthetic v4 patch member.\n` repeated 32 times |
+| `remove.txt` | Delete marker |
+| `folder/reference.bin` | Add 32 `B` bytes, encrypted single-unit FIX_KEY storage |
+
+The patch contains seven live entries, including generated listfile and
+attributes. Replacement CRC32/MD5 describe final logical bytes; patch-info
+MD5 describes the decoded PTCH body. Replacement timestamps follow the
+shared fixed formula, the addition uses `132537600040000000`, and the delete
+marker timestamp is zero. The attributes include PATCH_BIT.
+
+Applying the patch yields seven entries in the established private v3 view.
+`empty.bin` remains empty, `remove.txt` is absent, and the other user members
+match the table. Tests check exact bytes, public PTCH APIs, raw MD5, row
+identity and removal of unresolved patch/delete flags. Separate fixture-copy
+transactions exercise abort preservation and v4 update/checksum regeneration.
+Existing runtime tests retain malformed extents, truncated reads, publication
+failures and independent FIX_KEY ciphertext checks.
+
+### Regeneration
+
+From the prepared disposable test directory, generate the base, its MPQE
+variant, then the patch. The first two recipes are self-contained; patch
+generation requires the v4 base at the configured `FIXTURE_DIR` path.
+
+```sh
+./test-fixtures --v4-output fixtures/mpq-v4-features.mpq
+./test-fixtures --v4-mpqe-output fixtures/mpq-v4-features.mpqe
+./test-patch-reader --v4-output fixtures/mpq-v4-features-patch.mpq
+```
+
+The public writers use fixed options and member order with no random or
+path-derived metadata. Repeating these commands produces identical bytes.
+Each output switch also accepts a separate temporary destination for the
+common byte-comparison procedure below.
+
+Native fixture tests read the plain and MPQE variants and verify their
+logical-byte equivalence. Python, Java and D tests read and update temporary
+copies through their existing APIs. Python's
+`test_v4_fixture_wire_integrity` independently uses `hashlib` and a test-local
+classic table decoder to verify stored table/header/raw MD5 and non-overlap.
+It does not use native MD5 or table decoding. Corrupted fixture copies check
+header/classic/HET/BET MD5 rejection and raw-payload/digest mismatch reporting.
+For a configured Python binding test environment, run from the source root:
+
+```sh
+PYTHONPATH=bindings/python python3 -m pytest bindings/python/tests/test_mpq.py -k v4_fixture
+```
+
+Set `LIBMPQ_LIBRARY` to the freshly built library when it is not installed.
+
 ## Shared fixture details
 
 ### Synthetic text and storage methods
@@ -383,7 +486,7 @@ patch fixtures are unsigned.
 
 ### MPQE authentication conventions
 
-All three MPQE feature variants use the deliberately non-secret 32-byte test
+All MPQE feature variants use the deliberately non-secret 32-byte test
 authentication code:
 
 ```text
@@ -431,7 +534,7 @@ that take them. Normal runs never refresh committed archives implicitly.
 ### Checksums and deterministic comparison
 
 From the test directory, recalculate every binary checksum and compare it
-against the three version-local inventories:
+against the four version-local inventories:
 
 ```sh
 (cd fixtures && sha256sum *.mpq *.mpqe *.w3x)

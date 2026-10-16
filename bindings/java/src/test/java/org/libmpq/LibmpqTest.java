@@ -34,6 +34,47 @@ import org.libmpq.ffi.LibmpqNative;
  */
 class LibmpqTest {
     @Test
+    void v4FeatureFixtures(@TempDir Path directory) throws Exception {
+        Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
+        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
+        byte[] large = new byte[16421];
+        for (int i = 0; i < large.length; ++i) large[i] = (byte) (i * 37 + 11);
+        for (boolean encrypted : new boolean[] {false, true}) {
+            Path source = root.resolve(encrypted ? "mpq-v4-features.mpqe" : "mpq-v4-features.mpq");
+            Path path = directory.resolve(source.getFileName());
+            Files.copy(source, path);
+            try (Archive archive = encrypted ? Archive.openMpqe(path, code) : Archive.open(path)) {
+                assertEquals(4, archive.version());
+                assertEquals(7, archive.fileCount());
+                try (MpqStream stream = archive.openStream("large.bin")) {
+                    byte[] actual = new byte[large.length];
+                    assertEquals(actual.length, stream.read(actual));
+                    assertArrayEquals(large, actual);
+                }
+                assertEquals(0, archive.verify(archive.fileNumber("large.bin"), Mpq.VERIFY_RAW_MD5));
+            }
+            try (MpqUpdate update = encrypted ? MpqUpdate.beginMpqe(path, code) : MpqUpdate.begin(path)) {
+                update.remove("large.bin");
+                update.abort();
+            }
+            assertArrayEquals(Files.readAllBytes(source), Files.readAllBytes(path));
+            try (MpqUpdate update = encrypted ? MpqUpdate.beginMpqe(path, code) : MpqUpdate.begin(path)) {
+                update.replaceData("overview.txt", "updated\n".getBytes(StandardCharsets.US_ASCII), null);
+                update.commit();
+            }
+            try (Archive archive = encrypted ? Archive.openMpqe(path, code) : Archive.open(path)) {
+                assertEquals(4, archive.version());
+                assertArrayEquals("updated\n".getBytes(StandardCharsets.US_ASCII), archive.readFile(archive.fileNumber("overview.txt")));
+                try (MpqStream stream = archive.openStream("large.bin")) {
+                    byte[] actual = new byte[large.length];
+                    assertEquals(actual.length, stream.read(actual));
+                    assertArrayEquals(large, actual);
+                }
+            }
+        }
+    }
+
+    @Test
     void patchPayloadFixtures() throws Exception {
         String[] vectors = {
             "505443485400000088010000100000004d44355f28000000f5e506c1646586cd587606b06204f1edbd9130574d913d6ccec47d341a29d0625846524d1c000000434f50595061746368206c61796572206f6e650a",

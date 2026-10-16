@@ -42,6 +42,8 @@ static const uint8_t first_text[] = "Patch layer one\n";
 static const uint8_t second_text[] = "Patch layer two\n";
 static const uint8_t v2_text[] = "Version two patch\n";
 static const uint8_t new_text[] = "Patch-only member\n";
+static const uint8_t v4_fixture_copy[] = "Version four patch\n";
+static const uint8_t v4_fixture_line[] = "Encrypted synthetic v4 patch member.\n";
 static const uint8_t v3_fixture_copy[] = "Version three patch\n";
 static const uint8_t v3_fixture_line[] = "Encrypted synthetic v3 patch member.\n";
 static const uint8_t mpqe_auth_code[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
@@ -379,13 +381,18 @@ refresh_fixtures(void)
     return 0;
 }
 
-/* Reuse the legacy fixture recipe and existing BSD0 encoder for one complete v3 layer. */
+/* Reuse one fixture/PTCH recipe and the existing BSD0 encoder for v3 and v4 layers. */
 static int
-generate_v3_patch_fixture(const char *path)
+generate_feature_patch_fixture(const char *path, int v4)
 {
-    static const char *const names[] = { "overview.txt", "zlib.txt", "encrypted-compress.txt" };
-    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_THREE, 16, 4096,
-                                            LIBMPQ_ARCHIVE_CREATE_LISTFILE,
+    const char *const names[] = { "overview.txt", v4 ? "folder/sector.txt" : "zlib.txt",
+                                  v4 ? "large.bin" : "encrypted-compress.txt" };
+    const uint8_t *copy = v4 ? v4_fixture_copy : v3_fixture_copy;
+    const size_t copy_size = v4 ? sizeof(v4_fixture_copy) - 1 : sizeof(v3_fixture_copy) - 1;
+    const uint8_t *line = v4 ? v4_fixture_line : v3_fixture_line;
+    mpq_archive_create_options_s create = { v4 ? LIBMPQ_ARCHIVE_VERSION_FOUR
+                                               : LIBMPQ_ARCHIVE_VERSION_THREE,
+                                            16, 4096, LIBMPQ_ARCHIVE_CREATE_LISTFILE,
                                             LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 |
                                                 LIBMPQ_ATTRIBUTE_FILETIME |
                                                 LIBMPQ_ATTRIBUTE_PATCH_BIT };
@@ -397,11 +404,13 @@ generate_v3_patch_fixture(const char *path)
     uint32_t number;
 
     for (size_t i = 0; i < 32; i++)
-        memcpy(
-            secure + i * (sizeof(v3_fixture_line) - 1), v3_fixture_line, sizeof(v3_fixture_line) - 1
-        );
+        memcpy(secure + i * (sizeof(v3_fixture_line) - 1), line, sizeof(v3_fixture_line) - 1);
     memset(added, 'B', sizeof(added));
-    TEST_CHECK(libmpq__archive_open(&base, FIXTURE_DIR "/mpq-v3-features.mpq", 0) == 0);
+    TEST_CHECK(
+        libmpq__archive_open(
+            &base, v4 ? FIXTURE_DIR "/mpq-v4-features.mpq" : FIXTURE_DIR "/mpq-v3-features.mpq", 0
+        ) == 0
+    );
     TEST_CHECK(libmpq__archive_create(&writer, path, &create) == 0);
     writer->write_patch_mode = 1;
     for (size_t i = 0; i < 3; i++) {
@@ -415,10 +424,10 @@ generate_v3_patch_fixture(const char *path)
         TEST_CHECK(libmpq__reader_offsets_acquire(base, number, names[i]) == 0);
         TEST_CHECK(test_archive_read(base, number, &before, &before_size) == 0);
         TEST_CHECK(libmpq__reader_offsets_release(base, number) == 0);
-        after_size = i == 0 ? sizeof(v3_fixture_copy) - 1 : i == 1 ? before_size : sizeof(secure);
+        after_size = i == 0 ? copy_size : i == 1 ? before_size : sizeof(secure);
         after = malloc(after_size);
         TEST_CHECK(after != NULL);
-        memcpy(after, i == 0 ? v3_fixture_copy : i == 1 ? before : secure, after_size);
+        memcpy(after, i == 0 ? copy : i == 1 ? before : secure, after_size);
         if (i == 1) {
             TEST_CHECK(after_size > 17);
             after[17] ^= 0x5au;
@@ -467,12 +476,18 @@ generate_v3_patch_fixture(const char *path)
         free(before);
     }
 
-    /* Naming the unlisted BET-only tail allows complete base reconstruction. */
-    TEST_CHECK(libmpq__file_number(base, "zero.bin", &number) == 0);
-    TEST_CHECK(
-        base->mpq_entry[base->mpq_map[number].entry_index].source_mask == LIBMPQ_ENTRY_SOURCE_BET
-    );
-    TEST_CHECK(libmpq__writer_patch_delete_marker(writer, "zero.bin", 0, 0) == 0);
+    if (v4) {
+        TEST_CHECK(libmpq__writer_patch_delete_marker(writer, "remove.txt", 0, 0) == 0);
+    } else {
+
+        /* Naming the unlisted BET-only tail allows complete base reconstruction. */
+        TEST_CHECK(libmpq__file_number(base, "zero.bin", &number) == 0);
+        TEST_CHECK(
+            base->mpq_entry[base->mpq_map[number].entry_index].source_mask ==
+            LIBMPQ_ENTRY_SOURCE_BET
+        );
+        TEST_CHECK(libmpq__writer_patch_delete_marker(writer, "zero.bin", 0, 0) == 0);
+    }
     storage =
         (mpq_file_options_s){ LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0,
                               0, 0, 0 };
@@ -483,6 +498,132 @@ generate_v3_patch_fixture(const char *path)
     writer->write_attributes[writer->write_next_block - 1].filetime = UINT64_C(132537600040000000);
     TEST_CHECK(libmpq__archive_close(writer) == 0);
     TEST_CHECK(libmpq__archive_close(base) == 0);
+    return 0;
+}
+
+/* Reproduce the v4 patch, then validate decoded payloads and materialized contents. */
+static int
+test_v4_patch_fixture(void)
+{
+    const char *layers[] = { FIXTURE_DIR "/mpq-v4-features-patch.mpq" };
+    mpq_archive_s *archive = NULL;
+    mpq_patch_view_s *view = NULL;
+    uint32_t number;
+    uint32_t flags;
+    uint32_t files;
+    uint32_t mismatch;
+    uint8_t *data = NULL;
+    size_t size;
+    libmpq__off_t payload_size;
+    libmpq__off_t transferred;
+    {
+        char generated_path[512];
+        uint8_t *committed = NULL;
+        uint8_t *generated = NULL;
+        size_t committed_size = 0;
+        size_t generated_size = 0;
+        int reproduced;
+
+        TEST_CHECK(test_temp_path(generated_path, sizeof(generated_path), "v4-patch-recipe") == 0);
+        reproduced = generate_feature_patch_fixture(generated_path, 1) == 0 &&
+                     test_read_path(layers[0], &committed, &committed_size) == 0 &&
+                     test_read_path(generated_path, &generated, &generated_size) == 0 &&
+                     committed_size == generated_size &&
+                     memcmp(committed, generated, committed_size) == 0;
+        free(committed);
+        free(generated);
+        if (remove(generated_path) != 0)
+            reproduced = 0;
+        TEST_CHECK(reproduced);
+    }
+    TEST_CHECK(libmpq__archive_open(&archive, layers[0], 0) == 0);
+    TEST_CHECK(archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR);
+    TEST_CHECK(libmpq__file_number(archive, "overview.txt", &number) == 0);
+    TEST_CHECK(
+        libmpq__file_flags(archive, number, &flags) == 0 &&
+        (flags & LIBMPQ_FILE_FLAG_PATCH_FILE) != 0
+    );
+    TEST_CHECK(
+        libmpq__patch_payload_size(archive, number, &payload_size) == 0 &&
+        payload_size == 68 + sizeof(v4_fixture_copy) - 1
+    );
+    data = malloc((size_t)payload_size);
+    TEST_CHECK(data != NULL);
+    TEST_CHECK(
+        libmpq__patch_payload_read(
+            archive, number, "overview.txt", data, payload_size, &transferred
+        ) == 0
+    );
+    TEST_CHECK(transferred == payload_size && memcmp(data, "PTCH", 4) == 0);
+    TEST_CHECK(memcmp(data + 64, "COPY", 4) == 0);
+    TEST_CHECK(memcmp(data + 68, v4_fixture_copy, sizeof(v4_fixture_copy) - 1) == 0);
+    free(data);
+    TEST_CHECK(
+        libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &mismatch) == 0 && mismatch == 0
+    );
+    TEST_CHECK(libmpq__file_number(archive, "remove.txt", &number) == 0);
+    TEST_CHECK(
+        libmpq__file_flags(archive, number, &flags) == 0 &&
+        (flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) != 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__patch_view_open(&view, FIXTURE_DIR "/mpq-v4-features.mpq", layers, 1) == 0);
+    archive = libmpq__patch_view_archive(view);
+    TEST_CHECK(archive != NULL && archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE);
+    TEST_CHECK(libmpq__archive_files(archive, &files) == 0 && files == 7);
+    TEST_CHECK(libmpq__file_number(archive, "remove.txt", &number) == LIBMPQ_ERROR_EXIST);
+    {
+        static const char *const names[] = { "overview.txt", "folder/sector.txt", "large.bin",
+                                             "folder/reference.bin", "empty.bin" };
+        for (size_t i = 0; i < 5; ++i) {
+            mpq_entry_s *entry;
+            TEST_CHECK(libmpq__file_number(archive, names[i], &number) == 0);
+            entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+            {
+                uint32_t hashes[3];
+                uint32_t classic;
+                libmpq__file_hash(names[i], &hashes[0], &hashes[1], &hashes[2]);
+                TEST_CHECK(
+                    libmpq__file_number_from_hash(
+                        archive, hashes[0], hashes[1], hashes[2], &classic
+                    ) == 0
+                );
+                TEST_CHECK(classic == number);
+            }
+
+            TEST_CHECK(entry->classic_source_index == entry->bet_source_index);
+            TEST_CHECK(
+                (entry->flags & (LIBMPQ_FILE_FLAG_PATCH_FILE | LIBMPQ_FILE_FLAG_DELETE_MARKER)) == 0
+            );
+            TEST_CHECK(libmpq__reader_offsets_acquire(archive, number, names[i]) == 0);
+            data = NULL;
+            TEST_CHECK(test_archive_read(archive, number, &data, &size) == 0);
+            if (i == 0)
+                TEST_CHECK(
+                    size == sizeof(v4_fixture_copy) - 1 && memcmp(data, v4_fixture_copy, size) == 0
+                );
+            if (i == 1) {
+                TEST_CHECK(size == 8192);
+                for (size_t j = 0; j < size; ++j)
+                    TEST_CHECK(data[j] == ((uint8_t)('A' + j % 23) ^ (j == 17 ? 0x5a : 0)));
+            }
+            if (i == 2) {
+                TEST_CHECK(size == 32 * (sizeof(v4_fixture_line) - 1));
+                for (size_t j = 0; j < size; ++j)
+                    TEST_CHECK(data[j] == v4_fixture_line[j % (sizeof(v4_fixture_line) - 1)]);
+            }
+            if (i == 3) {
+                TEST_CHECK(size == 32);
+                for (size_t j = 0; j < size; ++j)
+                    TEST_CHECK(data[j] == 'B');
+            }
+            if (i == 4)
+                TEST_CHECK(size == 0);
+            free(data);
+            TEST_CHECK(libmpq__reader_offsets_release(archive, number) == 0);
+        }
+    }
+    TEST_CHECK(libmpq__patch_view_close(view) == 0);
     return 0;
 }
 
@@ -2540,7 +2681,7 @@ test_v3_committed_patch(void)
     uint64_t added_offset;
 
     TEST_CHECK(test_temp_path(generated_path, sizeof(generated_path), "v3-patch-recipe") == 0);
-    TEST_CHECK(generate_v3_patch_fixture(generated_path) == 0);
+    TEST_CHECK(generate_feature_patch_fixture(generated_path, 0) == 0);
     TEST_CHECK(test_read_path(path, &committed, &committed_size) == 0);
     TEST_CHECK(test_read_path(generated_path, &generated, &generated_size) == 0);
     TEST_CHECK(
@@ -3690,11 +3831,14 @@ test_v3_noop_view(int v4)
 int
 main(int argc, char **argv)
 {
+    if (argc == 3 && strcmp(argv[1], "--v4-output") == 0)
+        return generate_feature_patch_fixture(argv[2], 1);
     if (argc == 3 && strcmp(argv[1], "--v3-output") == 0)
-        return generate_v3_patch_fixture(argv[2]);
+        return generate_feature_patch_fixture(argv[2], 0);
     if (argc == 2 && strcmp(argv[1], "--refresh") == 0)
         return refresh_fixtures();
     TEST_CHECK(argc == 1);
+    TEST_CHECK(test_v4_patch_fixture() == 0);
     TEST_CHECK(test_v4_compact_legacy() == 0);
     TEST_CHECK(
         test_v4_views(LIBMPQ_ARCHIVE_VERSION_FOUR, LIBMPQ_ARCHIVE_VERSION_FOUR, 0, 0, 0) == 0
