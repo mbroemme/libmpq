@@ -141,6 +141,13 @@ test_policy_writer(uint32_t version, libmpq_compression_policy_t policy, uint32_
         size = (size_t)transferred;
         TEST_CHECK(size == sizeof(input) && memcmp(output, input, size) == 0);
         TEST_CHECK(libmpq__stream_close(stream) == 0);
+        if (version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+            uint32_t mismatches = UINT32_MAX;
+            TEST_CHECK(
+                libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &mismatches) == 0
+            );
+            TEST_CHECK(mismatches == 0);
+        }
         free(output);
         output = NULL;
     }
@@ -149,9 +156,9 @@ test_policy_writer(uint32_t version, libmpq_compression_policy_t policy, uint32_
     return 0;
 }
 
-/* Compare v2/v3 codec output and fallback at sector-size boundaries. */
+/* Compare v2/v3/v4 codec output and fallback at sector-size boundaries. */
 static int
-test_v2_v3_sector_semantics(void)
+test_modern_sector_semantics(void)
 {
     static const uint32_t masks[] = { 0,    0x01, 0x02, 0x08, 0x10,  0x20, 0x22,
                                       0x30, 0x03, 0x0a, 0x12, 0x100, 0x41, 0x81 };
@@ -177,12 +184,16 @@ test_v2_v3_sector_semantics(void)
                     allowed ==
                     libmpq__compression_allowed(LIBMPQ_ARCHIVE_VERSION_THREE, masks[m], policy)
                 );
+                TEST_CHECK(
+                    allowed ==
+                    libmpq__compression_allowed(LIBMPQ_ARCHIVE_VERSION_FOUR, masks[m], policy)
+                );
                 for (n = 0; n < sizeof(lengths) / sizeof(lengths[0]); ++n) {
-                    uint8_t *packed[2] = { NULL, NULL };
-                    uint8_t emitted[2] = { 0, 0 };
-                    size_t sizes[2] = { 0, 0 };
+                    uint8_t *packed[3] = { NULL, NULL, NULL };
+                    uint8_t emitted[3] = { 0, 0, 0 };
+                    size_t sizes[3] = { 0, 0, 0 };
                     unsigned int v;
-                    for (v = 0; v < 2; ++v) {
+                    for (v = 0; v < 3; ++v) {
                         uint32_t version = LIBMPQ_ARCHIVE_VERSION_TWO + v;
                         int32_t result = libmpq__compression_encode_sector(
                             input, lengths[n], masks[m], version, policy, &packed[v], &sizes[v],
@@ -213,9 +224,12 @@ test_v2_v3_sector_semantics(void)
                     if (allowed) {
                         TEST_CHECK(emitted[0] == emitted[1] && sizes[0] == sizes[1]);
                         TEST_CHECK(memcmp(packed[0], packed[1], sizes[0]) == 0);
+                        TEST_CHECK(emitted[0] == emitted[2] && sizes[0] == sizes[2]);
+                        TEST_CHECK(memcmp(packed[0], packed[2], sizes[0]) == 0);
                     }
                     free(packed[0]);
                     free(packed[1]);
+                    free(packed[2]);
                 }
             }
         }
@@ -259,7 +273,7 @@ main(void)
 
     TEST_CHECK(test_temp_path(path, sizeof(path), "compression") == 0);
     TEST_CHECK(test_policies() == 0);
-    TEST_CHECK(test_v2_v3_sector_semantics() == 0);
+    TEST_CHECK(test_modern_sector_semantics() == 0);
     TEST_CHECK(
         test_policy_writer(LIBMPQ_ARCHIVE_VERSION_ONE, LIBMPQ_COMPRESSION_POLICY_STANDARD, 0) == 0
     );
@@ -283,6 +297,9 @@ main(void)
         for (libmpq_compression_policy_t policy = LIBMPQ_COMPRESSION_POLICY_STANDARD;
              policy <= LIBMPQ_COMPRESSION_POLICY_EXTENDED; ++policy) {
             TEST_CHECK(test_policy_writer(version, policy, LIBMPQ_FILE_FLAG_ENCRYPTED) == 0);
+            TEST_CHECK(
+                test_policy_writer(version, policy, LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u) == 0
+            );
             TEST_CHECK(test_policy_writer(version, policy, LIBMPQ_FILE_FLAG_SINGLE) == 0);
             TEST_CHECK(
                 test_policy_writer(

@@ -410,6 +410,12 @@ test_adpcm_archive(uint32_t version, uint16_t channels)
     TEST_CHECK(packed < unpacked);
     TEST_CHECK(test_archive_read(archive, number, &output, &output_size) == 0);
     TEST_CHECK(output_size == wave_size);
+    TEST_CHECK(memcmp(wave, output, wave_size < 4096 ? wave_size : 4096) == 0);
+    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+        uint32_t mismatches = UINT32_MAX;
+        TEST_CHECK(libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &mismatches) == 0);
+        TEST_CHECK(mismatches == 0);
+    }
     result = test_wave_quality(wave, output, wave_size);
     free(output);
     free(wave);
@@ -476,6 +482,8 @@ main(void)
     TEST_CHECK(test_adpcm_archive(LIBMPQ_ARCHIVE_VERSION_TWO, 2) == 0);
     TEST_CHECK(test_adpcm_archive(LIBMPQ_ARCHIVE_VERSION_THREE, 1) == 0);
     TEST_CHECK(test_adpcm_archive(LIBMPQ_ARCHIVE_VERSION_THREE, 2) == 0);
+    TEST_CHECK(test_adpcm_archive(LIBMPQ_ARCHIVE_VERSION_FOUR, 1) == 0);
+    TEST_CHECK(test_adpcm_archive(LIBMPQ_ARCHIVE_VERSION_FOUR, 2) == 0);
     TEST_CHECK(test_wave_fixtures(1) == 0);
     TEST_CHECK(test_wave_fixtures(2) == 0);
     TEST_CHECK(test_adpcm_rejects_invalid_wave() == 0);
