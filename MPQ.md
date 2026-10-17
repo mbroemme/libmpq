@@ -69,9 +69,9 @@ bounded by the archive extent. Mixed-table archives can use classic lookup
 when a classic hash entry maps to a live block; other live blocks need not be
 hash-referenced. This does not assert equivalence with HET/BET. Declared
 extended tables must form a valid pair; malformed tables fail opening rather
-than downgrading to classic lookup. Compressed classic tables remain
-unsupported. MPQ v4 uses explicit stored-table extents for reading and
-creation.
+than downgrading to classic lookup. Compressed classic hash/block tables use
+the stored extents described under [Classic tables](#classic-tables). MPQ v4
+uses explicit stored-table extents for reading and creation.
 
 ### MPQ v4 header
 
@@ -118,10 +118,9 @@ stored-table sizes. Each position/size pair is checked independently against the
 declared 64-bit archive extent and physical source, including embedded archive
 origins, before table I/O or allocation. Tables need not be adjacent or ordered.
 Classic decoded lengths still come from entry counts. Equal stored and decoded
-lengths use the existing uncompressed hash/block/hi-block readers. Shorter stored
-extents may indicate compression or another unsupported/malformed encoding;
-size alone does not identify compression. They return UNPACK because the loader
-cannot decode them. HET/BET reuse the existing decrypt/decompress loaders, with
+lengths use the uncompressed readers; shorter hash/block extents require valid
+compression framing and exact decoded lengths. Hi-block tables remain
+uncompressed. HET/BET reuse the existing decrypt/decompress loaders, with
 the envelope-inclusive 1 MiB limit unchanged. Missing tables are allowed when
 the remaining representation permits lookup; malformed present tables do not
 disappear behind fallback.
@@ -248,6 +247,26 @@ entries. Writers and rebuild serialization still own classic wire tables.
 Isolated BET decoding also produces canonical entries with explicit BET
 provenance; archive loading owns both producers and their explicit maps.
 Sector offset and codec-length limits remain unchanged.
+
+Classic hash/block tables in v2/v3/v4 can store a smaller compressed
+representation. Decoded sizes remain `entry_count * 16`. V2 bounds the hash
+table by the following block table, and the block table by a following hi-block
+table or a declared archive end that agrees with the backing source extent.
+Without a reliable shorter boundary, count-sized handling is retained. V3 uses
+the following classic table or its authoritative archive end; v4 uses each
+explicit stored size independently of table order. V1 remains count-sized.
+
+The reader verifies any v4 table MD5 over the original stored bytes, decrypts
+those bytes with the fixed table key, then decodes the leading MPQ compression
+method byte through `libmpq__compression_decompress_table()`. Supported lossless
+methods are zlib (`0x02`), PKWARE (`0x08`), bzip2 (`0x10`), LZMA (`0x12`),
+SPARSE (`0x20`), and SPARSE combined with zlib (`0x22`) or bzip2 (`0x30`). A
+short extent alone does not prove compression: invalid framing, unsupported
+methods and incorrect output lengths fail decoding. Compressed classic tables
+reuse the 1 MiB decoded-metadata limit, checked before entry allocation.
+Hi-block tables are neither encrypted nor compressed. Writers continue emitting
+uncompressed classic tables; named reconstruction can read compressed sources
+without preserving their serialized table representation.
 
 ### Classic hashing and table cipher
 
@@ -416,7 +435,7 @@ BET decoding remains isolated from classic tables and attributes.
 Present v3 structures must follow HET, BET, classic hash, classic block,
 hi-block, archive end. Missing structures are skipped. Each v3 extended table's
 stored extent ends at the next present structure, or the effective 64-bit
-archive end; fixed-size classic tables must not overlap that next structure.
+archive end; classic stored extents must fit before that next structure.
 All relative positions are checked against the declared archive and backing
 source before I/O. Each stored and decoded extended table has an inclusive
 defensive limit of `0x00100000` bytes (1 MiB), including its 12-byte common
@@ -1054,9 +1073,9 @@ allocation error. Completed HET/BET tables must also fit the separate 1 MiB
 limit, so this ceiling is not a promise of that many writable files.
 
 Creation, transactional updates and patch writing support MPQ v1/v2/v3/v4,
-including MPQE output. Compressed classic tables remain unsupported. The v3/v4
-writer emits mixed HET/BET and classic tables, not BET-only output. V3/v4
-transactional reconstruction requires a complete, unambiguous named file set
+including MPQE output. Compressed classic-table writing remains unsupported.
+The v3/v4 writer emits mixed HET/BET and classic tables, not BET-only output.
+V3/v4 transactional reconstruction requires a complete, unambiguous named file set
 and representable metadata. It rebuilds all tables through the same writer;
 incomplete source information is rejected rather than silently losing members.
 Practical transaction rules and supported source boundaries are described in

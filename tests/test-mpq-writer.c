@@ -2277,6 +2277,7 @@ test_v4_determinism_and_signing(void)
     for (size_t i = 0; i < 5; ++i)
         TEST_CHECK(memcmp(first + digest_offsets[i], digests[i], 16) == 0);
     {
+
         /* Independent hashlib vectors: one full HET chunk and BET's final partial chunk. */
         static const uint8_t raw_digests[2][16] = {
             { 0x0a, 0xb7, 0xf9, 0xd0, 0x3e, 0xe3, 0x50, 0x3c, 0xcc, 0xa9, 0x33, 0xfa, 0x49, 0x84,
