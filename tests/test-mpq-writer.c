@@ -29,6 +29,7 @@
 #include "mpq-endian.h"
 #include "mpq-mpqe.h"
 #include "mpq-reader.h"
+#include "mpq-signature.h"
 #include "mpq-source.h"
 #include "mpq-writer.h"
 #include "test-mpq-helper.h"
@@ -2229,6 +2230,77 @@ test_v4_corruption(void)
     return 0;
 }
 
+/* A weak signature excludes its payload, but includes that payload's raw digest array. */
+static int
+test_v4_weak_raw_digest_dependency(void)
+{
+    static const uint8_t zero_digest[16] = { 0xac, 0x3b, 0x5a, 0x19, 0x64, 0x3e, 0xe5, 0x81,
+                                             0x6a, 0x1d, 0xf1, 0x7f, 0x2f, 0xad, 0xaa, 0xe3 };
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_FOUR, 4, 512, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_md5_s md5;
+    uint8_t zero[LIBMPQ_SIGNATURE_SIZE] = { 0 };
+    uint8_t digest[LIBMPQ_MD5_SIZE];
+    uint8_t encoded[LIBMPQ_RSA_SIZE];
+    uint8_t signature[LIBMPQ_RSA_SIZE];
+    uint8_t *bytes;
+    size_t size;
+    libmpq__off_t offset;
+    uint32_t number;
+    uint32_t mask;
+    char path[512];
+    FILE *output;
+    TEST_CHECK(test_temp_path(path, sizeof(path), "weak-raw-dependency") == 0);
+    TEST_CHECK(libmpq__writer_archive_create_v4(&archive, path, NULL, &options, 0x4000) == 0);
+    TEST_CHECK(libmpq__writer_file_add(archive, "(signature)", zero, sizeof(zero), NULL) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "(signature)", &number) == 0);
+    TEST_CHECK(libmpq__file_offset(archive, number, &offset) == 0 && offset == 0xd0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(test_read_path(path, &bytes, &size) == 0);
+    TEST_CHECK(size >= (size_t)offset + sizeof(zero) + sizeof(digest));
+
+    /* hashlib.md5(bytes(72)): the placeholder's independently calculated raw digest. */
+    TEST_CHECK(memcmp(bytes + offset + sizeof(zero), zero_digest, sizeof(zero_digest)) == 0);
+    libmpq__md5_init(&md5);
+    libmpq__md5_update(&md5, bytes, size);
+    libmpq__md5_final(&md5, digest);
+    libmpq__rsa_md5_encode(digest, encoded);
+    TEST_CHECK(libmpq__rsa_weak_operation(test_signature_private_key, encoded, signature) == 0);
+    for (size_t i = 0; i < sizeof(signature); ++i)
+        bytes[offset + LIBMPQ_SIGNATURE_PREFIX_SIZE + i] = signature[sizeof(signature) - 1 - i];
+    for (unsigned int repair = 0; repair < 2; ++repair) {
+        if (repair) {
+
+            /* Refreshing raw MD5 changes the archive bytes covered by the weak signature. */
+            libmpq__md5_init(&md5);
+            libmpq__md5_update(&md5, bytes + offset, sizeof(zero));
+            libmpq__md5_final(&md5, bytes + offset + sizeof(zero));
+        }
+        output = libmpq__file_open(path, "wb");
+        TEST_CHECK(output != NULL && fwrite(bytes, 1, size, output) == size);
+        TEST_CHECK(fclose(output) == 0);
+        TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+        TEST_CHECK(libmpq__file_number(archive, "(signature)", &number) == 0);
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, LIBMPQ_SIGNATURE_WEAK, test_signature_public_key,
+                sizeof(test_signature_public_key), &mask
+            ) == 0 &&
+            mask == (repair ? LIBMPQ_SIGNATURE_WEAK : 0)
+        );
+        TEST_CHECK(
+            libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &mask) == 0 &&
+            mask == (repair ? 0 : LIBMPQ_VERIFY_RAW_MD5)
+        );
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+    }
+    free(bytes);
+    TEST_CHECK(remove(path) == 0);
+    return 0;
+}
+
 /* The private path remains deterministic and cannot silently finalize stale signature digests. */
 static int
 test_v4_determinism_and_signing(void)
@@ -2506,6 +2578,7 @@ main(void)
 #endif
     TEST_CHECK(test_v4_corruption() == 0);
     TEST_CHECK(test_v4_determinism_and_signing() == 0);
+    TEST_CHECK(test_v4_weak_raw_digest_dependency() == 0);
     TEST_CHECK(test_v4_writer(0, 1, 0) == 0);
     TEST_CHECK(test_v4_writer(3, 1, 0) == 0);
     TEST_CHECK(test_v4_writer(0, 0, 0) == 0);

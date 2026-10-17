@@ -138,12 +138,12 @@ reserved legacy table space, independently of the current stream position.
 Single-unit writes must fit the configured sector size; larger generated
 listfiles use sector-based storage.
 
-V3 output reserves a 68-byte (`0x44`) header, writes file payloads at
-their final archive-relative positions, then appends HET, BET, classic hash,
-classic block, and (when file positions require it) hi-block tables. Stored
-tables are adjacent, without padding. The existing in-memory builders,
-serializers, and compress/encrypt encoder run only after payloads and generated
-internal files are finished.
+V3 output reserves a 68-byte (`0x44`) header, writes file payloads at their
+final archive-relative positions, then appends HET, BET, classic hash, classic
+block, and (when file positions require it) hi-block tables. Stored tables are
+adjacent, without padding. The existing in-memory builders, serializers, and
+compress/encrypt encoder run only after payloads and generated internal files
+are finished.
 
 BET row N and classic block row N come from the same completed writer metadata
 and retain insertion order. Classic block count is the completed row count,
@@ -177,28 +177,32 @@ base archive version.
 
 Public v4 creation, including patch writing, uses a raw-chunk size of `0x4000`
 (16 KiB), without a public configuration option. The private initializer also
-permits alternative sizes; zero emits no checksums. Nonzero settings append
-MD5 arrays after each finalized compressed/encrypted member, using bounded
-rereads of the readable, seekable output stream. These arrays occupy physical
-space but do not increase member packed sizes. HET/BET finalization also
-reserves and writes trailing raw digest arrays after each final stored
-envelope, without increasing its stored-table size. Members are not
-subsequently relocated, so FIX_KEY uses the final output offset before raw
-hashing.
+permits alternative sizes; zero emits no checksums. Nonzero settings append MD5
+arrays after each finalized compressed/encrypted member, using bounded rereads
+of the readable, seekable output stream. These arrays occupy physical space but
+do not increase member packed sizes. HET/BET finalization also reserves and
+writes trailing raw digest arrays after each final stored envelope, without
+increasing its stored-table size. Members are not subsequently relocated, so
+FIX_KEY uses the final output offset before raw hashing.
+
 Raw-enabled packed imports are rejected because their contract registers
 packed bytes already placed at their original offsets without reserving
 trailing digest space. Weak signing is rejected before modifying a raw-enabled
-writer because it would rewrite an already hashed member. Strong signature
-trailers do not change those stored ranges. V4 transactional rebuilds preserve
-the source `raw_chunk_size`, including zero. With raw chunks enabled, retained
-members are streamed through the writer at their final offsets instead of
-importing packed bytes, regenerating FIX_KEY ciphertext and trailing digests.
-Retained raw digests and logical CRC32/MD5 attributes are checked
-before publication. Lossy recompression, unsupported flags and unrepresentable
-sector-codec policies are rejected. With raw chunks disabled, unchanged packed
-members retain the existing import path. V4 flush, member-finish and
-finalization errors remain terminal for that handle; cleanup retains the
-existing writer guarantees.
+writer because it would rewrite an already hashed member. Refreshing that
+member's raw digest array would also invalidate the weak signature: its
+archive hash excludes only the signature payload, not the trailing array.
+Strong signature trailers do not change those stored ranges.
+
+V4 transactional rebuilds preserve the source `raw_chunk_size`, including
+zero. With raw chunks enabled, retained members are streamed through the
+writer at their final offsets instead of importing packed bytes, regenerating
+FIX_KEY ciphertext and trailing digests. Retained raw digests and logical
+CRC32/MD5 attributes are checked before publication. Lossy recompression,
+unsupported flags and unrepresentable sector-codec policies are rejected. With
+raw chunks disabled, unchanged packed members retain the existing import path.
+
+V4 flush, member-finish and finalization errors remain terminal for that
+handle; cleanup retains the existing writer guarantees.
 
 ## Classic tables
 
