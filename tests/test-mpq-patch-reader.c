@@ -538,6 +538,8 @@ test_v4_patch_fixture(void)
     }
     TEST_CHECK(libmpq__archive_open(&archive, layers[0], 0) == 0);
     TEST_CHECK(archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR);
+    TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_HET_SIGNATURE) == 0);
+    TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_BET_SIGNATURE) == 0);
     TEST_CHECK(libmpq__file_number(archive, "overview.txt", &number) == 0);
     TEST_CHECK(
         libmpq__file_flags(archive, number, &flags) == 0 &&

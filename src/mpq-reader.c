@@ -142,6 +142,116 @@ validate_table_extent(
     return 0;
 }
 
+/*
+ * Verify trailing raw digests separately from header-level table hashes.
+ * Older writers omitted these arrays; a following table/member at the exact
+ * envelope end identifies unavailable storage, not a successful checksum.
+ */
+int32_t
+libmpq__reader_verify_ext_raw_md5(mpq_archive_s *archive, uint32_t signature)
+{
+    uint64_t positions[5];
+    uint64_t sizes[5];
+    uint64_t position;
+    uint64_t size;
+    uint64_t chunks;
+    uint64_t digest_position;
+    uint64_t digest_end;
+    uint64_t base;
+    uint32_t chunk_size;
+    uint8_t buffer[16384];
+    uint8_t actual[LIBMPQ_MD5_SIZE];
+    uint8_t expected[LIBMPQ_MD5_SIZE];
+    int32_t result;
+    if (archive == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (archive->write_mode)
+        return LIBMPQ_ERROR_NOT_INITIALIZED;
+    if (signature != LIBMPQ_HET_SIGNATURE && signature != LIBMPQ_BET_SIGNATURE)
+        return LIBMPQ_ERROR_FORMAT;
+    chunk_size = archive->mpq_header_v4.raw_chunk_size;
+    if (archive->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_FOUR || chunk_size == 0)
+        return LIBMPQ_ERROR_EXIST;
+    positions[0] = archive->mpq_header.hash_table_offset |
+                   ((uint64_t)archive->mpq_header_ex.hash_table_offset_high << 32);
+    positions[1] = archive->mpq_header.block_table_offset |
+                   ((uint64_t)archive->mpq_header_ex.block_table_offset_high << 32);
+    positions[2] = archive->mpq_header_ex.extended_offset;
+    positions[3] = archive->mpq_header_v3.het_table_offset;
+    positions[4] = archive->mpq_header_v3.bet_table_offset;
+    sizes[0] = archive->mpq_header_v4.hash_table_size;
+    sizes[1] = archive->mpq_header_v4.block_table_size;
+    sizes[2] = archive->mpq_header_v4.hi_block_table_size;
+    sizes[3] = archive->mpq_header_v4.het_table_size;
+    sizes[4] = archive->mpq_header_v4.bet_table_size;
+    position = positions[signature == LIBMPQ_HET_SIGNATURE ? 3 : 4];
+    size = sizes[signature == LIBMPQ_HET_SIGNATURE ? 3 : 4];
+    if (position == 0 && size == 0)
+        return LIBMPQ_ERROR_EXIST;
+    result = validate_table_extent(
+        archive, position, size, LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE + 1, LIBMPQ_EXT_TABLE_MAX_SIZE
+    );
+    if (result != 0)
+        return result;
+    chunks = (size - 1) / chunk_size + 1;
+    digest_position = position + size;
+    for (uint64_t i = 0; i < (uint64_t)archive->entry_count + 5; ++i) {
+        if (i >= 5 && (archive->mpq_entry[i - 5].flags & LIBMPQ_FLAG_EXISTS) == 0)
+            continue;
+        uint64_t start = i < 5 ? positions[i] : archive->mpq_entry[i - 5].offset;
+        uint64_t length = i < 5 ? sizes[i] : archive->mpq_entry[i - 5].packed_size;
+        if (length != 0 && start == digest_position)
+            return LIBMPQ_ERROR_EXIST;
+    }
+    digest_end = libmpq__header_archive_size(&archive->mpq_header, &archive->mpq_header_v3);
+    if (digest_position == digest_end)
+        return LIBMPQ_ERROR_EXIST;
+    if (chunks > (digest_end - digest_position) / LIBMPQ_MD5_SIZE)
+        return LIBMPQ_ERROR_FORMAT;
+    digest_end = digest_position + chunks * LIBMPQ_MD5_SIZE;
+    base = (uint64_t)archive->archive_offset;
+    if (digest_end > (uint64_t)INT64_MAX - base || base > archive->file_size ||
+        digest_end > archive->file_size - base)
+        return LIBMPQ_ERROR_READ;
+
+    /* Never interpret another table or a stored member as a digest array. */
+    for (uint64_t i = 0; i < (uint64_t)archive->entry_count + 5; ++i) {
+        if (i >= 5 && (archive->mpq_entry[i - 5].flags & LIBMPQ_FLAG_EXISTS) == 0)
+            continue;
+        uint64_t start = i < 5 ? positions[i] : archive->mpq_entry[i - 5].offset;
+        uint64_t length = i < 5 ? sizes[i] : archive->mpq_entry[i - 5].packed_size;
+        if (length != 0 && start < digest_end &&
+            (start >= digest_position || length > digest_position - start))
+            return start == digest_position ? LIBMPQ_ERROR_EXIST : LIBMPQ_ERROR_FORMAT;
+    }
+    position += base;
+    digest_position += base;
+    while (size != 0) {
+        uint64_t remaining = size < chunk_size ? size : chunk_size;
+        mpq_md5_s md5;
+        size -= remaining;
+        libmpq__md5_init(&md5);
+        while (remaining != 0) {
+            size_t take = remaining < sizeof(buffer) ? (size_t)remaining : sizeof(buffer);
+            result = libmpq__source_read_at(archive->source, position, buffer, take);
+            if (result != 0)
+                return result;
+            libmpq__md5_update(&md5, buffer, take);
+            position += take;
+            remaining -= take;
+        }
+        libmpq__md5_final(&md5, actual);
+        result =
+            libmpq__source_read_at(archive->source, digest_position, expected, sizeof(expected));
+        if (result != 0)
+            return result;
+        if (memcmp(actual, expected, sizeof(actual)) != 0)
+            return LIBMPQ_ERROR_FORMAT;
+        digest_position += sizeof(expected);
+    }
+    return 0;
+}
+
 /* V4 table positions are independent; decoded classic geometry remains count-based. */
 static int32_t
 validate_v4_header(const mpq_archive_s *archive)

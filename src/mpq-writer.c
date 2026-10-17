@@ -538,10 +538,20 @@ finalize_extended_tables(mpq_archive_s *a)
     position = (uint64_t)current;
     end = position;
     result = writer_layout_advance(&end, sizes[0], 1);
+    if (result == 0 && a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
+        a->mpq_header_v4.raw_chunk_size != 0 && sizes[0] != 0)
+        result = writer_layout_advance(
+            &end, (sizes[0] - 1) / a->mpq_header_v4.raw_chunk_size + 1, LIBMPQ_MD5_SIZE
+        );
     if (result != 0)
         goto done;
     bet_position = end;
     result = writer_layout_advance(&end, sizes[1], 1);
+    if (result == 0 && a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
+        a->mpq_header_v4.raw_chunk_size != 0 && sizes[1] != 0)
+        result = writer_layout_advance(
+            &end, (sizes[1] - 1) / a->mpq_header_v4.raw_chunk_size + 1, LIBMPQ_MD5_SIZE
+        );
     if (result != 0)
         goto done;
     hash_position = end;
@@ -591,7 +601,11 @@ finalize_extended_tables(mpq_archive_s *a)
     a->mpq_header_ex.extended_offset = high ? high_position : 0;
     result = write_at(a->fp, position, stored[0], sizes[0]);
     if (result == 0)
+        result = writer_raw_md5(a, position, sizes[0]);
+    if (result == 0)
         result = write_at(a->fp, bet_position, stored[1], sizes[1]);
+    if (result == 0)
+        result = writer_raw_md5(a, bet_position, sizes[1]);
 done:
     free(wire);
     free(stored[0]);

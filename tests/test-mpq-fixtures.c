@@ -1261,6 +1261,8 @@ test_v4_fixture(const char *path, int mpqe)
         TEST_CHECK(libmpq__archive_open_mpqe(&archive, path, 0, auth, sizeof(auth) - 1) == 0);
     else
         TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_HET_SIGNATURE) == 0);
+    TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_BET_SIGNATURE) == 0);
     TEST_CHECK(archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR);
     TEST_CHECK(
         archive->mpq_header.header_size == 0xd0 && archive->mpq_header_v4.raw_chunk_size == 0x4000
@@ -1372,6 +1374,8 @@ test_v4_fixture_update(void)
         archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
         archive->mpq_header_v4.raw_chunk_size == 0x4000
     );
+    TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_HET_SIGNATURE) == 0);
+    TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_BET_SIGNATURE) == 0);
     TEST_CHECK(libmpq__file_number(archive, "large.bin", &number) == 0);
     TEST_CHECK(libmpq__reader_offsets_acquire(archive, number, "large.bin") == 0);
     TEST_CHECK(

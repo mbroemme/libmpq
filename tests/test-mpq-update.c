@@ -2801,6 +2801,14 @@ test_v4_updates(uint32_t chunk, unsigned layout, int mpqe)
     TEST_CHECK(libmpq__archive_signatures(archive, &mask) == 0 && mask == 0);
     TEST_CHECK(check_named(archive, "other/renamed.bin", payload, sizeof(payload)) == 0);
     TEST_CHECK(check_named(archive, "added", (const uint8_t *)"abc", 3) == 0);
+    TEST_CHECK(
+        libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_HET_SIGNATURE) ==
+        (chunk != 0 ? 0 : LIBMPQ_ERROR_EXIST)
+    );
+    TEST_CHECK(
+        libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_BET_SIGNATURE) ==
+        (chunk != 0 ? 0 : LIBMPQ_ERROR_EXIST)
+    );
     TEST_CHECK(libmpq__file_number(archive, "padding", &number) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__file_number(archive, name, &number) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__file_number(archive, "other/renamed.bin", &number) == 0);

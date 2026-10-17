@@ -284,13 +284,13 @@ and base recipe; they are runtime-only archives, not inventory entries:
 
 | Fixture | Purpose | SHA-256 |
 | --- | --- | --- |
-| `mpq-v4-features.mpq` | Mixed classic/HET-BET tables, structural/raw MD5, encryption and attributes | `1e93a765f0fd6dd2b6777e012a1b68a597ac1dbdde67596ac2aa8632f8c42632` |
-| `mpq-v4-features.mpqe` | Public MPQE creation of the same logical v4 bytes | `2328d01e337fd549273eeac1ac46b4d959d4e36e49c9445ce1678a62babb254f` |
-| `mpq-v4-features-patch.mpq` | V4 COPY/BSD0 replacements, deletion and encrypted addition | `1a30dc1cbda3a501dbc85bca44985bbb51eb7f565358067da4abe4373e8ea537` |
+| `mpq-v4-features.mpq` | Mixed classic/HET-BET tables, structural/raw MD5, encryption and attributes | `6e948dda24f8f88409870a11407cfbf4dc4e35302cad29100846665338f149b5` |
+| `mpq-v4-features.mpqe` | Public MPQE creation of the same logical v4 bytes | `caf54320cfc496032e8b6cf39816893f5926f6a7f34e683bd68914f85b651eb8` |
+| `mpq-v4-features-patch.mpq` | V4 COPY/BSD0 replacements, deletion and encrypted addition | `6f0bfb56ac744f5b8a9a2501ce46433d1e15d10c695647141f27217fa8473e91` |
 
 ### Base archive
 
-`mpq-v4-features.mpq` is an 18,032-byte archive created through the public
+`mpq-v4-features.mpq` is an 18,064-byte archive created through the public
 writer, with a 0xD0-byte header and on-disk version 3. Classic and HET/BET
 rows describe the same seven live entries. The five user members below are
 followed by generated `(listfile)` and `(attributes)` members; no signature
@@ -312,9 +312,14 @@ present metadata table has an explicit stored length and MD5; the absent
 hi-block table has zero position, size and digest. The header MD5 covers
 bytes [0x00, 0xC0).
 
+HET and BET each have one trailing 16-byte raw digest over their stored
+compressed/encrypted envelope. These arrays are excluded from declared table
+sizes. They add 32 bytes to each v4 fixture; user payloads and expected patch
+results remain unchanged.
+
 ### MPQE variant
 
-`mpq-v4-features.mpqe` is also 18,032 bytes. Its recipe uses the public MPQE
+`mpq-v4-features.mpqe` is also 18,064 bytes. Its recipe uses the public MPQE
 creation API with the shared authentication code below. Decrypted logical
 bytes match the plain v4 fixture exactly, including attributes and all MD5
 metadata. Temporary plaintext storage uses the existing writer lifecycle;
@@ -322,7 +327,7 @@ no staging files are retained in the fixture directory.
 
 ### Patch archive
 
-`mpq-v4-features-patch.mpq` is a 1,847-byte, unsigned v4 archive targeting
+`mpq-v4-features-patch.mpq` is a 1,879-byte, unsigned v4 archive targeting
 this base. It uses the existing fixture/PTCH recipe, BSD0 encoder and v4
 writer, including structural and trailing raw-chunk MD5. No new patch format
 or public interface is involved.
@@ -370,7 +375,8 @@ Native fixture tests read the plain and MPQE variants and verify their
 logical-byte equivalence. Python, Java and D tests read and update temporary
 copies through their existing APIs. Python's
 `test_v4_fixture_wire_integrity` independently uses `hashlib` and a test-local
-classic table decoder to verify stored table/header/raw MD5 and non-overlap.
+classic table decoder to verify stored table/header/raw MD5, trailing HET/BET
+raw arrays and non-overlap.
 It does not use native MD5 or table decoding. Corrupted fixture copies check
 header/classic/HET/BET MD5 rejection and raw-payload/digest mismatch reporting.
 For a configured Python binding test environment, run from the source root:

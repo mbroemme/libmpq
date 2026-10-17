@@ -181,8 +181,11 @@ Public v4 creation, including patch writing, uses a raw-chunk size of `0x4000`
 permits alternative sizes; zero emits no checksums. Nonzero settings append
 MD5 arrays after each finalized compressed/encrypted member, using bounded
 rereads of the readable, seekable output stream. These arrays occupy physical
-space but do not increase member packed sizes. Members are not subsequently
-relocated, so FIX_KEY uses the final output offset before raw hashing.
+space but do not increase member packed sizes. HET/BET finalization also
+reserves and writes trailing raw digest arrays after each final stored
+envelope, without increasing its stored-table size. Members are not
+subsequently relocated, so FIX_KEY uses the final output offset before raw
+hashing.
 Raw-enabled packed imports are rejected because their contract registers
 packed bytes already placed at their original offsets without reserving
 trailing digest space. Weak signing is rejected before modifying a raw-enabled
@@ -271,6 +274,17 @@ to classic lookup only on a valid miss, not a malformed table or mapping.
 V4 supplies explicit stored extents; v3 derives them from table order.
 Loading retains the plaintext common envelope and
 decrypts/decompresses its contained data before structural decoding.
+
+With a nonzero v4 `raw_chunk_size`, each stored HET/BET envelope is followed
+by `ceil(stored_size / raw_chunk_size)` consecutive 16-byte MD5 values.
+Chunks include the common envelope and its encrypted/compressed payload;
+the final chunk may be shorter. These arrays occupy physical archive space
+but are excluded from the declared stored-table size and its header-level MD5.
+The private `libmpq__reader_verify_ext_raw_md5()` checks them explicitly using
+bounded reads. Zero raw size, absent tables or legacy layouts with no array
+storage return `LIBMPQ_ERROR_EXIST`, not a verified checksum. Invalid digests
+or extents fail verification. Ordinary opening continues to verify the
+header-level table MD5 fields and accepts older archives without these arrays.
 
 The common envelope is three little-endian `uint32_t` values: signature at
 byte 0, version at byte 4 (supported value 1), and `data_size` at byte 8.

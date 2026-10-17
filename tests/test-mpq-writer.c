@@ -1812,8 +1812,27 @@ check_v4_wire(mpq_archive_s *archive, uint32_t chunk_size)
             check_v4_stored_md5(archive, positions[i], (size_t)size, wire + md5_offsets[i]) == 0
         );
     }
-    TEST_CHECK(positions[3] + libmpq__load_le64(wire + 92) == positions[4]);
-    TEST_CHECK(positions[4] + libmpq__load_le64(wire + 100) == positions[0]);
+    for (size_t i = 3; i < 5; ++i) {
+        uint64_t size = libmpq__load_le64(wire + size_offsets[i]);
+        uint64_t count = chunk_size != 0 ? (size - 1) / chunk_size + 1 : 0;
+        TEST_CHECK(positions[i] + size + count * 16 == positions[i == 3 ? 4 : 0]);
+        TEST_CHECK(
+            libmpq__reader_verify_ext_raw_md5(
+                archive, i == 3 ? LIBMPQ_HET_SIGNATURE : LIBMPQ_BET_SIGNATURE
+            ) == (chunk_size != 0 ? 0 : LIBMPQ_ERROR_EXIST)
+        );
+        for (uint64_t chunk = 0; chunk < count; ++chunk) {
+            uint8_t digest[16];
+            uint64_t start = chunk * chunk_size;
+            size_t length = (size_t)(size - start < chunk_size ? size - start : chunk_size);
+            TEST_CHECK(
+                libmpq__source_read_at(
+                    archive->source, positions[i] + size + chunk * 16, digest, sizeof(digest)
+                ) == 0
+            );
+            TEST_CHECK(check_v4_stored_md5(archive, positions[i] + start, length, digest) == 0);
+        }
+    }
     TEST_CHECK(positions[0] + libmpq__load_le64(wire + 68) == (positions[1] ? positions[1] : end));
     if (positions[2]) {
         TEST_CHECK(libmpq__load_le64(wire + 84) == (uint64_t)archive->files * 2);
@@ -2217,8 +2236,8 @@ test_v4_determinism_and_signing(void)
 
     /* Fixed wire digests independently checked with Python hashlib. */
     static const uint8_t digests[5][16] = {
-        { 0x5b, 0x7b, 0xe9, 0x4b, 0xc5, 0x6d, 0x76, 0xf9, 0xcb, 0xeb, 0xb3, 0x0f, 0xb0, 0x60, 0x7c,
-          0x3d },
+        { 0xf4, 0x99, 0x2a, 0x42, 0x41, 0x8d, 0x85, 0xb1, 0xcb, 0xfd, 0xca, 0x38, 0xc7, 0x7d, 0x4f,
+          0x69 },
         { 0xa1, 0x92, 0xec, 0xf5, 0x6a, 0x9c, 0x85, 0x39, 0xad, 0x4d, 0x47, 0x1e, 0x3b, 0xdd, 0x03,
           0x79 },
         { 0x21, 0xab, 0xd0, 0x85, 0x81, 0x0f, 0xe8, 0x1f, 0x91, 0x59, 0x94, 0x0f, 0x61, 0x6a, 0x6a,
@@ -2254,9 +2273,23 @@ test_v4_determinism_and_signing(void)
     TEST_CHECK(test_read_path(paths[0], &first, &first_size) == 0);
     TEST_CHECK(test_read_path(paths[1], &second, &second_size) == 0);
     TEST_CHECK(first_size == second_size && memcmp(first, second, first_size) == 0);
-    TEST_CHECK(first_size == 520);
+    TEST_CHECK(first_size == 1320);
     for (size_t i = 0; i < 5; ++i)
         TEST_CHECK(memcmp(first + digest_offsets[i], digests[i], 16) == 0);
+    {
+        /* Independent hashlib vectors: one full HET chunk and BET's final partial chunk. */
+        static const uint8_t raw_digests[2][16] = {
+            { 0x0a, 0xb7, 0xf9, 0xd0, 0x3e, 0xe3, 0x50, 0x3c, 0xcc, 0xa9, 0x33, 0xfa, 0x49, 0x84,
+              0x14, 0xad },
+            { 0xb9, 0x20, 0x4b, 0xee, 0xfe, 0xb8, 0x8c, 0x77, 0xb8, 0x54, 0x34, 0x7c, 0xc9, 0x9e,
+              0x0b, 0x14 },
+        };
+        uint64_t het_end = libmpq__load_le64(first + 60) + libmpq__load_le64(first + 92);
+        uint64_t bet_size = libmpq__load_le64(first + 100);
+        uint64_t bet_last = libmpq__load_le64(first + 52) + bet_size + ((bet_size - 1) / 3) * 16;
+        TEST_CHECK(memcmp(first + het_end, raw_digests[0], 16) == 0);
+        TEST_CHECK(memcmp(first + bet_last, raw_digests[1], 16) == 0);
+    }
     free(first);
     free(second);
     {

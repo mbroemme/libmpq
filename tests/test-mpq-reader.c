@@ -1871,6 +1871,123 @@ reader_v4_read_at(void *context, libmpq__off_t offset, uint8_t *buffer, size_t s
     return 0;
 }
 
+/* Exercise stored metadata arrays independently of ordinary table decoding. */
+static int
+test_v4_ext_raw(uint32_t chunk_size, int compressed, uint64_t base)
+{
+    reader_v4_source_s source = { { 0 }, 0, 0, 0, 0, 0, { 0 }, { 0 }, { 0 }, { 0 } };
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_FOUR, 64, 512, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    uint8_t *bytes;
+    size_t size;
+    char path[512];
+    TEST_CHECK(test_temp_path(path, sizeof(path), "reader-ext-raw") == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &options) == 0);
+    archive->mpq_header_v4.raw_chunk_size = chunk_size;
+    archive->write_ext_compress = compressed;
+    for (unsigned i = 0; i < 24; ++i) {
+        char name[64];
+        snprintf(name, sizeof(name), "synthetic/directory/member-%03u.txt", i);
+        TEST_CHECK(libmpq__archive_add_data(archive, name, (const uint8_t *)"abc", 3, NULL) == 0);
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(test_read_path(path, &bytes, &size) == 0 && size <= sizeof(source.bytes));
+    memcpy(source.bytes, bytes, size);
+    free(bytes);
+    source.size = size;
+    source.base = base;
+    TEST_CHECK(remove(path) == 0);
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &archive, &source, reader_v4_read_at, (libmpq__off_t)(base + size), (libmpq__off_t)base,
+            NULL
+        ) == 0
+    );
+    TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, 0) == LIBMPQ_ERROR_FORMAT);
+    for (unsigned table = 0; table < 2; ++table) {
+        uint32_t signature = table == 0 ? LIBMPQ_HET_SIGNATURE : LIBMPQ_BET_SIGNATURE;
+        uint64_t position = table == 0 ? archive->mpq_header_v3.het_table_offset
+                                       : archive->mpq_header_v3.bet_table_offset;
+        uint64_t stored = table == 0 ? archive->mpq_header_v4.het_table_size
+                                     : archive->mpq_header_v4.bet_table_size;
+        uint64_t digest = position + stored;
+        mpq_header_v3_s saved_v3 = archive->mpq_header_v3;
+        mpq_header_v4_s saved_v4 = archive->mpq_header_v4;
+        TEST_CHECK(
+            libmpq__reader_verify_ext_raw_md5(archive, signature) ==
+            (chunk_size == 0 ? LIBMPQ_ERROR_EXIST : 0)
+        );
+        if (chunk_size == 0)
+            continue;
+        {
+            mpq_entry_s saved = archive->mpq_entry[0];
+            /* Stale fields in an unused row do not reserve payload storage. */
+            archive->mpq_entry[0].flags = 0;
+            archive->mpq_entry[0].offset = digest;
+            archive->mpq_entry[0].packed_size = 16;
+            TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, signature) == 0);
+            archive->mpq_entry[0].offset++;
+            TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, signature) == 0);
+            archive->mpq_entry[0] = saved;
+        }
+        {
+            uint64_t count = (stored - 1) / chunk_size + 1;
+            /* First, interior and final digests are all required. */
+            for (uint64_t index = 0; index < count; ++index) {
+                source.bytes[digest + index * 16] ^= 1;
+                TEST_CHECK(
+                    libmpq__reader_verify_ext_raw_md5(archive, signature) == LIBMPQ_ERROR_FORMAT
+                );
+                source.bytes[digest + index * 16] ^= 1;
+            }
+            source.size = (size_t)(digest + count * 16 - 1);
+            TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, signature) == LIBMPQ_ERROR_READ);
+            source.size = size;
+            archive->mpq_header_v3.archive_size = digest + count * 16 - 1;
+            TEST_CHECK(
+                libmpq__reader_verify_ext_raw_md5(archive, signature) == LIBMPQ_ERROR_FORMAT
+            );
+            archive->mpq_header_v3 = saved_v3;
+        }
+        source.bytes[position + 12] ^= 1;
+        TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, signature) == LIBMPQ_ERROR_FORMAT);
+        source.bytes[position + 12] ^= 1;
+        source.fail_at = base + digest;
+        TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, signature) == LIBMPQ_ERROR_READ);
+        source.fail_at = 0;
+        if (table == 0) {
+            archive->mpq_header_v3.het_table_offset = UINT64_MAX;
+            TEST_CHECK(
+                libmpq__reader_verify_ext_raw_md5(archive, signature) == LIBMPQ_ERROR_FORMAT
+            );
+            archive->mpq_header_v3 = saved_v3;
+            archive->mpq_header_v4.het_table_size = UINT64_MAX;
+            TEST_CHECK(
+                libmpq__reader_verify_ext_raw_md5(archive, signature) == LIBMPQ_ERROR_FORMAT
+            );
+            archive->mpq_header_v4 = saved_v4;
+            /* Legacy output put BET directly after HET, with no digest storage. */
+            archive->mpq_header_v3.bet_table_offset = digest;
+            TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, signature) == LIBMPQ_ERROR_EXIST);
+            archive->mpq_header_v3.bet_table_offset = digest + 1;
+            TEST_CHECK(
+                libmpq__reader_verify_ext_raw_md5(archive, signature) == LIBMPQ_ERROR_FORMAT
+            );
+            archive->mpq_header_v3.het_table_offset = 0;
+            archive->mpq_header_v4.het_table_size = 0;
+        } else {
+            archive->mpq_header_v3.bet_table_offset = 0;
+            archive->mpq_header_v4.bet_table_size = 0;
+        }
+        TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, signature) == LIBMPQ_ERROR_EXIST);
+        archive->mpq_header_v3 = saved_v3;
+        archive->mpq_header_v4 = saved_v4;
+        TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, signature) == 0);
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    return 0;
+}
+
 static int
 reader_v4_header(reader_v4_source_s *source)
 {
@@ -3049,6 +3166,11 @@ test_v4_mpqe_read_only(int raw, int embedded)
 int
 main(void)
 {
+    TEST_CHECK(test_v4_ext_raw(0, 0, 0) == 0);
+    TEST_CHECK(test_v4_ext_raw(1, 0, 0) == 0);
+    TEST_CHECK(test_v4_ext_raw(3, 0, 512) == 0);
+    TEST_CHECK(test_v4_ext_raw(64, 1, 512) == 0);
+
     char path[512];
     mpq_archive_s *archive = NULL;
     uint8_t *data = NULL;

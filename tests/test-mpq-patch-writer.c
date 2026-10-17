@@ -1959,13 +1959,25 @@ test_extended_patch_source(
     TEST_CHECK(archive->het_data != NULL && archive->bet_data != NULL);
     TEST_CHECK(archive->mpq_het.header.entry_count == archive->mpq_bet.header.entry_count);
     TEST_CHECK(libmpq__reader_ext_table_sizes(archive, &het_size, &bet_size) == 0);
-    TEST_CHECK(
-        archive->mpq_header_v3.het_table_offset + het_size ==
-        archive->mpq_header_v3.bet_table_offset
-    );
-    TEST_CHECK(
-        archive->mpq_header_v3.bet_table_offset + bet_size == archive->mpq_header.hash_table_offset
-    );
+    {
+        uint64_t het_raw = 0;
+        uint64_t bet_raw = 0;
+        if (version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+            uint32_t chunk = archive->mpq_header_v4.raw_chunk_size;
+            het_raw = ((het_size - 1) / chunk + 1) * 16;
+            bet_raw = ((bet_size - 1) / chunk + 1) * 16;
+            TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_HET_SIGNATURE) == 0);
+            TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_BET_SIGNATURE) == 0);
+        }
+        TEST_CHECK(
+            archive->mpq_header_v3.het_table_offset + het_size + het_raw ==
+            archive->mpq_header_v3.bet_table_offset
+        );
+        TEST_CHECK(
+            archive->mpq_header_v3.bet_table_offset + bet_size + bet_raw ==
+            archive->mpq_header.hash_table_offset
+        );
+    }
     TEST_CHECK(libmpq__archive_files(archive, &count) == 0 && count == 4);
     TEST_CHECK(libmpq__file_number(archive, name, &number) == 0);
     if (version == LIBMPQ_ARCHIVE_VERSION_FOUR) {

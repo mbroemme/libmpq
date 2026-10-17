@@ -37,6 +37,9 @@ int32_t libmpq__reader_ext_table_sizes(
     const mpq_archive_s *archive, uint64_t *het_size, uint64_t *bet_size
 );
 
+/* Explicit v4 stored-envelope raw verification; EXIST means unavailable, not verified. */
+int32_t libmpq__reader_verify_ext_raw_md5(mpq_archive_s *archive, uint32_t signature);
+
 int32_t libmpq__reader_block_size_packed(
     mpq_archive_s *archive, uint32_t number, uint32_t block, libmpq__off_t *packed_size
 );

@@ -1028,6 +1028,19 @@ def _v4_stored_layout(wire):
             assert 0xd0 <= position < position + size <= len(wire)
             assert hashlib.md5(wire[position:position + size]).digest() == digest
             ranges.append((position, position + size))
+    # Extended-table raw arrays are outside their stored-envelope extents.
+    for position, size in zip(positions[3:], sizes[3:]):
+        if size == 0:
+            continue
+        chunks = (size - 1) // chunk_size + 1
+        end = position + size + 16 * chunks
+        assert end <= len(wire)
+        for index in range(chunks):
+            start = position + index * chunk_size
+            stop = min(start + chunk_size, position + size)
+            offset = position + size + index * 16
+            assert hashlib.md5(wire[start:stop]).digest() == wire[offset:offset + 16]
+        ranges.append((position + size, end))
     assert all(sizes[i] > 0 for i in (0, 1, 3, 4))
     count = struct.unpack_from("<I", wire, 28)[0]
     assert sizes[1] == count * 16
