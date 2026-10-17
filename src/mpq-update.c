@@ -1324,104 +1324,6 @@ update_collect_names(mpq_update_s *update, mpq_archive_s *archive, const char *t
     return result;
 }
 
-/* Re-encode retained v4 members at their final offsets, preserving representable codecs. */
-static int32_t
-update_reencode_member(
-    mpq_archive_s *archive, mpq_archive_s *writer, uint32_t number, const char *old_name,
-    const char *new_name, mpq_file_options_s *options, const mpq_file_attributes_s *attributes
-)
-{
-    const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
-    const uint32_t flags = LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SINGLE |
-                           LIBMPQ_FILE_FLAG_SECTOR_CRC | LIBMPQ_FILE_FLAG_COMPRESS |
-                           LIBMPQ_FILE_FLAG_IMPLODE | 0x00020000u;
-    mpq_stream_s *input = NULL;
-    mpq_writer_s *output = NULL;
-    uint8_t buffer[LIBMPQ_UPDATE_COPY_SIZE];
-    uint32_t blocks;
-    uint32_t mismatches;
-    int32_t result;
-    if ((entry->flags & ~(flags | LIBMPQ_FLAG_EXISTS)) != 0)
-        return LIBMPQ_ERROR_FORMAT;
-    if (entry->unpacked_size > UINT32_MAX || entry->packed_size > UINT32_MAX)
-        return LIBMPQ_ERROR_SIZE;
-    options->flags = entry->flags & flags;
-    result = libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &mismatches);
-    if (result != 0 || mismatches != 0)
-        return result != 0 ? result : LIBMPQ_ERROR_READ;
-    result = libmpq__reader_offsets_acquire(archive, number, old_name);
-    if (result != 0)
-        return result;
-    result = libmpq__file_blocks(archive, number, &blocks);
-    for (uint32_t i = 0;
-         result == 0 && i < blocks && (options->flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0; ++i) {
-        uint32_t mask;
-        result = libmpq__block_compression(archive, number, i, &mask);
-        if (result != 0)
-            break;
-        if (mask == 0)
-            continue;
-        if (mask == LIBMPQ_COMPRESSION_LZMA_METHOD)
-            mask = LIBMPQ_COMPRESSION_LZMA;
-        if ((mask & (LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO)) != 0) {
-            result = LIBMPQ_ERROR_FORMAT;
-            break;
-        }
-        if (i == 0)
-            options->compression_first = mask;
-        else if (options->compression_next != 0 && options->compression_next != mask)
-            result = LIBMPQ_ERROR_FORMAT;
-        else
-            options->compression_next = mask;
-    }
-    update_result(&result, libmpq__reader_offsets_release(archive, number));
-    if (result != 0)
-        return result;
-    if ((options->flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0) {
-        if (options->compression_first == 0)
-            options->compression_first = options->compression_next;
-        if (options->compression_first == 0)
-            options->compression_first = LIBMPQ_COMPRESSION_ZLIB;
-        if (options->compression_next == 0)
-            options->compression_next = options->compression_first;
-    }
-    result = libmpq__stream_open_name(archive, old_name, &input);
-    if (result == 0 && libmpq__file_seek(writer->fp, 0, SEEK_END) < 0)
-        result = LIBMPQ_ERROR_SEEK;
-    if (result == 0)
-        result = libmpq__writer_file_begin(
-            writer, new_name, (libmpq__off_t)entry->unpacked_size, options, &output
-        );
-    while (result == 0) {
-        libmpq__off_t transferred;
-        result = libmpq__stream_read(input, buffer, sizeof(buffer), &transferred);
-        if (result != 0 || transferred == 0)
-            break;
-        result = libmpq__writer_file_write(output, buffer, transferred);
-    }
-    if (input != NULL)
-        update_result(&result, libmpq__stream_close(input));
-    if (result == 0)
-        result = libmpq__writer_file_finish(output);
-    else if (output != NULL) {
-        if (writer->write_error == 0 && output->packed_total != 0)
-            writer->write_error = result;
-        libmpq__writer_file_abort(output);
-    }
-    if (result == 0 && writer->write_attributes != NULL) {
-        const mpq_file_attributes_s *actual =
-            &writer->write_attributes[writer->write_next_block - 1];
-        if (((attributes->flags & LIBMPQ_ATTRIBUTE_CRC32) != 0 &&
-             actual->crc32 != attributes->crc32) ||
-            ((attributes->flags & LIBMPQ_ATTRIBUTE_MD5) != 0 &&
-             memcmp(actual->md5, attributes->md5, sizeof(actual->md5)) != 0)) {
-            result = LIBMPQ_ERROR_READ;
-            writer->write_error = result;
-        }
-    }
-    return result;
-}
-
 /* Rebuild named logical entries using the ordinary writer and transaction publication. */
 static int32_t
 update_rebuild_named(
@@ -1583,8 +1485,10 @@ update_rebuild_named(
             (archive->mpq_header_v4.raw_chunk_size != 0 ||
              (i == target && action == LIBMPQ_UPDATE_RENAME &&
               (entry->flags & LIBMPQ_FILE_FLAG_ENCRYPTED) != 0))) {
-            result =
-                update_reencode_member(archive, writer, i, names[i], name, &options, &attributes);
+            result = libmpq__writer_copy_member(
+                writer, archive, i, names[i], name, options.locale, options.platform,
+                attribute_flags != 0 ? &attributes : NULL
+            );
             if (result != 0)
                 goto done;
             if (writer->write_attributes != NULL)

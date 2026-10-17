@@ -455,10 +455,11 @@ A no-op transaction preserves original bytes and signatures. Ordinary updates
 do not create true PATCH_BIT values; the dedicated patch writer does.
 
 V4 reconstruction retains the source raw-chunk size and regenerates header,
-table and member digests. Raw-enabled retained members are re-encoded with
-final offsets; lossy recompression and unsupported sector-codec policies are
-rejected. MPQE updates use the same plaintext reconstruction before encrypted
-publication.
+table and member digests. Raw-enabled retained members keep their packed bytes,
+including ADPCM and mixed sector methods. Relocation transforms encryption when
+needed and regenerates raw MD5 without recompression. Unsupported metadata
+remains rejected. MPQE updates use the same plaintext reconstruction before
+encrypted publication.
 
 ### Patch archive creation
 

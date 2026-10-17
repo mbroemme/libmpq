@@ -65,6 +65,13 @@ int32_t libmpq__writer_import_member(
     uint16_t platform, const mpq_file_attributes_s *attributes
 );
 
+/* Append a source member's packed representation, rekeying and generating v4 raw MD5. */
+int32_t libmpq__writer_copy_member(
+    mpq_archive_s *writer, mpq_archive_s *source, uint32_t number, const char *old_name,
+    const char *new_name, uint16_t locale, uint16_t platform,
+    const mpq_file_attributes_s *attributes
+);
+
 /* Set caller-controlled FILETIME on an active writer with generation enabled. */
 int32_t libmpq__writer_file_timestamp(mpq_writer_s *writer, uint64_t filetime);
 

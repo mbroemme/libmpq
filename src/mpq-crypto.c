@@ -227,60 +227,45 @@ libmpq__crypto_file_key(const char *name)
     return libmpq__crypto_hash_string(basename, 0x300);
 }
 
-/*
- * Encrypt a block in place using the MPQ block cipher and the supplied seed.
- * The routine serializes complete little-endian words and leaves any trailing
- * incomplete bytes untouched because MPQ encryption is word-oriented.
- */
+/* Continue one existing MPQ cipher block across aligned, bounded I/O buffers. */
+static void
+crypto_transform(uint8_t *buffer, uint32_t size, uint32_t *key, uint32_t *seed, uint8_t encrypt)
+{
+    for (; size >= 4; size -= 4, buffer += 4) {
+        uint32_t value = libmpq__load_le32(buffer);
+        uint32_t plain;
+        *seed += crypt_buf[0x400 + (*key & 0xff)];
+        plain = encrypt ? value : value ^ (*key + *seed);
+        libmpq__store_le32(buffer, value ^ (*key + *seed));
+        *key = ((~*key << 0x15) + 0x11111111) | (*key >> 0x0b);
+        *seed = plain + *seed + (*seed << 5) + 3;
+    }
+}
+
+/* Encrypt complete words; MPQ leaves a trailing incomplete word unchanged. */
 int32_t
 libmpq__crypto_encrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
 {
-
-    /* The cipher updates both seeds for every 32-bit word. */
-    uint32_t seed2 = 0xEEEEEEEE;
-    uint32_t ch;
-    uint32_t value;
-
-    /* The MPQ block cipher operates on complete 32-bit words. */
-    for (; in_size >= 4; in_size -= 4) {
-        seed2 += crypt_buf[0x400 + (seed & 0xFF)];
-        value = libmpq__load_le32(in_buf);
-        ch = value ^ (seed + seed2);
-        seed = ((~seed << 0x15) + 0x11111111) | (seed >> 0x0B);
-        seed2 = value + seed2 + (seed2 << 5) + 3;
-        libmpq__store_le32(in_buf, ch);
-        in_buf += sizeof(uint32_t);
-    }
-
-    /* Block encryption has no recoverable per-word error state. */
+    uint32_t seed2 = 0xeeeeeeee;
+    crypto_transform(in_buf, in_size, &seed, &seed2, 1);
     return 0;
 }
 
-/*
- * Decrypt a block in place using the MPQ block cipher and the supplied seed.
- * It reverses the word transformation performed by the matching encryptor,
- * so callers can reuse the same buffer without allocating a second copy.
- */
+/* Decrypt complete words using the same MPQ cipher state transition. */
 int32_t
 libmpq__crypto_decrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed)
 {
-
-    /* The cipher updates both seeds for every 32-bit word. */
-    uint32_t seed2 = 0xEEEEEEEE;
-    uint32_t ch;
-
-    /* The MPQ block cipher operates on complete 32-bit words. */
-    for (; in_size >= 4; in_size -= 4) {
-        seed2 += crypt_buf[0x400 + (seed & 0xFF)];
-        ch = libmpq__load_le32(in_buf) ^ (seed + seed2);
-        seed = ((~seed << 0x15) + 0x11111111) | (seed >> 0x0B);
-        seed2 = ch + seed2 + (seed2 << 5) + 3;
-        libmpq__store_le32(in_buf, ch);
-        in_buf += sizeof(uint32_t);
-    }
-
-    /* Block decryption has no recoverable per-word error state. */
+    uint32_t seed2 = 0xeeeeeeee;
+    crypto_transform(in_buf, in_size, &seed, &seed2, 0);
     return 0;
+}
+
+/* Retain both cipher states while changing only the encryption of stored bytes. */
+void
+libmpq__crypto_reencrypt_block(uint8_t *buffer, uint32_t size, uint32_t state[4])
+{
+    crypto_transform(buffer, size, &state[0], &state[1], 0);
+    crypto_transform(buffer, size, &state[2], &state[3], 1);
 }
 
 /*

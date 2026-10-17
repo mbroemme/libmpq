@@ -1586,6 +1586,114 @@ writer_v4_partial_write(void *context, const char *input, size_t size)
     return writer_v3_fault_write(context, input, size);
 }
 
+typedef struct
+{
+    mpq_io_read_at_fn read_at;
+    void *context;
+    uint64_t fail_at;
+} writer_copy_source_fault_s;
+
+/* An exact-read failure can occur before copying or after one rekeyed sector. */
+static int32_t
+writer_copy_source_read(void *context, uint64_t offset, uint8_t *buffer, size_t size)
+{
+    writer_copy_source_fault_s *fault = context;
+    if (offset >= fault->fail_at || size > fault->fail_at - offset)
+        return LIBMPQ_ERROR_READ;
+    return fault->read_at(fault->context, offset, buffer, size);
+}
+
+/* Packed payload and trailing-digest short writes cannot be finalized after recovery. */
+static int
+test_v4_copy_errors(unsigned int which)
+{
+    cookie_io_functions_t ops = { writer_v4_fault_read, writer_v4_partial_write,
+                                  writer_v4_fault_seek, writer_v3_fault_close };
+    writer_v3_fault_s fault = { { 0 }, 0, 0, SIZE_MAX, 0, 0 };
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_FOUR, 4, 512, 0, 0 };
+    mpq_archive_s *source = NULL;
+    mpq_archive_s *writer = NULL;
+    uint8_t data[1024] = { 1 };
+    mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0, 0, 0 };
+    writer_copy_source_fault_s read_fault;
+    mpq_io_backend_s backend;
+    uint32_t number;
+    char path[512];
+    FILE *fp;
+    TEST_CHECK(test_temp_path(path, sizeof(path), "v4-packed-copy-source") == 0);
+    TEST_CHECK(libmpq__writer_archive_create_v4(&source, path, NULL, &options, 0) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(
+            source, "payload", data, sizeof(data), which == 3 ? &storage : NULL
+        ) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(source) == 0);
+    TEST_CHECK(libmpq__archive_open(&source, path, 0) == 0);
+    TEST_CHECK(libmpq__file_number(source, "payload", &number) == 0);
+    fp = fopencookie(&fault, "w+b", ops);
+    TEST_CHECK(fp != NULL && setvbuf(fp, NULL, _IONBF, 0) == 0);
+    TEST_CHECK(
+        libmpq__writer_archive_create_v4(&writer, "cookie-v4-copy", fp, &options, 0x4000) == 0
+    );
+    if (which == 2) {
+        mpq_entry_s *entry = &source->mpq_entry[source->mpq_map[number].entry_index];
+        uint64_t saved = entry->packed_size;
+        entry->packed_size = 0;
+        TEST_CHECK(
+            libmpq__writer_copy_member(writer, source, number, "payload", "payload", 0, 0, NULL) ==
+            LIBMPQ_ERROR_FORMAT
+        );
+        TEST_CHECK(writer->write_error == 0 && fault.size == 208);
+        entry->packed_size = saved;
+
+        /* A position outside classic's 48-bit range is rejected before any copy. */
+        fault.end_override = UINT64_C(0x1000000000000);
+        TEST_CHECK(
+            libmpq__writer_copy_member(writer, source, number, "payload", "payload", 0, 0, NULL) ==
+            LIBMPQ_ERROR_SIZE
+        );
+        TEST_CHECK(writer->write_error == 0 && fault.size == 208);
+        fault.end_override = 0;
+    }
+    if (which == 3) {
+        TEST_CHECK(libmpq__archive_add_data(writer, "lead", data, 1, NULL) == 0);
+        backend = source->source->backend;
+        read_fault = (writer_copy_source_fault_s){
+            backend.read_at, backend.context,
+            source->mpq_entry[source->mpq_map[number].entry_index].offset
+        };
+        source->source->backend.read_at = writer_copy_source_read;
+        source->source->backend.context = &read_fault;
+        TEST_CHECK(
+            libmpq__writer_copy_member(writer, source, number, "payload", "payload", 0, 0, NULL) ==
+            LIBMPQ_ERROR_READ
+        );
+        TEST_CHECK(writer->write_error == 0 && fault.size == 225);
+        read_fault.fail_at += 512;
+    } else
+        fault.fail_at = which == 1 ? 208 + sizeof(data) + 3 : 212;
+    int32_t expected = which == 3 ? LIBMPQ_ERROR_READ : LIBMPQ_ERROR_WRITE;
+    TEST_CHECK(
+        libmpq__writer_copy_member(writer, source, number, "payload", "payload", 0, 0, NULL) ==
+        expected
+    );
+    TEST_CHECK(
+        writer->write_error == expected && writer->write_next_block == (which == 3 ? 1u : 0u)
+    );
+    fault.fail_at = SIZE_MAX;
+    clearerr(fp);
+    TEST_CHECK(
+        libmpq__writer_copy_member(writer, source, number, "payload", "payload", 0, 0, NULL) ==
+        expected
+    );
+    TEST_CHECK(libmpq__writer_finalize(writer) == expected);
+    TEST_CHECK(libmpq__archive_close(writer) == expected && fault.closed);
+    if (which == 3)
+        source->source->backend = backend;
+    TEST_CHECK(libmpq__archive_close(source) == 0 && remove(path) == 0);
+    return 0;
+}
+
 /* Partial begin/flush failures are terminal; untouched validation remains recoverable. */
 static int
 test_v4_error_state(unsigned int which)
@@ -2575,6 +2683,8 @@ main(void)
     for (unsigned int which = 0; which < 4; ++which)
         TEST_CHECK(test_v4_error_state(which) == 0);
     TEST_CHECK(test_v4_failures() == 0);
+    for (unsigned int which = 0; which < 4; ++which)
+        TEST_CHECK(test_v4_copy_errors(which) == 0);
 #endif
     TEST_CHECK(test_v4_corruption() == 0);
     TEST_CHECK(test_v4_determinism_and_signing() == 0);

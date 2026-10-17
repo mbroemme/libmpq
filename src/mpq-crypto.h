@@ -44,6 +44,14 @@ int32_t libmpq__crypto_encrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t
 int32_t libmpq__crypto_decrypt_block(uint8_t *in_buf, uint32_t in_size, uint32_t seed);
 
 /*
+ * Re-encrypt one block incrementally. Initialize state to old key, 0xeeeeeeee,
+ * new key, 0xeeeeeeee at each sector/table boundary. Every call except the
+ * final call for that block must have a multiple-of-four size. The caller owns
+ * buffer and state; trailing partial words on the final call remain unchanged.
+ */
+void libmpq__crypto_reencrypt_block(uint8_t *buffer, uint32_t size, uint32_t state[4]);
+
+/*
  * Recover a file encryption seed by testing known signatures in an encrypted
  * payload. key is written only when a supported signature and its companion
  * words identify a seed; insufficient or unrecognized data returns the

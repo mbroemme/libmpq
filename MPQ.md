@@ -185,21 +185,27 @@ writes trailing raw digest arrays after each final stored envelope, without
 increasing its stored-table size. Members are not subsequently relocated, so
 FIX_KEY uses the final output offset before raw hashing.
 
-Raw-enabled packed imports are rejected because their contract registers
-packed bytes already placed at their original offsets without reserving
-trailing digest space. Weak signing is rejected before modifying a raw-enabled
-writer because it would rewrite an already hashed member. Refreshing that
-member's raw digest array would also invalidate the weak signature: its
-archive hash excludes only the signature payload, not the trailing array.
-Strong signature trailers do not change those stored ranges.
+Original-offset packed imports are rejected for raw-enabled output: their
+contract registers packed bytes already placed at their original offsets
+without reserving trailing digest space. Weak signing is rejected before
+modifying a raw-enabled writer because it would rewrite an already hashed
+member. Refreshing that member's raw digest array would also invalidate the
+weak signature: its archive hash excludes only the signature payload, not the
+trailing array. Strong signature trailers do not change those stored ranges.
 
 V4 transactional rebuilds preserve the source `raw_chunk_size`, including
-zero. With raw chunks enabled, retained members are streamed through the
-writer at their final offsets instead of importing packed bytes, regenerating
-FIX_KEY ciphertext and trailing digests. Retained raw digests and logical
-CRC32/MD5 attributes are checked before publication. Lossy recompression,
-unsupported flags and unrepresentable sector-codec policies are rejected. With
-raw chunks disabled, unchanged packed members retain the existing import path.
+zero. With raw chunks enabled, retained members keep their packed representation,
+including ADPCM, mixed sector methods and sector CRC data. The writer copies
+stored bytes at final offsets without recompression, transforming encryption
+only when the basename or FIX_KEY offset changes. Sector tables use key minus
+one and sectors use key plus index; trailing CRC data stays unencrypted. Raw
+MD5 arrays are regenerated over the final stored bytes and excluded from packed
+sizes. Retained raw digests, sector CRCs and available logical CRC32/MD5
+attributes are checked before publication for lossless members. ADPCM retains
+its source-byte attributes without comparing them to lossy decoded PCM, matching
+ordinary reads; raw and sector checks remain enforced. Unsupported flags and
+unrepresentable metadata remain rejected. With raw chunks disabled, unchanged packed members
+retain the existing original-offset import path.
 
 V4 flush, member-finish and finalization errors remain terminal for that
 handle; cleanup retains the existing writer guarantees.
