@@ -29,19 +29,25 @@ preserved; stale weak and strong signatures are removed on modification. On
 failure, \fI*update\fP is NULL. MPQE archives require
 \fBlibmpq__update_begin_mpqe\fP(3). The handle is consumed by commit or abort.
 .SH COMPATIBILITY
-V3/v4 mutations require complete filenames from the listfile, supplied member
-names, or earlier successful operations. Unknown retained files, unresolved
-aliases, BET-only classic attributes, embedded v3/v4 wrappers and patch members
-are rejected without modifying the staged archive. Supported v3/v4 rebuilds
-retain their version and regenerate mixed HET/BET and classic tables. Invalidated
-signatures are removed. Unchanged commits and aborts require no reconstruction.
-V4 preserves the source raw-chunk size, including zero, and regenerates
-structural and member MD5 digests. Raw-enabled members are re-encoded at final
-offsets; lossy recompression and unrepresentable sector-codec policies are rejected.
+V3/v4 mutations use available filenames and stored lookup identities.
+Unrelated unnamed entries can be retained with fixed classic probe slots or
+complete normalized 64-bit HET/BET hashes and consistent row provenance.
+Classic hash capacity cannot grow without the missing probe-start hashes.
+Unknown encrypted members retain their original offsets and packed bytes;
+no filename key is guessed. Partial listfiles remain partial.
+.PP
+Reduced or ambiguous hashes, incompatible aliases, BET-only classic attributes,
+embedded v3/v4 wrappers and patch members remain rejected without modifying
+the staged archive. Rebuilds retain their version and regenerate metadata.
+Invalidated signatures are removed. Unchanged commits and aborts require no
+reconstruction. V4 preserves the source raw-chunk size, including zero, and
+regenerates structural and raw MD5 digests. Retained packed representations
+are preserved without recompression; known encrypted relocation adjusts keys.
+.PP
 Repeated names differing only by ASCII case or slash direction are accepted.
-Ambiguous names, embedded null bytes, unresolvable listfile entries and incomplete
-filename coverage reject reconstruction. A staged close failure prevents further
-mutation or publication; abort remains safe and attempts cleanup.
+Ambiguous names, embedded null bytes and unresolvable listfile entries reject
+reconstruction. A staged close failure prevents further mutation or publication;
+abort remains safe and attempts cleanup.
 .SH RETURN VALUE
 Returns \fBLIBMPQ_SUCCESS\fP on success, or a negative libmpq error.
 .SH ERRORS

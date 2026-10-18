@@ -324,9 +324,10 @@ libmpq__bet_builder_free(mpq_bet_builder_s *builder)
     }
 }
 
-int32_t
-libmpq__ext_tables_build(
-    const mpq_ext_table_file_s *files, size_t count, mpq_het_builder_s *het, mpq_bet_builder_s *bet
+static int32_t
+ext_tables_build(
+    const mpq_ext_table_file_s *files, const uint64_t *preserved_hashes, size_t count,
+    mpq_het_builder_s *het, mpq_bet_builder_s *bet
 )
 {
     mpq_het_builder_s h = { 0 };
@@ -367,7 +368,7 @@ libmpq__ext_tables_build(
     for (i = 0; i < count; ++i) {
         uint64_t hash;
         mpq_het_hash_s parts;
-        if (files[i].filename == NULL) {
+        if (files[i].filename == NULL && preserved_hashes == NULL) {
             result = LIBMPQ_ERROR_EXIST;
             goto done;
         }
@@ -375,9 +376,17 @@ libmpq__ext_tables_build(
             result = LIBMPQ_ERROR_SIZE;
             goto done;
         }
-        result = libmpq__het_hash_filename(files[i].filename, &hash);
-        if (result != 0)
+        if (preserved_hashes != NULL)
+            hash = preserved_hashes[i];
+        else {
+            result = libmpq__het_hash_filename(files[i].filename, &hash);
+            if (result != 0)
+                goto done;
+        }
+        if (preserved_hashes != NULL && (hash & (UINT64_C(1) << 63)) == 0) {
+            result = LIBMPQ_ERROR_FORMAT;
             goto done;
+        }
         result = libmpq__het_hash_partition(hash, 64, (uint32_t)slots, &parts);
         if (result != 0)
             goto done;
@@ -531,4 +540,25 @@ done:
     libmpq__het_builder_free(&h);
     libmpq__bet_builder_free(&b);
     return result;
+}
+
+/* Ordinary writer builds retain the established filename hashing and byte layout. */
+int32_t
+libmpq__ext_tables_build(
+    const mpq_ext_table_file_s *files, size_t count, mpq_het_builder_s *het, mpq_bet_builder_s *bet
+)
+{
+    return ext_tables_build(files, NULL, count, het, bet);
+}
+
+/* Reuse the same bit packing and collision checks for complete stored hash identities. */
+int32_t
+libmpq__ext_tables_build_hashes(
+    const mpq_ext_table_file_s *files, const uint64_t *hashes, size_t count, mpq_het_builder_s *het,
+    mpq_bet_builder_s *bet
+)
+{
+    if (hashes == NULL && count != 0)
+        return LIBMPQ_ERROR_EXIST;
+    return ext_tables_build(files, hashes, count, het, bet);
 }

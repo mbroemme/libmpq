@@ -425,9 +425,10 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI ");"
 .fi
 .SH DESCRIPTION
-\fIlibmpq\fP reads and creates MPQ v1, v2, and v3 archives, including embedded
+\fIlibmpq\fP reads and creates MPQ v1/v2/v3/v4 archives, including embedded
 MPQ containers. V3 creation emits both HET/BET and classic tables.
-V3 transactions require complete filenames; MPQ v4 remains unsupported.
+V3/v4 transactions can retain unrelated unnamed members with sufficient
+stored identities; see libmpq__update_begin(3) for restrictions.
 .SS "Archive Opening and Custom I/O"
 Open filesystem archives with \fBlibmpq__archive_open\fP(3) or provide a
 borrowed random-access callback through \fBlibmpq__archive_open_io\fP(3).
@@ -455,7 +456,7 @@ embedded MPQs in a distinct handle. Authenticated MPQE updates use
 only the working copy until commit atomically publishes it; abort
 discards it. Both commit and abort consume the update handle.
 Addition requires an absent staged filename; replacement remains existing-only.
-V3 rebuilds require complete filenames and supported metadata; unsupported
+V3/v4 rebuilds require sufficient lookup identities and supported metadata; unsupported
 inputs fail rather than silently omit files. Modified signatures are removed.
 .SS "Patch Archives"
 The patch creation API stages replacement and deletion entries without

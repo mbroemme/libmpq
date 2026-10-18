@@ -56,6 +56,12 @@ typedef struct
 int32_t libmpq__ext_tables_build(
     const mpq_ext_table_file_s *files, size_t count, mpq_het_builder_s *het, mpq_bet_builder_s *bet
 );
+
+/* Hashes are complete normalized 64-bit identities, not filenames or partial hashes. */
+int32_t libmpq__ext_tables_build_hashes(
+    const mpq_ext_table_file_s *files, const uint64_t *hashes, size_t count, mpq_het_builder_s *het,
+    mpq_bet_builder_s *bet
+);
 void libmpq__het_builder_free(mpq_het_builder_s *builder);
 void libmpq__bet_builder_free(mpq_bet_builder_s *builder);
 

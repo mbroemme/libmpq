@@ -613,6 +613,7 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
         );
         for (i = 0; i < mpq_archive->write_capacity; i++)
             free(mpq_archive->write_names ? mpq_archive->write_names[i] : NULL);
+        libmpq__writer_identity_free(mpq_archive);
         free(mpq_archive->write_names);
         free(mpq_archive->write_locales);
         free(mpq_archive->write_platforms);
@@ -889,7 +890,8 @@ libmpq__file_number_from_hash(
     /* The first hash selects the initial probe slot; collisions use linear probing. */
     for (i = hash1; mpq_archive->mpq_hash[i].block_table_index != LIBMPQ_HASH_FREE;
          i = (i + 1) % ht_count) {
-        if (mpq_archive->mpq_hash[i].hash_a == hash2 && mpq_archive->mpq_hash[i].hash_b == hash3) {
+        if (mpq_archive->mpq_hash[i].block_table_index != LIBMPQ_HASH_DELETED &&
+            mpq_archive->mpq_hash[i].hash_a == hash2 && mpq_archive->mpq_hash[i].hash_b == hash3) {
             block_table_index = mpq_archive->mpq_hash[i].block_table_index;
             if (libmpq__entry_index_from_classic(mpq_archive, block_table_index, &entry_index) !=
                     0 ||

@@ -399,25 +399,34 @@ names, and preserve embedded prefixes and unrelated trailing bytes. Their
 rebuilt archive extent must fit the legacy 32-bit size field. V3/v4 use a
 named rebuild instead, with the requirements below.
 
-V3/v4 operations resolve every live public file number to an actual filename
-from `(listfile)`, the operation's source name, internal-file names, or names
-learned by earlier successful operations in the same transaction. Hash values
-are not filenames. Incomplete coverage returns FORMAT without changing the
-previous staged archive. Begin/abort and unchanged commits do not require
-reconstruction. Repeated identical names and ASCII case or slash/backslash
+V3/v4 operations learn filenames from `(listfile)`, the operation's source
+name, internal-file names, and earlier successful operations in the same
+transaction. Repeated identical names and ASCII case or slash/backslash
 variants are one normalized name. Distinct complete names resolving to the
-same logical entry (including names indistinguishable after HET's hash-prefix
-limit) are ambiguous and return FORMAT. Empty CRLF/LF lines are ignored;
-embedded null bytes, unresolvable listed names and incomplete coverage reject
+same logical entry are ambiguous and return FORMAT. Empty CRLF/LF lines are
+ignored; embedded null bytes and unresolvable listed names reject
 reconstruction. Known source/listfile spellings take precedence over
-equivalent caller spellings; replacement retains that name so classic hashes
-do not change merely because the caller uses a different slash direction or
-ASCII case. Complete mixed and HET/BET-only sources are supported. A BET-only
-row with classic attributes, unresolved classic aliases/locale variants,
-embedded v3/v4 wrappers, unrelated trailing data, and patch/delete members are
-rejected. Extra header extensions, nonzero reserved BET record values and
-retained payload positions that overlap the new full header are also
-unsupported. Legacy embedded updates and patch handling remain unchanged.
+equivalent caller spellings, so replacement preserves the original hashes.
+
+Unrelated unnamed entries can be retained in classic-only, HET/BET-only and
+mixed sources. Classic probe slots and locale/platform identities are kept;
+the existing hash capacity cannot grow without the missing probe hashes.
+Extended identities must contain the complete normalized 64-bit name hash,
+with one HET reference per live BET row. Mixed sources require consistent
+classic/BET provenance for every live entry. Add and rename reject conflicting
+stored identities rather than assigning guessed names. Unnamed packed members
+retain their exact bytes and original offsets, including encrypted/FIX_KEY
+members; no filename-derived key is needed. V4 raw digests are checked and
+regenerated with the source chunk size. A partial listfile remains partial.
+
+Reduced or ambiguous extended hashes, incompatible provenance, BET-only rows
+with classic attributes, ambiguous named aliases, embedded v3/v4 wrappers,
+unrelated trailing data, and patch/delete members remain rejected. Extra
+header extensions, nonzero reserved BET record values and retained payloads
+that overlap the full header are also unsupported. Begin/abort and unchanged
+commits do not require reconstruction. Failed operations leave the previous
+staged archive unchanged. Legacy embedded updates and patch handling remain
+unchanged.
 Public file numbers may change after a rebuild.
 
 In v3 and raw-disabled v4 rebuilds, untouched packed members retain their

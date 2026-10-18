@@ -668,9 +668,65 @@ test_het_serialization_errors(void)
     return 0;
 }
 
+/* Complete stored identities serialize without filename placeholders. */
+static int
+test_preserved_hashes(void)
+{
+    mpq_ext_table_file_s files[2] = { { NULL, 208, 19, 19, 0x80000000u },
+                                      { NULL, 243, 31, 73, 0x80000200u } };
+    uint64_t hashes[2] = { UINT64_C(0x9123456789abcdef), UINT64_C(0xfedcba9876543210) };
+    mpq_het_builder_s h = { 0 };
+    mpq_bet_builder_s b = { 0 };
+    uint64_t low;
+    TEST_CHECK(libmpq__ext_tables_build_hashes(files, hashes, 2, &h, &b) == 0);
+    TEST_CHECK(libmpq__bit_get(b.name_hash2, b.header.name_hash2.size, 0, 56, &low) == 0);
+    TEST_CHECK(low == (hashes[0] & UINT64_C(0x00ffffffffffffff)));
+    {
+        mpq_bet_s table;
+        mpq_het_s lookup;
+        uint8_t *wire;
+        size_t size;
+        uint32_t seen = 0;
+        TEST_CHECK(libmpq__bet_serialize(&b, &wire, &size) == 0);
+        TEST_CHECK(libmpq__bet_view_init(wire, size, &table) == 0);
+        for (uint32_t row = 0; row < 2; ++row) {
+            mpq_bet_entry_s entry;
+            TEST_CHECK(libmpq__bet_record_decode(&table, row, &entry) == 0);
+            TEST_CHECK(entry.offset == files[row].offset && entry.flags == files[row].flags);
+            TEST_CHECK(
+                entry.packed_size == files[row].packed_size &&
+                entry.unpacked_size == files[row].unpacked_size
+            );
+            TEST_CHECK(entry.name_hash2 == (hashes[row] & UINT64_C(0x00ffffffffffffff)));
+        }
+        free(wire);
+        TEST_CHECK(libmpq__het_serialize(&h, &wire, &size) == 0);
+        TEST_CHECK(libmpq__het_view_init(wire, size, &lookup) == 0);
+        for (uint32_t slot = 0; slot < lookup.header.total_count; ++slot) {
+            uint64_t row;
+            if (lookup.name_hash1[slot] == LIBMPQ_HET_SLOT_FREE)
+                continue;
+            TEST_CHECK(libmpq__het_slot_index(&lookup, slot, &row) == 0 && row < 2);
+            TEST_CHECK((seen & (1u << row)) == 0);
+            TEST_CHECK(lookup.name_hash1[slot] == hashes[row] >> 56);
+            seen |= 1u << row;
+        }
+        TEST_CHECK(seen == 3);
+        free(wire);
+    }
+    libmpq__het_builder_free(&h);
+    libmpq__bet_builder_free(&b);
+    hashes[1] = hashes[0];
+    TEST_CHECK(libmpq__ext_tables_build_hashes(files, hashes, 2, &h, &b) == LIBMPQ_ERROR_EXIST);
+    hashes[1] = 1;
+    TEST_CHECK(libmpq__ext_tables_build_hashes(files, hashes, 2, &h, &b) == LIBMPQ_ERROR_FORMAT);
+    return 0;
+}
+
 int
 main(void)
 {
+    TEST_CHECK(test_preserved_hashes() == 0);
     TEST_CHECK(test_widths() == 0);
     TEST_CHECK(test_collisions_and_errors() == 0);
     TEST_CHECK(test_serialization_vector() == 0);

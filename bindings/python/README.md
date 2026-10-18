@@ -91,13 +91,15 @@ Creation defaults to `COMPRESSION_POLICY_STANDARD`. Pass
 Use `mpq.archive_compression_allowed(version, mask, policy)` to query whether
 a compression selection is allowed by the writer policy. Version uses
 `ARCHIVE_VERSION_ONE`, `ARCHIVE_VERSION_TWO`, `ARCHIVE_VERSION_THREE`, or
-`ARCHIVE_VERSION_FOUR`. V3/v4 output contains HET/BET plus classic tables;
-v3/v4 transactions require complete filename reconstruction. V4 creation,
-including MPQE, uses 16 KiB raw chunks; v4 updates preserve the source
-raw-chunk size. `Update.add_data()` and `Update.add_path()` add absent staged
+`ARCHIVE_VERSION_FOUR`. V3/v4 creation emits HET/BET plus classic tables.
+Transactions can retain unrelated unnamed members with sufficient stored
+identities; see the
+[transaction limits](../../DEVELOPER.md#transactional-modification).
+V4 creation, including MPQE, uses 16 KiB raw chunks; v4 updates preserve the
+source raw-chunk size. `Update.add_data()` and `Update.add_path()` add absent staged
 names; duplicates fail and replacement remains existing-only. Removal followed
-by addition is supported. V3 updates use complete listfiles or names learned
-during staging. Readers remain permissive regardless of the creation policy.
+by addition is supported. Readers remain permissive regardless of the
+creation policy.
 
 `COMPRESSION_SPARSE` selects lossless zero-run compression. In MPQ v2+,
 STANDARD allows the fixed SPARSE forms: alone (`0x20`), with

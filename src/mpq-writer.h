@@ -22,12 +22,36 @@
 
 #include "mpq-entry.h"
 #include "mpq-file.h"
+#include "mpq-hash.h"
 #include "mpq-md5.h"
 #include "mpq-mpqe.h"
 #include <libmpq/mpq.h>
 #include <stdio.h>
 
 #define LIBMPQ_WRITER_V4_RAW_CHUNK_SIZE 0x4000u
+
+/* Owned lookup identities used only when a transaction retains unnamed members. */
+typedef struct mpq_writer_identity
+{
+    mpq_hash_s *classic;
+    uint32_t classic_count;
+    uint32_t block_count;
+    uint32_t *classic_rows;
+    uint64_t *source_hashes;
+    uint64_t *hashes;
+    uint8_t extended;
+} mpq_writer_identity_s;
+
+int32_t libmpq__writer_identity_init(mpq_archive_s *writer, const mpq_archive_s *source);
+int32_t
+libmpq__writer_identity_bind(mpq_archive_s *writer, const mpq_archive_s *source, uint32_t number);
+void libmpq__writer_identity_free(mpq_archive_s *writer);
+
+/* Keep an unnamed member at its original offset in a reserved source extent. */
+int32_t libmpq__writer_preserve_member(
+    mpq_archive_s *writer, mpq_archive_s *source, uint32_t number,
+    const mpq_file_attributes_s *attributes
+);
 
 /*
  * A live writer owns the state for one file being streamed into an archive.

@@ -90,9 +90,10 @@ authentication bytes. It finalizes a private plaintext temporary file before
 atomically replacing the destination. Use `Update.beginMpqe` for changes to an
 existing MPQE archive. Crash cleanup is best effort. `Update.addData` and
 `addPath` add absent staged names, with optional `FileOptions`; duplicates
-fail and replacement remains existing-only. V3/v4 updates require complete
-filenames and supported metadata. Remove-then-add uses the same ordinary or
-authenticated transaction.
+fail and replacement remains existing-only. V3/v4 updates can retain unrelated
+unnamed members with sufficient stored identities; see the
+[transaction limits](../../DEVELOPER.md#transactional-modification).
+Remove-then-add uses the same ordinary or authenticated transaction.
 
 ### Compression policy
 

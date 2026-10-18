@@ -41,6 +41,7 @@
 #define LIBMPQ_ATTRIBUTES_NAME "(attributes)"
 
 struct mpq_writer_mpqe_ops;
+struct mpq_writer_identity;
 
 /*
  * Runtime handle for an opened or newly created MPQ archive. It owns the
@@ -103,11 +104,12 @@ struct mpq_archive
     uint32_t write_sector_size;   /* Sector size used while buffering and packing files. */
     uint32_t write_flags;         /* Archive-creation flags, including listfile generation. */
     uint32_t write_next_block;    /* Next block-table slot assigned to a completed file. */
-    char **write_names;           /* Names corresponding to assigned block-table entries. */
-    uint16_t *write_locales;      /* Locales corresponding to assigned file entries. */
-    uint16_t *write_platforms;    /* Platforms corresponding to assigned file entries. */
-    mpq_writer_s *write_current;  /* Active file writer; only one file may be streamed at once. */
-    uint8_t write_mpqe;           /* Whether finalization publishes an MPQE stream. */
+    struct mpq_writer_identity *write_identity; /* Optional preserved source hash identities. */
+    char **write_names;          /* Names corresponding to assigned block-table entries. */
+    uint16_t *write_locales;     /* Locales corresponding to assigned file entries. */
+    uint16_t *write_platforms;   /* Platforms corresponding to assigned file entries. */
+    mpq_writer_s *write_current; /* Active file writer; only one file may be streamed at once. */
+    uint8_t write_mpqe;          /* Whether finalization publishes an MPQE stream. */
     uint8_t
         write_mpqe_key[LIBMPQ_MPQE_CHUNK_SIZE]; /* Derived MPQE key retained only while writing. */
     FILE *write_mpqe_output;                    /* Secure temporary encrypted output handle. */

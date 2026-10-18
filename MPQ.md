@@ -200,12 +200,14 @@ stored bytes at final offsets without recompression, transforming encryption
 only when the basename or FIX_KEY offset changes. Sector tables use key minus
 one and sectors use key plus index; trailing CRC data stays unencrypted. Raw
 MD5 arrays are regenerated over the final stored bytes and excluded from packed
-sizes. Retained raw digests, sector CRCs and available logical CRC32/MD5
-attributes are checked before publication for lossless members. ADPCM retains
-its source-byte attributes without comparing them to lossy decoded PCM, matching
-ordinary reads; raw and sector checks remain enforced. Unsupported flags and
-unrepresentable metadata remain rejected. With raw chunks disabled, unchanged packed members
-retain the existing original-offset import path.
+sizes. Available raw digests are checked before publication. Named lossless
+members also undergo sector CRC and available logical CRC32/MD5 checks; unnamed
+members retain their source attributes without filename-dependent decoding.
+ADPCM retains its source-byte attributes without comparing them to lossy
+decoded PCM, matching ordinary reads; raw and sector checks remain enforced.
+Unsupported flags and unrepresentable metadata remain rejected. With raw chunks
+disabled, unchanged packed members retain the existing original-offset import
+path.
 
 V4 flush, member-finish and finalization errors remain terminal for that
 handle; cleanup retains the existing writer guarantees.
@@ -1068,8 +1070,9 @@ bytes between readers rather than requiring equality with source PCM.
 
 Current sector/codec lengths are 32-bit even though canonical BET metadata and
 positions are 64-bit. Unrepresentable member reads and block counts fail with
-SIZE rather than truncating. V3/v4 modification requires complete filename
-reconstruction. Creation and transactional rebuilding use the existing writer,
+SIZE rather than truncating. V3/v4 transactions can retain unrelated unnamed
+entries when their stored lookup identities are sufficient. Creation and
+transactional rebuilding use the existing writer,
 preserving explicit source mappings and independently validated generated
 tables.
 
@@ -1084,9 +1087,13 @@ limit, so this ceiling is not a promise of that many writable files.
 
 Creation, transactional updates and patch writing support MPQ v1/v2/v3/v4,
 including MPQE output. Compressed classic-table writing remains unsupported.
-The v3/v4 writer emits mixed HET/BET and classic tables, not BET-only output.
-V3/v4 transactional reconstruction requires a complete, unambiguous named file set
-and representable metadata. It rebuilds all tables through the same writer;
-incomplete source information is rejected rather than silently losing members.
+Ordinary v3/v4 creation emits mixed HET/BET and classic tables. Transactions
+with incomplete names preserve the source table representations: classic probe
+slots remain fixed, and complete normalized 64-bit HET/BET identities can be
+serialized without filenames. Unknown packed members stay at their original
+offsets, preserving ciphertext and FIX_KEY; v4 raw digests are regenerated.
+Ambiguous or reduced hashes, incompatible row provenance and unrepresentable
+metadata remain rejected. The same writer rebuilds all tables without
+inventing names or a complete listfile.
 Practical transaction rules and supported source boundaries are described in
 [DEVELOPER.md](DEVELOPER.md#transactional-modification).

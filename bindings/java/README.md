@@ -28,8 +28,10 @@ The canonical release installation path is Maven Central:
 Use `Mpq.ARCHIVE_VERSION_THREE` in existing `ArchiveCreateOptions` to create
 mixed HET/BET plus classic v3 archives, or `Mpq.ARCHIVE_VERSION_FOUR` for v4.
 V4 MPQ and MPQE creation uses 16 KiB raw chunks; v4 updates preserve the
-source raw-chunk size. V3/v4 transactions require complete filename
-reconstruction. `MpqUpdate.addData()` and `addPath()` add absent staged names;
+source raw-chunk size. V3/v4 transactions can retain unrelated unnamed
+members when their stored identities are sufficient; see the
+[transaction limits](../../DEVELOPER.md#transactional-modification).
+`MpqUpdate.addData()` and `addPath()` add absent staged names;
 duplicate names fail and replacement remains existing-only. Remove-then-add is
 supported.
 
