@@ -257,11 +257,11 @@ published.
 automatically. Omitting replacement options passes native NULL and uses native
 patch defaults; pass `FileCreateOptions` explicitly to configure patch-member
 storage. Patch options must match the base member's locale/platform identity.
-Patch add and rename are not supported. Signing configures the active patch
+Patch rename is not supported. Signing configures the active patch
 without consuming it. Plain v1/v2/v3 patches may configure weak and strong
-signatures separately; their MPQE variants support weak signing only. Public
-v4 patch creation enables raw-chunk MD5, preventing weak signing. Plain v4
-patches support strong signing only; MPQE excludes strong signing as well.
+signatures separately; their MPQE variants support weak signing only. V4 patches default to raw-chunk MD5, preventing weak signing.
+Call `patch.raw_chunk_size = 0` before signing to allow weak signatures on
+plain or MPQE output. MPQE strong signing remains unsupported.
 After `finish()`, use `Archive.signatures()` and `Archive.verify()`
 on the finished artifact, as for any other archive.
 
@@ -279,9 +279,10 @@ close, and `Archive.signatures()` / `Archive.verify(publicKey)` on reopened
 archives. Verification returns mismatch bits; malformed keys/archives raise
 normal binding errors. Weak keys are exactly 128 bytes: 64-byte big-endian
 modulus followed by a 64-byte big-endian exponent. Weak-signature creation is
-unsupported for MPQ v4 output with raw-chunk MD5 enabled. Public v4 creation
-uses raw chunks, so it supports strong signing on plain MPQ output only.
-The private native writer also supports weak signing with raw chunks disabled.
+unsupported for MPQ v4 output with raw-chunk MD5 enabled. Public v4 creation defaults to raw chunks.
+Call `writer.raw_chunk_size = 0` before signing to enable weak signatures,
+including on MPQE output. Plain MPQ strong signing supports any raw size;
+MPQE strong signing remains unsupported.
 libmpq does not ship Blizzard- or product-specific public verification keys
 or private signing keys; all signature key material is supplied explicitly
 by the caller.
@@ -354,3 +355,35 @@ materialization still requires unambiguous filenames and metadata. Verify
 physical signatures and raw checksums on the original input archives; these
 checks do not establish trust in reconstructed content. Temporary storage is
 cleaned up after the final dependent closes, with best-effort I/O cleanup.
+
+### V4 raw-chunk policy
+
+```python
+with mpq.Writer("output.mpq", version=mpq.ARCHIVE_VERSION_FOUR) as writer:
+    writer.raw_chunk_size = 17  # 0 disables trailing raw MD5
+    assert writer.raw_chunk_size == 17
+    writer.add("data.txt", b"content")
+```
+
+`Writer.raw_chunk_size` and `Patch.raw_chunk_size` are writable properties for
+plain or MPQE v4 output. The default remains `0x4000` (16 KiB). Zero disables
+member and HET/BET trailing raw arrays; all uint32 values, including 1, 17 and
+`0xffffffff`, are accepted without a power-of-two restriction. Processing
+uses bounded buffers. Configure before any member begins, signing succeeds or
+finalization starts. Repeated early calls are allowed; failed validation or
+signing preserves configurability, but an accepted begin fixes policy even
+if that member is later aborted or fails. Lifecycle errors use the existing
+binding exception mapping and leave the prior size unchanged.
+
+`Archive.raw_chunk_size` is read-only and reports loaded policy. Reading
+`Writer.raw_chunk_size` or `Patch.raw_chunk_size` reports configured policy,
+including after configuration locks. Older generations return zero. This is policy
+inspection, not proof of checksum presence or success. Physical raw MD5
+hashes stored bytes separately from logical file checks. Updates preserve
+the source policy; these setters do not configure transactions. Zero raw size
+permits weak signing on v4, including MPQE; nonzero raw size rejects weak
+signing. Successful signing freezes raw configuration. Plain strong signing
+is supported at any raw size, while MPQE strong signing is unsupported.
+
+Python setters require an integer in `0..0xffffffff`; invalid ranges or types
+raise `ValueError` or `TypeError` before native conversion.

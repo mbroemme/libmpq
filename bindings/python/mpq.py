@@ -14,6 +14,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import os
+import operator
 import sys
 import threading
 from dataclasses import dataclass
@@ -190,6 +191,14 @@ _ERROR_TYPES = {
 }
 
 
+def _raw_chunk_size(value):
+    """Validate a raw policy without allowing ctypes integer truncation."""
+    size = operator.index(value)
+    if not 0 <= size <= 0xffffffff:
+        raise ValueError("raw chunk size must fit uint32_t")
+    return size
+
+
 def _as_bytes(value):
     """Convert text or path-like values to UTF-8 C-string bytes."""
     value = os.fspath(value)
@@ -250,6 +259,10 @@ _configure("libmpq__archive_add_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_
 _configure("libmpq__archive_add_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__archive_open_patch", ctypes.c_int32, ctypes.POINTER(_VOID_PTR),
            _VOID_PTR, ctypes.POINTER(_VOID_PTR), ctypes.POINTER(ctypes.c_char_p), ctypes.c_size_t)
+_configure("libmpq__archive_raw_chunk_size_set", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32)
+_configure("libmpq__patch_raw_chunk_size_set", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32)
+_configure("libmpq__patch_raw_chunk_size_get", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
+_configure("libmpq__archive_raw_chunk_size_get", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__archive_clone", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), _VOID_PTR)
 _configure("libmpq__archive_close", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__update_begin", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p)
@@ -604,6 +617,20 @@ class Patch:
         self._ensure_open()
         libmpq.libmpq__patch_remove(self._patch, _as_bytes(name))
 
+    @property
+    def raw_chunk_size(self):
+        """Return this patch writer's configured raw size without locking it."""
+        self._ensure_open()
+        size = ctypes.c_uint32()
+        libmpq.libmpq__patch_raw_chunk_size_get(self._patch, ctypes.byref(size))
+        return size.value
+
+    @raw_chunk_size.setter
+    def raw_chunk_size(self, size):
+        """Configure the patch's v4 writer before any member begins or signing succeeds."""
+        self._ensure_open()
+        libmpq.libmpq__patch_raw_chunk_size_set(self._patch, _raw_chunk_size(size))
+
     def sign(self, private_key, signature_type=SIGNATURE_WEAK):
         """Configure weak or strong signing without consuming the patch."""
         self._ensure_open()
@@ -769,6 +796,20 @@ class Writer:
         )
         writer.filename, writer._opened = filename, True
         return writer
+
+    @property
+    def raw_chunk_size(self):
+        """Return the configured raw size; zero also describes older formats."""
+        self._ensure_open()
+        size = ctypes.c_uint32()
+        libmpq.libmpq__archive_raw_chunk_size_get(self._mpq, ctypes.byref(size))
+        return size.value
+
+    @raw_chunk_size.setter
+    def raw_chunk_size(self, size):
+        """Configure v4 raw MD5 before member begin or successful signing."""
+        self._ensure_open()
+        libmpq.libmpq__archive_raw_chunk_size_set(self._mpq, _raw_chunk_size(size))
 
     def add(self, name, data, options=None):
         """Add complete bytes using raw storage or supplied options."""
@@ -1334,6 +1375,14 @@ class Archive:
         libmpq.libmpq__archive_files(self._mpq, ctypes.byref(files))
         self.packed_size, self.unpacked_size = packed.value, unpacked.value
         self.offset, self.version, self.files = offset.value, version.value, files.value
+
+    @property
+    def raw_chunk_size(self):
+        """Return loaded v4 raw policy, or zero for older archive generations."""
+        self._ensure_open()
+        size = ctypes.c_uint32()
+        libmpq.libmpq__archive_raw_chunk_size_get(self._mpq, ctypes.byref(size))
+        return size.value
 
     def metadata(self):
         """Return an immutable snapshot of archive-level metadata."""

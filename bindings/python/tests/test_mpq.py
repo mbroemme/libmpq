@@ -1296,3 +1296,93 @@ def test_patch_ordinary_additions(tmp_path, version, wrapped, mixed):
         patch.add_data("aborted.txt", b"unpublished")
         patch.abort()
     assert not output.exists() and base_path.read_bytes() == original
+
+
+@pytest.mark.parametrize("chunk", [0, 1, 17, 0x4000, 0xffffffff])
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_raw_chunk_configuration(tmp_path, chunk, wrapped):
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    path = tmp_path / "raw-policy.mpq"
+    create = (lambda: mpq.Writer.create_mpqe(path, code, version=mpq.ARCHIVE_VERSION_FOUR,
+                                            flags=mpq.ARCHIVE_CREATE_LISTFILE)) if wrapped else lambda: mpq.Writer(
+        path, version=mpq.ARCHIVE_VERSION_FOUR, flags=mpq.ARCHIVE_CREATE_LISTFILE)
+    with create() as writer:
+        assert writer.raw_chunk_size == 0x4000
+        for invalid in (-1, 0x100000000, 1.5, "17"):
+            with pytest.raises((ValueError, TypeError)):
+                writer.raw_chunk_size = invalid
+            assert writer.raw_chunk_size == 0x4000
+        options = mpq.FileCreateOptions.raw()
+        options.flags = mpq.FILE_FLAG_COMPRESS | mpq.FILE_FLAG_IMPLODE
+        with pytest.raises(mpq.LibmpqFormatError):
+            writer.add("bad", b"x", options)
+        writer.raw_chunk_size = 1
+        writer.raw_chunk_size = chunk
+        with writer.begin("data", 3) as member:
+            with pytest.raises(mpq.LibmpqStateError):
+                writer.raw_chunk_size = 0
+            member.write(b"abc")
+        with pytest.raises(mpq.LibmpqStateError):
+            writer.raw_chunk_size = 0
+        assert writer.raw_chunk_size == chunk
+        writer.add("empty", b"")
+    with (mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive(path)) as archive:
+        assert archive.raw_chunk_size == chunk
+        with pytest.raises(AttributeError):
+            archive.raw_chunk_size = 17
+        assert archive["data"].read() == b"abc"
+        assert archive["empty"].read() == b""
+        assert archive["data"].verify(mpq.VERIFY_RAW_MD5) == 0
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_raw_chunk_signing_and_patch(tmp_path, wrapped):
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    path, output = tmp_path / "raw-signing.mpq", tmp_path / "patch.mpq"
+    create = (lambda: mpq.Writer.create_mpqe(path, code, version=mpq.ARCHIVE_VERSION_FOUR)) if wrapped else lambda: mpq.Writer(path, version=mpq.ARCHIVE_VERSION_FOUR)
+    with create() as writer:
+        with pytest.raises(mpq.LibmpqFormatError):
+            writer.sign(WEAK_PRIVATE_KEY)
+        writer.raw_chunk_size = 0
+        with pytest.raises(mpq.LibmpqFormatError):
+            writer.sign(b"invalid")
+        writer.raw_chunk_size = 17
+        writer.raw_chunk_size = 0
+        writer.sign(WEAK_PRIVATE_KEY)
+        with pytest.raises(mpq.LibmpqStateError):
+            writer.raw_chunk_size = 17
+        writer.add("signed", b"data")
+    with (mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive(path)) as archive:
+        assert archive.raw_chunk_size == 0
+        assert archive.signatures() == mpq.SIGNATURE_WEAK
+        assert archive.verify(WEAK_PUBLIC_KEY) == 0
+    base = tmp_path / "base.mpq"
+    with mpq.Writer(base, version=mpq.ARCHIVE_VERSION_FOUR, flags=mpq.ARCHIVE_CREATE_LISTFILE) as writer:
+        writer.add("base", b"base")
+    for chunk in (0, 1, 17, 0x4000, 0xffffffff):
+        begin = (lambda: mpq.Patch.begin_mpqe(base, output, code)) if wrapped else lambda: mpq.Patch.begin(base, output)
+        with begin() as patch:
+            with pytest.raises(ValueError):
+                patch.raw_chunk_size = -1
+            assert patch.raw_chunk_size == 0x4000
+            patch.raw_chunk_size = 1
+            assert patch.raw_chunk_size == 1
+            patch.raw_chunk_size = chunk
+            assert patch.raw_chunk_size == chunk
+            if chunk == 0:
+                patch.sign(WEAK_PRIVATE_KEY)
+                with pytest.raises(mpq.LibmpqStateError):
+                    patch.raw_chunk_size = 17
+                assert patch.raw_chunk_size == chunk
+            patch.add_data("new", b"new")
+            with pytest.raises(mpq.LibmpqStateError):
+                patch.raw_chunk_size = 0
+            assert patch.raw_chunk_size == chunk
+            patch.finish()
+        with (mpq.Archive.open_mpqe(output, code) if wrapped else mpq.Archive(output)) as archive:
+            assert archive.raw_chunk_size == chunk
+            assert archive["new"].read() == b"new"
+    with mpq.Writer(tmp_path / "older.mpq") as writer:
+        assert writer.raw_chunk_size == 0
+        with pytest.raises(mpq.LibmpqFormatError):
+            writer.raw_chunk_size = 17
