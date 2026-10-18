@@ -3373,7 +3373,7 @@ test_v4_compact_legacy(void)
     return 0;
 }
 
-/* Read-only v4 layers use the existing named view and never change either source. */
+/* Extended layers use the named view without changing legacy or extended sources. */
 static int
 test_v4_views(uint32_t base_version, uint32_t layer_version, int bet_only, int wrapped, int corrupt)
 {
@@ -3841,6 +3841,12 @@ main(int argc, char **argv)
         return refresh_fixtures();
     TEST_CHECK(argc == 1);
     TEST_CHECK(test_v4_patch_fixture() == 0);
+    for (uint32_t legacy = LIBMPQ_ARCHIVE_VERSION_ONE; legacy <= LIBMPQ_ARCHIVE_VERSION_TWO;
+         ++legacy) {
+        TEST_CHECK(test_v4_views(legacy, LIBMPQ_ARCHIVE_VERSION_THREE, 0, 0, 0) == 0);
+        TEST_CHECK(test_v4_views(legacy, LIBMPQ_ARCHIVE_VERSION_THREE, 0, 3, 0) == 0);
+        TEST_CHECK(test_v4_views(legacy, LIBMPQ_ARCHIVE_VERSION_THREE, 0, 0, 1) == 0);
+    }
     TEST_CHECK(test_v4_compact_legacy() == 0);
     TEST_CHECK(
         test_v4_views(LIBMPQ_ARCHIVE_VERSION_FOUR, LIBMPQ_ARCHIVE_VERSION_FOUR, 0, 0, 0) == 0

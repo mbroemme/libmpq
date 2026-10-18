@@ -1268,7 +1268,7 @@ test_public_patch_path_abort(void)
 
 /* Public storage options must survive normal MPQ decoding before PTCH parsing. */
 static int
-test_public_patch_storage(uint32_t flags)
+test_public_patch_storage(uint32_t version, uint32_t flags)
 {
     char base_path[1024];
     char patch_path[1024];
@@ -1284,6 +1284,10 @@ test_public_patch_storage(uint32_t flags)
     uint8_t prefix[LIBMPQ_PATCH_INFO_SIZE];
     uint8_t body_tag[4];
     uint8_t replacement[10000];
+    size_t replacement_size =
+        (flags & LIBMPQ_FILE_FLAG_SINGLE) != 0 || version >= LIBMPQ_ARCHIVE_VERSION_THREE
+            ? 1024
+            : sizeof(replacement);
     uint8_t *image = NULL;
     uint8_t *corrupt = NULL;
     size_t image_size = 0;
@@ -1296,28 +1300,29 @@ test_public_patch_storage(uint32_t flags)
         options.compression_first = LIBMPQ_COMPRESSION_ZLIB;
         options.compression_next = LIBMPQ_COMPRESSION_BZIP2;
     }
-    for (size_t i = 0; i < sizeof(replacement); i++)
+    for (size_t i = 0; i < replacement_size; i++)
         replacement[i] = (uint8_t)(i * 19u + i / 31u);
     TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "patch-storage-base") == 0);
     TEST_CHECK(test_temp_path(patch_path, sizeof(patch_path), "patch-storage-output") == 0);
-    TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
+    TEST_CHECK(create_base(base_path, version) == 0);
     TEST_CHECK(libmpq__patch_begin(&patch, base_path, patch_path) == 0);
     TEST_CHECK(
-        libmpq__patch_replace_data(
-            patch, "replace.txt", replacement, sizeof(replacement), &options
-        ) == 0
+        libmpq__patch_replace_data(patch, "replace.txt", replacement, replacement_size, &options) ==
+        0
     );
     TEST_CHECK(libmpq__patch_finish(patch) == 0);
     TEST_CHECK(libmpq__archive_open(&stored, patch_path, 0) == 0);
     TEST_CHECK(libmpq__file_number(stored, "replace.txt", &number) == 0);
     TEST_CHECK(
         stored->mpq_entry[stored->mpq_map[number].entry_index].source_mask ==
-        LIBMPQ_ENTRY_SOURCE_CLASSIC
+        (version >= LIBMPQ_ARCHIVE_VERSION_THREE
+             ? LIBMPQ_ENTRY_SOURCE_CLASSIC | LIBMPQ_ENTRY_SOURCE_BET
+             : LIBMPQ_ENTRY_SOURCE_CLASSIC)
     );
     block = stored->mpq_entry[stored->mpq_map[number].entry_index].classic_source_index;
     offset = (uint64_t)stored->archive_offset + stored->mpq_block[block].offset +
              ((uint64_t)stored->mpq_block_ex[block].offset_high << 32);
-    TEST_CHECK(stored->mpq_block[block].unpacked_size == sizeof(replacement));
+    TEST_CHECK(stored->mpq_block[block].unpacked_size == replacement_size);
     TEST_CHECK(stored->mpq_block[block].packed_size >= sizeof(prefix) + sizeof(body_tag));
     TEST_CHECK(offset <= stored->file_size);
     TEST_CHECK(stored->mpq_block[block].packed_size <= stored->file_size - offset);
@@ -1332,9 +1337,39 @@ test_public_patch_storage(uint32_t flags)
         TEST_CHECK(memcmp(body_tag, "PTCH", sizeof(body_tag)) != 0);
     else if ((flags & LIBMPQ_FILE_FLAG_COMPRESS) == 0)
         TEST_CHECK(memcmp(body_tag, "PTCH", sizeof(body_tag)) == 0);
+    if ((flags & 0x00020000u) != 0) {
+        uint8_t first[4];
+        uint32_t key;
+
+        /* Independent HashString("REPLACE.TXT", FILE_KEY) vector. */
+        key = (0xe00d8f12u + (uint32_t)(offset - (uint64_t)stored->archive_offset)) ^
+              (uint32_t)replacement_size;
+        memcpy(first, body_tag, sizeof(first));
+        if ((flags & LIBMPQ_FILE_FLAG_SINGLE) != 0) {
+            TEST_CHECK(libmpq__crypto_decrypt_block(first, sizeof(first), key) == 0);
+            TEST_CHECK(memcmp(first, "PTCH", sizeof(first)) == 0);
+        } else {
+            uint32_t sector = 512u << stored->mpq_header.block_size;
+            uint32_t count = (info.data_size - 1) / sector + 1;
+            TEST_CHECK(libmpq__crypto_decrypt_block(first, sizeof(first), key - 1) == 0);
+            TEST_CHECK(
+                libmpq__load_le32(first) ==
+                (count + 1 + ((flags & LIBMPQ_FILE_FLAG_SECTOR_CRC) != 0)) * 4
+            );
+        }
+    }
+    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+        uint32_t mismatches;
+        TEST_CHECK(
+            libmpq__file_verify(stored, number, LIBMPQ_VERIFY_RAW_MD5, &mismatches) == 0 &&
+            mismatches == 0
+        );
+        TEST_CHECK(libmpq__reader_verify_ext_raw_md5(stored, LIBMPQ_HET_SIGNATURE) == 0);
+        TEST_CHECK(libmpq__reader_verify_ext_raw_md5(stored, LIBMPQ_BET_SIGNATURE) == 0);
+    }
     TEST_CHECK(libmpq__file_flags(stored, number, &stored_flags) == 0);
     TEST_CHECK((stored_flags & LIBMPQ_FILE_FLAG_PATCH_FILE) != 0);
-    TEST_CHECK((stored_flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED)) == flags);
+    TEST_CHECK(stored_flags == (flags | LIBMPQ_FLAG_EXISTS | LIBMPQ_FILE_FLAG_PATCH_FILE));
     TEST_CHECK(libmpq__archive_close(stored) == 0);
     TEST_CHECK(test_read_path(patch_path, &image, &image_size) == 0);
     TEST_CHECK(offset <= image_size && sizeof(prefix) + sizeof(body_tag) <= image_size - offset);
@@ -1371,7 +1406,7 @@ test_public_patch_storage(uint32_t flags)
     TEST_CHECK(attributes.patch_bit == 0);
     TEST_CHECK(
         check_file(
-            libmpq__patch_view_archive(view), "replace.txt", replacement, sizeof(replacement)
+            libmpq__patch_view_archive(view), "replace.txt", replacement, replacement_size
         ) == 0
     );
     TEST_CHECK(libmpq__patch_view_close(view) == 0);
@@ -2175,8 +2210,7 @@ test_public_v4_chain(uint32_t base_version, uint32_t first_version, int mpqe)
         mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED,
                                        LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
         uint32_t mismatch;
-        if (version == LIBMPQ_ARCHIVE_VERSION_FOUR)
-            storage.flags |= 0x00020000u;
+        storage.flags |= 0x00020000u;
         TEST_CHECK(test_chain_source(paths[1], version, i, expected) == 0);
         TEST_CHECK(
             (mpqe && i == 0 ? libmpq__patch_begin_mpqe(
@@ -2315,6 +2349,12 @@ main(void)
         test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_FOUR, LIBMPQ_ARCHIVE_VERSION_THREE, 0) == 0
     );
     TEST_CHECK(
+        test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_FOUR, LIBMPQ_ARCHIVE_VERSION_ONE, 0) == 0
+    );
+    TEST_CHECK(
+        test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_FOUR, LIBMPQ_ARCHIVE_VERSION_TWO, 1) == 0
+    );
+    TEST_CHECK(
         test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_ONE, LIBMPQ_ARCHIVE_VERSION_FOUR, 0) == 0
     );
     TEST_CHECK(
@@ -2351,12 +2391,32 @@ main(void)
     TEST_CHECK(test_public_mpqe_patch_chain() == 0);
     TEST_CHECK(test_v3_signed_chain() == 0);
     TEST_CHECK(test_public_patch_path_abort() == 0);
-    TEST_CHECK(test_public_patch_storage(0) == 0);
-    TEST_CHECK(test_public_patch_storage(LIBMPQ_FILE_FLAG_COMPRESS) == 0);
-    TEST_CHECK(test_public_patch_storage(LIBMPQ_FILE_FLAG_ENCRYPTED) == 0);
+    TEST_CHECK(test_public_patch_storage(LIBMPQ_ARCHIVE_VERSION_TWO, 0) == 0);
     TEST_CHECK(
-        test_public_patch_storage(LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED) == 0
+        test_public_patch_storage(LIBMPQ_ARCHIVE_VERSION_TWO, LIBMPQ_FILE_FLAG_COMPRESS) == 0
     );
+    TEST_CHECK(
+        test_public_patch_storage(LIBMPQ_ARCHIVE_VERSION_TWO, LIBMPQ_FILE_FLAG_ENCRYPTED) == 0
+    );
+    TEST_CHECK(
+        test_public_patch_storage(
+            LIBMPQ_ARCHIVE_VERSION_TWO, LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED
+        ) == 0
+    );
+    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_FOUR;
+         ++version) {
+        TEST_CHECK(
+            test_public_patch_storage(
+                version, LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u
+            ) == 0
+        );
+        TEST_CHECK(
+            test_public_patch_storage(
+                version, LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
+                             LIBMPQ_FILE_FLAG_SECTOR_CRC | 0x00020000u
+            ) == 0
+        );
+    }
     TEST_CHECK(test_abort() == 0);
     TEST_CHECK(test_unsupported_base() == 0);
     return 0;

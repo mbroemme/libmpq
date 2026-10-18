@@ -817,9 +817,10 @@ are rejected instead of dropping information. Patch prefixes, COPY/BSD0
 transforms, normal replacements, additions and delete markers retain their
 existing semantics and integrity checks.
 
-V4 inputs may be base or patch layers, including MPQE sources and mixed-version
-chains. Any chain using v4 materialization follows the named rebuild path and
-requires complete, unambiguous filenames and writer-representable metadata.
+V3 HET/BET and v4 inputs may be patch layers over legacy bases, including
+MPQE sources and mixed-version chains. Extended-table and v4 materialization
+follows the named rebuild path and requires complete, unambiguous filenames
+and writer-representable metadata.
 Changed views are private v3 archives, not v4 writes or transactions. Compact
 legacy retained members that would overlap the v3 header are re-encoded at new
 positions. Physical raw-chunk checks remain attached to the original source
@@ -869,8 +870,7 @@ Encrypted PTCH reads reopen independent member caches and derive FIX_KEY from
 the original member before shifting past its plaintext patch-info prefix.
 Modified output members use basename keys and final archive-relative offsets,
 including when input archives have container prefixes. The public dedicated
-patch writer accepts normal encryption but not explicit FIX_KEY storage options;
-FIX_KEY patch members remain readable through the existing decoder.
+patch writer accepts FIX_KEY storage options for MPQ v1/v2/v3/v4 output.
 
 Signature presence is not proof of validity. Callers must explicitly verify
 input archives with the required public key; patch-view composition does not

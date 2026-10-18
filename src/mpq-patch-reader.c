@@ -2289,7 +2289,7 @@ patch_apply_layer(mpq_patch_view_s *view, const mpq_patch_source_s *source)
     if (status != 0)
         goto done;
     if (lower->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_THREE ||
-        patch->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+        patch->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR || patch->het_data != NULL) {
         status = patch_materialize_named(view, &lower, patch, source);
         goto done;
     }

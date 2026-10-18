@@ -734,9 +734,7 @@ libmpq__patch_writer_replace(
         if (options->locale != locale || options->platform != platform ||
             (options->flags &
              ~(LIBMPQ_FILE_FLAG_IMPLODE | LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-               LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_SECTOR_CRC |
-               (state->archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR ? 0x00020000u
-                                                                                  : 0u))) != 0)
+               LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_SECTOR_CRC | 0x00020000u)) != 0)
             return LIBMPQ_ERROR_FORMAT;
         storage = *options;
     } else {
