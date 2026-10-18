@@ -823,6 +823,7 @@ libmpq__writer_copy_member(
     uint32_t checks = LIBMPQ_VERIFY_RAW_MD5 | LIBMPQ_VERIFY_SECTOR_CRC;
     uint32_t mismatches;
     int32_t result;
+    int32_t released;
     uint8_t modified = 0;
     if (writer == NULL || source == NULL || old_name == NULL || new_name == NULL)
         return LIBMPQ_ERROR_EXIST;
@@ -940,11 +941,9 @@ libmpq__writer_copy_member(
         result = writer_register_member(writer, new_name, &entry, locale, platform, attributes);
     }
 done:
-    {
-        int32_t released = libmpq__reader_offsets_release(source, number);
-        if (result == 0)
-            result = released;
-    }
+    released = libmpq__reader_offsets_release(source, number);
+    if (result == 0)
+        result = released;
     if (result != 0 && modified)
         writer->write_error = result;
     return result;
