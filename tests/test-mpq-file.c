@@ -118,6 +118,83 @@ test_source_ownership(mpq_archive_s *archive)
     return 0;
 }
 
+/* Owned temporaries survive clones, and last-close/discard reports cleanup accurately. */
+static int
+test_owned_temporary(int mode)
+{
+    mpq_directory_s *directory = NULL;
+    mpq_source_s *source = NULL;
+    mpq_source_s *clone = NULL;
+    mpq_source_s *last = NULL;
+    close_failure_s failure = { 0 };
+    char *name = NULL;
+    char *temporary = NULL;
+    char *absolute;
+    FILE *file = NULL;
+    uint8_t data[5];
+    const char *moved = "owned-temporary-moved.mpq";
+
+    TEST_CHECK(libmpq__directory_open("owner-anchor.mpq", &directory, &name) == 0);
+    TEST_CHECK(
+        libmpq__directory_temporary_reopenable(
+            directory, ".libmpq-owner-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", 1, &temporary, &file
+        ) == 0
+    );
+    TEST_CHECK(fwrite("owned", 1, 5, file) == 5 && fclose(file) == 0);
+    absolute = libmpq__file_absolute_path(temporary);
+    TEST_CHECK(absolute != NULL);
+    TEST_CHECK(libmpq__source_open_file(&source, absolute) == 0);
+    TEST_CHECK(libmpq__source_temporary_path(source) == NULL);
+    TEST_CHECK(libmpq__source_adopt_temporary(source, directory, temporary, absolute) == 0);
+    directory = NULL;
+    TEST_CHECK(strcmp(libmpq__source_temporary_path(source), absolute) == 0);
+    TEST_CHECK(libmpq__source_clone(&clone, source, "not-the-backing-path.mpq") == 0);
+    TEST_CHECK(libmpq__source_close(source) == 0);
+    TEST_CHECK(libmpq__source_clone(&last, clone, NULL) == 0);
+    TEST_CHECK(libmpq__source_close(clone) == 0);
+    file = libmpq__file_open(absolute, "rb");
+    TEST_CHECK(file != NULL && fclose(file) == 0);
+    TEST_CHECK(libmpq__source_read_at(last, 0, data, sizeof(data)) == 0);
+    TEST_CHECK(memcmp(data, "owned", sizeof(data)) == 0);
+    if (mode == 1) {
+        libmpq__source_discard(last);
+    } else if (mode == 2) {
+        close_failure_install(last, &failure);
+        TEST_CHECK(libmpq__source_close(last) == LIBMPQ_ERROR_CLOSE);
+        TEST_CHECK(failure.closes == 1);
+    } else if (mode == 3) {
+#ifndef _WIN32
+
+        /* POSIX permits renaming an open file; test reopen failure without a linker hook. */
+        TEST_CHECK(rename(absolute, moved) == 0);
+        clone = (mpq_source_s *)last;
+        TEST_CHECK(libmpq__source_clone(&clone, last, NULL) == LIBMPQ_ERROR_OPEN);
+        TEST_CHECK(clone == NULL);
+        TEST_CHECK(libmpq__source_read_at(last, 0, data, sizeof(data)) == 0);
+        TEST_CHECK(rename(moved, absolute) == 0);
+#endif
+        TEST_CHECK(libmpq__source_close(last) == 0);
+    } else if (mode == 4) {
+#ifndef _WIN32
+
+        /* A failed unlink is an error, even after the last reader has been consumed. */
+        TEST_CHECK(rename(absolute, moved) == 0);
+        TEST_CHECK(libmpq__source_close(last) == LIBMPQ_ERROR_WRITE);
+        TEST_CHECK(remove(moved) == 0);
+#else
+        TEST_CHECK(libmpq__source_close(last) == 0);
+#endif
+    } else {
+        TEST_CHECK(libmpq__source_close(last) == 0);
+    }
+    TEST_CHECK(libmpq__file_open(absolute, "rb") == NULL);
+    free(name);
+    free(temporary);
+    free(absolute);
+    (void)moved;
+    return 0;
+}
+
 /* Invalid helper arguments must have identical contracts on both platforms. */
 static int
 invalid_arguments(void)
@@ -184,6 +261,8 @@ main(void)
     mpq_archive_create_options_s options = { 0, 4, 4096, 0, 0 };
 
     TEST_CHECK(invalid_arguments() == 0);
+    for (int mode = 0; mode < 5; mode++)
+        TEST_CHECK(test_owned_temporary(mode) == 0);
     TEST_CHECK(libmpq__directory_open(path, &directory, &destination) == 0);
     TEST_CHECK(
         libmpq__directory_temporary(

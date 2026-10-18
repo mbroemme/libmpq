@@ -60,6 +60,7 @@ struct mpq_patch_view
     char *path;
     mpq_archive_s *archive;
     libmpq__off_t archive_offset;
+    uint8_t changed;
 };
 
 /*
@@ -1927,7 +1928,7 @@ patch_named_storage(
 static int32_t
 patch_materialize_named(
     mpq_patch_view_s *view, mpq_archive_s **lower_handle, mpq_archive_s *patch,
-    const mpq_patch_source_s *source
+    const mpq_patch_source_s *source, uint8_t explicit_layer
 )
 {
     mpq_archive_s *lower = *lower_handle;
@@ -1944,7 +1945,7 @@ patch_materialize_named(
     char *temporary = NULL;
     char *candidate = NULL;
     uint64_t extent;
-    uint8_t detected = 0;
+    uint8_t detected = explicit_layer;
     uint8_t mutated = 0;
     int32_t status = patch_named_entries(patch, &entries);
 
@@ -2237,6 +2238,7 @@ patch_materialize_named(
     view->temporary = temporary;
     view->path = candidate;
     view->archive_offset = 0;
+    view->changed = 1;
     temporary = NULL;
     candidate = NULL;
 
@@ -2260,9 +2262,11 @@ done:
 
 /* Apply a complete layer in a separate private materialization, never via updates. */
 static int32_t
-patch_apply_layer(mpq_patch_view_s *view, const mpq_patch_source_s *source)
+patch_apply_layer(
+    mpq_patch_view_s *view, mpq_archive_s *patch, const mpq_patch_source_s *source,
+    uint8_t explicit_layer
+)
 {
-    mpq_archive_s *patch = NULL;
     mpq_archive_s *lower = NULL;
     mpq_archive_s *target = NULL;
     mpq_archive_s *check = NULL;
@@ -2277,20 +2281,17 @@ patch_apply_layer(mpq_patch_view_s *view, const mpq_patch_source_s *source)
     uint32_t attribute_flags = 0;
     uint32_t metadata_number;
     uint32_t entry_count = 0;
-    uint8_t detected = 0;
+    uint8_t detected = explicit_layer;
     uint8_t mutated = 0;
     uint8_t has_attributes = 0;
     int32_t status;
 
-    status = patch_source_open(&patch, source);
-    if (status != 0)
-        return status;
     status = libmpq__archive_open(&lower, view->path, view->archive_offset);
     if (status != 0)
         goto done;
     if (lower->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_THREE ||
         patch->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR || patch->het_data != NULL) {
-        status = patch_materialize_named(view, &lower, patch, source);
+        status = patch_materialize_named(view, &lower, patch, source, explicit_layer);
         goto done;
     }
     if (libmpq__file_number(patch, "(patch_metadata)", &metadata_number) == 0) {
@@ -2500,6 +2501,7 @@ patch_apply_layer(mpq_patch_view_s *view, const mpq_patch_source_s *source)
     free(view->path);
     view->temporary = temporary;
     view->path = candidate;
+    view->changed = 1;
     temporary = NULL;
     candidate = NULL;
 
@@ -2524,8 +2526,6 @@ done:
     free(attributes);
     free(changed_rows);
     free(changed);
-    if (patch != NULL)
-        (void)libmpq__archive_close(patch);
     free(temporary);
     free(candidate);
     return status;
@@ -2562,34 +2562,53 @@ libmpq__patch_view_archive(mpq_patch_view_s *view)
     return view == NULL ? NULL : view->archive;
 }
 
-/* Materialize independently opened sources without changing any input archive. */
-int32_t
-libmpq__patch_view_open_sources(
-    mpq_patch_view_s **view, const mpq_patch_source_s *base_source,
-    const mpq_patch_source_s *patch_sources, size_t patch_count
+/* Clone opened inputs only during the call; path callers retain auto-recognition. */
+static int32_t
+patch_layer_open(
+    mpq_archive_s **archive, mpq_patch_source_s *layer, const mpq_patch_source_s *sources,
+    mpq_archive_s *const *archives, const char *const *prefixes, size_t index
+)
+{
+    if (archives == NULL) {
+        *layer = sources[index];
+        return patch_source_open(archive, layer);
+    }
+    memset(layer, 0, sizeof(*layer));
+    layer->prefix = prefixes != NULL ? prefixes[index] : NULL;
+    return libmpq__archive_clone(archive, archives[index]);
+}
+
+/* Consume the private base reader; all output sources adopt their temporary. */
+static int32_t
+patch_view_compose(
+    mpq_patch_view_s **view, mpq_archive_s *base, const mpq_patch_source_s *patch_sources,
+    mpq_archive_s *const *patch_archives, const char *const *prefixes, size_t patch_count
 )
 {
     mpq_patch_view_s *state = NULL;
-    mpq_archive_s *base = NULL;
     mpq_archive_s *patch = NULL;
     FILE *temporary = NULL;
     char *absolute = NULL;
     char *destination = NULL;
+    char *logical_name = NULL;
+    mpq_patch_source_s layer;
+    uint8_t explicit_layer = patch_archives != NULL;
     uint8_t materialized = 0;
     int32_t status;
 
-    if (view == NULL)
-        return LIBMPQ_ERROR_EXIST;
     *view = NULL;
-    if (base_source == NULL || base_source->path == NULL || patch_sources == NULL ||
-        patch_count == 0)
-        return LIBMPQ_ERROR_EXIST;
     state = calloc(1, sizeof(*state));
-    if (state == NULL)
-        return LIBMPQ_ERROR_MALLOC;
-    status = patch_source_open(&base, base_source);
-    if (status != 0)
+    if (state == NULL) {
+        status = LIBMPQ_ERROR_MALLOC;
         goto error;
+    }
+    if (base->filename != NULL) {
+        logical_name = libmpq__string_duplicate(base->filename);
+        if (logical_name == NULL) {
+            status = LIBMPQ_ERROR_MALLOC;
+            goto error;
+        }
+    }
     absolute = patch_temporary_anchor();
     if (absolute == NULL) {
         status = LIBMPQ_ERROR_MALLOC;
@@ -2627,9 +2646,9 @@ libmpq__patch_view_open_sources(
                 if (status != 0)
                     goto error;
             }
-            status = patch_source_open(&patch, &patch_sources[i]);
+            status = patch_layer_open(&patch, &layer, patch_sources, patch_archives, prefixes, i);
             if (status == 0)
-                status = patch_materialize_named(state, &base, patch, &patch_sources[i]);
+                status = patch_materialize_named(state, &base, patch, &layer, explicit_layer);
             if (status != 0)
                 goto error;
             if (base == NULL)
@@ -2684,11 +2703,13 @@ libmpq__patch_view_open_sources(
     if (status != 0)
         goto error;
     for (size_t i = 0; i < patch_count; i++) {
-        if (patch_sources[i].path == NULL) {
-            status = LIBMPQ_ERROR_EXIST;
+        status = patch_layer_open(&patch, &layer, patch_sources, patch_archives, prefixes, i);
+        if (status == 0)
+            status = patch_apply_layer(state, patch, &layer, explicit_layer);
+        if (status != 0)
             goto error;
-        }
-        status = patch_apply_layer(state, &patch_sources[i]);
+        status = libmpq__archive_close(patch);
+        patch = NULL;
         if (status != 0)
             goto error;
     }
@@ -2696,6 +2717,18 @@ expose:
     status = libmpq__archive_open(&state->archive, state->path, state->archive_offset);
     if (status != 0)
         goto error;
+    status = libmpq__source_adopt_temporary(
+        state->archive->source, state->directory, state->temporary, state->path
+    );
+    if (status != 0)
+        goto error;
+    state->directory = NULL;
+    if (!state->changed) {
+        free(state->archive->filename);
+        state->archive->filename = logical_name;
+        logical_name = NULL;
+    }
+    free(logical_name);
     free(destination);
     free(absolute);
     *view = state;
@@ -2708,10 +2741,66 @@ error:
         (void)libmpq__archive_close(base);
     if (patch != NULL)
         (void)libmpq__archive_close(patch);
+    free(logical_name);
     free(destination);
     free(absolute);
     (void)libmpq__patch_view_close(state);
     return status;
+}
+
+/* Preserve path-based private recognition, ownership and nonempty-layer rules. */
+int32_t
+libmpq__patch_view_open_sources(
+    mpq_patch_view_s **view, const mpq_patch_source_s *base_source,
+    const mpq_patch_source_s *patch_sources, size_t patch_count
+)
+{
+    mpq_archive_s *base = NULL;
+    int32_t status;
+
+    if (view == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *view = NULL;
+    if (base_source == NULL || base_source->path == NULL || patch_sources == NULL ||
+        patch_count == 0)
+        return LIBMPQ_ERROR_EXIST;
+    if (patch_count > SIZE_MAX / sizeof(*patch_sources))
+        return LIBMPQ_ERROR_SIZE;
+    status = patch_source_open(&base, base_source);
+    return status == 0 ? patch_view_compose(view, base, patch_sources, NULL, NULL, patch_count)
+                       : status;
+}
+
+/* Borrow opened layers synchronously and return an independently owned reader. */
+int32_t
+libmpq__patch_reader_open_archives(
+    mpq_archive_s **archive, mpq_archive_s *base, mpq_archive_s *const *patches,
+    const char *const *prefixes, size_t patch_count
+)
+{
+    mpq_patch_view_s *view = NULL;
+    mpq_archive_s *lower = NULL;
+    int32_t status;
+
+    if (archive == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *archive = NULL;
+    if (base == NULL || base->write_mode || (patch_count != 0 && patches == NULL))
+        return LIBMPQ_ERROR_EXIST;
+    if (patch_count > SIZE_MAX / sizeof(*patches))
+        return LIBMPQ_ERROR_SIZE;
+    for (size_t i = 0; i < patch_count; i++)
+        if (patches[i] == NULL || patches[i]->write_mode)
+            return LIBMPQ_ERROR_EXIST;
+    status = libmpq__archive_clone(&lower, base);
+    if (status != 0)
+        return status;
+    status = patch_view_compose(&view, lower, NULL, patches, prefixes, patch_count);
+    if (status != 0)
+        return status;
+    *archive = view->archive;
+    view->archive = NULL;
+    return libmpq__patch_view_close(view);
 }
 
 /* Adapt path-only patch callers to independent ordinary source descriptors. */

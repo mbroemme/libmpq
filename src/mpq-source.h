@@ -26,6 +26,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "mpq-file.h"
 #include "mpq-mpqe.h"
 
 typedef struct mpq_source mpq_source_s;
@@ -61,6 +62,7 @@ struct mpq_source
     uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE];
     uint8_t mpqe;
     uint8_t allocated;
+    uint8_t file_backed; /* Explicit adapter kind, independent of callback addresses. */
 };
 
 int32_t libmpq__source_open_file(mpq_source_s **source, const char *path);
@@ -77,6 +79,15 @@ int32_t libmpq__source_open_mpqe_io(
     mpq_source_s **source, void *context, libmpq_read_at_fn read_at, uint64_t size,
     const uint8_t *auth_code, size_t auth_code_size
 );
+
+/* Transfer cleanup of a finalized private temporary on success, never an input. */
+int32_t libmpq__source_adopt_temporary(
+    mpq_source_s *source, mpq_directory_s *directory, const char *name, const char *path
+);
+
+/* Borrow the actual temporary backing path until the source closes, or NULL. */
+const char *libmpq__source_temporary_path(const mpq_source_s *source);
+
 int32_t libmpq__source_clone(mpq_source_s **clone, const mpq_source_s *source, const char *path);
 int32_t libmpq__source_read_at(mpq_source_s *source, uint64_t offset, uint8_t *buffer, size_t size);
 uint64_t libmpq__source_size(const mpq_source_s *source);

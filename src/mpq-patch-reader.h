@@ -45,6 +45,17 @@ typedef struct
     const char *prefix;
 } mpq_patch_source_s;
 
+/*
+ * Borrow readable input handles/prefixes for this call only. Return an owned
+ * snapshot, including with zero layers; caller callback contexts are not retained.
+ * Explicit layers may contain ordinary additions without a metadata marker.
+ * No concurrent family clone/close guarantee is provided.
+ */
+int32_t libmpq__patch_reader_open_archives(
+    mpq_archive_s **archive, mpq_archive_s *base, mpq_archive_s *const *patches,
+    const char *const *prefixes, size_t patch_count
+);
+
 /* Compose independently authenticated base and patch sources. */
 int32_t libmpq__patch_view_open_sources(
     mpq_patch_view_s **view, const mpq_patch_source_s *base, const mpq_patch_source_s *patches,

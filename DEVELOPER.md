@@ -554,6 +554,18 @@ against their before/after MD5 values. Existing archive and logical stream
 read APIs operate on the resulting private view. No public patch-composition
 API is exposed yet.
 
+The private `libmpq__patch_reader_open_archives()` bridge borrows already-open
+inputs during composition and returns an independently owned reader. Zero
+layers produce a byte-preserving snapshot of the logical backing source,
+including its source name; custom callback contexts are not retained. Explicit
+opened layers can contain ordinary additions without a metadata marker;
+automatic recognition for path-based private callers is unchanged. A shared
+source owner retains temporary backing storage until the last archive clone
+or stream closes. Cleanup closes backing handles before removing the file;
+last-owner cleanup errors propagate through archive or stream close. Cleanup
+is best effort and does not guarantee secure erasure or crash recovery. These
+lifetime operations require external serialization, not concurrent close/read.
+
 Patch matching primarily uses each entry's MPQ hash identity, including locale
 and platform. `(listfile)` is optional metadata that enriches entries with
 plaintext names. For legacy v1/v2 materialization, an unnamed patch entry can

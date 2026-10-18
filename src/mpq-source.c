@@ -33,11 +33,21 @@
 
 #define LIBMPQ_MPQE_READ_BUFFER_SIZE (LIBMPQ_MPQE_CHUNK_SIZE * 64U)
 
+/* Only finalized private temporaries may transfer their cleanup to this owner. */
+typedef struct
+{
+    mpq_directory_s *directory;
+    char *name;
+    char *path;
+    size_t references;
+} mpq_temporary_owner_s;
+
 typedef struct
 {
     FILE *file;
     uint64_t size;
     uint8_t owned;
+    mpq_temporary_owner_s *temporary;
 } mpq_file_backend_s;
 
 typedef struct
@@ -73,30 +83,48 @@ file_backend_read_at(void *context, uint64_t offset, uint8_t *buffer, size_t siz
     return 0;
 }
 
+/* Remove private backing storage only after all dependent FILE handles close. */
+static int32_t
+temporary_owner_release(mpq_temporary_owner_s *owner)
+{
+    int32_t result;
+
+    if (owner == NULL)
+        return 0;
+    if (--owner->references != 0)
+        return 0;
+    result = libmpq__directory_remove(owner->directory, owner->name);
+    libmpq__directory_close(owner->directory);
+    free(owner->name);
+    free(owner->path);
+    free(owner);
+    return result;
+}
+
+/* Close the reader before the final owner attempts Windows-compatible removal. */
 static int32_t
 file_backend_close(void *context)
 {
     mpq_file_backend_s *backend = context;
     int32_t result = 0;
+    int32_t cleanup;
 
     if (backend == NULL)
         return 0;
     if (backend->owned && backend->file != NULL && fclose(backend->file) != 0)
         result = LIBMPQ_ERROR_CLOSE;
+    cleanup = temporary_owner_release(backend->temporary);
+    if (result == 0)
+        result = cleanup;
     free(backend);
     return result;
 }
 
+/* Fallback cleanup still releases the last owner, but cannot report errors. */
 static void
 file_backend_discard(void *context)
 {
-    mpq_file_backend_s *backend = context;
-
-    if (backend == NULL)
-        return;
-    if (backend->owned && backend->file != NULL)
-        (void)fclose(backend->file);
-    free(backend);
+    (void)file_backend_close(context);
 }
 
 static int32_t
@@ -107,6 +135,90 @@ file_backend_identity(void *context, uint64_t *device, uint64_t *inode)
     if (backend == NULL)
         return LIBMPQ_ERROR_EXIST;
     return libmpq__file_identity(backend->file, device, inode);
+}
+
+/* Clone owned storage through its retained directory, not a logical source name. */
+static int32_t
+temporary_backend_clone(void *context, mpq_io_backend_s *clone)
+{
+    mpq_file_backend_s *source = context;
+    mpq_file_backend_s *backend;
+
+    if (source == NULL || clone == NULL || source->temporary == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    memset(clone, 0, sizeof(*clone));
+    if (source->temporary->references == SIZE_MAX)
+        return LIBMPQ_ERROR_SIZE;
+    backend = calloc(1, sizeof(*backend));
+    if (backend == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    backend->file =
+        libmpq__directory_file_open(source->temporary->directory, source->temporary->name, "rb");
+    if (backend->file == NULL) {
+        free(backend);
+        return LIBMPQ_ERROR_OPEN;
+    }
+    backend->size = source->size;
+    backend->owned = 1;
+    backend->temporary = source->temporary;
+    backend->temporary->references++;
+    clone->context = backend;
+    clone->size = backend->size;
+    clone->read_at = file_backend_read_at;
+    clone->identity = file_backend_identity;
+    clone->close = file_backend_close;
+    clone->discard = file_backend_discard;
+    clone->clone = temporary_backend_clone;
+    return 0;
+}
+
+/*
+ * Transfer a finalized private temporary's directory cleanup on success only.
+ * The caller must never adopt an input archive or a published destination.
+ * Family clone/close operations require external serialization.
+ */
+int32_t
+libmpq__source_adopt_temporary(
+    mpq_source_s *source, mpq_directory_s *directory, const char *name, const char *path
+)
+{
+    mpq_file_backend_s *backend;
+    mpq_temporary_owner_s *owner;
+
+    if (source == NULL || directory == NULL || name == NULL || path == NULL || source->mpqe ||
+        !source->file_backed)
+        return LIBMPQ_ERROR_EXIST;
+    backend = source->backend.context;
+    if (backend == NULL || !backend->owned || backend->temporary != NULL)
+        return LIBMPQ_ERROR_NOT_INITIALIZED;
+    owner = calloc(1, sizeof(*owner));
+    if (owner == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    owner->name = libmpq__string_duplicate(name);
+    owner->path = libmpq__string_duplicate(path);
+    if (owner->name == NULL || owner->path == NULL) {
+        free(owner->name);
+        free(owner->path);
+        free(owner);
+        return LIBMPQ_ERROR_MALLOC;
+    }
+    owner->directory = directory;
+    owner->references = 1;
+    backend->temporary = owner;
+    source->backend.clone = temporary_backend_clone;
+    return 0;
+}
+
+/* Return a borrowed physical cleanup path, separate from archive->filename. */
+const char *
+libmpq__source_temporary_path(const mpq_source_s *source)
+{
+    const mpq_file_backend_s *backend;
+
+    if (source == NULL || !source->file_backed || source->backend.context == NULL)
+        return NULL;
+    backend = source->backend.context;
+    return backend->temporary != NULL ? backend->temporary->path : NULL;
 }
 
 static int32_t
@@ -170,6 +282,7 @@ source_set_file_backend(mpq_source_s *source, FILE *file, uint64_t size, uint8_t
         return LIBMPQ_ERROR_MALLOC;
     backend->file = file;
     backend->size = size;
+    source->file_backed = 1;
     backend->owned = owned;
     source->backend.context = backend;
     source->backend.size = size;
@@ -377,6 +490,7 @@ libmpq__source_clone(mpq_source_s **clone, const mpq_source_s *source, const cha
     }
     if (source->backend.clone != NULL)
         (*clone)->size = (*clone)->backend.size;
+    (*clone)->file_backed = source->file_backed;
     (*clone)->mpqe = source->mpqe;
     if (source->mpqe)
         memcpy((*clone)->key, source->key, sizeof((*clone)->key));
