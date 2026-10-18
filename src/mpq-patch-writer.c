@@ -692,6 +692,29 @@ libmpq__patch_writer_begin_mpqe(
     );
 }
 
+/* Queries preserve terminal patch errors and clear their output on failure. */
+int32_t
+libmpq__patch_writer_get_raw_chunk_size(mpq_patch_writer_s *state, uint32_t *size)
+{
+    if (size == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *size = 0;
+    if (state == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (state->archive->write_error != 0)
+        return state->archive->write_error;
+    return libmpq__archive_raw_chunk_size_get(state->archive, size);
+}
+
+/* Do not expose the private archive or duplicate its lifecycle checks. */
+int32_t
+libmpq__patch_writer_set_raw_chunk_size(mpq_patch_writer_s *state, uint32_t size)
+{
+    if (state == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    return libmpq__writer_set_raw_chunk_size(state->archive, size);
+}
+
 /* Let archive finalization generate the configured weak or strong signature. */
 int32_t
 libmpq__patch_writer_sign(

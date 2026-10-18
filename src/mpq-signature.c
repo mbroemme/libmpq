@@ -442,6 +442,7 @@ libmpq__signature_configure(mpq_archive_s *a, uint32_t type, const uint8_t *key,
             return LIBMPQ_ERROR_FORMAT;
         memcpy(a->write_strong_signature_key, key, LIBMPQ_RSA_STRONG_KEY_SIZE);
         a->write_strong_signature = 1;
+        a->write_raw_locked = 1;
         return 0;
     }
 
@@ -468,6 +469,7 @@ libmpq__signature_configure(mpq_archive_s *a, uint32_t type, const uint8_t *key,
         a->mpq_block[index].offset | ((uint64_t)a->mpq_block_ex[index].offset_high << 32);
     memcpy(a->write_signature_key, key, LIBMPQ_RSA_KEY_SIZE);
     a->write_signature = 1;
+    a->write_raw_locked = 1;
     return 0;
 }
 

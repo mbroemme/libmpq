@@ -434,7 +434,7 @@ extern LIBMPQ_API int32_t libmpq__archive_open_patch(
 
 /*
  * Create a seekable MPQ v1, v2, v3, or v4 archive at mpq_filename.
- * V4 creation uses 16 KiB raw chunks; updates preserve the source chunk size.
+ * V4 creation defaults to 16 KiB raw chunks; updates preserve the source size.
  * The options determine the format, reserved table capacity, sector size, and
  * optional internal files; zero options select documented writer defaults.
  * The returned handle remains in write mode until close finalizes its tables,
@@ -462,6 +462,25 @@ extern LIBMPQ_API int32_t libmpq__archive_create_mpqe(
     mpq_archive_s **mpq_archive, const char *mpqe_filename, const uint8_t *auth_code,
     size_t auth_code_size, const mpq_archive_create_options_s *options
 );
+
+/*
+ * Set writable v4 raw-MD5 chunk size before any member begins, signing succeeds
+ * or finalization starts. All uint32_t values are allowed; zero disables member
+ * and HET/BET raw arrays. The default remains 0x4000. Repeated unlocked calls
+ * are allowed. Failed validation preserves the prior policy. Invalid lifecycle
+ * returns NOT_INITIALIZED, older writable generations return FORMAT, and a
+ * terminal writer error takes precedence. This does not configure updates.
+ */
+extern LIBMPQ_API int32_t
+libmpq__archive_raw_chunk_size_set(mpq_archive_s *archive, uint32_t raw_chunk_size);
+
+/*
+ * Query a reader's stored or writer's configured raw size without mutation.
+ * V1/v2/v3 return zero. Clear the output on failure when its pointer is valid.
+ * This reports policy, not checksum availability or verification success.
+ */
+extern LIBMPQ_API int32_t
+libmpq__archive_raw_chunk_size_get(mpq_archive_s *archive, uint32_t *raw_chunk_size);
 
 /*
  * Clone an opened archive into an independent read handle.
@@ -947,6 +966,18 @@ extern LIBMPQ_API int32_t libmpq__patch_begin_mpqe(
     mpq_patch_s **patch, const char *base_archive, const char *output_patch,
     const uint8_t *auth_code, size_t auth_code_size
 );
+
+/*
+ * Query the patch writer's configured raw size before or after member writing.
+ * Older generations return zero. This does not lock or mutate configuration.
+ * Clear a valid output on failure; terminal writer errors are returned unchanged.
+ */
+extern LIBMPQ_API int32_t
+libmpq__patch_raw_chunk_size_get(mpq_patch_s *patch, uint32_t *raw_chunk_size);
+
+/* The archive raw-size lifecycle rules also apply to plain/MPQE v4 patches. */
+extern LIBMPQ_API int32_t
+libmpq__patch_raw_chunk_size_set(mpq_patch_s *patch, uint32_t raw_chunk_size);
 
 /*
  * Configure signing on an active patch writer using the archive signing API.

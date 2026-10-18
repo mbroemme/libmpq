@@ -407,6 +407,19 @@ libmpq__patch_begin_mpqe(
     );
 }
 
+/* Query the patch's owned writer without exposing its private archive. */
+int32_t
+libmpq__patch_raw_chunk_size_get(mpq_patch_s *patch, uint32_t *raw_chunk_size)
+{
+    return libmpq__patch_writer_get_raw_chunk_size(patch, raw_chunk_size);
+}
+
+int32_t
+libmpq__patch_raw_chunk_size_set(mpq_patch_s *patch, uint32_t raw_chunk_size)
+{
+    return libmpq__patch_writer_set_raw_chunk_size(patch, raw_chunk_size);
+}
+
 int32_t
 libmpq__patch_sign(
     mpq_patch_s *patch, uint32_t signature_type, const uint8_t *private_key, size_t private_key_size
@@ -579,6 +592,28 @@ libmpq__archive_open_mpqe_io(
         mpq_archive, context, read_at, source_size, archive_offset, auth_code, auth_code_size,
         source_name
     );
+}
+
+/* Share the same private policy for ordinary and patch archive creation. */
+int32_t
+libmpq__archive_raw_chunk_size_set(mpq_archive_s *archive, uint32_t raw_chunk_size)
+{
+    return libmpq__writer_set_raw_chunk_size(archive, raw_chunk_size);
+}
+
+int32_t
+libmpq__archive_raw_chunk_size_get(mpq_archive_s *archive, uint32_t *raw_chunk_size)
+{
+    if (raw_chunk_size == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *raw_chunk_size = 0;
+    if (archive == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (archive->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_FOUR)
+        return LIBMPQ_ERROR_FORMAT;
+    if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+        *raw_chunk_size = archive->mpq_header_v4.raw_chunk_size;
+    return 0;
 }
 
 /* Compose already-open inputs without extending their source lifetimes. */

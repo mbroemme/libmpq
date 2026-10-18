@@ -1756,6 +1756,7 @@ test_v4_error_state(unsigned int which)
     }
     fault.fail_at = SIZE_MAX;
     clearerr(fp);
+    TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 17) == LIBMPQ_ERROR_WRITE);
     TEST_CHECK(libmpq__writer_finalize(archive) == LIBMPQ_ERROR_WRITE);
     TEST_CHECK(!archive->write_finalized && fault.bytes[0] == 0);
     TEST_CHECK(
@@ -2667,9 +2668,260 @@ test_large_listfile(uint32_t version)
     return 0;
 }
 
+/* Public raw policy uses bounded stored-byte hashing at every uint32 extreme. */
+static int
+test_public_raw_policy(uint32_t chunk, uint8_t mpqe)
+{
+    static const uint8_t expected_first[16] = { 0x4e, 0x20, 0x8b, 0xa7, 0xed, 0xa6, 0x2e, 0x0f,
+                                                0xa7, 0xce, 0x53, 0x38, 0x7b, 0x02, 0x23, 0x6d };
+    static const uint8_t expected_last[16] = { 0x7e, 0xa7, 0x48, 0xdd, 0x74, 0x12, 0xaa, 0x15,
+                                               0xe4, 0xd5, 0xdb, 0xf4, 0xca, 0xce, 0x31, 0x34 };
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_FOUR, 8, 512,
+                                             LIBMPQ_ARCHIVE_CREATE_LISTFILE,
+                                             LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 };
+    mpq_file_options_s invalid = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE, 0, 0, 0,
+                                   0 };
+    mpq_file_options_s secure = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
+                                      LIBMPQ_FILE_FLAG_SECTOR_CRC | 0x20000u,
+                                  LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_writer_s *writer = NULL;
+    mpq_stream_s *stream = NULL;
+    char path[128];
+    uint8_t data[17003];
+    uint8_t decoded[17003];
+    uint8_t digest[16];
+    size_t size = chunk == 0x4000 ? sizeof(data) : 129;
+    uint32_t actual;
+    uint32_t number;
+    uint32_t mismatches;
+    libmpq__off_t transferred;
+
+    for (size_t j = 0; j < sizeof(data); j++)
+        data[j] = (uint8_t)(j * 7 + 3);
+    TEST_CHECK(test_temp_path(path, sizeof(path), "raw-policy") == 0);
+    TEST_CHECK(
+        (mpqe ? libmpq__archive_create_mpqe(
+                    &archive, path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1, &options
+                )
+              : libmpq__archive_create(&archive, path, &options)) == 0
+    );
+    TEST_CHECK(libmpq__archive_raw_chunk_size_get(archive, &actual) == 0 && actual == 0x4000);
+    TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 0) == 0);
+    TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 1) == 0);
+    TEST_CHECK(
+        libmpq__writer_begin(archive, "invalid", 1, &invalid, &writer) == LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, chunk) == 0);
+    TEST_CHECK(libmpq__archive_raw_chunk_size_get(archive, &actual) == 0 && actual == chunk);
+    TEST_CHECK(libmpq__writer_begin(archive, "raw", (libmpq__off_t)size, NULL, &writer) == 0);
+    TEST_CHECK(
+        libmpq__archive_raw_chunk_size_set(archive, chunk ^ 1) == LIBMPQ_ERROR_NOT_INITIALIZED
+    );
+    TEST_CHECK(libmpq__writer_write(writer, data, (libmpq__off_t)size) == 0);
+    TEST_CHECK(libmpq__writer_finish(writer) == 0);
+    TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 0) == LIBMPQ_ERROR_NOT_INITIALIZED);
+    TEST_CHECK(libmpq__archive_add_data(archive, "secure.bin", data, 1301, &secure) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "empty", NULL, 0, NULL) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(
+        (mpqe ? libmpq__archive_open_mpqe(
+                    &archive, path, 0, mpqe_auth_code, sizeof(mpqe_auth_code) - 1
+                )
+              : libmpq__archive_open(&archive, path, 0)) == 0
+    );
+    TEST_CHECK(libmpq__archive_raw_chunk_size_get(archive, &actual) == 0 && actual == chunk);
+    TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 17) == LIBMPQ_ERROR_NOT_INITIALIZED);
+    TEST_CHECK(
+        libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_HET_SIGNATURE) ==
+        (chunk == 0 ? LIBMPQ_ERROR_EXIST : 0)
+    );
+    TEST_CHECK(
+        libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_BET_SIGNATURE) ==
+        (chunk == 0 ? LIBMPQ_ERROR_EXIST : 0)
+    );
+    TEST_CHECK(libmpq__file_number(archive, "raw", &number) == 0);
+    TEST_CHECK(
+        libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &mismatches) == 0 && mismatches == 0
+    );
+    if (chunk == 17) {
+        const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+        TEST_CHECK(entry->packed_size == 129);
+        TEST_CHECK(
+            libmpq__source_read_at(
+                archive->source, entry->offset + entry->packed_size, digest, sizeof(digest)
+            ) == 0
+        );
+        TEST_CHECK(memcmp(digest, expected_first, sizeof(digest)) == 0);
+        TEST_CHECK(
+            libmpq__source_read_at(
+                archive->source, entry->offset + entry->packed_size + 7 * 16, digest, sizeof(digest)
+            ) == 0
+        );
+        TEST_CHECK(memcmp(digest, expected_last, sizeof(digest)) == 0);
+    }
+    TEST_CHECK(libmpq__stream_open_name(archive, "raw", &stream) == 0);
+    TEST_CHECK(
+        libmpq__stream_read(stream, decoded, sizeof(decoded), &transferred) == 0 &&
+        transferred == (libmpq__off_t)size && memcmp(decoded, data, size) == 0
+    );
+    TEST_CHECK(libmpq__stream_close(stream) == 0);
+    TEST_CHECK(libmpq__stream_open_name(archive, "secure.bin", &stream) == 0);
+    TEST_CHECK(
+        libmpq__stream_read(stream, decoded, sizeof(decoded), &transferred) == 0 &&
+        transferred == 1301 && memcmp(decoded, data, 1301) == 0
+    );
+    TEST_CHECK(libmpq__stream_close(stream) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "secure.bin", &number) == 0);
+    TEST_CHECK(
+        libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &mismatches) == 0 &&
+        mismatches == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0 && remove(path) == 0);
+    return 0;
+}
+
+/* An accepted begin cannot be unlocked by abort; mere argument rejection can. */
+static int
+test_public_raw_lock(void)
+{
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_FOUR, 8, 512,
+                                             LIBMPQ_ARCHIVE_CREATE_LISTFILE, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_writer_s *writer = NULL;
+    uint32_t actual = 123;
+    char path[128];
+
+    TEST_CHECK(
+        libmpq__archive_raw_chunk_size_get(NULL, &actual) == LIBMPQ_ERROR_EXIST && actual == 0
+    );
+    TEST_CHECK(libmpq__archive_raw_chunk_size_get(NULL, NULL) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__archive_raw_chunk_size_set(NULL, 17) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(test_temp_path(path, sizeof(path), "raw-lock") == 0);
+    for (unsigned kind = 0; kind < 2; kind++) {
+        TEST_CHECK(libmpq__archive_create(&archive, path, &options) == 0);
+        TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 17) == 0);
+        TEST_CHECK(libmpq__writer_begin(archive, "bad", -1, NULL, &writer) == LIBMPQ_ERROR_FORMAT);
+        TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 0) == 0);
+        if (kind == 0) {
+            TEST_CHECK(libmpq__writer_begin(archive, "discarded", 1, NULL, &writer) == 0);
+            libmpq__writer_file_abort(writer);
+            TEST_CHECK(archive->write_error == 0);
+        } else {
+            TEST_CHECK(libmpq__writer_finalize(archive) == 0);
+        }
+        TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 17) == LIBMPQ_ERROR_NOT_INITIALIZED);
+        TEST_CHECK(libmpq__archive_raw_chunk_size_get(archive, &actual) == 0 && actual == 0);
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+    }
+    for (uint32_t version = 0; version < LIBMPQ_ARCHIVE_VERSION_FOUR; version++) {
+        options.version = version;
+        TEST_CHECK(libmpq__archive_create(&archive, path, &options) == 0);
+        TEST_CHECK(libmpq__archive_raw_chunk_size_get(archive, &actual) == 0 && actual == 0);
+        TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 17) == LIBMPQ_ERROR_FORMAT);
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+        TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+        TEST_CHECK(libmpq__archive_raw_chunk_size_get(archive, &actual) == 0 && actual == 0);
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+    }
+    TEST_CHECK(remove(path) == 0);
+    return 0;
+}
+
+/* Zero-raw weak signing works for plain/MPQE; failed signing does not fix policy. */
+static int
+test_public_raw_signing(uint8_t mpqe)
+{
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_FOUR, 8, 512,
+                                             LIBMPQ_ARCHIVE_CREATE_LISTFILE, 0 };
+    mpq_archive_s *archive = NULL;
+    uint8_t strong_key[sizeof(test_strong_signature_public_key)];
+    uint32_t mismatch;
+    uint32_t actual;
+    char path[128];
+    test_strong_signature_private_key(strong_key);
+    TEST_CHECK(test_temp_path(path, sizeof(path), "raw-signing") == 0);
+    TEST_CHECK(
+        (mpqe ? libmpq__archive_create_mpqe(
+                    &archive, path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1, &options
+                )
+              : libmpq__archive_create(&archive, path, &options)) == 0
+    );
+    TEST_CHECK(
+        libmpq__archive_sign(
+            archive, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+            sizeof(test_signature_private_key)
+        ) == LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 0) == 0);
+    TEST_CHECK(
+        libmpq__archive_sign(archive, LIBMPQ_SIGNATURE_WEAK, NULL, 0) == LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 17) == 0);
+    if (mpqe) {
+        TEST_CHECK(
+            libmpq__archive_sign(
+                archive, LIBMPQ_SIGNATURE_STRONG, strong_key, sizeof(strong_key)
+            ) == LIBMPQ_ERROR_FORMAT
+        );
+        TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 0) == 0);
+    } else {
+        TEST_CHECK(
+            libmpq__archive_sign(archive, LIBMPQ_SIGNATURE_STRONG, NULL, 0) == LIBMPQ_ERROR_FORMAT
+        );
+        TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 0) == 0);
+        TEST_CHECK(
+            libmpq__archive_sign(
+                archive, LIBMPQ_SIGNATURE_STRONG, strong_key, sizeof(strong_key)
+            ) == 0
+        );
+        TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 17) == LIBMPQ_ERROR_NOT_INITIALIZED);
+    }
+    TEST_CHECK(
+        libmpq__archive_sign(
+            archive, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+            sizeof(test_signature_private_key)
+        ) == 0
+    );
+    TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 17) == LIBMPQ_ERROR_NOT_INITIALIZED);
+    TEST_CHECK(libmpq__archive_raw_chunk_size_get(archive, &actual) == 0 && actual == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "signed", (const uint8_t *)"data", 4, NULL) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(
+        (mpqe ? libmpq__archive_open_mpqe(
+                    &archive, path, 0, mpqe_auth_code, sizeof(mpqe_auth_code) - 1
+                )
+              : libmpq__archive_open(&archive, path, 0)) == 0
+    );
+    TEST_CHECK(
+        libmpq__archive_verify(
+            archive, LIBMPQ_SIGNATURE_WEAK, test_signature_public_key,
+            sizeof(test_signature_public_key), &mismatch
+        ) == 0 &&
+        mismatch == 0
+    );
+    if (!mpqe)
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
+                sizeof(test_strong_signature_public_key), &mismatch
+            ) == 0 &&
+            mismatch == 0
+        );
+    TEST_CHECK(libmpq__archive_close(archive) == 0 && remove(path) == 0);
+    return 0;
+}
+
 int
 main(void)
 {
+    const uint32_t raw_sizes[] = { 0, 1, 17, 0x4000, UINT32_MAX };
+    TEST_CHECK(test_public_raw_lock() == 0);
+    for (uint8_t mpqe = 0; mpqe < 2; mpqe++) {
+        for (size_t i = 0; i < sizeof(raw_sizes) / sizeof(raw_sizes[0]); i++)
+            TEST_CHECK(test_public_raw_policy(raw_sizes[i], mpqe) == 0);
+        TEST_CHECK(test_public_raw_signing(mpqe) == 0);
+    }
     for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_FOUR;
          ++version)
         TEST_CHECK(test_large_listfile(version) == 0);

@@ -630,6 +630,26 @@ done:
     return result;
 }
 
+/* Keep configuration separate from creation-option layout and physical serialization. */
+int32_t
+libmpq__writer_set_raw_chunk_size(mpq_archive_s *archive, uint32_t raw_chunk_size)
+{
+    if (archive == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (archive->write_error != 0)
+        return archive->write_error;
+    if (!archive->write_mode)
+        return LIBMPQ_ERROR_NOT_INITIALIZED;
+    if (archive->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_FOUR)
+        return LIBMPQ_ERROR_FORMAT;
+    if (archive->write_raw_locked || archive->write_current != NULL ||
+        archive->write_next_block != 0 || archive->write_signature ||
+        archive->write_strong_signature || archive->write_finalized)
+        return LIBMPQ_ERROR_NOT_INITIALIZED;
+    archive->mpq_header_v4.raw_chunk_size = raw_chunk_size;
+    return 0;
+}
+
 /* The original import contract cannot reserve trailing digest space or relocate ciphertext. */
 int32_t
 libmpq__writer_import_member(
@@ -1670,7 +1690,7 @@ libmpq__writer_archive_create_file(
     return writer_archive_create_handle(out, path, file, options);
 }
 
-/* Allow private callers to select raw-chunk sizes without a public configuration option. */
+/* Initialize private v4 output with an explicit pre-write raw policy. */
 int32_t
 libmpq__writer_archive_create_v4(
     mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options,
@@ -1934,7 +1954,9 @@ writer_file_begin(
         return LIBMPQ_ERROR_SEEK;
     }
     if (prefix_size != 0) {
-        int32_t result = write_at(a->fp, w->payload_offset, prefix, prefix_size);
+        int32_t result;
+        a->write_raw_locked = 1;
+        result = write_at(a->fp, w->payload_offset, prefix, prefix_size);
 
         if (result != 0) {
             if (a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR)
@@ -1976,6 +1998,7 @@ writer_file_begin(
         w->offsets[0] = (uint32_t)table_size;
         if (crc)
             w->checksums = w->offsets + (size_t)entries;
+        a->write_raw_locked = 1;
         if (libmpq__file_seek(a->fp, (w->payload_offset + table_size), SEEK_SET) < 0) {
             if (a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
                 (prefix_size != 0 || ferror(a->fp)))
@@ -1987,6 +2010,7 @@ writer_file_begin(
             return LIBMPQ_ERROR_SEEK;
         }
     }
+    a->write_raw_locked = 1;
     a->write_current = w;
     w->attributes.flags = libmpq__attributes_write_flags(a);
 
@@ -2254,6 +2278,7 @@ libmpq__writer_finalize(mpq_archive_s *a)
         return LIBMPQ_ERROR_EXIST;
     if (a->write_error != 0)
         return a->write_error;
+    a->write_raw_locked = 1;
     if (a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR || a->write_identity != NULL) {
         int32_t result;
         if (a->write_finalized)

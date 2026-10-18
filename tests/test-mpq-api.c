@@ -435,6 +435,15 @@ main(void)
 
     TEST_CHECK(test_public_patch() == 0);
     TEST_CHECK(test_public_patch_add() == 0);
+    {
+        uint32_t raw = 123;
+        TEST_CHECK(
+            libmpq__archive_raw_chunk_size_get(NULL, &raw) == LIBMPQ_ERROR_EXIST && raw == 0
+        );
+        TEST_CHECK(libmpq__archive_raw_chunk_size_get(NULL, NULL) == LIBMPQ_ERROR_EXIST);
+        TEST_CHECK(libmpq__archive_raw_chunk_size_set(NULL, 0) == LIBMPQ_ERROR_EXIST);
+        TEST_CHECK(libmpq__patch_raw_chunk_size_set(NULL, 0) == LIBMPQ_ERROR_EXIST);
+    }
     TEST_CHECK(libmpq__version() != NULL && *libmpq__version() != '\0');
     TEST_CHECK(test_error_strings() == 0);
     TEST_CHECK(test_create_errors() == 0);

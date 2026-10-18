@@ -30,6 +30,9 @@
 
 #define LIBMPQ_WRITER_V4_RAW_CHUNK_SIZE 0x4000u
 
+/* Configure writable v4 output only before its raw policy becomes fixed. */
+int32_t libmpq__writer_set_raw_chunk_size(mpq_archive_s *archive, uint32_t raw_chunk_size);
+
 /* Owned lookup identities used only when a transaction retains unnamed members. */
 typedef struct mpq_writer_identity
 {

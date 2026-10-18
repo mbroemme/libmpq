@@ -2813,6 +2813,15 @@ test_v4_updates(uint32_t chunk, unsigned layout, int mpqe)
         archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
         archive->mpq_header.header_size == 208 && archive->mpq_header_v4.raw_chunk_size == chunk
     );
+    {
+        uint32_t configured;
+        TEST_CHECK(
+            libmpq__archive_raw_chunk_size_get(archive, &configured) == 0 && configured == chunk
+        );
+        TEST_CHECK(
+            libmpq__archive_raw_chunk_size_set(archive, chunk ^ 1) == LIBMPQ_ERROR_NOT_INITIALIZED
+        );
+    }
     TEST_CHECK(archive->het_data != NULL && archive->bet_data != NULL);
     TEST_CHECK(libmpq__archive_signatures(archive, &mask) == 0 && mask == 0);
     TEST_CHECK(check_named(archive, "other/renamed.bin", payload, sizeof(payload)) == 0);

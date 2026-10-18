@@ -2709,6 +2709,12 @@ test_add_terminal_error(uint32_t version, uint8_t mpqe)
     TEST_CHECK(setrlimit(RLIMIT_FSIZE, &saved) == 0);
     TEST_CHECK(signal(SIGXFSZ, handler) != SIG_ERR);
     TEST_CHECK(status == LIBMPQ_ERROR_WRITE);
+    {
+        uint32_t size = UINT32_MAX;
+        TEST_CHECK(libmpq__patch_raw_chunk_size_get(patch, &size) == status && size == 0);
+        size = UINT32_MAX;
+        TEST_CHECK(libmpq__patch_raw_chunk_size_get(patch, &size) == status && size == 0);
+    }
     TEST_CHECK(libmpq__patch_add_data(patch, "later.bin", data, 1, NULL) == status);
     TEST_CHECK(libmpq__patch_remove(patch, "remove.txt") == status);
     TEST_CHECK(libmpq__patch_replace_data(patch, "replace.txt", data, 1, NULL) == status);
@@ -2729,9 +2735,100 @@ test_add_terminal_error(uint32_t version, uint8_t mpqe)
 }
 #endif
 
+/* Patch policy delegates to the same lock, with zero-raw weak signing on MPQE too. */
+static int
+test_patch_raw_policy(uint32_t chunk, uint8_t mpqe)
+{
+    char base_path[1024];
+    char patch_path[1024];
+    mpq_patch_s *patch = NULL;
+    mpq_archive_s *archive = NULL;
+    uint32_t size;
+    uint32_t number;
+    uint32_t mismatch;
+    TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "raw-patch-base") == 0);
+    TEST_CHECK(test_temp_path(patch_path, sizeof(patch_path), "raw-patch-policy") == 0);
+    TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_FOUR) == 0);
+    TEST_CHECK(
+        (mpqe ? libmpq__patch_begin_mpqe(
+                    &patch, base_path, patch_path, mpqe_patch_auth_code,
+                    sizeof(mpqe_patch_auth_code) - 1
+                )
+              : libmpq__patch_begin(&patch, base_path, patch_path)) == 0
+    );
+    TEST_CHECK(libmpq__patch_raw_chunk_size_get(patch, &size) == 0 && size == 0x4000);
+    TEST_CHECK(libmpq__patch_raw_chunk_size_get(patch, NULL) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__patch_raw_chunk_size_set(patch, 1) == 0);
+    TEST_CHECK(libmpq__patch_raw_chunk_size_get(patch, &size) == 0 && size == 1);
+    TEST_CHECK(libmpq__patch_raw_chunk_size_set(patch, chunk) == 0);
+    TEST_CHECK(libmpq__patch_raw_chunk_size_get(patch, &size) == 0 && size == chunk);
+    TEST_CHECK(
+        libmpq__patch_add_data(patch, "replace.txt", old_data, sizeof(old_data) - 1, NULL) ==
+        LIBMPQ_ERROR_EXIST
+    );
+    TEST_CHECK(libmpq__patch_sign(patch, LIBMPQ_SIGNATURE_WEAK, NULL, 0) == LIBMPQ_ERROR_FORMAT);
+    TEST_CHECK(libmpq__patch_raw_chunk_size_set(patch, chunk) == 0);
+    TEST_CHECK(libmpq__patch_raw_chunk_size_get(patch, &size) == 0 && size == chunk);
+    if (chunk == 0) {
+        TEST_CHECK(
+            libmpq__patch_sign(
+                patch, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+                sizeof(test_signature_private_key)
+            ) == 0
+        );
+        TEST_CHECK(libmpq__patch_raw_chunk_size_set(patch, 17) == LIBMPQ_ERROR_NOT_INITIALIZED);
+    }
+    TEST_CHECK(libmpq__patch_add_data(patch, "new.txt", new_data, sizeof(new_data) - 1, NULL) == 0);
+    TEST_CHECK(
+        libmpq__patch_replace_data(patch, "replace.txt", new_data, sizeof(new_data) - 1, NULL) == 0
+    );
+    TEST_CHECK(libmpq__patch_raw_chunk_size_set(patch, 17) == LIBMPQ_ERROR_NOT_INITIALIZED);
+    TEST_CHECK(libmpq__patch_raw_chunk_size_get(patch, &size) == 0 && size == chunk);
+    TEST_CHECK(libmpq__patch_finish(patch) == 0);
+    TEST_CHECK(
+        (mpqe ? libmpq__archive_open_mpqe(
+                    &archive, patch_path, 0, mpqe_patch_auth_code, sizeof(mpqe_patch_auth_code) - 1
+                )
+              : libmpq__archive_open(&archive, patch_path, 0)) == 0
+    );
+    TEST_CHECK(libmpq__archive_raw_chunk_size_get(archive, &size) == 0 && size == chunk);
+    TEST_CHECK(
+        libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_HET_SIGNATURE) ==
+        (chunk == 0 ? LIBMPQ_ERROR_EXIST : 0)
+    );
+    TEST_CHECK(
+        libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_BET_SIGNATURE) ==
+        (chunk == 0 ? LIBMPQ_ERROR_EXIST : 0)
+    );
+    TEST_CHECK(check_file(archive, "new.txt", new_data, sizeof(new_data) - 1) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "new.txt", &number) == 0);
+    TEST_CHECK(
+        libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &mismatch) == 0 && mismatch == 0
+    );
+    if (chunk == 0)
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, LIBMPQ_SIGNATURE_WEAK, test_signature_public_key,
+                sizeof(test_signature_public_key), &mismatch
+            ) == 0 &&
+            mismatch == 0
+        );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(remove(base_path) == 0 && remove(patch_path) == 0);
+    return 0;
+}
+
 int
 main(void)
 {
+    const uint32_t sizes[] = { 0, 1, 17, 0x4000, UINT32_MAX };
+    uint32_t size = UINT32_MAX;
+    TEST_CHECK(libmpq__patch_raw_chunk_size_get(NULL, &size) == LIBMPQ_ERROR_EXIST && size == 0);
+    TEST_CHECK(libmpq__patch_raw_chunk_size_get(NULL, NULL) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__patch_raw_chunk_size_set(NULL, 17) == LIBMPQ_ERROR_EXIST);
+    for (uint8_t mpqe = 0; mpqe < 2; mpqe++)
+        for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++)
+            TEST_CHECK(test_patch_raw_policy(sizes[i], mpqe) == 0);
     for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_FOUR;
          version++) {
         for (uint8_t mpqe = 0; mpqe < 2; mpqe++)

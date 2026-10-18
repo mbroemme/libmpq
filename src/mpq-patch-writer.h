@@ -41,6 +41,12 @@ int32_t libmpq__patch_writer_begin_mpqe(
     const uint8_t *auth_code, size_t auth_code_size
 );
 
+/* Query the owned writer without exposing its archive or mutating policy. */
+int32_t libmpq__patch_writer_get_raw_chunk_size(mpq_patch_writer_s *patch_writer, uint32_t *size);
+
+/* Apply the shared raw policy to the patch's owned physical writer. */
+int32_t libmpq__patch_writer_set_raw_chunk_size(mpq_patch_writer_s *patch_writer, uint32_t size);
+
 /* Delegate signing configuration to the owned archive writer. */
 int32_t libmpq__patch_writer_sign(
     mpq_patch_writer_s *patch_writer, uint32_t signature_type, const uint8_t *private_key,
