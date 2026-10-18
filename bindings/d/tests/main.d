@@ -1050,7 +1050,73 @@ private void testOpenPatchNamespaces() {
     }
 }
 
+private void testPatchAdditions() {
+    foreach (archiveVersion; [ARCHIVE_VERSION_ONE, ARCHIVE_VERSION_FOUR]) {
+        auto basePath = temporaryArchive("patch-add-base");
+        auto output = temporaryArchive("patch-add-output");
+        auto source = basePath ~ ".source";
+        scope(exit) {
+            remove(basePath);
+            remove(source);
+            if (exists(output)) remove(output);
+        }
+        auto payload = new ubyte[17003];
+        foreach (i, ref value; payload) value = cast(ubyte)(i * 37 + 11);
+        write(source, payload);
+        auto create = ArchiveCreateOptions.v1();
+        create.version_ = archiveVersion;
+        create.flags = ARCHIVE_CREATE_LISTFILE;
+        auto base = Archive.create(basePath, create);
+        base.add("existing.txt", cast(const(ubyte)[]) "before");
+        base.add("remove.txt", cast(const(ubyte)[]) "remove");
+        base.close();
+        auto original = read(basePath);
+        foreach (wrapped; [false, true]) foreach (mixed; [false, true]) {
+            auto code = cast(const(ubyte)[]) "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+            auto patch = wrapped ? Patch.beginMpqe(basePath, output, code) : Patch.begin(basePath, output);
+            scope(exit) patch.close();
+            bool failed;
+            try { patch.addData("existing.txt", payload); }
+            catch (MPQException) { failed = true; }
+            assert(failed);
+            failed = false;
+            try { patch.addData("bad\0name", payload); }
+            catch (MPQException) { failed = true; }
+            assert(failed);
+            patch.addData("new.bin", payload);
+            patch.addData("empty.bin", null);
+            auto secure = FileOptions.compressed(COMPRESSION_ZLIB, COMPRESSION_ZLIB);
+            secure.flags |= FILE_FLAG_ENCRYPTED | 0x20000;
+            patch.addPath("path.bin", source, secure);
+            failed = false;
+            try { patch.addData("NEW.BIN", payload); }
+            catch (MPQException) { failed = true; }
+            assert(failed);
+            if (mixed) {
+                patch.replaceData("existing.txt", cast(const(ubyte)[]) "after");
+                patch.remove("remove.txt");
+            }
+            patch.finish();
+            assert(read(basePath) == original);
+            base = Archive.open(basePath);
+            auto layer = wrapped ? Archive.openMpqe(output, code) : Archive.open(output);
+            auto result = Archive.openPatch(base, [layer]);
+            base.close();
+            layer.close();
+            assert(result.file("new.bin").read() == payload);
+            assert(result.file("empty.bin").read().length == 0);
+            auto stream = result.openStream("path.bin");
+            auto actual = new ubyte[payload.length];
+            assert(stream.read(actual) == actual.length && actual == payload);
+            stream.close();
+            assert(result.file("existing.txt").read() == cast(const(ubyte)[])(mixed ? "after" : "before"));
+            result.close();
+        }
+    }
+}
+
 void main() {
+    testPatchAdditions();
     testOpenPatch();
     testOpenPatchNamespaces();
     testV4FeatureFixtures();

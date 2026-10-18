@@ -36,6 +36,60 @@ import org.libmpq.ffi.LibmpqNative;
  */
 class LibmpqTest {
     @Test
+    void ordinaryPatchAdditions(@TempDir Path directory) throws Exception {
+        byte[] payload = new byte[17003];
+        for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i * 37 + 11);
+        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.UTF_8);
+        for (int version : new int[] {Mpq.ARCHIVE_VERSION_ONE, Mpq.ARCHIVE_VERSION_FOUR}) {
+            Path basePath = directory.resolve("base.mpq");
+            Path output = directory.resolve("patch.mpq");
+            Path source = directory.resolve("source.bin");
+            Files.write(source, payload);
+            try (Archive base = Archive.create(basePath,
+                    new ArchiveCreateOptions(version, 8, 4096, Mpq.ARCHIVE_CREATE_LISTFILE))) {
+                base.add("existing.txt", "before".getBytes(StandardCharsets.UTF_8), null);
+                base.add("remove.txt", "remove".getBytes(StandardCharsets.UTF_8), null);
+            }
+            byte[] original = Files.readAllBytes(basePath);
+            for (boolean wrapped : new boolean[] {false, true}) {
+                for (boolean mixed : new boolean[] {false, true}) {
+                    try (MpqPatch patch = wrapped ? MpqPatch.beginMpqe(basePath, output, code)
+                                                  : MpqPatch.begin(basePath, output)) {
+                        assertThrows(LibmpqException.class, () -> patch.addData("existing.txt", payload));
+                        assertThrows(IllegalArgumentException.class, () -> patch.addData("bad\0name", payload));
+                        patch.addData("new.bin", payload);
+                        patch.addData("empty.bin", new byte[0]);
+                        patch.addPath("path.bin", source, new FileOptions(
+                            Mpq.FILE_FLAG_COMPRESS | Mpq.FILE_FLAG_ENCRYPTED | 0x20000,
+                            Mpq.COMPRESSION_ZLIB, Mpq.COMPRESSION_ZLIB, 0, 0));
+                        assertThrows(LibmpqException.class, () -> patch.addData("NEW.BIN", payload));
+                        assertThrows(LibmpqException.class, () -> patch.remove("new.bin"));
+                        if (mixed) {
+                            patch.replaceData("existing.txt", "after".getBytes(StandardCharsets.UTF_8));
+                            patch.remove("remove.txt");
+                        }
+                        patch.finish();
+                    }
+                    assertArrayEquals(original, Files.readAllBytes(basePath));
+                    try (Archive base = Archive.open(basePath);
+                         Archive layer = wrapped ? Archive.openMpqe(output, code) : Archive.open(output);
+                         Archive result = Archive.openPatch(base, List.of(layer))) {
+                        assertArrayEquals(payload, result.readFile(result.fileNumber("new.bin")));
+                        try (MpqStream stream = result.openStream("path.bin")) {
+                            byte[] actual = new byte[payload.length];
+                            assertEquals(actual.length, stream.read(actual));
+                            assertArrayEquals(payload, actual);
+                        }
+                        assertEquals(0, result.readFile(result.fileNumber("empty.bin")).length);
+                        assertEquals(mixed ? "after" : "before", new String(
+                            result.readFile(result.fileNumber("existing.txt")), StandardCharsets.UTF_8));
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     void ownedPatchComposition(@TempDir Path directory) throws Exception {
         Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
         Path addition = directory.resolve("addition.mpq");

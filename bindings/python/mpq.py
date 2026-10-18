@@ -268,6 +268,8 @@ _configure("libmpq__patch_begin_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR)
            ctypes.c_char_p, _BYTE_PTR, ctypes.c_size_t)
 _configure("libmpq__patch_sign", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR,
            ctypes.c_size_t)
+_configure("libmpq__patch_add_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE_PTR, _OFF_T, _VOID_PTR)
+_configure("libmpq__patch_add_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__patch_replace_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE_PTR, _OFF_T, _VOID_PTR)
 _configure("libmpq__patch_replace_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__patch_remove", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p)
@@ -538,6 +540,39 @@ class Patch:
     def _ensure_open(self):
         if not self._patch:
             raise LibmpqStateError(ERROR_NOT_INITIALIZED, "patch is closed")
+
+    def add_data(self, name, data, options=None):
+        """Stage bytes-like addition; None passes ordinary writer defaults."""
+        self._ensure_open()
+        encoded_name = _as_bytes(name)
+        if b"\0" in encoded_name:
+            raise ValueError("name must not contain NUL")
+        native_options = Update._options(options)
+        view = memoryview(data)
+        try:
+            view = view.cast("B")
+            if len(view) > (1 << 63) - 1:
+                raise OverflowError("data exceeds native offset range")
+            if view.readonly:
+                buffer = (ctypes.c_uint8 * len(view)).from_buffer_copy(view)
+            else:
+                buffer = (ctypes.c_uint8 * len(view)).from_buffer(view)
+            libmpq.libmpq__patch_add_data(
+                self._patch, encoded_name, buffer if len(view) else None,
+                len(view), native_options
+            )
+        finally:
+            view.release()
+
+    def add_path(self, name, source_path, options=None):
+        """Stage path addition; None passes ordinary writer defaults."""
+        self._ensure_open()
+        encoded_name, encoded_path = _as_bytes(name), _as_bytes(source_path)
+        if b"\0" in encoded_name or b"\0" in encoded_path:
+            raise ValueError("name and source path must not contain NUL")
+        libmpq.libmpq__patch_add_path(
+            self._patch, encoded_name, encoded_path, Update._options(options)
+        )
 
     def replace_data(self, name, data, options=None):
         """Stage bytes-like replacement; None passes native NULL options."""

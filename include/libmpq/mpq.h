@@ -957,6 +957,31 @@ extern LIBMPQ_API int32_t libmpq__patch_sign(
 );
 
 /*
+ * Stage an ordinary new member, not a PTCH replacement or delete marker.
+ * The nonempty filename must be absent from the base and staged identities.
+ * Existing identities return LIBMPQ_ERROR_EXIST; ambiguous identities return
+ * LIBMPQ_ERROR_FORMAT.
+ * Remove-then-add of a base member is rejected; use patch_replace instead.
+ * NULL options select ordinary writer defaults. PATCH_FILE/DELETE_MARKER
+ * options are rejected. Data is borrowed during the call; NULL requires size
+ * zero. Pre-write validation is recoverable; partial output errors are terminal.
+ */
+extern LIBMPQ_API int32_t libmpq__patch_add_data(
+    mpq_patch_s *patch, const char *filename, const uint8_t *data, libmpq__off_t size,
+    const mpq_file_options_s *options
+);
+
+/*
+ * Stage a new ordinary member from a read-only filesystem source in bounded
+ * chunks. The same identity, storage and failure rules as patch_add_data apply.
+ * The source is not retained and filesystem timestamps are not imported.
+ */
+extern LIBMPQ_API int32_t libmpq__patch_add_path(
+    mpq_patch_s *patch, const char *filename, const char *source_path,
+    const mpq_file_options_s *options
+);
+
+/*
  * Stage replacement of an existing base member from caller-owned bytes.
  * NULL options select patch defaults; explicit options store the patch member
  * and must match the base member's locale and platform.

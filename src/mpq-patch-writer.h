@@ -47,6 +47,16 @@ int32_t libmpq__patch_writer_sign(
     size_t private_key_size
 );
 
+/* Add ordinary base-absent members using the shared physical writer. */
+int32_t libmpq__patch_writer_add(
+    mpq_patch_writer_s *patch_writer, const char *name, const uint8_t *data, libmpq__off_t size,
+    const mpq_file_options_s *options
+);
+int32_t libmpq__patch_writer_add_path(
+    mpq_patch_writer_s *patch_writer, const char *name, const char *source_path,
+    const mpq_file_options_s *options
+);
+
 /* Add a PTCH replacement, selecting BSD0 only when smaller than COPY. */
 int32_t libmpq__patch_writer_replace(
     mpq_patch_writer_s *patch_writer, const char *name, const uint8_t *data, libmpq__off_t size,

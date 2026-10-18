@@ -355,6 +355,52 @@ test_public_patch(void)
     return 0;
 }
 
+/* Ordinary patch additions are reachable through installed public declarations. */
+static int
+test_public_patch_add(void)
+{
+    char patch_path[128];
+    char source_path[128];
+    mpq_patch_s *patch = NULL;
+    mpq_archive_s *base = NULL;
+    mpq_archive_s *layer = NULL;
+    mpq_archive_s *result = NULL;
+    uint8_t *data = NULL;
+    size_t size;
+    uint32_t number;
+    FILE *source;
+    static const uint8_t expected[] = "ordinary patch addition";
+
+    TEST_CHECK(test_temp_path(patch_path, sizeof(patch_path), "api-add-patch") == 0);
+    TEST_CHECK(test_temp_path(source_path, sizeof(source_path), "api-add-source") == 0);
+    source = fopen(source_path, "wb");
+    TEST_CHECK(
+        source != NULL && fwrite(expected, 1, sizeof(expected) - 1, source) == sizeof(expected) - 1
+    );
+    TEST_CHECK(fclose(source) == 0);
+    TEST_CHECK(libmpq__patch_begin(&patch, FIXTURE_DIR "/mpq-v4-features.mpq", patch_path) == 0);
+    TEST_CHECK(
+        libmpq__patch_add_data(patch, "added.txt", expected, sizeof(expected) - 1, NULL) == 0
+    );
+    TEST_CHECK(libmpq__patch_add_path(patch, "path.txt", source_path, NULL) == 0);
+    TEST_CHECK(libmpq__patch_finish(patch) == 0);
+    TEST_CHECK(libmpq__archive_open(&base, FIXTURE_DIR "/mpq-v4-features.mpq", 0) == 0);
+    TEST_CHECK(libmpq__archive_open(&layer, patch_path, 0) == 0);
+    TEST_CHECK(libmpq__archive_open_patch(&result, base, &layer, NULL, 1) == 0);
+    TEST_CHECK(libmpq__archive_close(base) == 0 && libmpq__archive_close(layer) == 0);
+    TEST_CHECK(libmpq__file_number(result, "added.txt", &number) == 0);
+    TEST_CHECK(test_archive_read(result, number, &data, &size) == 0);
+    TEST_CHECK(size == sizeof(expected) - 1 && memcmp(data, expected, size) == 0);
+    free(data);
+    TEST_CHECK(libmpq__file_number(result, "path.txt", &number) == 0);
+    TEST_CHECK(test_archive_read(result, number, &data, &size) == 0);
+    TEST_CHECK(size == sizeof(expected) - 1 && memcmp(data, expected, size) == 0);
+    free(data);
+    TEST_CHECK(libmpq__archive_close(result) == 0);
+    TEST_CHECK(remove(patch_path) == 0 && remove(source_path) == 0);
+    return 0;
+}
+
 /* Exercise metadata, lookups, streaming, convenience writers, and blocks. */
 int
 main(void)
@@ -388,6 +434,7 @@ main(void)
     size_t i;
 
     TEST_CHECK(test_public_patch() == 0);
+    TEST_CHECK(test_public_patch_add() == 0);
     TEST_CHECK(libmpq__version() != NULL && *libmpq__version() != '\0');
     TEST_CHECK(test_error_strings() == 0);
     TEST_CHECK(test_create_errors() == 0);

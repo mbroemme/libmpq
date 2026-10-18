@@ -19,9 +19,11 @@
 
 #include "mpq-patch-writer.h"
 #include "mpq-archive.h"
+#include "mpq-bet.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
 #include "mpq-file.h"
+#include "mpq-het.h"
 #include "mpq-md5.h"
 #include "mpq-patch-reader.h"
 #include "mpq-reader.h"
@@ -699,7 +701,185 @@ libmpq__patch_writer_sign(
 {
     if (state == NULL)
         return LIBMPQ_ERROR_EXIST;
+    if (state->archive->write_error != 0)
+        return state->archive->write_error;
     return libmpq__archive_sign(state->archive, signature_type, private_key, private_key_size);
+}
+
+/* Inspect every matching extended identity, rather than stopping at the first. */
+static int32_t
+patch_add_base_identity(mpq_archive_s *base, const char *name)
+{
+    uint32_t hashes[3];
+    uint32_t classic = UINT32_MAX;
+    uint32_t extended = UINT32_MAX;
+    uint32_t matches = 0;
+    int32_t result;
+
+    libmpq__file_hash(name, &hashes[0], &hashes[1], &hashes[2]);
+    for (uint32_t i = 0; i < base->mpq_header.hash_table_count; i++) {
+        const mpq_hash_s *hash = &base->mpq_hash[i];
+        if (hash->block_table_index >= LIBMPQ_HASH_DELETED || hash->hash_a != hashes[1] ||
+            hash->hash_b != hashes[2])
+            continue;
+        result = libmpq__entry_index_from_classic(base, hash->block_table_index, &classic);
+        if (result != 0 || ++matches > 1 ||
+            (base->mpq_entry[classic].flags & LIBMPQ_FLAG_EXISTS) == 0)
+            return LIBMPQ_ERROR_FORMAT;
+    }
+    if (base->het_data != NULL) {
+        mpq_het_hash_s parts;
+        uint64_t hash;
+        uint32_t found = 0;
+        result = libmpq__het_hash_filename(name, &hash);
+        if (result == 0)
+            result = libmpq__het_hash_partition(
+                hash, base->mpq_het.header.name_hash_bit_size, base->mpq_het.header.total_count,
+                &parts
+            );
+        if (result != 0)
+            return result;
+        for (uint32_t i = 0; i < base->mpq_het.header.total_count; i++) {
+            uint64_t row;
+            uint32_t candidate;
+            int equal;
+            if (base->mpq_het.name_hash1[i] != parts.name_hash1)
+                continue;
+            result = libmpq__het_slot_index(&base->mpq_het, i, &row);
+            if (result == 0)
+                result = libmpq__bet_match(&base->mpq_bet, row, parts.name_hash2, &equal);
+            if (result != 0)
+                return result;
+            if (!equal)
+                continue;
+            result = libmpq__entry_index_from_bet(base, row, &candidate);
+            if (result != 0)
+                return result;
+            if ((base->mpq_entry[candidate].flags & LIBMPQ_FLAG_EXISTS) == 0)
+                continue;
+            extended = candidate;
+            if (++found > 1 || base->mpq_het.header.name_hash_bit_size != 64 ||
+                (classic != UINT32_MAX && classic != extended) ||
+                (classic == UINT32_MAX &&
+                 (base->mpq_entry[extended].source_mask & LIBMPQ_ENTRY_SOURCE_CLASSIC) != 0))
+                return LIBMPQ_ERROR_FORMAT;
+        }
+    }
+    return classic != UINT32_MAX || extended != UINT32_MAX ? LIBMPQ_ERROR_EXIST : 0;
+}
+
+/* Validate absence without relying on listfile coverage or locale fallback. */
+static int32_t
+patch_add_validate(mpq_patch_writer_s *state, const char *name, const mpq_file_options_s *options)
+{
+    uint32_t hashes[3];
+    uint16_t locale = options != NULL ? options->locale : 0;
+    uint16_t platform = options != NULL ? options->platform : 0;
+    uint64_t name_hash = 0;
+    int32_t result;
+    const uint32_t supported = LIBMPQ_FILE_FLAG_IMPLODE | LIBMPQ_FILE_FLAG_COMPRESS |
+                               LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u | LIBMPQ_FILE_FLAG_SINGLE |
+                               LIBMPQ_FILE_FLAG_SECTOR_CRC;
+
+    if (state == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (state->archive->write_error != 0)
+        return state->archive->write_error;
+    if (name == NULL || name[0] == '\0')
+        return LIBMPQ_ERROR_EXIST;
+    if (strpbrk(name, "\r\n") != NULL || (options != NULL && (options->flags & ~supported) != 0))
+        return LIBMPQ_ERROR_FORMAT;
+    result = patch_add_base_identity(state->base, name);
+    if (result != 0)
+        return result;
+    libmpq__file_hash(name, &hashes[0], &hashes[1], &hashes[2]);
+    if (state->archive->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_THREE) {
+        result = libmpq__het_hash_filename(name, &name_hash);
+        if (result != 0)
+            return result;
+    }
+    {
+        const char *reserved[] = { LIBMPQ_LISTFILE_NAME, LIBMPQ_ATTRIBUTES_NAME,
+                                   LIBMPQ_SIGNATURE_NAME };
+        for (size_t i = 0; i < sizeof(reserved) / sizeof(reserved[0]); i++) {
+            uint32_t existing[3];
+            libmpq__file_hash(reserved[i], &existing[0], &existing[1], &existing[2]);
+            if (hashes[1] == existing[1] && hashes[2] == existing[2])
+                return LIBMPQ_ERROR_FORMAT;
+        }
+    }
+    name_hash |= UINT64_C(0x8000000000000000);
+    for (uint32_t i = 0; i < state->archive->write_next_block; i++) {
+        uint32_t existing[3];
+        uint64_t existing_hash;
+        libmpq__file_hash(state->archive->write_names[i], &existing[0], &existing[1], &existing[2]);
+        if (hashes[1] == existing[1] && hashes[2] == existing[2]) {
+            if (hashes[0] != existing[0] || state->archive->write_locales[i] != locale ||
+                state->archive->write_platforms[i] != platform)
+                return LIBMPQ_ERROR_FORMAT;
+            return LIBMPQ_ERROR_EXIST;
+        }
+        if (state->archive->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_THREE) {
+            result = libmpq__het_hash_filename(state->archive->write_names[i], &existing_hash);
+            if (result != 0)
+                return result;
+            if (name_hash == (existing_hash | UINT64_C(0x8000000000000000)))
+                return LIBMPQ_ERROR_FORMAT;
+        }
+    }
+    return 0;
+}
+
+/* Latch errors after output movement or stream failure for every patch version. */
+static int32_t
+patch_add_result(mpq_patch_writer_s *state, libmpq__off_t before, int32_t result)
+{
+    if (result != 0 && state->archive->write_error == 0 &&
+        (ferror(state->archive->fp) || libmpq__file_tell(state->archive->fp) != before))
+        state->archive->write_error = result;
+    return result;
+}
+
+/* Store an ordinary member through the existing compression/encryption pipeline. */
+int32_t
+libmpq__patch_writer_add(
+    mpq_patch_writer_s *state, const char *name, const uint8_t *data, libmpq__off_t size,
+    const mpq_file_options_s *options
+)
+{
+    libmpq__off_t before;
+    int32_t result = patch_add_validate(state, name, options);
+    if (result != 0)
+        return result;
+    if (size < 0)
+        return LIBMPQ_ERROR_SIZE;
+    if (data == NULL && size != 0)
+        return LIBMPQ_ERROR_EXIST;
+    before = libmpq__file_tell(state->archive->fp);
+    if (before < 0)
+        return state->archive->write_error = LIBMPQ_ERROR_SEEK;
+    result = libmpq__writer_file_add(state->archive, name, data, size, options);
+    return patch_add_result(state, before, result);
+}
+
+/* The shared path writer reads bounded sectors and does not import timestamps. */
+int32_t
+libmpq__patch_writer_add_path(
+    mpq_patch_writer_s *state, const char *name, const char *source_path,
+    const mpq_file_options_s *options
+)
+{
+    libmpq__off_t before;
+    int32_t result = patch_add_validate(state, name, options);
+    if (result != 0)
+        return result;
+    if (source_path == NULL || source_path[0] == '\0')
+        return LIBMPQ_ERROR_EXIST;
+    before = libmpq__file_tell(state->archive->fp);
+    if (before < 0)
+        return state->archive->write_error = LIBMPQ_ERROR_SEEK;
+    result = libmpq__writer_file_add_path(state->archive, name, source_path, options);
+    return patch_add_result(state, before, result);
 }
 
 /* Stage a named replacement, falling back to COPY unless BSD0 is smaller. */
@@ -723,6 +903,8 @@ libmpq__patch_writer_replace(
 
     if (state == NULL || (data == NULL && size != 0))
         return LIBMPQ_ERROR_EXIST;
+    if (state->archive->write_error != 0)
+        return state->archive->write_error;
     if (size < 0 ||
         (uint64_t)size > UINT32_MAX - LIBMPQ_PATCH_INFO_SIZE - LIBMPQ_PATCH_COPY_HEADER_SIZE ||
         (uint64_t)size > SIZE_MAX - LIBMPQ_PATCH_INFO_SIZE - LIBMPQ_PATCH_COPY_HEADER_SIZE)
@@ -816,6 +998,8 @@ libmpq__patch_writer_remove(mpq_patch_writer_s *state, const char *name)
 
     if (state == NULL)
         return LIBMPQ_ERROR_EXIST;
+    if (state->archive->write_error != 0)
+        return state->archive->write_error;
     result = patch_writer_member(state, name, &number, &locale, &platform);
     if (result != 0)
         return result;

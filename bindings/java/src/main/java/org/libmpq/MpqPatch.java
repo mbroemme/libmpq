@@ -52,6 +52,40 @@ public final class MpqPatch implements AutoCloseable {
         }
     }
 
+    /** Stage bytes using ordinary writer defaults. */
+    public void addData(String name, byte[] data) throws LibmpqException {
+        addData(name, data, null);
+    }
+
+    /** Stage bytes with explicit ordinary-member storage options. */
+    public void addData(String name, byte[] data, FileOptions options) throws LibmpqException {
+        checkOpen();
+        Objects.requireNonNull(name, "name");
+        if (name.indexOf('\0') >= 0) throw new IllegalArgumentException("NUL in name");
+        Objects.requireNonNull(data, "data");
+        try (Arena arena = Arena.ofConfined()) {
+            Support.check(LibmpqNative.patchAddData(handle, Support.text(arena, name),
+                    Support.bytes(arena, data), data.length, options(arena, options)));
+        }
+    }
+
+    /** Stage a filesystem source using ordinary writer defaults. */
+    public void addPath(String name, Path source) throws LibmpqException {
+        addPath(name, source, null);
+    }
+
+    /** Stage a filesystem source with explicit ordinary-member storage options. */
+    public void addPath(String name, Path source, FileOptions options) throws LibmpqException {
+        checkOpen();
+        Objects.requireNonNull(name, "name");
+        if (name.indexOf('\0') >= 0) throw new IllegalArgumentException("NUL in name");
+        Objects.requireNonNull(source, "source");
+        try (Arena arena = Arena.ofConfined()) {
+            Support.check(LibmpqNative.patchAddPath(handle, Support.text(arena, name),
+                    Support.text(arena, source.toString()), options(arena, options)));
+        }
+    }
+
     /** Stage bytes using native patch storage defaults. */
     public void replaceData(String name, byte[] data) throws LibmpqException {
         replaceData(name, data, null);

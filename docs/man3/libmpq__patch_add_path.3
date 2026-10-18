@@ -1,0 +1,89 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__PATCH_ADD_PATH 3 2026-11-03 "The MoPaQ archive library"
+.SH NAME
+libmpq__patch_add_path \- stage an ordinary new member from a filesystem path
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__patch_add_path("
+.BI "        mpq_patch_s *" "patch,"
+.BI "        const char *" "filename,"
+.BI "        const char *" "source_path,"
+.BI "        const mpq_file_options_s *" "options"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Stage an ordinary physical member whose nonempty filename is absent from the
+base archive and all staged identities. This is an addition, not a PTCH
+replacement or delete marker. No base file is modified. Addition-only patches
+need no metadata marker when explicitly supplied to
+\fBlibmpq__archive_open_patch\fP().
+.PP
+NULL \fIoptions\fP selects ordinary writer defaults. Existing compression,
+encryption, FIX_KEY, single-unit, sector CRC and representable locale/platform
+options are supported. PATCH_FILE, DELETE_MARKER and unsupported flags are
+rejected. The common finalizer generates v4 structural and raw-chunk MD5 over
+final stored bytes, using the existing public 16 KiB raw-chunk default.
+.PP
+Read \fIsource_path\fP in bounded chunks during the call. The source file
+is not modified or retained, and filesystem timestamps are not imported.
+.PP
+Existing base or staged identities are rejected. Ambiguous hashes or
+locale/platform identities are rejected without guessing filenames. Removing
+a base member does not make it eligible for addition; use replacement.
+A staged addition cannot subsequently be replaced or removed on this handle.
+.PP
+Arguments and options are validated before output where possible; such errors
+preserve earlier valid stages. Partial output failures latch a terminal error
+and prevent successful publication. Finish and abort consume the patch handle,
+including on error. Abort discards unpublished output. The existing MPQE
+staging/publication and signing restrictions are unchanged.
+.SH RETURN VALUE
+Return 0 on success or an existing negative libmpq error code on failure.
+.SH ERRORS
+Missing required pointers, empty filenames, and existing identities return
+LIBMPQ_ERROR_EXIST. Ambiguous identities, embedded line breaks in names,
+reserved metadata names, and unsupported options return LIBMPQ_ERROR_FORMAT.
+Invalid sizes return LIBMPQ_ERROR_SIZE. Allocation, filesystem, compression
+and encryption errors propagate using the existing error codes.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__patch_begin (3),
+.BR libmpq__patch_begin_mpqe (3),
+.BR libmpq__patch_add_data (3),
+.BR libmpq__patch_replace_data (3),
+.BR libmpq__patch_remove (3),
+.BR libmpq__patch_finish (3),
+.BR libmpq__patch_abort (3),
+.BR libmpq__archive_open_patch (3)
+.SH AUTHOR
+The libmpq project is maintained by Maik Broemme.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

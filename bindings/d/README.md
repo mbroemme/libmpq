@@ -226,11 +226,25 @@ Create a patch without changing its base archive:
 ```d
 auto patch = Patch.begin("base.mpq", "changes.mpq");
 scope(exit) patch.close();
+patch.addData("new.txt", cast(const(ubyte)[])"ordinary addition");
+patch.addPath("from-path.bin", "source.bin");
 patch.replaceData("foo.txt", cast(const(ubyte)[])"new contents");
 patch.remove("old.txt");
 patch.sign(privateKey); // or patch.sign(strongKey, SIGNATURE_STRONG)
 patch.finish();
 ```
+
+`Patch.addData(name, data, options)` and `addPath(name, sourcePath, options)`
+create ordinary new members, with no-options overloads using ordinary writer
+defaults. Names must be absent from the base and staged identities. Existing
+names and ambiguous hash/locale identities raise `MPQException`. Empty slices
+are valid; inputs are borrowed only during the call. Use replacement for an
+existing base member, even after removal. A staged addition cannot then be
+replaced or removed. Existing `FileOptions` support compression,
+encryption/FIX_KEY and sector CRC; patch/delete flags are rejected. Validation
+before output preserves valid stages; partial output failures prevent
+publication. Addition-only artifacts compose through `Archive.openPatch()`
+without a metadata marker.
 
 `Patch.begin` creates an ordinary MPQ patch. Use `Patch.beginMpqe` to create
 an MPQE-wrapped patch with a caller-supplied authentication code:

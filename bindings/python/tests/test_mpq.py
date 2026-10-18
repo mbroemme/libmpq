@@ -1239,3 +1239,60 @@ def test_open_patch_namespace(tmp_path):
         for prefixes in ([""], ["Other"]):
             with pytest.raises(mpq.LibmpqFormatError):
                 mpq.Archive.open_patch(base, [patch], prefixes)
+
+
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_FOUR])
+@pytest.mark.parametrize("wrapped", [False, True])
+@pytest.mark.parametrize("mixed", [False, True])
+def test_patch_ordinary_additions(tmp_path, version, wrapped, mixed):
+    base_path, output, source = (tmp_path / name for name in ("base.mpq", "patch.mpq", "source.bin"))
+    payload = bytes((i * 37 + 11) & 255 for i in range(17003))
+    source.write_bytes(payload)
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    with mpq.Writer(base_path, version=version, max_files=8,
+                    flags=mpq.ARCHIVE_CREATE_LISTFILE) as writer:
+        writer.add("existing.txt", b"before")
+        writer.add("remove.txt", b"remove")
+    original = base_path.read_bytes()
+    secure = mpq.FileCreateOptions.compressed(mpq.COMPRESSION_ZLIB, mpq.COMPRESSION_ZLIB)
+    secure.flags |= mpq.FILE_FLAG_ENCRYPTED | 0x00020000 | mpq.FILE_FLAG_SECTOR_CRC
+    opener = (lambda: mpq.Patch.begin_mpqe(base_path, output, code)) if wrapped else lambda: mpq.Patch(base_path, output)
+    with opener() as patch:
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            patch.add_data("existing.txt", b"not an addition")
+        with pytest.raises(ValueError):
+            patch.add_data("bad\0name", b"payload")
+        with pytest.raises(ValueError):
+            patch.add_path("bad", "bad\0source")
+        patch.add_data("new.bin", payload)
+        patch.add_path("path.bin", source, secure)
+        patch.add_data("empty.bin", b"")
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            patch.add_data("NEW.BIN", b"duplicate")
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            patch.replace_data("new.bin", b"not a base member")
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            patch.remove("new.bin")
+        if mixed:
+            patch.replace_data("existing.txt", b"after")
+            patch.remove("remove.txt")
+            with pytest.raises(mpq.LibmpqNotFoundError):
+                patch.add_data("remove.txt", b"use replace")
+        patch.finish()
+    assert base_path.read_bytes() == original
+    open_layer = mpq.Archive.open_mpqe(output, code) if wrapped else mpq.Archive(output)
+    with mpq.Archive(base_path) as base, open_layer as layer:
+        assert not layer["new.bin"].flags & (mpq.FILE_FLAG_PATCH_FILE | mpq.FILE_FLAG_DELETE_MARKER)
+        assert layer["new.bin"].verify(mpq.VERIFY_ALL) == 0
+        with mpq.Archive.open_patch(base, [layer]) as result:
+            assert result["new.bin"].read() == payload
+            with result.open_stream("path.bin") as stream:
+                assert stream.read() == payload
+            assert result["empty.bin"].read() == b""
+            assert result["existing.txt"].read() == (b"after" if mixed else b"before")
+            assert ("remove.txt" in result) is not mixed
+    output.unlink()
+    with opener() as patch:
+        patch.add_data("aborted.txt", b"unpublished")
+        patch.abort()
+    assert not output.exists() and base_path.read_bytes() == original

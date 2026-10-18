@@ -219,11 +219,25 @@ Create a separate patch artifact without modifying its base archive:
 
 ```python
 with mpq.Patch.begin("base.mpq", "changes.mpq") as patch:
+    patch.add_data("new.txt", b"ordinary addition")
+    patch.add_path("from-path.bin", "source.bin")
     patch.replace_data("foo.txt", b"new contents")
     patch.remove("old.txt")
     patch.sign(private_key)  # or patch.sign(strong_key, mpq.SIGNATURE_STRONG)
     patch.finish()
 ```
+
+`Patch.add_data(name, data, options=None)` and
+`Patch.add_path(name, source_path, options=None)` create ordinary members,
+not PTCH payloads. Names must be absent from the base and staged identities;
+duplicates raise the existing not-found/existence exception, while ambiguous
+hash/locale identities raise a format exception. Use replacement for existing
+base members, even after removal. A staged addition cannot then be replaced
+or removed. Empty bytes are valid. Existing storage options support compression
+and encryption/FIX_KEY; patch/delete flags are rejected. Inputs are borrowed
+only during the call. Before-output validation preserves valid stages;
+partial output errors prevent publication. Addition-only patches compose
+through `Archive.open_patch()` without a metadata marker.
 
 `Patch.begin()` creates an ordinary MPQ patch. For an MPQE-wrapped patch, use
 the same `Patch` wrapper with an explicit caller-supplied authentication code:

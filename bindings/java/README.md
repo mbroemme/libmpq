@@ -196,12 +196,26 @@ Create a patch artifact while leaving its base archive unchanged:
 
 ```java
 try (MpqPatch patch = MpqPatch.begin(Path.of("base.mpq"), Path.of("changes.mpq"))) {
+    patch.addData("new.txt", "ordinary addition".getBytes());
+    patch.addPath("from-path.bin", Path.of("source.bin"));
     patch.replaceData("foo.txt", "new contents".getBytes());
     patch.remove("old.txt");
     patch.sign(weakPrivateKey); // or patch.sign(Mpq.SIGNATURE_STRONG, strongPrivateKey)
     patch.finish();
 }
 ```
+
+`MpqPatch.addData(name, data, options)` and `addPath(name, source, options)`
+write ordinary new members; the overloads without options use ordinary writer
+defaults. These calls require base-absent, unstaged identities. Existing names
+or ambiguous hash/locale identities throw `LibmpqException`; name NULs are
+rejected before the native call. Empty byte arrays are valid. Use replacement
+for an existing base member, even after removal. Staged additions cannot be
+replaced or removed. Compression, encryption/FIX_KEY and sector CRC reuse
+`FileOptions`; patch/delete flags are rejected. Native arenas own the borrowed
+bytes and strings during each call. Validation preserves earlier valid stages;
+partial output failures prevent publication. Addition-only artifacts compose
+through `Archive.openPatch()` without a metadata marker.
 
 `MpqPatch.begin` creates an ordinary MPQ patch. Use `beginMpqe` and an
 explicit caller-supplied authentication code for MPQE output:

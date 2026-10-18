@@ -39,6 +39,52 @@ final class Patch {
         return new Patch(result);
     }
 
+    /** Stage ordinary addition using native ordinary writer defaults. */
+    void addData(string name, const(ubyte)[] data) {
+        addDataImpl(name, data, null);
+    }
+
+    /** Stage ordinary addition with explicit ordinary-member storage options. */
+    void addData(string name, const(ubyte)[] data, FileOptions options) {
+        auto nativeOptions = options.nativeOptions();
+        addDataImpl(name, data, &nativeOptions);
+    }
+
+    private void addDataImpl(string name, const(ubyte)[] data,
+                                 const(mpq_file_options_s)* options) {
+        ensureOpen();
+        foreach (character; name)
+            if (character == 0) throw new MPQException("Patch.addData", ERROR_FORMAT);
+        if (data.length > cast(size_t)long.max)
+            throw new MPQException("Patch.addData", ERROR_SIZE);
+        checkStatus(libmpq__patch_add_data(handle, toStringz(name),
+                    data.length == 0 ? null : data.ptr, cast(off_t)data.length,
+                    options), "libmpq__patch_add_data");
+    }
+
+    /** Stage path ordinary addition using native ordinary writer defaults. */
+    void addPath(string name, string sourcePath) {
+        addPathImpl(name, sourcePath, null);
+    }
+
+    /** Stage path ordinary addition with explicit ordinary-member storage options. */
+    void addPath(string name, string sourcePath, FileOptions options) {
+        auto nativeOptions = options.nativeOptions();
+        addPathImpl(name, sourcePath, &nativeOptions);
+    }
+
+    private void addPathImpl(string name, string sourcePath,
+                                 const(mpq_file_options_s)* options) {
+        ensureOpen();
+        foreach (character; name)
+            if (character == 0) throw new MPQException("Patch.addPath", ERROR_FORMAT);
+        foreach (character; sourcePath)
+            if (character == 0) throw new MPQException("Patch.addPath", ERROR_FORMAT);
+        checkStatus(libmpq__patch_add_path(handle, toStringz(name),
+                    toStringz(sourcePath), options),
+                    "libmpq__patch_add_path");
+    }
+
     /** Stage replacement using native patch storage defaults. */
     void replaceData(string name, const(ubyte)[] data) {
         replaceDataImpl(name, data, null);

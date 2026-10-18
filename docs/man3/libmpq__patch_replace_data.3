@@ -33,8 +33,9 @@ from \fIdata\fP. It does not modify the base archive or publish the patch. The
 private writer selects a validated BSD0 delta only when smaller than a
 whole-file PTCH COPY payload. NULL \fIoptions\fP selects patch-writer
 defaults. Explicit options control storage of the patch member, not the final
-patched file; locale and platform must match the base member. Add and rename
-operations are not supported.
+patched file; locale and platform must match the base member. Use
+\fBlibmpq__patch_add_data\fP() for an ordinary new member. Rename operations
+are not supported.
 .PP
 MPQ v1/v2/v3/v4 patch output accepts FIX_KEY encryption, using the final
 archive-relative member offset and reconstructed target size for key adjustment.

@@ -42,6 +42,8 @@ man_MANS = \
 	libmpq__file_size_unpacked.3 \
 	libmpq__file_verify.3 \
 	libmpq__patch_abort.3 \
+	libmpq__patch_add_data.3 \
+	libmpq__patch_add_path.3 \
 	libmpq__patch_begin.3 \
 	libmpq__patch_begin_mpqe.3 \
 	libmpq__patch_finish.3 \

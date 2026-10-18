@@ -416,6 +416,24 @@ libmpq__patch_sign(
 }
 
 int32_t
+libmpq__patch_add_data(
+    mpq_patch_s *patch, const char *filename, const uint8_t *data, libmpq__off_t size,
+    const mpq_file_options_s *options
+)
+{
+    return libmpq__patch_writer_add(patch, filename, data, size, options);
+}
+
+int32_t
+libmpq__patch_add_path(
+    mpq_patch_s *patch, const char *filename, const char *source_path,
+    const mpq_file_options_s *options
+)
+{
+    return libmpq__patch_writer_add_path(patch, filename, source_path, options);
+}
+
+int32_t
 libmpq__patch_replace_data(
     mpq_patch_s *patch, const char *filename, const uint8_t *data, libmpq__off_t size,
     const mpq_file_options_s *options

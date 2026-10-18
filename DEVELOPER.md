@@ -501,11 +501,11 @@ if (status == 0) {
 
 `libmpq__patch_begin()` creates an ordinary MPQ patch. To create an
 MPQE-wrapped patch instead, call `libmpq__patch_begin_mpqe()` with a
-caller-supplied authentication code; replacement, removal, finish, and abort
-then follow the same lifecycle. Authenticated patch readers can consume the
-result using that patch layer's own code. Signing is optional and configured
-with `libmpq__patch_sign()` before finish. It delegates to the existing
-archive writer: v1/v2/v3 plain patches may use weak, strong, or both
+caller-supplied authentication code; addition, replacement, removal, finish,
+and abort then follow the same lifecycle. Authenticated patch readers can
+consume the result using that patch layer's own code. Signing is optional
+and configured with `libmpq__patch_sign()` before finish. It delegates to the
+existing archive writer: v1/v2/v3 plain patches may use weak, strong, or both
 signatures; their MPQE variants support weak signatures only. Public v4
 patch creation enables raw-chunk MD5, preventing weak signing. Plain v4
 patches therefore support strong signing only; MPQE-wrapped v4 patches
@@ -521,7 +521,7 @@ archive. It writes named replacements as PTCH BSD0 members when a
 deterministic binary delta is smaller than PTCH COPY, and uses COPY otherwise.
 Deletions are delete markers. It publishes only on finish; abort discards the
 temporary output. Finish and abort consume the handle even when they report an
-error; the pointer must not be reused. Patch creation does not add or rename
+error; the pointer must not be reused. Patch creation does not rename
 members. Public patch creation currently requires an ordinary filesystem MPQ
 base; this restriction does not apply to public patch composition, which
 accepts authenticated MPQE sources. PTCH COPY/BSD0 encoding and validation are
@@ -530,9 +530,9 @@ members are read with their plaintext names, so encrypted members can supply
 their filename-derived keys.
 
 The patch writer emits a generated `(listfile)` and `(attributes)` with
-PATCH_BIT=true only for patch-file replacements, not delete markers. It does
-not emit a Blizzard `(patch_metadata)` marker; the private patch reader
-identifies these archives from patch-file and delete-marker flags.
+PATCH_BIT=true only for patch-file replacements, not additions or delete
+markers. It does not emit a Blizzard `(patch_metadata)` marker; the private
+patch reader identifies these archives from patch-file and delete-marker flags.
 Game-specific Blizzard patch-prefix autodetection heuristics are deliberately
 outside the game-neutral core. Patch artifacts record target MD5 and plaintext
 patch CRC32; FILETIME is omitted so materialization can retain base
@@ -544,8 +544,24 @@ private patch view. Checked-in synthetic patch fixtures provide complementary
 regression coverage; their inventory and regeneration recipes are documented
 in [tests/fixtures/README.md](tests/fixtures/README.md). Patch creation can
 use the existing archive signer but does not write embedded patch containers.
-The public patch API supports replacement and removal, but not addition or
-rename.
+Use `libmpq__patch_add_data()` or `libmpq__patch_add_path()` for a genuinely
+base-absent ordinary member. These calls do not generate PTCH or delete-marker
+payloads; NULL options use ordinary writer defaults. They support existing
+compression, encryption/FIX_KEY, sector CRC and representable locale/platform
+options. Path input is read in bounded chunks without importing timestamps.
+Additions have PATCH_BIT=false and use the common v4 raw/structural checksum
+finalizer. Addition-only artifacts need no metadata marker when explicitly
+supplied to `libmpq__archive_open_patch()`.
+
+Existing base or staged identities return `LIBMPQ_ERROR_EXIST`; ambiguous
+classic/extended hashes or locale/platform identities return
+`LIBMPQ_ERROR_FORMAT`. A remove-then-add of a base member is rejected; use
+replacement instead. A newly added name cannot be replaced or removed within
+the same patch handle. Empty data is valid, including NULL at size zero.
+PATCH_FILE, DELETE_MARKER and unsupported flags are rejected. Validation before
+output leaves prior stages usable; partial output failures latch a terminal
+error, so finish cannot publish an incomplete patch. Abort discards unpublished
+output; finish and abort retain their consuming semantics.
 
 ### Patch composition
 

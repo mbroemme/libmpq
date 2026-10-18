@@ -100,6 +100,8 @@ public final class LibmpqNative {
     private static final MethodHandle PATCH_BEGIN;
     private static final MethodHandle PATCH_BEGIN_MPQE;
     private static final MethodHandle PATCH_SIGN;
+    private static final MethodHandle PATCH_ADD_DATA;
+    private static final MethodHandle PATCH_ADD_PATH;
     private static final MethodHandle PATCH_REPLACE_DATA;
     private static final MethodHandle PATCH_REPLACE_PATH;
     private static final MethodHandle PATCH_REMOVE;
@@ -247,6 +249,12 @@ public final class LibmpqNative {
         PATCH_SIGN = function(linker, lookup, "libmpq__patch_sign",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT,
                                       ValueLayout.ADDRESS, C_SIZE_T));
+        PATCH_ADD_DATA = function(linker, lookup, "libmpq__patch_add_data",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS));
+        PATCH_ADD_PATH = function(linker, lookup, "libmpq__patch_add_path",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS, ValueLayout.ADDRESS));
         PATCH_REPLACE_DATA = function(linker, lookup, "libmpq__patch_replace_data",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                       ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS));
@@ -588,6 +596,14 @@ public final class LibmpqNative {
     public static int patchSign(MemorySegment patch, int signatureType, MemorySegment key,
                                 long size) {
         return callInt(PATCH_SIGN, patch, signatureType, key, nativeSizeT(size));
+    }
+    public static int patchAddData(MemorySegment patch, MemorySegment name,
+                                       MemorySegment data, long size, MemorySegment options) {
+        return callInt(PATCH_ADD_DATA, patch, name, data, size, options);
+    }
+    public static int patchAddPath(MemorySegment patch, MemorySegment name,
+                                       MemorySegment path, MemorySegment options) {
+        return callInt(PATCH_ADD_PATH, patch, name, path, options);
     }
     public static int patchReplaceData(MemorySegment patch, MemorySegment name,
                                        MemorySegment data, long size, MemorySegment options) {

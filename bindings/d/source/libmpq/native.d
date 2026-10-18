@@ -329,6 +329,12 @@ extern(C) {
                                  size_t auth_code_size);
     int libmpq__patch_sign(mpq_patch_s* patch, uint signature_type,
                            const(ubyte)* private_key, size_t private_key_size);
+    int libmpq__patch_add_data(mpq_patch_s* patch, const(char)* filename,
+                                   const(ubyte)* data, off_t size,
+                                   const(mpq_file_options_s)* options);
+    int libmpq__patch_add_path(mpq_patch_s* patch, const(char)* filename,
+                                   const(char)* source_path,
+                                   const(mpq_file_options_s)* options);
     int libmpq__patch_replace_data(mpq_patch_s* patch, const(char)* filename,
                                    const(ubyte)* data, off_t size,
                                    const(mpq_file_options_s)* options);
