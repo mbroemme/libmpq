@@ -31,7 +31,9 @@ libmpq__writer_begin \- begin an MPQ streaming file writer
 Begins \fIfilename\fP with declared \fIunpacked_size\fP and returns an
 active, caller-owned \fI*writer\fP. NULL \fIoptions\fP selects writer
 defaults. Supply bytes with libmpq__writer_write(3), then call
-libmpq__writer_finish(3). Only one writer may be active per archive.
+libmpq__writer_finish(3). Only one writer may be active per archive. The archive
+must outlive the writer. Closing the archive with an active writer reports an
+error and discards that writer; neither handle may then be reused.
 .PP
 Add LIBMPQ_FILE_FLAG_SECTOR_CRC to options.flags to generate sector Adler-32
 checksums for sectorized COMPRESS or IMPLODE files. Checksums cover packed
@@ -40,7 +42,7 @@ encrypted; it uses zlib compression only when smaller than raw storage.
 The flag is ignored for empty, raw, and single-unit files. Generation is
 opt-in and does not enable implicit verification during extraction.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP with an active writer on success, or a
+Returns \fB0\fP with an active writer on success, or a
 negative libmpq error. No file entry is published before finish succeeds.
 .SH ERRORS
 Invalid writer state or storage options return \fBLIBMPQ_ERROR_FORMAT\fP;

@@ -50,7 +50,7 @@ After finish, open the patch with the ordinary MPQ or authenticated MPQE
 reader. Use libmpq__archive_signatures(3) and libmpq__archive_verify(3)
 to inspect and verify its signatures. No separate patch verification API exists.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP or an existing negative libmpq error.
+Returns \fB0\fP or an existing negative libmpq error.
 .SH ERRORS
 A NULL patch returns \fBLIBMPQ_ERROR_EXIST\fP. Invalid types, keys, duplicate
 configuration, and unsupported MPQE strong signing return

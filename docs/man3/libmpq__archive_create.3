@@ -29,7 +29,8 @@ libmpq__archive_create \- create a seekable MPQ archive
 Creates an MPQ v1, v2, v3, or v4 archive at \fImpq_filename\fP. On success,
 \fI*mpq_archive\fP is a caller-owned writer handle. Add members using the
 streaming writer or archive-add convenience functions, then finalize the
-archive with \fBlibmpq__archive_close\fP().
+archive with \fBlibmpq__archive_close\fP(). Plain creation opens or truncates the
+destination directly and does not provide transactional rollback on failure.
 .SS "Creation Options"
 The options select a fixed entry capacity, sector size, archive version,
 and optional generated (listfile). NULL \fIoptions\fP uses the built-in
@@ -61,7 +62,7 @@ FILETIME defaults to zero and patch bits are zero. Use
 \fBlibmpq__writer_timestamp\fP() on an active writer for an explicit
 timestamp. Path addition never imports filesystem timestamps.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP with a writer handle on success. A valid
+Returns \fB0\fP with a writer handle on success. A valid
 \fI*mpq_archive\fP is NULL on failure, which returns a negative libmpq error.
 .SH ERRORS
 NULL required arguments return \fBLIBMPQ_ERROR_EXIST\fP; invalid creation

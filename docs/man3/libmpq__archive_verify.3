@@ -48,7 +48,7 @@ MPQE-wrapped MPQs; no external strong-signature transport is defined for
 MPQE. These legacy signatures should not be treated as modern trust
 primitives.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP after verification. The requested bit is
+Returns \fB0\fP after verification. The requested bit is
 set in \fI*mismatches\fP if the signature does not match; it is clear
 when it matches. On failure the function returns a negative libmpq error
 and leaves a non-NULL mismatch output zero.

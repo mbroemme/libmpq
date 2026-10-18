@@ -56,7 +56,7 @@ weak signing. MPQE output rejects external strong signing regardless of
 version because no MPQE transport representation is defined for it. Both
 algorithms are legacy compatibility mechanisms, not modern trust primitives.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP after configuration, or a negative libmpq
+Returns \fB0\fP after configuration, or a negative libmpq
 error. A failed request does not consume the writer handle.
 .SH ERRORS
 NULL archive handles return \fBLIBMPQ_ERROR_EXIST\fP; invalid type,

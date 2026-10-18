@@ -31,7 +31,7 @@ Seek relative to \fBLIBMPQ_SEEK_SET\fP, \fBLIBMPQ_SEEK_CUR\fP, or
 file size. Invalid origins, overflow, positions before zero, and positions
 after EOF fail without changing the current position.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP on success.
+Returns \fB0\fP on success.
 .SH ERRORS
 \fBLIBMPQ_ERROR_EXIST\fP reports a NULL stream. \fBLIBMPQ_ERROR_SEEK\fP
 reports an invalid origin or position.

@@ -42,7 +42,7 @@ complete lossless file reads also check available CRC32/MD5 attributes.
 \fBlibmpq__block_read\fP() does not implicitly verify its stored sector
 checksum or perform file-level attribute verification.
 .SH RETURN VALUE
-LIBMPQ_SUCCESS means the operation completed. *checksum receives the stored
+0 means the operation completed. *checksum receives the stored
 Adler-32, not the calculated value. *mismatches is zero for a match or
 LIBMPQ_VERIFY_SECTOR_CRC for a mismatch. Checksums are not authentication.
 .PP

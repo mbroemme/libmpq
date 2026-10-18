@@ -35,7 +35,7 @@ borrowed callback context valid until this derived logical member stream closes.
 Open encrypted members whose key cannot be recovered without their plaintext
 filename with \fBlibmpq__stream_open_name\fP().
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP on success. Otherwise returns an existing archive,
+Returns \fB0\fP on success. Otherwise returns an existing archive,
 file, clone, allocation, or decoding error and leaves \fI*stream\fP NULL.
 .SH ERRORS
 \fBLIBMPQ_ERROR_EXIST\fP reports an invalid archive, output pointer, file

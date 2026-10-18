@@ -27,7 +27,7 @@ The base archive and destination patch path remain unchanged. This call
 consumes \fIpatch\fP whether it succeeds or fails; callers must not reuse the
 pointer.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP or a negative libmpq error.
+Returns \fB0\fP or a negative libmpq error.
 .SH ERRORS
 A NULL handle returns LIBMPQ_ERROR_EXIST. Close or temporary-file cleanup
 errors may also propagate.

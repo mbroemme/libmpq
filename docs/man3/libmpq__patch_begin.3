@@ -36,7 +36,7 @@ uses 0x4000-byte raw chunks and regenerates structural and member MD5 digests.
 This entry point creates an ordinary MPQ patch. Use
 libmpq__patch_begin_mpqe(3) to create an MPQE-wrapped patch instead.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP or a negative libmpq error.
+Returns \fB0\fP or a negative libmpq error.
 .SH ERRORS
 Invalid arguments return LIBMPQ_ERROR_EXIST; unsupported archive formats
 return LIBMPQ_ERROR_FORMAT. Opening, allocation, and I/O errors may also

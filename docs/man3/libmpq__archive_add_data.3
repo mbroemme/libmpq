@@ -33,7 +33,7 @@ The call begins, writes, and finishes one member using the same file options
 as the streaming writer. NULL \fIoptions\fP selects writer defaults; the
 buffer need only remain valid until this call returns.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP after the member is staged in the writer
+Returns \fB0\fP after the member is staged in the writer
 archive, or a negative libmpq error. Archive publication still requires
 \fBlibmpq__archive_close\fP().
 .SH ERRORS

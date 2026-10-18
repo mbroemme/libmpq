@@ -47,7 +47,7 @@ temporary data behind. The destination identity is rechecked immediately
 before publication on a best-effort basis; this is not a lock or conditional
 replacement.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP on success, or a negative libmpq error. On
+Returns \fB0\fP on success, or a negative libmpq error. On
 failure, \fI*update\fP is NULL.
 .SH ERRORS
 Missing or short authentication data returns \fBLIBMPQ_ERROR_DECRYPT\fP. Wrong

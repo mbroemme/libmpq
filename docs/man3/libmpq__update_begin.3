@@ -49,7 +49,7 @@ Ambiguous names, embedded null bytes and unresolvable listfile entries reject
 reconstruction. A staged close failure prevents further mutation or publication;
 abort remains safe and attempts cleanup.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP on success, or a negative libmpq error.
+Returns \fB0\fP on success, or a negative libmpq error.
 .SH ERRORS
 Invalid paths, unsupported formats, allocation, and backing I/O errors are
 returned as negative LIBMPQ_ERROR_* values.

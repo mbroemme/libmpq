@@ -26,9 +26,10 @@ Validates the declared size, writes the file sectors and records its hash and
 block entry. Incomplete streams are rejected. This call consumes the writer
 on both success and failure; do not reuse it afterward.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP when the member entry is staged, or a
-negative libmpq error. Archive publication still requires
-\fBlibmpq__archive_close\fP().
+Returns \fB0\fP when the member entry is staged, or a
+negative libmpq error. Archive finalization still requires
+\fBlibmpq__archive_close\fP(). Plain creation writes directly to its destination
+and does not provide transactional rollback.
 .SH ERRORS
 NULL writers return \fBLIBMPQ_ERROR_EXIST\fP; an incomplete stream returns
 \fBLIBMPQ_ERROR_SIZE\fP. Compression, allocation, and I/O errors may also

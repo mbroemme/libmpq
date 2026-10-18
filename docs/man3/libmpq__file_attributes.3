@@ -49,7 +49,7 @@ The native ABI is 40 bytes: fields begin at offsets 0, 4, 8, 16, and 32,
 followed by reserved[4] at offset 36. Reserved bytes are returned as zero.
 Natural alignment is retained; this is not the serialized little-endian payload.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP with stored attributes on success, or a
+Returns \fB0\fP with stored attributes on success, or a
 negative libmpq error. The output is zeroed on failure.
 .SH ERRORS
 \fBLIBMPQ_ERROR_EXIST\fP means a required argument, file number, or

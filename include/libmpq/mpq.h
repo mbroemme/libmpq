@@ -117,7 +117,8 @@ typedef int32_t (*libmpq_read_at_fn)(
 /*
  * On-disk archive format versions (not combinable flags). Creation accepts
  * ONE, TWO, THREE, and FOUR. V3/v4 creation emits HET/BET and classic tables;
- * V3/v4 updates require complete filename reconstruction.
+ * V3/v4 updates can preserve supported unrelated unknown-name entries; see
+ * libmpq__update_begin() for reconstruction restrictions.
  * libmpq__archive_version() reports the corresponding one-based generation.
  */
 #define LIBMPQ_ARCHIVE_VERSION_ONE 0
@@ -415,7 +416,8 @@ extern LIBMPQ_API int32_t libmpq__archive_open_mpqe_io(
  * The options determine the format, reserved table capacity, sector size, and
  * optional internal files; zero options select documented writer defaults.
  * The returned handle remains in write mode until close finalizes its tables,
- * and the caller must close it even when no files are added.
+ * and the caller must close it even when no files are added. Plain creation
+ * writes directly to the destination without transactional rollback.
  */
 extern LIBMPQ_API int32_t libmpq__archive_create(
     mpq_archive_s **mpq_archive, const char *mpq_filename,
@@ -443,16 +445,18 @@ extern LIBMPQ_API int32_t libmpq__archive_create_mpqe(
  * Clone an opened archive into an independent read handle.
  * The clone reopens a filesystem source or clones the custom source backend
  * and reparses its tables, so decoded metadata and caches are independent.
- * Custom-I/O callback context remains caller-owned. Both handles are
- * independently closable; the backing source must remain valid.
+ * Custom-I/O callback context remains caller-owned and must outlive all
+ * derived clones and streams. Both handles are independently closable;
+ * the backing source must remain readable and unchanged.
  */
 extern LIBMPQ_API int32_t libmpq__archive_clone(mpq_archive_s **clone, mpq_archive_s *source);
 
 /*
- * Close an archive handle and release all decoded tables, caches, and streams.
- * For writer handles this also finalizes the archive header and encrypted
- * metadata tables. The archive handle is invalid after this call regardless
- * of the returned status.
+ * Close and consume an archive, releasing its tables and caches. Independently
+ * owned clones and logical streams remain usable with a valid backing source.
+ * For writers this attempts header/table finalization, then discards any
+ * active file writer, invalidating that writer handle. Do not reuse or
+ * close the archive again, even if this call reports an error.
  */
 extern LIBMPQ_API int32_t libmpq__archive_close(mpq_archive_s *mpq_archive);
 
@@ -752,8 +756,9 @@ extern LIBMPQ_API int32_t libmpq__block_read(
  * Begin writing a file in a writer archive and reserve its declared size.
  * The returned writer accepts only the number of bytes specified by
  * unpacked_size and applies the copied file options sector by sector.
- * Only one writer may be active per archive; finish it or abandon it before
- * beginning another file.
+ * Only one writer may be active per archive; finish it before beginning
+ * another file. The archive must outlive the writer. Closing the archive
+ * with an active writer reports an error and consumes both handles.
  */
 extern LIBMPQ_API int32_t libmpq__writer_begin(
     mpq_archive_s *mpq_archive, const char *filename, libmpq__off_t unpacked_size,
@@ -810,10 +815,15 @@ extern LIBMPQ_API int32_t libmpq__archive_add_path(
 /*
  * Stage changes to an existing filesystem MPQ in a private working copy.
  * Changes reach the original only when commit atomically publishes that copy.
- * Embedded MPQs retain their container prefix and unrelated trailing bytes.
+ * Supported legacy embedded updates retain their container prefix and
+ * unrelated trailing bytes; v3/v4 reconstruction rejects embedded wrappers.
  * Stale weak and strong signatures are removed on modification. MPQE archives
  * require the explicit authenticated update_begin_mpqe() entry point.
- * V3/v4 updates require complete filenames and representable metadata.
+ * Known-target v3/v4 modifications can preserve supported unrelated unnamed
+ * entries with complete normalized hashes and consistent canonical provenance
+ * where applicable. Ambiguous aliases, reduced hashes, and unrepresentable
+ * metadata remain restricted. Private named patch materialization has separate
+ * filename requirements.
  */
 extern LIBMPQ_API int32_t libmpq__update_begin(mpq_update_s **update, const char *path);
 

@@ -31,7 +31,7 @@ already exist. Encrypted members are decoded under the old name and re-encoded
 under the new name so filename-derived keys remain correct. The original
 archive remains unchanged until commit.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP on success, or a negative libmpq error.
+Returns \fB0\fP on success, or a negative libmpq error.
 .SH ERRORS
 A missing old name or existing new name returns LIBMPQ_ERROR_EXIST. Renaming
 an encrypted member whose physical block is shared by another name returns

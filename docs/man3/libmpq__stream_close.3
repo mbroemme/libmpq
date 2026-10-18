@@ -26,7 +26,7 @@ Release retained offset-table state and the decoded block cache, then close the
 private archive clone owned by \fIstream\fP. The handle is consumed regardless
 of the returned status and must not be reused.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP or the first cleanup error while all cleanup is
+Returns \fB0\fP or the first cleanup error while all cleanup is
 still attempted.
 .SH ERRORS
 \fBLIBMPQ_ERROR_EXIST\fP reports a NULL stream. A clone close can report its

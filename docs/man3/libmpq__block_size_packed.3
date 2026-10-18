@@ -40,7 +40,7 @@ checksum-table bytes are excluded, including from the final data block.
 This complements libmpq__block_size_unpacked(), which reports decoded bytes.
 Use the unpacked size when allocating a buffer for libmpq__block_read().
 .SH RETURN VALUE
-Returns LIBMPQ_SUCCESS and stores the size in *packed_size on success.
+Returns 0 and stores the size in *packed_size on success.
 A non-NULL packed_size output is initialized to zero before validation and
 remains zero on failure.
 .SH ERRORS

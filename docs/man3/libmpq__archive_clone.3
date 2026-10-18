@@ -28,7 +28,8 @@ libmpq__archive_clone \- clone an MPQ archive for independent reading.
 Call \fBlibmpq__archive_clone\fP() to create an independently parsed
 reader with separate metadata tables and lazy block caches. A filesystem
 source is reopened; a custom-I/O backend is cloned while its callback
-context remains caller-owned. The original archive handle may be closed
+context remains caller-owned and must outlive all derived clones and streams.
+The original archive handle may be closed
 after cloning, and each clone must be closed independently with
 \fBlibmpq__archive_close\fP().
 .PP

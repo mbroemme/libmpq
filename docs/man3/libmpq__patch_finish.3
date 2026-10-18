@@ -28,7 +28,7 @@ base archive remains unchanged. This call consumes \fIpatch\fP whether it
 succeeds or fails; callers must not reuse the pointer. On a handled failure
 before publication, the temporary output is discarded.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP or a negative libmpq error.
+Returns \fB0\fP or a negative libmpq error.
 .SH ERRORS
 A NULL handle returns LIBMPQ_ERROR_EXIST. Finalization, close, and publication
 errors may also propagate.

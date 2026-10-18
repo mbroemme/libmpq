@@ -33,7 +33,7 @@ publish the patch. NULL \fIoptions\fP selects patch-writer defaults. Explicit
 options control storage of the patch member, not the final patched file;
 locale and platform must match the base member.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP or a negative libmpq error.
+Returns \fB0\fP or a negative libmpq error.
 .SH ERRORS
 A missing member or invalid pointer returns LIBMPQ_ERROR_EXIST.
 Locale/platform mismatches or unsupported options return LIBMPQ_ERROR_FORMAT.

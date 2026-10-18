@@ -28,7 +28,7 @@ identity recheck. This is not a lock or a conditional replacement primitive.
 The handle is consumed on both success and failure; do not use it again. A
 no-op transaction preserves the complete original container byte-for-byte.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP on success, or a negative libmpq error.
+Returns \fB0\fP on success, or a negative libmpq error.
 .SH ERRORS
 A failure before publication leaves the original file untouched. A negative
 LIBMPQ_ERROR_* result may report identity conflict, validation, flush, close,

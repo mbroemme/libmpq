@@ -1,7 +1,7 @@
 # libmpq Java bindings
 
 These bindings use the Java Foreign Function and Memory API and require JDK
-22 or newer. They provide a complete mapping of libmpq's stable public C API
+22 or newer. They provide a complete mapping of libmpq's public C API
 through `org.libmpq.ffi.LibmpqNative` and safer `AutoCloseable` wrappers in
 `org.libmpq`.
 

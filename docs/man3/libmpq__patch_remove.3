@@ -30,7 +30,7 @@ patch hides that member from the base archive, but neither this call nor patch
 publication modifies the base archive itself. A missing member cannot be
 removed.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP or a negative libmpq error.
+Returns \fB0\fP or a negative libmpq error.
 .SH ERRORS
 A NULL handle or missing member returns LIBMPQ_ERROR_EXIST. Malformed
 identity, allocation, and write errors may also propagate.

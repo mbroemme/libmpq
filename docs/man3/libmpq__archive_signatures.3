@@ -37,7 +37,7 @@ This call checks storage structure, not cryptographic authenticity.
 Use \fBlibmpq__archive_verify\fP(3) with a caller-supplied public key to
 verify one detected signature.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP and sets \fI*signatures\fP on success,
+Returns \fB0\fP and sets \fI*signatures\fP on success,
 including when the mask is zero. A non-NULL output is initialized to zero
 before validation. On failure it returns a negative libmpq error; callers
 must not use the partial mask.

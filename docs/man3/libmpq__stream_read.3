@@ -37,7 +37,7 @@ member stream reads do not implicitly verify whole-file CRC32/MD5 attributes; us
 .BR libmpq__file_verify (3)
 for explicit whole-file integrity verification.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP for normal, short EOF, and zero-length reads.
+Returns \fB0\fP for normal, short EOF, and zero-length reads.
 .SH ERRORS
 \fBLIBMPQ_ERROR_EXIST\fP reports an invalid stream or nonzero read with a NULL
 buffer. \fBLIBMPQ_ERROR_SIZE\fP reports an invalid size.

@@ -77,7 +77,7 @@ Zero mismatch bits mean no mismatch was detected, not that checksums existed.
 Use \fBlibmpq__file_attributes\fP() to inspect per-file availability when
 required. Checksums are not cryptographic authentication.
 .SH RETURN VALUE
-Returns LIBMPQ_SUCCESS when the operation completes, even on mismatch.
+Returns 0 when the operation completes, even on mismatch.
 The output in *mismatches is a subset of verify_flags, using the same
 LIBMPQ_VERIFY_SECTOR_CRC, LIBMPQ_VERIFY_FILE_CRC32, LIBMPQ_VERIFY_FILE_MD5,
 and LIBMPQ_VERIFY_RAW_MD5

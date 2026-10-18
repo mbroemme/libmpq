@@ -32,7 +32,7 @@ derivation requires it. The stream owns a private archive clone, starts at
 zero, and outlives its source archive;
 custom-I/O callback context remains caller-owned until close.
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP and a stream, or an existing lookup, clone, or
+Returns \fB0\fP and a stream, or an existing lookup, clone, or
 allocation error with \fI*stream\fP NULL.
 .SH ERRORS
 \fBLIBMPQ_ERROR_EXIST\fP reports invalid input, a missing name, or writer mode.

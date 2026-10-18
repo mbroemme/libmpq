@@ -32,7 +32,7 @@ Reads caller-owned \fIsource_path\fP in bounded chunks and adds it under
 selects writer defaults. Archive publication still requires
 \fBlibmpq__archive_close\fP().
 .SH RETURN VALUE
-Returns \fBLIBMPQ_SUCCESS\fP after the member is staged in the writer
+Returns \fB0\fP after the member is staged in the writer
 archive, or a negative libmpq error.
 .SH ERRORS
 An inaccessible source returns \fBLIBMPQ_ERROR_OPEN\fP; source read or

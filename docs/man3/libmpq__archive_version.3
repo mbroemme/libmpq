@@ -27,9 +27,13 @@ libmpq__archive_version \- return the MPQ archive format version.
 .SH DESCRIPTION
 .PP
 Call \fBlibmpq__archive_version\fP() to get the archive format version.
-The returned generation is one-based: 1 for MPQ v1, 2 for MPQ v2, and 3
-for classic-table MPQ v3. MPQ v3 uses a 64-bit archive size when its full
-header is present; HET/BET-only archives and MPQ v4 are not supported.
+The returned generation is one-based: 1 for MPQ v1, 2 for MPQ v2, 3 for
+MPQ v3, and 4 for MPQ v4. This includes supported classic-only, HET/BET-only,
+and mixed-table archives where those representations apply.
+.PP
+These values differ from the LIBMPQ_ARCHIVE_VERSION_* selectors used for
+creation, which match the on-disk version values 0, 1, 2, and 3. The function
+returns the decoded on-disk version plus one, regardless of table representation.
 .LP
 The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The function stores the format version in
