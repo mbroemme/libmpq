@@ -319,3 +319,24 @@ Both architectures retain the native SDK's macOS 11.0 deployment baseline;
 there is no universal2 wheel. The wheels use system zlib, bzip2, and liblzma.
 
 See [RELEASING.md](../../RELEASING.md) for maintainer release procedures.
+
+### Composing opened archives
+
+```python
+with Archive("base.mpq") as base, Archive("patch.mpq") as patch:
+    result = Archive.open_patch(base, [patch], prefixes=[None])
+with result:
+    with result.open_stream("document.txt") as stream:
+        contents = stream.read()
+```
+
+The result is an independently owned read-only Archive. Layers are ordered;
+`Archive.open_patch(base, [])` creates an independent snapshot. A `None`
+prefix list or entry requests inference; `""` selects the root namespace.
+Explicit ordinary addition-only layers are accepted. Input wrappers and their
+callback sources are needed only during the call and their normal input
+lifetimes. Result clones and streams survive parent closure. Named modern
+materialization still requires unambiguous filenames and metadata. Verify
+physical signatures and raw checksums on the original input archives; these
+checks do not establish trust in reconstructed content. Temporary storage is
+cleaned up after the final dependent closes, with best-effort I/O cleanup.

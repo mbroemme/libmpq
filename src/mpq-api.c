@@ -563,6 +563,18 @@ libmpq__archive_open_mpqe_io(
     );
 }
 
+/* Compose already-open inputs without extending their source lifetimes. */
+int32_t
+libmpq__archive_open_patch(
+    mpq_archive_s **archive, mpq_archive_s *base, mpq_archive_s *const *patch_archives,
+    const char *const *patch_prefixes, size_t patch_count
+)
+{
+    return libmpq__patch_reader_open_archives(
+        archive, base, patch_archives, patch_prefixes, patch_count
+    );
+}
+
 /*
  * Reopen an archive with independent file I/O, metadata, and lazy caches.
  * Cloning rejects writer handles and verifies a path-backed source still

@@ -1157,3 +1157,85 @@ def test_v4_fixture_corrupt_raw(digest):
     wire[position + size if digest else position + 0x4000] ^= 1
     with mpq.Archive.open_io(io.BytesIO(wire), len(wire)) as archive:
         assert archive["large.bin"].verify(mpq.VERIFY_RAW_MD5) == mpq.VERIFY_RAW_MD5
+
+
+@pytest.mark.parametrize("source_kind", ["path", "custom", "mpqe"])
+@pytest.mark.parametrize("prefixes", [None, [None, None], ["", ""]])
+def test_open_patch_owned(tmp_path, source_kind, prefixes):
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    base_path = FIXTURES / ("mpq-v4-features.mpqe" if source_kind == "mpqe"
+                            else "mpq-v4-features.mpq")
+    callback_source = None
+    if source_kind == "custom":
+        callback_source = io.BytesIO(base_path.read_bytes())
+        base = mpq.Archive.open_io(callback_source, len(callback_source.getvalue()))
+    elif source_kind == "mpqe":
+        base = mpq.Archive.open_mpqe(base_path, code)
+    else:
+        base = mpq.Archive(base_path)
+    patch = mpq.Archive(FIXTURES / "mpq-v4-features-patch.mpq")
+    overlay_path = tmp_path / "addition.mpq"
+    with mpq.Writer(overlay_path, version=mpq.ARCHIVE_VERSION_FOUR,
+                    flags=mpq.ARCHIVE_CREATE_LISTFILE) as writer:
+        writer.add("addition.txt", b"ordinary addition")
+    overlay = mpq.Archive(overlay_path)
+    snapshot = mpq.Archive.open_patch(base, [])
+    assert snapshot.version == 4
+    result = mpq.Archive.open_patch(base, [patch, overlay], prefixes)
+    base.close()
+    patch.close()
+    overlay.close()
+    if callback_source is not None:
+        reference = weakref.ref(callback_source)
+        callback_source.close()
+        del callback_source
+        gc.collect()
+        assert reference() is None
+    with snapshot.open_stream("large.bin") as stream:
+        assert len(stream.read()) == 16421
+    snapshot.close()
+    assert result["overview.txt"].read() == b"Version four patch\n"
+    assert result["addition.txt"].read() == b"ordinary addition"
+    assert "remove.txt" not in result
+    clone = result.clone()
+    stream = result.open_stream("folder/sector.txt")
+    result.close()
+    assert clone["overview.txt"].read() == b"Version four patch\n"
+    clone.close()
+    expected = bytearray(65 + i % 23 for i in range(8192))
+    expected[17] ^= 0x5a
+    assert stream.read() == expected
+    stream.close()
+
+
+def test_open_patch_arguments():
+    with mpq.Archive(FIXTURES / "mpq-v4-features.mpq") as base:
+        with pytest.raises(ValueError):
+            mpq.Archive.open_patch(base, [], [None])
+        with pytest.raises(ValueError):
+            mpq.Archive.open_patch(base, [base], ["bad\0prefix"])
+        with pytest.raises(TypeError):
+            mpq.Archive.open_patch(base, [None])
+        with pytest.raises(TypeError):
+            mpq.Archive.open_patch(None, [])
+        with mpq.Archive(FIXTURES / "mpq-v4-features-patch.mpq") as patch:
+            with pytest.raises(mpq.LibmpqFormatError):
+                mpq.Archive.open_patch(base, [patch, patch])
+            assert base["overview.txt"].read() == b"Synthetic MPQ v4 overview.\n"
+    with pytest.raises(mpq.LibmpqStateError):
+        mpq.Archive.open_patch(base, [])
+
+
+def test_open_patch_namespace(tmp_path):
+    path = tmp_path / "namespaced.mpq"
+    with mpq.Writer(path, version=mpq.ARCHIVE_VERSION_FOUR,
+                    flags=mpq.ARCHIVE_CREATE_LISTFILE) as writer:
+        writer.add("Base\\extra.txt", b"prefix payload")
+        writer.add("Base\\(patch_metadata)", b"namespace marker")
+    with mpq.Archive(FIXTURES / "mpq-v4-features.mpq") as base, mpq.Archive(path) as patch:
+        for prefixes in (None, [None], ["Base"]):
+            with mpq.Archive.open_patch(base, [patch], prefixes) as result:
+                assert result["extra.txt"].read() == b"prefix payload"
+        for prefixes in ([""], ["Other"]):
+            with pytest.raises(mpq.LibmpqFormatError):
+                mpq.Archive.open_patch(base, [patch], prefixes)

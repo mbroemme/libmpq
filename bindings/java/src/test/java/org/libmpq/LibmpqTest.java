@@ -21,6 +21,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HexFormat;
+import java.util.List;
+import java.util.Arrays;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -33,6 +35,83 @@ import org.libmpq.ffi.LibmpqNative;
  * creation or fixture reading rather than mocking the FFM calls.
  */
 class LibmpqTest {
+    @Test
+    void ownedPatchComposition(@TempDir Path directory) throws Exception {
+        Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
+        Path addition = directory.resolve("addition.mpq");
+        try (Archive writer = Archive.create(addition, new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_FOUR, 8, 4096, Mpq.ARCHIVE_CREATE_LISTFILE))) {
+            writer.add("added.txt", "ordinary addition".getBytes(StandardCharsets.UTF_8), null);
+        }
+        for (int mode = 0; mode < 3; ++mode) {
+            try (SeekableByteChannel source = Files.newByteChannel(root.resolve("mpq-v4-features.mpq"))) {
+                Archive base = mode == 0 ? Archive.openSource(source, "base.mpq")
+                    : mode == 1 ? Archive.open(root.resolve("mpq-v4-features.mpq"))
+                    : Archive.openMpqe(root.resolve("mpq-v4-features.mpqe"),
+                        "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.UTF_8));
+                Archive patch = Archive.open(root.resolve("mpq-v4-features-patch.mpq"));
+                Archive overlay = Archive.open(addition);
+                try (base; patch; overlay) {
+                    assertThrows(IllegalArgumentException.class,
+                        () -> Archive.openPatch(base, List.of(), List.of("")));
+                    assertThrows(IllegalArgumentException.class,
+                        () -> Archive.openPatch(base, List.of(patch), List.of("bad\0prefix")));
+                    assertThrows(LibmpqException.class,
+                        () -> Archive.openPatch(base, List.of(patch, patch)));
+                    try (Archive snapshot = Archive.openPatch(base, List.of())) {
+                        assertEquals(4, snapshot.version());
+                    }
+                    Archive result = Archive.openPatch(base, List.of(patch, overlay),
+                        mode == 0 ? null : mode == 1 ? Arrays.asList(null, null) : List.of("", ""));
+                    base.close();
+                    patch.close();
+                    overlay.close();
+                    source.close();
+                    try (result) {
+                        assertEquals("Version four patch\n", new String(
+                            result.readFile(result.fileNumber("overview.txt")), StandardCharsets.UTF_8));
+                        assertEquals("ordinary addition", new String(
+                            result.readFile(result.fileNumber("added.txt")), StandardCharsets.UTF_8));
+                        assertThrows(LibmpqException.class, () -> result.fileNumber("remove.txt"));
+                        try (Archive clone = result.cloneArchive();
+                             MpqStream stream = result.openStream("overview.txt")) {
+                            result.close();
+                            assertEquals(3, clone.version());
+                            byte[] bytes = new byte[19];
+                            assertEquals(19, stream.read(bytes));
+                            assertArrayEquals("Version four patch\n".getBytes(StandardCharsets.UTF_8), bytes);
+                        }
+                    }
+                }
+                assertThrows(LibmpqException.class, () -> Archive.openPatch(base, List.of()));
+            }
+        }
+        assertThrows(NullPointerException.class, () -> Archive.openPatch(null, List.of()));
+    }
+
+    @Test
+    void patchPrefixNamespaces(@TempDir Path directory) throws Exception {
+        Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
+        Path path = directory.resolve("namespaced.mpq");
+        try (Archive writer = Archive.create(path,
+                new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_FOUR, 8, 4096, Mpq.ARCHIVE_CREATE_LISTFILE))) {
+            writer.add("Base\\extra.txt", "prefix payload".getBytes(StandardCharsets.UTF_8), null);
+            writer.add("Base\\(patch_metadata)", "namespace marker".getBytes(StandardCharsets.UTF_8), null);
+        }
+        try (Archive base = Archive.open(root.resolve("mpq-v4-features.mpq"));
+             Archive patch = Archive.open(path)) {
+            for (List<String> prefixes : Arrays.asList(null, Arrays.asList((String) null), List.of("Base"))) {
+                try (Archive result = Archive.openPatch(base, List.of(patch), prefixes)) {
+                    assertArrayEquals("prefix payload".getBytes(StandardCharsets.UTF_8),
+                        result.readFile(result.fileNumber("extra.txt")));
+                }
+            }
+            for (String prefix : List.of("", "Other")) {
+                assertThrows(LibmpqException.class,
+                    () -> Archive.openPatch(base, List.of(patch), List.of(prefix)));
+            }
+        }
+    }
+
     @Test
     void v4FeatureFixtures(@TempDir Path directory) throws Exception {
         Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");

@@ -45,15 +45,19 @@ private string temporaryArchive(string suffix) {
 private class MemorySource : MpqSource {
     private ubyte[] data;
     private bool fail;
+    private bool collectOnRead;
 
-    this(ubyte[] data, bool fail = false) {
+    this(ubyte[] data, bool fail = false, bool collectOnRead = false) {
         this.data = data;
         this.fail = fail;
+        this.collectOnRead = collectOnRead;
     }
 
     ulong size() { return data.length; }
 
     void readAt(ulong offset, ubyte[] buffer) {
+        import core.memory : GC;
+        if (collectOnRead) GC.collect();
         if (fail || offset > data.length || buffer.length > data.length - offset)
             throw new Exception("source read failure");
         buffer[] = data[offset .. offset + buffer.length];
@@ -953,7 +957,102 @@ private void testV4FeatureFixtures() {
     }
 }
 
+private void testOpenPatch() {
+    import core.memory : GC;
+    auto root = buildPath(environment.get("LIBMPQ_SOURCE_DIR", "."), "tests", "fixtures");
+    auto addition = temporaryArchive("patch-addition");
+    scope(exit) remove(addition);
+    auto options = ArchiveCreateOptions.v1();
+    options.version_ = ARCHIVE_VERSION_FOUR;
+    options.flags = ARCHIVE_CREATE_LISTFILE;
+    auto writer = Archive.create(addition, options);
+    writer.add("added.txt", cast(const(ubyte)[]) "ordinary addition");
+    writer.close();
+    foreach (mode; 0 .. 3) {
+        auto source = new MemorySource(
+            cast(ubyte[]) read(buildPath(root, "mpq-v4-features.mpq")), false, true);
+        auto base = mode == 0 ? Archive.openSource(source, "base.mpq")
+            : mode == 1 ? Archive.open(buildPath(root, "mpq-v4-features.mpq"))
+            : Archive.openMpqe(buildPath(root, "mpq-v4-features.mpqe"),
+                cast(const(ubyte)[]) "LIBMPQ-MPQE-TEST-AUTH-CODE-00001");
+        auto patch = Archive.open(buildPath(root, "mpq-v4-features-patch.mpq"));
+        auto overlay = Archive.open(addition);
+        auto snapshot = Archive.openPatch(base, []);
+        assert(snapshot.version_() == 4);
+        snapshot.close();
+        bool failed;
+        try { Archive.openPatch(base, [], [""]); }
+        catch (MPQException) { failed = true; }
+        assert(failed);
+        failed = false;
+        try { Archive.openPatch(null, []); }
+        catch (MPQException) { failed = true; }
+        assert(failed);
+        failed = false;
+        try { Archive.openPatch(base, [cast(Archive) null]); }
+        catch (MPQException) { failed = true; }
+        assert(failed);
+        failed = false;
+        try { Archive.openPatch(base, [patch], ["bad\0prefix"]); }
+        catch (MPQException) { failed = true; }
+        assert(failed);
+        failed = false;
+        try { Archive.openPatch(base, [patch, patch]); }
+        catch (MPQException) { failed = true; }
+        assert(failed);
+        string[] prefixes = mode == 0 ? null : mode == 1 ? [cast(string) null, cast(string) null] : [cast(string)(new char[1])[0 .. 0], cast(string)(new char[1])[0 .. 0]];
+        auto result = Archive.openPatch(base, [patch, overlay], prefixes);
+        base.close();
+        patch.close();
+        overlay.close();
+        source = null;
+        GC.collect();
+        assert(result.file("overview.txt").read() == cast(const(ubyte)[]) "Version four patch\n");
+        assert(result.file("added.txt").read() == cast(const(ubyte)[]) "ordinary addition");
+        auto clone = result.clone();
+        auto stream = result.openStream("overview.txt");
+        result.close();
+        assert(clone.version_() == 3);
+        clone.close();
+        ubyte[19] output;
+        assert(stream.read(output[]) == output.length);
+        assert(output[] == cast(const(ubyte)[]) "Version four patch\n");
+        stream.close();
+    }
+}
+
+private void testOpenPatchNamespaces() {
+    auto root = buildPath(environment.get("LIBMPQ_SOURCE_DIR", "."), "tests", "fixtures");
+    auto path = temporaryArchive("patch-namespace");
+    scope(exit) remove(path);
+    auto options = ArchiveCreateOptions.v1();
+    options.version_ = ARCHIVE_VERSION_FOUR;
+    options.flags = ARCHIVE_CREATE_LISTFILE;
+    auto writer = Archive.create(path, options);
+    writer.add("Base\\extra.txt", cast(const(ubyte)[]) "prefix payload");
+    writer.add("Base\\(patch_metadata)", cast(const(ubyte)[]) "namespace marker");
+    writer.close();
+    auto base = Archive.open(buildPath(root, "mpq-v4-features.mpq"));
+    scope(exit) base.close();
+    auto patch = Archive.open(path);
+    scope(exit) patch.close();
+    foreach (string[] prefixes; [null, [cast(string) null], ["Base"]]) {
+        auto result = Archive.openPatch(base, [patch], prefixes);
+        assert(result.file("extra.txt").read() == cast(const(ubyte)[]) "prefix payload");
+        result.close();
+    }
+    foreach (prefix; [cast(string)(new char[1])[0 .. 0], "Other"]) {
+        assert(prefix.ptr !is null);
+        bool failed;
+        try { Archive.openPatch(base, [patch], [prefix]); }
+        catch (MPQException) { failed = true; }
+        assert(failed);
+    }
+}
+
 void main() {
+    testOpenPatch();
+    testOpenPatchNamespaces();
     testV4FeatureFixtures();
     testPatchPayloadFixtures();
     testVersionAndErrors();

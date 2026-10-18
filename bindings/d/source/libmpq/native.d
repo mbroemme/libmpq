@@ -290,6 +290,9 @@ extern(C) {
                               const(mpq_file_options_s)* options);
 
     /** Clone an archive into an independent native handle. */
+    int libmpq__archive_open_patch(mpq_archive_s** archive, mpq_archive_s* base,
+                                  mpq_archive_s** patches, const(char)** prefixes,
+                                  size_t patch_count);
     int libmpq__archive_clone(mpq_archive_s** clone, mpq_archive_s* source);
 
     /** Close an archive and release all native state. */

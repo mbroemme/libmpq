@@ -1,0 +1,100 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__ARCHIVE_OPEN_PATCH 3 2026-11-03 "The MoPaQ archive library"
+.SH NAME
+libmpq__archive_open_patch \- compose opened MPQ archives into an owned reader.
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__archive_open_patch("
+.BI "        mpq_archive_s **" "archive,"
+.BI "        mpq_archive_s *" "base,"
+.BI "        mpq_archive_s *const *" "patch_archives,"
+.BI "        const char *const *" "patch_prefixes,"
+.BI "        size_t " "patch_count"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Compose the opened \fIbase\fP with \fIpatch_count\fP ordered layers from
+\fIpatch_archives\fP. Later layers override earlier ones. COPY and BSD0
+payloads are validated against their before/after MD5 values; ordinary added
+members and delete markers are supported. Explicit addition-only layers need
+no fabricated patch metadata marker.
+.PP
+Zero layers create an independent byte-preserving snapshot of the base's
+logical backing source. The layer array may be NULL in this case. Changed
+modern views use the existing private v3 materialization; this does not
+change the generation of any physical input archive.
+.PP
+A NULL \fIpatch_prefixes\fP array or a NULL entry requests deterministic
+prefix inference for that layer. An empty string selects the root namespace.
+Explicit prefixes must agree with available namespace metadata; conflicting
+or ambiguous metadata is rejected. Game-specific prefix inference, filename
+recovery, and locale selection are not provided. Named v3/v4 materialization
+requires complete, unambiguous names and representable metadata.
+.PP
+Input archives are borrowed synchronously, remain unchanged, and are never
+closed by this function. Their callback contexts must remain valid during
+composition and for their own normal archive lifetimes. After success, the
+result retains neither input sources, callback contexts, nor MPQE credential
+buffers. Inputs may be closed and their callback contexts released.
+.PP
+The result is an ordinary independently owned, read-only archive. Close it
+with \fBlibmpq__archive_close\fP(). Independently owned clones and streams
+remain usable after parent closure. Private temporary storage is retained
+until the final dependent source closes. Cleanup is best effort on persistent
+I/O failure; secure deletion and crash recovery are not guaranteed. Concurrent
+close/read operations require external synchronization.
+.PP
+Verify physical signatures and RAW_MD5 on the original input handles.
+Composition does not inherit their trust as verification of the logical
+output. A changed v3 materialization does not retain physical v4 raw digests.
+.SH RETURN VALUE
+Success returns 0 and sets *\fIarchive\fP to a non-NULL owned reader.
+Failure returns an existing negative error code and clears *\fIarchive\fP
+when the output pointer is supplied. No partially usable result is returned.
+.SH ERRORS
+NULL required arguments, missing layer arrays, or invalid input handles
+return \fBLIBMPQ_ERROR_EXIST\fP. An oversized layer count returns
+\fBLIBMPQ_ERROR_SIZE\fP. Invalid patches, digest mismatches, unsupported
+identities, or namespace conflicts return the existing format or decoding
+error. Source, temporary-storage, allocation, and cleanup errors propagate.
+Input archives remain caller-owned on every error path.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__archive_open (3),
+.BR libmpq__archive_clone (3),
+.BR libmpq__archive_close (3),
+.BR libmpq__file_verify (3),
+.BR libmpq__archive_verify (3)
+.SH AUTHOR
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

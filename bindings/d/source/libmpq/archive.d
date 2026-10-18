@@ -10,6 +10,7 @@
 /** High-level ownership-safe wrappers around the libmpq C API. */
 module libmpq.archive;
 
+import core.memory : GC;
 import std.string : splitLines, toStringz;
 import libmpq.errors : MPQException, checkStatus;
 import libmpq.native;
@@ -213,6 +214,46 @@ class Archive {
         checkStatus(libmpq__archive_create_mpqe(&result, toStringz(path), authPointer,
                                                  authCode.length, &nativeOptions),
                     "libmpq__archive_create_mpqe");
+        return new Archive(result);
+    }
+
+    /** Materialize borrowed ordered layers as an independently owned archive.
+     * Null prefixes request inference; allocated empty strings select the root.
+     * The result does not retain the input wrappers or callback contexts.
+     */
+    static Archive openPatch(Archive base, Archive[] patches, const(string)[] prefixes = null) {
+        if (base is null) throw new MPQException("null base", ERROR_EXIST);
+        if (prefixes.ptr !is null && prefixes.length != patches.length)
+            throw new MPQException("prefix count must match patch count", ERROR_SIZE);
+
+        // Root fresh call storage so callback-triggered GC cannot release inputs.
+        struct Inputs {
+            Archive base;
+            Archive[] layers;
+            mpq_archive_s*[] handles;
+            const(char)*[] names;
+        }
+        auto inputs = new Inputs;
+        GC.addRoot(cast(void*) inputs);
+        scope(exit) GC.removeRoot(cast(void*) inputs);
+        inputs.base = base;
+        inputs.layers = patches.dup;
+        inputs.handles.length = patches.length;
+        if (prefixes.ptr !is null) inputs.names.length = patches.length;
+        foreach (i, layer; inputs.layers) {
+            if (layer is null) throw new MPQException("null patch layer", ERROR_EXIST);
+            inputs.handles[i] = layer.nativeHandle();
+            if (prefixes.ptr !is null && prefixes[i].ptr !is null) {
+                foreach (character; prefixes[i])
+                    if (character == 0) throw new MPQException("NUL prefix", ERROR_FORMAT);
+                inputs.names[i] = toStringz(prefixes[i]);
+            }
+        }
+        mpq_archive_s* result;
+        checkStatus(libmpq__archive_open_patch(&result, base.nativeHandle(),
+                    inputs.handles.ptr, inputs.names.ptr, patches.length),
+                    "libmpq__archive_open_patch");
+        scope(failure) libmpq__archive_close(result);
         return new Archive(result);
     }
 

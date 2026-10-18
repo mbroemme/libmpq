@@ -316,6 +316,45 @@ test_writer_errors(mpq_archive_s *archive)
     return 0;
 }
 
+/* Exercise the owned result using only installed public declarations. */
+static int
+test_public_patch(void)
+{
+    mpq_archive_s *base = NULL;
+    mpq_archive_s *patch = NULL;
+    mpq_archive_s *result = NULL;
+    mpq_archive_s *clone = NULL;
+    mpq_stream_s *stream = NULL;
+    libmpq__off_t transferred;
+    uint32_t version;
+    uint32_t number;
+    uint8_t output[64];
+    const char *root = "";
+    const char expected[] = "Version four patch\n";
+
+    TEST_CHECK(libmpq__archive_open(&base, FIXTURE_DIR "/mpq-v4-features.mpq", 0) == 0);
+    TEST_CHECK(libmpq__archive_open_patch(&result, base, NULL, NULL, 0) == 0);
+    TEST_CHECK(libmpq__archive_version(result, &version) == 0 && version == 4);
+    TEST_CHECK(libmpq__archive_close(result) == 0);
+    TEST_CHECK(libmpq__archive_open(&patch, FIXTURE_DIR "/mpq-v4-features-patch.mpq", 0) == 0);
+    TEST_CHECK(libmpq__archive_open_patch(&result, base, &patch, &root, 1) == 0);
+    TEST_CHECK(libmpq__archive_close(patch) == 0);
+    TEST_CHECK(libmpq__archive_close(base) == 0);
+    TEST_CHECK(libmpq__archive_version(result, &version) == 0 && version == 3);
+    TEST_CHECK(libmpq__file_number(result, "remove.txt", &number) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__archive_clone(&clone, result) == 0);
+    TEST_CHECK(libmpq__stream_open_name(result, "overview.txt", &stream) == 0);
+    TEST_CHECK(libmpq__archive_close(result) == 0);
+    TEST_CHECK(libmpq__archive_close(clone) == 0);
+    TEST_CHECK(libmpq__stream_read(stream, output, sizeof(output), &transferred) == 0);
+    TEST_CHECK(
+        transferred == sizeof(expected) - 1 && memcmp(output, expected, sizeof(expected) - 1) == 0
+    );
+    TEST_CHECK(libmpq__stream_close(stream) == 0);
+    TEST_CHECK(libmpq__archive_open_patch(NULL, NULL, NULL, NULL, 0) == LIBMPQ_ERROR_EXIST);
+    return 0;
+}
+
 /* Exercise metadata, lookups, streaming, convenience writers, and blocks. */
 int
 main(void)
@@ -348,6 +387,7 @@ main(void)
     FILE *source_file;
     size_t i;
 
+    TEST_CHECK(test_public_patch() == 0);
     TEST_CHECK(libmpq__version() != NULL && *libmpq__version() != '\0');
     TEST_CHECK(test_error_strings() == 0);
     TEST_CHECK(test_create_errors() == 0);

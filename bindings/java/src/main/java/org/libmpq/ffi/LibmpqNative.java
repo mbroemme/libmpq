@@ -84,6 +84,7 @@ public final class LibmpqNative {
     private static final MethodHandle WRITER_FINISH;
     private static final MethodHandle ARCHIVE_ADD_DATA;
     private static final MethodHandle ARCHIVE_ADD_PATH;
+    private static final MethodHandle ARCHIVE_OPEN_PATCH;
     private static final MethodHandle ARCHIVE_CLONE;
     private static final MethodHandle ARCHIVE_CLOSE;
     private static final MethodHandle UPDATE_BEGIN;
@@ -202,6 +203,10 @@ public final class LibmpqNative {
                                        FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                              ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                                              C_SIZE_T, ValueLayout.ADDRESS));
+        ARCHIVE_OPEN_PATCH = function(linker, lookup, "libmpq__archive_open_patch",
+                                      FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
+                                          ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                          ValueLayout.ADDRESS, C_SIZE_T));
         ARCHIVE_CLONE = function(linker, lookup, "libmpq__archive_clone",
                                  FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                        ValueLayout.ADDRESS));
@@ -529,6 +534,11 @@ public final class LibmpqNative {
     public static int archiveAddPath(MemorySegment archive, MemorySegment name, MemorySegment path,
                                   MemorySegment options) {
         return callInt(ARCHIVE_ADD_PATH, archive, name, path, options);
+    }
+    /** Materializes borrowed ordered inputs into an owned archive. */
+    public static int archiveOpenPatch(MemorySegment out, MemorySegment base,
+                                       MemorySegment patches, MemorySegment prefixes, long count) {
+        return callInt(ARCHIVE_OPEN_PATCH, out, base, patches, prefixes, nativeSizeT(count));
     }
     /** Reopens an archive into an independent native handle. */
     public static int archiveClone(MemorySegment out, MemorySegment archive) {

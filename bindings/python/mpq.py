@@ -248,6 +248,8 @@ _configure("libmpq__writer_write", ctypes.c_int32, _VOID_PTR, _BYTE_PTR, _OFF_T)
 _configure("libmpq__writer_finish", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__archive_add_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE_PTR, _OFF_T, _VOID_PTR)
 _configure("libmpq__archive_add_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
+_configure("libmpq__archive_open_patch", ctypes.c_int32, ctypes.POINTER(_VOID_PTR),
+           _VOID_PTR, ctypes.POINTER(_VOID_PTR), ctypes.POINTER(ctypes.c_char_p), ctypes.c_size_t)
 _configure("libmpq__archive_clone", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), _VOID_PTR)
 _configure("libmpq__archive_close", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__update_begin", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p)
@@ -1301,6 +1303,48 @@ class Archive:
     def metadata(self):
         """Return an immutable snapshot of archive-level metadata."""
         return ArchiveMetadata(self.packed_size, self.unpacked_size, self.offset, self.version, self.files)
+
+    @classmethod
+    def open_patch(cls, base, patches, prefixes=None):
+        """Materialize ordered borrowed inputs as an independent read-only archive.
+
+        None prefixes request inference; an empty string selects the root.
+        Inputs and callback sources need remain alive only for this call and
+        their own normal lifetimes, not for the returned archive's lifetime.
+        """
+        if not isinstance(base, Archive):
+            raise TypeError("base must be an Archive")
+        layers = tuple(patches)
+        base._ensure_open()
+        for layer in layers:
+            if not isinstance(layer, Archive):
+                raise TypeError("patches must contain Archive objects")
+            layer._ensure_open()
+        encoded = None
+        if prefixes is not None:
+            values = tuple(prefixes)
+            if len(values) != len(layers):
+                raise ValueError("prefix count must match patch count")
+            encoded = tuple(None if value is None else _as_bytes(value) for value in values)
+            if any(value is not None and b"\0" in value for value in encoded):
+                raise ValueError("prefixes must not contain NUL")
+        handles = (_VOID_PTR * len(layers))(*(layer._mpq for layer in layers))
+        names = None if encoded is None else (ctypes.c_char_p * len(layers))(*encoded)
+        result = object.__new__(cls)
+        result._source = result.filename = "<patch composition>"
+        result._mpq, result._source_state, result._opened = _VOID_PTR(), None, False
+        libmpq.libmpq__archive_open_patch(ctypes.byref(result._mpq), base._mpq,
+                                        handles, names, len(layers))
+        result._opened = True
+        try:
+            result._load_metadata()
+        except BaseException:
+            try:
+                result.close()
+            except LibmpqError:
+                pass
+            raise
+        return result
 
     def clone(self):
         """Return an independently closable native handle for this archive."""

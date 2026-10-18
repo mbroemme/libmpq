@@ -393,3 +393,28 @@ at runtime. The outer D release ZIP also contains the source package so
 consumers can rebuild when a precompiled package is not suitable.
 
 See [RELEASING.md](../../RELEASING.md) for maintainer release procedures.
+
+### Composing opened archives
+
+```d
+auto base = Archive.open("base.mpq");
+auto patch = Archive.open("patch.mpq");
+auto result = Archive.openPatch(base, [patch]);
+base.close();
+patch.close();
+scope(exit) result.close();
+auto contents = result.file("document.txt").read();
+```
+
+Layers are applied in order. An empty patch array creates an independent
+snapshot. A null prefix array or string requests inference; use an allocated
+empty string, such as `cast(string)(new char[1])[0 .. 0]`, to select the
+root namespace explicitly. An empty `.idup` may have a null pointer and
+therefore request inference.
+Explicit addition-only layers need no metadata marker. The result is a normal
+owned read-only Archive, retaining no input wrappers or callback sources.
+Clones and streams remain usable after parent closure. Named modern
+materialization requires unambiguous names and metadata. Verify physical
+signatures and raw checksums on input archives, separately from reconstructed
+logical content. Temporary storage survives until the last dependent closes;
+cleanup is best effort on persistent I/O failure.

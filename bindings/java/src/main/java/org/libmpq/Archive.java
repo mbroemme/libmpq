@@ -11,8 +11,10 @@ package org.libmpq;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.ref.Reference;
 import java.nio.file.Path;
 import java.nio.channels.SeekableByteChannel;
+import java.util.List;
 import java.util.Objects;
 import org.libmpq.ffi.LibmpqNative;
 
@@ -296,6 +298,59 @@ public final class Archive implements AutoCloseable {
             ));
             return new Archive(LibmpqNative.getAddress(output));
         }
+    }
+
+    /**
+     * Materialize borrowed ordered layers as an independently owned read-only archive.
+     * Null prefixes request inference; empty strings select the root namespace.
+     * The result retains neither input archives nor their callback source states.
+     */
+    public static Archive openPatch(Archive base, List<Archive> patches, List<String> prefixes)
+            throws LibmpqException {
+        Objects.requireNonNull(base, "base");
+        Archive[] layers = Objects.requireNonNull(patches, "patches").toArray(Archive[]::new);
+        String[] names = prefixes == null ? null : prefixes.toArray(String[]::new);
+        if (names != null && names.length != layers.length) {
+            throw new IllegalArgumentException("prefix count must match patch count");
+        }
+        base.checkOpen();
+        for (Archive layer : layers) {
+            Objects.requireNonNull(layer, "patch layer").checkOpen();
+        }
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment handles = layers.length == 0 ? MemorySegment.NULL
+                : arena.allocate(ValueLayout.ADDRESS, layers.length);
+            MemorySegment nativeNames = names == null || names.length == 0 ? MemorySegment.NULL
+                : arena.allocate(ValueLayout.ADDRESS, names.length);
+            for (int i = 0; i < layers.length; i++) {
+                handles.setAtIndex(ValueLayout.ADDRESS, i, layers[i].handle);
+                if (names != null) {
+                    if (names[i] != null && names[i].indexOf('\0') >= 0) {
+                        throw new IllegalArgumentException("prefixes must not contain NUL");
+                    }
+                    nativeNames.setAtIndex(ValueLayout.ADDRESS, i,
+                        names[i] == null ? MemorySegment.NULL : Support.text(arena, names[i]));
+                }
+            }
+            MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
+            Support.check(LibmpqNative.archiveOpenPatch(output, base.handle, handles,
+                                                       nativeNames, layers.length));
+            MemorySegment result = LibmpqNative.getAddress(output);
+            try {
+                return new Archive(result);
+            } catch (RuntimeException | Error failure) {
+                LibmpqNative.archiveClose(result);
+                throw failure;
+            }
+        } finally {
+            Reference.reachabilityFence(base);
+            Reference.reachabilityFence(layers);
+        }
+    }
+
+    /** Materialize layers using inferred prefixes. */
+    public static Archive openPatch(Archive base, List<Archive> patches) throws LibmpqException {
+        return openPatch(base, patches, null);
     }
 
     /**

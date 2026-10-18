@@ -411,6 +411,28 @@ extern LIBMPQ_API int32_t libmpq__archive_open_mpqe_io(
 );
 
 /*
+ * Compose borrowed, opened archives into an independently owned read-only
+ * result. patch_archives contains patch_count layers in application order;
+ * zero layers makes a byte-preserving base snapshot. NULL patch_prefixes or
+ * a NULL entry requests inference; an empty prefix selects the root namespace.
+ * Inputs remain unchanged and are not consumed. Their callback contexts must
+ * remain valid during this synchronous call and their normal input lifetimes;
+ * the result retains neither those contexts nor MPQE credentials.
+ *
+ * Close the result with archive_close(); its clones and streams independently
+ * retain its private temporary storage. Cleanup is best effort on persistent
+ * I/O failure. Named materialization requires sufficient unambiguous filename
+ * and locale metadata; it does not recover missing names or infer locales.
+ * Verify physical patch signatures and RAW_MD5 on the original inputs; their
+ * trust and physical checksums are not inherited by the logical result.
+ * Success sets *archive to a non-NULL handle; failure clears it when provided.
+ */
+extern LIBMPQ_API int32_t libmpq__archive_open_patch(
+    mpq_archive_s **archive, mpq_archive_s *base, mpq_archive_s *const *patch_archives,
+    const char *const *patch_prefixes, size_t patch_count
+);
+
+/*
  * Create a seekable MPQ v1, v2, v3, or v4 archive at mpq_filename.
  * V4 creation uses 16 KiB raw chunks; updates preserve the source chunk size.
  * The options determine the format, reserved table capacity, sector size, and

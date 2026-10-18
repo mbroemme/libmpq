@@ -18,6 +18,7 @@ man_MANS = \
 	libmpq__archive_open_io.3 \
 	libmpq__archive_open_mpqe.3 \
 	libmpq__archive_open_mpqe_io.3 \
+	libmpq__archive_open_patch.3 \
 	libmpq__archive_sign.3 \
 	libmpq__archive_signatures.3 \
 	libmpq__archive_size_packed.3 \

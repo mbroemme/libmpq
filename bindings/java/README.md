@@ -282,3 +282,28 @@ runtime, sources, and Javadoc JARs together with `COPYING`, `COPYING.LESSER`,
 and this README.
 
 See [RELEASING.md](../../RELEASING.md) for maintainer release procedures.
+
+### Composing opened archives
+
+```java
+Archive result;
+try (Archive base = Archive.open(Path.of("base.mpq"));
+     Archive patch = Archive.open(Path.of("patch.mpq"))) {
+    result = Archive.openPatch(base, List.of(patch));
+}
+try (result; MpqStream stream = result.openStream("document.txt")) {
+    byte[] bytes = new byte[4096];
+    int count = stream.read(bytes);
+}
+```
+
+Import `java.util.List` for the ordered layer list. The optional third
+argument is a prefix list: a null list or entry requests inference, while
+`""` selects the root namespace. An empty patch list creates an independent
+snapshot. Explicit addition-only layers need no metadata marker. The normal
+owned Archive result retains neither inputs nor callback channels. Its clones
+and streams survive parent closure. Named modern materialization requires
+unambiguous names and metadata. Verify physical signatures and raw checksums
+on input archives separately; they do not confer trust on logical output.
+Temporary storage is released after the final dependent closes, with
+best-effort cleanup on persistent I/O failure.
