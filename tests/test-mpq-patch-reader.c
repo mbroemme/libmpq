@@ -4358,13 +4358,18 @@ test_owned_stream_unlink(void)
     mpq_archive_s *snapshot = NULL;
     mpq_stream_s *stream = NULL;
     char *path;
-    const char *moved = "owned-stream-moved.mpq";
+    char moved[4096];
+    int length;
 
     TEST_CHECK(libmpq__archive_open(&base, FIXTURE_DIR "/mpq-v4-features.mpq", 0) == 0);
     TEST_CHECK(libmpq__archive_open_patch(&snapshot, base, NULL, NULL, 0) == 0 && snapshot != NULL);
     TEST_CHECK(libmpq__archive_close(base) == 0);
     path = libmpq__string_duplicate(libmpq__source_temporary_path(snapshot->source));
     TEST_CHECK(path != NULL);
+
+    /* Keep rename on the temporary file's filesystem, even in CI containers. */
+    length = snprintf(moved, sizeof(moved), "%s.moved", path);
+    TEST_CHECK(length > 0 && (size_t)length < sizeof(moved));
     TEST_CHECK(libmpq__stream_open_name(snapshot, "overview.txt", &stream) == 0);
     TEST_CHECK(libmpq__archive_close(snapshot) == 0);
     TEST_CHECK(rename(path, moved) == 0);
