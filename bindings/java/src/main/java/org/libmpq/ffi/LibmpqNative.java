@@ -110,6 +110,10 @@ public final class LibmpqNative {
     private static final MethodHandle ARCHIVE_SIZE_PACKED;
     private static final MethodHandle ARCHIVE_SIZE_UNPACKED;
     private static final MethodHandle ARCHIVE_OFFSET;
+    private static final MethodHandle ARCHIVE_SET_RAW_CHUNK_SIZE;
+    private static final MethodHandle PATCH_SET_RAW_CHUNK_SIZE;
+    private static final MethodHandle ARCHIVE_GET_RAW_CHUNK_SIZE;
+    private static final MethodHandle PATCH_GET_RAW_CHUNK_SIZE;
     private static final MethodHandle ARCHIVE_VERSION;
     private static final MethodHandle ARCHIVE_FILES;
     private static final MethodHandle FILE_SIZE_PACKED;
@@ -270,6 +274,12 @@ public final class LibmpqNative {
         ARCHIVE_SIZE_PACKED = metadata(linker, lookup, "libmpq__archive_size_packed");
         ARCHIVE_SIZE_UNPACKED = metadata(linker, lookup, "libmpq__archive_size_unpacked");
         ARCHIVE_OFFSET = metadata(linker, lookup, "libmpq__archive_offset");
+        ARCHIVE_SET_RAW_CHUNK_SIZE = function(linker, lookup, "libmpq__archive_raw_chunk_size_set",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT));
+        PATCH_SET_RAW_CHUNK_SIZE = function(linker, lookup, "libmpq__patch_raw_chunk_size_set",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT));
+        PATCH_GET_RAW_CHUNK_SIZE = uintMetadata(linker, lookup, "libmpq__patch_raw_chunk_size_get");
+        ARCHIVE_GET_RAW_CHUNK_SIZE = uintMetadata(linker, lookup, "libmpq__archive_raw_chunk_size_get");
         ARCHIVE_VERSION = uintMetadata(linker, lookup, "libmpq__archive_version");
         ARCHIVE_FILES = uintMetadata(linker, lookup, "libmpq__archive_files");
         FILE_SIZE_PACKED = fileMetadata(linker, lookup, "libmpq__file_size_packed");
@@ -592,6 +602,22 @@ public final class LibmpqNative {
     public static int patchBeginMpqe(MemorySegment out, MemorySegment base, MemorySegment output,
                                      MemorySegment authCode, long authCodeSize) {
         return callInt(PATCH_BEGIN_MPQE, out, base, output, authCode, nativeSizeT(authCodeSize));
+    }
+    /** Configure an unlocked v4 archive writer; uint32 bits are passed unchanged. */
+    public static int archiveSetRawChunkSize(MemorySegment archive, int size) {
+        return callInt(ARCHIVE_SET_RAW_CHUNK_SIZE, archive, size);
+    }
+    /** Configure an unlocked v4 patch writer using the same native policy. */
+    public static int patchSetRawChunkSize(MemorySegment patch, int size) {
+        return callInt(PATCH_SET_RAW_CHUNK_SIZE, patch, size);
+    }
+    /** Read the configured or loaded uint32 raw policy without changing it. */
+    public static int archiveGetRawChunkSize(MemorySegment archive, MemorySegment output) {
+        return callInt(ARCHIVE_GET_RAW_CHUNK_SIZE, archive, output);
+    }
+    /** Query the patch writer without changing configuration or its lock. */
+    public static int patchGetRawChunkSize(MemorySegment patch, MemorySegment output) {
+        return callInt(PATCH_GET_RAW_CHUNK_SIZE, patch, output);
     }
     public static int patchSign(MemorySegment patch, int signatureType, MemorySegment key,
                                 long size) {

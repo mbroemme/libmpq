@@ -36,6 +36,63 @@ import org.libmpq.ffi.LibmpqNative;
  */
 class LibmpqTest {
     @Test
+    void rawChunkConfiguration(@TempDir Path directory) throws Exception {
+        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.UTF_8);
+        Path path = directory.resolve("raw.mpq");
+        ArchiveCreateOptions options = new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_FOUR, 8, 512, Mpq.ARCHIVE_CREATE_LISTFILE);
+        for (boolean wrapped : new boolean[] {false, true}) {
+            for (long chunk : new long[] {0, 1, 17, 0x4000, 0xffffffffL}) {
+                try (Archive archive = wrapped ? Archive.createMpqe(path, code, options) : Archive.create(path, options)) {
+                    assertEquals(0x4000, archive.getRawChunkSize());
+                    assertThrows(IllegalArgumentException.class, () -> archive.setRawChunkSize(-1));
+                    assertThrows(IllegalArgumentException.class, () -> archive.setRawChunkSize(0x100000000L));
+                    archive.setRawChunkSize(1);
+                    archive.setRawChunkSize(chunk);
+                    try (MpqFileWriter writer = archive.begin("data", 3, null)) {
+                        assertThrows(LibmpqException.class, () -> archive.setRawChunkSize(0));
+                        writer.write("abc".getBytes(StandardCharsets.UTF_8));
+                        writer.finish();
+                    }
+                    assertThrows(LibmpqException.class, () -> archive.setRawChunkSize(0));
+                    assertEquals(chunk, archive.getRawChunkSize());
+                }
+                try (Archive archive = wrapped ? Archive.openMpqe(path, code) : Archive.open(path)) {
+                    assertEquals(chunk, archive.getRawChunkSize());
+                    assertThrows(LibmpqException.class, () -> archive.setRawChunkSize(17));
+                }
+            }
+        }
+        try (Archive archive = Archive.create(path, options)) {
+            assertThrows(LibmpqException.class, () -> archive.sign(weakPrivateKey()));
+            archive.setRawChunkSize(0);
+            assertThrows(LibmpqException.class, () -> archive.sign(new byte[0]));
+            archive.setRawChunkSize(17);
+            archive.setRawChunkSize(0);
+            archive.sign(weakPrivateKey());
+            assertThrows(LibmpqException.class, () -> archive.setRawChunkSize(17));
+        }
+        Path output = directory.resolve("patch.mpq");
+        for (boolean wrapped : new boolean[] {false, true}) {
+            for (long chunk : new long[] {0, 1, 17, 0x4000, 0xffffffffL}) {
+                try (MpqPatch patch = wrapped ? MpqPatch.beginMpqe(path, output, code) : MpqPatch.begin(path, output)) {
+                    assertEquals(0x4000, patch.getRawChunkSize());
+                    patch.setRawChunkSize(1);
+                    assertEquals(1, patch.getRawChunkSize());
+                    patch.setRawChunkSize(chunk);
+                    assertEquals(chunk, patch.getRawChunkSize());
+                    patch.addData("new", new byte[0]);
+                    assertThrows(LibmpqException.class, () -> patch.setRawChunkSize(0));
+                    assertEquals(chunk, patch.getRawChunkSize());
+                    patch.finish();
+                }
+                try (Archive archive = wrapped ? Archive.openMpqe(output, code) : Archive.open(output)) {
+                    assertEquals(chunk, archive.getRawChunkSize());
+                }
+            }
+        }
+    }
+
+    @Test
     void ordinaryPatchAdditions(@TempDir Path directory) throws Exception {
         byte[] payload = new byte[17003];
         for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i * 37 + 11);

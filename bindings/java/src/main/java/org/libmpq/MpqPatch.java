@@ -127,6 +127,22 @@ public final class MpqPatch implements AutoCloseable {
         }
     }
 
+    /** Read the configured raw size, including after member writing begins. */
+    public long getRawChunkSize() throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment output = arena.allocate(ValueLayout.JAVA_INT);
+            Support.check(LibmpqNative.patchGetRawChunkSize(handle, output));
+            return Integer.toUnsignedLong(output.get(ValueLayout.JAVA_INT, 0));
+        }
+    }
+
+    /** Set the v4 raw policy before member begin or successful signing. */
+    public void setRawChunkSize(long size) throws LibmpqException {
+        checkOpen();
+        Support.check(LibmpqNative.patchSetRawChunkSize(handle, Support.uint32(size, "rawChunkSize")));
+    }
+
     /** Configure weak signing with the existing raw private-key convention. */
     public void sign(byte[] privateKey) throws LibmpqException {
         sign(Mpq.SIGNATURE_WEAK, privateKey);

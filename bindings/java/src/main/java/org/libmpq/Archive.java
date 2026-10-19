@@ -390,6 +390,22 @@ public final class Archive implements AutoCloseable {
         }
     }
 
+    /** Set the v4 raw policy before member begin, signing or finalization. */
+    public void setRawChunkSize(long size) throws LibmpqException {
+        checkOpen();
+        Support.check(LibmpqNative.archiveSetRawChunkSize(handle, Support.uint32(size, "rawChunkSize")));
+    }
+
+    /** Return configured/loaded raw size, or zero for older generations. */
+    public long getRawChunkSize() throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment output = arena.allocate(ValueLayout.JAVA_INT);
+            Support.check(LibmpqNative.archiveGetRawChunkSize(handle, output));
+            return Integer.toUnsignedLong(output.get(ValueLayout.JAVA_INT, 0));
+        }
+    }
+
     /**
      * Returns the public archive format version, normally one for v1 and two
      * for v2.  This differs from the zero/one creation selectors in
