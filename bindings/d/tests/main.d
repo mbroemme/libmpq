@@ -1115,7 +1115,76 @@ private void testPatchAdditions() {
     }
 }
 
+private void testRawChunkConfiguration() {
+    auto path = temporaryArchive("raw-policy");
+    auto output = temporaryArchive("raw-patch");
+    scope(exit) {
+        remove(path);
+        if (exists(output)) remove(output);
+    }
+    auto options = ArchiveCreateOptions.v1();
+    options.version_ = ARCHIVE_VERSION_FOUR;
+    options.flags = ARCHIVE_CREATE_LISTFILE;
+    auto code = cast(const(ubyte)[]) "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+    foreach (wrapped; [false, true]) foreach (uint chunk; [0u, 1u, 17u, 0x4000u, uint.max]) {
+        auto archive = wrapped ? Archive.createMpqe(path, code, options) : Archive.create(path, options);
+        assert(archive.getRawChunkSize() == 0x4000);
+        archive.setRawChunkSize(1);
+        archive.setRawChunkSize(chunk);
+        auto writer = archive.begin("data", 3);
+        bool failed;
+        try { archive.setRawChunkSize(0); }
+        catch (MPQException) { failed = true; }
+        assert(failed);
+        writer.write(cast(const(ubyte)[]) "abc");
+        writer.finish();
+        assert(archive.getRawChunkSize() == chunk);
+        archive.close();
+        archive = wrapped ? Archive.openMpqe(path, code) : Archive.open(path);
+        assert(archive.getRawChunkSize() == chunk);
+        assert(archive.file("data").read() == cast(const(ubyte)[]) "abc");
+        archive.close();
+    }
+    auto archive = Archive.create(path, options);
+    bool failed;
+    try { archive.sign(weakPrivateKey()); }
+    catch (MPQException) { failed = true; }
+    assert(failed);
+    archive.setRawChunkSize(0);
+    failed = false;
+    try { archive.sign(null); }
+    catch (MPQException) { failed = true; }
+    assert(failed);
+    archive.setRawChunkSize(17);
+    archive.setRawChunkSize(0);
+    archive.sign(weakPrivateKey());
+    failed = false;
+    try { archive.setRawChunkSize(17); }
+    catch (MPQException) { failed = true; }
+    assert(failed);
+    archive.close();
+    foreach (wrapped; [false, true]) foreach (uint chunk; [0u, 1u, 17u, 0x4000u, uint.max]) {
+        auto patch = wrapped ? Patch.beginMpqe(path, output, code) : Patch.begin(path, output);
+        assert(patch.getRawChunkSize() == 0x4000);
+        patch.setRawChunkSize(1);
+        assert(patch.getRawChunkSize() == 1);
+        patch.setRawChunkSize(chunk);
+        assert(patch.getRawChunkSize() == chunk);
+        patch.addData("new", null);
+        failed = false;
+        try { patch.setRawChunkSize(0); }
+        catch (MPQException) { failed = true; }
+        assert(failed);
+        assert(patch.getRawChunkSize() == chunk);
+        patch.finish();
+        archive = wrapped ? Archive.openMpqe(output, code) : Archive.open(output);
+        assert(archive.getRawChunkSize() == chunk);
+        archive.close();
+    }
+}
+
 void main() {
+    testRawChunkConfiguration();
     testPatchAdditions();
     testOpenPatch();
     testOpenPatchNamespaces();

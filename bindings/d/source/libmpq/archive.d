@@ -257,6 +257,22 @@ class Archive {
         return new Archive(result);
     }
 
+    /** Configure v4 raw MD5 before member begin, signing or finalization. */
+    void setRawChunkSize(uint size) {
+        ensureOpen();
+        checkStatus(libmpq__archive_raw_chunk_size_set(handle, size),
+                    "libmpq__archive_raw_chunk_size_set");
+    }
+
+    /** Return configured/loaded raw size; older archive generations return zero. */
+    uint getRawChunkSize() {
+        ensureOpen();
+        uint result;
+        checkStatus(libmpq__archive_raw_chunk_size_get(handle, &result),
+                    "libmpq__archive_raw_chunk_size_get");
+        return result;
+    }
+
     /** Return an independently parsed clone of this archive. */
     Archive clone() {
         ensureOpen();

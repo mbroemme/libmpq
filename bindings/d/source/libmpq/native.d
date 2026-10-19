@@ -289,10 +289,19 @@ extern(C) {
                               const(char)* source_path,
                               const(mpq_file_options_s)* options);
 
-    /** Clone an archive into an independent native handle. */
+    /** Compose borrowed archives into an independently owned reader. */
     int libmpq__archive_open_patch(mpq_archive_s** archive, mpq_archive_s* base,
                                   mpq_archive_s** patches, const(char)** prefixes,
                                   size_t patch_count);
+
+    /** Configure writable v4 output before member begin or successful signing. */
+    int libmpq__archive_raw_chunk_size_set(mpq_archive_s* archive, uint raw_chunk_size);
+    int libmpq__patch_raw_chunk_size_set(mpq_patch_s* patch, uint raw_chunk_size);
+    /** Query loaded/configured policy; older generations report zero. */
+    int libmpq__archive_raw_chunk_size_get(mpq_archive_s* archive, uint* raw_chunk_size);
+    int libmpq__patch_raw_chunk_size_get(mpq_patch_s* patch, uint* raw_chunk_size);
+
+    /** Clone an archive into an independent native handle. */
     int libmpq__archive_clone(mpq_archive_s** clone, mpq_archive_s* source);
 
     /** Close an archive and release all native state. */

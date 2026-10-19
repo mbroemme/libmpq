@@ -132,6 +132,22 @@ final class Patch {
                     "libmpq__patch_remove");
     }
 
+    /** Query configured policy without changing it or locking configuration. */
+    uint getRawChunkSize() {
+        ensureOpen();
+        uint result;
+        checkStatus(libmpq__patch_raw_chunk_size_get(handle, &result),
+                    "libmpq__patch_raw_chunk_size_get");
+        return result;
+    }
+
+    /** Configure v4 raw MD5 before any member begins or signing succeeds. */
+    void setRawChunkSize(uint size) {
+        ensureOpen();
+        checkStatus(libmpq__patch_raw_chunk_size_set(handle, size),
+                    "libmpq__patch_raw_chunk_size_set");
+    }
+
     /** Configure weak signing with the existing raw private-key convention. */
     void sign(const(ubyte)[] privateKey) {
         sign(privateKey, SIGNATURE_WEAK);

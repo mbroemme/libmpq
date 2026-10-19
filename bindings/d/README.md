@@ -83,7 +83,7 @@ archive.add("hello.txt", cast(const(ubyte)[])"hello\n");
 ```
 
 Use `ARCHIVE_VERSION_FOUR` with the same creation APIs for v4 MPQ or MPQE
-output with 16 KiB raw chunks. V4 updates preserve the source raw-chunk size.
+output with 16 KiB raw chunks by default. V4 updates preserve the source raw-chunk size.
 
 `Archive.createMpqe` creates a new encrypted MPQE stream from borrowed
 authentication bytes. It finalizes a private plaintext temporary file before
@@ -262,13 +262,12 @@ only during begin; an unfinished patch is aborted rather than published.
 `replacePath` is also available. `finish()` publishes the patch; `abort()`
 discards it, and destruction of an unfinished patch aborts automatically.
 Omitting `FileOptions` passes native NULL and uses native patch defaults;
-the explicit-options overload configures patch-member storage. Patch add and
-rename are not supported; explicit locale/platform must match the base
+the explicit-options overload configures patch-member storage. Patch rename is not supported; explicit locale/platform must match the base
 member. Signing configures the active patch without consuming it; an
 ordinary MPQ v1/v2/v3 patch may configure weak and strong signatures
-separately; its MPQE variant supports weak signing only. Public v4 patch
-creation enables raw-chunk MD5, preventing weak signing. Plain v4 patches
-support strong signing only; MPQE excludes strong signing as well. After
+separately; its MPQE variant supports weak signing only. V4 patches default to raw-chunk MD5, preventing weak signing.
+Call `Patch.setRawChunkSize(0)` before signing to allow weak signatures on
+plain or MPQE output. MPQE strong signing remains unsupported. After
 `finish()`, use `Archive.signatures()` and `Archive.verify()` on the
 finished artifact.
 
@@ -286,9 +285,10 @@ close, and `Archive.signatures()` / `Archive.verify(publicKey)` on reopened
 archives. Verification returns mismatch bits; malformed keys/archives raise
 normal binding errors. Weak keys are exactly 128 bytes: 64-byte big-endian
 modulus followed by a 64-byte big-endian exponent. Weak-signature creation is
-unsupported for MPQ v4 output with raw-chunk MD5 enabled. Public v4 creation
-uses raw chunks, so it supports strong signing on plain MPQ output only.
-The private native writer also supports weak signing with raw chunks disabled.
+unsupported for MPQ v4 output with raw-chunk MD5 enabled. Public v4 creation defaults to raw chunks.
+Call `Archive.setRawChunkSize(0)` before signing to enable weak signatures,
+including on MPQE output. Plain MPQ strong signing supports any raw size;
+MPQE strong signing remains unsupported.
 libmpq does not ship Blizzard- or product-specific public verification keys
 or private signing keys; all signature key material is supplied explicitly
 by the caller.
@@ -432,3 +432,37 @@ materialization requires unambiguous names and metadata. Verify physical
 signatures and raw checksums on input archives, separately from reconstructed
 logical content. Temporary storage survives until the last dependent closes;
 cleanup is best effort on persistent I/O failure.
+
+### V4 raw-chunk policy
+
+```d
+auto options = ArchiveCreateOptions.v1();
+options.version_ = ARCHIVE_VERSION_FOUR;
+auto archive = Archive.create("output.mpq", options);
+scope(exit) archive.close();
+archive.setRawChunkSize(17); // 0 disables trailing raw MD5
+assert(archive.getRawChunkSize() == 17);
+archive.add("data.txt", cast(const(ubyte)[])"content");
+```
+
+`Archive.setRawChunkSize(size)` and `Patch.setRawChunkSize(size)` configure
+plain or MPQE v4 output. The default remains `0x4000` (16 KiB). Zero disables
+member and HET/BET trailing raw arrays; all uint32 values, including 1, 17 and
+`0xffffffff`, are accepted without a power-of-two restriction. Processing
+uses bounded buffers. Configure before any member begins, signing succeeds or
+finalization starts. Repeated early calls are allowed; failed validation or
+signing preserves configurability, but an accepted begin fixes policy even
+if that member is later aborted or fails. Lifecycle errors use the existing
+binding exception mapping and leave the prior size unchanged.
+
+`Archive.getRawChunkSize()` reports loaded or configured policy on readers or
+writers. Older generations return zero. This is policy
+inspection, not proof of checksum presence or success. Physical raw MD5
+hashes stored bytes separately from logical file checks. Updates preserve
+the source policy; these setters do not configure transactions. Zero raw size
+permits weak signing on v4, including MPQE; nonzero raw size rejects weak
+signing. Successful signing freezes raw configuration. Plain strong signing
+is supported at any raw size, while MPQE strong signing is unsupported.
+
+`Patch.getRawChunkSize()` reports a live patch writer's configured policy,
+including after its setters lock.
