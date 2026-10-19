@@ -178,9 +178,30 @@ The public creation APIs accept versions through `LIBMPQ_ARCHIVE_VERSION_FOUR`
 1024 entries, and 4096-byte sectors; explicit capacity, sector size,
 compression policy, listfile, attributes, timestamps, and signing options
 retain their meanings. MPQE creation uses the same writer and unchanged
-authentication/wrapping. Public v4 creation uses 16 KiB (`0x4000`) raw chunks
-and generates structural and raw-chunk MD5 digests automatically. Transactions
-preserve the source raw-chunk size, including zero.
+authentication/wrapping. Public v4 creation defaults to 16 KiB (`0x4000`) raw
+chunks and generates structural and raw-chunk MD5 digests automatically.
+Transactions preserve the source raw-chunk size, including zero.
+
+Use `libmpq__archive_raw_chunk_size_set(archive, size)` or
+`libmpq__patch_raw_chunk_size_set(patch, size)` before any member begins,
+signing succeeds or finalization starts. Every `uint32_t` value is supported,
+including zero, 1, 17 and `UINT32_MAX`; powers of two are not required. Zero
+disables member and HET/BET trailing raw arrays, while structural MD5 remains
+enabled. Processing uses bounded buffers, not an allocation of chunk size.
+Repeated setters before locking are allowed. Failed pre-write validation or
+signing does not freeze policy; an accepted member begin does, even if later
+aborted or failed. Invalid lifecycle returns `LIBMPQ_ERROR_NOT_INITIALIZED`,
+older writable generations return `LIBMPQ_ERROR_FORMAT`, and terminal writer
+errors take precedence. Rejected calls preserve the prior size.
+
+`libmpq__archive_raw_chunk_size_get(archive, &size)` queries the configured
+or loaded policy on writers/readers. V1/v2/v3 return zero; use archive version to
+separate that case from v4 with disabled raw arrays. It neither changes policy
+nor verifies checksums. Raw MD5 covers physical stored bytes, not logical
+content, and configuration does not provide an update/conversion option. Use
+`libmpq__patch_raw_chunk_size_get(patch, &size)` to query a live patch writer,
+including after configuration locks. This does not mutate its state. A failed
+patch query clears the output and preserves any terminal writer error.
 
 `libmpq__writer_begin()` starts an archive member and returns `mpq_writer_s`.
 Use `libmpq__writer_write()`, `libmpq__writer_timestamp()`, and
@@ -318,9 +339,9 @@ during verification only.
 
 To sign, call `libmpq__archive_sign` on a writer with the corresponding
 private key before close. Weak-signature creation is unsupported for MPQ v4
-output with raw-chunk MD5 enabled. The private writer supports weak signing
-with raw chunks disabled; public v4 creation enables them and supports only
-strong signing on plain MPQ output. Weak signing reserves one file slot for
+output with raw-chunk MD5 enabled. Set raw size to zero before signing to
+allow weak signatures on plain or MPQE v4 output. Plain v4 also supports
+strong signing; MPQE strong signing remains unsupported. Weak signing reserves one file slot for
 `(signature)`; strong signing appends an external `NGIS` trailer after
 finalization.
 
@@ -506,10 +527,10 @@ and abort then follow the same lifecycle. Authenticated patch readers can
 consume the result using that patch layer's own code. Signing is optional
 and configured with `libmpq__patch_sign()` before finish. It delegates to the
 existing archive writer: v1/v2/v3 plain patches may use weak, strong, or both
-signatures; their MPQE variants support weak signatures only. Public v4
-patch creation enables raw-chunk MD5, preventing weak signing. Plain v4
-patches therefore support strong signing only; MPQE-wrapped v4 patches
-cannot be signed through this API because MPQE also excludes strong signing.
+signatures; their MPQE variants support weak signatures only. V4 patches
+default to enabled raw-chunk MD5, preventing weak signing. Set their raw size
+to zero before signing to allow weak signatures, including on MPQE output.
+Plain v4 supports strong signing at any raw size; MPQE excludes strong signing.
 A finished patch is inspected and verified with
 `libmpq__archive_signatures()` and `libmpq__archive_verify()`.
 

@@ -39,7 +39,9 @@ archive-creation defaults.
 LIBMPQ_ARCHIVE_VERSION_THREE selects MPQ v3 with a 0x44-byte header,
 HET/BET and classic hash/block tables sharing the same logical rows.
 LIBMPQ_ARCHIVE_VERSION_FOUR selects MPQ v4 with a 0xD0-byte header,
-explicit stored-table sizes, structural MD5 and 0x4000-byte raw chunks.
+explicit stored-table sizes, structural MD5 and default 0x4000-byte raw chunks.
+Use libmpq__archive_raw_chunk_size_set(3) before member writing or signing
+to select another size.
 V4 transactions preserve the source raw-chunk size. Incomplete-name rebuild
 restrictions are described in libmpq__update_begin(3).
 Defaults remain v1 with 4096-byte sectors. Explicit sector sizes are retained.

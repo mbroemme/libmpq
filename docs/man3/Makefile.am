@@ -19,6 +19,8 @@ man_MANS = \
 	libmpq__archive_open_mpqe.3 \
 	libmpq__archive_open_mpqe_io.3 \
 	libmpq__archive_open_patch.3 \
+	libmpq__archive_raw_chunk_size_get.3 \
+	libmpq__archive_raw_chunk_size_set.3 \
 	libmpq__archive_sign.3 \
 	libmpq__archive_signatures.3 \
 	libmpq__archive_size_packed.3 \
@@ -52,6 +54,8 @@ man_MANS = \
 	libmpq__patch_remove.3 \
 	libmpq__patch_replace_data.3 \
 	libmpq__patch_replace_path.3 \
+	libmpq__patch_raw_chunk_size_get.3 \
+	libmpq__patch_raw_chunk_size_set.3 \
 	libmpq__patch_sign.3 \
 	libmpq__stream_close.3 \
 	libmpq__stream_open.3 \

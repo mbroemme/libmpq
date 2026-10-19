@@ -175,15 +175,17 @@ completed header is written and flushed. MPQE creation uses the same logical
 v4 serialization before transport encryption. Public patch archives retain the
 base archive version.
 
-Public v4 creation, including patch writing, uses a raw-chunk size of `0x4000`
-(16 KiB), without a public configuration option. The private initializer also
-permits alternative sizes; zero emits no checksums. Nonzero settings append MD5
-arrays after each finalized compressed/encrypted member, using bounded rereads
-of the readable, seekable output stream. These arrays occupy physical space but
-do not increase member packed sizes. HET/BET finalization also reserves and
-writes trailing raw digest arrays after each final stored envelope, without
-increasing its stored-table size. Members are not subsequently relocated, so
-FIX_KEY uses the final output offset before raw hashing.
+Public v4 creation, including patch writing, defaults to a raw-chunk size of
+`0x4000` (16 KiB). Before member writing, signing or finalization begins, the
+raw policy can select any `uint32_t` size, including non-powers of two; zero
+disables trailing raw arrays while structural MD5 remains enabled. Nonzero
+settings append MD5 arrays after each finalized compressed/encrypted member,
+using bounded rereads of the readable, seekable output stream. These arrays
+occupy physical space but do not increase member packed sizes. HET/BET
+finalization also reserves and writes trailing raw digest arrays after each
+final stored envelope, without increasing its stored-table size. Members are
+not subsequently relocated, so FIX_KEY uses the final output offset before raw
+hashing.
 
 Original-offset packed imports are rejected for raw-enabled output: their
 contract registers packed bytes already placed at their original offsets
@@ -1028,9 +1030,10 @@ for creation. The writer emits only the plain SHA-1 archive-range variant.
 On a new writer, call `libmpq__archive_sign` once for each supported
 signature type before closing, with no active file writer. Weak-signature
 creation is unsupported for MPQ v4 output with raw-chunk MD5 enabled:
-signing rewrites an already hashed member. The private writer supports weak
-signing when `raw_chunk_size` is zero. Public v4 creation enables raw
-chunks, so it supports strong signing on plain MPQ output only.
+signing rewrites an already hashed member. Set `raw_chunk_size` to zero
+before signing to permit weak signatures, including on MPQE output. Public
+v4 creation defaults to enabled raw chunks. Plain strong signing supports
+any raw size; MPQE strong signing remains unsupported.
 Configuration copies the private key. Weak signing reserves one file-table
 slot and a zero signature payload immediately. Close finalizes listfile,
 attributes, tables, and header before hashing, overwriting the weak

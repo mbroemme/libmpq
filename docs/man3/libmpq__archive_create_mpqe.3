@@ -34,8 +34,9 @@ supplies at least 32 authentication-code bytes. Add members using the
 ordinary writer APIs; \fBlibmpq__archive_close\fP() finalizes the archive,
 encrypts it, and atomically publishes the result on success.
 .PP
-V4 creation uses 0x4000-byte raw chunks and generates header, table and raw-chunk
-MD5 digests before MPQE transport encryption. V4 updates preserve the source raw-chunk size.
+V4 creation defaults to 0x4000-byte raw chunks and generates header, table
+and raw-chunk MD5 before MPQE transport encryption. Configure another size
+with libmpq__archive_raw_chunk_size_set(3) before writing or signing. V4 updates preserve the source raw-chunk size.
 .SS "Creation Options"
 NULL \fIoptions\fP uses the built-in archive-creation defaults.
 Compression defaults to STANDARD. Add

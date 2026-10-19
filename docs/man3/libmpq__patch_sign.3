@@ -31,15 +31,17 @@ Configures \fBLIBMPQ_SIGNATURE_WEAK\fP or \fBLIBMPQ_SIGNATURE_STRONG\fP
 signing on an active patch writer. The operation delegates to the ordinary
 archive signing implementation. Configure each type at most once before
 libmpq__patch_finish(3); plain MPQ v1/v2/v3 patches may configure both types.
-Public v4 patch creation enables raw-chunk MD5. Weak-signature creation is
-unsupported for this output and returns \fBLIBMPQ_ERROR_FORMAT\fP.
-Plain v4 patches therefore support strong signing only.
+Public v4 patch creation defaults to raw-chunk MD5. Weak-signature creation
+with nonzero raw size returns \fBLIBMPQ_ERROR_FORMAT\fP. Call
+libmpq__patch_raw_chunk_size_set(3) with zero before signing to enable weak
+signatures. Successful signing locks raw policy; failed requests do not.
+Plain v4 patches support strong signing at any raw size.
 The existing archive writer generates signatures during finalization.
 All signing keys are caller-supplied; no default or product-specific keys are
 built in.
 .PP
-MPQE-wrapped v1/v2/v3 patches support internal weak signatures. Public v4
-MPQE patch creation enables raw chunks and does not support signing.
+MPQE-wrapped patches support internal weak signatures, including v4 when
+raw chunks are disabled before signing.
 No external strong signature representation is defined for MPQE transport,
 so requesting one returns \fBLIBMPQ_ERROR_FORMAT\fP, matching archive
 signing behavior.
