@@ -404,7 +404,7 @@ extern(C) {
     int libmpq__file_flags(mpq_archive_s* archive, uint number, uint* flags);
 
     /** Enumerate or select exact read-only filename identities. */
-    int libmpq__file_variant(mpq_archive_s* archive, const(char)* name, uint ordinal, mpq_file_identity_s* identity);
+    int libmpq__file_identity(mpq_archive_s* archive, const(char)* name, uint identity_index, mpq_file_identity_s* identity);
     int libmpq__file_number_identity(mpq_archive_s* archive, const(char)* name, ushort locale, ushort platform, uint* number);
     int libmpq__stream_open_name_identity(mpq_archive_s* archive, const(char)* name, ushort locale, ushort platform, mpq_stream_s** stream);
     /** Resolve a filename using Storm's archive hash tables. */

@@ -29,7 +29,7 @@ typedef struct mpq_directory mpq_directory_s;
 FILE *libmpq__file_open(const char *path, const char *mode);
 int32_t libmpq__file_seek(FILE *file, uint64_t offset, int origin);
 libmpq__off_t libmpq__file_tell(FILE *file);
-int32_t libmpq__file_identity(FILE *file, uint64_t *device, uint64_t *inode);
+int32_t libmpq__file_handle_identity(FILE *file, uint64_t *device, uint64_t *inode);
 char *libmpq__string_duplicate(const char *text);
 char *libmpq__file_absolute_path(const char *path);
 

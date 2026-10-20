@@ -1215,16 +1215,17 @@ done:
     return result;
 }
 
-/* Enumerate validated identities without changing ordinary name lookup. */
+/* Return one indexed identity without changing ordinary name lookup. */
 int32_t
-libmpq__file_variant(
-    mpq_archive_s *archive, const char *filename, uint32_t ordinal, mpq_file_identity_s *identity
+libmpq__file_identity(
+    mpq_archive_s *archive, const char *filename, uint32_t identity_index,
+    mpq_file_identity_s *identity
 )
 {
     if (identity == NULL)
         return LIBMPQ_ERROR_EXIST;
     memset(identity, 0, sizeof(*identity));
-    return api_identity_lookup(archive, filename, ordinal, 0, 0, 0, identity);
+    return api_identity_lookup(archive, filename, identity_index, 0, 0, 0, identity);
 }
 
 /* Select only an explicitly stored identity, without locale-neutral fallback. */

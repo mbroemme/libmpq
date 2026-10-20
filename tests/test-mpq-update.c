@@ -3648,7 +3648,7 @@ test_identity_access(uint32_t version, uint32_t chunk, unsigned layout, uint8_t 
     }
     TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
     TEST_CHECK(libmpq__file_number(archive, "chain-32", &original) == 0);
-    TEST_CHECK(libmpq__file_variant(archive, "chain-32", 0, &identity) == 0);
+    TEST_CHECK(libmpq__file_identity(archive, "chain-32", 0, &identity) == 0);
     TEST_CHECK(identity.reserved == 0 && identity.locale == 0 && identity.platform == 0);
     TEST_CHECK(
         identity.flags == (layout == 0   ? LIBMPQ_IDENTITY_CLASSIC
@@ -3658,13 +3658,13 @@ test_identity_access(uint32_t version, uint32_t chunk, unsigned layout, uint8_t 
     TEST_CHECK(libmpq__file_number_identity(archive, "chain-32", 0, 0, &number) == 0);
     TEST_CHECK(number == original && number == identity.file_number);
     if (layout != 2) {
-        TEST_CHECK(libmpq__file_variant(archive, "chain-32", 1, &identity) == 0);
+        TEST_CHECK(libmpq__file_identity(archive, "chain-32", 1, &identity) == 0);
         TEST_CHECK(
             identity.locale == 0x409 && identity.platform == 1 && identity.file_number != original
         );
         TEST_CHECK(libmpq__file_number_identity(archive, "chain-32", 0x409, 1, &number) == 0);
         TEST_CHECK(number == identity.file_number);
-        TEST_CHECK(libmpq__file_variant(archive, "chain-32", 2, &identity) == 0);
+        TEST_CHECK(libmpq__file_identity(archive, "chain-32", 2, &identity) == 0);
         TEST_CHECK(
             identity.locale == 0x409 && identity.platform == 2 && identity.file_number == original
         );
@@ -3672,7 +3672,7 @@ test_identity_access(uint32_t version, uint32_t chunk, unsigned layout, uint8_t 
             libmpq__file_number_identity(archive, "chain-32", 0x409, 2, &number) == 0 &&
             number == original
         );
-        TEST_CHECK(libmpq__file_variant(archive, "chain-32", 3, &identity) == 0);
+        TEST_CHECK(libmpq__file_identity(archive, "chain-32", 3, &identity) == 0);
         TEST_CHECK(
             identity.locale == 0x411 && identity.platform == 2 && identity.file_number == original
         );
@@ -3681,7 +3681,7 @@ test_identity_access(uint32_t version, uint32_t chunk, unsigned layout, uint8_t 
         TEST_CHECK(libmpq__stream_open_name_identity(archive, "chain-32", 0, 0, &stream) == 0);
         archive->mpq_het.header.name_hash_bit_size = 63;
         memset(&identity, 0xff, sizeof(identity));
-        TEST_CHECK(libmpq__file_variant(archive, "chain-32", 0, &identity) == LIBMPQ_ERROR_FORMAT);
+        TEST_CHECK(libmpq__file_identity(archive, "chain-32", 0, &identity) == LIBMPQ_ERROR_FORMAT);
         TEST_CHECK(memcmp(&identity, &zero, sizeof(zero)) == 0);
         archive->mpq_het.header.name_hash_bit_size = 64;
         {
@@ -3725,7 +3725,7 @@ test_identity_access(uint32_t version, uint32_t chunk, unsigned layout, uint8_t 
                 ) == 0
             );
             TEST_CHECK(
-                libmpq__file_variant(archive, "chain-32", 0, &identity) == LIBMPQ_ERROR_FORMAT
+                libmpq__file_identity(archive, "chain-32", 0, &identity) == LIBMPQ_ERROR_FORMAT
             );
             TEST_CHECK(memcmp(&identity, &zero, sizeof(zero)) == 0);
             names[duplicate] = saved_name;
@@ -3739,7 +3739,7 @@ test_identity_access(uint32_t version, uint32_t chunk, unsigned layout, uint8_t 
     }
     memset(&identity, 0xff, sizeof(identity));
     TEST_CHECK(
-        libmpq__file_variant(archive, "chain-32", layout == 2 ? 1 : 4, &identity) ==
+        libmpq__file_identity(archive, "chain-32", layout == 2 ? 1 : 4, &identity) ==
         LIBMPQ_ERROR_EXIST
     );
     TEST_CHECK(memcmp(&identity, &zero, sizeof(zero)) == 0);
@@ -3754,7 +3754,7 @@ test_identity_access(uint32_t version, uint32_t chunk, unsigned layout, uint8_t 
         uint32_t index = archive->mpq_map[original].entry_index;
         uint32_t saved = archive->mpq_entry[index].file_number;
         archive->mpq_entry[index].file_number = archive->entry_count;
-        TEST_CHECK(libmpq__file_variant(archive, "chain-32", 0, &identity) == LIBMPQ_ERROR_FORMAT);
+        TEST_CHECK(libmpq__file_identity(archive, "chain-32", 0, &identity) == LIBMPQ_ERROR_FORMAT);
         TEST_CHECK(memcmp(&identity, &zero, sizeof(zero)) == 0);
         archive->mpq_entry[index].file_number = saved;
         if (layout == 1) {
@@ -3769,7 +3769,7 @@ test_identity_access(uint32_t version, uint32_t chunk, unsigned layout, uint8_t 
                 libmpq__file_number(archive, "chain-32", &number) == 0 && number == original
             );
             archive->mpq_hash[0].locale = 0;
-            TEST_CHECK(libmpq__file_variant(archive, "nested/chain-32", 0, &identity) == 0);
+            TEST_CHECK(libmpq__file_identity(archive, "nested/chain-32", 0, &identity) == 0);
             TEST_CHECK(
                 identity.flags == LIBMPQ_IDENTITY_BET && identity.locale == 0 &&
                 identity.platform == 0
@@ -3799,7 +3799,7 @@ test_identity_access(uint32_t version, uint32_t chunk, unsigned layout, uint8_t 
             TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
             memset(&identity, 0xff, sizeof(identity));
             TEST_CHECK(
-                libmpq__file_variant(archive, "chain-32", 0, &identity) == LIBMPQ_ERROR_FORMAT
+                libmpq__file_identity(archive, "chain-32", 0, &identity) == LIBMPQ_ERROR_FORMAT
             );
             TEST_CHECK(memcmp(&identity, &zero, sizeof(zero)) == 0);
             number = UINT32_MAX;
@@ -3823,10 +3823,10 @@ test_identity_access(uint32_t version, uint32_t chunk, unsigned layout, uint8_t 
                 hashes[i].block_table_index = LIBMPQ_HASH_DELETED;
             TEST_CHECK(test_alias_table_write(path, hashes, 0) == 0);
             TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
-            TEST_CHECK(libmpq__file_variant(archive, "chain-32", 2, &identity) == 0);
+            TEST_CHECK(libmpq__file_identity(archive, "chain-32", 2, &identity) == 0);
             TEST_CHECK(identity.locale == 99 && identity.platform == 99);
             TEST_CHECK(
-                libmpq__file_variant(archive, "chain-32", 3, &identity) == 0 &&
+                libmpq__file_identity(archive, "chain-32", 3, &identity) == 0 &&
                 identity.locale == 0x411
             );
             TEST_CHECK(libmpq__archive_close(archive) == 0);

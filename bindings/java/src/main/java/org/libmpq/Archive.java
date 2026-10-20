@@ -437,7 +437,7 @@ public final class Archive implements AutoCloseable {
             MemorySegment encoded = Support.text(arena, name);
             MemorySegment output = arena.allocate(LibmpqNative.FILE_IDENTITY);
             for (long ordinal = 0; ordinal <= 0xffffffffL; ordinal++) {
-                int status = LibmpqNative.fileVariant(handle, encoded, (int) ordinal, output);
+                int status = LibmpqNative.fileIdentity(handle, encoded, (int) ordinal, output);
                 if (status == Mpq.ERROR_EXIST) return List.copyOf(result);
                 Support.check(status);
                 result.add(new FileIdentity(output.get(ValueLayout.JAVA_INT, 0),

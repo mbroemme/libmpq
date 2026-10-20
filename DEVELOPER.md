@@ -136,13 +136,15 @@ memory_read_at(void *context, libmpq__off_t offset, uint8_t *buffer, size_t size
 
 ### Logical member streams
 
-`libmpq__file_variant(archive, name, ordinal, &identity)` enumerates live
-identities for one filename in ascending original classic hash-slot order.
-Probing crosses deleted slots and stops at the first never-used slot or full
-wrap. Aliases may share a canonical file number; locale/platform identities
-are retained separately. `mpq_file_identity_s` has a 16-byte natural layout,
-with a zero reserved field. `LIBMPQ_IDENTITY_CLASSIC` and
-`LIBMPQ_IDENTITY_BET` describe stored provenance, not file-storage flags.
+`libmpq__file_identity(archive, name, identity_index, &identity)` retrieves
+one live filename identity by zero-based index, returning an operational
+status. Repeated calls enumerate identities in ascending original classic
+hash-slot order. Probing crosses deleted slots and stops at the first
+never-used slot or full wrap. Aliases may share a canonical file number;
+locale/platform identities are retained separately. `mpq_file_identity_s` has
+a 16-byte natural layout, with a zero reserved field.
+`LIBMPQ_IDENTITY_CLASSIC` and `LIBMPQ_IDENTITY_BET` describe stored provenance,
+not file-storage flags.
 Mixed entries carry both flags when canonically reconciled. HET/BET-only
 entries expose one unqualified `(0, 0)` identity with BET provenance.
 

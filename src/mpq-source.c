@@ -134,7 +134,7 @@ file_backend_identity(void *context, uint64_t *device, uint64_t *inode)
 
     if (backend == NULL)
         return LIBMPQ_ERROR_EXIST;
-    return libmpq__file_identity(backend->file, device, inode);
+    return libmpq__file_handle_identity(backend->file, device, inode);
 }
 
 /* Clone owned storage through its retained directory, not a logical source name. */

@@ -465,9 +465,9 @@ main(void)
         );
         TEST_CHECK(offsetof(mpq_file_identity_s, reserved) == 12);
         memset(&identity, 0xff, sizeof(identity));
-        TEST_CHECK(libmpq__file_variant(NULL, "x", 0, &identity) == LIBMPQ_ERROR_EXIST);
+        TEST_CHECK(libmpq__file_identity(NULL, "x", 0, &identity) == LIBMPQ_ERROR_EXIST);
         TEST_CHECK(memcmp(&identity, &zero, sizeof(zero)) == 0);
-        TEST_CHECK(libmpq__file_variant(NULL, NULL, 0, NULL) == LIBMPQ_ERROR_EXIST);
+        TEST_CHECK(libmpq__file_identity(NULL, NULL, 0, NULL) == LIBMPQ_ERROR_EXIST);
         TEST_CHECK(
             libmpq__file_number_identity(NULL, "x", 0, 0, &number) == LIBMPQ_ERROR_EXIST &&
             number == 0

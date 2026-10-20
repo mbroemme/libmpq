@@ -340,9 +340,9 @@ class Archive {
         auto encoded = toStringz(name);
         for (ulong ordinal = 0; ordinal <= uint.max; ordinal++) {
             mpq_file_identity_s identity;
-            auto status = libmpq__file_variant(handle, encoded, cast(uint)ordinal, &identity);
+            auto status = libmpq__file_identity(handle, encoded, cast(uint)ordinal, &identity);
             if (status == ERROR_EXIST) return result;
-            checkStatus(status, "libmpq__file_variant");
+            checkStatus(status, "libmpq__file_identity");
             result ~= FileIdentity(identity.file_number, identity.flags, identity.locale, identity.platform);
         }
         throw new MPQException("Archive.variants", ERROR_SIZE);

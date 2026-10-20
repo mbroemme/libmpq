@@ -273,7 +273,7 @@ libmpq__file_open(const char *path, const char *mode)
 }
 
 int32_t
-libmpq__file_identity(FILE *file, uint64_t *device, uint64_t *inode)
+libmpq__file_handle_identity(FILE *file, uint64_t *device, uint64_t *inode)
 {
     BY_HANDLE_FILE_INFORMATION info;
 
@@ -734,7 +734,7 @@ libmpq__file_open(const char *path, const char *mode)
 }
 
 int32_t
-libmpq__file_identity(FILE *file, uint64_t *device, uint64_t *inode)
+libmpq__file_handle_identity(FILE *file, uint64_t *device, uint64_t *inode)
 {
     struct stat status;
 

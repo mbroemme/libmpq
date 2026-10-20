@@ -309,7 +309,7 @@ _configure("libmpq__patch_payload_read", ctypes.c_int32, _VOID_PTR, ctypes.c_uin
 _configure("libmpq__file_offset", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_OFF_T))
 for _name in ("blocks", "flags"):
     _configure("libmpq__file_" + _name, ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
-_configure("libmpq__file_variant", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
+_configure("libmpq__file_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
            ctypes.c_uint32, _VOID_PTR)
 _configure("libmpq__file_number_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
            ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(ctypes.c_uint32))
@@ -1381,7 +1381,7 @@ class Archive:
         for ordinal in range(0x100000000):
             native = _FileIdentity()
             try:
-                libmpq.libmpq__file_variant(self._mpq, encoded, ordinal, ctypes.byref(native))
+                libmpq.libmpq__file_identity(self._mpq, encoded, ordinal, ctypes.byref(native))
             except LibmpqNotFoundError:
                 return tuple(result)
             result.append(FileIdentity(native.file_number, native.flags,

@@ -533,7 +533,7 @@ patch_writer_check_destination(mpq_patch_writer_s *state)
     if (existing == NULL)
         return 0;
     if (state->base->file_identity_valid) {
-        result = libmpq__file_identity(existing, &device, &inode);
+        result = libmpq__file_handle_identity(existing, &device, &inode);
         if (result == 0 && device == state->base->file_device && inode == state->base->file_inode)
             result = LIBMPQ_ERROR_FORMAT;
     }

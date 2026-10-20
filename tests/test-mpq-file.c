@@ -217,7 +217,7 @@ invalid_arguments(void)
     TEST_CHECK(libmpq__file_open("name", NULL) == NULL);
     TEST_CHECK(libmpq__file_seek(NULL, 0, SEEK_SET) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__file_tell(NULL) == LIBMPQ_ERROR_EXIST);
-    TEST_CHECK(libmpq__file_identity(NULL, &device, &inode) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__file_handle_identity(NULL, &device, &inode) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(device == 0 && inode == 0);
     TEST_CHECK(libmpq__directory_open("unused.mpq", &directory, &name) == 0);
     free(name);
@@ -304,13 +304,13 @@ main(void)
     TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
     original = libmpq__file_open(path, "rb");
     TEST_CHECK(original != NULL);
-    TEST_CHECK(libmpq__file_identity(original, &device, &inode) == 0);
+    TEST_CHECK(libmpq__file_handle_identity(original, &device, &inode) == 0);
     TEST_CHECK(
         libmpq__directory_temporary(
             directory, ".libmpq-mpqe-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", 0, &temporary, &file
         ) == 0
     );
-    TEST_CHECK(libmpq__file_identity(file, &replacement_device, &replacement_inode) == 0);
+    TEST_CHECK(libmpq__file_handle_identity(file, &replacement_device, &replacement_inode) == 0);
     TEST_CHECK(device != replacement_device || inode != replacement_inode);
     TEST_CHECK(fclose(file) == 0);
 

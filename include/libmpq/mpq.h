@@ -600,14 +600,15 @@ extern LIBMPQ_API int32_t
 libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *number);
 
 /*
- * Enumerate this filename's live identities in original classic slot order.
+ * Retrieve one live filename identity by zero-based identity_index.
+ * Repeated calls enumerate identities in original classic slot order.
  * Deleted slots do not end probing. Distinct locale/platform aliases remain
  * distinct even when sharing a file number. BET-only identities are (0,0).
  * EXIST marks the end; ambiguous/reduced identities return FORMAT. Output is
  * cleared on failure. Flags describe stored provenance, not storage flags.
  */
-extern LIBMPQ_API int32_t libmpq__file_variant(
-    mpq_archive_s *archive, const char *filename, uint32_t variant_index,
+extern LIBMPQ_API int32_t libmpq__file_identity(
+    mpq_archive_s *archive, const char *filename, uint32_t identity_index,
     mpq_file_identity_s *identity
 );
 

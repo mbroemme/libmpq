@@ -12,22 +12,23 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public License
 .\" along with this file; if not, see <https://www.gnu.org/licenses/>.
-.TH LIBMPQ__FILE_VARIANT 3 2026-11-04 "The MoPaQ archive library"
+.TH LIBMPQ__FILE_IDENTITY 3 2026-11-04 "The MoPaQ archive library"
 .SH NAME
-libmpq__file_variant \- enumerate exact stored filename identities
+libmpq__file_identity \- retrieve one exact stored filename identity
 .SH SYNOPSIS
 .nf
 #include <libmpq/mpq.h>
 
-int32_t libmpq__file_variant(
+int32_t libmpq__file_identity(
         mpq_archive_s *archive, const char *filename,
-        uint32_t variant_index, mpq_file_identity_s *identity);
+        uint32_t identity_index, mpq_file_identity_s *identity);
 .fi
 .SH DESCRIPTION
-Enumerate live identities for filename using a zero-based ordinal. Classic
-probing continues across deleted slots, stopping at the first never-used slot
-or full wrap. Results follow ascending original hash-slot order, including
-wraparound chains. Slots themselves are not public persistent identifiers.
+Return one live identity for filename at the zero-based identity_index.
+Repeated calls enumerate identities. Classic probing continues across deleted
+slots, stopping at the first never-used slot or full wrap. Results follow
+ascending original hash-slot order, including wraparound chains. Slots
+themselves are not public persistent identifiers.
 Aliases may share a canonical file number; locale/platform variants are not
 deduplicated. Duplicate identities are rejected even if they share a member.
 .PP
@@ -45,7 +46,7 @@ Ambiguous or incomplete mappings are rejected, without filename recovery.
 
 .SH RETURN VALUE
 Return 0 on success or a negative libmpq error. A valid output is entirely
-cleared on failure. No partial stream is returned.
+cleared on failure.
 .SH ERRORS
 LIBMPQ_ERROR_EXIST indicates missing required arguments, an absent identity
 or the end of enumeration. LIBMPQ_ERROR_FORMAT indicates malformed canonical

@@ -36,7 +36,7 @@ man_MANS = \
 	libmpq__file_blocks.3 \
 	libmpq__file_flags.3 \
 	libmpq__file_hash.3 \
-	libmpq__file_variant.3 \
+	libmpq__file_identity.3 \
 	libmpq__file_number_identity.3 \
 	libmpq__stream_open_name_identity.3 \
 	libmpq__file_number.3 \

@@ -151,7 +151,7 @@ update_identity(const mpq_update_s *update)
     file = libmpq__directory_file_open(update->directory, update->destination, "rb");
     if (file == NULL)
         return LIBMPQ_ERROR_EXIST;
-    result = libmpq__file_identity(file, &device, &inode);
+    result = libmpq__file_handle_identity(file, &device, &inode);
     if (result == 0 && (device != update->device || inode != update->inode))
         result = LIBMPQ_ERROR_EXIST;
     if (fclose(file) != 0)
@@ -220,7 +220,7 @@ update_transaction_begin_source(mpq_update_s **update, const char *path, uint8_t
         result = LIBMPQ_ERROR_EXIST;
         goto fail;
     }
-    result = libmpq__file_identity(input, &state->device, &state->inode);
+    result = libmpq__file_handle_identity(input, &state->device, &state->inode);
     if (result != 0)
         goto fail;
     result = libmpq__directory_temporary_reopenable(

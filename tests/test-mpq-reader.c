@@ -569,7 +569,7 @@ test_v3_mixed_rows(uint32_t classic_count, uint32_t bet_count, int live_sources,
         if (i >= classic_count || i >= bet_count) {
             mpq_file_identity_s identity;
             uint32_t exact = UINT32_MAX;
-            TEST_CHECK(libmpq__file_variant(archive, name, 0, &identity) == 0);
+            TEST_CHECK(libmpq__file_identity(archive, name, 0, &identity) == 0);
             TEST_CHECK(
                 identity.file_number == number && identity.locale == 0 && identity.platform == 0
             );
@@ -584,7 +584,7 @@ test_v3_mixed_rows(uint32_t classic_count, uint32_t bet_count, int live_sources,
                 libmpq__file_number_identity(archive, name, 1, 0, &exact) == LIBMPQ_ERROR_EXIST &&
                 exact == 0
             );
-            TEST_CHECK(libmpq__file_variant(archive, name, 1, &identity) == LIBMPQ_ERROR_EXIST);
+            TEST_CHECK(libmpq__file_identity(archive, name, 1, &identity) == LIBMPQ_ERROR_EXIST);
         }
         if (i < classic_count && !(live_sources && i == 1)) {
             TEST_CHECK(snprintf(name, sizeof(name), "classic-%u.bin", i) > 0);
@@ -1705,7 +1705,7 @@ test_filename_provenance(uint32_t version)
                 for (uint32_t j = 0; j < 4; j++)
                     if (strcmp(identities[i].name, identities[j].name) == 0 && slots[j] < slots[i])
                         ordinal++;
-            TEST_CHECK(libmpq__file_variant(archive, identities[i].name, ordinal, &identity) == 0);
+            TEST_CHECK(libmpq__file_identity(archive, identities[i].name, ordinal, &identity) == 0);
             TEST_CHECK(identity.flags == identities[i].flags);
             TEST_CHECK(identity.file_number == numbers[identities[i].block]);
             TEST_CHECK(identity.locale == identities[i].locale);
@@ -1740,7 +1740,7 @@ test_filename_provenance(uint32_t version)
             }
             memset(&identity, 0xff, sizeof(identity));
             TEST_CHECK(
-                libmpq__file_variant(archive, "shared.bin", 0, &identity) == LIBMPQ_ERROR_FORMAT
+                libmpq__file_identity(archive, "shared.bin", 0, &identity) == LIBMPQ_ERROR_FORMAT
             );
             TEST_CHECK(memcmp(&identity, &zero, sizeof(identity)) == 0);
             TEST_CHECK(
