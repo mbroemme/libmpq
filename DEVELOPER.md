@@ -136,6 +136,34 @@ memory_read_at(void *context, libmpq__off_t offset, uint8_t *buffer, size_t size
 
 ### Logical member streams
 
+`libmpq__file_variant(archive, name, ordinal, &identity)` enumerates live
+identities for one filename in ascending original classic hash-slot order.
+Probing crosses deleted slots and stops at the first never-used slot or full
+wrap. Aliases may share a canonical file number; locale/platform identities
+are retained separately. `mpq_file_identity_s` has a 16-byte natural layout,
+with a zero reserved field. `LIBMPQ_IDENTITY_CLASSIC` and
+`LIBMPQ_IDENTITY_BET` describe stored provenance, not file-storage flags.
+Mixed entries carry both flags when canonically reconciled. HET/BET-only
+entries expose one unqualified `(0, 0)` identity with BET provenance.
+
+Use `libmpq__file_number_identity()` or
+`libmpq__stream_open_name_identity()` for exact locale/platform selection.
+Selectors are `uint16_t`; no neutral or first-hit fallback is applied. The
+existing `libmpq__file_number()` behavior remains unchanged. Variant end and
+exact misses return `LIBMPQ_ERROR_EXIST`; contradictory duplicate identities,
+inconsistent canonical mappings, reduced extended hashes and HET names beyond
+264 bytes return `LIBMPQ_ERROR_FORMAT`. Exact HET-only access requires complete
+64-bit normalized HET/56-bit BET hashes and a unique mapping. A name found
+only through HET/BET remains unqualified even if its canonical payload has
+classic aliases under other names. All new outputs are cleared on failure.
+
+Exact named streams resolve on their own archive clone and retain the supplied
+filename for basename-derived encryption and FIX_KEY. Indexed metadata access
+alone does not supply an encryption key. Streams survive parent close;
+custom callback contexts must outlive dependent streams, as for other stream
+APIs. These operations are read-only and do not configure global locale state
+or enable transactional identity mutation.
+
 `libmpq__stream_open()` and `libmpq__stream_open_name()` provide incremental
 logical-member reads and seeks without a complete file buffer. An archive
 source is the backing MPQ or MPQE byte source; a logical member stream is a

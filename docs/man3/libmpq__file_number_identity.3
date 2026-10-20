@@ -1,0 +1,64 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__FILE_NUMBER_IDENTITY 3 2026-11-04 "The MoPaQ archive library"
+.SH NAME
+libmpq__file_number_identity \- resolve an exact filename locale and platform
+.SH SYNOPSIS
+.nf
+#include <libmpq/mpq.h>
+
+int32_t libmpq__file_number_identity(
+        mpq_archive_s *archive, const char *filename,
+        uint16_t locale, uint16_t platform, uint32_t *file_number);
+.fi
+.SH DESCRIPTION
+Select the exact stored classic locale/platform identity for filename.
+There is no neutral fallback or global locale state. The existing ordinary
+libmpq__file_number(3) behavior is unchanged. Conflicting or duplicate
+identities return FORMAT rather than choosing the first hit.
+.PP
+HET/BET-only identities accept only (0, 0). A missing classic selector is
+not satisfied by a name-only BET row when other classic variants exist.
+A name found only through HET/BET remains unqualified, even if its payload
+has classic aliases under other names. Reduced extended hashes cannot establish exact
+identity and are rejected. Indexed metadata queries can use the result;
+for encrypted reads use the exact named stream so the filename is supplied.
+
+.SH RETURN VALUE
+Return 0 on success or a negative libmpq error. A valid output is entirely
+cleared on failure. No partial stream is returned.
+.SH ERRORS
+LIBMPQ_ERROR_EXIST indicates missing required arguments, an absent identity
+or the end of enumeration. LIBMPQ_ERROR_FORMAT indicates malformed canonical
+mappings, contradictory duplicate identities or unsupported reduced hashes.
+Read-only identity queries reject writable archives with
+LIBMPQ_ERROR_NOT_INITIALIZED. Stream opening rejects invalid writer handles
+with LIBMPQ_ERROR_EXIST. Existing allocation, source I/O and decode errors
+are propagated. All source archives remain unchanged.
+.SH SEE ALSO
+.BR libmpq__file_number (3),
+.BR libmpq__file_variant (3),
+.BR libmpq__stream_open_name_identity (3),
+.BR libmpq__stream_close (3)
+.SH AUTHOR
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later. See COPYING.LESSER for the full license.
