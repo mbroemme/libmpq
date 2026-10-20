@@ -1386,3 +1386,58 @@ def test_raw_chunk_signing_and_patch(tmp_path, wrapped):
         assert writer.raw_chunk_size == 0
         with pytest.raises(mpq.LibmpqFormatError):
             writer.raw_chunk_size = 17
+
+
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO])
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_exact_identities(tmp_path, version, wrapped):
+    path = tmp_path / "identities.mpq"
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    create = (lambda: mpq.Writer.create_mpqe(path, code, version=version)) if wrapped else lambda: mpq.Writer(path, version=version)
+    options = mpq.FileCreateOptions(mpq.FILE_FLAG_COMPRESS | mpq.FILE_FLAG_ENCRYPTED | 0x20000,
+                                    mpq.COMPRESSION_ZLIB, mpq.COMPRESSION_ZLIB, 0, 0)
+    with create() as writer:
+        writer.add("dir/voice.bin", b"neutral", options)
+        options.locale, options.platform = 0x409, 1
+        writer.add("dir/voice.bin", b"localized", options)
+    archive = mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive(path)
+    identities = archive.variants("dir/voice.bin")
+    assert {(i.locale, i.platform) for i in identities} == {(0, 0), (0x409, 1)}
+    assert all(i.flags == mpq.IDENTITY_CLASSIC for i in identities)
+    with pytest.raises(AttributeError):
+        identities[0].locale = 7
+    assert archive.variants("absent") == ()
+    assert archive.file_number_identity("dir/voice.bin", 0x409, 1) in {i.file_number for i in identities}
+    with pytest.raises(mpq.LibmpqNotFoundError):
+        archive.file_number_identity("dir/voice.bin", 0x409, 0)
+    for invalid in (-1, 65536, 1.5):
+        with pytest.raises((ValueError, TypeError)):
+            archive.open_stream_identity("dir/voice.bin", invalid, 0)
+    stream = archive.open_stream_identity("dir/voice.bin", 0x409, 1)
+    archive.close()
+    assert stream.read() == b"localized"
+    stream.close()
+
+
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_THREE, mpq.ARCHIVE_VERSION_FOUR])
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_exact_extended_identity_sources(tmp_path, version, wrapped):
+    path = tmp_path / "exact-source.mpq"
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    create = (lambda: mpq.Writer.create_mpqe(path, code, version=version, sector_size=512)) if wrapped else lambda: mpq.Writer(path, version=version, sector_size=512)
+    options = mpq.FileCreateOptions(mpq.FILE_FLAG_COMPRESS | mpq.FILE_FLAG_ENCRYPTED | 0x20000,
+                                    mpq.COMPRESSION_ZLIB, mpq.COMPRESSION_ZLIB, 0, 0)
+    payload = b"exact neutral content" * 100
+    with create() as writer:
+        writer.add("nested/content.bin", payload, options)
+    wire = path.read_bytes()
+    archive = mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive.open_io(io.BytesIO(wire), len(wire))
+    identities = archive.variants("nested/content.bin")
+    assert len(identities) == 1 and identities[0].flags == mpq.IDENTITY_CLASSIC | mpq.IDENTITY_BET
+    assert archive.file_number_identity("nested/content.bin") == identities[0].file_number
+    with pytest.raises(mpq.LibmpqNotFoundError):
+        archive.file_number_identity("nested/content.bin", 1, 0)
+    stream = archive.open_stream_identity("nested/content.bin")
+    archive.close()
+    assert stream.read() == payload
+    stream.close()

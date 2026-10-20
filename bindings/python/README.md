@@ -387,3 +387,24 @@ is supported at any raw size, while MPQE strong signing is unsupported.
 
 Python setters require an integer in `0..0xffffffff`; invalid ranges or types
 raise `ValueError` or `TypeError` before native conversion.
+
+### Exact filename identities
+
+```python
+identities = archive.variants("dir/file.bin")
+for identity in identities:
+    print(identity.file_number, identity.flags, identity.locale, identity.platform)
+number = archive.file_number_identity("dir/file.bin", locale=0x409, platform=1)
+with archive.open_stream_identity("dir/file.bin", locale=0x409, platform=1) as stream:
+    content = stream.read()
+```
+
+`variants()` returns a tuple of immutable `FileIdentity` records in native
+classic slot order. Aliases can share a file number. `IDENTITY_CLASSIC` and
+`IDENTITY_BET` flags describe stored provenance, not storage flags. BET-only
+identities are unqualified `(0, 0)`; exact calls never fall back to another
+locale/platform. Both selectors must be integers in `0..65535`. Ambiguous,
+contradictory or reduced-hash layouts raise the existing format exception.
+Ordinary lookup retains its existing behavior. Exact named streams supply
+the encryption filename and own their native clone, so they survive parent
+closure. Custom source ownership follows the existing stream contract.

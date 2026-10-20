@@ -309,6 +309,12 @@ _configure("libmpq__patch_payload_read", ctypes.c_int32, _VOID_PTR, ctypes.c_uin
 _configure("libmpq__file_offset", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_OFF_T))
 for _name in ("blocks", "flags"):
     _configure("libmpq__file_" + _name, ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
+_configure("libmpq__file_variant", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
+           ctypes.c_uint32, _VOID_PTR)
+_configure("libmpq__file_number_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
+           ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(ctypes.c_uint32))
+_configure("libmpq__stream_open_name_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
+           ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(_VOID_PTR))
 _configure("libmpq__file_number", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_hash", None, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_number_from_hash", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
@@ -375,6 +381,32 @@ class ArchiveCreateOptions(ctypes.Structure):
     def v2(cls):
         """Return options for a default v2 archive."""
         return cls(ARCHIVE_VERSION_TWO, 0, 0, 0)
+
+
+IDENTITY_CLASSIC = 0x00000001
+IDENTITY_BET = 0x00000002
+
+
+class _FileIdentity(ctypes.Structure):
+    _fields_ = [("file_number", ctypes.c_uint32), ("flags", ctypes.c_uint32),
+                ("locale", ctypes.c_uint16), ("platform", ctypes.c_uint16),
+                ("reserved", ctypes.c_uint32)]
+
+
+@dataclass(frozen=True)
+class FileIdentity:
+    """Immutable stored identity; flags report provenance, not storage flags."""
+    file_number: int
+    flags: int
+    locale: int
+    platform: int
+
+
+def _identity_selector(value):
+    value = operator.index(value)
+    if not 0 <= value <= 0xffff:
+        raise ValueError("identity selector must fit uint16_t")
+    return value
 
 
 class FileCreateOptions(ctypes.Structure):
@@ -1341,6 +1373,36 @@ class Archive:
         """Return signature type bits; malformed internal files raise."""
         self._ensure_open()
         return _read_value(libmpq.libmpq__archive_signatures, ctypes.c_uint32, self._mpq)
+
+    def variants(self, name):
+        """Return immutable identities in native slot order, without fallback."""
+        self._ensure_open()
+        encoded, result = _as_bytes(name), []
+        for ordinal in range(0x100000000):
+            native = _FileIdentity()
+            try:
+                libmpq.libmpq__file_variant(self._mpq, encoded, ordinal, ctypes.byref(native))
+            except LibmpqNotFoundError:
+                return tuple(result)
+            result.append(FileIdentity(native.file_number, native.flags,
+                                       native.locale, native.platform))
+        raise OverflowError("too many identities")
+
+    def file_number_identity(self, name, locale=0, platform=0):
+        """Resolve exactly one stored locale/platform, with no neutral fallback."""
+        self._ensure_open()
+        number = ctypes.c_uint32()
+        libmpq.libmpq__file_number_identity(self._mpq, _as_bytes(name),
+            _identity_selector(locale), _identity_selector(platform), ctypes.byref(number))
+        return number.value
+
+    def open_stream_identity(self, name, locale=0, platform=0):
+        """Open the exact named identity on an independent native clone."""
+        self._ensure_open()
+        stream = _VOID_PTR()
+        libmpq.libmpq__stream_open_name_identity(self._mpq, _as_bytes(name),
+            _identity_selector(locale), _identity_selector(platform), ctypes.byref(stream))
+        return MpqStream(stream, self._source_state)
 
     def open_stream(self, member):
         """Open an independent incremental member stream by name or number."""
