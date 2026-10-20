@@ -274,6 +274,14 @@ _configure("libmpq__update_add_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p
 _configure("libmpq__update_replace_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__update_remove", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p)
 _configure("libmpq__update_rename", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p)
+_configure("libmpq__update_replace_data_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
+           ctypes.c_uint16, ctypes.c_uint16, _BYTE_PTR, _OFF_T, _VOID_PTR)
+_configure("libmpq__update_replace_path_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
+           ctypes.c_uint16, ctypes.c_uint16, ctypes.c_char_p, _VOID_PTR)
+_configure("libmpq__update_remove_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
+           ctypes.c_uint16, ctypes.c_uint16)
+_configure("libmpq__update_rename_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
+           ctypes.c_uint16, ctypes.c_uint16, ctypes.c_char_p)
 _configure("libmpq__update_commit", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__update_abort", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__patch_begin", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, ctypes.c_char_p)
@@ -517,6 +525,36 @@ class Update:
         libmpq.libmpq__update_rename(
             self._update, _as_bytes(old_name), _as_bytes(new_name)
         )
+
+    def replace_data_identity(self, name, locale, platform, data, options=None):
+        """Replace only the exact stored locale/platform identity."""
+        locale, platform = _identity_selector(locale), _identity_selector(platform)
+        self._stage_data(
+            name, data, options,
+            lambda update, name, data, size, options:
+                libmpq.libmpq__update_replace_data_identity(
+                    update, name, locale, platform, data, size, options))
+
+    def replace_path_identity(self, name, locale, platform, source_path, options=None):
+        """Replace an exact identity from a caller-owned path."""
+        self._ensure_open()
+        libmpq.libmpq__update_replace_path_identity(
+            self._update, _as_bytes(name), _identity_selector(locale),
+            _identity_selector(platform), _as_bytes(source_path), self._options(options))
+
+    def remove_identity(self, name, locale, platform):
+        """Remove only the selected stored identity."""
+        self._ensure_open()
+        libmpq.libmpq__update_remove_identity(
+            self._update, _as_bytes(name), _identity_selector(locale),
+            _identity_selector(platform))
+
+    def rename_identity(self, old_name, locale, platform, new_name):
+        """Rename one exact identity while retaining its locale/platform."""
+        self._ensure_open()
+        libmpq.libmpq__update_rename_identity(
+            self._update, _as_bytes(old_name), _identity_selector(locale),
+            _identity_selector(platform), _as_bytes(new_name))
 
     def commit(self):
         """Publish staged changes and consume this handle, even on error."""

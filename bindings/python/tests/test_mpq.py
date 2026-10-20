@@ -1441,3 +1441,53 @@ def test_exact_extended_identity_sources(tmp_path, version, wrapped):
     archive.close()
     assert stream.read() == payload
     stream.close()
+
+
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO,
+                                     mpq.ARCHIVE_VERSION_THREE, mpq.ARCHIVE_VERSION_FOUR])
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_exact_update_stages(tmp_path, version, wrapped):
+    path = tmp_path / "exact-update.mpq"
+    source = tmp_path / "replacement.bin"
+    source.write_bytes(b"path bytes")
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    classic = version in (mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO)
+    locale, platform = (0x409, 1) if classic else (0, 0)
+    options = mpq.FileCreateOptions.raw()
+    options.locale, options.platform = locale, platform
+    create = (mpq.Writer.create_mpqe(path, code, version=version) if wrapped
+              else mpq.Writer(path, version=version))
+    with create as writer:
+        writer.add("voice", b"selected", options)
+        if classic:
+            writer.add("voice", b"neutral")
+    original = path.read_bytes()
+    begin = lambda: (mpq.Update.begin_mpqe(path, code) if wrapped else mpq.Update.begin(path))
+    with begin() as update:
+        update.replace_data_identity("voice", locale, platform, b"bytes")
+        for invalid in (-1, 65536, 1.5):
+            with pytest.raises((ValueError, TypeError)):
+                update.remove_identity("voice", invalid, 0)
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            update.remove_identity("voice", locale, platform + 1)
+        update.rename_identity("voice", locale, platform, "renamed")
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            update.replace_data_identity("voice", locale, platform, b"stale")
+        update.replace_path_identity("renamed", locale, platform, source)
+        assert path.read_bytes() == original
+        update.commit()
+    with (mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive(path)) as archive:
+        with archive.open_stream_identity("renamed", locale, platform) as stream:
+            assert stream.read() == b"path bytes"
+        if classic:
+            with archive.open_stream_identity("voice", 0, 0) as stream:
+                assert stream.read() == b"neutral"
+    committed = path.read_bytes()
+    with begin() as update:
+        update.remove_identity("renamed", locale, platform)
+    assert path.read_bytes() == committed
+    with begin() as update:
+        update.remove_identity("renamed", locale, platform)
+        update.commit()
+    with (mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive(path)) as archive:
+        assert archive.variants("renamed") == ()

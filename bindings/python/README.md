@@ -408,3 +408,25 @@ contradictory or reduced-hash layouts raise the existing format exception.
 Ordinary lookup retains its existing behavior. Exact named streams supply
 the encryption filename and own their native clone, so they survive parent
 closure. Custom source ownership follows the existing stream contract.
+
+Exact updates select one filename/locale/platform identity in the current
+stage, without neutral fallback:
+
+```python
+with mpq.Update.begin(path) as update:
+    update.replace_data_identity("voice.bin", 0x409, 1, b"replacement")
+    update.rename_identity("voice.bin", 0x409, 1, "renamed.bin")
+    update.replace_path_identity("renamed.bin", 0x409, 1, source_path)
+    update.remove_identity("obsolete.bin", 0, 0)
+    update.commit()
+```
+
+Classic-only archives detach the selected shared alias on replacement and
+retain other aliases on removal or rename. Explicit replacement options must
+match the selectors; omitted options use default storage with those selectors.
+Mixed classic/HET/BET targets require consistent one-to-one mappings and
+complete hashes. Unique HET/BET-only targets accept zero selectors only.
+Unsupported or ambiguous metadata is rejected. A rejected operation preserves
+the previous valid stage; commit/abort consume the transaction. Exact rebuilds
+reject embedded archives and unsupported trailers, preserve source raw-chunk
+policy, and do not change existing name-based operations.
