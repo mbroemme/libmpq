@@ -164,7 +164,7 @@ filename for basename-derived encryption and FIX_KEY. Indexed metadata access
 alone does not supply an encryption key. Streams survive parent close;
 custom callback contexts must outlive dependent streams, as for other stream
 APIs. These operations are read-only and do not configure global locale state
-or enable transactional identity mutation.
+or mutate identity locale/platform values.
 
 `libmpq__stream_open()` and `libmpq__stream_open_name()` provide incremental
 logical-member reads and seeks without a complete file buffer. An archive
@@ -440,13 +440,37 @@ When options are supplied, their `locale` and `platform` must match the
 existing member; replacement cannot move a member to a different hash
 identity. When multiple names share one physical block, removing or renaming
 an unencrypted name leaves the other names intact. Replacing that block, or
-renaming it when encrypted, returns `LIBMPQ_ERROR_FORMAT` until block
-splitting is supported. Modification also rejects shared `(listfile)`,
+renaming it when encrypted, returns `LIBMPQ_ERROR_FORMAT` for these
+name-based operations. Modification also rejects shared `(listfile)`,
 `(attributes)`, or `(signature)` blocks when those internal entries must be
 rewritten or removed. Commit and abort both consume the update handle,
 including on error. Commit rechecks the destination's filesystem identity
 immediately before atomic replacement, but this is best effort and does not
 lock out a concurrent change between check and publication.
+
+Exact identity operations use `libmpq__update_replace_data_identity()`,
+`libmpq__update_replace_path_identity()`, `libmpq__update_remove_identity()`
+and `libmpq__update_rename_identity()`. Each resolves the filename, locale and
+platform against the current stage without neutral fallback. For example:
+
+```c
+status = libmpq__update_replace_data_identity(
+    update, "data/file.bin", 0x0409, 0, replacement, replacement_size, NULL);
+```
+
+In classic-only v1-v4 archives, replacement detaches one selected alias into a
+new payload; remove and rename preserve all other aliases and their original
+packed contents. NULL replacement options keep the selected locale/platform
+with default storage; explicit options must match. Mixed classic/HET/BET
+mutations require a consistent one-to-one target with complete hashes.
+Unique HET/BET-only targets accept `(0, 0)` only. Ambiguous aliases or metadata
+are rejected, without discarding extended tables. Retained attributes and
+timestamps, v4 raw policy, and final-offset encryption are preserved.
+
+Exact operations use the reconstruction path for every generation. They
+reject embedded wrappers, unsupported metadata and unrelated trailers. A
+rejected stage leaves earlier valid changes available; the original remains
+unchanged until commit. Existing name-based operations retain their behavior.
 
 Legacy v1/v2 updates retain unchanged packed entries even without `(listfile)`
 names, and preserve embedded prefixes and unrelated trailing bytes. Their

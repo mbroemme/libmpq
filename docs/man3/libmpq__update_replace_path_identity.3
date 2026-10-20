@@ -1,0 +1,89 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__UPDATE_REPLACE_PATH_IDENTITY 3 2026-11-05 "The MoPaQ archive library"
+.SH NAME
+libmpq__update_replace_path_identity \- replace path contents for one exact staged MPQ identity
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__update_replace_path_identity("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename,"
+.BI "        uint16_t " "locale,"
+.BI "        uint16_t " "platform,"
+.BI "        const char *" "source_path,"
+.BI "        const mpq_file_options_s *" "options"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Selects the exact filename, locale and platform in the current transaction
+stage, including preceding successful operations. There is no neutral-locale
+fallback. Existing name-based update functions retain their own behavior.
+.PP
+Classic-only archives support shared payload aliases. Replacement detaches
+only the selected identity into a new payload; removal retains the old
+payload until its last alias disappears; rename preserves other aliases.
+Locale/platform values and applicable attributes and timestamps are retained.
+Encrypted renames use the new basename and final FIX_KEY offset.
+.PP
+Mixed classic/HET/BET targets require consistent one-to-one identities and
+complete extended hashes. Mutations that split a shared BET identity or lose
+another identity are rejected. Unique HET/BET-only targets accept only zero
+locale and platform. Unknown unrelated members retain packed bytes and
+identities. Extended tables are never discarded to permit an operation.
+.PP
+These operations use transactional reconstruction. Embedded archives and
+unrecognized trailers are unsupported on this path. Existing archive
+version, v4 raw-chunk policy and supported metadata are preserved. Special
+members and unsupported metadata or storage layouts are rejected.
+.PP
+NULL options use existing replacement storage defaults while retaining the
+selected locale and platform. Explicit options must match those selectors.
+The caller-owned source path is read synchronously and is never removed.
+.PP
+A rejected operation leaves the preceding valid stage available. The original
+archive remains unchanged until commit publishes a finalized working copy.
+Commit and abort consume the update handle, including on error.
+.SH RETURN VALUE
+Returns 0 on success or a negative libmpq error.
+.SH ERRORS
+LIBMPQ_ERROR_EXIST reports a missing identity or invalid required argument.
+For rename it also reports an occupied destination identity.
+LIBMPQ_ERROR_FORMAT reports ambiguous or unsupported metadata, inconsistent
+mappings, or mismatched replacement options. Size, allocation, read, write,
+seek and close errors use existing LIBMPQ_ERROR_* values.
+.SH SEE ALSO
+.BR libmpq__file_identity (3),
+.BR libmpq__update_begin (3),
+.BR libmpq__update_commit (3),
+.BR libmpq__update_abort (3)
+.SH AUTHOR
+The libmpq project is maintained by Maik Broemme.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

@@ -351,6 +351,50 @@ libmpq__update_rename(mpq_update_s *update, const char *old_filename, const char
     return libmpq__update_transaction_rename(update, old_filename, new_filename);
 }
 
+/* Exact update wrappers reuse the staged transaction engine. */
+int32_t
+libmpq__update_replace_data_identity(
+    mpq_update_s *update, const char *name, uint16_t locale, uint16_t platform, const uint8_t *data,
+    libmpq__off_t size, const mpq_file_options_s *options
+)
+{
+    return libmpq__update_transaction_replace_identity(
+        update, name, locale, platform, data, size, NULL, options
+    );
+}
+
+/* Borrow a replacement path only for this synchronous staging call. */
+int32_t
+libmpq__update_replace_path_identity(
+    mpq_update_s *update, const char *name, uint16_t locale, uint16_t platform, const char *path,
+    const mpq_file_options_s *options
+)
+{
+    if (path == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    return libmpq__update_transaction_replace_identity(
+        update, name, locale, platform, NULL, 0, path, options
+    );
+}
+
+/* Remove a single exact identity, retaining any shared payload aliases. */
+int32_t
+libmpq__update_remove_identity(
+    mpq_update_s *update, const char *name, uint16_t locale, uint16_t platform
+)
+{
+    return libmpq__update_transaction_remove_identity(update, name, locale, platform);
+}
+
+/* Preserve the selected locale/platform while renaming one exact identity. */
+int32_t
+libmpq__update_rename_identity(
+    mpq_update_s *update, const char *name, uint16_t locale, uint16_t platform, const char *new_name
+)
+{
+    return libmpq__update_transaction_rename_identity(update, name, locale, platform, new_name);
+}
+
 int32_t
 libmpq__update_commit(mpq_update_s *update)
 {

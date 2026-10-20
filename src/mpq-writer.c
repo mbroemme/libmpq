@@ -822,7 +822,7 @@ libmpq__writer_preserve_member(
     return result;
 }
 
-/* Place retained v4 payloads without recompression; only changed keys alter stored bytes. */
+/* Place retained payloads without recompression; only changed keys alter stored bytes. */
 int32_t
 libmpq__writer_copy_member(
     mpq_archive_s *writer, mpq_archive_s *source, uint32_t number, const char *old_name,
@@ -850,7 +850,9 @@ libmpq__writer_copy_member(
     if (writer->write_error != 0)
         return writer->write_error;
     if (!writer->write_mode || writer->write_current || writer->write_finalized ||
-        writer->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_FOUR || source->write_mode)
+        (writer->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_FOUR &&
+         writer->mpq_header.version != source->mpq_header.version) ||
+        source->write_mode)
         return LIBMPQ_ERROR_NOT_INITIALIZED;
     result = libmpq__reader_validate_file_number(source, number);
     if (result != 0)
@@ -1238,6 +1240,31 @@ finalize_archive(mpq_archive_s *a)
         result = finalize_extended_tables(a);
         if (result != 0)
             return result;
+    }
+
+    /* Preserved probe capacity can exceed the legacy writer's initial reservation. */
+    if (a->write_identity != NULL && a->mpq_header.version < LIBMPQ_ARCHIVE_VERSION_THREE) {
+        libmpq__off_t position;
+        uint64_t tables;
+        if (libmpq__file_seek(a->fp, 0, SEEK_END) != 0 || (position = libmpq__file_tell(a->fp)) < 0)
+            return LIBMPQ_ERROR_SEEK;
+        tables = (uint64_t)position;
+        a->mpq_header.hash_table_offset = (uint32_t)tables;
+        result =
+            writer_layout_advance(&tables, a->write_hash_capacity, LIBMPQ_HASH_ENTRY_WIRE_SIZE);
+        if (result != 0 || tables > UINT32_MAX)
+            return result != 0 ? result : LIBMPQ_ERROR_SIZE;
+        a->mpq_header.block_table_offset = (uint32_t)tables;
+        result = writer_layout_advance(&tables, a->write_capacity, LIBMPQ_BLOCK_ENTRY_WIRE_SIZE);
+        if (result != 0 || tables > UINT32_MAX)
+            return result != 0 ? result : LIBMPQ_ERROR_SIZE;
+        if (a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO) {
+            a->mpq_header_ex.extended_offset = tables;
+            result =
+                writer_layout_advance(&tables, a->write_capacity, LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE);
+            if (result != 0 || tables > UINT32_MAX)
+                return result != 0 ? result : LIBMPQ_ERROR_SIZE;
+        }
     }
 
     /* Legacy tables retain reserved capacity; v3 shares only completed BET/classic rows. */

@@ -75,6 +75,10 @@ man_MANS = \
 	libmpq__update_remove.3 \
 	libmpq__update_rename.3 \
 	libmpq__update_replace_data.3 \
+	libmpq__update_replace_data_identity.3 \
+	libmpq__update_replace_path_identity.3 \
+	libmpq__update_remove_identity.3 \
+	libmpq__update_rename_identity.3 \
 	libmpq__update_add_data.3 \
 	libmpq__update_add_path.3 \
 	libmpq__update_replace_path.3 \

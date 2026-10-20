@@ -897,6 +897,30 @@ extern LIBMPQ_API int32_t libmpq__archive_add_path(
 /* Transactional archive updates. */
 
 /*
+ * Mutate only the exact identity in the current staged archive, without fallback.
+ * Replacement options must retain the selected locale/platform; NULL uses the
+ * existing replacement defaults. Classic shared payloads detach on replacement
+ * or rename, and remain live until the last alias is removed. Extended targets
+ * require unique one-to-one mappings; ambiguous layouts return FORMAT. A failed
+ * pre-publication stage preserves the source. Commit/abort consume the handle.
+ */
+extern LIBMPQ_API int32_t libmpq__update_replace_data_identity(
+    mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform,
+    const uint8_t *data, libmpq__off_t size, const mpq_file_options_s *options
+);
+extern LIBMPQ_API int32_t libmpq__update_replace_path_identity(
+    mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform,
+    const char *source_path, const mpq_file_options_s *options
+);
+extern LIBMPQ_API int32_t libmpq__update_remove_identity(
+    mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform
+);
+extern LIBMPQ_API int32_t libmpq__update_rename_identity(
+    mpq_update_s *update, const char *old_filename, uint16_t locale, uint16_t platform,
+    const char *new_filename
+);
+
+/*
  * Stage changes to an existing filesystem MPQ in a private working copy.
  * Changes reach the original only when commit atomically publishes that copy.
  * Supported legacy embedded updates retain their container prefix and

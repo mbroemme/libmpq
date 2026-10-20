@@ -52,6 +52,16 @@ int32_t libmpq__update_transaction_remove(mpq_update_s *update, const char *file
 int32_t libmpq__update_transaction_rename(
     mpq_update_s *update, const char *old_filename, const char *new_filename
 );
+int32_t libmpq__update_transaction_replace_identity(
+    mpq_update_s *update, const char *name, uint16_t locale, uint16_t platform, const uint8_t *data,
+    libmpq__off_t size, const char *path, const mpq_file_options_s *options
+);
+int32_t libmpq__update_transaction_remove_identity(
+    mpq_update_s *update, const char *name, uint16_t locale, uint16_t platform
+);
+int32_t libmpq__update_transaction_rename_identity(
+    mpq_update_s *update, const char *name, uint16_t locale, uint16_t platform, const char *new_name
+);
 const mpq_update_ops_s *libmpq__update_ops(const mpq_update_s *update);
 void libmpq__update_set_ops(mpq_update_s *update, const mpq_update_ops_s *ops);
 
