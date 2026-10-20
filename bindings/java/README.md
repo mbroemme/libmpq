@@ -378,3 +378,26 @@ Existing overloads keep their behavior. Duplicate, ambiguous or reduced-hash
 layouts raise the existing native error exception. Exact named streams retain
 the encryption filename and their own archive clone; parent close is safe.
 Callback sources retain the existing dependent-stream lifetime contract.
+
+Exact update overloads select a filename/locale/platform identity without
+neutral fallback. Selectors must be in `0..65535`:
+
+```java
+try (MpqUpdate update = MpqUpdate.begin(path)) {
+    update.replaceData("voice.bin", 0x409, 1, replacement, null);
+    update.rename("voice.bin", 0x409, 1, "renamed.bin");
+    update.replacePath("renamed.bin", 0x409, 1, source, null);
+    update.remove("obsolete.bin", 0, 0);
+    update.commit();
+}
+```
+
+Classic-only archives detach the selected shared alias on replacement and
+retain other aliases on removal or rename. Explicit replacement options must
+match the selectors; omitted options use default storage with those selectors.
+Mixed classic/HET/BET targets require consistent one-to-one mappings and
+complete hashes. Unique HET/BET-only targets accept zero selectors only.
+Unsupported or ambiguous metadata is rejected. A rejected operation preserves
+the previous valid stage; commit/abort consume the transaction. Exact rebuilds
+reject embedded archives and unsupported trailers, preserve source raw-chunk
+policy, and do not change existing name-based operations.

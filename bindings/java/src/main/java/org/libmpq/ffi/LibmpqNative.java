@@ -95,6 +95,10 @@ public final class LibmpqNative {
     private static final MethodHandle UPDATE_REPLACE_PATH;
     private static final MethodHandle UPDATE_REMOVE;
     private static final MethodHandle UPDATE_RENAME;
+    private static final MethodHandle UPDATE_REPLACE_DATA_IDENTITY;
+    private static final MethodHandle UPDATE_REPLACE_PATH_IDENTITY;
+    private static final MethodHandle UPDATE_REMOVE_IDENTITY;
+    private static final MethodHandle UPDATE_RENAME_IDENTITY;
     private static final MethodHandle UPDATE_COMMIT;
     private static final MethodHandle UPDATE_ABORT;
     private static final MethodHandle PATCH_BEGIN;
@@ -246,6 +250,18 @@ public final class LibmpqNative {
         UPDATE_RENAME = function(linker, lookup, "libmpq__update_rename",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                       ValueLayout.ADDRESS));
+        UPDATE_REPLACE_DATA_IDENTITY = function(linker, lookup, "libmpq__update_replace_data_identity",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                        C_SHORT, C_SHORT, ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS));
+        UPDATE_REPLACE_PATH_IDENTITY = function(linker, lookup, "libmpq__update_replace_path_identity",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                        C_SHORT, C_SHORT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+        UPDATE_REMOVE_IDENTITY = function(linker, lookup, "libmpq__update_remove_identity",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                        C_SHORT, C_SHORT));
+        UPDATE_RENAME_IDENTITY = function(linker, lookup, "libmpq__update_rename_identity",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                        C_SHORT, C_SHORT, ValueLayout.ADDRESS));
         UPDATE_COMMIT = function(linker, lookup, "libmpq__update_commit",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
         UPDATE_ABORT = function(linker, lookup, "libmpq__update_abort",
@@ -605,6 +621,22 @@ public final class LibmpqNative {
     public static int updateRename(MemorySegment update, MemorySegment oldName,
                                    MemorySegment newName) {
         return callInt(UPDATE_RENAME, update, oldName, newName);
+    }
+    public static int updateReplaceDataIdentity(MemorySegment update, MemorySegment name,
+            short locale, short platform, MemorySegment data, long size, MemorySegment options) {
+        return callInt(UPDATE_REPLACE_DATA_IDENTITY, update, name, locale, platform, data, size, options);
+    }
+    public static int updateReplacePathIdentity(MemorySegment update, MemorySegment name,
+            short locale, short platform, MemorySegment path, MemorySegment options) {
+        return callInt(UPDATE_REPLACE_PATH_IDENTITY, update, name, locale, platform, path, options);
+    }
+    public static int updateRemoveIdentity(MemorySegment update, MemorySegment name,
+            short locale, short platform) {
+        return callInt(UPDATE_REMOVE_IDENTITY, update, name, locale, platform);
+    }
+    public static int updateRenameIdentity(MemorySegment update, MemorySegment name,
+            short locale, short platform, MemorySegment newName) {
+        return callInt(UPDATE_RENAME_IDENTITY, update, name, locale, platform, newName);
     }
     public static int updateCommit(MemorySegment update) { return callInt(UPDATE_COMMIT, update); }
     public static int updateAbort(MemorySegment update) { return callInt(UPDATE_ABORT, update); }

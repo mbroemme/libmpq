@@ -105,6 +105,64 @@ public final class MpqUpdate implements AutoCloseable {
         }
     }
 
+    /** Replace only the exact locale/platform identity; null options retain its selectors. */
+    public void replaceData(String name, int locale, int platform, byte[] data,
+                            FileOptions options) throws LibmpqException {
+        checkOpen();
+        short selectedLocale = selector(locale);
+        short selectedPlatform = selector(platform);
+        Objects.requireNonNull(data, "data");
+        try (Arena arena = Arena.ofConfined()) {
+            Support.check(LibmpqNative.updateReplaceDataIdentity(handle, Support.text(arena, name),
+                    selectedLocale, selectedPlatform, Support.bytes(arena, data), data.length,
+                    options(arena, options)));
+        }
+    }
+
+    /** Replace one exact identity from a source path. */
+    public void replacePath(String name, int locale, int platform, Path source,
+                            FileOptions options) throws LibmpqException {
+        checkOpen();
+        short selectedLocale = selector(locale);
+        short selectedPlatform = selector(platform);
+        Objects.requireNonNull(source, "source");
+        try (Arena arena = Arena.ofConfined()) {
+            Support.check(LibmpqNative.updateReplacePathIdentity(handle, Support.text(arena, name),
+                    selectedLocale, selectedPlatform, Support.text(arena, source.toString()),
+                    options(arena, options)));
+        }
+    }
+
+    /** Remove only the selected identity, preserving shared payload aliases. */
+    public void remove(String name, int locale, int platform) throws LibmpqException {
+        checkOpen();
+        short selectedLocale = selector(locale);
+        short selectedPlatform = selector(platform);
+        try (Arena arena = Arena.ofConfined()) {
+            Support.check(LibmpqNative.updateRemoveIdentity(handle, Support.text(arena, name),
+                    selectedLocale, selectedPlatform));
+        }
+    }
+
+    /** Rename one exact identity without changing its locale/platform. */
+    public void rename(String name, int locale, int platform, String newName)
+            throws LibmpqException {
+        checkOpen();
+        short selectedLocale = selector(locale);
+        short selectedPlatform = selector(platform);
+        try (Arena arena = Arena.ofConfined()) {
+            Support.check(LibmpqNative.updateRenameIdentity(handle, Support.text(arena, name),
+                    selectedLocale, selectedPlatform, Support.text(arena, newName)));
+        }
+    }
+
+    private static short selector(int value) {
+        if (value < 0 || value > 65535) {
+            throw new IllegalArgumentException("Identity selector must be in 0..65535");
+        }
+        return (short) value;
+    }
+
     /** Atomically publish staged changes; consumes the handle even on error. */
     public void commit() throws LibmpqException {
         MemorySegment current = take();

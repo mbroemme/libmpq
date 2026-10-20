@@ -36,6 +36,50 @@ import org.libmpq.ffi.LibmpqNative;
  */
 class LibmpqTest {
     @Test
+    void exactUpdateStages(@TempDir Path directory) throws Exception {
+        Path source = directory.resolve("replacement.bin");
+        Files.write(source, "path bytes".getBytes(StandardCharsets.UTF_8));
+        for (int version : new int[] {Mpq.ARCHIVE_VERSION_ONE, Mpq.ARCHIVE_VERSION_TWO,
+                                     Mpq.ARCHIVE_VERSION_THREE, Mpq.ARCHIVE_VERSION_FOUR}) {
+            Path path = directory.resolve("exact.mpq");
+            boolean classic = version <= Mpq.ARCHIVE_VERSION_TWO;
+            int locale = classic ? 0x409 : 0;
+            int platform = classic ? 1 : 0;
+            try (Archive writer = Archive.create(path, new ArchiveCreateOptions(version, 8, 4096, 0))) {
+                writer.add("voice", "selected".getBytes(StandardCharsets.UTF_8),
+                        new FileOptions(0, 0, 0, locale, platform));
+                if (classic) writer.add("voice", "neutral".getBytes(StandardCharsets.UTF_8), null);
+            }
+            byte[] original = Files.readAllBytes(path);
+            try (MpqUpdate update = MpqUpdate.begin(path)) {
+                update.replaceData("voice", locale, platform, new byte[0], null);
+                assertThrows(IllegalArgumentException.class, () -> update.remove("voice", -1, 0));
+                assertThrows(LibmpqException.class, () -> update.remove("voice", locale, platform + 1));
+                update.rename("voice", locale, platform, "renamed");
+                assertThrows(LibmpqException.class, () -> update.remove("voice", locale, platform));
+                update.replacePath("renamed", locale, platform, source, null);
+                assertArrayEquals(original, Files.readAllBytes(path));
+                update.commit();
+            }
+            try (Archive archive = Archive.open(path);
+                 MpqStream stream = archive.openStream("renamed", locale, platform)) {
+                byte[] bytes = new byte[10];
+                assertEquals(10, stream.read(bytes));
+                assertArrayEquals("path bytes".getBytes(StandardCharsets.UTF_8), bytes);
+                if (classic) assertEquals(1, archive.variants("voice").size());
+            }
+            byte[] committed = Files.readAllBytes(path);
+            try (MpqUpdate update = MpqUpdate.begin(path)) { update.remove("renamed", locale, platform); }
+            assertArrayEquals(committed, Files.readAllBytes(path));
+            try (MpqUpdate update = MpqUpdate.begin(path)) {
+                update.remove("renamed", locale, platform);
+                update.commit();
+            }
+            try (Archive archive = Archive.open(path)) { assertTrue(archive.variants("renamed").isEmpty()); }
+        }
+    }
+
+    @Test
     void exactIdentities(@TempDir Path directory) throws Exception {
         assertEquals(16, LibmpqNative.FILE_IDENTITY.byteSize());
         assertEquals(8, LibmpqNative.FILE_IDENTITY.byteOffset(java.lang.foreign.MemoryLayout.PathElement.groupElement("locale")));
