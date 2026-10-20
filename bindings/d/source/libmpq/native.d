@@ -102,6 +102,22 @@ alias LIBMPQ_COMPRESSION_WAVE_STEREO = COMPRESSION_WAVE_STEREO;
 alias LIBMPQ_COMPRESSION_LZMA = COMPRESSION_LZMA;
 
 /** Opaque native archive state owned by libmpq. */
+enum IDENTITY_CLASSIC = 0x00000001u;
+enum IDENTITY_BET = 0x00000002u;
+struct mpq_file_identity_s {
+    uint file_number;
+    uint flags;
+    ushort locale;
+    ushort platform;
+    uint reserved;
+}
+static assert(mpq_file_identity_s.sizeof == 16);
+static assert(mpq_file_identity_s.file_number.offsetof == 0);
+static assert(mpq_file_identity_s.flags.offsetof == 4);
+static assert(mpq_file_identity_s.locale.offsetof == 8);
+static assert(mpq_file_identity_s.platform.offsetof == 10);
+static assert(mpq_file_identity_s.reserved.offsetof == 12);
+
 extern(C) struct mpq_archive_s;
 
 /** Opaque native streaming-writer state owned by libmpq. */
@@ -387,6 +403,10 @@ extern(C) {
     /** Query one file's stored block-table flags. */
     int libmpq__file_flags(mpq_archive_s* archive, uint number, uint* flags);
 
+    /** Enumerate or select exact read-only filename identities. */
+    int libmpq__file_variant(mpq_archive_s* archive, const(char)* name, uint ordinal, mpq_file_identity_s* identity);
+    int libmpq__file_number_identity(mpq_archive_s* archive, const(char)* name, ushort locale, ushort platform, uint* number);
+    int libmpq__stream_open_name_identity(mpq_archive_s* archive, const(char)* name, ushort locale, ushort platform, mpq_stream_s** stream);
     /** Resolve a filename using Storm's archive hash tables. */
     int libmpq__file_number(mpq_archive_s* archive, const(char)* filename,
                             uint* number);

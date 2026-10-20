@@ -1183,7 +1183,42 @@ private void testRawChunkConfiguration() {
     }
 }
 
+private void testExactIdentities() {
+    string path = temporaryArchive("identities");
+    scope(exit) remove(path);
+    foreach (version_; [ARCHIVE_VERSION_ONE, ARCHIVE_VERSION_TWO]) {
+        auto options = ArchiveCreateOptions.v1();
+        options.version_ = version_;
+        auto writer = Archive.create(path, options);
+        auto fileOptions = FileOptions.raw();
+        fileOptions.flags = FILE_FLAG_ENCRYPTED;
+        writer.add("voice", cast(const(ubyte)[])"neutral", fileOptions);
+        fileOptions.flags |= 0x20000;
+        fileOptions.locale = 0x409;
+        fileOptions.platform = 1;
+        writer.add("voice", cast(const(ubyte)[])"localized", fileOptions);
+        writer.close();
+        auto archive = Archive.open(path);
+        auto identities = archive.variants("voice");
+        assert(identities.length == 2 && identities[0].flags == IDENTITY_CLASSIC);
+        assert(archive.variants("absent").length == 0);
+        auto number = archive.fileNumber("voice", 0x409, 1);
+        assert(number == identities[1].fileNumber || number == identities[0].fileNumber);
+        bool failed;
+        try { archive.fileNumber("voice", 0x409, 0); }
+        catch (MPQException) { failed = true; }
+        assert(failed);
+        auto stream = archive.openStream("voice", 0x409, 1);
+        archive.close();
+        ubyte[9] bytes;
+        assert(stream.read(bytes[]) == 9);
+        assert(bytes[] == cast(const(ubyte)[])"localized");
+        stream.close();
+    }
+}
+
 void main() {
+    testExactIdentities();
     testRawChunkConfiguration();
     testPatchAdditions();
     testOpenPatch();

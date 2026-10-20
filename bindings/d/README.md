@@ -466,3 +466,24 @@ is supported at any raw size, while MPQE strong signing is unsupported.
 
 `Patch.getRawChunkSize()` reports a live patch writer's configured policy,
 including after its setters lock.
+
+### Exact filename identities
+
+```d
+FileIdentity[] identities = archive.variants("dir/file.bin");
+uint number = archive.fileNumber("dir/file.bin", 0x409, 1);
+auto stream = archive.openStream("dir/file.bin", 0x409, 1);
+scope(exit) stream.close();
+ubyte[32] bytes;
+auto count = stream.read(bytes[]);
+```
+
+Identity values contain fileNumber, flags, locale and platform, without the
+native reserved field. Native identity layout is checked as 16 bytes.
+`IDENTITY_CLASSIC` and `IDENTITY_BET` describe stored provenance, not storage
+flags. Variants use original classic slot order; aliases may share a member
+number. BET-only identities are unqualified `(0, 0)`. The exact overloads
+accept `ushort` selectors without fallback; existing overloads are unchanged.
+Ambiguous or reduced-hash metadata raises `MPQException`. Exact named streams
+preserve the filename for decryption and own their archive clone, surviving
+parent close. Custom-source lifetime follows the existing stream contract.

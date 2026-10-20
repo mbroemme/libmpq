@@ -17,6 +17,14 @@ import libmpq.native;
 import libmpq.options : ArchiveCreateOptions, FileOptions;
 import std.typecons : Nullable, nullable;
 
+/** Stored filename identity; flags describe provenance, not storage flags. */
+struct FileIdentity {
+    uint fileNumber;
+    uint flags;
+    ushort locale;
+    ushort platform;
+}
+
 /** Owned stored metadata; complete lossless reads verify available CRC32/MD5 hashes. */
 struct FileAttributes {
     uint flags;
@@ -324,6 +332,39 @@ class Archive {
     /** Return archive start offset. */ off_t offset() { return metadata().offset; }
     /** Return archive format selector. */ uint version_() { return metadata().version_; }
     /** Return number of valid file entries. */ uint fileCount() { return metadata().fileCount; }
+
+    /** Enumerate reachable identities in their original classic slot order. */
+    FileIdentity[] variants(string name) {
+        ensureOpen();
+        FileIdentity[] result;
+        auto encoded = toStringz(name);
+        for (ulong ordinal = 0; ordinal <= uint.max; ordinal++) {
+            mpq_file_identity_s identity;
+            auto status = libmpq__file_variant(handle, encoded, cast(uint)ordinal, &identity);
+            if (status == ERROR_EXIST) return result;
+            checkStatus(status, "libmpq__file_variant");
+            result ~= FileIdentity(identity.file_number, identity.flags, identity.locale, identity.platform);
+        }
+        throw new MPQException("Archive.variants", ERROR_SIZE);
+    }
+
+    /** Select exactly the requested stored locale/platform with no fallback. */
+    uint fileNumber(string name, ushort locale, ushort platform) {
+        ensureOpen();
+        uint result;
+        checkStatus(libmpq__file_number_identity(handle, toStringz(name), locale, platform, &result),
+                    "libmpq__file_number_identity");
+        return result;
+    }
+
+    /** Open the exact named identity on the stream's independently owned clone. */
+    MpqStream openStream(string name, ushort locale, ushort platform) {
+        ensureOpen();
+        mpq_stream_s* result;
+        checkStatus(libmpq__stream_open_name_identity(handle, toStringz(name), locale, platform, &result),
+                    "libmpq__stream_open_name_identity");
+        return new MpqStream(result, sourceState);
+    }
 
     /** Resolve a file name through the Storm hash tables. */
     uint fileNumber(string name) {
