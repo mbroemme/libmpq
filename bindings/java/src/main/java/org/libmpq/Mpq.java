@@ -92,6 +92,10 @@ public final class Mpq {
     public static final int FILE_FLAG_IMPLODE = 0x00000100;
     /** MPQ flag for multi-compression storage. */
     public static final int FILE_FLAG_COMPRESS = 0x00000200;
+    /** The filename identity is stored in the classic hash table. */
+    public static final int IDENTITY_CLASSIC = 0x00000001;
+    /** The filename identity has reconciled HET/BET provenance. */
+    public static final int IDENTITY_BET = 0x00000002;
     /** MPQ flag for encrypted storage. */
     public static final int FILE_FLAG_ENCRYPTED = 0x00010000;
     /** Member stores a PTCH payload rather than final target bytes. */

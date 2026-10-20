@@ -357,3 +357,24 @@ including after its setters lock.
 
 Java uses unsigned values represented as `long`, validating
 `0 <= size <= 0xffffffffL` before narrowing.
+
+### Exact filename identities
+
+```java
+List<FileIdentity> identities = archive.variants("dir/file.bin");
+int number = archive.fileNumber("dir/file.bin", 0x409, 1);
+try (MpqStream stream = archive.openStream("dir/file.bin", 0x409, 1)) {
+    byte[] bytes = new byte[32];
+    int count = stream.read(bytes);
+}
+```
+
+`variants()` returns an immutable list of `FileIdentity` records in native
+classic slot order. Aliases may share a canonical file number. The
+`Mpq.IDENTITY_CLASSIC` and `Mpq.IDENTITY_BET` bits describe stored provenance,
+not storage flags. BET-only identities are unqualified `(0, 0)`. Exact
+selectors must be in `0..65535`; these overloads never perform locale fallback.
+Existing overloads keep their behavior. Duplicate, ambiguous or reduced-hash
+layouts raise the existing native error exception. Exact named streams retain
+the encryption filename and their own archive clone; parent close is safe.
+Callback sources retain the existing dependent-stream lifetime contract.

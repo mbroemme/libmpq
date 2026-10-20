@@ -36,6 +36,37 @@ import org.libmpq.ffi.LibmpqNative;
  */
 class LibmpqTest {
     @Test
+    void exactIdentities(@TempDir Path directory) throws Exception {
+        assertEquals(16, LibmpqNative.FILE_IDENTITY.byteSize());
+        assertEquals(8, LibmpqNative.FILE_IDENTITY.byteOffset(java.lang.foreign.MemoryLayout.PathElement.groupElement("locale")));
+        Path path = directory.resolve("identities.mpq");
+        for (int version : new int[] {Mpq.ARCHIVE_VERSION_ONE, Mpq.ARCHIVE_VERSION_TWO}) {
+            var options = new ArchiveCreateOptions(version, 8, 4096, 0);
+            try (Archive writer = Archive.create(path, options)) {
+                writer.add("voice", "neutral".getBytes(), new FileOptions(Mpq.FILE_FLAG_ENCRYPTED, 0, 0, 0, 0));
+                writer.add("voice", "localized".getBytes(), new FileOptions(Mpq.FILE_FLAG_ENCRYPTED | 0x20000, 0, 0, 0x409, 1));
+            }
+            Archive archive = Archive.open(path);
+            var variants = archive.variants("voice");
+            assertEquals(2, variants.size());
+            assertEquals(Mpq.IDENTITY_CLASSIC, variants.get(0).flags());
+            assertTrue(archive.variants("absent").isEmpty());
+            assertThrows(UnsupportedOperationException.class, () -> variants.clear());
+            assertThrows(LibmpqException.class, () -> archive.fileNumber("voice", 0x409, 0));
+            assertThrows(IllegalArgumentException.class, () -> archive.fileNumber("voice", -1, 0));
+            assertThrows(IllegalArgumentException.class, () -> archive.openStream("voice", 0, 65536));
+            int number = archive.fileNumber("voice", 0x409, 1);
+            assertTrue(variants.stream().anyMatch(v -> v.fileNumber() == number && v.locale() == 0x409 && v.platform() == 1));
+            try (MpqStream stream = archive.openStream("voice", 0x409, 1)) {
+                archive.close();
+                byte[] data = new byte[9];
+                assertEquals(9, stream.read(data));
+                assertArrayEquals("localized".getBytes(), data);
+            }
+        }
+    }
+
+    @Test
     void rawChunkConfiguration(@TempDir Path directory) throws Exception {
         byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.UTF_8);
         Path path = directory.resolve("raw.mpq");

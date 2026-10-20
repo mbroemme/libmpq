@@ -429,6 +429,52 @@ public final class Archive implements AutoCloseable {
         return new ArchiveMetadata(packedSize(), unpackedSize(), offset(), version(), fileCount());
     }
 
+    /** Enumerate stored identities in native slot order; provenance is not a storage flag. */
+    public List<FileIdentity> variants(String name) throws LibmpqException {
+        checkOpen();
+        var result = new java.util.ArrayList<FileIdentity>();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment encoded = Support.text(arena, name);
+            MemorySegment output = arena.allocate(LibmpqNative.FILE_IDENTITY);
+            for (long ordinal = 0; ordinal <= 0xffffffffL; ordinal++) {
+                int status = LibmpqNative.fileVariant(handle, encoded, (int) ordinal, output);
+                if (status == Mpq.ERROR_EXIST) return List.copyOf(result);
+                Support.check(status);
+                result.add(new FileIdentity(output.get(ValueLayout.JAVA_INT, 0),
+                    output.get(ValueLayout.JAVA_INT, 4), Short.toUnsignedInt(output.get(ValueLayout.JAVA_SHORT, 8)),
+                    Short.toUnsignedInt(output.get(ValueLayout.JAVA_SHORT, 10))));
+            }
+        }
+        throw new IllegalStateException("too many identities");
+    }
+
+    /** Select precisely the stored locale/platform; no fallback is applied. */
+    public int fileNumber(String name, int locale, int platform) throws LibmpqException {
+        checkOpen();
+        short l = identitySelector(locale), p = identitySelector(platform);
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment output = arena.allocate(ValueLayout.JAVA_INT);
+            Support.check(LibmpqNative.fileNumberIdentity(handle, Support.text(arena, name), l, p, output));
+            return output.get(ValueLayout.JAVA_INT, 0);
+        }
+    }
+
+    /** Open the exact named identity on the stream's owned clone. */
+    public MpqStream openStream(String name, int locale, int platform) throws LibmpqException {
+        checkOpen();
+        short l = identitySelector(locale), p = identitySelector(platform);
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
+            Support.check(LibmpqNative.streamOpenNameIdentity(handle, Support.text(arena, name), l, p, output));
+            return new MpqStream(LibmpqNative.getAddress(output), sourceState);
+        }
+    }
+
+    private static short identitySelector(int value) {
+        if (value < 0 || value > 65535) throw new IllegalArgumentException("identity selector must fit uint16");
+        return (short) value;
+    }
+
     /**
      * Resolves an MPQ filename through the native hash tables.
      *

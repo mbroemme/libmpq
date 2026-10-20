@@ -121,6 +121,12 @@ public final class LibmpqNative {
     private static final MethodHandle FILE_OFFSET;
     private static final MethodHandle FILE_BLOCKS;
     private static final MethodHandle FILE_FLAGS;
+    public static final MemoryLayout FILE_IDENTITY = MemoryLayout.structLayout(
+        C_INT.withName("file_number"), C_INT.withName("flags"),
+        C_SHORT.withName("locale"), C_SHORT.withName("platform"), C_INT.withName("reserved"));
+    private static final MethodHandle FILE_VARIANT;
+    private static final MethodHandle FILE_NUMBER_IDENTITY;
+    private static final MethodHandle STREAM_OPEN_NAME_IDENTITY;
     private static final MethodHandle FILE_NUMBER;
     private static final MethodHandle FILE_HASH;
     private static final MethodHandle FILE_NUMBER_FROM_HASH;
@@ -292,6 +298,12 @@ public final class LibmpqNative {
         FILE_OFFSET = fileMetadata(linker, lookup, "libmpq__file_offset");
         FILE_BLOCKS = fileUintMetadata(linker, lookup, "libmpq__file_blocks");
         FILE_FLAGS = fileUintMetadata(linker, lookup, "libmpq__file_flags");
+        FILE_VARIANT = function(linker, lookup, "libmpq__file_variant",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS));
+        FILE_NUMBER_IDENTITY = function(linker, lookup, "libmpq__file_number_identity",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, C_SHORT, C_SHORT, ValueLayout.ADDRESS));
+        STREAM_OPEN_NAME_IDENTITY = function(linker, lookup, "libmpq__stream_open_name_identity",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, C_SHORT, C_SHORT, ValueLayout.ADDRESS));
         FILE_NUMBER = function(linker, lookup, "libmpq__file_number",
                                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                      ValueLayout.ADDRESS, ValueLayout.ADDRESS));
@@ -672,6 +684,17 @@ public final class LibmpqNative {
         return callInt(handle, archive, number, output);
     }
     /** Resolves a native archive filename to its public file number. */
+    public static int fileVariant(MemorySegment archive, MemorySegment name, int ordinal, MemorySegment output) {
+        return callInt(FILE_VARIANT, archive, name, ordinal, output);
+    }
+    public static int fileNumberIdentity(MemorySegment archive, MemorySegment name, short locale,
+                                         short platform, MemorySegment output) {
+        return callInt(FILE_NUMBER_IDENTITY, archive, name, locale, platform, output);
+    }
+    public static int streamOpenNameIdentity(MemorySegment archive, MemorySegment name, short locale,
+                                             short platform, MemorySegment output) {
+        return callInt(STREAM_OPEN_NAME_IDENTITY, archive, name, locale, platform, output);
+    }
     public static int fileNumber(MemorySegment archive, MemorySegment name, MemorySegment output) {
         return callInt(FILE_NUMBER, archive, name, output);
     }
