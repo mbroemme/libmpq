@@ -588,6 +588,14 @@ test_v3_fixture(void)
             TEST_CHECK(transferred == 0);
         }
         TEST_CHECK(libmpq__stream_close(stream) == 0);
+        TEST_CHECK(libmpq__stream_open_name_identity(encrypted, names[i], 0, 0, &stream) == 0);
+        TEST_CHECK(libmpq__stream_read(stream, bytes, sizeof(bytes), &transferred) == 0);
+        TEST_CHECK(
+            transferred ==
+            (libmpq__off_t)(actual_size < sizeof(bytes) ? actual_size : sizeof(bytes))
+        );
+        TEST_CHECK(transferred == 0 || memcmp(bytes, actual, (size_t)transferred) == 0);
+        TEST_CHECK(libmpq__stream_close(stream) == 0);
         stream = NULL;
         free(expected);
         free(actual);

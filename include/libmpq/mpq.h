@@ -322,6 +322,19 @@ typedef struct
     uint8_t reserved[4]; /* Explicit ABI padding; not serialized attribute data. */
 } mpq_file_attributes_s;
 
+/* Stored identity provenance, independent of file-storage flags. */
+#define LIBMPQ_IDENTITY_CLASSIC 0x00000001u
+#define LIBMPQ_IDENTITY_BET 0x00000002u
+
+typedef struct
+{
+    uint32_t file_number;
+    uint32_t flags;
+    uint16_t locale;
+    uint16_t platform;
+    uint32_t reserved; /* Always zero; natural native layout is 16 bytes. */
+} mpq_file_identity_s;
+
 /* Utility functions. */
 
 /*
@@ -587,6 +600,24 @@ extern LIBMPQ_API int32_t
 libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *number);
 
 /*
+ * Enumerate this filename's live identities in original classic slot order.
+ * Deleted slots do not end probing. Distinct locale/platform aliases remain
+ * distinct even when sharing a file number. BET-only identities are (0,0).
+ * EXIST marks the end; ambiguous/reduced identities return FORMAT. Output is
+ * cleared on failure. Flags describe stored provenance, not storage flags.
+ */
+extern LIBMPQ_API int32_t libmpq__file_variant(
+    mpq_archive_s *archive, const char *filename, uint32_t variant_index,
+    mpq_file_identity_s *identity
+);
+
+/* Select exactly this locale/platform, with no fallback; clear output on error. */
+extern LIBMPQ_API int32_t libmpq__file_number_identity(
+    mpq_archive_s *archive, const char *filename, uint16_t locale, uint16_t platform,
+    uint32_t *file_number
+);
+
+/*
  * Calculate the three Storm-compatible hashes used to identify an MPQ name.
  * The outputs are deterministic for a given byte string and are written to
  * hash1, hash2, and hash3; this helper performs no archive lookup and cannot
@@ -702,6 +733,17 @@ extern LIBMPQ_API int32_t libmpq__file_read(
  */
 extern LIBMPQ_API int32_t
 libmpq__stream_open(mpq_archive_s *archive, uint32_t file_number, mpq_stream_s **stream);
+
+/*
+ * Resolve exactly on an owned clone, retaining the name for encryption.
+ * No locale fallback occurs. The stream survives parent close; custom callback
+ * context must outlive derived streams, as with other streams. Failure clears
+ * *stream. Close consumes the returned stream.
+ */
+extern LIBMPQ_API int32_t libmpq__stream_open_name_identity(
+    mpq_archive_s *archive, const char *filename, uint16_t locale, uint16_t platform,
+    mpq_stream_s **stream
+);
 
 /* Open an independent incremental stream after resolving a plaintext filename. */
 extern LIBMPQ_API int32_t

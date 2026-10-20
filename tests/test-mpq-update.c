@@ -20,6 +20,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "mpq-archive.h"
+#include "mpq-bit.h"
 #include "mpq-compression.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
@@ -3484,22 +3485,25 @@ static int
 test_alias_table_write(const char *path, const mpq_hash_s hashes[16], int unsupported)
 {
     mpq_archive_s *archive = NULL;
-    uint8_t *bytes;
+    uint8_t *bytes = NULL;
     size_t size;
     uint32_t position;
     uint32_t block_position;
     uint32_t block_size;
     uint32_t version;
     mpq_md5_s md5;
-    TEST_CHECK(read_bytes(path, &bytes, &size) == 0);
-    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
-    TEST_CHECK(archive->mpq_header.hash_table_count == 16);
+    int32_t status;
+    UPDATE_CHECK(read_bytes(path, &bytes, &size) == 0);
+    UPDATE_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    UPDATE_CHECK(archive->mpq_header.hash_table_count == 16);
     position = archive->mpq_header.hash_table_offset;
     block_position = archive->mpq_header.block_table_offset;
     block_size = archive->mpq_header.block_table_count * 16;
     version = archive->mpq_header.version;
-    TEST_CHECK(libmpq__archive_close(archive) == 0);
-    TEST_CHECK(position <= size && 256 <= size - position);
+    status = libmpq__archive_close(archive);
+    archive = NULL;
+    UPDATE_CHECK(status == 0);
+    UPDATE_CHECK(position <= size && 256 <= size - position);
     for (uint32_t i = 0; i < 16; ++i) {
         uint8_t *wire = bytes + position + i * 16;
         libmpq__store_le32(wire, hashes[i].hash_a);
@@ -3508,7 +3512,7 @@ test_alias_table_write(const char *path, const mpq_hash_s hashes[16], int unsupp
         libmpq__store_le16(wire + 10, hashes[i].platform);
         libmpq__store_le32(wire + 12, hashes[i].block_table_index);
     }
-    TEST_CHECK(
+    UPDATE_CHECK(
         libmpq__crypto_encrypt_block(
             bytes + position, 256, libmpq__crypto_hash_string("(hash table)", 0x300)
         ) == 0
@@ -3516,12 +3520,12 @@ test_alias_table_write(const char *path, const mpq_hash_s hashes[16], int unsupp
     if (unsupported) {
         uint8_t *wire = bytes + block_position;
         uint32_t key = libmpq__crypto_hash_string("(block table)", 0x300);
-        TEST_CHECK(
+        UPDATE_CHECK(
             block_position <= size && block_size <= size - block_position && block_size >= 32
         );
-        TEST_CHECK(libmpq__crypto_decrypt_block(wire, block_size, key) == 0);
+        UPDATE_CHECK(libmpq__crypto_decrypt_block(wire, block_size, key) == 0);
         libmpq__store_le32(wire + 28, libmpq__load_le32(wire + 28) | 1u);
-        TEST_CHECK(libmpq__crypto_encrypt_block(wire, block_size, key) == 0);
+        UPDATE_CHECK(libmpq__crypto_encrypt_block(wire, block_size, key) == 0);
     }
     if (version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
         libmpq__md5_init(&md5);
@@ -3534,9 +3538,14 @@ test_alias_table_write(const char *path, const mpq_hash_s hashes[16], int unsupp
         libmpq__md5_update(&md5, bytes, 192);
         libmpq__md5_final(&md5, bytes + 192);
     }
-    TEST_CHECK(write_bytes(path, bytes, size) == 0);
+    UPDATE_CHECK(write_bytes(path, bytes, size) == 0);
     free(bytes);
     return 0;
+fail:
+    free(bytes);
+    if (archive != NULL)
+        (void)libmpq__archive_close(archive);
+    return 1;
 }
 
 /* Inspect serialized aliases, not just the default filename lookup result. */
@@ -3565,6 +3574,265 @@ test_alias_table_check(const char *path, const mpq_hash_s expected[16])
         TEST_CHECK(libmpq__load_le32(wire + i * 16 + 12) == expected[i].block_table_index);
     }
     TEST_CHECK(libmpq__archive_close(archive) == 0);
+    return 0;
+}
+
+/* Serialize independent locale aliases into a wrapping probe chain, then select exactly. */
+static int
+test_identity_access(uint32_t version, uint32_t chunk, unsigned layout, uint8_t single)
+{
+    mpq_archive_create_options_s create = { version, 8, single ? 4096 : 512, 0, 0 };
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
+                                       0x00020000u,
+                                   LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_stream_s *stream = NULL;
+    mpq_hash_s hashes[16];
+    mpq_file_identity_s identity;
+    mpq_file_identity_s zero = { 0 };
+    uint8_t first[257];
+    uint8_t second[1507];
+    uint8_t output[1507];
+    uint32_t number;
+    uint32_t original;
+    libmpq__off_t got;
+    char path[512];
+
+    TEST_CHECK(test_temp_path(path, sizeof(path), "exact-identity") == 0);
+    for (size_t i = 0; i < sizeof(first); i++)
+        first[i] = (uint8_t)(i * 7);
+    for (size_t i = 0; i < sizeof(second); i++)
+        second[i] = (uint8_t)(i * 13 + i / 17);
+    options.flags |= single ? LIBMPQ_FILE_FLAG_SINGLE : LIBMPQ_FILE_FLAG_SECTOR_CRC;
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+        TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, chunk) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "chain-32", first, sizeof(first), &options) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, "nested/chain-32", second, sizeof(second), &options) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    if (version >= LIBMPQ_ARCHIVE_VERSION_THREE && layout != 1) {
+        if (version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+            TEST_CHECK(test_v4_source_layout(path, layout == 0 ? 1 : 2) == 0);
+        else if (layout == 2) {
+            uint8_t *image;
+            size_t image_size;
+            uint32_t end;
+            TEST_CHECK(read_bytes(path, &image, &image_size) == 0);
+            end = libmpq__load_le32(image + 16);
+            TEST_CHECK(end <= image_size && end >= LIBMPQ_HEADER_V3_WIRE_SIZE);
+            memset(image + 16, 0, 28);
+            libmpq__store_le32(image + 8, end);
+            libmpq__store_le64(image + 44, end);
+            TEST_CHECK(write_bytes(path, image, end) == 0);
+            free(image);
+        } else {
+            FILE *file = libmpq__file_open(path, "r+b");
+            uint8_t absent[28] = { 0 };
+            TEST_CHECK(file != NULL);
+            TEST_CHECK(libmpq__file_seek(file, layout == 0 ? 52 : 16, SEEK_SET) == 0);
+            TEST_CHECK(fwrite(absent, 1, layout == 0 ? 16 : 28, file) == (layout == 0 ? 16u : 28u));
+            TEST_CHECK(fclose(file) == 0);
+        }
+    }
+    if (layout != 2) {
+        memset(hashes, 0xff, sizeof(hashes));
+        hashes[14] = (mpq_hash_s){ 0, 0, 0, 0, LIBMPQ_HASH_DELETED };
+        hashes[15] = (mpq_hash_s){ alias_hashes[1][1], alias_hashes[1][2], 0x411, 2, 0 };
+        hashes[0] = (mpq_hash_s){ alias_hashes[1][1], alias_hashes[1][2], 0, 0, 0 };
+        hashes[1] = (mpq_hash_s){ alias_hashes[1][1], alias_hashes[1][2], 0x409, 1, 1 };
+        hashes[2] = (mpq_hash_s){ alias_hashes[1][1], alias_hashes[1][2], 0x409, 2, 0 };
+        hashes[13] = (mpq_hash_s){ alias_hashes[1][1], alias_hashes[1][2], 99, 99, 0 };
+        TEST_CHECK(test_alias_table_write(path, hashes, 0) == 0);
+    }
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "chain-32", &original) == 0);
+    TEST_CHECK(libmpq__file_variant(archive, "chain-32", 0, &identity) == 0);
+    TEST_CHECK(identity.reserved == 0 && identity.locale == 0 && identity.platform == 0);
+    TEST_CHECK(
+        identity.flags == (layout == 0   ? LIBMPQ_IDENTITY_CLASSIC
+                           : layout == 1 ? LIBMPQ_IDENTITY_CLASSIC | LIBMPQ_IDENTITY_BET
+                                         : LIBMPQ_IDENTITY_BET)
+    );
+    TEST_CHECK(libmpq__file_number_identity(archive, "chain-32", 0, 0, &number) == 0);
+    TEST_CHECK(number == original && number == identity.file_number);
+    if (layout != 2) {
+        TEST_CHECK(libmpq__file_variant(archive, "chain-32", 1, &identity) == 0);
+        TEST_CHECK(
+            identity.locale == 0x409 && identity.platform == 1 && identity.file_number != original
+        );
+        TEST_CHECK(libmpq__file_number_identity(archive, "chain-32", 0x409, 1, &number) == 0);
+        TEST_CHECK(number == identity.file_number);
+        TEST_CHECK(libmpq__file_variant(archive, "chain-32", 2, &identity) == 0);
+        TEST_CHECK(
+            identity.locale == 0x409 && identity.platform == 2 && identity.file_number == original
+        );
+        TEST_CHECK(
+            libmpq__file_number_identity(archive, "chain-32", 0x409, 2, &number) == 0 &&
+            number == original
+        );
+        TEST_CHECK(libmpq__file_variant(archive, "chain-32", 3, &identity) == 0);
+        TEST_CHECK(
+            identity.locale == 0x411 && identity.platform == 2 && identity.file_number == original
+        );
+        TEST_CHECK(libmpq__stream_open_name_identity(archive, "chain-32", 0x409, 1, &stream) == 0);
+    } else {
+        TEST_CHECK(libmpq__stream_open_name_identity(archive, "chain-32", 0, 0, &stream) == 0);
+        archive->mpq_het.header.name_hash_bit_size = 63;
+        memset(&identity, 0xff, sizeof(identity));
+        TEST_CHECK(libmpq__file_variant(archive, "chain-32", 0, &identity) == LIBMPQ_ERROR_FORMAT);
+        TEST_CHECK(memcmp(&identity, &zero, sizeof(zero)) == 0);
+        archive->mpq_het.header.name_hash_bit_size = 64;
+        {
+            mpq_het_hash_s parts;
+            uint64_t hash;
+            uint64_t saved_bits;
+            uint32_t slot;
+            uint32_t duplicate;
+            uint8_t saved_name;
+            uint8_t *names = (uint8_t *)archive->mpq_het.name_hash1;
+            uint8_t *bits = (uint8_t *)archive->mpq_het.index_bits;
+            uint32_t stride = archive->mpq_het.header.index_size_total;
+            uint32_t width = archive->mpq_het.header.index_size;
+            uint32_t row =
+                archive->mpq_entry[archive->mpq_map[original].entry_index].bet_source_index;
+            TEST_CHECK(libmpq__het_hash_filename("chain-32", &hash) == 0);
+            TEST_CHECK(
+                libmpq__het_hash_partition(hash, 64, archive->mpq_het.header.total_count, &parts) ==
+                0
+            );
+            slot = parts.initial_slot;
+            for (uint32_t probe = 0; probe < archive->mpq_het.header.total_count; probe++) {
+                uint64_t index;
+                TEST_CHECK(libmpq__het_slot_index(&archive->mpq_het, slot, &index) == 0);
+                if (index == row)
+                    break;
+                slot = (slot + 1) % archive->mpq_het.header.total_count;
+            }
+            duplicate = (slot + 1) % archive->mpq_het.header.total_count;
+            saved_name = names[duplicate];
+            TEST_CHECK(
+                libmpq__bit_get(
+                    bits, archive->mpq_het.index_bits_size, (uint64_t)duplicate * stride, width,
+                    &saved_bits
+                ) == 0
+            );
+            names[duplicate] = names[slot];
+            TEST_CHECK(
+                libmpq__bit_set(
+                    bits, archive->mpq_het.index_bits_size, (uint64_t)duplicate * stride, width, row
+                ) == 0
+            );
+            TEST_CHECK(
+                libmpq__file_variant(archive, "chain-32", 0, &identity) == LIBMPQ_ERROR_FORMAT
+            );
+            TEST_CHECK(memcmp(&identity, &zero, sizeof(zero)) == 0);
+            names[duplicate] = saved_name;
+            TEST_CHECK(
+                libmpq__bit_set(
+                    bits, archive->mpq_het.index_bits_size, (uint64_t)duplicate * stride, width,
+                    saved_bits
+                ) == 0
+            );
+        }
+    }
+    memset(&identity, 0xff, sizeof(identity));
+    TEST_CHECK(
+        libmpq__file_variant(archive, "chain-32", layout == 2 ? 1 : 4, &identity) ==
+        LIBMPQ_ERROR_EXIST
+    );
+    TEST_CHECK(memcmp(&identity, &zero, sizeof(zero)) == 0);
+    number = UINT32_MAX;
+    TEST_CHECK(
+        libmpq__file_number_identity(archive, "chain-32", 0x409, 0, &number) ==
+            LIBMPQ_ERROR_EXIST &&
+        number == 0
+    );
+    TEST_CHECK(libmpq__file_number(archive, "chain-32", &number) == 0 && number == original);
+    {
+        uint32_t index = archive->mpq_map[original].entry_index;
+        uint32_t saved = archive->mpq_entry[index].file_number;
+        archive->mpq_entry[index].file_number = archive->entry_count;
+        TEST_CHECK(libmpq__file_variant(archive, "chain-32", 0, &identity) == LIBMPQ_ERROR_FORMAT);
+        TEST_CHECK(memcmp(&identity, &zero, sizeof(zero)) == 0);
+        archive->mpq_entry[index].file_number = saved;
+        if (layout == 1) {
+            archive->mpq_hash[0].locale = 0x415;
+            number = UINT32_MAX;
+            TEST_CHECK(
+                libmpq__file_number_identity(archive, "chain-32", 0, 0, &number) ==
+                    LIBMPQ_ERROR_EXIST &&
+                number == 0
+            );
+            TEST_CHECK(
+                libmpq__file_number(archive, "chain-32", &number) == 0 && number == original
+            );
+            archive->mpq_hash[0].locale = 0;
+            TEST_CHECK(libmpq__file_variant(archive, "nested/chain-32", 0, &identity) == 0);
+            TEST_CHECK(
+                identity.flags == LIBMPQ_IDENTITY_BET && identity.locale == 0 &&
+                identity.platform == 0
+            );
+            TEST_CHECK(
+                libmpq__file_number_identity(archive, "nested/chain-32", 0, 0, &number) == 0
+            );
+            TEST_CHECK(number == identity.file_number);
+            TEST_CHECK(
+                libmpq__file_number_identity(archive, "nested/chain-32", 0x409, 1, &number) ==
+                    LIBMPQ_ERROR_EXIST &&
+                number == 0
+            );
+        }
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__stream_read(stream, output, sizeof(output), &got) == 0);
+    TEST_CHECK(got == (libmpq__off_t)(layout == 2 ? sizeof(first) : sizeof(second)));
+    TEST_CHECK(memcmp(output, layout == 2 ? first : second, (size_t)got) == 0);
+    TEST_CHECK(libmpq__stream_close(stream) == 0);
+    if (layout != 2) {
+        for (unsigned conflict = 0; conflict < 2; conflict++) {
+            mpq_hash_s saved = hashes[15];
+            hashes[15] = hashes[0];
+            hashes[15].block_table_index = conflict;
+            TEST_CHECK(test_alias_table_write(path, hashes, 0) == 0);
+            TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+            memset(&identity, 0xff, sizeof(identity));
+            TEST_CHECK(
+                libmpq__file_variant(archive, "chain-32", 0, &identity) == LIBMPQ_ERROR_FORMAT
+            );
+            TEST_CHECK(memcmp(&identity, &zero, sizeof(zero)) == 0);
+            number = UINT32_MAX;
+            TEST_CHECK(
+                libmpq__file_number_identity(archive, "chain-32", 0, 0, &number) ==
+                    LIBMPQ_ERROR_FORMAT &&
+                number == 0
+            );
+            stream = (mpq_stream_s *)&identity;
+            TEST_CHECK(
+                libmpq__stream_open_name_identity(archive, "chain-32", 0, 0, &stream) ==
+                    LIBMPQ_ERROR_FORMAT &&
+                stream == NULL
+            );
+            TEST_CHECK(libmpq__archive_close(archive) == 0);
+            hashes[15] = saved;
+            TEST_CHECK(test_alias_table_write(path, hashes, 0) == 0);
+        }
+        if (layout == 0) {
+            for (uint32_t i = 2; i < 13; i++)
+                hashes[i].block_table_index = LIBMPQ_HASH_DELETED;
+            TEST_CHECK(test_alias_table_write(path, hashes, 0) == 0);
+            TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+            TEST_CHECK(libmpq__file_variant(archive, "chain-32", 2, &identity) == 0);
+            TEST_CHECK(identity.locale == 99 && identity.platform == 99);
+            TEST_CHECK(
+                libmpq__file_variant(archive, "chain-32", 3, &identity) == 0 &&
+                identity.locale == 0x411
+            );
+            TEST_CHECK(libmpq__archive_close(archive) == 0);
+        }
+    }
+    TEST_CHECK(remove(path) == 0);
     return 0;
 }
 
@@ -3917,6 +4185,18 @@ test_alias_probe_update(uint32_t version, uint32_t chunk, int mixed)
 int
 main(void)
 {
+    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_FOUR;
+         version++) {
+        for (unsigned layout = 0; layout < (version >= LIBMPQ_ARCHIVE_VERSION_THREE ? 3u : 1u);
+             layout++)
+            for (uint8_t single = 0; single < 2; single++)
+                for (unsigned raw = 0; raw < (version == LIBMPQ_ARCHIVE_VERSION_FOUR ? 3u : 1u);
+                     raw++) {
+                    const uint32_t sizes[] = { 0, 17, 0x4000 };
+                    TEST_CHECK(test_identity_access(version, sizes[raw], layout, single) == 0);
+                }
+    }
+
     const char *archive_path = "update.mpq";
     mpq_update_s *update = NULL;
 

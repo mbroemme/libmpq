@@ -142,6 +142,21 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         }
     }
 
+    {
+        mpq_file_identity_s identity;
+        mpq_stream_s *stream = NULL;
+        uint16_t locale = size >= 3 ? (uint16_t)(data[1] | ((uint16_t)data[2] << 8)) : 0;
+        uint16_t platform = size >= 5 ? (uint16_t)(data[3] | ((uint16_t)data[4] << 8)) : 0;
+        uint8_t bytes[64];
+
+        (void)libmpq__file_variant(archive, name, size > 1 ? data[1] : 0, &identity);
+        (void)libmpq__file_number_identity(archive, name, locale, platform, &number);
+        if (libmpq__stream_open_name_identity(archive, name, locale, platform, &stream) == 0) {
+            (void)libmpq__stream_read(stream, bytes, sizeof(bytes), &transferred);
+            (void)libmpq__stream_close(stream);
+        }
+    }
+
     if (size >= 5) {
         number = libmpq_fuzz_le32(data + 1);
         if (libmpq__file_size_unpacked(archive, number, &unpacked_size) == 0 &&

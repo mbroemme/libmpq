@@ -69,6 +69,7 @@ test_custom_io(const char *path)
     mpq_archive_s *clone = NULL;
     mpq_stream_s *stream = NULL;
     mpq_stream_s *second_stream = NULL;
+    mpq_stream_s *identity_stream = NULL;
     uint8_t *embedded = NULL;
     uint8_t *raw = NULL;
     uint8_t output[16];
@@ -120,6 +121,7 @@ test_custom_io(const char *path)
     TEST_CHECK(transferred == 10 && memcmp(output, "public API", 10) == 0);
     TEST_CHECK(libmpq__stream_open(archive, number, &stream) == 0);
     TEST_CHECK(libmpq__stream_open_name(archive, "payload", &second_stream) == 0);
+    TEST_CHECK(libmpq__stream_open_name_identity(archive, "payload", 0, 0, &identity_stream) == 0);
     TEST_CHECK(libmpq__archive_clone(&clone, archive) == 0);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     archive = NULL;
@@ -136,6 +138,9 @@ test_custom_io(const char *path)
     stream = NULL;
     TEST_CHECK(libmpq__stream_read(second_stream, output, 1, &transferred) == 0);
     TEST_CHECK(transferred == 1 && output[0] == 'p');
+    TEST_CHECK(libmpq__stream_read(identity_stream, output, 10, &transferred) == 0);
+    TEST_CHECK(transferred == 10 && memcmp(output, "public API", 10) == 0);
+    TEST_CHECK(libmpq__stream_close(identity_stream) == 0);
     TEST_CHECK(libmpq__stream_close(second_stream) == 0);
     second_stream = NULL;
     TEST_CHECK(libmpq__file_number(clone, "payload", &number) == 0);
@@ -169,6 +174,21 @@ test_custom_io(const char *path)
             &archive, &source, memory_read_at, source.size, (libmpq__off_t)sizeof(prefix), NULL
         ) == 0
     );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+
+    TEST_CHECK(
+        libmpq__archive_open_io(&archive, &source, memory_read_at, source.size, -1, NULL) == 0
+    );
+    source.failure = LIBMPQ_ERROR_READ;
+    identity_stream = (mpq_stream_s *)&source;
+    TEST_CHECK(
+        libmpq__stream_open_name_identity(archive, "payload", 0, 0, &identity_stream) ==
+        LIBMPQ_ERROR_READ
+    );
+    TEST_CHECK(identity_stream == NULL);
+    source.failure = 0;
+    TEST_CHECK(libmpq__file_number_identity(archive, "payload", 0, 0, &number) == 0);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     archive = NULL;
 
@@ -433,6 +453,30 @@ main(void)
     FILE *source_file;
     size_t i;
 
+    {
+        mpq_file_identity_s identity;
+        mpq_file_identity_s zero = { 0 };
+        mpq_stream_s *stream = (mpq_stream_s *)&identity;
+        uint32_t number = UINT32_MAX;
+        TEST_CHECK(sizeof(identity) == 16 && offsetof(mpq_file_identity_s, flags) == 4);
+        TEST_CHECK(
+            offsetof(mpq_file_identity_s, locale) == 8 &&
+            offsetof(mpq_file_identity_s, platform) == 10
+        );
+        TEST_CHECK(offsetof(mpq_file_identity_s, reserved) == 12);
+        memset(&identity, 0xff, sizeof(identity));
+        TEST_CHECK(libmpq__file_variant(NULL, "x", 0, &identity) == LIBMPQ_ERROR_EXIST);
+        TEST_CHECK(memcmp(&identity, &zero, sizeof(zero)) == 0);
+        TEST_CHECK(libmpq__file_variant(NULL, NULL, 0, NULL) == LIBMPQ_ERROR_EXIST);
+        TEST_CHECK(
+            libmpq__file_number_identity(NULL, "x", 0, 0, &number) == LIBMPQ_ERROR_EXIST &&
+            number == 0
+        );
+        TEST_CHECK(
+            libmpq__stream_open_name_identity(NULL, "x", 0, 0, &stream) == LIBMPQ_ERROR_EXIST &&
+            stream == NULL
+        );
+    }
     TEST_CHECK(test_public_patch() == 0);
     TEST_CHECK(test_public_patch_add() == 0);
     {

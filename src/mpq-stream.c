@@ -203,6 +203,33 @@ libmpq__reader_stream_open_name(mpq_archive_s *archive, const char *filename, mp
     return stream_adopt(clone, file_number, filename, stream);
 }
 
+/* Never reselect a resolved identity through the ordinary name lookup. */
+int32_t
+libmpq__reader_stream_open_name_identity(
+    mpq_archive_s *archive, const char *filename, uint16_t locale, uint16_t platform,
+    mpq_stream_s **stream
+)
+{
+    mpq_archive_s *clone = NULL;
+    uint32_t number;
+    int32_t result;
+
+    if (stream == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *stream = NULL;
+    if (archive == NULL || filename == NULL || archive->write_mode)
+        return LIBMPQ_ERROR_EXIST;
+    result = libmpq__archive_clone(&clone, archive);
+    if (result != 0)
+        return result;
+    result = libmpq__file_number_identity(clone, filename, locale, platform, &number);
+    if (result != 0) {
+        (void)libmpq__archive_close(clone);
+        return result;
+    }
+    return stream_adopt(clone, number, filename, stream);
+}
+
 int32_t
 libmpq__reader_stream_read(
     mpq_stream_s *stream, uint8_t *buffer, libmpq__off_t size, libmpq__off_t *transferred

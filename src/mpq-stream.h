@@ -27,6 +27,12 @@ libmpq__reader_stream_open(mpq_archive_s *archive, uint32_t file_number, mpq_str
 int32_t libmpq__reader_stream_open_name(
     mpq_archive_s *archive, const char *filename, mpq_stream_s **stream
 );
+
+/* Resolve the identity on the clone that the stream will adopt. */
+int32_t libmpq__reader_stream_open_name_identity(
+    mpq_archive_s *archive, const char *filename, uint16_t locale, uint16_t platform,
+    mpq_stream_s **stream
+);
 int32_t libmpq__reader_stream_read(
     mpq_stream_s *stream, uint8_t *buffer, libmpq__off_t size, libmpq__off_t *transferred
 );
