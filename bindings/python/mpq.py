@@ -282,6 +282,8 @@ _configure("libmpq__update_remove_identity", ctypes.c_int32, _VOID_PTR, ctypes.c
            ctypes.c_uint16, ctypes.c_uint16)
 _configure("libmpq__update_rename_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
            ctypes.c_uint16, ctypes.c_uint16, ctypes.c_char_p)
+_configure("libmpq__update_change_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
+           ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint16)
 _configure("libmpq__update_commit", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__update_abort", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__patch_begin", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, ctypes.c_char_p)
@@ -555,6 +557,14 @@ class Update:
         libmpq.libmpq__update_rename_identity(
             self._update, _as_bytes(old_name), _identity_selector(locale),
             _identity_selector(platform), _as_bytes(new_name))
+
+    def change_identity(self, name, locale, platform, new_locale, new_platform):
+        """Change one exact staged locale/platform tuple without moving its payload."""
+        self._ensure_open()
+        libmpq.libmpq__update_change_identity(
+            self._update, _as_bytes(name), _identity_selector(locale),
+            _identity_selector(platform), _identity_selector(new_locale),
+            _identity_selector(new_platform))
 
     def commit(self):
         """Publish staged changes and consume this handle, even on error."""

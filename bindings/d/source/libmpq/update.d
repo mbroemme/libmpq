@@ -180,6 +180,14 @@ final class Update {
                     toStringz(newName)), "libmpq__update_rename_identity");
     }
 
+    /** Change an exact locale/platform tuple without relocating its payload. */
+    void changeIdentity(string name, ushort locale, ushort platform,
+                     ushort newLocale, ushort newPlatform) {
+        ensureOpen();
+        checkStatus(libmpq__update_change_identity(handle, toStringz(name), locale, platform,
+                    newLocale, newPlatform), "libmpq__update_change_identity");
+    }
+
     /** Publish staged changes; this object is consumed even on native error. */
     void commit() {
         auto current = take();

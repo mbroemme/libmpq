@@ -1273,7 +1273,72 @@ private void testExactUpdateStages() {
     }
 }
 
+private void testChangeIdentity() {
+    auto path = temporaryArchive("change-identity");
+    scope(exit) if (exists(path)) remove(path);
+    foreach (version_; [ARCHIVE_VERSION_ONE, ARCHIVE_VERSION_TWO,
+                       ARCHIVE_VERSION_THREE, ARCHIVE_VERSION_FOUR]) {
+        auto create = ArchiveCreateOptions.v1();
+        create.version_ = version_;
+        auto writer = Archive.create(path, create);
+        bool classic = version_ <= ARCHIVE_VERSION_TWO;
+        auto options = FileOptions.raw();
+        options.flags = FILE_FLAG_ENCRYPTED | 0x20000;
+        writer.add("voice", cast(const(ubyte)[])"neutral", options);
+        writer.add("other", cast(const(ubyte)[])"other");
+        if (classic) {
+            options.locale = 0x411;
+            options.platform = 2;
+            writer.add("voice", cast(const(ubyte)[])"localized", options);
+        }
+        writer.close();
+        auto original = read(path);
+        auto update = Update.begin(path);
+        update.changeIdentity("voice", 0, 0, 0, 0);
+        update.commit();
+        assert(read(path) == original);
+        update = Update.begin(path);
+        bool failed;
+        try { update.changeIdentity("voice", 0, 1, 0, 1); }
+        catch (MPQException e) { failed = e.code == ERROR_EXIST; }
+        assert(failed);
+        if (classic) {
+            failed = false;
+            try { update.changeIdentity("voice", 0, 0, 0x411, 2); }
+            catch (MPQException e) { failed = e.code == ERROR_EXIST; }
+            assert(failed);
+        }
+        update.changeIdentity("voice", 0, 0, 0x409, 0);
+        failed = false;
+        try { update.changeIdentity("voice", 0, 0, 0, 0); }
+        catch (MPQException e) { failed = e.code == ERROR_EXIST; }
+        assert(failed);
+        update.changeIdentity("voice", 0x409, 0, 0x409, 3);
+        update.rename("voice", 0x409, 3, "renamed");
+        update.changeIdentity("renamed", 0x409, 3, 0, 0);
+        update.replaceData("renamed", 0, 0, cast(const(ubyte)[])"updated");
+        update.remove("other", 0, 0);
+        update.changeIdentity("renamed", 0, 0, ushort.max, ushort.max);
+        assert(read(path) == original);
+        update.commit();
+        auto archive = Archive.open(path);
+        auto stream = archive.openStream("renamed", ushort.max, ushort.max);
+        ubyte[7] bytes;
+        assert(stream.read(bytes[]) == 7 && bytes[] == cast(const(ubyte)[])"updated");
+        stream.close();
+        if (classic) assert(archive.variants("voice").length == 1);
+        assert(archive.variants("other").length == 0);
+        archive.close();
+        auto committed = read(path);
+        update = Update.begin(path);
+        update.changeIdentity("renamed", ushort.max, ushort.max, 0, 0);
+        update.abort();
+        assert(read(path) == committed);
+    }
+}
+
 void main() {
+    testChangeIdentity();
     testExactUpdateStages();
     testExactIdentities();
     testRawChunkConfiguration();

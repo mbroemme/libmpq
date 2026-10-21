@@ -99,6 +99,7 @@ public final class LibmpqNative {
     private static final MethodHandle UPDATE_REPLACE_PATH_IDENTITY;
     private static final MethodHandle UPDATE_REMOVE_IDENTITY;
     private static final MethodHandle UPDATE_RENAME_IDENTITY;
+    private static final MethodHandle UPDATE_CHANGE_IDENTITY;
     private static final MethodHandle UPDATE_COMMIT;
     private static final MethodHandle UPDATE_ABORT;
     private static final MethodHandle PATCH_BEGIN;
@@ -262,6 +263,9 @@ public final class LibmpqNative {
         UPDATE_RENAME_IDENTITY = function(linker, lookup, "libmpq__update_rename_identity",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                         C_SHORT, C_SHORT, ValueLayout.ADDRESS));
+        UPDATE_CHANGE_IDENTITY = function(linker, lookup, "libmpq__update_change_identity",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                        C_SHORT, C_SHORT, C_SHORT, C_SHORT));
         UPDATE_COMMIT = function(linker, lookup, "libmpq__update_commit",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
         UPDATE_ABORT = function(linker, lookup, "libmpq__update_abort",
@@ -637,6 +641,10 @@ public final class LibmpqNative {
     public static int updateRenameIdentity(MemorySegment update, MemorySegment name,
             short locale, short platform, MemorySegment newName) {
         return callInt(UPDATE_RENAME_IDENTITY, update, name, locale, platform, newName);
+    }
+    public static int updateChangeIdentity(MemorySegment update, MemorySegment name,
+            short locale, short platform, short newLocale, short newPlatform) {
+        return callInt(UPDATE_CHANGE_IDENTITY, update, name, locale, platform, newLocale, newPlatform);
     }
     public static int updateCommit(MemorySegment update) { return callInt(UPDATE_COMMIT, update); }
     public static int updateAbort(MemorySegment update) { return callInt(UPDATE_ABORT, update); }

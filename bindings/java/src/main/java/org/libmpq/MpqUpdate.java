@@ -156,6 +156,20 @@ public final class MpqUpdate implements AutoCloseable {
         }
     }
 
+    /** Change an exact stored tuple while preserving the payload and unrelated aliases. */
+    public void changeIdentity(String name, int locale, int platform, int newLocale, int newPlatform)
+            throws LibmpqException {
+        checkOpen();
+        short selectedLocale = selector(locale);
+        short selectedPlatform = selector(platform);
+        short destinationLocale = selector(newLocale);
+        short destinationPlatform = selector(newPlatform);
+        try (Arena arena = Arena.ofConfined()) {
+            Support.check(LibmpqNative.updateChangeIdentity(handle, Support.text(arena, name),
+                    selectedLocale, selectedPlatform, destinationLocale, destinationPlatform));
+        }
+    }
+
     private static short selector(int value) {
         if (value < 0 || value > 65535) {
             throw new IllegalArgumentException("Identity selector must be in 0..65535");

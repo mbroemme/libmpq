@@ -1491,3 +1491,64 @@ def test_exact_update_stages(tmp_path, version, wrapped):
         update.commit()
     with (mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive(path)) as archive:
         assert archive.variants("renamed") == ()
+
+
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO,
+                                     mpq.ARCHIVE_VERSION_THREE, mpq.ARCHIVE_VERSION_FOUR])
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_change_identity(tmp_path, version, wrapped):
+    path = tmp_path / "change-identity.mpq"
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    classic = version <= mpq.ARCHIVE_VERSION_TWO
+    create = (mpq.Writer.create_mpqe(path, code, version=version) if wrapped
+              else mpq.Writer(path, version=version))
+    with create as writer:
+        options = mpq.FileCreateOptions.raw()
+        options.flags = mpq.FILE_FLAG_ENCRYPTED | 0x20000
+        writer.add("voice", b"neutral", options)
+        writer.add("other", b"other")
+        if classic:
+            options.locale, options.platform = 0x411, 2
+            writer.add("voice", b"other locale", options)
+    begin = lambda: (mpq.Update.begin_mpqe(path, code) if wrapped else mpq.Update.begin(path))
+    original = path.read_bytes()
+    with begin() as update:
+        update.change_identity("voice", 0, 0, 0, 0)
+        update.commit()
+    assert path.read_bytes() == original
+    with begin() as update:
+        for invalid in (-1, 65536, 1.5):
+            for index in range(4):
+                selectors = [0, 0, 0, 0]
+                selectors[index] = invalid
+                with pytest.raises((ValueError, TypeError)):
+                    update.change_identity("voice", *selectors)
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            update.change_identity("voice", 0, 1, 0, 1)
+        if classic:
+            with pytest.raises(mpq.LibmpqNotFoundError):
+                update.change_identity("voice", 0, 0, 0x411, 2)
+        update.change_identity("voice", 0, 0, 0x409, 0)
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            update.change_identity("voice", 0, 0, 0, 0)
+        update.change_identity("voice", 0x409, 0, 0x409, 3)
+        update.rename_identity("voice", 0x409, 3, "renamed")
+        update.change_identity("renamed", 0x409, 3, 0, 0)
+        update.replace_data_identity("renamed", 0, 0, b"updated")
+        update.remove_identity("other", 0, 0)
+        update.change_identity("renamed", 0, 0, 65535, 65535)
+        assert path.read_bytes() == original
+        update.commit()
+    with pytest.raises(mpq.LibmpqStateError):
+        update.change_identity("renamed", 65535, 65535, 0, 0)
+    with (mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive(path)) as archive:
+        with archive.open_stream_identity("renamed", 65535, 65535) as stream:
+            assert stream.read() == b"updated"
+        if classic:
+            with archive.open_stream_identity("voice", 0x411, 2) as stream:
+                assert stream.read() == b"other locale"
+        assert archive.variants("other") == ()
+    committed = path.read_bytes()
+    with begin() as update:
+        update.change_identity("renamed", 65535, 65535, 0, 0)
+    assert path.read_bytes() == committed

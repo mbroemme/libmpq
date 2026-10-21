@@ -510,3 +510,22 @@ Unsupported or ambiguous metadata is rejected. A rejected operation preserves
 the previous valid stage; commit/abort consume the transaction. Exact rebuilds
 reject embedded archives and unsupported trailers, preserve source raw-chunk
 policy, and do not change existing name-based operations.
+
+`Update.changeIdentity(name, locale, platform, newLocale, newPlatform)` uses
+`ushort` selectors and changes only the selected tuple:
+
+```d
+auto update = Update.begin(path);
+scope(exit) update.close();
+update.changeIdentity("voice.bin", 0, 0, 0x409, 1);
+update.commit();
+```
+
+There is no neutral fallback. Equal tuples validate the source and are no-ops;
+missing sources and occupied destinations use the existing EXIST error mapping.
+Classic-only archives preserve shared aliases and their packed payloads at the
+same offsets. Mixed targets require consistent one-to-one mappings with full
+hashes; HET/BET-only entries cannot acquire qualifiers. Unsupported metadata,
+special-member mutations and reconstruction layouts are rejected. Attributes,
+timestamps, raw policy and transaction ownership are unchanged, and rejected
+calls preserve the previous valid stage.

@@ -36,6 +36,57 @@ import org.libmpq.ffi.LibmpqNative;
  */
 class LibmpqTest {
     @Test
+    void changeIdentity(@TempDir Path directory) throws Exception {
+        for (int version : new int[] {Mpq.ARCHIVE_VERSION_ONE, Mpq.ARCHIVE_VERSION_TWO,
+                                     Mpq.ARCHIVE_VERSION_THREE, Mpq.ARCHIVE_VERSION_FOUR}) {
+            Path path = directory.resolve("change-identity.mpq");
+            boolean classic = version <= Mpq.ARCHIVE_VERSION_TWO;
+            try (Archive writer = Archive.create(path, new ArchiveCreateOptions(version, 8, 4096, 0))) {
+                writer.add("voice", "neutral".getBytes(StandardCharsets.UTF_8),
+                        new FileOptions(Mpq.FILE_FLAG_ENCRYPTED | 0x20000, 0, 0, 0, 0));
+                writer.add("other", "other".getBytes(StandardCharsets.UTF_8), null);
+                if (classic) writer.add("voice", "localized".getBytes(StandardCharsets.UTF_8),
+                        new FileOptions(0, 0, 0, 0x411, 2));
+            }
+            byte[] original = Files.readAllBytes(path);
+            try (MpqUpdate update = MpqUpdate.begin(path)) {
+                update.changeIdentity("voice", 0, 0, 0, 0);
+                update.commit();
+            }
+            assertArrayEquals(original, Files.readAllBytes(path));
+            try (MpqUpdate update = MpqUpdate.begin(path)) {
+                assertThrows(IllegalArgumentException.class, () -> update.changeIdentity("voice", -1, 0, 0, 0));
+                assertThrows(IllegalArgumentException.class, () -> update.changeIdentity("voice", 0, -1, 0, 0));
+                assertThrows(IllegalArgumentException.class, () -> update.changeIdentity("voice", 0, 0, 65536, 0));
+                assertThrows(IllegalArgumentException.class, () -> update.changeIdentity("voice", 0, 0, 0, 65536));
+                assertThrows(LibmpqException.class, () -> update.changeIdentity("voice", 0, 1, 0, 1));
+                if (classic) assertThrows(LibmpqException.class, () -> update.changeIdentity("voice", 0, 0, 0x411, 2));
+                update.changeIdentity("voice", 0, 0, 0x409, 0);
+                assertThrows(LibmpqException.class, () -> update.changeIdentity("voice", 0, 0, 0, 0));
+                update.changeIdentity("voice", 0x409, 0, 0x409, 3);
+                update.rename("voice", 0x409, 3, "renamed");
+                update.changeIdentity("renamed", 0x409, 3, 0, 0);
+                update.replaceData("renamed", 0, 0, "updated".getBytes(StandardCharsets.UTF_8), null);
+                update.remove("other", 0, 0);
+                update.changeIdentity("renamed", 0, 0, 65535, 65535);
+                assertArrayEquals(original, Files.readAllBytes(path));
+                update.commit();
+            }
+            try (Archive archive = Archive.open(path);
+                 MpqStream stream = archive.openStream("renamed", 65535, 65535)) {
+                byte[] bytes = new byte[7];
+                assertEquals(7, stream.read(bytes));
+                assertArrayEquals("updated".getBytes(StandardCharsets.UTF_8), bytes);
+                if (classic) assertEquals(1, archive.variants("voice").size());
+                assertTrue(archive.variants("other").isEmpty());
+            }
+            byte[] committed = Files.readAllBytes(path);
+            try (MpqUpdate update = MpqUpdate.begin(path)) { update.changeIdentity("renamed", 65535, 65535, 0, 0); }
+            assertArrayEquals(committed, Files.readAllBytes(path));
+        }
+    }
+
+    @Test
     void exactUpdateStages(@TempDir Path directory) throws Exception {
         Path source = directory.resolve("replacement.bin");
         Files.write(source, "path bytes".getBytes(StandardCharsets.UTF_8));
