@@ -1,0 +1,97 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__UPDATE_CHANGE_IDENTITY 3 2026-11-06 "The MoPaQ archive library"
+.SH NAME
+libmpq__update_change_identity \- change one exact staged locale/platform identity
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__update_change_identity("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename,"
+.BI "        uint16_t " "locale,"
+.BI "        uint16_t " "platform,"
+.BI "        uint16_t " "new_locale,"
+.BI "        uint16_t " "new_platform"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Selects exactly the stored filename, locale and platform in the current
+successful transaction stage and changes its locale/platform tuple. There is
+no implicit neutral fallback or global locale state. An identical tuple
+validates the exact source and succeeds without changing the working file.
+.PP
+Classic-only v1-v4 archives support shared-block aliases and unrelated
+unknown-name members. Hash A/B and the selected probe slot are preserved.
+Only the selected tuple changes; all other ordinary identities retain their
+association with the original payload. Canonical member numbers may remap
+when metadata is rebuilt, as for other transactional operations.
+.PP
+Ordinary member offsets, packed bytes, storage flags, attributes and timestamps
+are preserved. Payloads are neither detached nor re-encoded. A tuple change
+requires no encryption or FIX_KEY transformation because it changes neither
+the basename nor the physical member offset. Source raw-chunk policy is
+retained, and applicable raw and structural digests are regenerated. An
+unchanged listfile is also preserved unless signature invalidation requires
+removing its signature entry.
+.PP
+Mixed classic/HET/BET targets require consistent one-to-one mappings and full
+extended hashes. Shared BET rows, ambiguous provenance and unsupported metadata
+are rejected. HET/BET-only entries cannot acquire classic locale/platform
+selectors; their only supported operation is an unchanged unqualified tuple.
+Special-member qualifier mutations are rejected, but valid identical-tuple
+requests remain no-ops. Existing reconstruction limits, including embedded
+wrappers and unrelated trailers, apply to actual changes.
+.PP
+The operation borrows filename only for this synchronous call. A rejected
+operation preserves the previous valid transaction stage and original source.
+Commit publishes only finalized output. Modifications follow the existing
+signature-invalidation policy. Transactions containing only no-op requests
+preserve the original bytes.
+Commit and abort consume the transaction, including on error.
+.SH RETURN VALUE
+Returns 0 on success or a negative libmpq error.
+.SH ERRORS
+LIBMPQ_ERROR_EXIST reports a missing source identity, an occupied destination
+identity or an invalid required argument. LIBMPQ_ERROR_FORMAT reports
+ambiguous, contradictory or unrepresentable metadata. Allocation, size and I/O
+failures use the existing LIBMPQ_ERROR_* values. No rejected operation publishes
+partially rebuilt output.
+.SH SEE ALSO
+.BR libmpq__file_identity (3),
+.BR libmpq__file_number_identity (3),
+.BR libmpq__update_begin (3),
+.BR libmpq__update_replace_data_identity (3),
+.BR libmpq__update_rename_identity (3),
+.BR libmpq__update_commit (3),
+.BR libmpq__update_abort (3)
+.SH AUTHOR
+The libmpq project is maintained by Maik Broemme.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>.
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later.
+.PP
+This manual is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+.PP
+See the COPYING.LESSER file distributed with libmpq for the authoritative
+license reference. The GNU license text is available at
+<https://www.gnu.org/licenses/>.

@@ -472,6 +472,23 @@ reject embedded wrappers, unsupported metadata and unrelated trailers. A
 rejected stage leaves earlier valid changes available; the original remains
 unchanged until commit. Existing name-based operations retain their behavior.
 
+`libmpq__update_change_identity(update, name, locale, platform, new_locale,
+new_platform)` changes only the exact staged locale/platform tuple. Identical
+tuples validate the source and succeed without rebuilding; missing sources or
+occupied destinations return EXIST. Classic-only v1-v4 support shared aliases.
+Mixed targets require consistent one-to-one classic/BET mappings with complete
+hashes; HET/BET-only entries cannot acquire qualifiers. Ambiguous metadata and
+special-member mutations return FORMAT. Existing reconstruction limits apply.
+
+Ordinary payload offsets, packed bytes, flags, attributes and timestamps are
+retained. If no internal `(signature)` member is present, listfiles also keep
+their original storage. Payloads keep their stored representation, and FIX_KEY
+remains valid because neither the basename nor the physical offset changes.
+Canonical member numbers may remap during reconstruction; their payload
+associations and probe slots are preserved. V4 raw policy and transaction
+publication guarantees remain unchanged. Rejected calls preserve the preceding
+valid stage.
+
 Legacy v1/v2 updates retain unchanged packed entries even without `(listfile)`
 names, and preserve embedded prefixes and unrelated trailing bytes. Their
 rebuilt archive extent must fit the legacy 32-bit size field. V3/v4 use a
