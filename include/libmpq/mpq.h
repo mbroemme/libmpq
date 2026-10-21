@@ -921,6 +921,21 @@ extern LIBMPQ_API int32_t libmpq__update_rename_identity(
 );
 
 /*
+ * Change exactly one staged filename/locale/platform tuple without fallback.
+ * Payloads and shared aliases retain their packed bytes and physical offsets.
+ * Occupied destinations return EXIST; ambiguous or unrepresentable changes
+ * return FORMAT. Classic-only v1-v4 and consistent one-to-one mixed targets
+ * are supported. BET-only targets cannot acquire qualified identities.
+ * Equal tuples validate the exact source and succeed without reconstruction.
+ * Special-member mutations and existing unsupported reconstruction layouts
+ * return FORMAT. Rejected operations preserve the preceding valid stage.
+ */
+extern LIBMPQ_API int32_t libmpq__update_change_identity(
+    mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform,
+    uint16_t new_locale, uint16_t new_platform
+);
+
+/*
  * Stage changes to an existing filesystem MPQ in a private working copy.
  * Changes reach the original only when commit atomically publishes that copy.
  * Supported legacy embedded updates retain their container prefix and

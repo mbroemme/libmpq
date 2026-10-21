@@ -395,6 +395,18 @@ libmpq__update_rename_identity(
     return libmpq__update_transaction_rename_identity(update, name, locale, platform, new_name);
 }
 
+/* Change only an exact staged identity's locale/platform tuple. */
+int32_t
+libmpq__update_change_identity(
+    mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform,
+    uint16_t new_locale, uint16_t new_platform
+)
+{
+    return libmpq__update_transaction_change_identity(
+        update, filename, locale, platform, new_locale, new_platform
+    );
+}
+
 int32_t
 libmpq__update_commit(mpq_update_s *update)
 {
