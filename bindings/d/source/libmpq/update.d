@@ -126,6 +126,60 @@ final class Update {
                     toStringz(newName)), "libmpq__update_rename");
     }
 
+    /** Replace only the exact locale/platform identity. */
+    void replaceData(string name, ushort locale, ushort platform, const(ubyte)[] data) {
+        replaceDataIdentityImpl(name, locale, platform, data, null);
+    }
+
+    void replaceData(string name, ushort locale, ushort platform, const(ubyte)[] data,
+                     FileOptions options) {
+        auto nativeOptions = options.nativeOptions();
+        replaceDataIdentityImpl(name, locale, platform, data, &nativeOptions);
+    }
+
+    private void replaceDataIdentityImpl(string name, ushort locale, ushort platform,
+            const(ubyte)[] data, const(mpq_file_options_s)* options) {
+        ensureOpen();
+        if (data.length > cast(size_t)long.max)
+            throw new MPQException("Update.replaceData", ERROR_SIZE);
+        checkStatus(libmpq__update_replace_data_identity(handle, toStringz(name), locale,
+                    platform, data.length == 0 ? null : data.ptr, cast(off_t)data.length,
+                    options), "libmpq__update_replace_data_identity");
+    }
+
+    /** Replace an exact identity from a caller-owned source path. */
+    void replacePath(string name, ushort locale, ushort platform, string sourcePath) {
+        replacePathIdentityImpl(name, locale, platform, sourcePath, null);
+    }
+
+    void replacePath(string name, ushort locale, ushort platform, string sourcePath,
+                     FileOptions options) {
+        auto nativeOptions = options.nativeOptions();
+        replacePathIdentityImpl(name, locale, platform, sourcePath, &nativeOptions);
+    }
+
+    private void replacePathIdentityImpl(string name, ushort locale, ushort platform,
+            string sourcePath, const(mpq_file_options_s)* options) {
+        ensureOpen();
+        checkStatus(libmpq__update_replace_path_identity(handle, toStringz(name), locale,
+                    platform, toStringz(sourcePath), options),
+                    "libmpq__update_replace_path_identity");
+    }
+
+    /** Remove only the selected identity. */
+    void remove(string name, ushort locale, ushort platform) {
+        ensureOpen();
+        checkStatus(libmpq__update_remove_identity(handle, toStringz(name), locale, platform),
+                    "libmpq__update_remove_identity");
+    }
+
+    /** Rename one exact identity, preserving its selectors. */
+    void rename(string name, ushort locale, ushort platform, string newName) {
+        ensureOpen();
+        checkStatus(libmpq__update_rename_identity(handle, toStringz(name), locale, platform,
+                    toStringz(newName)), "libmpq__update_rename_identity");
+    }
+
     /** Publish staged changes; this object is consumed even on native error. */
     void commit() {
         auto current = take();

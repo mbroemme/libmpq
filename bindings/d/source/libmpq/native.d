@@ -343,6 +343,16 @@ extern(C) {
     int libmpq__update_rename(mpq_update_s* update, const(char)* old_filename,
                               const(char)* new_filename);
     /** Both lifecycle calls consume the handle, including on error. */
+    int libmpq__update_replace_data_identity(mpq_update_s* update, const(char)* filename,
+        ushort locale, ushort platform, const(ubyte)* data, off_t size,
+        const(mpq_file_options_s)* options);
+    int libmpq__update_replace_path_identity(mpq_update_s* update, const(char)* filename,
+        ushort locale, ushort platform, const(char)* sourcePath,
+        const(mpq_file_options_s)* options);
+    int libmpq__update_remove_identity(mpq_update_s* update, const(char)* filename,
+        ushort locale, ushort platform);
+    int libmpq__update_rename_identity(mpq_update_s* update, const(char)* filename,
+        ushort locale, ushort platform, const(char)* newFilename);
     int libmpq__update_commit(mpq_update_s* update);
     int libmpq__update_abort(mpq_update_s* update);
 

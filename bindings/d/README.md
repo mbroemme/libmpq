@@ -487,3 +487,26 @@ accept `ushort` selectors without fallback; existing overloads are unchanged.
 Ambiguous or reduced-hash metadata raises `MPQException`. Exact named streams
 preserve the filename for decryption and own their archive clone, surviving
 parent close. Custom-source lifetime follows the existing stream contract.
+
+Exact update overloads use `ushort` locale/platform selectors, without
+neutral fallback:
+
+```d
+auto update = Update.begin(path);
+scope(exit) update.close();
+update.replaceData("voice.bin", 0x409, 1, replacement);
+update.rename("voice.bin", 0x409, 1, "renamed.bin");
+update.replacePath("renamed.bin", 0x409, 1, sourcePath);
+update.remove("obsolete.bin", 0, 0);
+update.commit();
+```
+
+Classic-only archives detach the selected shared alias on replacement and
+retain other aliases on removal or rename. Explicit replacement options must
+match the selectors; omitted options use default storage with those selectors.
+Mixed classic/HET/BET targets require consistent one-to-one mappings and
+complete hashes. Unique HET/BET-only targets accept zero selectors only.
+Unsupported or ambiguous metadata is rejected. A rejected operation preserves
+the previous valid stage; commit/abort consume the transaction. Exact rebuilds
+reject embedded archives and unsupported trailers, preserve source raw-chunk
+policy, and do not change existing name-based operations.

@@ -1217,7 +1217,64 @@ private void testExactIdentities() {
     }
 }
 
+private void testExactUpdateStages() {
+    auto path = temporaryArchive("exact-update");
+    auto source = path ~ ".source";
+    scope(exit) { if (exists(path)) remove(path); remove(source); }
+    write(source, "path bytes");
+    foreach (version_; [ARCHIVE_VERSION_ONE, ARCHIVE_VERSION_TWO,
+                       ARCHIVE_VERSION_THREE, ARCHIVE_VERSION_FOUR]) {
+        auto create = ArchiveCreateOptions.v1();
+        create.version_ = version_;
+        auto writer = Archive.create(path, create);
+        bool classic = version_ <= ARCHIVE_VERSION_TWO;
+        ushort locale = classic ? 0x409 : 0;
+        ushort platform = classic ? 1 : 0;
+        auto options = FileOptions.raw();
+        options.locale = locale;
+        options.platform = platform;
+        writer.add("voice", cast(const(ubyte)[])"selected", options);
+        if (classic) writer.add("voice", cast(const(ubyte)[])"neutral");
+        writer.close();
+        auto original = read(path);
+        auto update = Update.begin(path);
+        update.replaceData("voice", locale, platform, cast(const(ubyte)[])"bytes");
+        bool failed;
+        try { update.remove("voice", locale, cast(ushort)(platform + 1)); }
+        catch (MPQException e) { failed = e.code == ERROR_EXIST; }
+        assert(failed);
+        update.rename("voice", locale, platform, "renamed");
+        failed = false;
+        try { update.remove("voice", locale, platform); }
+        catch (MPQException e) { failed = e.code == ERROR_EXIST; }
+        assert(failed);
+        update.replacePath("renamed", locale, platform, source);
+        assert(read(path) == original);
+        update.commit();
+        auto archive = Archive.open(path);
+        auto stream = archive.openStream("renamed", locale, platform);
+        ubyte[10] bytes;
+        assert(stream.read(bytes[]) == 10);
+        assert(bytes[] == cast(const(ubyte)[])"path bytes");
+        stream.close();
+        if (classic) assert(archive.variants("voice").length == 1);
+        archive.close();
+        auto committed = read(path);
+        update = Update.begin(path);
+        update.remove("renamed", locale, platform);
+        update.abort();
+        assert(read(path) == committed);
+        update = Update.begin(path);
+        update.remove("renamed", locale, platform);
+        update.commit();
+        archive = Archive.open(path);
+        assert(archive.variants("renamed").length == 0);
+        archive.close();
+    }
+}
+
 void main() {
+    testExactUpdateStages();
     testExactIdentities();
     testRawChunkConfiguration();
     testPatchAdditions();
