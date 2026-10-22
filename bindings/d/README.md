@@ -178,6 +178,23 @@ file-level CRC32/MD5 comparison.
 
 ## Transactional updates
 
+`Update.timestamp` sets existing Windows FILETIME metadata, expressed in
+100-nanosecond ticks since 1601-01-01 UTC. Omit locale/platform for ordinary
+lookup or supply both for exact selection without fallback:
+
+```d
+update.timestamp("voice.bin", 132537600000000000UL, 0, 0);
+```
+
+Zero is an available timestamp; `ulong` retains all FILETIME bits and
+selectors use `ushort`.
+Existing valid FILETIME and classic provenance are required. Actual changes
+to shared rows are rejected; validated same-value requests preserve staged
+bytes and signatures, including shared rows. Eligible changes preserve packed
+payloads and invalidate signatures. Missing arrays are not created. Ordinary
+replacement resets timestamps to zero; exact replacement retains them. Normal
+transaction staging, abort and publication guarantees apply.
+
 Transactional updates stage edits until commit. `Update` aborts any active
 transaction when it is destroyed or closed:
 

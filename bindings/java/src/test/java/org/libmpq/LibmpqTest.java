@@ -36,6 +36,38 @@ import org.libmpq.ffi.LibmpqNative;
  */
 class LibmpqTest {
     @Test
+    void transactionalTimestamps(@TempDir Path directory) throws Exception {
+        for (int version : new int[] {Mpq.ARCHIVE_VERSION_ONE, Mpq.ARCHIVE_VERSION_TWO,
+                                     Mpq.ARCHIVE_VERSION_THREE, Mpq.ARCHIVE_VERSION_FOUR}) {
+            Path path = directory.resolve("timestamp.mpq");
+            try (Archive writer = Archive.create(path,
+                    new ArchiveCreateOptions(version, 8, 512, 0, Mpq.ATTRIBUTE_FILETIME))) {
+                writer.add("voice", new byte[] {1}, null);
+                writer.add("other", new byte[] {2}, null);
+            }
+            byte[] original = Files.readAllBytes(path);
+            try (MpqUpdate update = MpqUpdate.begin(path)) {
+                update.timestamp("voice", 0L);
+                assertThrows(IllegalArgumentException.class, () -> update.timestamp("voice", 1, -1, 0));
+                assertThrows(IllegalArgumentException.class, () -> update.timestamp("voice", 1, 0, 65536));
+                assertThrows(LibmpqException.class, () -> update.timestamp("voice", 1, 1, 0));
+                update.timestamp("voice", Long.MIN_VALUE);
+                update.timestamp("voice", -1L, 0, 0);
+                update.replaceData("voice", 0, 0, new byte[] {3}, null);
+                assertArrayEquals(original, Files.readAllBytes(path));
+                update.commit();
+            }
+            try (Archive archive = Archive.open(path)) {
+                assertEquals(-1L, archive.attributes(archive.fileNumber("voice")).filetime());
+                assertEquals(0L, archive.attributes(archive.fileNumber("other")).filetime());
+            }
+            byte[] committed = Files.readAllBytes(path);
+            try (MpqUpdate update = MpqUpdate.begin(path)) { update.timestamp("voice", 0); }
+            assertArrayEquals(committed, Files.readAllBytes(path));
+        }
+    }
+
+    @Test
     void changeIdentity(@TempDir Path directory) throws Exception {
 
         for (int version : new int[] {Mpq.ARCHIVE_VERSION_ONE, Mpq.ARCHIVE_VERSION_TWO,

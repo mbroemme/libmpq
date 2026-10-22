@@ -1343,7 +1343,44 @@ private void testChangeIdentity() {
     }
 }
 
+private void testTransactionalTimestamps() {
+    auto path = temporaryArchive("timestamp");
+    scope(exit) if (exists(path)) remove(path);
+    foreach (version_; [ARCHIVE_VERSION_ONE, ARCHIVE_VERSION_TWO,
+                       ARCHIVE_VERSION_THREE, ARCHIVE_VERSION_FOUR]) {
+        auto create = ArchiveCreateOptions.v1();
+        create.version_ = version_;
+        create.attributes = ATTRIBUTE_FILETIME;
+        auto writer = Archive.create(path, create);
+        writer.add("voice", cast(const(ubyte)[])"payload");
+        writer.add("other", cast(const(ubyte)[])"other");
+        writer.close();
+        auto original = read(path);
+        auto update = Update.begin(path);
+        update.timestamp("voice", 0);
+        bool failed;
+        try { update.timestamp("voice", 1, 1, 0); }
+        catch (MPQException e) { failed = e.code == ERROR_EXIST; }
+        assert(failed);
+        update.timestamp("voice", 0x8000000000000000UL);
+        update.timestamp("voice", ulong.max, 0, 0);
+        update.replaceData("voice", 0, 0, cast(const(ubyte)[])"new");
+        assert(read(path) == original);
+        update.commit();
+        auto archive = Archive.open(path);
+        assert(archive.file("voice").attributes().filetime == ulong.max);
+        assert(archive.file("other").attributes().filetime == 0);
+        archive.close();
+        auto committed = read(path);
+        update = Update.begin(path);
+        update.timestamp("voice", 0);
+        update.abort();
+        assert(read(path) == committed);
+    }
+}
+
 void main() {
+    testTransactionalTimestamps();
     testChangeIdentity();
     testExactUpdateStages();
     testExactIdentities();

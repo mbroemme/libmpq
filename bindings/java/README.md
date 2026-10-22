@@ -150,6 +150,23 @@ file-level CRC32/MD5 comparison.
 
 ## Transactional updates
 
+`MpqUpdate.timestamp` sets existing Windows FILETIME metadata, expressed in
+100-nanosecond ticks since 1601-01-01 UTC. Omit locale/platform for ordinary
+lookup or supply both for exact selection without fallback:
+
+```java
+update.timestamp("voice.bin", 132537600000000000L, 0, 0);
+```
+
+Zero is an available timestamp; all Java `long` bit patterns are accepted,
+including negative ones.
+Existing valid FILETIME and classic provenance are required. Actual changes
+to shared rows are rejected; validated same-value requests preserve staged
+bytes and signatures, including shared rows. Eligible changes preserve packed
+payloads and invalidate signatures. Missing arrays are not created. Ordinary
+replacement resets timestamps to zero; exact replacement retains them. Normal
+transaction staging, abort and publication guarantees apply.
+
 Updates are separate transactions. Closing without commit aborts staged edits:
 
 ```java

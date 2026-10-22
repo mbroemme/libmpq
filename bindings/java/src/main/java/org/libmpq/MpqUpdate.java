@@ -86,6 +86,25 @@ public final class MpqUpdate implements AutoCloseable {
         }
     }
 
+    /** Set existing Windows FILETIME bits, with no filesystem time conversion. */
+    public void timestamp(String name, long filetime) throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            Support.check(LibmpqNative.updateTimestamp(handle, Support.text(arena, name), filetime));
+        }
+    }
+
+    public void timestamp(String name, long filetime, int locale, int platform)
+            throws LibmpqException {
+        checkOpen();
+        short selectedLocale = selector(locale);
+        short selectedPlatform = selector(platform);
+        try (Arena arena = Arena.ofConfined()) {
+            Support.check(LibmpqNative.updateTimestampIdentity(handle, Support.text(arena, name),
+                    filetime, selectedLocale, selectedPlatform));
+        }
+    }
+
     /** Stage removal of an existing named member. */
     public void remove(String name) throws LibmpqException {
         checkOpen();

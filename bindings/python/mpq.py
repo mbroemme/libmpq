@@ -284,6 +284,9 @@ _configure("libmpq__update_rename_identity", ctypes.c_int32, _VOID_PTR, ctypes.c
            ctypes.c_char_p, ctypes.c_uint16, ctypes.c_uint16)
 _configure("libmpq__update_change_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
            ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint16)
+_configure("libmpq__update_timestamp", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_uint64)
+_configure("libmpq__update_timestamp_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
+           ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16)
 _configure("libmpq__update_commit", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__update_abort", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__patch_begin", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, ctypes.c_char_p)
@@ -539,6 +542,18 @@ class Update:
         libmpq.libmpq__update_add_path(
             self._update, _as_bytes(name), _as_bytes(source_path), self._options(options)
         )
+
+    def timestamp(self, name, filetime, *, locale=None, platform=None):
+        """Set an existing unsigned Windows FILETIME without changing the payload."""
+        self._ensure_open()
+        if not isinstance(filetime, int) or not 0 <= filetime <= 0xffffffffffffffff:
+            raise ValueError("filetime must be an unsigned 64-bit integer")
+        selected = _identity_selection(locale, platform)
+        if selected is None:
+            libmpq.libmpq__update_timestamp(self._update, _as_bytes(name), filetime)
+        else:
+            libmpq.libmpq__update_timestamp_identity(
+                self._update, _as_bytes(name), filetime, *selected)
 
     def remove(self, name, *, locale=None, platform=None):
         """Stage removal of an existing member."""

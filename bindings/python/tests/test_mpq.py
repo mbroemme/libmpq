@@ -1571,3 +1571,42 @@ def test_change_identity(tmp_path, version, wrapped):
     with begin() as update:
         update.change_identity("renamed", 65535, 65535, 0, 0)
     assert path.read_bytes() == committed
+
+
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO,
+                                     mpq.ARCHIVE_VERSION_THREE, mpq.ARCHIVE_VERSION_FOUR])
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_transactional_timestamps(tmp_path, version, wrapped):
+    path = tmp_path / "timestamp.mpq"
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    create = (mpq.Writer.create_mpqe(path, code, version=version, attributes=mpq.ATTRIBUTE_FILETIME)
+              if wrapped else mpq.Writer(path, version=version, attributes=mpq.ATTRIBUTE_FILETIME))
+    with create as writer:
+        writer.add("voice", b"payload")
+        writer.add("other", b"unchanged")
+    original = path.read_bytes()
+    begin = lambda: (mpq.Update.begin_mpqe(path, code) if wrapped else mpq.Update.begin(path))
+    with begin() as update:
+        assert update.timestamp("voice", 0) is None
+        for invalid in [-1, 1 << 64, 1.5, "bad", None]:
+            with pytest.raises(ValueError):
+                update.timestamp("voice", invalid)
+        for selectors in [dict(locale=1), dict(platform=0), dict(locale=-1, platform=0),
+                          dict(locale=0, platform=65536)]:
+            with pytest.raises(ValueError):
+                update.timestamp("voice", 1, **selectors)
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            update.timestamp("voice", 1, locale=1, platform=0)
+        update.timestamp("voice", 0xffffffffffffffff, locale=0, platform=0)
+        update.replace_data("voice", b"new", locale=0, platform=0)
+        assert path.read_bytes() == original
+        update.commit()
+    archive = mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive(path)
+    with archive:
+        assert archive["voice"].attributes().filetime == 0xffffffffffffffff
+        assert archive["other"].attributes().filetime == 0
+        assert archive["voice"].read() == b"new"
+    committed = path.read_bytes()
+    with begin() as update:
+        update.timestamp("voice", 1)
+    assert path.read_bytes() == committed

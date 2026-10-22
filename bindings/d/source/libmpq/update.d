@@ -109,6 +109,17 @@ final class Update {
                     "libmpq__update_replace_path");
     }
 
+    /** Set an existing Windows FILETIME; shared rows only accept same-value no-ops. */
+    void timestamp(string name, ulong filetime) {
+        ensureOpen();
+        checkStatus(libmpq__update_timestamp(handle, toStringz(name), filetime), "libmpq__update_timestamp");
+    }
+
+    void timestamp(string name, ulong filetime, ushort locale, ushort platform) {
+        ensureOpen();
+        checkStatus(libmpq__update_timestamp_identity(handle, toStringz(name), filetime, locale, platform), "libmpq__update_timestamp_identity");
+    }
+
     /** Stage removal of one named member. */
     void remove(string name) {
         ensureOpen();

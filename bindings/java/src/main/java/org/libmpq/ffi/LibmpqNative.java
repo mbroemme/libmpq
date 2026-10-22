@@ -100,6 +100,8 @@ public final class LibmpqNative {
     private static final MethodHandle UPDATE_RENAME;
     private static final MethodHandle UPDATE_RENAME_IDENTITY;
     private static final MethodHandle UPDATE_CHANGE_IDENTITY;
+    private static final MethodHandle UPDATE_TIMESTAMP;
+    private static final MethodHandle UPDATE_TIMESTAMP_IDENTITY;
     private static final MethodHandle UPDATE_COMMIT;
     private static final MethodHandle UPDATE_ABORT;
     private static final MethodHandle PATCH_BEGIN;
@@ -266,6 +268,11 @@ public final class LibmpqNative {
         UPDATE_CHANGE_IDENTITY = function(linker, lookup, "libmpq__update_change_identity",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                         C_SHORT, C_SHORT, C_SHORT, C_SHORT));
+        UPDATE_TIMESTAMP = function(linker, lookup, "libmpq__update_timestamp",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, C_LONG));
+        UPDATE_TIMESTAMP_IDENTITY = function(linker, lookup, "libmpq__update_timestamp_identity",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                        C_LONG, C_SHORT, C_SHORT));
         UPDATE_COMMIT = function(linker, lookup, "libmpq__update_commit",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
         UPDATE_ABORT = function(linker, lookup, "libmpq__update_abort",
@@ -644,6 +651,13 @@ public final class LibmpqNative {
     public static int updateChangeIdentity(MemorySegment update, MemorySegment name,
             short locale, short platform, short newLocale, short newPlatform) {
         return callInt(UPDATE_CHANGE_IDENTITY, update, name, locale, platform, newLocale, newPlatform);
+    }
+    public static int updateTimestamp(MemorySegment update, MemorySegment name, long filetime) {
+        return callInt(UPDATE_TIMESTAMP, update, name, filetime);
+    }
+    public static int updateTimestampIdentity(MemorySegment update, MemorySegment name,
+            long filetime, short locale, short platform) {
+        return callInt(UPDATE_TIMESTAMP_IDENTITY, update, name, filetime, locale, platform);
     }
     public static int updateCommit(MemorySegment update) { return callInt(UPDATE_COMMIT, update); }
     public static int updateAbort(MemorySegment update) { return callInt(UPDATE_ABORT, update); }
