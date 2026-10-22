@@ -6,6 +6,17 @@ See [README.md](README.md) for requirements, building, and limitations,
 [RELEASING.md](RELEASING.md) for release packaging, validation, and
 publication.
 
+The C API provides separate ordinary filename operations and explicit
+`_identity` operations. Ordinary signatures retain their published argument
+lists; exact operations take locale/platform values directly, including
+neutral `(0,0)`, without fallback. Storage options remain independent and
+must match the selected identity on replacement.
+
+Autotools uses compatible libtool `6:0:2` (ELF SONAME 4), retaining the
+published v0.8.1 function ABI and public layouts while adding new interfaces.
+CMake currently leaves VERSION and SOVERSION unset; its shared-library naming
+is separate from the Autotools version-info.
+
 ## Getting started
 
 ### Native API example
@@ -149,15 +160,17 @@ Mixed entries carry both flags when canonically reconciled. HET/BET-only
 entries expose one unqualified `(0, 0)` identity with BET provenance.
 
 Use `libmpq__file_number_identity()` or
-`libmpq__stream_open_name_identity()` for exact locale/platform selection.
-Selectors are `uint16_t`; no neutral or first-hit fallback is applied. The
-existing `libmpq__file_number()` behavior remains unchanged. Variant end and
+`libmpq__stream_open_name_identity()` for exact selection with explicit
+`uint16_t` locale/platform values; `(0,0)` selects the neutral identity.
+Ordinary functions retain HET-first/classic first-hit resolution. Exact
+selection never falls back.
+Variant end and
 exact misses return `LIBMPQ_ERROR_EXIST`; contradictory duplicate identities,
 inconsistent canonical mappings, reduced extended hashes and HET names beyond
 264 bytes return `LIBMPQ_ERROR_FORMAT`. Exact HET-only access requires complete
 64-bit normalized HET/56-bit BET hashes and a unique mapping. A name found
 only through HET/BET remains unqualified even if its canonical payload has
-classic aliases under other names. All new outputs are cleared on failure.
+classic aliases under other names. Exact lookup outputs are cleared on failure.
 
 Exact named streams resolve on their own archive clone and retain the supplied
 filename for basename-derived encryption and FIX_KEY. Indexed metadata access
@@ -407,8 +420,9 @@ const uint8_t replacement[] = "new contents";
 int32_t status = libmpq__update_begin(&update, "data.mpq");
 
 if (status == 0) {
-    status = libmpq__update_replace_data(update, "data/file.bin", replacement,
-                                        sizeof(replacement) - 1, NULL);
+    status = libmpq__update_replace_data(
+        update, "data/file.bin", replacement, sizeof(replacement) - 1, NULL
+    );
     if (status == 0)
         status = libmpq__update_commit(update);
     else
@@ -448,14 +462,22 @@ including on error. Commit rechecks the destination's filesystem identity
 immediately before atomic replacement, but this is best effort and does not
 lock out a concurrent change between check and publication.
 
+Add operations take no selector: `mpq_file_options_s.locale` and `.platform`
+define the identity to create for an absent filename. Replacement uses the
+ordinary or exact lookup to find an existing identity and keeps its tuple;
+replacement options must match it and cannot redirect selection. Use
+`libmpq__update_change_identity()` to change an existing tuple explicitly.
+
 Exact identity operations use `libmpq__update_replace_data_identity()`,
 `libmpq__update_replace_path_identity()`, `libmpq__update_remove_identity()`
-and `libmpq__update_rename_identity()`. Each resolves the filename, locale and
-platform against the current stage without neutral fallback. For example:
+and `libmpq__update_rename_identity()` with explicit locale/platform values. Each resolves
+the filename, locale and platform against the current stage without neutral
+fallback. For example:
 
 ```c
 status = libmpq__update_replace_data_identity(
-    update, "data/file.bin", 0x0409, 0, replacement, replacement_size, NULL);
+    update, "data/file.bin", 0x0409, 0, replacement, replacement_size, NULL
+);
 ```
 
 In classic-only v1-v4 archives, replacement detaches one selected alias into a
@@ -472,8 +494,9 @@ reject embedded wrappers, unsupported metadata and unrelated trailers. A
 rejected stage leaves earlier valid changes available; the original remains
 unchanged until commit. Existing name-based operations retain their behavior.
 
-`libmpq__update_change_identity(update, name, locale, platform, new_locale,
-new_platform)` changes only the exact staged locale/platform tuple. Identical
+`libmpq__update_change_identity(update, name, old_locale, old_platform,
+new_locale, new_platform)` selects the old tuple exactly and changes only its locale and
+platform to the new tuple, preserving the filename and payload. Identical
 tuples validate the source and succeed without rebuilding; missing sources or
 occupied destinations return EXIST. Classic-only v1-v4 support shared aliases.
 Mixed targets require consistent one-to-one classic/BET mappings with complete

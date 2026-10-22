@@ -495,7 +495,7 @@ neutral fallback:
 auto update = Update.begin(path);
 scope(exit) update.close();
 update.replaceData("voice.bin", 0x409, 1, replacement);
-update.rename("voice.bin", 0x409, 1, "renamed.bin");
+update.rename("voice.bin", "renamed.bin", 0x409, 1);
 update.replacePath("renamed.bin", 0x409, 1, sourcePath);
 update.remove("obsolete.bin", 0, 0);
 update.commit();
@@ -512,7 +512,9 @@ reject embedded archives and unsupported trailers, preserve source raw-chunk
 policy, and do not change existing name-based operations.
 
 `Update.changeIdentity(name, locale, platform, newLocale, newPlatform)` uses
-`ushort` selectors and changes only the selected tuple:
+`ushort` values: `locale` and `platform` select the old identity, while
+`newLocale` and `newPlatform` specify its destination tuple. Only that tuple
+changes; the filename and payload stay unchanged:
 
 ```d
 auto update = Update.begin(path);
@@ -529,3 +531,16 @@ hashes; HET/BET-only entries cannot acquire qualifiers. Unsupported metadata,
 special-member mutations and reconstruction layouts are rejected. Attributes,
 timestamps, raw policy and transaction ownership are unchanged, and rejected
 calls preserve the previous valid stage.
+
+Filename operations retain their default and locale/platform overloads. The
+default overload calls the ordinary C operation; the qualified overload calls
+the explicit identity operation with scalar locale/platform values, including
+`(0,0)`, without fallback. Replacement options remain independent and must
+match the selected tuple. Use the v0.9.0 native
+library with these bindings to provide the explicit identity functions.
+
+Add operations create an absent filename using the locale/platform in
+`FileOptions`, without a selector. Replacement
+selects an existing identity, retaining its tuple; storage options must match
+that tuple and cannot redirect selection. Change the tuple explicitly with
+`changeIdentity()`.

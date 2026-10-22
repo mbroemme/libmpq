@@ -594,10 +594,18 @@ extern LIBMPQ_API int32_t libmpq__archive_sign(
  * Resolve a plaintext MPQ filename to its public file number.
  * The name is hashed using the library's Storm-compatible rules and matched
  * against locale and platform variants in the archive. The returned number
- * is suitable for the size, property, block, and read APIs.
+ * is suitable for the size, property, block, and read APIs. This preserves
+ * HET-first/classic first-hit lookup. Use libmpq__file_number_identity for exact
+ * locale/platform selection with a cleared output on failure.
  */
 extern LIBMPQ_API int32_t
 libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *number);
+
+/* Exact locale/platform selection, with no fallback. */
+extern LIBMPQ_API int32_t libmpq__file_number_identity(
+    mpq_archive_s *archive, const char *filename, uint16_t locale, uint16_t platform,
+    uint32_t *file_number
+);
 
 /*
  * Retrieve one live filename identity by zero-based identity_index.
@@ -610,12 +618,6 @@ libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *
 extern LIBMPQ_API int32_t libmpq__file_identity(
     mpq_archive_s *archive, const char *filename, uint32_t identity_index,
     mpq_file_identity_s *identity
-);
-
-/* Select exactly this locale/platform, with no fallback; clear output on error. */
-extern LIBMPQ_API int32_t libmpq__file_number_identity(
-    mpq_archive_s *archive, const char *filename, uint16_t locale, uint16_t platform,
-    uint32_t *file_number
 );
 
 /*
@@ -736,19 +738,19 @@ extern LIBMPQ_API int32_t
 libmpq__stream_open(mpq_archive_s *archive, uint32_t file_number, mpq_stream_s **stream);
 
 /*
- * Resolve exactly on an owned clone, retaining the name for encryption.
- * No locale fallback occurs. The stream survives parent close; custom callback
- * context must outlive derived streams, as with other streams. Failure clears
- * *stream. Close consumes the returned stream.
+ * Resolve on an owned clone, retaining the name for encryption.
+ * Ordinary name lookup is used. The stream survives
+ * parent close; custom callback context must outlive derived streams, as with other streams.
+ * Failure clears *stream. Close consumes the returned stream.
  */
+extern LIBMPQ_API int32_t
+libmpq__stream_open_name(mpq_archive_s *archive, const char *filename, mpq_stream_s **stream);
+
+/* Exact locale/platform selection, with no fallback. */
 extern LIBMPQ_API int32_t libmpq__stream_open_name_identity(
     mpq_archive_s *archive, const char *filename, uint16_t locale, uint16_t platform,
     mpq_stream_s **stream
 );
-
-/* Open an independent incremental stream after resolving a plaintext filename. */
-extern LIBMPQ_API int32_t
-libmpq__stream_open_name(mpq_archive_s *archive, const char *filename, mpq_stream_s **stream);
 
 /*
  * Read up to size logical bytes and advance the stream position. Reads at EOF
@@ -897,31 +899,8 @@ extern LIBMPQ_API int32_t libmpq__archive_add_path(
 /* Transactional archive updates. */
 
 /*
- * Mutate only the exact identity in the current staged archive, without fallback.
- * Replacement options must retain the selected locale/platform; NULL uses the
- * existing replacement defaults. Classic shared payloads detach on replacement
- * or rename, and remain live until the last alias is removed. Extended targets
- * require unique one-to-one mappings; ambiguous layouts return FORMAT. A failed
- * pre-publication stage preserves the source. Commit/abort consume the handle.
- */
-extern LIBMPQ_API int32_t libmpq__update_replace_data_identity(
-    mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform,
-    const uint8_t *data, libmpq__off_t size, const mpq_file_options_s *options
-);
-extern LIBMPQ_API int32_t libmpq__update_replace_path_identity(
-    mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform,
-    const char *source_path, const mpq_file_options_s *options
-);
-extern LIBMPQ_API int32_t libmpq__update_remove_identity(
-    mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform
-);
-extern LIBMPQ_API int32_t libmpq__update_rename_identity(
-    mpq_update_s *update, const char *old_filename, uint16_t locale, uint16_t platform,
-    const char *new_filename
-);
-
-/*
- * Change exactly one staged filename/locale/platform tuple without fallback.
+ * Select filename/old_locale/old_platform exactly, without fallback, then
+ * change only its tuple to new_locale/new_platform; keep filename and payload.
  * Payloads and shared aliases retain their packed bytes and physical offsets.
  * Occupied destinations return EXIST; ambiguous or unrepresentable changes
  * return FORMAT. Classic-only v1-v4 and consistent one-to-one mixed targets
@@ -931,7 +910,7 @@ extern LIBMPQ_API int32_t libmpq__update_rename_identity(
  * return FORMAT. Rejected operations preserve the preceding valid stage.
  */
 extern LIBMPQ_API int32_t libmpq__update_change_identity(
-    mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform,
+    mpq_update_s *update, const char *filename, uint16_t old_locale, uint16_t old_platform,
     uint16_t new_locale, uint16_t new_platform
 );
 
@@ -963,6 +942,8 @@ extern LIBMPQ_API int32_t libmpq__update_begin_mpqe(
 /*
  * Stage addition of an absent named member. Data/options are borrowed only
  * during this call; duplicate staged names return LIBMPQ_ERROR_EXIST.
+ * Options supply the new member's locale/platform identity and storage.
+ * This creates an absent filename; it does not select an existing identity.
  */
 extern LIBMPQ_API int32_t libmpq__update_add_data(
     mpq_update_s *update, const char *filename, const uint8_t *data, libmpq__off_t size,
@@ -976,10 +957,23 @@ extern LIBMPQ_API int32_t libmpq__update_add_path(
 /*
  * Stage replacement of an existing named member from caller-owned bytes.
  * NULL options select native defaults and preserve locale/platform identity.
+ *
+ * Ordinary replacement retains its existing mutation semantics. The explicit
+ * identity operations select exactly without fallback. Exact shared classic
+ * aliases detach on replacement/rename and survive removal while referenced.
+ * Mixed targets retain one-to-one/full-hash restrictions. Explicit options must
+ * match the selected tuple; they never redirect lookup. Failed stages retain
+ * the preceding valid stage. Selection does not change storage defaults.
  */
 extern LIBMPQ_API int32_t libmpq__update_replace_data(
     mpq_update_s *update, const char *filename, const uint8_t *data, libmpq__off_t size,
     const mpq_file_options_s *options
+);
+
+/* Exact locale/platform selection, with no fallback. */
+extern LIBMPQ_API int32_t libmpq__update_replace_data_identity(
+    mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform,
+    const uint8_t *data, libmpq__off_t size, const mpq_file_options_s *options
 );
 
 /*
@@ -991,12 +985,29 @@ extern LIBMPQ_API int32_t libmpq__update_replace_path(
     const mpq_file_options_s *options
 );
 
+/* Exact locale/platform selection, with no fallback. */
+extern LIBMPQ_API int32_t libmpq__update_replace_path_identity(
+    mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform,
+    const char *source_path, const mpq_file_options_s *options
+);
+
 /* Stage removal of one named member without consuming the update handle. */
 extern LIBMPQ_API int32_t libmpq__update_remove(mpq_update_s *update, const char *filename);
 
-/* Stage a named-member rename without consuming the update handle. */
+/* Exact locale/platform selection, with no fallback. */
+extern LIBMPQ_API int32_t libmpq__update_remove_identity(
+    mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform
+);
+
+/* Rename using ordinary filename resolution; exact rename retains other aliases. */
 extern LIBMPQ_API int32_t
 libmpq__update_rename(mpq_update_s *update, const char *old_filename, const char *new_filename);
+
+/* Exact locale/platform selection, with no fallback. */
+extern LIBMPQ_API int32_t libmpq__update_rename_identity(
+    mpq_update_s *update, const char *old_filename, const char *new_filename, uint16_t locale,
+    uint16_t platform
+);
 
 /*
  * Validate and atomically publish staged changes. This consumes the update

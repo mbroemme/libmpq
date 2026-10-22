@@ -16,6 +16,7 @@ import org.libmpq.ffi.LibmpqNative;
 
 /** Internal memory, encoding, range, and native-error helpers for the binding. */
 final class Support {
+
     /** Prevents construction of this static helper class. */
     private Support() { }
 

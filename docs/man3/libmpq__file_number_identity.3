@@ -25,6 +25,7 @@ int32_t libmpq__file_number_identity(
 .fi
 .SH DESCRIPTION
 Select the exact stored classic locale/platform identity for filename.
+The tuple (0,0) is exact neutral selection, never ordinary/default lookup.
 There is no neutral fallback or global locale state. The existing ordinary
 libmpq__file_number(3) behavior is unchanged. Conflicting or duplicate
 identities return FORMAT rather than choosing the first hit.

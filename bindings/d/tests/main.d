@@ -1202,6 +1202,12 @@ private void testExactIdentities() {
         auto identities = archive.variants("voice");
         assert(identities.length == 2 && identities[0].flags == IDENTITY_CLASSIC);
         assert(archive.variants("absent").length == 0);
+        assert(archive.fileNumber("voice") == archive.fileNumber("voice", 0, 0));
+        auto neutral = archive.openStream("voice", 0, 0);
+        ubyte[7] neutralBytes;
+        assert(neutral.read(neutralBytes[]) == 7);
+        assert(neutralBytes[] == cast(const(ubyte)[])"neutral");
+        neutral.close();
         auto number = archive.fileNumber("voice", 0x409, 1);
         assert(number == identities[1].fileNumber || number == identities[0].fileNumber);
         bool failed;
@@ -1243,7 +1249,7 @@ private void testExactUpdateStages() {
         try { update.remove("voice", locale, cast(ushort)(platform + 1)); }
         catch (MPQException e) { failed = e.code == ERROR_EXIST; }
         assert(failed);
-        update.rename("voice", locale, platform, "renamed");
+        update.rename("voice", "renamed", locale, platform);
         failed = false;
         try { update.remove("voice", locale, platform); }
         catch (MPQException e) { failed = e.code == ERROR_EXIST; }
@@ -1314,7 +1320,7 @@ private void testChangeIdentity() {
         catch (MPQException e) { failed = e.code == ERROR_EXIST; }
         assert(failed);
         update.changeIdentity("voice", 0x409, 0, 0x409, 3);
-        update.rename("voice", 0x409, 3, "renamed");
+        update.rename("voice", "renamed", 0x409, 3);
         update.changeIdentity("renamed", 0x409, 3, 0, 0);
         update.replaceData("renamed", 0, 0, cast(const(ubyte)[])"updated");
         update.remove("other", 0, 0);

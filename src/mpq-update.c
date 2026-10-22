@@ -2839,7 +2839,7 @@ libmpq__update_transaction_remove_identity(
 /* Rename the selected staged identity, leaving other aliases untouched. */
 int32_t
 libmpq__update_transaction_rename_identity(
-    mpq_update_s *update, const char *name, uint16_t locale, uint16_t platform, const char *new_name
+    mpq_update_s *update, const char *name, const char *new_name, uint16_t locale, uint16_t platform
 )
 {
     mpq_update_identity_s selector = { .locale = locale, .platform = platform, .slot = UINT32_MAX };
@@ -2851,12 +2851,12 @@ libmpq__update_transaction_rename_identity(
 /* Change one tuple in the existing identity-preserving reconstruction path. */
 int32_t
 libmpq__update_transaction_change_identity(
-    mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform,
+    mpq_update_s *update, const char *filename, uint16_t old_locale, uint16_t old_platform,
     uint16_t new_locale, uint16_t new_platform
 )
 {
-    mpq_update_identity_s selector = { .locale = locale,
-                                       .platform = platform,
+    mpq_update_identity_s selector = { .locale = old_locale,
+                                       .platform = old_platform,
                                        .slot = UINT32_MAX,
                                        .new_locale = new_locale,
                                        .new_platform = new_platform };

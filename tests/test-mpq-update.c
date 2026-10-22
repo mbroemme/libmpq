@@ -4306,7 +4306,7 @@ test_exact_cross_names(uint32_t version, uint32_t raw_size, int mixed)
         );
         TEST_CHECK(same_file(libmpq__update_path(update), staged));
         TEST_CHECK(
-            libmpq__update_rename_identity(update, exact_alias_names[2], 0, 0, "renamed/new.bin") ==
+            libmpq__update_rename_identity(update, exact_alias_names[2], "renamed/new.bin", 0, 0) ==
             LIBMPQ_ERROR_FORMAT
         );
         TEST_CHECK(same_file(libmpq__update_path(update), staged));
@@ -4336,7 +4336,7 @@ test_exact_cross_names(uint32_t version, uint32_t raw_size, int mixed)
             ) == 0
         );
         TEST_CHECK(
-            libmpq__update_rename_identity(update, exact_alias_names[2], 0, 0, "renamed/new.bin") ==
+            libmpq__update_rename_identity(update, exact_alias_names[2], "renamed/new.bin", 0, 0) ==
             0
         );
         TEST_CHECK(test_change_identity_stage(update, "renamed/new.bin", 0, 0, 7, 2) == 0);
@@ -4360,13 +4360,13 @@ test_exact_cross_names(uint32_t version, uint32_t raw_size, int mixed)
         );
         TEST_CHECK(copy_file(libmpq__update_path(update), staged) == 0);
         TEST_CHECK(
-            libmpq__update_rename_identity(update, "renamed/new.bin", 0, 0, "other") ==
+            libmpq__update_rename_identity(update, "renamed/new.bin", "other", 0, 0) ==
             LIBMPQ_ERROR_EXIST
         );
         TEST_CHECK(same_file(libmpq__update_path(update), staged));
         TEST_CHECK(libmpq__update_remove_identity(update, exact_alias_names[1], 0x409, 1) == 0);
         TEST_CHECK(
-            libmpq__update_rename_identity(update, "renamed/new.bin", 0, 0, "again/new.bin") == 0
+            libmpq__update_rename_identity(update, "renamed/new.bin", "again/new.bin", 0, 0) == 0
         );
         TEST_CHECK(
             test_exact_cross_check(libmpq__update_path(update), &original, retained, 0) == 0
@@ -4510,7 +4510,7 @@ test_exact_distinct(uint32_t version)
         ) == 0
     );
     TEST_CHECK(libmpq__update_remove_identity(update, "voice", 0x409, 0) == LIBMPQ_ERROR_EXIST);
-    TEST_CHECK(libmpq__update_rename_identity(update, "voice", 0x409, 1, "renamed") == 0);
+    TEST_CHECK(libmpq__update_rename_identity(update, "voice", "renamed", 0x409, 1) == 0);
     TEST_CHECK(libmpq__update_remove_identity(update, "voice", 0x409, 1) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(
         libmpq__update_replace_data_identity(update, "renamed", 0x409, 1, NULL, 0, NULL) == 0
@@ -4646,6 +4646,27 @@ test_exact_updates(uint32_t version, uint32_t chunk, unsigned layout, uint8_t si
         (encrypted ? libmpq__archive_open_mpqe(&archive, path, 0, auth_code, sizeof(auth_code) - 1)
                    : libmpq__archive_open(&archive, path, 0)) == 0
     );
+    if (layout != 2) {
+        mpq_stream_s *selected = (mpq_stream_s *)archive;
+        uint32_t default_number;
+        uint32_t exact_number;
+        TEST_CHECK(libmpq__file_number(archive, "other", &default_number) == 0);
+        TEST_CHECK(libmpq__file_number_identity(archive, "other", 0x409, 1, &exact_number) == 0);
+        TEST_CHECK(default_number == exact_number);
+        exact_number = UINT32_MAX;
+        TEST_CHECK(
+            libmpq__file_number_identity(archive, "other", 0, 0, &exact_number) ==
+            LIBMPQ_ERROR_EXIST
+        );
+        TEST_CHECK(exact_number == 0);
+        TEST_CHECK(
+            libmpq__stream_open_name_identity(archive, "other", 0, 0, &selected) ==
+            LIBMPQ_ERROR_EXIST
+        );
+        TEST_CHECK(selected == NULL);
+        TEST_CHECK(libmpq__stream_open_name(archive, "other", &selected) == 0);
+        TEST_CHECK(libmpq__stream_close(selected) == 0);
+    }
     TEST_CHECK(libmpq__file_number(archive, "chain-32", &number) == 0);
     const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
     original_offset = entry->offset;
@@ -4664,7 +4685,7 @@ test_exact_updates(uint32_t version, uint32_t chunk, unsigned layout, uint8_t si
         LIBMPQ_ERROR_EXIST
     );
     TEST_CHECK(
-        libmpq__update_rename_identity(update, "chain-32", locale, platform, "CHAIN-32") == 0
+        libmpq__update_rename_identity(update, "chain-32", "CHAIN-32", locale, platform) == 0
     );
     if (layout == 0) {
         TEST_CHECK(test_change_identity_stage(update, "chain-32", 0x409, 1, 0x409, 9) == 0);
@@ -4692,7 +4713,7 @@ test_exact_updates(uint32_t version, uint32_t chunk, unsigned layout, uint8_t si
             LIBMPQ_ERROR_FORMAT
         );
         TEST_CHECK(
-            libmpq__update_rename_identity(update, "chain-32", locale, platform, "renamed") ==
+            libmpq__update_rename_identity(update, "chain-32", "renamed", locale, platform) ==
             LIBMPQ_ERROR_FORMAT
         );
         TEST_CHECK(libmpq__update_abort(update) == 0 && same_file(path, snapshot));
@@ -4737,7 +4758,7 @@ test_exact_updates(uint32_t version, uint32_t chunk, unsigned layout, uint8_t si
             memcmp(packed, retained, packed_size) == 0
         );
         TEST_CHECK(libmpq__archive_close(archive) == 0);
-        TEST_CHECK(libmpq__update_rename_identity(update, "chain-32", 0x411, 2, "renamed") == 0);
+        TEST_CHECK(libmpq__update_rename_identity(update, "chain-32", "renamed", 0x411, 2) == 0);
         TEST_CHECK(libmpq__update_remove_identity(update, "chain-32", 0, 0) == 0);
     }
     options.locale = locale;
@@ -4748,12 +4769,12 @@ test_exact_updates(uint32_t version, uint32_t chunk, unsigned layout, uint8_t si
         ) == 0
     );
     TEST_CHECK(
-        libmpq__update_rename_identity(update, "chain-32", locale, platform, "other") ==
+        libmpq__update_rename_identity(update, "chain-32", "other", locale, platform) ==
         LIBMPQ_ERROR_EXIST
     );
     if (layout != 0)
         TEST_CHECK(
-            libmpq__update_rename_identity(update, "chain-32", locale, platform, "renamed") == 0
+            libmpq__update_rename_identity(update, "chain-32", "renamed", locale, platform) == 0
         );
     TEST_CHECK(libmpq__update_commit(update) == 0);
     TEST_CHECK(

@@ -22,16 +22,17 @@ libmpq__update_change_identity \- change one exact staged locale/platform identi
 .BI "int32_t libmpq__update_change_identity("
 .BI "        mpq_update_s *" "update,"
 .BI "        const char *" "filename,"
-.BI "        uint16_t " "locale,"
-.BI "        uint16_t " "platform,"
+.BI "        uint16_t " "old_locale,"
+.BI "        uint16_t " "old_platform,"
 .BI "        uint16_t " "new_locale,"
 .BI "        uint16_t " "new_platform"
 .BI ");"
 .fi
 .SH DESCRIPTION
-Selects exactly the stored filename, locale and platform in the current
-successful transaction stage and changes its locale/platform tuple. There is
-no implicit neutral fallback or global locale state. An identical tuple
+Selects filename with old_locale and old_platform exactly in the current
+successful transaction stage, then changes only its tuple to new_locale and
+new_platform. The filename and payload remain unchanged. There is
+no implicit neutral fallback or global locale state. An identical old/new tuple
 validates the exact source and succeeds without changing the working file.
 .PP
 Classic-only v1-v4 archives support shared-block aliases and unrelated
@@ -56,7 +57,10 @@ Special-member qualifier mutations are rejected, but valid identical-tuple
 requests remain no-ops. Existing reconstruction limits, including embedded
 wrappers and unrelated trailers, apply to actual changes.
 .PP
-The operation borrows filename only for this synchronous call. A rejected
+No selector or storage options are accepted: the old/new arguments identify
+the source and destination tuples. Add operations instead create an identity
+from mpq_file_options_s; replacement selects an existing identity and retains
+its tuple. The operation borrows filename only for this synchronous call. A rejected
 operation preserves the previous valid transaction stage and original source.
 Commit publishes only finalized output. Modifications follow the existing
 signature-invalidation policy. Transactions containing only no-op requests
@@ -72,10 +76,10 @@ failures use the existing LIBMPQ_ERROR_* values. No rejected operation publishes
 partially rebuilt output.
 .SH SEE ALSO
 .BR libmpq__file_identity (3),
-.BR libmpq__file_number_identity (3),
+.BR libmpq__file_number (3),
 .BR libmpq__update_begin (3),
-.BR libmpq__update_replace_data_identity (3),
-.BR libmpq__update_rename_identity (3),
+.BR libmpq__update_replace_data (3),
+.BR libmpq__update_rename (3),
 .BR libmpq__update_commit (3),
 .BR libmpq__update_abort (3)
 .SH AUTHOR

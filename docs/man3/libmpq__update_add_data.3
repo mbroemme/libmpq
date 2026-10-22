@@ -34,6 +34,12 @@ after rebuild validation, further mutation and commit are rejected; abort remain
 safe and attempts temporary-file cleanup.
 V3/v4 rebuilds require sufficient lookup identities and representable metadata;
 see libmpq__update_begin(3) for incomplete-name restrictions.
+.PP
+The locale and platform fields in mpq_file_options_s define the new member's
+identity, subject to the existing filename collision rules. This operation
+accepts no selector and does not select an existing identity. Replacement
+instead uses ordinary or exact lookup to find an existing identity and retains
+that tuple; use libmpq__update_change_identity(3) to change a stored tuple.
 .SH RETURN VALUE
 Returns zero on success or a negative libmpq error.
 .SH ERRORS

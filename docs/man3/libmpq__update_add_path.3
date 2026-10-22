@@ -29,6 +29,12 @@ The source is not retained, modified or removed. Storage options, duplicate
 checks, rollback and v3/v4 filename requirements are identical to
 libmpq__update_add_data(3). Remove-then-add is supported; replacement is not
 an upsert operation.
+.PP
+The locale and platform fields in mpq_file_options_s define the new member's
+identity, subject to the existing filename collision rules. This operation
+accepts no selector and does not select an existing identity. Replacement
+instead uses ordinary or exact lookup to find an existing identity and retains
+that tuple; use libmpq__update_change_identity(3) to change a stored tuple.
 .SH RETURN VALUE
 Returns zero on success or a negative libmpq error. A duplicate returns
 LIBMPQ_ERROR_EXIST; a source that cannot be opened returns LIBMPQ_ERROR_OPEN.

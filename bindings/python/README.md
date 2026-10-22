@@ -394,8 +394,8 @@ raise `ValueError` or `TypeError` before native conversion.
 identities = archive.variants("dir/file.bin")
 for identity in identities:
     print(identity.file_number, identity.flags, identity.locale, identity.platform)
-number = archive.file_number_identity("dir/file.bin", locale=0x409, platform=1)
-with archive.open_stream_identity("dir/file.bin", locale=0x409, platform=1) as stream:
+number = archive.file_number("dir/file.bin", locale=0x409, platform=1)
+with archive.open_stream("dir/file.bin", locale=0x409, platform=1) as stream:
     content = stream.read()
 ```
 
@@ -414,10 +414,10 @@ stage, without neutral fallback:
 
 ```python
 with mpq.Update.begin(path) as update:
-    update.replace_data_identity("voice.bin", 0x409, 1, b"replacement")
-    update.rename_identity("voice.bin", 0x409, 1, "renamed.bin")
-    update.replace_path_identity("renamed.bin", 0x409, 1, source_path)
-    update.remove_identity("obsolete.bin", 0, 0)
+    update.replace_data("voice.bin", b"replacement", locale=0x409, platform=1)
+    update.rename("voice.bin", "renamed.bin", locale=0x409, platform=1)
+    update.replace_path("renamed.bin", source_path, locale=0x409, platform=1)
+    update.remove("obsolete.bin", locale=0, platform=0)
     update.commit()
 ```
 
@@ -432,7 +432,9 @@ reject embedded archives and unsupported trailers, preserve source raw-chunk
 policy, and do not change existing name-based operations.
 
 Use `Update.change_identity(name, locale, platform, new_locale, new_platform)`
-to change only a stored tuple. All four selectors must be in `0..65535`:
+to change only a stored tuple. `locale` and `platform` select the old
+identity; `new_locale` and `new_platform` specify its destination tuple. The
+filename and payload stay unchanged. All four values must be in `0..65535`:
 
 ```python
 with mpq.Update.begin(path) as update:
@@ -448,3 +450,17 @@ hashes; HET/BET-only entries cannot acquire qualifiers. Unsupported metadata,
 special-member mutations and reconstruction layouts are rejected. Attributes,
 timestamps, raw policy and transaction ownership are unchanged, and rejected
 calls preserve the previous valid stage.
+
+Filename selection uses keyword-only `locale` and `platform` arguments on
+`file_number`, `open_stream`, `replace_data`, `replace_path`, `remove` and
+`rename`. Omit both (or pass both as None) for the existing default policy;
+supply both for an exact match, including `(0, 0)`. Partial selectors and
+out-of-range values raise ValueError; selectors cannot accompany a numeric
+stream member. Indexing and containment retain default selection. The binding dispatches default calls to ordinary C operations and qualified
+calls to explicit identity operations with scalar locale/platform arguments.
+
+Add operations create an absent filename using the locale/platform in
+`FileCreateOptions`, without a selector. Replacement
+selects an existing identity, retaining its tuple; storage options must match
+that tuple and cannot redirect selection. Change the tuple explicitly with
+`change_identity()`.

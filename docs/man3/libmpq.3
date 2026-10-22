@@ -63,6 +63,14 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        const char *" "source_name"
 .BI ");"
 .sp
+.BI "int32_t libmpq__archive_open_patch("
+.BI "        mpq_archive_s **" "archive,"
+.BI "        mpq_archive_s *" "base,"
+.BI "        mpq_archive_s *const *" "patch_archives,"
+.BI "        const char *const *" "patch_prefixes,"
+.BI "        size_t " "patch_count"
+.BI ");"
+.sp
 .BI "int32_t libmpq__archive_clone("
 .BI "        mpq_archive_s **" "clone,"
 .BI "        mpq_archive_s *" "source"
@@ -82,6 +90,16 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        const uint8_t *" "auth_code,"
 .BI "        size_t " "auth_code_size,"
 .BI "        const mpq_archive_create_options_s *" "options"
+.BI ");"
+.sp
+.BI "int32_t libmpq__archive_raw_chunk_size_get("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        uint32_t *" "raw_chunk_size"
+.BI ");"
+.sp
+.BI "int32_t libmpq__archive_raw_chunk_size_set("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        uint32_t " "raw_chunk_size"
 .BI ");"
 .sp
 .BI "int32_t libmpq__archive_add_data("
@@ -134,6 +152,10 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        mpq_stream_s **" "stream"
 .BI ");"
 .sp
+int32_t libmpq__stream_open_name_identity(
+        mpq_archive_s *archive, const char *filename,
+        uint16_t locale, uint16_t platform, mpq_stream_s **stream);
+.sp
 .BI "int32_t libmpq__stream_read("
 .BI "        mpq_stream_s *" "stream,"
 .BI "        uint8_t *" "buffer,"
@@ -168,11 +190,27 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        size_t " "auth_code_size"
 .BI ");"
 .sp
+.BI "int32_t libmpq__update_change_identity("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename,"
+.BI "        uint16_t " "old_locale,"
+.BI "        uint16_t " "old_platform,"
+.BI "        uint16_t " "new_locale,"
+.BI "        uint16_t " "new_platform"
+.BI ");"
+.sp
 .BI "int32_t libmpq__update_commit(mpq_update_s *" "update" ");"
 .sp
 .BI "int32_t libmpq__update_remove("
 .BI "        mpq_update_s *" "update,"
 .BI "        const char *" "filename"
+.BI ");"
+.sp
+.BI "int32_t libmpq__update_remove_identity("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename,"
+.BI "        uint16_t " "locale,"
+.BI "        uint16_t " "platform"
 .BI ");"
 .sp
 .BI "int32_t libmpq__update_rename("
@@ -181,9 +219,27 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        const char *" "new_filename"
 .BI ");"
 .sp
+.BI "int32_t libmpq__update_rename_identity("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "old_filename,"
+.BI "        const char *" "new_filename,"
+.BI "        uint16_t " "locale,"
+.BI "        uint16_t " "platform"
+.BI ");"
+.sp
 .BI "int32_t libmpq__update_replace_data("
 .BI "        mpq_update_s *" "update,"
 .BI "        const char *" "filename,"
+.BI "        const uint8_t *" "data,"
+.BI "        libmpq__off_t " "size,"
+.BI "        const mpq_file_options_s *" "options"
+.BI ");"
+.sp
+.BI "int32_t libmpq__update_replace_data_identity("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename,"
+.BI "        uint16_t " "locale,"
+.BI "        uint16_t " "platform,"
 .BI "        const uint8_t *" "data,"
 .BI "        libmpq__off_t " "size,"
 .BI "        const mpq_file_options_s *" "options"
@@ -204,7 +260,31 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        const mpq_file_options_s *" "options"
 .BI ");"
 .sp
+.BI "int32_t libmpq__update_replace_path_identity("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename,"
+.BI "        uint16_t " "locale,"
+.BI "        uint16_t " "platform,"
+.BI "        const char *" "source_path,"
+.BI "        const mpq_file_options_s *" "options"
+.BI ");"
+.sp
 .BI "int32_t libmpq__patch_abort(mpq_patch_s *" "patch" ");"
+.sp
+.BI "int32_t libmpq__patch_add_data("
+.BI "        mpq_patch_s *" "patch,"
+.BI "        const char *" "filename,"
+.BI "        const uint8_t *" "data,"
+.BI "        libmpq__off_t " "size,"
+.BI "        const mpq_file_options_s *" "options"
+.BI ");"
+.sp
+.BI "int32_t libmpq__patch_add_path("
+.BI "        mpq_patch_s *" "patch,"
+.BI "        const char *" "filename,"
+.BI "        const char *" "source_path,"
+.BI "        const mpq_file_options_s *" "options"
+.BI ");"
 .sp
 .BI "int32_t libmpq__patch_begin("
 .BI "        mpq_patch_s **" "patch,"
@@ -235,6 +315,16 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        mpq_archive_s *" "archive,"
 .BI "        uint32_t " "file_number,"
 .BI "        libmpq__off_t *" "size"
+.BI ");"
+.sp
+.BI "int32_t libmpq__patch_raw_chunk_size_get("
+.BI "        mpq_patch_s *" "patch,"
+.BI "        uint32_t *" "raw_chunk_size"
+.BI ");"
+.sp
+.BI "int32_t libmpq__patch_raw_chunk_size_set("
+.BI "        mpq_patch_s *" "patch,"
+.BI "        uint32_t " "raw_chunk_size"
 .BI ");"
 .sp
 .BI "int32_t libmpq__patch_remove("
@@ -339,11 +429,22 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        uint32_t *" "hash3"
 .BI ");"
 .sp
+.BI "int32_t libmpq__file_identity("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        const char *" "filename,"
+.BI "        uint32_t " "identity_index,"
+.BI "        mpq_file_identity_s *" "identity"
+.BI ");"
+.sp
 .BI "int32_t libmpq__file_number("
 .BI "        mpq_archive_s *" "mpq_archive,"
 .BI "        const char *" "filename,"
 .BI "        uint32_t *" "number"
 .BI ");"
+.sp
+int32_t libmpq__file_number_identity(
+        mpq_archive_s *archive, const char *filename,
+        uint16_t locale, uint16_t platform, uint32_t *file_number);
 .sp
 .BI "int32_t libmpq__file_number_from_hash("
 .BI "        mpq_archive_s *" "mpq_archive,"
@@ -444,26 +545,42 @@ Patch-file members instead expose their decoded, unapplied PTCH bodies through
 \fBlibmpq__patch_payload_size\fP(3) and
 \fBlibmpq__patch_payload_read\fP(3).
 .SS "Archive Creation and Writers"
-Create MPQ v1/v2/v3 archives with \fBlibmpq__archive_create\fP(3).
+Create MPQ v1/v2/v3/v4 archives with \fBlibmpq__archive_create\fP(3).
 Add complete buffers or paths with the archive-add calls, or use the
 writer begin/write/finish lifecycle for streamed members. Writer finish
 consumes the member writer; archive close finalizes and consumes the
-archive handle. Encrypted random-access writing is not supported.
+archive handle. V4 writers default to raw chunks of 0x4000 bytes; the archive
+and patch raw-size setters configure the policy before writing or signing.
+Their getters report configured or loaded values, with zero for older formats.
+Encrypted random-access writing is not supported.
 .SS "Transactional Updates"
 \fBlibmpq__update_begin\fP(3) stages modifications to ordinary or
 embedded MPQs in a distinct handle. Authenticated MPQE updates use
 \fBlibmpq__update_begin_mpqe\fP(3). Add, replace, remove, and rename affect
 only the working copy until commit atomically publishes it; abort
 discards it. Both commit and abort consume the update handle.
-Addition requires an absent staged filename; replacement remains existing-only.
-V3/v4 rebuilds require sufficient lookup identities and supported metadata; unsupported
-inputs fail rather than silently omit files. Modified signatures are removed.
+Addition requires an absent staged filename; its file options define the
+created identity. Ordinary replacement preserves its existing lookup and mutation behavior.
+The explicit identity operations select a locale/platform tuple without
+fallback, including (0,0), and preserve unrelated aliases. Replacement
+retains the selected tuple; explicit storage options must match it. libmpq__update_change_identity(3) selects the old
+locale/platform tuple explicitly and changes it to the new tuple without
+changing the filename or payload.
+V3/v4 rebuilds require sufficient lookup identities and supported metadata;
+unsupported inputs fail rather than silently omit files. Modified signatures
+are removed.
 .SS "Patch Archives"
-The patch creation API stages replacement and deletion entries without
-changing the base archive. Finish publishes a new patch artifact; abort
-discards it, and both consume the patch handle. Ordinary and
-MPQE-wrapped patch artifacts have separate begin calls. No public
-patch-view composition API is provided.
+The patch creation API stages ordinary additions, replacements and deletion
+entries without changing the base archive. Finish publishes a new patch
+artifact; abort discards it, and both consume the patch handle. Ordinary and
+MPQE-wrapped patch artifacts have separate begin calls.
+.PP
+libmpq__archive_open_patch(3) synchronously composes already-open base and
+ordered patch archives into an independently owned read-only archive. Zero
+layers produce an independent snapshot; explicit addition-only overlays are
+supported. Inputs are borrowed, and the result has the usual archive, clone
+and stream lifetimes. Physical input signatures and raw checksums are not
+inherited as trust in the logical result.
 .SS Signatures
 \fBlibmpq__archive_signatures\fP(3) detects stored signatures;
 \fBlibmpq__archive_verify\fP(3) verifies one type using a caller-supplied
@@ -473,16 +590,20 @@ performed at finalization. No default or product-specific keys are
 built in.
 .SS MPQE
 MPQE operations require explicit caller-supplied authentication material.
-Internal weak signatures work in MPQE-wrapped MPQs, but no external
-strong-signature transport is defined. Creation and transactional updates
-use private plaintext staging files; cleanup after abnormal termination
-is best effort.
+Internal weak signatures work in MPQE-wrapped MPQs, subject to the existing
+rejection for v4 output with nonzero raw-chunk size. No external strong-signature
+transport is defined. Creation and transactional updates use private plaintext
+staging files; cleanup after abnormal termination is best effort.
 .SS "Metadata and Integrity"
 Archive, file, and block queries expose sizes, flags, and version-100
 \fB(attributes)\fP rows. Complete lossless file reads automatically
 check available CRC32/MD5 and usable sector Adler-32 data.
 \fBlibmpq__file_verify\fP(3) performs selected explicit comparisons;
 lossy ADPCM may legitimately differ from source-byte checksums.
+libmpq__file_identity(3) enumerates filename identities and their CLASSIC/BET
+provenance without merging locale/platform aliases. Explicit identity
+file-number lookup and named streams select exactly, including neutral (0,0).
+Ordinary operations retain HET-first/classic first-hit resolution.
 .SH SEE ALSO
 .SS "Utility and Compression Policy"
 .BR libmpq__version (3),
@@ -493,11 +614,13 @@ lossy ADPCM may legitimately differ from source-byte checksums.
 .BR libmpq__archive_open_io (3),
 .BR libmpq__archive_open_mpqe (3),
 .BR libmpq__archive_open_mpqe_io (3),
+.BR libmpq__archive_open_patch (3),
 .BR libmpq__archive_clone (3),
 .BR libmpq__archive_close (3)
 .SS "Archive Creation and Writers"
 .BR libmpq__archive_create (3),
 .BR libmpq__archive_create_mpqe (3),
+.BR libmpq__archive_raw_chunk_size_set (3),
 .BR libmpq__archive_add_data (3),
 .BR libmpq__archive_add_path (3),
 .BR libmpq__writer_begin (3),
@@ -508,6 +631,7 @@ lossy ADPCM may legitimately differ from source-byte checksums.
 .BR libmpq__stream_close (3),
 .BR libmpq__stream_open (3),
 .BR libmpq__stream_open_name (3),
+.BR libmpq__stream_open_name_identity (3),
 .BR libmpq__stream_read (3),
 .BR libmpq__stream_seek (3),
 .BR libmpq__stream_size (3),
@@ -516,20 +640,29 @@ lossy ADPCM may legitimately differ from source-byte checksums.
 .BR libmpq__update_abort (3),
 .BR libmpq__update_begin (3),
 .BR libmpq__update_begin_mpqe (3),
+.BR libmpq__update_change_identity (3),
 .BR libmpq__update_commit (3),
 .BR libmpq__update_remove (3),
+.BR libmpq__update_remove_identity (3),
 .BR libmpq__update_rename (3),
+.BR libmpq__update_rename_identity (3),
 .BR libmpq__update_replace_data (3),
+.BR libmpq__update_replace_data_identity (3),
 .BR libmpq__update_add_data (3),
 .BR libmpq__update_add_path (3),
-.BR libmpq__update_replace_path (3)
+.BR libmpq__update_replace_path (3),
+.BR libmpq__update_replace_path_identity (3)
 .SS "Patch Archives"
 .BR libmpq__patch_abort (3),
+.BR libmpq__patch_add_data (3),
+.BR libmpq__patch_add_path (3),
 .BR libmpq__patch_begin (3),
 .BR libmpq__patch_begin_mpqe (3),
 .BR libmpq__patch_finish (3),
 .BR libmpq__patch_payload_read (3),
 .BR libmpq__patch_payload_size (3),
+.BR libmpq__patch_raw_chunk_size_get (3),
+.BR libmpq__patch_raw_chunk_size_set (3),
 .BR libmpq__patch_remove (3),
 .BR libmpq__patch_replace_data (3),
 .BR libmpq__patch_replace_path (3),
@@ -542,6 +675,7 @@ lossy ADPCM may legitimately differ from source-byte checksums.
 .BR libmpq__archive_attributes (3),
 .BR libmpq__archive_files (3),
 .BR libmpq__archive_offset (3),
+.BR libmpq__archive_raw_chunk_size_get (3),
 .BR libmpq__archive_size_packed (3),
 .BR libmpq__archive_size_unpacked (3),
 .BR libmpq__archive_version (3)
@@ -550,7 +684,9 @@ lossy ADPCM may legitimately differ from source-byte checksums.
 .BR libmpq__file_blocks (3),
 .BR libmpq__file_flags (3),
 .BR libmpq__file_hash (3),
+.BR libmpq__file_identity (3),
 .BR libmpq__file_number (3),
+.BR libmpq__file_number_identity (3),
 .BR libmpq__file_number_from_hash (3),
 .BR libmpq__file_offset (3),
 .BR libmpq__file_read (3),

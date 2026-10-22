@@ -60,10 +60,10 @@ int32_t libmpq__update_transaction_remove_identity(
     mpq_update_s *update, const char *name, uint16_t locale, uint16_t platform
 );
 int32_t libmpq__update_transaction_rename_identity(
-    mpq_update_s *update, const char *name, uint16_t locale, uint16_t platform, const char *new_name
+    mpq_update_s *update, const char *name, const char *new_name, uint16_t locale, uint16_t platform
 );
 int32_t libmpq__update_transaction_change_identity(
-    mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform,
+    mpq_update_s *update, const char *filename, uint16_t old_locale, uint16_t old_platform,
     uint16_t new_locale, uint16_t new_platform
 );
 const mpq_update_ops_s *libmpq__update_ops(const mpq_update_s *update);

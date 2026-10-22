@@ -1407,13 +1407,25 @@ def test_exact_identities(tmp_path, version, wrapped):
     with pytest.raises(AttributeError):
         identities[0].locale = 7
     assert archive.variants("absent") == ()
-    assert archive.file_number_identity("dir/voice.bin", 0x409, 1) in {i.file_number for i in identities}
+    assert archive.file_number("dir/voice.bin", locale=0x409, platform=1) in {i.file_number for i in identities}
     with pytest.raises(mpq.LibmpqNotFoundError):
-        archive.file_number_identity("dir/voice.bin", 0x409, 0)
+        archive.file_number("dir/voice.bin", locale=0x409, platform=0)
     for invalid in (-1, 65536, 1.5):
         with pytest.raises((ValueError, TypeError)):
-            archive.open_stream_identity("dir/voice.bin", invalid, 0)
-    stream = archive.open_stream_identity("dir/voice.bin", 0x409, 1)
+            archive.open_stream("dir/voice.bin", locale=invalid, platform=0)
+    assert archive.file_number("dir/voice.bin") == archive["dir/voice.bin"].number
+    with archive.open_stream("dir/voice.bin", locale=0, platform=0) as neutral:
+        assert neutral.read() == b"neutral"
+    for keyword in ({"locale": 0}, {"platform": 0}, {"locale": None, "platform": 0}):
+        with pytest.raises(ValueError):
+            archive.file_number("dir/voice.bin", **keyword)
+        with pytest.raises(ValueError):
+            archive.open_stream("dir/voice.bin", **keyword)
+    with pytest.raises(ValueError):
+        archive.open_stream(identities[0].file_number, locale=0, platform=0)
+    with pytest.raises(TypeError):
+        archive.file_number("dir/voice.bin", locale="0", platform=0)
+    stream = archive.open_stream("dir/voice.bin", locale=0x409, platform=1)
     archive.close()
     assert stream.read() == b"localized"
     stream.close()
@@ -1434,10 +1446,10 @@ def test_exact_extended_identity_sources(tmp_path, version, wrapped):
     archive = mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive.open_io(io.BytesIO(wire), len(wire))
     identities = archive.variants("nested/content.bin")
     assert len(identities) == 1 and identities[0].flags == mpq.IDENTITY_CLASSIC | mpq.IDENTITY_BET
-    assert archive.file_number_identity("nested/content.bin") == identities[0].file_number
+    assert archive.file_number("nested/content.bin", locale=0, platform=0) == identities[0].file_number
     with pytest.raises(mpq.LibmpqNotFoundError):
-        archive.file_number_identity("nested/content.bin", 1, 0)
-    stream = archive.open_stream_identity("nested/content.bin")
+        archive.file_number("nested/content.bin", locale=1, platform=0)
+    stream = archive.open_stream("nested/content.bin", locale=0, platform=0)
     archive.close()
     assert stream.read() == payload
     stream.close()
@@ -1464,30 +1476,30 @@ def test_exact_update_stages(tmp_path, version, wrapped):
     original = path.read_bytes()
     begin = lambda: (mpq.Update.begin_mpqe(path, code) if wrapped else mpq.Update.begin(path))
     with begin() as update:
-        update.replace_data_identity("voice", locale, platform, b"bytes")
+        update.replace_data("voice", b"bytes", locale=locale, platform=platform)
         for invalid in (-1, 65536, 1.5):
             with pytest.raises((ValueError, TypeError)):
-                update.remove_identity("voice", invalid, 0)
+                update.remove("voice", locale=invalid, platform=0)
         with pytest.raises(mpq.LibmpqNotFoundError):
-            update.remove_identity("voice", locale, platform + 1)
-        update.rename_identity("voice", locale, platform, "renamed")
+            update.remove("voice", locale=locale, platform=platform + 1)
+        update.rename("voice", "renamed", locale=locale, platform=platform)
         with pytest.raises(mpq.LibmpqNotFoundError):
-            update.replace_data_identity("voice", locale, platform, b"stale")
-        update.replace_path_identity("renamed", locale, platform, source)
+            update.replace_data("voice", b"stale", locale=locale, platform=platform)
+        update.replace_path("renamed", source, locale=locale, platform=platform)
         assert path.read_bytes() == original
         update.commit()
     with (mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive(path)) as archive:
-        with archive.open_stream_identity("renamed", locale, platform) as stream:
+        with archive.open_stream("renamed", locale=locale, platform=platform) as stream:
             assert stream.read() == b"path bytes"
         if classic:
-            with archive.open_stream_identity("voice", 0, 0) as stream:
+            with archive.open_stream("voice", locale=0, platform=0) as stream:
                 assert stream.read() == b"neutral"
     committed = path.read_bytes()
     with begin() as update:
-        update.remove_identity("renamed", locale, platform)
+        update.remove("renamed", locale=locale, platform=platform)
     assert path.read_bytes() == committed
     with begin() as update:
-        update.remove_identity("renamed", locale, platform)
+        update.remove("renamed", locale=locale, platform=platform)
         update.commit()
     with (mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive(path)) as archive:
         assert archive.variants("renamed") == ()
@@ -1513,6 +1525,13 @@ def test_change_identity(tmp_path, version, wrapped):
     begin = lambda: (mpq.Update.begin_mpqe(path, code) if wrapped else mpq.Update.begin(path))
     original = path.read_bytes()
     with begin() as update:
+        for operation in (
+                lambda: update.remove("voice", locale=0),
+                lambda: update.rename("voice", "other", platform=0),
+                lambda: update.replace_data("voice", b"bad", locale=65536, platform=0),
+                lambda: update.replace_path("voice", path, locale=0)):
+            with pytest.raises(ValueError):
+                operation()
         update.change_identity("voice", 0, 0, 0, 0)
         update.commit()
     assert path.read_bytes() == original
@@ -1532,20 +1551,20 @@ def test_change_identity(tmp_path, version, wrapped):
         with pytest.raises(mpq.LibmpqNotFoundError):
             update.change_identity("voice", 0, 0, 0, 0)
         update.change_identity("voice", 0x409, 0, 0x409, 3)
-        update.rename_identity("voice", 0x409, 3, "renamed")
+        update.rename("voice", "renamed", locale=0x409, platform=3)
         update.change_identity("renamed", 0x409, 3, 0, 0)
-        update.replace_data_identity("renamed", 0, 0, b"updated")
-        update.remove_identity("other", 0, 0)
+        update.replace_data("renamed", b"updated", locale=0, platform=0)
+        update.remove("other", locale=0, platform=0)
         update.change_identity("renamed", 0, 0, 65535, 65535)
         assert path.read_bytes() == original
         update.commit()
     with pytest.raises(mpq.LibmpqStateError):
         update.change_identity("renamed", 65535, 65535, 0, 0)
     with (mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive(path)) as archive:
-        with archive.open_stream_identity("renamed", 65535, 65535) as stream:
+        with archive.open_stream("renamed", locale=65535, platform=65535) as stream:
             assert stream.read() == b"updated"
         if classic:
-            with archive.open_stream_identity("voice", 0x411, 2) as stream:
+            with archive.open_stream("voice", locale=0x411, platform=2) as stream:
                 assert stream.read() == b"other locale"
         assert archive.variants("other") == ()
     committed = path.read_bytes()

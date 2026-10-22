@@ -37,6 +37,7 @@ import org.libmpq.ffi.LibmpqNative;
 class LibmpqTest {
     @Test
     void changeIdentity(@TempDir Path directory) throws Exception {
+
         for (int version : new int[] {Mpq.ARCHIVE_VERSION_ONE, Mpq.ARCHIVE_VERSION_TWO,
                                      Mpq.ARCHIVE_VERSION_THREE, Mpq.ARCHIVE_VERSION_FOUR}) {
             Path path = directory.resolve("change-identity.mpq");
@@ -64,7 +65,7 @@ class LibmpqTest {
                 update.changeIdentity("voice", 0, 0, 0x409, 0);
                 assertThrows(LibmpqException.class, () -> update.changeIdentity("voice", 0, 0, 0, 0));
                 update.changeIdentity("voice", 0x409, 0, 0x409, 3);
-                update.rename("voice", 0x409, 3, "renamed");
+                update.rename("voice", "renamed", 0x409, 3);
                 update.changeIdentity("renamed", 0x409, 3, 0, 0);
                 update.replaceData("renamed", 0, 0, "updated".getBytes(StandardCharsets.UTF_8), null);
                 update.remove("other", 0, 0);
@@ -106,7 +107,7 @@ class LibmpqTest {
                 update.replaceData("voice", locale, platform, new byte[0], null);
                 assertThrows(IllegalArgumentException.class, () -> update.remove("voice", -1, 0));
                 assertThrows(LibmpqException.class, () -> update.remove("voice", locale, platform + 1));
-                update.rename("voice", locale, platform, "renamed");
+                update.rename("voice", "renamed", locale, platform);
                 assertThrows(LibmpqException.class, () -> update.remove("voice", locale, platform));
                 update.replacePath("renamed", locale, platform, source, null);
                 assertArrayEquals(original, Files.readAllBytes(path));
@@ -150,6 +151,12 @@ class LibmpqTest {
             assertThrows(LibmpqException.class, () -> archive.fileNumber("voice", 0x409, 0));
             assertThrows(IllegalArgumentException.class, () -> archive.fileNumber("voice", -1, 0));
             assertThrows(IllegalArgumentException.class, () -> archive.openStream("voice", 0, 65536));
+            assertEquals(archive.fileNumber("voice"), archive.fileNumber("voice", 0, 0));
+            try (MpqStream neutral = archive.openStream("voice", 0, 0)) {
+                byte[] data = new byte[7];
+                assertEquals(7, neutral.read(data));
+                assertArrayEquals("neutral".getBytes(), data);
+            }
             int number = archive.fileNumber("voice", 0x409, 1);
             assertTrue(variants.stream().anyMatch(v -> v.fileNumber() == number && v.locale() == 0x409 && v.platform() == 1));
             try (MpqStream stream = archive.openStream("voice", 0x409, 1)) {

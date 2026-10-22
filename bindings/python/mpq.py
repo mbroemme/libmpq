@@ -269,19 +269,19 @@ _configure("libmpq__update_begin", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ct
 _configure("libmpq__update_begin_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p,
            _BYTE_PTR, ctypes.c_size_t)
 _configure("libmpq__update_replace_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE_PTR, _OFF_T, _VOID_PTR)
+_configure("libmpq__update_replace_data_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
+           ctypes.c_uint16, ctypes.c_uint16, _BYTE_PTR, _OFF_T, _VOID_PTR)
 _configure("libmpq__update_add_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE_PTR, _OFF_T, _VOID_PTR)
 _configure("libmpq__update_add_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__update_replace_path", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p, _VOID_PTR)
-_configure("libmpq__update_remove", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p)
-_configure("libmpq__update_rename", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p)
-_configure("libmpq__update_replace_data_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
-           ctypes.c_uint16, ctypes.c_uint16, _BYTE_PTR, _OFF_T, _VOID_PTR)
 _configure("libmpq__update_replace_path_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
            ctypes.c_uint16, ctypes.c_uint16, ctypes.c_char_p, _VOID_PTR)
+_configure("libmpq__update_remove", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p)
 _configure("libmpq__update_remove_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
            ctypes.c_uint16, ctypes.c_uint16)
+_configure("libmpq__update_rename", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_char_p)
 _configure("libmpq__update_rename_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
-           ctypes.c_uint16, ctypes.c_uint16, ctypes.c_char_p)
+           ctypes.c_char_p, ctypes.c_uint16, ctypes.c_uint16)
 _configure("libmpq__update_change_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
            ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint16)
 _configure("libmpq__update_commit", ctypes.c_int32, _VOID_PTR)
@@ -321,16 +321,16 @@ for _name in ("blocks", "flags"):
     _configure("libmpq__file_" + _name, ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
            ctypes.c_uint32, _VOID_PTR)
+_configure("libmpq__file_number", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_number_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
            ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(ctypes.c_uint32))
-_configure("libmpq__stream_open_name_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
-           ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(_VOID_PTR))
-_configure("libmpq__file_number", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_hash", None, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_number_from_hash", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_read", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR, _OFF_T, ctypes.POINTER(_OFF_T))
 _configure("libmpq__stream_open", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_VOID_PTR))
 _configure("libmpq__stream_open_name", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.POINTER(_VOID_PTR))
+_configure("libmpq__stream_open_name_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
+           ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(_VOID_PTR))
 _configure("libmpq__stream_read", ctypes.c_int32, _VOID_PTR, _BYTE_PTR, _OFF_T, ctypes.POINTER(_OFF_T))
 _configure("libmpq__stream_seek", ctypes.c_int32, _VOID_PTR, _OFF_T, ctypes.c_int32)
 _configure("libmpq__stream_tell", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(_OFF_T))
@@ -439,6 +439,26 @@ class FileCreateOptions(ctypes.Structure):
         return type(self)(self.flags | FILE_FLAG_ENCRYPTED, self.compression_first, self.compression_next, self.locale, self.platform)
 
 
+
+def _identity_selection(locale, platform):
+    """Validate optional exact selectors while retaining default name behavior."""
+    if locale is None and platform is None:
+        return None
+    if locale is None or platform is None:
+        raise ValueError("locale and platform must be supplied together")
+    return (_identity_selector(locale), _identity_selector(platform))
+
+
+def _identity_call(operation, selection, *arguments):
+    """Dispatch a unified Python operation to ordinary or exact native APIs."""
+    if selection is None:
+        return getattr(libmpq, operation)(*arguments)
+    if operation == "libmpq__update_rename":
+        return getattr(libmpq, operation + "_identity")(*arguments, *selection)
+    return getattr(libmpq, operation + "_identity")(
+        *arguments[:2], *selection, *arguments[2:])
+
+
 class Update:
     """Transactional edits to one filesystem MPQ; uncommitted changes abort."""
 
@@ -475,9 +495,12 @@ class Update:
             raise TypeError("options must be FileCreateOptions")
         return ctypes.byref(options)
 
-    def replace_data(self, name, data, options=None):
+    def replace_data(self, name, data, options=None, *, locale=None, platform=None):
         """Stage bytes-like replacement; None uses native storage defaults."""
-        self._stage_data(name, data, options, libmpq.libmpq__update_replace_data)
+        selected = _identity_selection(locale, platform)
+        self._stage_data(name, data, options,
+                         lambda update, name, data, size, options:
+                             _identity_call("libmpq__update_replace_data", selected, update, name, data, size, options))
 
     def add_data(self, name, data, options=None):
         """Stage a new member; duplicate names fail without changing the transaction."""
@@ -500,14 +523,11 @@ class Update:
         finally:
             view.release()
 
-    def replace_path(self, name, source_path, options=None):
+    def replace_path(self, name, source_path, options=None, *, locale=None, platform=None):
         """Stage path replacement; None uses native storage defaults."""
         self._ensure_open()
         native_options = self._options(options)
-        libmpq.libmpq__update_replace_path(
-            self._update, _as_bytes(name), _as_bytes(source_path),
-            native_options
-        )
+        _identity_call("libmpq__update_replace_path", _identity_selection(locale, platform), self._update, _as_bytes(name), _as_bytes(source_path), native_options)
 
     def add_path(self, name, source_path, options=None):
         """Stage a new member from a caller-owned source path."""
@@ -516,47 +536,15 @@ class Update:
             self._update, _as_bytes(name), _as_bytes(source_path), self._options(options)
         )
 
-    def remove(self, name):
+    def remove(self, name, *, locale=None, platform=None):
         """Stage removal of an existing member."""
         self._ensure_open()
-        libmpq.libmpq__update_remove(self._update, _as_bytes(name))
+        _identity_call("libmpq__update_remove", _identity_selection(locale, platform), self._update, _as_bytes(name))
 
-    def rename(self, old_name, new_name):
+    def rename(self, old_name, new_name, *, locale=None, platform=None):
         """Stage a member rename."""
         self._ensure_open()
-        libmpq.libmpq__update_rename(
-            self._update, _as_bytes(old_name), _as_bytes(new_name)
-        )
-
-    def replace_data_identity(self, name, locale, platform, data, options=None):
-        """Replace only the exact stored locale/platform identity."""
-        locale, platform = _identity_selector(locale), _identity_selector(platform)
-        self._stage_data(
-            name, data, options,
-            lambda update, name, data, size, options:
-                libmpq.libmpq__update_replace_data_identity(
-                    update, name, locale, platform, data, size, options))
-
-    def replace_path_identity(self, name, locale, platform, source_path, options=None):
-        """Replace an exact identity from a caller-owned path."""
-        self._ensure_open()
-        libmpq.libmpq__update_replace_path_identity(
-            self._update, _as_bytes(name), _identity_selector(locale),
-            _identity_selector(platform), _as_bytes(source_path), self._options(options))
-
-    def remove_identity(self, name, locale, platform):
-        """Remove only the selected stored identity."""
-        self._ensure_open()
-        libmpq.libmpq__update_remove_identity(
-            self._update, _as_bytes(name), _identity_selector(locale),
-            _identity_selector(platform))
-
-    def rename_identity(self, old_name, locale, platform, new_name):
-        """Rename one exact identity while retaining its locale/platform."""
-        self._ensure_open()
-        libmpq.libmpq__update_rename_identity(
-            self._update, _as_bytes(old_name), _identity_selector(locale),
-            _identity_selector(platform), _as_bytes(new_name))
+        _identity_call("libmpq__update_rename", _identity_selection(locale, platform), self._update, _as_bytes(old_name), _as_bytes(new_name))
 
     def change_identity(self, name, locale, platform, new_locale, new_platform):
         """Change one exact staged locale/platform tuple without moving its payload."""
@@ -1422,6 +1410,13 @@ class Archive:
         self._ensure_open()
         return _read_value(libmpq.libmpq__archive_signatures, ctypes.c_uint32, self._mpq)
 
+    def file_number(self, name, *, locale=None, platform=None):
+        """Resolve by default policy, or select an exact locale/platform tuple."""
+        self._ensure_open()
+        number = ctypes.c_uint32()
+        _identity_call("libmpq__file_number", _identity_selection(locale, platform), self._mpq, _as_bytes(name), ctypes.byref(number))
+        return number.value
+
     def variants(self, name):
         """Return immutable identities in native slot order, without fallback."""
         self._ensure_open()
@@ -1436,34 +1431,19 @@ class Archive:
                                        native.locale, native.platform))
         raise OverflowError("too many identities")
 
-    def file_number_identity(self, name, locale=0, platform=0):
-        """Resolve exactly one stored locale/platform, with no neutral fallback."""
-        self._ensure_open()
-        number = ctypes.c_uint32()
-        libmpq.libmpq__file_number_identity(self._mpq, _as_bytes(name),
-            _identity_selector(locale), _identity_selector(platform), ctypes.byref(number))
-        return number.value
-
-    def open_stream_identity(self, name, locale=0, platform=0):
-        """Open the exact named identity on an independent native clone."""
-        self._ensure_open()
-        stream = _VOID_PTR()
-        libmpq.libmpq__stream_open_name_identity(self._mpq, _as_bytes(name),
-            _identity_selector(locale), _identity_selector(platform), ctypes.byref(stream))
-        return MpqStream(stream, self._source_state)
-
-    def open_stream(self, member):
+    def open_stream(self, member, *, locale=None, platform=None):
         """Open an independent incremental member stream by name or number."""
         self._ensure_open()
+        selected = _identity_selection(locale, platform)
         stream = _VOID_PTR()
         if isinstance(member, int):
+            if selected is not None:
+                raise ValueError("numeric streams do not accept identity selectors")
             if not 0 <= member <= 0xffffffff:
                 raise IndexError("file number is out of range")
             libmpq.libmpq__stream_open(self._mpq, member, ctypes.byref(stream))
         else:
-            libmpq.libmpq__stream_open_name(
-                self._mpq, _as_bytes(member), ctypes.byref(stream)
-            )
+            _identity_call("libmpq__stream_open_name", selected, self._mpq, _as_bytes(member), ctypes.byref(stream))
         return MpqStream(stream, self._source_state)
 
     def verify(self, public_key, signature_type=SIGNATURE_WEAK):

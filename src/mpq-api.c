@@ -330,28 +330,7 @@ libmpq__update_replace_data(
     return libmpq__update_transaction_replace(update, filename, data, size, NULL, options);
 }
 
-int32_t
-libmpq__update_replace_path(
-    mpq_update_s *update, const char *filename, const char *source_path,
-    const mpq_file_options_s *options
-)
-{
-    return libmpq__update_transaction_replace(update, filename, NULL, 0, source_path, options);
-}
-
-int32_t
-libmpq__update_remove(mpq_update_s *update, const char *filename)
-{
-    return libmpq__update_transaction_remove(update, filename);
-}
-
-int32_t
-libmpq__update_rename(mpq_update_s *update, const char *old_filename, const char *new_filename)
-{
-    return libmpq__update_transaction_rename(update, old_filename, new_filename);
-}
-
-/* Exact update wrappers reuse the staged transaction engine. */
+/* Select only the explicitly requested identity, without fallback. */
 int32_t
 libmpq__update_replace_data_identity(
     mpq_update_s *update, const char *name, uint16_t locale, uint16_t platform, const uint8_t *data,
@@ -363,7 +342,16 @@ libmpq__update_replace_data_identity(
     );
 }
 
-/* Borrow a replacement path only for this synchronous staging call. */
+int32_t
+libmpq__update_replace_path(
+    mpq_update_s *update, const char *filename, const char *source_path,
+    const mpq_file_options_s *options
+)
+{
+    return libmpq__update_transaction_replace(update, filename, NULL, 0, source_path, options);
+}
+
+/* Select only the explicitly requested identity, without fallback. */
 int32_t
 libmpq__update_replace_path_identity(
     mpq_update_s *update, const char *name, uint16_t locale, uint16_t platform, const char *path,
@@ -377,7 +365,13 @@ libmpq__update_replace_path_identity(
     );
 }
 
-/* Remove a single exact identity, retaining any shared payload aliases. */
+int32_t
+libmpq__update_remove(mpq_update_s *update, const char *filename)
+{
+    return libmpq__update_transaction_remove(update, filename);
+}
+
+/* Select only the explicitly requested identity, without fallback. */
 int32_t
 libmpq__update_remove_identity(
     mpq_update_s *update, const char *name, uint16_t locale, uint16_t platform
@@ -386,24 +380,30 @@ libmpq__update_remove_identity(
     return libmpq__update_transaction_remove_identity(update, name, locale, platform);
 }
 
-/* Preserve the selected locale/platform while renaming one exact identity. */
+int32_t
+libmpq__update_rename(mpq_update_s *update, const char *old_filename, const char *new_filename)
+{
+    return libmpq__update_transaction_rename(update, old_filename, new_filename);
+}
+
+/* Select only the explicitly requested identity, without fallback. */
 int32_t
 libmpq__update_rename_identity(
-    mpq_update_s *update, const char *name, uint16_t locale, uint16_t platform, const char *new_name
+    mpq_update_s *update, const char *name, const char *new_name, uint16_t locale, uint16_t platform
 )
 {
-    return libmpq__update_transaction_rename_identity(update, name, locale, platform, new_name);
+    return libmpq__update_transaction_rename_identity(update, name, new_name, locale, platform);
 }
 
 /* Change only an exact staged identity's locale/platform tuple. */
 int32_t
 libmpq__update_change_identity(
-    mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform,
+    mpq_update_s *update, const char *filename, uint16_t old_locale, uint16_t old_platform,
     uint16_t new_locale, uint16_t new_platform
 )
 {
     return libmpq__update_transaction_change_identity(
-        update, filename, locale, platform, new_locale, new_platform
+        update, filename, old_locale, old_platform, new_locale, new_platform
     );
 }
 
@@ -1284,35 +1284,6 @@ libmpq__file_identity(
     return api_identity_lookup(archive, filename, identity_index, 0, 0, 0, identity);
 }
 
-/* Select only an explicitly stored identity, without locale-neutral fallback. */
-int32_t
-libmpq__file_number_identity(
-    mpq_archive_s *archive, const char *filename, uint16_t locale, uint16_t platform,
-    uint32_t *number
-)
-{
-    mpq_file_identity_s identity = { 0 };
-    int32_t result;
-
-    if (number == NULL)
-        return LIBMPQ_ERROR_EXIST;
-    *number = 0;
-    result = api_identity_lookup(archive, filename, 0, locale, platform, 1, &identity);
-    if (result == 0)
-        *number = identity.file_number;
-    return result;
-}
-
-/* Resolve on the owned clone while retaining the supplied physical encryption name. */
-int32_t
-libmpq__stream_open_name_identity(
-    mpq_archive_s *archive, const char *filename, uint16_t locale, uint16_t platform,
-    mpq_stream_s **stream
-)
-{
-    return libmpq__reader_stream_open_name_identity(archive, filename, locale, platform, stream);
-}
-
 /*
  * Resolve a name through validated HET/BET first, with classic fallback on a miss.
  * The name is hashed with all three Storm phases before the collision-aware
@@ -1351,6 +1322,25 @@ libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *
     return libmpq__file_number_from_hash(mpq_archive, hash1, hash2, hash3, number);
 }
 
+/* Select only the explicitly requested identity, without fallback. */
+int32_t
+libmpq__file_number_identity(
+    mpq_archive_s *archive, const char *filename, uint16_t locale, uint16_t platform,
+    uint32_t *number
+)
+{
+    mpq_file_identity_s identity = { 0 };
+    int32_t result;
+
+    if (number == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *number = 0;
+    result = api_identity_lookup(archive, filename, 0, locale, platform, 1, &identity);
+    if (result == 0)
+        *number = identity.file_number;
+    return result;
+}
+
 /* Complete reads scope their offset cache inside the reader. */
 int32_t
 libmpq__file_read(
@@ -1370,7 +1360,17 @@ libmpq__stream_open(mpq_archive_s *archive, uint32_t file_number, mpq_stream_s *
 int32_t
 libmpq__stream_open_name(mpq_archive_s *archive, const char *filename, mpq_stream_s **stream)
 {
-    return libmpq__reader_stream_open_name(archive, filename, stream);
+    return libmpq__reader_stream_open_name(archive, filename, stream, 0, 0, 0);
+}
+
+/* Select only the explicitly requested identity, without fallback. */
+int32_t
+libmpq__stream_open_name_identity(
+    mpq_archive_s *archive, const char *filename, uint16_t locale, uint16_t platform,
+    mpq_stream_s **stream
+)
+{
+    return libmpq__reader_stream_open_name(archive, filename, stream, 1, locale, platform);
 }
 
 int32_t

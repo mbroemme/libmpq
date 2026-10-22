@@ -37,9 +37,8 @@ man_MANS = \
 	libmpq__file_flags.3 \
 	libmpq__file_hash.3 \
 	libmpq__file_identity.3 \
-	libmpq__file_number_identity.3 \
-	libmpq__stream_open_name_identity.3 \
 	libmpq__file_number.3 \
+	libmpq__file_number_identity.3 \
 	libmpq__file_number_from_hash.3 \
 	libmpq__file_offset.3 \
 	libmpq__file_read.3 \
@@ -63,6 +62,7 @@ man_MANS = \
 	libmpq__stream_close.3 \
 	libmpq__stream_open.3 \
 	libmpq__stream_open_name.3 \
+	libmpq__stream_open_name_identity.3 \
 	libmpq__stream_read.3 \
 	libmpq__stream_seek.3 \
 	libmpq__stream_size.3 \
@@ -73,16 +73,16 @@ man_MANS = \
 	libmpq__update_begin_mpqe.3 \
 	libmpq__update_commit.3 \
 	libmpq__update_remove.3 \
+	libmpq__update_remove_identity.3 \
 	libmpq__update_rename.3 \
+	libmpq__update_rename_identity.3 \
 	libmpq__update_replace_data.3 \
 	libmpq__update_replace_data_identity.3 \
-	libmpq__update_replace_path_identity.3 \
-	libmpq__update_remove_identity.3 \
 	libmpq__update_change_identity.3 \
-	libmpq__update_rename_identity.3 \
 	libmpq__update_add_data.3 \
 	libmpq__update_add_path.3 \
 	libmpq__update_replace_path.3 \
+	libmpq__update_replace_path_identity.3 \
 	libmpq__version.3 \
 	libmpq__writer_begin.3 \
 	libmpq__writer_finish.3 \

@@ -37,7 +37,8 @@ fallback. Existing name-based update functions retain their own behavior.
 Classic-only archives support shared payload aliases. Replacement detaches
 only the selected identity into a new payload; removal retains the old
 payload until its last alias disappears; rename preserves other aliases.
-Locale/platform values and applicable attributes and timestamps are retained.
+Locale/platform values are retained. Unchanged aliases retain their original
+attributes and timestamps; replacements keep existing writer defaults.
 Encrypted renames use the new basename and final FIX_KEY offset.
 .PP
 Mixed classic/HET/BET targets require consistent one-to-one identities and

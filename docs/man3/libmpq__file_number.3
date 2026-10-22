@@ -28,7 +28,9 @@ libmpq__file_number \- resolve an MPQ filename to its file number.
 .SH DESCRIPTION
 .PP
 Call \fBlibmpq__file_number\fP() to resolve a filename using the archive
-hash table. The lookup does not require a listfile.
+hash tables. HET/BET lookup takes precedence, with classic first-hit lookup
+on a miss. The lookup does not require a listfile. Use
+libmpq__file_number_identity(3) for an exact locale/platform tuple.
 .LP
 The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The function resolves \fIfilename\fP and
@@ -39,7 +41,10 @@ On error, one of the following constants is returned.
 .SH ERRORS
 .TP
 .B LIBMPQ_ERROR_EXIST
-The file does not exist in the archive.
+A required argument or the requested filename is absent.
+.TP
+.B LIBMPQ_ERROR_FORMAT
+Stored canonical metadata is malformed.
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__archive_open (3),

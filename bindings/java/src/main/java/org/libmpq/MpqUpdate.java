@@ -72,8 +72,7 @@ public final class MpqUpdate implements AutoCloseable {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(data, "data");
         try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.updateReplaceData(handle, Support.text(arena, name),
-                    Support.bytes(arena, data), data.length, options(arena, options)));
+            Support.check(LibmpqNative.updateReplaceData(handle, Support.text(arena, name), Support.bytes(arena, data), data.length, options(arena, options)));
         }
     }
 
@@ -83,8 +82,7 @@ public final class MpqUpdate implements AutoCloseable {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(source, "source");
         try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.updateReplacePath(handle, Support.text(arena, name),
-                    Support.text(arena, source.toString()), options(arena, options)));
+            Support.check(LibmpqNative.updateReplacePath(handle, Support.text(arena, name), Support.text(arena, source.toString()), options(arena, options)));
         }
     }
 
@@ -100,8 +98,7 @@ public final class MpqUpdate implements AutoCloseable {
     public void rename(String oldName, String newName) throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.updateRename(handle, Support.text(arena, oldName),
-                                                    Support.text(arena, newName)));
+            Support.check(LibmpqNative.updateRename(handle, Support.text(arena, oldName), Support.text(arena, newName)));
         }
     }
 
@@ -113,9 +110,7 @@ public final class MpqUpdate implements AutoCloseable {
         short selectedPlatform = selector(platform);
         Objects.requireNonNull(data, "data");
         try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.updateReplaceDataIdentity(handle, Support.text(arena, name),
-                    selectedLocale, selectedPlatform, Support.bytes(arena, data), data.length,
-                    options(arena, options)));
+            Support.check(LibmpqNative.updateReplaceDataIdentity(handle, Support.text(arena, name), selectedLocale, selectedPlatform, Support.bytes(arena, data), data.length, options(arena, options)));
         }
     }
 
@@ -127,9 +122,7 @@ public final class MpqUpdate implements AutoCloseable {
         short selectedPlatform = selector(platform);
         Objects.requireNonNull(source, "source");
         try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.updateReplacePathIdentity(handle, Support.text(arena, name),
-                    selectedLocale, selectedPlatform, Support.text(arena, source.toString()),
-                    options(arena, options)));
+            Support.check(LibmpqNative.updateReplacePathIdentity(handle, Support.text(arena, name), selectedLocale, selectedPlatform, Support.text(arena, source.toString()), options(arena, options)));
         }
     }
 
@@ -139,20 +132,18 @@ public final class MpqUpdate implements AutoCloseable {
         short selectedLocale = selector(locale);
         short selectedPlatform = selector(platform);
         try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.updateRemoveIdentity(handle, Support.text(arena, name),
-                    selectedLocale, selectedPlatform));
+            Support.check(LibmpqNative.updateRemoveIdentity(handle, Support.text(arena, name), selectedLocale, selectedPlatform));
         }
     }
 
     /** Rename one exact identity without changing its locale/platform. */
-    public void rename(String name, int locale, int platform, String newName)
+    public void rename(String name, String newName, int locale, int platform)
             throws LibmpqException {
         checkOpen();
         short selectedLocale = selector(locale);
         short selectedPlatform = selector(platform);
         try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.updateRenameIdentity(handle, Support.text(arena, name),
-                    selectedLocale, selectedPlatform, Support.text(arena, newName)));
+            Support.check(LibmpqNative.updateRenameIdentity(handle, Support.text(arena, name), Support.text(arena, newName), selectedLocale, selectedPlatform));
         }
     }
 

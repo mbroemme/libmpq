@@ -90,14 +90,14 @@ public final class LibmpqNative {
     private static final MethodHandle UPDATE_BEGIN;
     private static final MethodHandle UPDATE_BEGIN_MPQE;
     private static final MethodHandle UPDATE_REPLACE_DATA;
+    private static final MethodHandle UPDATE_REPLACE_DATA_IDENTITY;
     private static final MethodHandle UPDATE_ADD_DATA;
     private static final MethodHandle UPDATE_ADD_PATH;
     private static final MethodHandle UPDATE_REPLACE_PATH;
-    private static final MethodHandle UPDATE_REMOVE;
-    private static final MethodHandle UPDATE_RENAME;
-    private static final MethodHandle UPDATE_REPLACE_DATA_IDENTITY;
     private static final MethodHandle UPDATE_REPLACE_PATH_IDENTITY;
+    private static final MethodHandle UPDATE_REMOVE;
     private static final MethodHandle UPDATE_REMOVE_IDENTITY;
+    private static final MethodHandle UPDATE_RENAME;
     private static final MethodHandle UPDATE_RENAME_IDENTITY;
     private static final MethodHandle UPDATE_CHANGE_IDENTITY;
     private static final MethodHandle UPDATE_COMMIT;
@@ -130,9 +130,8 @@ public final class LibmpqNative {
         C_INT.withName("file_number"), C_INT.withName("flags"),
         C_SHORT.withName("locale"), C_SHORT.withName("platform"), C_INT.withName("reserved"));
     private static final MethodHandle FILE_IDENTITY_QUERY;
-    private static final MethodHandle FILE_NUMBER_IDENTITY;
-    private static final MethodHandle STREAM_OPEN_NAME_IDENTITY;
     private static final MethodHandle FILE_NUMBER;
+    private static final MethodHandle FILE_NUMBER_IDENTITY;
     private static final MethodHandle FILE_HASH;
     private static final MethodHandle FILE_NUMBER_FROM_HASH;
     private static final MethodHandle FILE_READ;
@@ -140,6 +139,7 @@ public final class LibmpqNative {
     private static final MethodHandle PATCH_PAYLOAD_READ;
     private static final MethodHandle STREAM_OPEN;
     private static final MethodHandle STREAM_OPEN_NAME;
+    private static final MethodHandle STREAM_OPEN_NAME_IDENTITY;
     private static final MethodHandle STREAM_READ;
     private static final MethodHandle STREAM_SEEK;
     private static final MethodHandle STREAM_TELL;
@@ -237,6 +237,9 @@ public final class LibmpqNative {
         UPDATE_REPLACE_DATA = function(linker, lookup, "libmpq__update_replace_data",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                       ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS));
+        UPDATE_REPLACE_DATA_IDENTITY = function(linker, lookup, "libmpq__update_replace_data_identity",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                        C_SHORT, C_SHORT, ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS));
         UPDATE_ADD_DATA = function(linker, lookup, "libmpq__update_add_data",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                       ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS));
@@ -246,23 +249,20 @@ public final class LibmpqNative {
         UPDATE_REPLACE_PATH = function(linker, lookup, "libmpq__update_replace_path",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                       ValueLayout.ADDRESS, ValueLayout.ADDRESS));
-        UPDATE_REMOVE = function(linker, lookup, "libmpq__update_remove",
-                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
-        UPDATE_RENAME = function(linker, lookup, "libmpq__update_rename",
-                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
-                                      ValueLayout.ADDRESS));
-        UPDATE_REPLACE_DATA_IDENTITY = function(linker, lookup, "libmpq__update_replace_data_identity",
-                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
-                        C_SHORT, C_SHORT, ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS));
         UPDATE_REPLACE_PATH_IDENTITY = function(linker, lookup, "libmpq__update_replace_path_identity",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                         C_SHORT, C_SHORT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+        UPDATE_REMOVE = function(linker, lookup, "libmpq__update_remove",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
         UPDATE_REMOVE_IDENTITY = function(linker, lookup, "libmpq__update_remove_identity",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                         C_SHORT, C_SHORT));
+        UPDATE_RENAME = function(linker, lookup, "libmpq__update_rename",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                      ValueLayout.ADDRESS));
         UPDATE_RENAME_IDENTITY = function(linker, lookup, "libmpq__update_rename_identity",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
-                        C_SHORT, C_SHORT, ValueLayout.ADDRESS));
+                        ValueLayout.ADDRESS, C_SHORT, C_SHORT));
         UPDATE_CHANGE_IDENTITY = function(linker, lookup, "libmpq__update_change_identity",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                         C_SHORT, C_SHORT, C_SHORT, C_SHORT));
@@ -320,13 +320,11 @@ public final class LibmpqNative {
         FILE_FLAGS = fileUintMetadata(linker, lookup, "libmpq__file_flags");
         FILE_IDENTITY_QUERY = function(linker, lookup, "libmpq__file_identity",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS));
-        FILE_NUMBER_IDENTITY = function(linker, lookup, "libmpq__file_number_identity",
-            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, C_SHORT, C_SHORT, ValueLayout.ADDRESS));
-        STREAM_OPEN_NAME_IDENTITY = function(linker, lookup, "libmpq__stream_open_name_identity",
-            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, C_SHORT, C_SHORT, ValueLayout.ADDRESS));
         FILE_NUMBER = function(linker, lookup, "libmpq__file_number",
                                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                      ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+        FILE_NUMBER_IDENTITY = function(linker, lookup, "libmpq__file_number_identity",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, C_SHORT, C_SHORT, ValueLayout.ADDRESS));
         FILE_HASH = function(linker, lookup, "libmpq__file_hash",
                              FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                                        ValueLayout.ADDRESS, ValueLayout.ADDRESS));
@@ -345,6 +343,8 @@ public final class LibmpqNative {
                                     FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                           ValueLayout.ADDRESS,
                                                           ValueLayout.ADDRESS));
+        STREAM_OPEN_NAME_IDENTITY = function(linker, lookup, "libmpq__stream_open_name_identity",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, C_SHORT, C_SHORT, ValueLayout.ADDRESS));
         STREAM_READ = function(linker, lookup, "libmpq__stream_read",
                                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                      ValueLayout.ADDRESS, C_LONG,
@@ -607,6 +607,10 @@ public final class LibmpqNative {
                                         MemorySegment data, long size, MemorySegment options) {
         return callInt(UPDATE_REPLACE_DATA, update, name, data, size, options);
     }
+    public static int updateReplaceDataIdentity(MemorySegment update, MemorySegment name,
+            short locale, short platform, MemorySegment data, long size, MemorySegment options) {
+        return callInt(UPDATE_REPLACE_DATA_IDENTITY, update, name, locale, platform, data, size, options);
+    }
     public static int updateAddData(MemorySegment update, MemorySegment name,
                                     MemorySegment data, long size, MemorySegment options) {
         return callInt(UPDATE_ADD_DATA, update, name, data, size, options);
@@ -619,28 +623,23 @@ public final class LibmpqNative {
                                         MemorySegment path, MemorySegment options) {
         return callInt(UPDATE_REPLACE_PATH, update, name, path, options);
     }
-    public static int updateRemove(MemorySegment update, MemorySegment name) {
-        return callInt(UPDATE_REMOVE, update, name);
-    }
-    public static int updateRename(MemorySegment update, MemorySegment oldName,
-                                   MemorySegment newName) {
-        return callInt(UPDATE_RENAME, update, oldName, newName);
-    }
-    public static int updateReplaceDataIdentity(MemorySegment update, MemorySegment name,
-            short locale, short platform, MemorySegment data, long size, MemorySegment options) {
-        return callInt(UPDATE_REPLACE_DATA_IDENTITY, update, name, locale, platform, data, size, options);
-    }
     public static int updateReplacePathIdentity(MemorySegment update, MemorySegment name,
             short locale, short platform, MemorySegment path, MemorySegment options) {
         return callInt(UPDATE_REPLACE_PATH_IDENTITY, update, name, locale, platform, path, options);
+    }
+    public static int updateRemove(MemorySegment update, MemorySegment name) {
+        return callInt(UPDATE_REMOVE, update, name);
     }
     public static int updateRemoveIdentity(MemorySegment update, MemorySegment name,
             short locale, short platform) {
         return callInt(UPDATE_REMOVE_IDENTITY, update, name, locale, platform);
     }
-    public static int updateRenameIdentity(MemorySegment update, MemorySegment name,
-            short locale, short platform, MemorySegment newName) {
-        return callInt(UPDATE_RENAME_IDENTITY, update, name, locale, platform, newName);
+    public static int updateRename(MemorySegment update, MemorySegment oldName,
+                                   MemorySegment newName) {
+        return callInt(UPDATE_RENAME, update, oldName, newName);
+    }
+    public static int updateRenameIdentity(MemorySegment update, MemorySegment name, MemorySegment newName, short locale, short platform) {
+        return callInt(UPDATE_RENAME_IDENTITY, update, name, newName, locale, platform);
     }
     public static int updateChangeIdentity(MemorySegment update, MemorySegment name,
             short locale, short platform, short newLocale, short newPlatform) {
@@ -727,16 +726,12 @@ public final class LibmpqNative {
     public static int fileIdentity(MemorySegment archive, MemorySegment name, int ordinal, MemorySegment output) {
         return callInt(FILE_IDENTITY_QUERY, archive, name, ordinal, output);
     }
+    public static int fileNumber(MemorySegment archive, MemorySegment name, MemorySegment output) {
+        return callInt(FILE_NUMBER, archive, name, output);
+    }
     public static int fileNumberIdentity(MemorySegment archive, MemorySegment name, short locale,
                                          short platform, MemorySegment output) {
         return callInt(FILE_NUMBER_IDENTITY, archive, name, locale, platform, output);
-    }
-    public static int streamOpenNameIdentity(MemorySegment archive, MemorySegment name, short locale,
-                                             short platform, MemorySegment output) {
-        return callInt(STREAM_OPEN_NAME_IDENTITY, archive, name, locale, platform, output);
-    }
-    public static int fileNumber(MemorySegment archive, MemorySegment name, MemorySegment output) {
-        return callInt(FILE_NUMBER, archive, name, output);
     }
     /** Computes the three Storm hash values into caller-provided outputs. */
     public static void fileHash(MemorySegment name, MemorySegment hash1, MemorySegment hash2,
@@ -765,6 +760,10 @@ public final class LibmpqNative {
     }
     public static int streamOpenName(MemorySegment archive, MemorySegment name, MemorySegment output) {
         return callInt(STREAM_OPEN_NAME, archive, name, output);
+    }
+    public static int streamOpenNameIdentity(MemorySegment archive, MemorySegment name, short locale,
+                                             short platform, MemorySegment output) {
+        return callInt(STREAM_OPEN_NAME_IDENTITY, archive, name, locale, platform, output);
     }
     public static int streamRead(MemorySegment stream, MemorySegment output, long size,
                                  MemorySegment transferred) {

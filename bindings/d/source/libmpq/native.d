@@ -330,6 +330,9 @@ extern(C) {
     int libmpq__update_replace_data(mpq_update_s* update, const(char)* filename,
                                     const(ubyte)* data, off_t size,
                                     const(mpq_file_options_s)* options);
+    int libmpq__update_replace_data_identity(mpq_update_s* update, const(char)* filename,
+        ushort locale, ushort platform, const(ubyte)* data, off_t size,
+        const(mpq_file_options_s)* options);
     int libmpq__update_add_data(mpq_update_s* update, const(char)* filename,
                               const(ubyte)* data, off_t size,
                               const(mpq_file_options_s)* options);
@@ -339,19 +342,15 @@ extern(C) {
     int libmpq__update_replace_path(mpq_update_s* update, const(char)* filename,
                                     const(char)* source_path,
                                     const(mpq_file_options_s)* options);
-    int libmpq__update_remove(mpq_update_s* update, const(char)* filename);
-    int libmpq__update_rename(mpq_update_s* update, const(char)* old_filename,
-                              const(char)* new_filename);
-    int libmpq__update_replace_data_identity(mpq_update_s* update, const(char)* filename,
-        ushort locale, ushort platform, const(ubyte)* data, off_t size,
-        const(mpq_file_options_s)* options);
     int libmpq__update_replace_path_identity(mpq_update_s* update, const(char)* filename,
         ushort locale, ushort platform, const(char)* sourcePath,
         const(mpq_file_options_s)* options);
+    int libmpq__update_remove(mpq_update_s* update, const(char)* filename);
     int libmpq__update_remove_identity(mpq_update_s* update, const(char)* filename,
         ushort locale, ushort platform);
-    int libmpq__update_rename_identity(mpq_update_s* update, const(char)* filename,
-        ushort locale, ushort platform, const(char)* newFilename);
+    int libmpq__update_rename(mpq_update_s* update, const(char)* old_filename,
+                              const(char)* new_filename);
+    int libmpq__update_rename_identity(mpq_update_s* update, const(char)* filename, const(char)* newFilename, ushort locale, ushort platform);
     int libmpq__update_change_identity(mpq_update_s* update, const(char)* filename,
         ushort locale, ushort platform, ushort newLocale, ushort newPlatform);
     /** Both lifecycle calls consume the handle, including on error. */
@@ -417,11 +416,10 @@ extern(C) {
 
     /** Enumerate or select exact read-only filename identities. */
     int libmpq__file_identity(mpq_archive_s* archive, const(char)* name, uint identity_index, mpq_file_identity_s* identity);
-    int libmpq__file_number_identity(mpq_archive_s* archive, const(char)* name, ushort locale, ushort platform, uint* number);
-    int libmpq__stream_open_name_identity(mpq_archive_s* archive, const(char)* name, ushort locale, ushort platform, mpq_stream_s** stream);
     /** Resolve a filename using Storm's archive hash tables. */
     int libmpq__file_number(mpq_archive_s* archive, const(char)* filename,
                             uint* number);
+    int libmpq__file_number_identity(mpq_archive_s* archive, const(char)* name, ushort locale, ushort platform, uint* number);
 
     /** Calculate the three Storm hashes for a filename. */
     void libmpq__file_hash(const(char)* filename, uint* hash1, uint* hash2,
@@ -446,6 +444,7 @@ extern(C) {
     int libmpq__stream_open(mpq_archive_s* archive, uint number, mpq_stream_s** stream);
     int libmpq__stream_open_name(mpq_archive_s* archive, const(char)* filename,
                                  mpq_stream_s** stream);
+    int libmpq__stream_open_name_identity(mpq_archive_s* archive, const(char)* name, ushort locale, ushort platform, mpq_stream_s** stream);
     int libmpq__stream_read(mpq_stream_s* stream, ubyte* buffer, off_t size,
                             off_t* transferred);
     int libmpq__stream_seek(mpq_stream_s* stream, off_t offset, int origin);
