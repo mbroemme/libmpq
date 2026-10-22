@@ -12,14 +12,14 @@
 .\"
 .\" You should have received a copy of the GNU Lesser General Public License
 .\" along with this file; if not, see <https://www.gnu.org/licenses/>.
-.TH LIBMPQ__FILE_NUMBER_IDENTITY 3 2026-11-04 "The MoPaQ archive library"
+.TH LIBMPQ__FILE_NUMBER_FROM_IDENTITY 3 2026-11-04 "The MoPaQ archive library"
 .SH NAME
-libmpq__file_number_identity \- resolve an exact filename locale and platform
+libmpq__file_number_from_identity \- resolve an exact filename locale and platform
 .SH SYNOPSIS
 .nf
 #include <libmpq/mpq.h>
 
-int32_t libmpq__file_number_identity(
+int32_t libmpq__file_number_from_identity(
         mpq_archive_s *archive, const char *filename,
         uint16_t locale, uint16_t platform, uint32_t *file_number);
 .fi

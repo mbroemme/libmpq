@@ -198,8 +198,9 @@ libmpq__reader_stream_open_name(
     result = libmpq__archive_clone(&clone, archive);
     if (result != 0)
         return result;
-    result = exact ? libmpq__file_number_identity(clone, filename, locale, platform, &file_number)
-                   : libmpq__file_number(clone, filename, &file_number);
+    result =
+        exact ? libmpq__file_number_from_identity(clone, filename, locale, platform, &file_number)
+              : libmpq__file_number(clone, filename, &file_number);
     if (result != 0) {
         (void)libmpq__archive_close(clone);
         return result;

@@ -595,14 +595,14 @@ extern LIBMPQ_API int32_t libmpq__archive_sign(
  * The name is hashed using the library's Storm-compatible rules and matched
  * against locale and platform variants in the archive. The returned number
  * is suitable for the size, property, block, and read APIs. This preserves
- * HET-first/classic first-hit lookup. Use libmpq__file_number_identity for exact
+ * HET-first/classic first-hit lookup. Use libmpq__file_number_from_identity for exact
  * locale/platform selection with a cleared output on failure.
  */
 extern LIBMPQ_API int32_t
 libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *number);
 
 /* Exact locale/platform selection, with no fallback. */
-extern LIBMPQ_API int32_t libmpq__file_number_identity(
+extern LIBMPQ_API int32_t libmpq__file_number_from_identity(
     mpq_archive_s *archive, const char *filename, uint16_t locale, uint16_t platform,
     uint32_t *file_number
 );

@@ -188,7 +188,7 @@ test_custom_io(const char *path)
     );
     TEST_CHECK(identity_stream == NULL);
     source.failure = 0;
-    TEST_CHECK(libmpq__file_number_identity(archive, "payload", 0, 0, &number) == 0);
+    TEST_CHECK(libmpq__file_number_from_identity(archive, "payload", 0, 0, &number) == 0);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     archive = NULL;
 
@@ -469,7 +469,7 @@ main(void)
         TEST_CHECK(memcmp(&identity, &zero, sizeof(zero)) == 0);
         TEST_CHECK(libmpq__file_identity(NULL, NULL, 0, NULL) == LIBMPQ_ERROR_EXIST);
         TEST_CHECK(
-            libmpq__file_number_identity(NULL, "x", 0, 0, &number) == LIBMPQ_ERROR_EXIST &&
+            libmpq__file_number_from_identity(NULL, "x", 0, 0, &number) == LIBMPQ_ERROR_EXIST &&
             number == 0
         );
         TEST_CHECK(

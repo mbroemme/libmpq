@@ -578,10 +578,12 @@ test_v3_mixed_rows(uint32_t classic_count, uint32_t bet_count, int live_sources,
                 (i >= classic_count ? LIBMPQ_IDENTITY_BET : LIBMPQ_IDENTITY_CLASSIC)
             );
             TEST_CHECK(
-                libmpq__file_number_identity(archive, name, 0, 0, &exact) == 0 && exact == number
+                libmpq__file_number_from_identity(archive, name, 0, 0, &exact) == 0 &&
+                exact == number
             );
             TEST_CHECK(
-                libmpq__file_number_identity(archive, name, 1, 0, &exact) == LIBMPQ_ERROR_EXIST &&
+                libmpq__file_number_from_identity(archive, name, 1, 0, &exact) ==
+                    LIBMPQ_ERROR_EXIST &&
                 exact == 0
             );
             TEST_CHECK(libmpq__file_identity(archive, name, 1, &identity) == LIBMPQ_ERROR_EXIST);
@@ -1711,7 +1713,7 @@ test_filename_provenance(uint32_t version)
             TEST_CHECK(identity.locale == identities[i].locale);
             TEST_CHECK(identity.platform == identities[i].platform && identity.reserved == 0);
             TEST_CHECK(
-                libmpq__file_number_identity(
+                libmpq__file_number_from_identity(
                     archive, identities[i].name, identities[i].locale, identities[i].platform,
                     &number
                 ) == 0 &&
@@ -1744,7 +1746,7 @@ test_filename_provenance(uint32_t version)
             );
             TEST_CHECK(memcmp(&identity, &zero, sizeof(identity)) == 0);
             TEST_CHECK(
-                libmpq__file_number_identity(archive, "shared.bin", 0, 0, &number) ==
+                libmpq__file_number_from_identity(archive, "shared.bin", 0, 0, &number) ==
                     LIBMPQ_ERROR_FORMAT &&
                 number == 0
             );

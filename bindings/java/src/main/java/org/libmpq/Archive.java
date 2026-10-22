@@ -454,7 +454,7 @@ public final class Archive implements AutoCloseable {
         short l = identitySelector(locale), p = identitySelector(platform);
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(ValueLayout.JAVA_INT);
-            Support.check(LibmpqNative.fileNumberIdentity(handle, Support.text(arena, name), l, p, output));
+            Support.check(LibmpqNative.fileNumberFromIdentity(handle, Support.text(arena, name), l, p, output));
             return output.get(ValueLayout.JAVA_INT, 0);
         }
     }

@@ -322,7 +322,7 @@ for _name in ("blocks", "flags"):
 _configure("libmpq__file_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
            ctypes.c_uint32, _VOID_PTR)
 _configure("libmpq__file_number", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32))
-_configure("libmpq__file_number_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
+_configure("libmpq__file_number_from_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
            ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_hash", None, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__file_number_from_hash", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
@@ -455,7 +455,11 @@ def _identity_call(operation, selection, *arguments):
         return getattr(libmpq, operation)(*arguments)
     if operation == "libmpq__update_rename":
         return getattr(libmpq, operation + "_identity")(*arguments, *selection)
-    return getattr(libmpq, operation + "_identity")(
+    native_name = (
+        operation + "_from_identity" if operation == "libmpq__file_number"
+        else operation + "_identity"
+    )
+    return getattr(libmpq, native_name)(
         *arguments[:2], *selection, *arguments[2:])
 
 

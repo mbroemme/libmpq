@@ -159,7 +159,7 @@ not file-storage flags.
 Mixed entries carry both flags when canonically reconciled. HET/BET-only
 entries expose one unqualified `(0, 0)` identity with BET provenance.
 
-Use `libmpq__file_number_identity()` or
+Use `libmpq__file_number_from_identity()` or
 `libmpq__stream_open_name_identity()` for exact selection with explicit
 `uint16_t` locale/platform values; `(0,0)` selects the neutral identity.
 Ordinary functions retain HET-first/classic first-hit resolution. Exact

@@ -1324,7 +1324,7 @@ libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *
 
 /* Select only the explicitly requested identity, without fallback. */
 int32_t
-libmpq__file_number_identity(
+libmpq__file_number_from_identity(
     mpq_archive_s *archive, const char *filename, uint16_t locale, uint16_t platform,
     uint32_t *number
 )

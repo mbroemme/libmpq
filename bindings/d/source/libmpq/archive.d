@@ -352,7 +352,7 @@ class Archive {
     uint fileNumber(string name, ushort locale, ushort platform) {
         ensureOpen();
         uint result;
-        checkStatus(libmpq__file_number_identity(handle, toStringz(name), locale, platform, &result),
+        checkStatus(libmpq__file_number_from_identity(handle, toStringz(name), locale, platform, &result),
                     "libmpq__file_number");
         return result;
     }

@@ -1346,7 +1346,7 @@ update_resolve_identity(
     const mpq_entry_s *entry;
     uint32_t hashes[3];
     uint32_t unused;
-    int32_t result = libmpq__file_number_identity(
+    int32_t result = libmpq__file_number_from_identity(
         archive, name, target->locale, target->platform, &target->number
     );
     if (result != 0)
@@ -1373,7 +1373,7 @@ update_resolve_identity(
     if (action == LIBMPQ_UPDATE_CHANGE_IDENTITY) {
         if (target->locale == target->new_locale && target->platform == target->new_platform)
             return 0;
-        result = libmpq__file_number_identity(
+        result = libmpq__file_number_from_identity(
             archive, name, target->new_locale, target->new_platform, &unused
         );
         if (result != LIBMPQ_ERROR_EXIST)
@@ -1411,8 +1411,9 @@ update_resolve_identity(
         target->shared = update_block_references(archive, entry->classic_source_index) > 1;
     if (action != LIBMPQ_UPDATE_RENAME)
         return 0;
-    result =
-        libmpq__file_number_identity(archive, new_name, target->locale, target->platform, &unused);
+    result = libmpq__file_number_from_identity(
+        archive, new_name, target->locale, target->platform, &unused
+    );
     if (result != LIBMPQ_ERROR_EXIST)
         return result == 0 ? LIBMPQ_ERROR_EXIST : result;
     if (archive->het_data != NULL) {
@@ -2162,7 +2163,7 @@ update_rebuild_named(
             uint32_t number;
             const mpq_hash_s *before = &archive->mpq_hash[exact->slot];
             const mpq_hash_s *after = &check->mpq_hash[exact->slot];
-            result = libmpq__file_number_identity(
+            result = libmpq__file_number_from_identity(
                 check, old_name, exact->new_locale, exact->new_platform, &number
             );
             if (result == 0 &&
@@ -2173,7 +2174,7 @@ update_rebuild_named(
                      preserved_rows[target]))
                 result = LIBMPQ_ERROR_FORMAT;
             if (result == 0) {
-                result = libmpq__file_number_identity(
+                result = libmpq__file_number_from_identity(
                     check, old_name, exact->locale, exact->platform, &number
                 );
                 result = result == LIBMPQ_ERROR_EXIST ? 0
@@ -2189,7 +2190,7 @@ update_rebuild_named(
                 result = LIBMPQ_ERROR_READ;
         } else {
             uint32_t ignored;
-            result = libmpq__file_number_identity(
+            result = libmpq__file_number_from_identity(
                 check, old_name, exact->locale, exact->platform, &ignored
             );
             result = result == LIBMPQ_ERROR_EXIST ? 0 : result == 0 ? LIBMPQ_ERROR_FORMAT : result;

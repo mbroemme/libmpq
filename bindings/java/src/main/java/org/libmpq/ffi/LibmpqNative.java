@@ -131,7 +131,7 @@ public final class LibmpqNative {
         C_SHORT.withName("locale"), C_SHORT.withName("platform"), C_INT.withName("reserved"));
     private static final MethodHandle FILE_IDENTITY_QUERY;
     private static final MethodHandle FILE_NUMBER;
-    private static final MethodHandle FILE_NUMBER_IDENTITY;
+    private static final MethodHandle FILE_NUMBER_FROM_IDENTITY;
     private static final MethodHandle FILE_HASH;
     private static final MethodHandle FILE_NUMBER_FROM_HASH;
     private static final MethodHandle FILE_READ;
@@ -323,7 +323,7 @@ public final class LibmpqNative {
         FILE_NUMBER = function(linker, lookup, "libmpq__file_number",
                                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                      ValueLayout.ADDRESS, ValueLayout.ADDRESS));
-        FILE_NUMBER_IDENTITY = function(linker, lookup, "libmpq__file_number_identity",
+        FILE_NUMBER_FROM_IDENTITY = function(linker, lookup, "libmpq__file_number_from_identity",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, C_SHORT, C_SHORT, ValueLayout.ADDRESS));
         FILE_HASH = function(linker, lookup, "libmpq__file_hash",
                              FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS,
@@ -729,9 +729,9 @@ public final class LibmpqNative {
     public static int fileNumber(MemorySegment archive, MemorySegment name, MemorySegment output) {
         return callInt(FILE_NUMBER, archive, name, output);
     }
-    public static int fileNumberIdentity(MemorySegment archive, MemorySegment name, short locale,
+    public static int fileNumberFromIdentity(MemorySegment archive, MemorySegment name, short locale,
                                          short platform, MemorySegment output) {
-        return callInt(FILE_NUMBER_IDENTITY, archive, name, locale, platform, output);
+        return callInt(FILE_NUMBER_FROM_IDENTITY, archive, name, locale, platform, output);
     }
     /** Computes the three Storm hash values into caller-provided outputs. */
     public static void fileHash(MemorySegment name, MemorySegment hash1, MemorySegment hash2,

@@ -38,7 +38,7 @@ man_MANS = \
 	libmpq__file_hash.3 \
 	libmpq__file_identity.3 \
 	libmpq__file_number.3 \
-	libmpq__file_number_identity.3 \
+	libmpq__file_number_from_identity.3 \
 	libmpq__file_number_from_hash.3 \
 	libmpq__file_offset.3 \
 	libmpq__file_read.3 \

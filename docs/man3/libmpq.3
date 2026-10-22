@@ -442,7 +442,7 @@ int32_t libmpq__stream_open_name_identity(
 .BI "        uint32_t *" "number"
 .BI ");"
 .sp
-int32_t libmpq__file_number_identity(
+int32_t libmpq__file_number_from_identity(
         mpq_archive_s *archive, const char *filename,
         uint16_t locale, uint16_t platform, uint32_t *file_number);
 .sp
@@ -686,7 +686,7 @@ Ordinary operations retain HET-first/classic first-hit resolution.
 .BR libmpq__file_hash (3),
 .BR libmpq__file_identity (3),
 .BR libmpq__file_number (3),
-.BR libmpq__file_number_identity (3),
+.BR libmpq__file_number_from_identity (3),
 .BR libmpq__file_number_from_hash (3),
 .BR libmpq__file_offset (3),
 .BR libmpq__file_read (3),

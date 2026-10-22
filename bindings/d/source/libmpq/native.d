@@ -419,7 +419,7 @@ extern(C) {
     /** Resolve a filename using Storm's archive hash tables. */
     int libmpq__file_number(mpq_archive_s* archive, const(char)* filename,
                             uint* number);
-    int libmpq__file_number_identity(mpq_archive_s* archive, const(char)* name, ushort locale, ushort platform, uint* number);
+    int libmpq__file_number_from_identity(mpq_archive_s* archive, const(char)* name, ushort locale, ushort platform, uint* number);
 
     /** Calculate the three Storm hashes for a filename. */
     void libmpq__file_hash(const(char)* filename, uint* hash1, uint* hash2,
