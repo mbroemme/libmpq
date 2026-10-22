@@ -191,6 +191,26 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     archive = NULL;
     if (result != 0)
         goto cleanup;
+    if ((archive_options.attributes & LIBMPQ_ATTRIBUTE_FILETIME) != 0) {
+        mpq_update_s *update = NULL;
+        result = mpqe ? libmpq__update_begin_mpqe(
+                            &update, archive_path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1U
+                        )
+                      : libmpq__update_begin(&update, archive_path);
+        if (result == 0) {
+            uint64_t timestamp = UINT64_MAX - data[1];
+            result = libmpq__update_timestamp(update, "roundtrip.bin", timestamp);
+            if (result == 0)
+                result =
+                    libmpq__update_timestamp_identity(update, "roundtrip.bin", timestamp, 0, 0);
+            if (result == 0)
+                result = libmpq__update_commit(update);
+            else
+                (void)libmpq__update_abort(update);
+            if (result != 0)
+                goto cleanup;
+        }
+    }
     if ((mpqe ? libmpq__archive_open_mpqe(
                     &archive, archive_path, 0, mpqe_auth_code, sizeof(mpqe_auth_code) - 1U
                 )
