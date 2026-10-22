@@ -395,6 +395,22 @@ libmpq__update_rename_identity(
     return libmpq__update_transaction_rename_identity(update, name, new_name, locale, platform);
 }
 
+/* Change an existing row timestamp without changing its stored payload. */
+int32_t
+libmpq__update_timestamp(mpq_update_s *update, const char *filename, uint64_t filetime)
+{
+    return libmpq__update_transaction_timestamp(update, filename, filetime, 0, 0, 0);
+}
+
+int32_t
+libmpq__update_timestamp_identity(
+    mpq_update_s *update, const char *filename, uint64_t filetime, uint16_t locale,
+    uint16_t platform
+)
+{
+    return libmpq__update_transaction_timestamp(update, filename, filetime, 1, locale, platform);
+}
+
 /* Change only an exact staged identity's locale/platform tuple. */
 int32_t
 libmpq__update_change_identity(

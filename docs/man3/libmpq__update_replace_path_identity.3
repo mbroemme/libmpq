@@ -37,7 +37,7 @@ Classic-only archives support shared payload aliases. Replacement detaches
 only the selected identity into a new payload; removal retains the old
 payload until its last alias disappears; rename preserves other aliases.
 Locale/platform values are retained. Unchanged aliases retain their original
-attributes and timestamps; replacements keep existing writer defaults.
+attributes and timestamps; replacements keep existing writer defaults while retaining the selected FILETIME.
 Encrypted renames use the new basename and final FIX_KEY offset.
 .PP
 Mixed classic/HET/BET targets require consistent one-to-one identities and

@@ -1,0 +1,78 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__UPDATE_TIMESTAMP_IDENTITY 3 2026-11-11 "The MoPaQ archive library"
+.SH NAME
+libmpq__update_timestamp_identity \- stage an existing MPQ member FILETIME update
+.SH SYNOPSIS
+.nf
+#include <libmpq/mpq.h>
+
+int32_t libmpq__update_timestamp_identity(
+        mpq_update_s *update,
+        const char *filename,
+        uint64_t filetime,
+        uint16_t locale,
+        uint16_t platform);
+.fi
+.SH DESCRIPTION
+Set existing Windows FILETIME metadata in the current successful transaction
+stage. FILETIME is an unsigned count of 100-nanosecond intervals since
+1601-01-01 UTC. Every uint64_t value is valid, including zero and UINT64_MAX.
+Zero is an available timestamp, not an unavailable-value marker.
+.PP
+Select the exact filename, locale and platform without fallback. (0,0)
+selects the exact neutral identity.
+.PP
+The target requires valid, available FILETIME metadata and usable classic
+block-table provenance. This operation neither creates (attributes) nor
+enables missing arrays, clears availability, or imports filesystem times.
+Targets without classic attributes provenance and existing unsupported
+reconstruction layouts are rejected.
+.PP
+FILETIME belongs to a physical classic block row. A request assigning its
+current value is a validated no-op, including shared rows. It does not rewrite
+the stage or invalidate signatures. Actual changes to a row with more than
+one live hash identity are rejected, including unrelated unknown-name aliases.
+No identity is detached and no payload is duplicated.
+.PP
+Supported changes preserve payload offsets, packed bytes, compression,
+encryption/FIX_KEY, checksums, and unrelated attributes and identities.
+Attributes and applicable structural/raw MD5 are regenerated. The archive
+generation and v4 raw-chunk policy are preserved. Actual changes remove stale
+weak/strong signatures under the existing update policy; they do not re-sign.
+MPQE requires the authenticated transaction entry point.
+.PP
+Operations resolve the current stage, so the last successful timestamp wins.
+Ordinary replacement resets FILETIME to zero; exact replacement retains it.
+Set the timestamp after ordinary replacement when a different value is needed.
+.PP
+Semantic rejection preserves the preceding valid stage. Operational failure
+during candidate adoption may leave the transaction abort-only. The original
+archive is unchanged before successful publication. This call does not consume
+the update handle; commit and abort retain their consuming behavior.
+.SH RETURN VALUE
+Returns 0 on success, including validated no-ops, or a negative libmpq error.
+.SH ERRORS
+Missing targets or exact selectors and invalid arguments use
+LIBMPQ_ERROR_EXIST. Missing/unavailable FILETIME, malformed attributes,
+ambiguous identities, actual changes to shared rows, special-member targets,
+and unsupported mappings/layouts return LIBMPQ_ERROR_FORMAT. Allocation,
+size, and I/O failures use the existing corresponding errors.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__file_attributes (3),
+.BR libmpq__writer_timestamp (3),
+.BR libmpq__update_commit (3),
+.BR libmpq__update_abort (3)

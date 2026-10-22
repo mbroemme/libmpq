@@ -1010,6 +1010,24 @@ extern LIBMPQ_API int32_t libmpq__update_rename_identity(
 );
 
 /*
+ * Set existing Windows FILETIME (unsigned 100-ns ticks since 1601-01-01 UTC).
+ * Ordinary lookup retains HET-first/classic first-hit selection; the identity
+ * variant selects exactly, without fallback. Zero is an available timestamp.
+ * Existing valid FILETIME and classic provenance are required; otherwise FORMAT.
+ * Actual changes to shared rows return FORMAT; validated same-value calls are
+ * no-ops, including shared rows, preserving signatures and staged bytes.
+ * Payloads and unrelated metadata are preserved. Actual changes invalidate
+ * signatures under the normal update policy. Rejected requests preserve the
+ * previous valid stage; operational adoption errors can leave it abort-only.
+ */
+extern LIBMPQ_API int32_t
+libmpq__update_timestamp(mpq_update_s *update, const char *filename, uint64_t filetime);
+extern LIBMPQ_API int32_t libmpq__update_timestamp_identity(
+    mpq_update_s *update, const char *filename, uint64_t filetime, uint16_t locale,
+    uint16_t platform
+);
+
+/*
  * Validate and atomically publish staged changes. This consumes the update
  * handle even if publication fails; callers must not use it afterward.
  */

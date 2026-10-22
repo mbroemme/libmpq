@@ -468,6 +468,23 @@ ordinary or exact lookup to find an existing identity and keeps its tuple;
 replacement options must match it and cannot redirect selection. Use
 `libmpq__update_change_identity()` to change an existing tuple explicitly.
 
+`libmpq__update_timestamp(update, name, filetime)` changes existing FILETIME
+metadata using ordinary lookup. Use `libmpq__update_timestamp_identity(update,
+name, filetime, locale, platform)` for exact selection without fallback.
+FILETIME is unsigned 100-nanosecond ticks since 1601-01-01 UTC; zero and
+`UINT64_MAX` are valid values. Valid, available classic-backed FILETIME is
+required. Missing arrays are not created and timestamps cannot be unset.
+
+A validated same-value request is a no-op, including shared rows, and keeps
+staged bytes and signatures intact. Actual changes to rows shared by multiple
+identities, including unknown aliases, return FORMAT. Eligible changes retain
+packed payloads and offsets, regenerate attributes and physical integrity,
+preserve raw-chunk policy, and invalidate signatures under the normal update
+policy. Existing mixed-table, embedded and unsupported metadata restrictions
+remain. Semantic rejection retains the preceding stage; operational adoption
+failures can leave it abort-only. Set timestamps after ordinary replacement;
+exact replacement retains the selected timestamp.
+
 Exact identity operations use `libmpq__update_replace_data_identity()`,
 `libmpq__update_replace_path_identity()`, `libmpq__update_remove_identity()`
 and `libmpq__update_rename_identity()` with explicit locale/platform values. Each resolves
@@ -555,8 +572,8 @@ the new name/key at the final position, preserving FIX_KEY and timestamps. As
 with legacy updates, rewritten v3 multi-compression rename data uses zlib;
 replacement uses caller options or native defaults. Untouched
 CRC32/MD5/FILETIME metadata uses explicit classic provenance, not canonical
-indices; new/replaced attributes are regenerated. Replacement resets FILETIME
-to the writer default of zero; rename retains it.
+indices; new/replaced attributes are regenerated. Ordinary replacement resets
+FILETIME to the writer default of zero; exact replacement and rename retain it.
 
 Legacy per-member staging encodes FIX_KEY at the final archive-relative copy
 position: the plaintext rebuild stream position minus the source archive

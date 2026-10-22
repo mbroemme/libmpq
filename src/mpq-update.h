@@ -66,6 +66,10 @@ int32_t libmpq__update_transaction_change_identity(
     mpq_update_s *update, const char *filename, uint16_t old_locale, uint16_t old_platform,
     uint16_t new_locale, uint16_t new_platform
 );
+int32_t libmpq__update_transaction_timestamp(
+    mpq_update_s *update, const char *filename, uint64_t filetime, uint8_t exact, uint16_t locale,
+    uint16_t platform
+);
 const mpq_update_ops_s *libmpq__update_ops(const mpq_update_s *update);
 void libmpq__update_set_ops(mpq_update_s *update, const mpq_update_ops_s *ops);
 

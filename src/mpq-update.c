@@ -52,7 +52,8 @@ typedef enum
     LIBMPQ_UPDATE_REPLACE,
     LIBMPQ_UPDATE_REMOVE,
     LIBMPQ_UPDATE_RENAME,
-    LIBMPQ_UPDATE_CHANGE_IDENTITY
+    LIBMPQ_UPDATE_CHANGE_IDENTITY,
+    LIBMPQ_UPDATE_TIMESTAMP
 } mpq_update_action_e;
 
 /* A selector is resolved afresh against each successfully adopted stage. */
@@ -66,6 +67,8 @@ typedef struct
     uint8_t keep_name;
     uint16_t new_locale;
     uint16_t new_platform;
+    uint64_t filetime;
+    uint8_t timestamp_exact;
 } mpq_update_identity_s;
 
 struct mpq_update
@@ -1432,6 +1435,74 @@ update_resolve_identity(
     return 0;
 }
 
+/* Validate available row metadata before deciding whether a timestamp is a no-op. */
+static int32_t
+update_resolve_timestamp(
+    mpq_archive_s *archive, const char *name, mpq_update_identity_s *target, uint8_t *unchanged
+)
+{
+    mpq_file_attributes_s attributes;
+    mpq_file_identity_s identity;
+    const mpq_entry_s *entry;
+    uint32_t selected;
+    int32_t result;
+
+    *unchanged = 0;
+    result = target->timestamp_exact
+                 ? libmpq__file_number_from_identity(
+                       archive, name, target->locale, target->platform, &selected
+                   )
+                 : libmpq__file_number(archive, name, &selected);
+    if (result != 0)
+        return result;
+
+    /* Enumeration validates contradictory tuples and filename-specific provenance. */
+    for (uint32_t ordinal = 0;; ++ordinal) {
+        result = libmpq__file_identity(archive, name, ordinal, &identity);
+        if (result != 0)
+            return result == LIBMPQ_ERROR_EXIST ? LIBMPQ_ERROR_FORMAT : result;
+        if (identity.file_number == selected &&
+            (!target->timestamp_exact ||
+             (identity.locale == target->locale && identity.platform == target->platform)))
+            break;
+        if (ordinal == UINT32_MAX)
+            return LIBMPQ_ERROR_FORMAT;
+    }
+    entry = &archive->mpq_entry[archive->mpq_map[selected].entry_index];
+    target->slot = UINT32_MAX;
+    uint32_t hashes[3];
+    libmpq__file_hash(name, &hashes[0], &hashes[1], &hashes[2]);
+    for (uint32_t slot = 0; (identity.flags & LIBMPQ_IDENTITY_CLASSIC) != 0 &&
+                            slot < archive->mpq_header.hash_table_count;
+         ++slot) {
+        const mpq_hash_s *row = &archive->mpq_hash[slot];
+        if (row->block_table_index < LIBMPQ_HASH_DELETED && row->hash_a == hashes[1] &&
+            row->hash_b == hashes[2] && row->locale == identity.locale &&
+            row->platform == identity.platform) {
+            if (target->slot != UINT32_MAX || row->block_table_index != entry->classic_source_index)
+                return LIBMPQ_ERROR_FORMAT;
+            target->slot = slot;
+        }
+    }
+    if ((identity.flags & LIBMPQ_IDENTITY_CLASSIC) != 0 && target->slot == UINT32_MAX)
+        return LIBMPQ_ERROR_FORMAT;
+    result = libmpq__file_attributes(archive, selected, &attributes);
+    if (result != 0)
+        return result == LIBMPQ_ERROR_EXIST ? LIBMPQ_ERROR_FORMAT : result;
+    if (!(attributes.flags & LIBMPQ_ATTRIBUTE_FILETIME))
+        return LIBMPQ_ERROR_FORMAT;
+    target->number = selected;
+    target->locale = identity.locale;
+    target->platform = identity.platform;
+    if (attributes.filetime == target->filetime) {
+        *unchanged = 1;
+        return 0;
+    }
+    if (update_block_references(archive, entry->classic_source_index) != 1)
+        return LIBMPQ_ERROR_FORMAT;
+    return update_resolve_identity(archive, LIBMPQ_UPDATE_TIMESTAMP, name, NULL, NULL, target);
+}
+
 /* Hash an exact logical member with bounded storage, never first-hit name lookup. */
 static int32_t
 update_exact_digest(
@@ -1542,7 +1613,8 @@ update_detach_identity(
 static int32_t
 update_check_unknowns(
     mpq_archive_s *source, mpq_archive_s *check, char **names, const uint32_t *rows,
-    uint64_t *hashes, uint32_t attribute_flags, uint32_t ignored_slot
+    uint64_t *hashes, uint32_t attribute_flags, uint32_t ignored_slot,
+    const mpq_update_identity_s *timestamp
 )
 {
     uint8_t before[LIBMPQ_UPDATE_COPY_SIZE];
@@ -1601,9 +1673,12 @@ update_check_unknowns(
             mpq_file_attributes_s a;
             mpq_file_attributes_s b;
             if (libmpq__file_attributes(source, i, &a) != 0 ||
-                libmpq__file_attributes(check, entry->file_number, &b) != 0 || a.flags != b.flags ||
-                a.crc32 != b.crc32 || a.filetime != b.filetime || a.patch_bit != b.patch_bit ||
-                memcmp(a.md5, b.md5, sizeof(a.md5)) != 0)
+                libmpq__file_attributes(check, entry->file_number, &b) != 0)
+                goto done;
+            if (timestamp != NULL && i == timestamp->number)
+                a.filetime = timestamp->filetime;
+            if (a.flags != b.flags || a.crc32 != b.crc32 || a.filetime != b.filetime ||
+                a.patch_bit != b.patch_bit || memcmp(a.md5, b.md5, sizeof(a.md5)) != 0)
                 goto done;
         }
     }
@@ -1757,14 +1832,16 @@ update_rebuild_named(
                     result = LIBMPQ_ERROR_MALLOC;
             }
         }
-        if (result == 0 && !exact->shared && action != LIBMPQ_UPDATE_CHANGE_IDENTITY) {
+        if (result == 0 && !exact->shared && action != LIBMPQ_UPDATE_CHANGE_IDENTITY &&
+            action != LIBMPQ_UPDATE_TIMESTAMP) {
             names[target] = libmpq__string_duplicate(old_name);
             if (names[target] == NULL)
                 result = LIBMPQ_ERROR_MALLOC;
         }
 
-        /* Tuple edits preserve listfiles unless an internal signature must be removed. */
-        if (result == 0 && action == LIBMPQ_UPDATE_CHANGE_IDENTITY &&
+        /* Metadata edits preserve listfiles unless an internal signature must be removed. */
+        if (result == 0 &&
+            (action == LIBMPQ_UPDATE_CHANGE_IDENTITY || action == LIBMPQ_UPDATE_TIMESTAMP) &&
             special_numbers[0] != UINT32_MAX && special_numbers[2] == UINT32_MAX) {
             preserve_listfile = 1;
             free(names[special_numbers[0]]);
@@ -1850,7 +1927,7 @@ update_rebuild_named(
             result = update_listfile(
                 archive,
                 action == LIBMPQ_UPDATE_REPLACE || action == LIBMPQ_UPDATE_CHANGE_IDENTITY ||
-                        exact->keep_name
+                        action == LIBMPQ_UPDATE_TIMESTAMP || exact->keep_name
                     ? LIBMPQ_SIGNATURE_NAME
                     : old_name,
                 action == LIBMPQ_UPDATE_RENAME ? new_name : NULL, &list_data, &list_size, &unused
@@ -1948,12 +2025,20 @@ update_rebuild_named(
             result = LIBMPQ_ERROR_FORMAT;
             goto done;
         }
+        if (action == LIBMPQ_UPDATE_TIMESTAMP) {
+            if (!(attributes.flags & LIBMPQ_ATTRIBUTE_FILETIME)) {
+                result = LIBMPQ_ERROR_FORMAT;
+                goto done;
+            }
+            if (i == target)
+                attributes.filetime = exact->filetime;
+        }
         if (attributes.patch_bit) {
             result = LIBMPQ_ERROR_FORMAT;
             goto done;
         }
         if (exact != NULL && i == target && !exact->shared &&
-            action != LIBMPQ_UPDATE_CHANGE_IDENTITY)
+            action != LIBMPQ_UPDATE_CHANGE_IDENTITY && action != LIBMPQ_UPDATE_TIMESTAMP)
             continue;
         if (exact == NULL && i == target && action == LIBMPQ_UPDATE_REMOVE)
             continue;
@@ -2064,7 +2149,7 @@ update_rebuild_named(
             );
         else
             result = 0;
-        if (result == 0)
+        if (result == 0 && action != LIBMPQ_UPDATE_TIMESTAMP)
             result = update_detach_identity(writer, exact, action, new_name);
         if (result != 0)
             goto done;
@@ -2125,7 +2210,7 @@ update_rebuild_named(
     }
     {
         uint32_t expected =
-            action == LIBMPQ_UPDATE_CHANGE_IDENTITY ? count
+            (action == LIBMPQ_UPDATE_CHANGE_IDENTITY || action == LIBMPQ_UPDATE_TIMESTAMP) ? count
             : exact != NULL
                 ? count - !exact->shared + (action != LIBMPQ_UPDATE_REMOVE)
                 : count + (action == LIBMPQ_UPDATE_ADD) - (action == LIBMPQ_UPDATE_REMOVE);
@@ -2146,7 +2231,8 @@ update_rebuild_named(
     if (incomplete) {
         result = update_check_unknowns(
             archive, check, names, preserved_rows, preserved_hashes, attribute_flags,
-            exact != NULL ? exact->slot : UINT32_MAX
+            exact != NULL && action != LIBMPQ_UPDATE_TIMESTAMP ? exact->slot : UINT32_MAX,
+            action == LIBMPQ_UPDATE_TIMESTAMP ? exact : NULL
         );
         if (result != 0)
             goto done;
@@ -2159,7 +2245,18 @@ update_rebuild_named(
     if (exact != NULL) {
         uint8_t digest[16];
         uint64_t length;
-        if (action == LIBMPQ_UPDATE_CHANGE_IDENTITY) {
+        if (action == LIBMPQ_UPDATE_TIMESTAMP) {
+            mpq_file_attributes_s attributes;
+            uint32_t number;
+            result = libmpq__file_number_from_identity(
+                check, old_name, exact->locale, exact->platform, &number
+            );
+            if (result == 0)
+                result = libmpq__file_attributes(check, number, &attributes);
+            if (result == 0 && (!(attributes.flags & LIBMPQ_ATTRIBUTE_FILETIME) ||
+                                attributes.filetime != exact->filetime))
+                result = LIBMPQ_ERROR_FORMAT;
+        } else if (action == LIBMPQ_UPDATE_CHANGE_IDENTITY) {
             uint32_t number;
             const mpq_hash_s *before = &archive->mpq_hash[exact->slot];
             const mpq_hash_s *after = &check->mpq_hash[exact->slot];
@@ -2370,9 +2467,15 @@ update_apply(
     mpq_update_identity_s exact = { 0 };
     if (selector != NULL) {
         exact = *selector;
-        result = update_resolve_identity(
-            archive, action, old_name, new_name, replacement_options, &exact
-        );
+        if (action == LIBMPQ_UPDATE_TIMESTAMP) {
+            uint8_t unchanged;
+            result = update_resolve_timestamp(archive, old_name, &exact, &unchanged);
+            if (result != 0 || unchanged)
+                goto done;
+        } else
+            result = update_resolve_identity(
+                archive, action, old_name, new_name, replacement_options, &exact
+            );
         if (result != 0 ||
             (action == LIBMPQ_UPDATE_RENAME && update_names_equal(old_name, new_name)) ||
             (action == LIBMPQ_UPDATE_CHANGE_IDENTITY && exact.locale == exact.new_locale &&
@@ -2864,4 +2967,19 @@ libmpq__update_transaction_change_identity(
     return update_apply(
         update, LIBMPQ_UPDATE_CHANGE_IDENTITY, filename, NULL, NULL, 0, NULL, NULL, &selector
     );
+}
+
+/* Copy timestamp and selection values into the synchronous staging request. */
+int32_t
+libmpq__update_transaction_timestamp(
+    mpq_update_s *update, const char *name, uint64_t filetime, uint8_t exact, uint16_t locale,
+    uint16_t platform
+)
+{
+    mpq_update_identity_s target = { .locale = locale,
+                                     .platform = platform,
+                                     .slot = UINT32_MAX,
+                                     .filetime = filetime,
+                                     .timestamp_exact = exact };
+    return update_apply(update, LIBMPQ_UPDATE_TIMESTAMP, name, NULL, NULL, 0, NULL, NULL, &target);
 }
