@@ -1829,6 +1829,74 @@ libmpq__reader_decode_uint32_table(uint32_t *table, const uint8_t *raw, uint32_t
     }
 }
 
+/* Share the strict one-hop user-data validation used by normal discovery. */
+static int32_t
+reader_user_data_header(
+    const uint8_t *data, uint64_t position, uint64_t size, mpq_prefix_info_s *prefix
+)
+{
+    uint32_t data_size = libmpq__load_le32(data + 4);
+    uint32_t header_offset = libmpq__load_le32(data + 8);
+    uint32_t header_size = libmpq__load_le32(data + 12);
+    if (position > size || header_size < LIBMPQ_USER_DATA_HEADER_WIRE_SIZE ||
+        data_size < header_size || header_offset < data_size || header_offset > size - position ||
+        LIBMPQ_HEADER_WIRE_SIZE > size - position - header_offset ||
+        position > (uint64_t)INT64_MAX - header_offset)
+        return LIBMPQ_ERROR_FORMAT;
+    *prefix = (mpq_prefix_info_s){ .origin = position + header_offset,
+                                   .user_data_position = position,
+                                   .user_data_size = data_size,
+                                   .user_data_header_size = header_size,
+                                   .header_offset = header_offset,
+                                   .has_user_data = 1 };
+    return 0;
+}
+
+/* Replay only the normal discovery path; user-data payload bytes remain opaque. */
+int32_t
+libmpq__reader_archive_prefix_info(const mpq_archive_s *archive, mpq_prefix_info_s *prefix)
+{
+    mpq_prefix_info_s found = { 0 };
+    uint64_t position = 0;
+    uint8_t data[LIBMPQ_HEADER_WIRE_SIZE];
+    if (prefix == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    memset(prefix, 0, sizeof(*prefix));
+    if (archive == NULL || archive->source == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (archive->archive_offset < 0)
+        return LIBMPQ_ERROR_FORMAT;
+    uint64_t origin = (uint64_t)archive->archive_offset;
+    for (;;) {
+        if (position > origin || position > archive->file_size ||
+            sizeof(data) > archive->file_size - position)
+            return LIBMPQ_ERROR_FORMAT;
+        int32_t result = libmpq__source_read_at(archive->source, position, data, sizeof(data));
+        if (result != 0)
+            return result;
+        uint32_t magic = libmpq__load_le32(data);
+        if (magic == LIBMPQ_HEADER) {
+            if (position != origin)
+                return LIBMPQ_ERROR_FORMAT;
+            found.origin = origin;
+            *prefix = found;
+            return 0;
+        }
+        if (found.has_user_data || position == origin)
+            return LIBMPQ_ERROR_FORMAT;
+        if (magic == LIBMPQ_USER_DATA_HEADER) {
+            result = reader_user_data_header(data, position, archive->file_size, &found);
+            if (result != 0 || found.origin != origin)
+                return result != 0 ? result : LIBMPQ_ERROR_FORMAT;
+            position = found.origin;
+        } else {
+            if (position > (uint64_t)INT64_MAX - 512)
+                return LIBMPQ_ERROR_FORMAT;
+            position += 512;
+        }
+    }
+}
+
 /*
  * Open an MPQ archive path and prepare decoded metadata for later operations.
  * The routine locates the header, loads and decrypts all metadata tables, and
@@ -1911,18 +1979,13 @@ libmpq__reader_archive_open_source(
 
         /* Follow a validated user-data pointer once, without permissive header recovery. */
         if (header_search && libmpq__load_le32(header_data) == LIBMPQ_USER_DATA_HEADER) {
-            uint32_t data_size = libmpq__load_le32(header_data + 4);
-            uint32_t header_offset = libmpq__load_le32(header_data + 8);
-            uint32_t data_header_size = libmpq__load_le32(header_data + 12);
-            uint64_t available = (*mpq_archive)->file_size - (uint64_t)archive_offset;
-            if (data_header_size < LIBMPQ_USER_DATA_HEADER_WIRE_SIZE ||
-                data_size < data_header_size || header_offset < data_size ||
-                header_offset > available || sizeof(header_data) > available - header_offset ||
-                (uint64_t)archive_offset > (uint64_t)INT64_MAX - header_offset) {
-                result = LIBMPQ_ERROR_FORMAT;
+            mpq_prefix_info_s prefix;
+            result = reader_user_data_header(
+                header_data, (uint64_t)archive_offset, (*mpq_archive)->file_size, &prefix
+            );
+            if (result != 0)
                 goto error;
-            }
-            archive_offset += header_offset;
+            archive_offset = (libmpq__off_t)prefix.origin;
             header_search = 0;
             continue;
         }

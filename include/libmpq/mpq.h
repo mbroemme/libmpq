@@ -1034,7 +1034,8 @@ extern LIBMPQ_API int32_t libmpq__update_timestamp_identity(
  * already-compact archives are unchanged, including signatures. Actual rebuilds
  * invalidate signatures. Unknown position-independent ciphertext may be copied
  * opaquely; FIX_KEY relocation requires a usable key when its adjustment changes.
- * Embedded wrappers, unrelated trailers and unsupported mappings return FORMAT.
+ * Discoverable embedded prefixes retain their bytes and original MPQ origin.
+ * Unrelated trailers and unsupported prefix metadata or mappings return FORMAT.
  * Semantic rejection preserves the stage; adoption errors may leave it abort-only.
  * Commit alone publishes and consumes the transaction. Compact last when final
  * placement matters: later mutations may reintroduce gaps.

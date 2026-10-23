@@ -87,6 +87,19 @@ int32_t libmpq__reader_validate_payload_range(
     const mpq_archive_s *archive, uint32_t index, uint64_t offset, uint64_t size
 );
 
+/* Discovery provenance is revalidated from source bytes, not inherited from clones. */
+typedef struct
+{
+    uint64_t origin;
+    uint64_t user_data_position;
+    uint32_t user_data_size;
+    uint32_t user_data_header_size;
+    uint32_t header_offset;
+    uint8_t has_user_data;
+} mpq_prefix_info_s;
+
+int32_t libmpq__reader_archive_prefix_info(const mpq_archive_s *archive, mpq_prefix_info_s *prefix);
+
 /*
  * Open and parse an archive at archive_offset. A negative offset enables the
  * embedded-archive scan; otherwise the offset is interpreted as an absolute

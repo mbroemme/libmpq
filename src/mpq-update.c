@@ -3074,7 +3074,9 @@ update_compact_layout(mpq_archive_s *archive, uint8_t *dense)
     size_t count = 1;
     int32_t result = LIBMPQ_ERROR_FORMAT;
     *dense = 1;
-    if (archive->archive_offset != 0 || extent > archive->file_size ||
+    if (archive->archive_offset < 0 || (uint64_t)archive->archive_offset > archive->file_size ||
+        extent > archive->file_size - (uint64_t)archive->archive_offset ||
+        extent > (uint64_t)INT64_MAX - (uint64_t)archive->archive_offset ||
         ((uint64_t)archive->files + 6) * sizeof(*ranges) > SIZE_MAX)
         return LIBMPQ_ERROR_FORMAT;
     ranges = calloc((size_t)archive->files + 6, sizeof(*ranges));
@@ -3261,6 +3263,21 @@ update_compact_bytes(
     if (a->packed_size != b->packed_size || a->unpacked_size != b->unpacked_size ||
         a->flags != b->flags || a->source_mask != b->source_mask)
         return LIBMPQ_ERROR_FORMAT;
+    result = libmpq__reader_validate_payload_range(
+        source, source->mpq_map[number].entry_index, 0, a->packed_size
+    );
+    if (result == 0)
+        result = libmpq__reader_validate_payload_range(
+            check, check->mpq_map[output].entry_index, 0, b->packed_size
+        );
+    if (result != 0)
+        return result;
+    if (a->offset > INT64_MAX || b->offset > INT64_MAX ||
+        (uint64_t)source->archive_offset > (uint64_t)INT64_MAX - a->offset ||
+        (uint64_t)check->archive_offset > (uint64_t)INT64_MAX - b->offset)
+        return LIBMPQ_ERROR_FORMAT;
+    uint64_t source_position = (uint64_t)source->archive_offset + a->offset;
+    uint64_t candidate_position = (uint64_t)check->archive_offset + b->offset;
     if (rekey) {
         result = libmpq__reader_offsets_acquire(source, number, name);
         if (result != 0)
@@ -3297,9 +3314,10 @@ update_compact_bytes(
         while (offset < end) {
             uint32_t take =
                 end - offset < sizeof(before) ? (uint32_t)(end - offset) : sizeof(before);
-            result = libmpq__source_read_at(source->source, a->offset + offset, before, take);
+            result = libmpq__source_read_at(source->source, source_position + offset, before, take);
             if (result == 0)
-                result = libmpq__source_read_at(check->source, b->offset + offset, after, take);
+                result =
+                    libmpq__source_read_at(check->source, candidate_position + offset, after, take);
             if (result != 0)
                 break;
             if (old_key != new_key)
@@ -3429,6 +3447,113 @@ done:
     return result;
 }
 
+/* Wrap completed zero-origin output without changing its serialized offsets or keys. */
+static int32_t
+update_compact_assemble(mpq_update_s *update, mpq_archive_s *source, char **name, char **path)
+{
+    FILE *input = NULL;
+    FILE *output = NULL;
+    char *assembled = NULL;
+    char *assembled_path = NULL;
+    libmpq__off_t size;
+    uint64_t origin = (uint64_t)source->archive_offset;
+    int32_t result = 0;
+    if (origin == 0)
+        return 0;
+    input = libmpq__file_open(*path, "rb");
+    if (input == NULL)
+        return LIBMPQ_ERROR_OPEN;
+    if (libmpq__file_seek(input, 0, SEEK_END) != 0 || (size = libmpq__file_tell(input)) < 0 ||
+        libmpq__file_seek(input, 0, SEEK_SET) != 0) {
+        result = LIBMPQ_ERROR_SEEK;
+        goto done;
+    }
+    if ((uint64_t)size > (uint64_t)INT64_MAX - origin) {
+        result = LIBMPQ_ERROR_SIZE;
+        goto done;
+    }
+    result = libmpq__directory_temporary_reopenable(
+        update->directory, ".libmpq-embedded-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", 1, &assembled,
+        &output
+    );
+    if (result != 0)
+        goto done;
+    assembled_path = update_working_path(update->working_path, assembled);
+    if (assembled_path == NULL) {
+        result = LIBMPQ_ERROR_MALLOC;
+        goto done;
+    }
+    result = update_copy_range(source, output, 0, origin);
+    if (result == 0)
+        result = update_copy(input, output);
+    if (result == 0) {
+        libmpq__off_t written = libmpq__file_tell(output);
+        if (written < 0)
+            result = LIBMPQ_ERROR_SEEK;
+        else if ((uint64_t)written != origin + (uint64_t)size)
+            result = LIBMPQ_ERROR_READ;
+    }
+done:
+    if (input != NULL)
+        update_result(&result, fclose(input) == 0 ? 0 : LIBMPQ_ERROR_CLOSE);
+    if (output != NULL) {
+        if (result == 0 && fflush(output) != 0)
+            result = LIBMPQ_ERROR_WRITE;
+        update_result(&result, fclose(output) == 0 ? 0 : LIBMPQ_ERROR_CLOSE);
+    }
+    if (result == 0)
+        result = libmpq__directory_remove(update->directory, *name);
+    if (result == 0) {
+        free(*name);
+        free(*path);
+        *name = assembled;
+        *path = assembled_path;
+        assembled = assembled_path = NULL;
+    }
+    if (assembled != NULL)
+        update_result(&result, libmpq__directory_remove(update->directory, assembled));
+    free(assembled);
+    free(assembled_path);
+    return result;
+}
+
+/* Validate both discovery provenance and every immutable prefix byte before adoption. */
+static int32_t
+update_compact_prefix(
+    mpq_archive_s *source, mpq_archive_s *candidate, const mpq_prefix_info_s *expected
+)
+{
+    mpq_prefix_info_s actual;
+    uint8_t before[16384];
+    uint8_t after[16384];
+    int32_t result = libmpq__reader_archive_prefix_info(candidate, &actual);
+    if (result != 0)
+        return result;
+    if (actual.origin != expected->origin || actual.has_user_data != expected->has_user_data ||
+        actual.user_data_position != expected->user_data_position ||
+        actual.user_data_size != expected->user_data_size ||
+        actual.user_data_header_size != expected->user_data_header_size ||
+        actual.header_offset != expected->header_offset)
+        return LIBMPQ_ERROR_FORMAT;
+    uint64_t extent =
+        libmpq__header_archive_size(&candidate->mpq_header, &candidate->mpq_header_v3);
+    if (actual.origin > candidate->file_size || extent != candidate->file_size - actual.origin)
+        return LIBMPQ_ERROR_FORMAT;
+    for (uint64_t position = 0; position < actual.origin;) {
+        size_t take = actual.origin - position < sizeof(before) ? (size_t)(actual.origin - position)
+                                                                : sizeof(before);
+        result = libmpq__source_read_at(source->source, position, before, take);
+        if (result == 0)
+            result = libmpq__source_read_at(candidate->source, position, after, take);
+        if (result != 0)
+            return result;
+        if (memcmp(before, after, take) != 0)
+            return LIBMPQ_ERROR_FORMAT;
+        position += take;
+    }
+    return 0;
+}
+
 /* Compact the current stage through the shared writer, then adopt only a validated candidate. */
 int32_t
 libmpq__update_transaction_compact(mpq_update_s *update)
@@ -3452,6 +3577,7 @@ libmpq__update_transaction_compact(mpq_update_s *update)
     size_t list_size = 0;
     mpq_file_options_s list_options = { 0 };
     mpq_entry_s encoded_list = { 0 };
+    mpq_prefix_info_s prefix;
     uint32_t signature = UINT32_MAX;
     uint32_t attribute = UINT32_MAX;
     uint32_t listfile = UINT32_MAX;
@@ -3469,8 +3595,17 @@ libmpq__update_transaction_compact(mpq_update_s *update)
     result = libmpq__archive_open(&archive, update->working_path, -1);
     if (result != 0)
         return result;
+    result = libmpq__reader_archive_prefix_info(archive, &prefix);
+    if (result != 0)
+        goto done;
     uint64_t extent = libmpq__header_archive_size(&archive->mpq_header, &archive->mpq_header_v3);
-    if (archive->archive_offset != 0 || archive->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_FOUR ||
+    if (prefix.origin > archive->file_size || extent > archive->file_size - prefix.origin ||
+        extent > (uint64_t)INT64_MAX - prefix.origin) {
+        result = LIBMPQ_ERROR_FORMAT;
+        goto done;
+    }
+    uint64_t end = prefix.origin + extent;
+    if (archive->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_FOUR ||
         archive->mpq_header.header_size !=
             (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE ? LIBMPQ_HEADER_WIRE_SIZE
              : archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO
@@ -3481,13 +3616,12 @@ libmpq__update_transaction_compact(mpq_update_s *update)
         result = LIBMPQ_ERROR_FORMAT;
         goto done;
     }
-    if (archive->file_size != extent) {
+    if (archive->file_size != end) {
         uint32_t signatures;
         result = libmpq__archive_signatures(archive, &signatures);
         if (result != 0)
             goto done;
-        if (archive->file_size < extent ||
-            archive->file_size - extent != LIBMPQ_STRONG_TRAILER_SIZE ||
+        if (archive->file_size < end || archive->file_size - end != LIBMPQ_STRONG_TRAILER_SIZE ||
             !(signatures & LIBMPQ_SIGNATURE_STRONG)) {
             result = LIBMPQ_ERROR_FORMAT;
             goto done;
@@ -3774,7 +3908,13 @@ libmpq__update_transaction_compact(mpq_update_s *update)
     writer = NULL;
     if (result != 0)
         goto done;
+    result = update_compact_assemble(update, archive, &temporary, &path);
+    if (result != 0)
+        goto done;
     result = libmpq__archive_open(&check, path, -1);
+    if (result != 0)
+        goto done;
+    result = update_compact_prefix(archive, check, &prefix);
     if (result != 0)
         goto done;
     result = update_compact_layout(check, &dense);

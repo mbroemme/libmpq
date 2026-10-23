@@ -488,14 +488,25 @@ Opaque non-FIX_KEY ciphertext can move unchanged without a filename, which
 establishes stored-byte preservation rather than plaintext verification. Moving
 FIX_KEY data requires a usable basename key when its effective key changes.
 Shared encrypted rows require known, key-compatible spellings for every alias.
-Unsupported or ambiguous identities, shared encryption provenance, embedded
-wrappers, unrelated trailers and physical patch/delete members are rejected.
+Discoverable embedded prefixes retain every byte and the original absolute
+MPQ-header position. Discovery uses 512-byte probes or one validated user-data
+header; its pointer can target an unaligned MPQ. User-data headers, payloads
+and padding are retained without interpreting incidental payload signatures.
+FIX_KEY adjustments remain MPQ-relative and exclude the prefix. Prefix bytes
+and supported MPQ relationships are preserved, not arbitrary container validity.
+Unsupported identities, shared encryption provenance, contradictory prefix
+metadata, unrelated trailers and physical patch/delete members are rejected.
+Unaligned MPQs without a discoverable user-data pointer remain unsupported.
 
 Compaction uses the current stage, including earlier identity and timestamp
 changes. Semantic rejection preserves that stage; existing operational adoption
 failures can leave it abort-only. Budget space for the original, working stage
-and full candidate; MPQE publication may also need an encrypted candidate.
+and full candidate. Embedded assembly also retains a completed zero-origin
+MPQ temporary until the prefixed candidate is closed. MPQE publication may
+need an encrypted candidate; prefix bytes refer to the decoded logical source.
 Existing cleanup, authentication and source-preservation guarantees apply.
+This support is specific to compaction. Other embedded exact, identity,
+timestamp and modern v3/v4 mutation restrictions remain unchanged.
 
 `libmpq__update_timestamp(update, name, filetime)` changes existing FILETIME
 metadata using ordinary lookup. Use `libmpq__update_timestamp_identity(update,

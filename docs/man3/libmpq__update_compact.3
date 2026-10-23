@@ -39,7 +39,7 @@ candidate. It does not imply successful plaintext verification of every member.
 Actual reconstruction removes stale signatures and regenerates applicable
 structural and raw MD5 using the original v4 raw-chunk policy.
 .PP
-Supported standalone v1-v4 classic and representable HET/BET layouts reuse
+Supported v1-v4 classic and representable HET/BET layouts reuse
 identity-preserving packed reconstruction. Unknown unencrypted and
 position-independent encrypted payloads can move as opaque stored bytes.
 Ciphertext copying is not plaintext verification. FIX_KEY relocation requires
@@ -47,21 +47,40 @@ a usable basename key when its effective key changes; no name is fabricated.
 Every shared encrypted alias requires a known, key-compatible spelling.
 Ambiguous or insufficient shared encryption provenance is rejected.
 .PP
-Embedded prefixes, unrelated trailers, physical patch/delete members,
+Discoverable embedded prefixes are copied byte-for-byte, retaining the original
+absolute MPQ-header position. Automatic discovery scans 512-byte boundaries or
+follows one validated MPQ user-data header, which may point to an unaligned MPQ.
+Opaque prefixes before a discoverable user-data header, its payload, extended
+header bytes and padding are retained unchanged. Arbitrary payload bytes are
+not scanned for incidental MPQ signatures. Unaligned origins without a
+discoverable user-data pointer and contradictory prefix metadata are rejected.
+Only supported MPQ relationships and prefix bytes are preserved; arbitrary
+executable/container validity is not guaranteed. FIX_KEY adjustments use
+MPQ-relative member offsets and never include prefix length.
+.PP
+Unrelated trailers, physical patch/delete members,
 contradictory or reduced hashes, unsupported BET/attributes metadata and
 overlapping physical ranges are rejected conservatively. Recognized strong
 signature trailers survive proven no-ops and are removed on reconstruction.
 Authenticated MPQE uses the existing plaintext stage and encrypted publication.
 .PP
 Temporary disk space is required for the working stage and a complete candidate,
-in addition to the original archive. MPQE publication can require another
+in addition to the original archive. Embedded reconstruction also needs a
+completed zero-origin MPQ temporary while assembling the full candidate.
+MPQE publication can require another
 encrypted candidate. Memory for payload copying is bounded independently of
 unpacked file size. Cleanup remains best effort on persistent I/O failure;
 secure deletion and crash durability are not guaranteed.
 .PP
 Semantic rejection preserves the preceding valid stage. Existing operational
-adoption failures can leave the transaction abort-only. Abort and failed
+adoption failures can leave the transaction abort-only. Prefix assembly is
+validated before adoption; pre-adoption failures preserve the previous stage. Abort and failed
 publication preserve the original under the normal transaction guarantees.
+.PP
+This extends compaction only. Existing restrictions on other embedded exact,
+identity, timestamp and modern v3/v4 mutations remain unchanged; supported
+legacy ordinary mutations retain their behavior. For MPQE, prefix preservation
+refers to the decoded logical source, using existing authenticated publication.
 .SH RETURN VALUE
 Returns 0 on success, including proven no-ops, or a negative libmpq error.
 .SH ERRORS

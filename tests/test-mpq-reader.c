@@ -3007,6 +3007,30 @@ test_v4_user_data(void)
             archive->archive_offset == 96 &&
             archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR
         );
+        mpq_prefix_info_s prefix;
+        TEST_CHECK(libmpq__reader_archive_prefix_info(archive, &prefix) == 0);
+        TEST_CHECK(
+            prefix.origin == 96 && prefix.has_user_data && prefix.user_data_position == 0 &&
+            prefix.header_offset == 96 && prefix.user_data_header_size == 16 &&
+            prefix.user_data_size == 32
+        );
+        source.fail_at = 16;
+        memset(&prefix, 0xff, sizeof(prefix));
+        TEST_CHECK(libmpq__reader_archive_prefix_info(archive, &prefix) == LIBMPQ_ERROR_READ);
+        TEST_CHECK(prefix.origin == 0 && prefix.has_user_data == 0);
+        source.fail_at = 0;
+        libmpq__store_le32(source.bytes + 8, 95);
+        TEST_CHECK(libmpq__reader_archive_prefix_info(archive, &prefix) == LIBMPQ_ERROR_FORMAT);
+        libmpq__store_le32(source.bytes + 8, 96);
+        archive->archive_offset = INT64_MAX;
+        TEST_CHECK(libmpq__reader_archive_prefix_info(archive, &prefix) == LIBMPQ_ERROR_FORMAT);
+        archive->archive_offset = -1;
+        TEST_CHECK(libmpq__reader_archive_prefix_info(archive, &prefix) == LIBMPQ_ERROR_FORMAT);
+        archive->archive_offset = 96;
+        mpq_archive_s *clone = NULL;
+        TEST_CHECK(libmpq__archive_clone(&clone, archive) == 0);
+        TEST_CHECK(libmpq__reader_archive_prefix_info(clone, &prefix) == 0 && prefix.origin == 96);
+        TEST_CHECK(libmpq__archive_close(clone) == 0);
         TEST_CHECK(libmpq__stream_open_name(archive, "folder/payload.bin", &stream) == 0);
         TEST_CHECK(
             libmpq__stream_read(stream, actual, sizeof(actual), &transferred) == 0 &&

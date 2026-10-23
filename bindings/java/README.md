@@ -467,7 +467,14 @@ stale signatures and regenerate integrity using the original raw-chunk policy.
 
 Unknown position-independent ciphertext can move opaquely; this does not verify
 plaintext. FIX_KEY relocation requires a usable key when its adjustment changes.
-Unsupported identities, ambiguous shared encryption, embedded wrappers and
-unrelated trailers are rejected. Budget disk space for a working stage and full
-candidate, plus encrypted MPQE publication where applicable. Native errors and
-transaction ownership follow the existing update conventions.
+Discoverable embedded prefixes retain all bytes and the MPQ-header position.
+Discovery uses 512-byte probes or a validated user-data pointer, which can
+identify an unaligned MPQ. FIX_KEY remains relative to the MPQ header. This is
+byte preservation, not a guarantee of arbitrary container validity. Unsupported
+identities, contradictory prefixes, ambiguous shared encryption and unrelated
+trailers are rejected. Other embedded mutation restrictions remain unchanged.
+
+Budget disk space for a working stage and full candidate. Embedded assembly
+also needs a completed zero-origin MPQ temporary; MPQE publication may require
+an encrypted candidate. MPQE prefix preservation refers to decoded bytes.
+Native errors and transaction ownership follow existing update conventions.
