@@ -1347,21 +1347,28 @@ private void testTransactionalCompaction() {
     auto path = temporaryArchive("compact");
     scope(exit) if (exists(path)) remove(path);
     foreach (version_; 0u .. 4u) {
-        auto writer = Archive.create(path, ArchiveCreateOptions(version_, 8, 512, 0, ATTRIBUTE_FILETIME));
-        writer.add("voice", cast(const(ubyte)[]) "payload");
-        writer.add("discard", new ubyte[32768]);
-        writer.close();
-        auto before = read(path);
-        auto update = Update.begin(path);
-        update.remove("discard");
-        update.timestamp("voice", 17);
-        update.compact();
-        update.compact();
-        assert(read(path) == before);
-        update.commit();
-        auto archive = Archive.open(path);
-        assert(archive.file("voice").attributes().filetime == 17);
-        archive.close();
+        foreach (embedded; [false, true]) {
+            auto writer = Archive.create(path, ArchiveCreateOptions(version_, 8, 512, 0, ATTRIBUTE_FILETIME));
+            writer.add("voice", cast(const(ubyte)[]) "payload");
+            writer.add("discard", new ubyte[32768]);
+            writer.close();
+            if (embedded) write(path, new ubyte[512] ~ cast(ubyte[]) read(path));
+            auto before = read(path);
+            auto update = Update.begin(path);
+            update.remove("discard");
+            update.replaceData("voice", cast(const(ubyte)[]) "new");
+            update.rename("voice", "renamed");
+            update.changeIdentity("renamed", 0, 0, 1033, 2);
+            update.timestamp("renamed", 17, 1033, 2);
+            update.compact();
+            update.compact();
+            assert(read(path) == before);
+            update.commit();
+            if (embedded) assert((cast(ubyte[]) read(path))[0 .. 512] == new ubyte[512]);
+            auto archive = Archive.open(path);
+            assert(archive.file("renamed").attributes().filetime == 17);
+            archive.close();
+        }
     }
 }
 

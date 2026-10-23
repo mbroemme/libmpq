@@ -1652,12 +1652,32 @@ update_check_unknowns(
             entry->flags != old->flags || entry->file_number >= check->files ||
             libmpq__reader_validate_payload_range(check, index, 0, entry->packed_size) != 0)
             goto done;
+        result = libmpq__reader_validate_payload_range(
+            source, source->mpq_map[i].entry_index, 0, old->packed_size
+        );
+        if (result != 0)
+            goto done;
+        if (source->archive_offset < 0 || check->archive_offset < 0 ||
+            old->offset > (uint64_t)INT64_MAX - (uint64_t)source->archive_offset ||
+            entry->offset > (uint64_t)INT64_MAX - (uint64_t)check->archive_offset ||
+            old->packed_size >
+                (uint64_t)INT64_MAX - (uint64_t)source->archive_offset - old->offset ||
+            entry->packed_size >
+                (uint64_t)INT64_MAX - (uint64_t)check->archive_offset - entry->offset) {
+            result = LIBMPQ_ERROR_FORMAT;
+            goto done;
+        }
+        uint64_t source_position = (uint64_t)source->archive_offset + old->offset;
+        uint64_t candidate_position = (uint64_t)check->archive_offset + entry->offset;
+        result = LIBMPQ_ERROR_FORMAT;
         for (uint64_t offset = 0; offset < old->packed_size;) {
             size_t size = old->packed_size - offset < sizeof(before)
                               ? (size_t)(old->packed_size - offset)
                               : sizeof(before);
-            if (libmpq__source_read_at(source->source, old->offset + offset, before, size) != 0 ||
-                libmpq__source_read_at(check->source, entry->offset + offset, after, size) != 0 ||
+            if (libmpq__source_read_at(source->source, source_position + offset, before, size) !=
+                    0 ||
+                libmpq__source_read_at(check->source, candidate_position + offset, after, size) !=
+                    0 ||
                 memcmp(before, after, size) != 0) {
                 result = LIBMPQ_ERROR_READ;
                 goto done;
@@ -1730,6 +1750,12 @@ done:
     return result;
 }
 
+/* Shared completed-MPQ assembly preserves origins without changing writer coordinates. */
+static int32_t update_open_candidate(
+    mpq_update_s *update, mpq_archive_s *source, const mpq_prefix_info_s *prefix, char **name,
+    char **path, mpq_archive_s **candidate
+);
+
 /* Rebuild named logical entries using the ordinary writer and transaction publication. */
 static int32_t
 update_rebuild_named(
@@ -1764,19 +1790,26 @@ update_rebuild_named(
     int32_t result;
     uint64_t extent = libmpq__header_archive_size(&archive->mpq_header, &archive->mpq_header_v3);
 
-    /* Embedded wrappers and unrelated trailers must not be silently discarded. */
-    if (archive->archive_offset != 0 || archive->file_size < extent ||
+    mpq_prefix_info_s prefix;
+    result = libmpq__reader_archive_prefix_info(archive, &prefix);
+    if (result != 0)
+        return result;
+
+    /* Preserve supported prefixes; unrelated trailers must not be silently discarded. */
+    if (prefix.origin > archive->file_size || extent > archive->file_size - prefix.origin ||
+        extent > (uint64_t)INT64_MAX - prefix.origin ||
         archive->mpq_header.header_size >
             (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR
                  ? LIBMPQ_HEADER_V4_WIRE_SIZE
                  : LIBMPQ_HEADER_V3_WIRE_SIZE))
         return LIBMPQ_ERROR_FORMAT;
-    if (archive->file_size != extent) {
+    uint64_t end = prefix.origin + extent;
+    if (archive->file_size != end) {
         uint32_t signatures;
         result = libmpq__archive_signatures(archive, &signatures);
         if (result != 0)
             return result;
-        if (archive->file_size - extent != LIBMPQ_STRONG_TRAILER_SIZE ||
+        if (archive->file_size - end != LIBMPQ_STRONG_TRAILER_SIZE ||
             (signatures & LIBMPQ_SIGNATURE_STRONG) == 0)
             return LIBMPQ_ERROR_FORMAT;
     }
@@ -2102,7 +2135,13 @@ update_rebuild_named(
                 result = LIBMPQ_ERROR_SEEK;
                 goto done;
             }
-            result = update_copy_range(archive, writer->fp, entry->offset, entry->packed_size);
+            result = libmpq__reader_validate_payload_range(
+                archive, archive->mpq_map[i].entry_index, 0, entry->packed_size
+            );
+            if (result == 0)
+                result = update_copy_range(
+                    archive, writer->fp, prefix.origin + entry->offset, entry->packed_size
+                );
             if (result == 0)
                 result = libmpq__writer_import_member(
                     writer, name, entry, options.locale, options.platform,
@@ -2201,7 +2240,7 @@ update_rebuild_named(
     writer = NULL;
     if (result != 0)
         goto done;
-    result = libmpq__archive_open(&check, path, -1);
+    result = update_open_candidate(update, archive, &prefix, &temporary, &path, &check);
     if (result != 0)
         goto done;
     if (check->mpq_header.version != archive->mpq_header.version) {
@@ -3449,7 +3488,7 @@ done:
 
 /* Wrap completed zero-origin output without changing its serialized offsets or keys. */
 static int32_t
-update_compact_assemble(mpq_update_s *update, mpq_archive_s *source, char **name, char **path)
+update_assemble_prefix(mpq_update_s *update, mpq_archive_s *source, char **name, char **path)
 {
     FILE *input = NULL;
     FILE *output = NULL;
@@ -3519,7 +3558,7 @@ done:
 
 /* Validate both discovery provenance and every immutable prefix byte before adoption. */
 static int32_t
-update_compact_prefix(
+update_validate_prefix(
     mpq_archive_s *source, mpq_archive_s *candidate, const mpq_prefix_info_s *expected
 )
 {
@@ -3535,10 +3574,6 @@ update_compact_prefix(
         actual.user_data_header_size != expected->user_data_header_size ||
         actual.header_offset != expected->header_offset)
         return LIBMPQ_ERROR_FORMAT;
-    uint64_t extent =
-        libmpq__header_archive_size(&candidate->mpq_header, &candidate->mpq_header_v3);
-    if (actual.origin > candidate->file_size || extent != candidate->file_size - actual.origin)
-        return LIBMPQ_ERROR_FORMAT;
     for (uint64_t position = 0; position < actual.origin;) {
         size_t take = actual.origin - position < sizeof(before) ? (size_t)(actual.origin - position)
                                                                 : sizeof(before);
@@ -3552,6 +3587,33 @@ update_compact_prefix(
         position += take;
     }
     return 0;
+}
+
+/* Reopen assembled output through normal discovery before operation-specific validation. */
+static int32_t
+update_open_candidate(
+    mpq_update_s *update, mpq_archive_s *source, const mpq_prefix_info_s *prefix, char **name,
+    char **path, mpq_archive_s **candidate
+)
+{
+    *candidate = NULL;
+    int32_t result = update_assemble_prefix(update, source, name, path);
+    if (result == 0)
+        result = libmpq__archive_open(candidate, *path, -1);
+    if (result == 0)
+        result = update_validate_prefix(source, *candidate, prefix);
+    if (result == 0) {
+        uint64_t extent =
+            libmpq__header_archive_size(&(*candidate)->mpq_header, &(*candidate)->mpq_header_v3);
+        if (prefix->origin > (*candidate)->file_size ||
+            extent != (*candidate)->file_size - prefix->origin)
+            result = LIBMPQ_ERROR_FORMAT;
+    }
+    if (result != 0 && *candidate != NULL) {
+        (void)libmpq__archive_close(*candidate);
+        *candidate = NULL;
+    }
+    return result;
 }
 
 /* Compact the current stage through the shared writer, then adopt only a validated candidate. */
@@ -3908,13 +3970,7 @@ libmpq__update_transaction_compact(mpq_update_s *update)
     writer = NULL;
     if (result != 0)
         goto done;
-    result = update_compact_assemble(update, archive, &temporary, &path);
-    if (result != 0)
-        goto done;
-    result = libmpq__archive_open(&check, path, -1);
-    if (result != 0)
-        goto done;
-    result = update_compact_prefix(archive, check, &prefix);
+    result = update_open_candidate(update, archive, &prefix, &temporary, &path, &check);
     if (result != 0)
         goto done;
     result = update_compact_layout(check, &dense);

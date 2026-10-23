@@ -1613,8 +1613,8 @@ def test_transactional_timestamps(tmp_path, version, wrapped):
 
 
 @pytest.mark.parametrize("version", [0, 1, 2, 3])
-@pytest.mark.parametrize("wrapped", [False, True])
-def test_transactional_compaction(tmp_path, version, wrapped):
+@pytest.mark.parametrize("wrapped,embedded", [(False, False), (True, False), (False, True)])
+def test_transactional_compaction(tmp_path, version, wrapped, embedded):
     path = tmp_path / "compact.mpq"
     code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
     create = (mpq.Writer.create_mpqe(path, code, version=version, max_files=8, attributes=mpq.ATTRIBUTE_FILETIME)
@@ -1622,6 +1622,9 @@ def test_transactional_compaction(tmp_path, version, wrapped):
     with create as writer:
         writer.add("voice", b"payload")
         writer.add("discard", bytes(32768))
+    prefix = bytes(512) if embedded else b""
+    if embedded:
+        path.write_bytes(prefix + path.read_bytes())
     before = path.read_bytes()
     begin = lambda: mpq.Update.begin_mpqe(path, code) if wrapped else mpq.Update(path)
     with begin() as update:
@@ -1642,6 +1645,7 @@ def test_transactional_compaction(tmp_path, version, wrapped):
         assert archive["renamed"].attributes().filetime == 17
         assert "discard" not in archive
     after = path.read_bytes()
+    assert after[:len(prefix)] == prefix
     with begin() as update:
         update.compact()
     assert path.read_bytes() == after

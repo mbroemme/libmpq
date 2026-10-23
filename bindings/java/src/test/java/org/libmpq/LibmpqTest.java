@@ -38,24 +38,38 @@ class LibmpqTest {
     @Test
     void transactionalCompaction(@TempDir Path directory) throws Exception {
         for (int version = 0; version < 4; ++version) {
-            Path path = directory.resolve("compact.mpq");
-            try (Archive writer = Archive.create(path,
-                    new ArchiveCreateOptions(version, 8, 512, 0, Mpq.ATTRIBUTE_FILETIME))) {
-                writer.add("voice", new byte[] {1, 2, 3}, null);
-                writer.add("discard", new byte[32768], null);
-            }
-            byte[] original = Files.readAllBytes(path);
-            try (MpqUpdate update = MpqUpdate.begin(path)) {
-                update.remove("discard");
-                update.timestamp("voice", 17L);
-                update.compact();
-                update.compact();
-                assertArrayEquals(original, Files.readAllBytes(path));
-                update.commit();
-            }
-            try (Archive archive = Archive.open(path)) {
-                assertEquals(17L, archive.attributes(archive.fileNumber("voice")).filetime());
-                assertThrows(LibmpqException.class, () -> archive.fileNumber("discard"));
+            for (boolean embedded : new boolean[] {false, true}) {
+                Path path = directory.resolve("compact.mpq");
+                try (Archive writer = Archive.create(path,
+                        new ArchiveCreateOptions(version, 8, 512, 0, Mpq.ATTRIBUTE_FILETIME))) {
+                    writer.add("voice", new byte[] {1, 2, 3}, null);
+                    writer.add("discard", new byte[32768], null);
+                }
+                if (embedded) {
+                    byte[] mpq = Files.readAllBytes(path);
+                    byte[] container = new byte[512 + mpq.length];
+                    System.arraycopy(mpq, 0, container, 512, mpq.length);
+                    Files.write(path, container);
+                }
+                byte[] original = Files.readAllBytes(path);
+                try (MpqUpdate update = MpqUpdate.begin(path)) {
+                    update.remove("discard");
+                    update.replaceData("voice", new byte[] {4, 5, 6}, null);
+                    update.rename("voice", "renamed");
+                    update.changeIdentity("renamed", 0, 0, 1033, 2);
+                    update.timestamp("renamed", 17L, 1033, 2);
+                    update.compact();
+                    update.compact();
+                    assertArrayEquals(original, Files.readAllBytes(path));
+                    update.commit();
+                }
+                if (embedded) {
+                    assertArrayEquals(new byte[512], java.util.Arrays.copyOf(Files.readAllBytes(path), 512));
+                }
+                try (Archive archive = Archive.open(path, -1)) {
+                    assertEquals(17L, archive.attributes(archive.fileNumber("renamed", 1033, 2)).filetime());
+                    assertThrows(LibmpqException.class, () -> archive.fileNumber("discard"));
+                }
             }
         }
     }
