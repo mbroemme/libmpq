@@ -37,6 +37,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <zlib.h>
 #ifndef _WIN32
 #include <sys/stat.h>
 #include <unistd.h>
@@ -6064,9 +6065,988 @@ test_timestamp_bet_alias(uint32_t version)
     return 0;
 }
 
+/* Inspect actual serialized payload order independently of the compaction planner. */
+static int
+test_compact_dense(mpq_archive_s *archive)
+{
+    uint64_t cursor = archive->mpq_header.header_size;
+    for (uint32_t i = 0; i < archive->files; ++i) {
+        const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[i].entry_index];
+        TEST_CHECK(entry->offset == cursor);
+        cursor += entry->packed_size;
+        if (archive->mpq_header_v4.raw_chunk_size != 0 && entry->packed_size != 0)
+            cursor += ((entry->packed_size - 1) / archive->mpq_header_v4.raw_chunk_size + 1) * 16;
+    }
+    uint64_t table = archive->het_data != NULL
+                         ? archive->mpq_header_v3.het_table_offset
+                         : archive->mpq_header.hash_table_offset |
+                               ((uint64_t)archive->mpq_header_ex.hash_table_offset_high << 32);
+    TEST_CHECK(cursor == table);
+    return 0;
+}
+
+/* All generations reclaim a deliberate hole without changing packed contents or attributes. */
+static int
+test_compaction(uint32_t version, uint32_t raw, unsigned encryption, int wrapped)
+{
+    mpq_archive_create_options_s create = {
+        version, 8, 512,
+        LIBMPQ_ARCHIVE_CREATE_LISTFILE | LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED,
+        LIBMPQ_ATTRIBUTE_FILETIME | LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5
+    };
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SECTOR_CRC,
+                                   LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    mpq_writer_s *member = NULL;
+    uint8_t payload[1508];
+    uint8_t packed[4096];
+    uint8_t after[4096];
+    mpq_file_attributes_s attributes;
+    mpq_entry_s original;
+    mpq_hash_s hashes[16];
+    char path[512];
+    char snapshot[512];
+    char stage[512];
+    uint32_t number;
+    test_payload(payload, sizeof(payload), 41);
+    if (encryption == 2 && wrapped) {
+        create.sector_size = 4096;
+        options.flags &= ~LIBMPQ_FILE_FLAG_SECTOR_CRC;
+        options.flags |= LIBMPQ_FILE_FLAG_SINGLE;
+    }
+    if (encryption != 0)
+        options.flags |= LIBMPQ_FILE_FLAG_ENCRYPTED;
+    if (encryption == 2)
+        options.flags |= 0x00020000u;
+    TEST_CHECK(test_temp_path(path, sizeof(path), "compact") == 0);
+    TEST_CHECK(test_temp_path(snapshot, sizeof(snapshot), "compact-original") == 0);
+    TEST_CHECK(test_temp_path(stage, sizeof(stage), "compact-stage") == 0);
+    TEST_CHECK(
+        (wrapped ? libmpq__archive_create_mpqe(
+                       &archive, path, auth_code, sizeof(auth_code) - 1, &create
+                   )
+                 : libmpq__archive_create(&archive, path, &create)) == 0
+    );
+    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+        TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, raw) == 0);
+    TEST_CHECK(libmpq__file_seek(archive->fp, 8191, SEEK_SET) == 0 && fputc(0, archive->fp) == 0);
+    TEST_CHECK(
+        libmpq__writer_begin(archive, "folder\\voice", sizeof(payload), &options, &member) == 0
+    );
+    TEST_CHECK(libmpq__writer_timestamp(member, UINT64_MAX) == 0);
+    TEST_CHECK(libmpq__writer_write(member, payload, sizeof(payload)) == 0);
+    TEST_CHECK(libmpq__writer_finish(member) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "empty", NULL, 0, NULL) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(
+        (wrapped ? libmpq__archive_open_mpqe(&archive, path, -1, auth_code, sizeof(auth_code) - 1)
+                 : libmpq__archive_open(&archive, path, -1)) == 0
+    );
+    uint64_t old_size = archive->file_size;
+    TEST_CHECK(libmpq__file_number(archive, "folder\\voice", &number) == 0);
+    original = archive->mpq_entry[archive->mpq_map[number].entry_index];
+    TEST_CHECK(original.packed_size <= sizeof(packed));
+    TEST_CHECK(
+        libmpq__source_read_at(archive->source, original.offset, packed, original.packed_size) == 0
+    );
+    TEST_CHECK(libmpq__file_attributes(archive, number, &attributes) == 0);
+    TEST_CHECK(archive->mpq_header.hash_table_count == 16);
+    memcpy(hashes, archive->mpq_hash, sizeof(hashes));
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(copy_file(path, snapshot) == 0);
+    TEST_CHECK(
+        (wrapped ? libmpq__update_begin_mpqe(&update, path, auth_code, sizeof(auth_code) - 1)
+                 : libmpq__update_begin(&update, path)) == 0
+    );
+    TEST_CHECK(libmpq__update_compact(update) == 0);
+    TEST_CHECK(same_file(path, snapshot));
+    TEST_CHECK(libmpq__archive_open(&archive, libmpq__update_path(update), -1) == 0);
+    TEST_CHECK(test_compact_dense(archive) == 0 && archive->file_size < old_size);
+    TEST_CHECK(
+        archive->mpq_header.version == version && archive->mpq_header_v4.raw_chunk_size == raw
+    );
+    TEST_CHECK(libmpq__file_number(archive, "folder\\voice", &number) == 0);
+    const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+    TEST_CHECK(
+        entry->offset < original.offset && entry->flags == original.flags &&
+        entry->packed_size == original.packed_size && entry->unpacked_size == original.unpacked_size
+    );
+    TEST_CHECK(check_named(archive, "folder\\voice", payload, sizeof(payload)) == 0);
+    TEST_CHECK(
+        libmpq__source_read_at(archive->source, entry->offset, after, entry->packed_size) == 0
+    );
+    if (encryption != 2)
+        TEST_CHECK(memcmp(packed, after, entry->packed_size) == 0);
+    else
+        TEST_CHECK(memcmp(packed, after, entry->packed_size) != 0);
+    mpq_file_attributes_s actual;
+    TEST_CHECK(libmpq__file_attributes(archive, number, &actual) == 0);
+    TEST_CHECK(
+        actual.filetime == UINT64_MAX && actual.crc32 == attributes.crc32 &&
+        memcmp(actual.md5, attributes.md5, 16) == 0
+    );
+    TEST_CHECK(memcmp(hashes, archive->mpq_hash, sizeof(hashes)) == 0);
+    uint32_t mismatches;
+    TEST_CHECK(libmpq__reader_offsets_acquire(archive, number, "folder\\voice") == 0);
+    TEST_CHECK(
+        libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &mismatches) == 0 && mismatches == 0
+    );
+    TEST_CHECK(libmpq__reader_offsets_release(archive, number) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(copy_file(libmpq__update_path(update), stage) == 0);
+    TEST_CHECK(
+        libmpq__update_compact(update) == 0 && same_file(libmpq__update_path(update), stage)
+    );
+    TEST_CHECK(libmpq__update_timestamp(update, "folder\\voice", 17) == 0);
+    TEST_CHECK(libmpq__update_compact(update) == 0);
+    TEST_CHECK(libmpq__update_commit(update) == 0);
+    TEST_CHECK(
+        (wrapped ? libmpq__update_begin_mpqe(&update, path, auth_code, sizeof(auth_code) - 1)
+                 : libmpq__update_begin(&update, path)) == 0
+    );
+    TEST_CHECK(libmpq__update_remove(update, "empty") == 0);
+    TEST_CHECK(libmpq__update_compact(update) == 0);
+    TEST_CHECK(libmpq__update_abort(update) == 0);
+    TEST_CHECK(copy_file(path, snapshot) == 0);
+    TEST_CHECK(
+        (wrapped ? libmpq__update_begin_mpqe(&update, path, auth_code, sizeof(auth_code) - 1)
+                 : libmpq__update_begin(&update, path)) == 0
+    );
+    TEST_CHECK(libmpq__update_timestamp(update, "folder\\voice", 19) == 0);
+    TEST_CHECK(libmpq__update_compact(update) == 0);
+    libmpq__update_set_ops(update, &(mpq_update_ops_s){ fflush, fclose, fail_publish });
+    TEST_CHECK(libmpq__update_commit(update) == LIBMPQ_ERROR_WRITE && same_file(path, snapshot));
+    TEST_CHECK(remove(path) == 0 && remove(snapshot) == 0 && remove(stage) == 0);
+    return 0;
+}
+
+/* Unknown names need no key for offset-independent ciphertext; shared rows stay shared. */
+static int
+test_compaction_opaque(uint32_t version, unsigned layout, unsigned encryption)
+{
+    mpq_archive_create_options_s create = { version, 8, 512,
+                                            LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED, 0 };
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS, LIBMPQ_COMPRESSION_ZLIB,
+                                   LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    mpq_hash_s hashes[16];
+    mpq_entry_s before;
+    uint8_t payload[1508];
+    uint8_t stored[2048];
+    uint8_t output[2048];
+    char path[512];
+    char stage[512];
+    uint32_t number;
+    uint32_t hash[3];
+    test_payload(payload, sizeof(payload), 57);
+    if (encryption == 4)
+        create.flags |= LIBMPQ_ARCHIVE_CREATE_LISTFILE;
+    if (encryption)
+        options.flags |= LIBMPQ_FILE_FLAG_ENCRYPTED;
+    if (encryption == 2 || encryption == 6)
+        options.flags |= 0x00020000u;
+    TEST_CHECK(test_temp_path(path, sizeof(path), "compact-opaque") == 0);
+    TEST_CHECK(test_temp_path(stage, sizeof(stage), "compact-opaque-before") == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+        TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 17) == 0);
+    TEST_CHECK(libmpq__file_seek(archive->fp, 8191, SEEK_SET) == 0 && fputc(0, archive->fp) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, "opaque", payload, sizeof(payload), &options) == 0
+    );
+    if (encryption >= 5) {
+        static const uint8_t list[] = "folder/opaque\nopaque\n";
+        archive->write_internal = 1;
+        TEST_CHECK(
+            libmpq__writer_file_add(archive, LIBMPQ_LISTFILE_NAME, list, sizeof(list) - 1, NULL) ==
+            0
+        );
+        archive->write_internal = 0;
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    if (version >= LIBMPQ_ARCHIVE_VERSION_THREE && layout != 1) {
+        if (version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+            TEST_CHECK(test_v4_source_layout(path, layout == 0 ? 1 : 2) == 0);
+        else {
+            uint8_t *bytes;
+            size_t size;
+            TEST_CHECK(read_bytes(path, &bytes, &size) == 0);
+            if (layout == 0)
+                memset(bytes + 52, 0, 16);
+            else {
+                size = libmpq__load_le32(bytes + 16);
+                memset(bytes + 16, 0, 28);
+                libmpq__store_le32(bytes + 8, (uint32_t)size);
+                libmpq__store_le64(bytes + 44, size);
+            }
+            TEST_CHECK(write_bytes(path, bytes, size) == 0);
+            free(bytes);
+        }
+    }
+    TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "opaque", &number) == 0);
+    before = archive->mpq_entry[archive->mpq_map[number].entry_index];
+    TEST_CHECK(before.packed_size <= sizeof(stored));
+    TEST_CHECK(
+        libmpq__source_read_at(archive->source, before.offset, stored, before.packed_size) == 0
+    );
+    if (layout != 2) {
+        TEST_CHECK(archive->mpq_header.hash_table_count == 16);
+        memcpy(hashes, archive->mpq_hash, sizeof(hashes));
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    if (layout != 2 && (encryption == 0 || encryption == 3 || encryption >= 4)) {
+        libmpq__file_hash(
+            encryption == 4   ? "opaque"
+            : encryption >= 5 ? "folder/opaque"
+                              : "other-alias",
+            &hash[0], &hash[1], &hash[2]
+        );
+        uint32_t slot = hash[0] & 15;
+        while (hashes[slot].block_table_index < LIBMPQ_HASH_DELETED)
+            slot = (slot + 1) & 15;
+        hashes[slot] = (mpq_hash_s){ hash[1], hash[2], 0x409, 2, before.classic_source_index };
+        TEST_CHECK(test_alias_table_write(path, hashes, 0) == 0);
+    }
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+    TEST_CHECK(copy_file(libmpq__update_path(update), stage) == 0);
+    if (encryption == 2 || encryption == 3) {
+        TEST_CHECK(libmpq__update_compact(update) == LIBMPQ_ERROR_DECRYPT);
+        TEST_CHECK(same_file(libmpq__update_path(update), stage));
+        TEST_CHECK(libmpq__update_abort(update) == 0);
+    } else {
+        TEST_CHECK(libmpq__update_compact(update) == 0);
+        TEST_CHECK(libmpq__archive_open(&archive, libmpq__update_path(update), -1) == 0);
+        TEST_CHECK(
+            archive->files == (encryption >= 4 ? 2u : 1u) && test_compact_dense(archive) == 0
+        );
+        TEST_CHECK(libmpq__file_number(archive, "opaque", &number) == 0);
+        const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+        TEST_CHECK(entry->offset < before.offset && entry->packed_size == before.packed_size);
+        TEST_CHECK(
+            libmpq__source_read_at(archive->source, entry->offset, output, entry->packed_size) == 0
+        );
+        TEST_CHECK((memcmp(stored, output, entry->packed_size) == 0) == (encryption != 6));
+        TEST_CHECK(check_named(archive, "opaque", payload, sizeof(payload)) == 0);
+        if (layout != 2 && (encryption == 0 || encryption >= 4)) {
+            uint32_t alias;
+            TEST_CHECK(
+                libmpq__file_number_from_identity(
+                    archive,
+                    encryption == 4   ? "opaque"
+                    : encryption >= 5 ? "folder/opaque"
+                                      : "other-alias",
+                    0x409, 2, &alias
+                ) == 0 &&
+                alias == number
+            );
+            for (uint32_t slot = 0; slot < 16; ++slot) {
+                if (hashes[slot].block_table_index == before.classic_source_index)
+                    hashes[slot].block_table_index = 0;
+                TEST_CHECK(
+                    memcmp(&hashes[slot], &archive->mpq_hash[slot], sizeof(hashes[slot])) == 0
+                );
+            }
+        }
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+        TEST_CHECK(copy_file(libmpq__update_path(update), stage) == 0);
+        TEST_CHECK(
+            libmpq__update_compact(update) == 0 && same_file(libmpq__update_path(update), stage)
+        );
+        TEST_CHECK(libmpq__update_commit(update) == 0);
+        TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
+        TEST_CHECK(check_named(archive, "opaque", payload, sizeof(payload)) == 0);
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+    }
+    if (layout != 2 && encryption == 0) {
+        uint32_t occupied = 0;
+        uint32_t free_slot = 0;
+        while (hashes[occupied].block_table_index >= LIBMPQ_HASH_DELETED)
+            ++occupied;
+        while (hashes[free_slot].block_table_index < LIBMPQ_HASH_DELETED)
+            ++free_slot;
+        hashes[free_slot] = hashes[occupied];
+        TEST_CHECK(test_alias_table_write(path, hashes, 0) == 0);
+        TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+        TEST_CHECK(copy_file(libmpq__update_path(update), stage) == 0);
+        TEST_CHECK(libmpq__update_compact(update) == LIBMPQ_ERROR_FORMAT);
+        TEST_CHECK(same_file(libmpq__update_path(update), stage));
+        TEST_CHECK(libmpq__update_abort(update) == 0);
+        hashes[free_slot].hash_a ^= 1;
+        hashes[free_slot].block_table_index = 1;
+        TEST_CHECK(test_alias_table_write(path, hashes, 0) == 0);
+        TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+        TEST_CHECK(copy_file(libmpq__update_path(update), stage) == 0);
+        TEST_CHECK(libmpq__update_compact(update) == LIBMPQ_ERROR_FORMAT);
+        TEST_CHECK(same_file(libmpq__update_path(update), stage));
+        TEST_CHECK(libmpq__update_abort(update) == 0);
+    }
+    TEST_CHECK(remove(path) == 0 && remove(stage) == 0);
+    return 0;
+}
+
+/* Inspect regenerated metadata independently of the compactor's candidate checks. */
+static int
+test_compaction_listfile(uint32_t version, unsigned storage, int signature, int listed)
+{
+    mpq_archive_create_options_s create = { version, 8, 512,
+                                            LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED,
+                                            LIBMPQ_ATTRIBUTE_FILETIME | LIBMPQ_ATTRIBUTE_CRC32 |
+                                                LIBMPQ_ATTRIBUTE_MD5 };
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    mpq_file_attributes_s attributes;
+    mpq_entry_s before;
+    uint8_t list[4096];
+    uint8_t expected[4096];
+    uint8_t packed[8192];
+    uint8_t actual[8192];
+    uint8_t *snapshot;
+    size_t snapshot_size;
+    size_t size = 0;
+    size_t expected_size = 0;
+    char path[512];
+    uint32_t number;
+    if (storage != 0) {
+        options.flags = LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SINGLE;
+        options.compression_first = options.compression_next = LIBMPQ_COMPRESSION_ZLIB;
+    }
+    if (storage == 2 || storage == 3) {
+        options.flags =
+            LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SECTOR_CRC;
+        if (storage == 3)
+            options.flags |= 0x00020000u;
+    }
+    if (storage == 7) {
+        options.flags = LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SECTOR_CRC;
+        options.compression_first = 0;
+    }
+    if (storage == 4)
+        options.flags = LIBMPQ_FILE_FLAG_IMPLODE | LIBMPQ_FILE_FLAG_SINGLE;
+    if (storage != 5) {
+        static const char lines[] = "voice\r\n\nvoice\rvoice\n\r\n";
+        for (unsigned i = 0; i < (storage == 2 || storage == 3 || storage == 7 ? 80u : 10u); ++i) {
+            memcpy(list + size, lines, sizeof(lines) - 1);
+            size += sizeof(lines) - 1;
+        }
+    }
+    memcpy(expected, list, size);
+    expected_size = size;
+    if (listed) {
+        memcpy(list + size, "(SiGnAtUrE)\r\n", 13);
+        size += 13;
+    }
+    if (storage != 5) {
+        memcpy(list + size, "voice", sizeof("voice"));
+        size += 5;
+        memcpy(expected + expected_size, "voice", sizeof("voice"));
+        expected_size += 5;
+    }
+    TEST_CHECK(test_temp_path(path, sizeof(path), "compact-listfile") == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+        TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, signature == 1 ? 0 : 17) == 0);
+    if (signature == 1)
+        TEST_CHECK(
+            libmpq__archive_sign(
+                archive, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+                sizeof(test_signature_private_key)
+            ) == 0
+        );
+    TEST_CHECK(libmpq__file_seek(archive->fp, 8191, SEEK_SET) == 0 && fputc(0, archive->fp) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "voice", (const uint8_t *)"data", 4, NULL) == 0);
+    if (signature == 2) {
+        uint8_t stale[72] = { 0 };
+        archive->write_internal = 1;
+        TEST_CHECK(
+            libmpq__writer_file_add(archive, LIBMPQ_SIGNATURE_NAME, stale, sizeof(stale), NULL) == 0
+        );
+        archive->write_internal = 0;
+    }
+    uint32_t row = archive->write_next_block;
+    archive->write_internal = 1;
+    TEST_CHECK(libmpq__writer_file_add(archive, LIBMPQ_LISTFILE_NAME, list, size, &options) == 0);
+    archive->write_internal = 0;
+    archive->write_attributes[row].filetime = UINT64_MAX;
+    if (storage == 6)
+        memset(archive->write_attributes[row].md5, 0, 16);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
+    TEST_CHECK(libmpq__file_number(archive, LIBMPQ_LISTFILE_NAME, &number) == 0);
+    before = archive->mpq_entry[archive->mpq_map[number].entry_index];
+    if (storage == 6) {
+        TEST_CHECK(libmpq__file_attributes(archive, number, &attributes) == 0);
+        TEST_CHECK(!(attributes.flags & LIBMPQ_ATTRIBUTE_MD5));
+    }
+    TEST_CHECK(before.packed_size <= sizeof(packed));
+    TEST_CHECK(
+        libmpq__source_read_at(archive->source, before.offset, packed, before.packed_size) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(read_bytes(path, &snapshot, &snapshot_size) == 0);
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+    if (storage == 5) {
+        TEST_CHECK(libmpq__update_compact(update) == LIBMPQ_ERROR_FORMAT);
+        TEST_CHECK(same_file(libmpq__update_path(update), path));
+        TEST_CHECK(libmpq__update_abort(update) == 0);
+    } else {
+        TEST_CHECK(libmpq__update_compact(update) == 0);
+        TEST_CHECK(libmpq__archive_open(&archive, libmpq__update_path(update), -1) == 0);
+        TEST_CHECK(libmpq__file_number(archive, LIBMPQ_LISTFILE_NAME, &number) == 0);
+        const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+        TEST_CHECK(entry->flags == before.flags && entry->offset < before.offset);
+        if (signature && listed) {
+            uint32_t attribute_number;
+            TEST_CHECK(
+                libmpq__file_number(archive, LIBMPQ_ATTRIBUTES_NAME, &attribute_number) == 0
+            );
+            const mpq_entry_s *attribute_entry =
+                &archive->mpq_entry[archive->mpq_map[attribute_number].entry_index];
+            uint32_t chunk = archive->mpq_header_v4.raw_chunk_size;
+            uint64_t physical = entry->packed_size;
+            if (chunk && physical)
+                physical += ((entry->packed_size - 1) / chunk + 1) * UINT64_C(16);
+            TEST_CHECK(attribute_entry->offset == entry->offset + physical);
+        }
+        if (!(signature && listed)) {
+            TEST_CHECK(entry->packed_size == before.packed_size);
+            if (storage != 3) {
+                TEST_CHECK(
+                    libmpq__source_read_at(
+                        archive->source, entry->offset, actual, entry->packed_size
+                    ) == 0
+                );
+                TEST_CHECK(memcmp(actual, packed, entry->packed_size) == 0);
+            }
+        }
+        mpq_stream_s *stream = NULL;
+        libmpq__off_t transferred;
+        size_t wanted = signature && listed ? expected_size : size;
+        const uint8_t *content = signature && listed ? expected : list;
+        TEST_CHECK(libmpq__stream_open_name(archive, LIBMPQ_LISTFILE_NAME, &stream) == 0);
+        TEST_CHECK(libmpq__stream_read(stream, actual, sizeof(actual), &transferred) == 0);
+        TEST_CHECK(transferred == (libmpq__off_t)wanted && memcmp(actual, content, wanted) == 0);
+        TEST_CHECK(libmpq__stream_close(stream) == 0);
+        if (storage != 0) {
+            TEST_CHECK(libmpq__reader_offsets_acquire(archive, number, LIBMPQ_LISTFILE_NAME) == 0);
+            for (uint32_t sector = 0; sector < libmpq__reader_count_file_blocks(archive, number);
+                 ++sector) {
+                uint32_t method;
+                TEST_CHECK(libmpq__block_compression(archive, number, sector, &method) == 0);
+                if (storage == 7 && sector == 0)
+                    TEST_CHECK(method == 0);
+                TEST_CHECK(
+                    method == 0 ||
+                    method == (storage == 4 ? LIBMPQ_COMPRESSION_PKZIP : LIBMPQ_COMPRESSION_ZLIB)
+                );
+            }
+            TEST_CHECK(libmpq__reader_offsets_release(archive, number) == 0);
+        }
+        TEST_CHECK(libmpq__file_attributes(archive, number, &attributes) == 0);
+        TEST_CHECK(attributes.filetime == UINT64_MAX);
+        TEST_CHECK(attributes.crc32 == (uint32_t)crc32(0, content, (uInt)wanted));
+        mpq_md5_s md5;
+        uint8_t digest[16];
+        libmpq__md5_init(&md5);
+        libmpq__md5_update(&md5, content, wanted);
+        libmpq__md5_final(&md5, digest);
+        TEST_CHECK(memcmp(attributes.md5, digest, 16) == 0);
+        uint32_t mismatches;
+        TEST_CHECK(
+            libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &mismatches) == 0 &&
+            mismatches == 0
+        );
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+        uint8_t *stage;
+        size_t stage_size;
+        TEST_CHECK(read_bytes(libmpq__update_path(update), &stage, &stage_size) == 0);
+        TEST_CHECK(libmpq__update_compact(update) == 0);
+        uint8_t *again;
+        size_t again_size;
+        TEST_CHECK(read_bytes(libmpq__update_path(update), &again, &again_size) == 0);
+        TEST_CHECK(stage_size == again_size && memcmp(stage, again, stage_size) == 0);
+        free(stage);
+        free(again);
+        TEST_CHECK(libmpq__update_commit(update) == 0);
+    }
+    if (storage == 5) {
+        uint8_t *after;
+        size_t after_size;
+        TEST_CHECK(read_bytes(path, &after, &after_size) == 0);
+        TEST_CHECK(after_size == snapshot_size && memcmp(after, snapshot, after_size) == 0);
+        free(after);
+    }
+    free(snapshot);
+    TEST_CHECK(remove(path) == 0);
+    return 0;
+}
+
+/* No-op compaction retains valid signatures; physical changes invalidate old trust. */
+static int
+test_compaction_signatures(int fragmented)
+{
+    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_ONE, 8, 512,
+                                            LIBMPQ_ARCHIVE_CREATE_LISTFILE,
+                                            LIBMPQ_ATTRIBUTE_FILETIME };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    char path[512];
+    char stage[512];
+    uint32_t signatures;
+    uint8_t strong_key[512];
+    test_strong_signature_private_key(strong_key);
+    TEST_CHECK(test_temp_path(path, sizeof(path), "compact-signed") == 0);
+    TEST_CHECK(test_temp_path(stage, sizeof(stage), "compact-signed-before") == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    TEST_CHECK(
+        libmpq__archive_sign(
+            archive, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+            sizeof(test_signature_private_key)
+        ) == 0
+    );
+    TEST_CHECK(
+        libmpq__archive_sign(archive, LIBMPQ_SIGNATURE_STRONG, strong_key, sizeof(strong_key)) == 0
+    );
+    if (fragmented)
+        TEST_CHECK(
+            libmpq__file_seek(archive->fp, 8191, SEEK_SET) == 0 && fputc(0, archive->fp) == 0
+        );
+    TEST_CHECK(libmpq__archive_add_data(archive, "voice", (const uint8_t *)"data", 4, NULL) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(copy_file(path, stage) == 0);
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+    TEST_CHECK(libmpq__update_compact(update) == 0);
+    TEST_CHECK(same_file(libmpq__update_path(update), stage) == !fragmented);
+    TEST_CHECK(libmpq__archive_open(&archive, libmpq__update_path(update), -1) == 0);
+    TEST_CHECK(libmpq__archive_signatures(archive, &signatures) == 0);
+    TEST_CHECK(
+        fragmented ? signatures == 0
+                   : signatures == (LIBMPQ_SIGNATURE_WEAK | LIBMPQ_SIGNATURE_STRONG)
+    );
+    if (!fragmented) {
+        uint32_t mismatch;
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, LIBMPQ_SIGNATURE_WEAK, test_signature_public_key,
+                sizeof(test_signature_public_key), &mismatch
+            ) == 0 &&
+            mismatch == 0
+        );
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
+                sizeof(test_strong_signature_public_key), &mismatch
+            ) == 0 &&
+            mismatch == 0
+        );
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__update_commit(update) == 0);
+    TEST_CHECK(same_file(path, stage) == !fragmented);
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+    TEST_CHECK(
+        libmpq__update_replace_data(update, "voice", (const uint8_t *)"changed", 7, NULL) == 0
+    );
+    TEST_CHECK(libmpq__update_compact(update) == 0);
+    TEST_CHECK(libmpq__update_commit(update) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
+    TEST_CHECK(libmpq__archive_signatures(archive, &signatures) == 0 && signatures == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(remove(path) == 0 && remove(stage) == 0);
+    return 0;
+}
+
+/* Existing flush/close hooks exercise semantic rejection and the abort-only adoption boundary. */
+static int
+test_compaction_failure(uint32_t version, int closing)
+{
+    mpq_archive_create_options_s create = { version, 4, 512, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    char path[512];
+    char before[512];
+    char stage[512];
+    TEST_CHECK(test_temp_path(path, sizeof(path), "compact-fault") == 0);
+    TEST_CHECK(test_temp_path(before, sizeof(before), "compact-fault-source") == 0);
+    TEST_CHECK(test_temp_path(stage, sizeof(stage), "compact-fault-stage") == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    TEST_CHECK(libmpq__file_seek(archive->fp, 8191, SEEK_SET) == 0 && fputc(0, archive->fp) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "voice", (const uint8_t *)"data", 4, NULL) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(copy_file(path, before) == 0);
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+    TEST_CHECK(copy_file(libmpq__update_path(update), stage) == 0);
+    libmpq__update_set_ops(
+        update, &(mpq_update_ops_s){ closing ? fflush : fail_flush, closing ? fail_close : fclose,
+                                     fail_publish }
+    );
+    TEST_CHECK(
+        libmpq__update_compact(update) == (closing ? LIBMPQ_ERROR_CLOSE : LIBMPQ_ERROR_WRITE)
+    );
+    TEST_CHECK(same_file(path, before) && same_file(libmpq__update_path(update), stage));
+    if (closing)
+        TEST_CHECK(libmpq__update_compact(update) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__update_abort(update) == 0 && same_file(path, before));
+    TEST_CHECK(remove(path) == 0 && remove(before) == 0 && remove(stage) == 0);
+    return 0;
+}
+
+/* Stored ADPCM streams survive relocation without another lossy encoding pass. */
+static int
+test_compaction_adpcm(uint32_t version)
+{
+    mpq_archive_create_options_s create = { version, 4, 512,
+                                            LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED, 0 };
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS, LIBMPQ_COMPRESSION_ZLIB,
+                                   LIBMPQ_COMPRESSION_WAVE_MONO, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    uint8_t input[1508];
+    uint8_t decoded[1508];
+    uint8_t actual[1508];
+    uint8_t stored[2048];
+    uint8_t output[2048];
+    char path[512];
+    uint32_t number;
+    uint32_t method;
+    libmpq__off_t got;
+    memset(input, 0, sizeof(input));
+    memcpy(input, "RIFF", 4);
+    libmpq__store_le32(input + 4, sizeof(input) - 8);
+    memcpy(input + 8, "WAVEfmt ", 8);
+    libmpq__store_le32(input + 16, 16);
+    libmpq__store_le16(input + 20, 1);
+    libmpq__store_le16(input + 22, 1);
+    libmpq__store_le32(input + 24, 22050);
+    libmpq__store_le32(input + 28, 44100);
+    libmpq__store_le16(input + 32, 2);
+    libmpq__store_le16(input + 34, 16);
+    memcpy(input + 36, "data", 4);
+    libmpq__store_le32(input + 40, sizeof(input) - 44);
+    for (size_t i = 44; i < sizeof(input); i += 2)
+        libmpq__store_le16(input + i, (uint16_t)(((int)(i % 101) - 50) * 317));
+    TEST_CHECK(test_temp_path(path, sizeof(path), "compact-adpcm") == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    TEST_CHECK(libmpq__file_seek(archive->fp, 8191, SEEK_SET) == 0 && fputc(0, archive->fp) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "audio", input, sizeof(input), &options) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "audio", &number) == 0);
+    const mpq_entry_s before = archive->mpq_entry[archive->mpq_map[number].entry_index];
+    TEST_CHECK(before.packed_size <= sizeof(stored));
+    TEST_CHECK(
+        libmpq__block_compression(archive, number, 1, &method) == 0 &&
+        method == LIBMPQ_COMPRESSION_WAVE_MONO
+    );
+    TEST_CHECK(
+        libmpq__file_read(archive, number, decoded, sizeof(decoded), &got) == 0 &&
+        got == sizeof(decoded)
+    );
+    TEST_CHECK(memcmp(decoded, input, sizeof(input)) != 0);
+    TEST_CHECK(
+        libmpq__source_read_at(archive->source, before.offset, stored, before.packed_size) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0 && libmpq__update_compact(update) == 0);
+    TEST_CHECK(libmpq__update_commit(update) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "audio", &number) == 0);
+    const mpq_entry_s after = archive->mpq_entry[archive->mpq_map[number].entry_index];
+    TEST_CHECK(after.offset < before.offset && after.packed_size == before.packed_size);
+    TEST_CHECK(
+        libmpq__source_read_at(archive->source, after.offset, output, after.packed_size) == 0
+    );
+    TEST_CHECK(memcmp(stored, output, after.packed_size) == 0);
+    TEST_CHECK(
+        libmpq__file_read(archive, number, actual, sizeof(actual), &got) == 0 &&
+        got == sizeof(actual)
+    );
+    TEST_CHECK(memcmp(decoded, actual, sizeof(decoded)) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0 && remove(path) == 0);
+    return 0;
+}
+
+/* Unsupported wrappers, physical patches and corrupt raw storage never replace the stage. */
+static int
+test_compaction_rejection(unsigned kind)
+{
+    mpq_archive_create_options_s create = { kind == 3 ? LIBMPQ_ARCHIVE_VERSION_FOUR
+                                                      : LIBMPQ_ARCHIVE_VERSION_ONE,
+                                            4, 512, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    char path[512];
+    char before[512];
+    char stage[512];
+    uint8_t image[16384];
+    size_t size;
+    TEST_CHECK(test_temp_path(path, sizeof(path), "compact-reject") == 0);
+    TEST_CHECK(test_temp_path(before, sizeof(before), "compact-reject-source") == 0);
+    TEST_CHECK(test_temp_path(stage, sizeof(stage), "compact-reject-stage") == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    if (kind == 3)
+        TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 17) == 0);
+    TEST_CHECK(libmpq__file_seek(archive->fp, 8191, SEEK_SET) == 0 && fputc(0, archive->fp) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "voice", (const uint8_t *)"data", 4, NULL) == 0);
+    if (kind == 2) {
+        archive->write_patch_mode = 1;
+        TEST_CHECK(libmpq__writer_patch_delete_marker(archive, "deleted", 0, 0) == 0);
+    }
+    if (kind == 5) {
+        uint8_t malformed[8] = { 99, 0, 0, 0, 0, 0, 0, 0 };
+        archive->write_internal = 1;
+        TEST_CHECK(
+            libmpq__writer_file_add(
+                archive, LIBMPQ_ATTRIBUTES_NAME, malformed, sizeof(malformed), NULL
+            ) == 0
+        );
+        archive->write_internal = 0;
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    FILE *input = libmpq__file_open(path, "rb");
+    TEST_CHECK(input != NULL);
+    size = fread(image, 1, sizeof(image), input);
+    int closed = fclose(input);
+    TEST_CHECK(closed == 0 && size < sizeof(image));
+    if (kind == 0) {
+        uint8_t embedded[sizeof(image) + 512] = { 0 };
+        memcpy(embedded + 512, image, size);
+        TEST_CHECK(write_bytes(path, embedded, size + 512) == 0);
+    } else if (kind == 1) {
+        FILE *file = libmpq__file_open(path, "ab");
+        TEST_CHECK(file != NULL && fwrite("trailer", 1, 7, file) == 7 && fclose(file) == 0);
+    } else if (kind == 3) {
+        TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
+        uint32_t number;
+        TEST_CHECK(libmpq__file_number(archive, "voice", &number) == 0);
+        const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+        TEST_CHECK(entry->offset + entry->packed_size < size);
+        image[entry->offset + entry->packed_size] ^= 1;
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+        TEST_CHECK(write_bytes(path, image, size) == 0);
+    }
+    if (kind == 4) {
+        uint32_t offset = libmpq__load_le32(image + 20);
+        uint32_t bytes = libmpq__load_le32(image + 28) * 16;
+        uint32_t key = libmpq__crypto_hash_string("(block table)", 0x300);
+        TEST_CHECK(offset <= size && bytes <= size - offset);
+        TEST_CHECK(libmpq__crypto_decrypt_block(image + offset, bytes, key) == 0);
+        libmpq__store_le32(image + offset, libmpq__load_le32(image + 16));
+        TEST_CHECK(libmpq__crypto_encrypt_block(image + offset, bytes, key) == 0);
+        TEST_CHECK(write_bytes(path, image, size) == 0);
+    }
+    TEST_CHECK(copy_file(path, before) == 0);
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+    TEST_CHECK(copy_file(libmpq__update_path(update), stage) == 0);
+    TEST_CHECK(
+        libmpq__update_compact(update) == (kind == 3 ? LIBMPQ_ERROR_READ : LIBMPQ_ERROR_FORMAT)
+    );
+    TEST_CHECK(same_file(libmpq__update_path(update), stage));
+    TEST_CHECK(libmpq__update_abort(update) == 0 && same_file(path, before));
+    TEST_CHECK(remove(path) == 0 && remove(before) == 0 && remove(stage) == 0);
+    return 0;
+}
+
+/* A single known spelling supplies keys for distinct qualified physical payloads. */
+static int
+test_compaction_qualified(uint32_t version)
+{
+    mpq_archive_create_options_s create = { version, 8, 512, 0,
+                                            LIBMPQ_ATTRIBUTE_FILETIME | LIBMPQ_ATTRIBUTE_CRC32 |
+                                                LIBMPQ_ATTRIBUTE_MD5 };
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
+                                       0x20000u,
+                                   LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    mpq_hash_s hashes[16];
+    uint32_t name_hash[3];
+    uint8_t payload[1508];
+    uint8_t actual[1508];
+    char path[512];
+    memset(payload, 'N', sizeof(payload));
+    TEST_CHECK(test_temp_path(path, sizeof(path), "compact-qualified") == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    TEST_CHECK(libmpq__file_seek(archive->fp, 8191, SEEK_SET) == 0 && fputc(0, archive->fp) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, "left/voice", payload, sizeof(payload), &options) == 0
+    );
+    memset(payload, 'L', sizeof(payload));
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, "right/voice", payload, sizeof(payload), &options) == 0
+    );
+    archive->write_attributes[0].filetime = 11;
+    archive->write_attributes[1].filetime = 22;
+    archive->write_internal = 1;
+    TEST_CHECK(
+        libmpq__writer_file_add(
+            archive, LIBMPQ_LISTFILE_NAME, (const uint8_t *)"left/voice\n", 11, NULL
+        ) == 0
+    );
+    archive->write_internal = 0;
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+        TEST_CHECK(test_v4_source_layout(path, 1) == 0);
+    else if (version == LIBMPQ_ARCHIVE_VERSION_THREE) {
+        FILE *file = libmpq__file_open(path, "r+b");
+        uint8_t zero[16] = { 0 };
+        TEST_CHECK(file != NULL && libmpq__file_seek(file, 52, SEEK_SET) == 0);
+        TEST_CHECK(fwrite(zero, 1, sizeof(zero), file) == sizeof(zero) && fclose(file) == 0);
+    }
+    TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
+    memcpy(hashes, archive->mpq_hash, sizeof(hashes));
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    libmpq__file_hash("left/voice", &name_hash[0], &name_hash[1], &name_hash[2]);
+    for (uint32_t slot = 0; slot < 16; ++slot)
+        if (hashes[slot].block_table_index == 1)
+            hashes[slot] = (mpq_hash_s){ name_hash[1], name_hash[2], 0x409, 2, 1 };
+
+    /* The first lookup already reaches this row before encountering a never-used slot. */
+    uint32_t target = name_hash[0] & 15;
+    uint32_t localized = target;
+    while (hashes[localized].block_table_index != 1 &&
+           hashes[localized].block_table_index < LIBMPQ_HASH_DELETED)
+        localized = (localized + 1) & 15;
+    if (hashes[localized].block_table_index != 1) {
+        uint32_t old = 0;
+        while (hashes[old].block_table_index != 1)
+            ++old;
+        hashes[old].block_table_index = LIBMPQ_HASH_DELETED;
+        hashes[localized] = (mpq_hash_s){ name_hash[1], name_hash[2], 0x409, 2, 1 };
+    }
+    TEST_CHECK(test_alias_table_write(path, hashes, 0) == 0);
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0 && libmpq__update_compact(update) == 0);
+    TEST_CHECK(libmpq__update_commit(update) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
+    for (unsigned identity = 0; identity < 2; ++identity) {
+        mpq_stream_s *stream = NULL;
+        mpq_file_attributes_s attributes;
+        uint32_t number;
+        libmpq__off_t got;
+        TEST_CHECK(
+            libmpq__file_number_from_identity(
+                archive, "left/voice", identity ? 0x409 : 0, identity ? 2 : 0, &number
+            ) == 0
+        );
+        TEST_CHECK(libmpq__file_attributes(archive, number, &attributes) == 0);
+        TEST_CHECK(attributes.filetime == (identity ? 22u : 11u));
+        TEST_CHECK(
+            libmpq__stream_open_name_identity(
+                archive, "left/voice", identity ? 0x409 : 0, identity ? 2 : 0, &stream
+            ) == 0
+        );
+        TEST_CHECK(
+            libmpq__stream_read(stream, actual, sizeof(actual), &got) == 0 && got == sizeof(actual)
+        );
+        memset(payload, identity ? 'L' : 'N', sizeof(payload));
+        TEST_CHECK(memcmp(actual, payload, sizeof(payload)) == 0);
+        TEST_CHECK(libmpq__stream_close(stream) == 0);
+    }
+    TEST_CHECK(memcmp(hashes, archive->mpq_hash, sizeof(hashes)) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0 && remove(path) == 0);
+    return 0;
+}
+
+/* Reader caches use public numbers even when deleted classic rows leave canonical holes. */
+static int
+test_compaction_cache_mapping(uint32_t version, int single)
+{
+    mpq_archive_create_options_s create = { version, 8, single ? 4096u : 512u,
+                                            LIBMPQ_ARCHIVE_CREATE_LISTFILE,
+                                            LIBMPQ_ATTRIBUTE_FILETIME | LIBMPQ_ATTRIBUTE_CRC32 |
+                                                LIBMPQ_ATTRIBUTE_MD5 };
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
+                                       0x20000u,
+                                   LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    uint8_t payload[1508];
+    char path[512];
+    uint32_t number;
+    test_payload(payload, sizeof(payload), 39);
+    if (single)
+        options.flags |= LIBMPQ_FILE_FLAG_SINGLE;
+    TEST_CHECK(test_temp_path(path, sizeof(path), "compact-cache-mapping") == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    TEST_CHECK(libmpq__file_seek(archive->fp, 8191, SEEK_SET) == 0 && fputc(0, archive->fp) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "discard", payload, 16, NULL) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "voice", payload, sizeof(payload), &options) == 0);
+    archive->write_attributes[1].filetime = 42;
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(
+        libmpq__update_begin(&update, path) == 0 && libmpq__update_remove(update, "discard") == 0
+    );
+    TEST_CHECK(libmpq__archive_open(&archive, libmpq__update_path(update), -1) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "voice", &number) == 0 && number == 0);
+    TEST_CHECK(archive->mpq_map[number].entry_index == 1);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__update_compact(update) == 0 && libmpq__update_commit(update) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
+    TEST_CHECK(test_compact_dense(archive) == 0);
+    TEST_CHECK(check_named(archive, "voice", payload, sizeof(payload)) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "voice", &number) == 0);
+    mpq_file_attributes_s attributes;
+    TEST_CHECK(
+        libmpq__file_attributes(archive, number, &attributes) == 0 && attributes.filetime == 42
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0 && remove(path) == 0);
+    return 0;
+}
+
 int
 main(void)
 {
+    for (uint32_t version = 0; version < 2; ++version)
+        for (int single = 0; single < 2; ++single)
+            TEST_CHECK(test_compaction_cache_mapping(version, single) == 0);
+
+    for (unsigned kind = 0; kind < 6; ++kind)
+        TEST_CHECK(test_compaction_rejection(kind) == 0);
+
+    for (uint32_t version = 0; version < 4; ++version) {
+        TEST_CHECK(test_compaction_qualified(version) == 0);
+        TEST_CHECK(test_compaction_failure(version, 0) == 0);
+        TEST_CHECK(test_compaction_failure(version, 1) == 0);
+        TEST_CHECK(test_compaction_adpcm(version) == 0);
+    }
+
+    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_FOUR;
+         ++version)
+        for (unsigned storage = 0; storage < 8; ++storage) {
+            TEST_CHECK(test_compaction_listfile(version, storage, 1, 1) == 0);
+            if (storage < 5) {
+                TEST_CHECK(test_compaction_listfile(version, storage, 1, 0) == 0);
+                TEST_CHECK(test_compaction_listfile(version, storage, 0, 0) == 0);
+                if (version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+                    TEST_CHECK(test_compaction_listfile(version, storage, 2, 1) == 0);
+            }
+        }
+    TEST_CHECK(test_compaction_signatures(0) == 0);
+    TEST_CHECK(test_compaction_signatures(1) == 0);
+    for (uint32_t version = 0; version < 4; ++version)
+        for (unsigned layout = 0; layout < (version >= 2 ? 3u : 1u); ++layout)
+            for (unsigned encryption = 0; encryption < 7; ++encryption)
+                if (layout != 2 || (encryption != 3 && encryption < 5))
+                    TEST_CHECK(test_compaction_opaque(version, layout, encryption) == 0);
+
+    TEST_CHECK(libmpq__update_compact(NULL) == LIBMPQ_ERROR_EXIST);
+    for (uint32_t version = 0; version < 4; ++version)
+        for (uint32_t raw = 0; raw < (version == LIBMPQ_ARCHIVE_VERSION_FOUR ? 3u : 1u); ++raw)
+            for (unsigned encryption = 0; encryption < 3; ++encryption)
+                for (int wrapped = 0; wrapped < 2; ++wrapped)
+                    TEST_CHECK(
+                        test_compaction(
+                            version,
+                            raw == 1   ? 17
+                            : raw == 2 ? 0x4000
+                                       : 0,
+                            encryption, wrapped
+                        ) == 0
+                    );
+
     TEST_CHECK(libmpq__update_timestamp(NULL, "x", 0) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(
         libmpq__update_timestamp_identity(NULL, "x", UINT64_MAX, 0, 0) == LIBMPQ_ERROR_EXIST
