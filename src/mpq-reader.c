@@ -164,6 +164,25 @@ classic_table_size(const mpq_archive_s *archive, int block, size_t decoded, size
     return 0;
 }
 
+/* Expose the same stored table bounds used by the reader to private layout validation. */
+int32_t
+libmpq__reader_classic_table_sizes(const mpq_archive_s *archive, uint64_t sizes[2])
+{
+    for (int block = 0; block < 2; ++block) {
+        size_t decoded;
+        size_t stored;
+        uint32_t count =
+            block ? archive->mpq_header.block_table_count : archive->mpq_header.hash_table_count;
+        int32_t result = table_size(count, LIBMPQ_HASH_ENTRY_WIRE_SIZE, &decoded);
+        if (result == 0)
+            result = classic_table_size(archive, block, decoded, &stored);
+        if (result != 0)
+            return result;
+        sizes[block] = stored;
+    }
+    return 0;
+}
+
 /* Validate a v4 stored extent before allocation or archive-relative I/O translation. */
 static int32_t
 validate_table_extent(

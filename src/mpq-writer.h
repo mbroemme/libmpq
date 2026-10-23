@@ -99,6 +99,16 @@ int32_t libmpq__writer_copy_member(
     const mpq_file_attributes_s *attributes
 );
 
+/* Private dense-placement initialization and opaque relocation for transactions. */
+int32_t libmpq__writer_archive_create_compact(
+    mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options,
+    uint32_t raw_chunk_size
+);
+int32_t libmpq__writer_relocate_member(
+    mpq_archive_s *writer, mpq_archive_s *source, uint32_t number, const char *name,
+    const mpq_file_attributes_s *attributes
+);
+
 /* Set caller-controlled FILETIME on an active writer with generation enabled. */
 int32_t libmpq__writer_file_timestamp(mpq_writer_s *writer, uint64_t filetime);
 

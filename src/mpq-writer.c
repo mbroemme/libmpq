@@ -822,12 +822,70 @@ libmpq__writer_preserve_member(
     return result;
 }
 
-/* Place retained payloads without recompression; only changed keys alter stored bytes. */
-int32_t
-libmpq__writer_copy_member(
+static int32_t writer_copy_member_checked(
     mpq_archive_s *writer, mpq_archive_s *source, uint32_t number, const char *old_name,
     const char *new_name, uint16_t locale, uint16_t platform,
+    const mpq_file_attributes_s *attributes, uint8_t opaque
+);
+
+/* Relocate opaque packed bytes only when the encryption key is position independent. */
+int32_t
+libmpq__writer_relocate_member(
+    mpq_archive_s *writer, mpq_archive_s *source, uint32_t number, const char *name,
     const mpq_file_attributes_s *attributes
+)
+{
+    mpq_entry_s entry = source->mpq_entry[source->mpq_map[number].entry_index];
+    libmpq__off_t output;
+    uint8_t modified = 0;
+    uint32_t mismatches;
+    int32_t result;
+    if (writer->write_error != 0)
+        return writer->write_error;
+    if (libmpq__file_seek(writer->fp, 0, SEEK_END) != 0 ||
+        (output = libmpq__file_tell(writer->fp)) < 0)
+        return LIBMPQ_ERROR_SEEK;
+    if ((entry.flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u)) ==
+            (LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u) &&
+        (uint32_t)output != (uint32_t)entry.offset && entry.packed_size != 0) {
+        if (name == NULL)
+            return LIBMPQ_ERROR_DECRYPT;
+        result =
+            writer_copy_member_checked(writer, source, number, name, name, 0, 0, attributes, 1);
+        if (result == 0) {
+
+            /* A key spelling is not necessarily this payload's extended lookup identity. */
+            free(writer->write_names[writer->write_next_block - 1]);
+            writer->write_names[writer->write_next_block - 1] = NULL;
+        }
+    } else {
+        uint64_t end = (uint64_t)output;
+        result = writer_layout_advance(&end, entry.packed_size, 1);
+        if (result != 0 || (uint64_t)output >> 32 > UINT16_MAX)
+            return LIBMPQ_ERROR_SIZE;
+        result = libmpq__file_verify(source, number, LIBMPQ_VERIFY_RAW_MD5, &mismatches);
+        if (result != 0 || mismatches != 0)
+            return result != 0 ? result : LIBMPQ_ERROR_READ;
+        result = writer_copy_range(writer, source, &entry, 0, entry.packed_size, 0, 0, &modified);
+        if (result == 0)
+            result = writer_raw_md5(writer, (uint64_t)output, entry.packed_size);
+        entry.offset = (uint64_t)output;
+        if (result == 0)
+            result = writer_register_member(writer, NULL, &entry, 0, 0, attributes);
+        if (result != 0 && modified)
+            writer->write_error = result;
+    }
+    if (result == 0)
+        result = libmpq__writer_identity_bind(writer, source, number);
+    return result;
+}
+
+/* Place retained payloads without recompression; only changed keys alter stored bytes. */
+static int32_t
+writer_copy_member_checked(
+    mpq_archive_s *writer, mpq_archive_s *source, uint32_t number, const char *old_name,
+    const char *new_name, uint16_t locale, uint16_t platform,
+    const mpq_file_attributes_s *attributes, uint8_t opaque
 )
 {
     const uint32_t supported = LIBMPQ_FLAG_EXISTS | LIBMPQ_FILE_FLAG_ENCRYPTED |
@@ -840,7 +898,7 @@ libmpq__writer_copy_member(
     uint64_t copied = 0;
     uint32_t old_key = 0;
     uint32_t new_key = 0;
-    uint32_t checks = LIBMPQ_VERIFY_RAW_MD5 | LIBMPQ_VERIFY_SECTOR_CRC;
+    uint32_t checks = LIBMPQ_VERIFY_RAW_MD5 | (opaque ? 0 : LIBMPQ_VERIFY_SECTOR_CRC);
     uint32_t mismatches;
     int32_t result;
     int32_t released;
@@ -875,7 +933,7 @@ libmpq__writer_copy_member(
     if (result != 0)
         return result;
     file = source->mpq_file[number];
-    if (attributes != NULL) {
+    if (attributes != NULL && !opaque) {
         if ((attributes->flags & LIBMPQ_ATTRIBUTE_CRC32) != 0)
             checks |= LIBMPQ_VERIFY_FILE_CRC32;
         if ((attributes->flags & LIBMPQ_ATTRIBUTE_MD5) != 0)
@@ -969,6 +1027,19 @@ done:
     if (result != 0 && modified)
         writer->write_error = result;
     return result;
+}
+
+/* Ordinary updates retain their existing logical/sector verification policy. */
+int32_t
+libmpq__writer_copy_member(
+    mpq_archive_s *writer, mpq_archive_s *source, uint32_t number, const char *old_name,
+    const char *new_name, uint16_t locale, uint16_t platform,
+    const mpq_file_attributes_s *attributes
+)
+{
+    return writer_copy_member_checked(
+        writer, source, number, old_name, new_name, locale, platform, attributes, 0
+    );
 }
 
 /* Share one HET/BET layout and serializer for v3 and private v4 output. */
@@ -1551,7 +1622,8 @@ libmpq__writer_validate_options(const mpq_archive_create_options_s *options)
 /* Allocate the writer before opening ordinary output, or adopt a private stream. */
 static int32_t
 writer_archive_create_handle(
-    mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options
+    mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options,
+    uint8_t dense
 )
 {
     mpq_archive_create_options_s defaults = { LIBMPQ_ARCHIVE_VERSION_ONE, 1024, 4096, 0, 0 };
@@ -1630,7 +1702,7 @@ writer_archive_create_handle(
         a->mpq_header_ex.extended_offset = offset;
         offset += (uint64_t)a->write_capacity * LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE;
     }
-    offset = extended ? header_size : (offset + 511) & ~UINT64_C(511);
+    offset = extended || dense ? header_size : (offset + 511) & ~UINT64_C(511);
     if (options->version == LIBMPQ_ARCHIVE_VERSION_ONE && offset > UINT32_MAX) {
         fclose(a->fp);
         free(a->filename);
@@ -1714,7 +1786,20 @@ libmpq__writer_archive_create_file(
         return libmpq__writer_archive_create_v4(
             out, path, file, options, LIBMPQ_WRITER_V4_RAW_CHUNK_SIZE
         );
-    return writer_archive_create_handle(out, path, file, options);
+    return writer_archive_create_handle(out, path, file, options, 0);
+}
+
+/* Dense transactions append tables after packed payloads, without source reservations. */
+int32_t
+libmpq__writer_archive_create_compact(
+    mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options,
+    uint32_t raw_chunk_size
+)
+{
+    int32_t result = writer_archive_create_handle(out, path, file, options, 1);
+    if (result == 0)
+        (*out)->mpq_header_v4.raw_chunk_size = raw_chunk_size;
+    return result;
 }
 
 /* Initialize private v4 output with an explicit pre-write raw policy. */
@@ -1733,7 +1818,7 @@ libmpq__writer_archive_create_v4(
             (void)fclose(file);
         return LIBMPQ_ERROR_FORMAT;
     }
-    result = writer_archive_create_handle(out, path, file, options);
+    result = writer_archive_create_handle(out, path, file, options, 0);
     if (result == 0)
         (*out)->mpq_header_v4.raw_chunk_size = raw_chunk_size;
     return result;

@@ -142,4 +142,7 @@ int32_t libmpq__archive_required_extent(const mpq_archive_s *archive, uint64_t *
  */
 int32_t libmpq__archive_signature_extent(const mpq_archive_s *archive, uint64_t *size);
 
+/* Stored classic extents, including compressed table representations. */
+int32_t libmpq__reader_classic_table_sizes(const mpq_archive_s *archive, uint64_t sizes[2]);
+
 #endif /* LIBMPQ_READER_H */
