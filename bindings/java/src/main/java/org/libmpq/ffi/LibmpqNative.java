@@ -100,6 +100,7 @@ public final class LibmpqNative {
     private static final MethodHandle UPDATE_RENAME;
     private static final MethodHandle UPDATE_RENAME_IDENTITY;
     private static final MethodHandle UPDATE_CHANGE_IDENTITY;
+    private static final MethodHandle UPDATE_COMPACT;
     private static final MethodHandle UPDATE_TIMESTAMP;
     private static final MethodHandle UPDATE_TIMESTAMP_IDENTITY;
     private static final MethodHandle UPDATE_COMMIT;
@@ -268,6 +269,8 @@ public final class LibmpqNative {
         UPDATE_CHANGE_IDENTITY = function(linker, lookup, "libmpq__update_change_identity",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                         C_SHORT, C_SHORT, C_SHORT, C_SHORT));
+        UPDATE_COMPACT = function(linker, lookup, "libmpq__update_compact",
+                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
         UPDATE_TIMESTAMP = function(linker, lookup, "libmpq__update_timestamp",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, C_LONG));
         UPDATE_TIMESTAMP_IDENTITY = function(linker, lookup, "libmpq__update_timestamp_identity",
@@ -651,6 +654,9 @@ public final class LibmpqNative {
     public static int updateChangeIdentity(MemorySegment update, MemorySegment name,
             short locale, short platform, short newLocale, short newPlatform) {
         return callInt(UPDATE_CHANGE_IDENTITY, update, name, locale, platform, newLocale, newPlatform);
+    }
+    public static int updateCompact(MemorySegment update) {
+        return callInt(UPDATE_COMPACT, update);
     }
     public static int updateTimestamp(MemorySegment update, MemorySegment name, long filetime) {
         return callInt(UPDATE_TIMESTAMP, update, name, filetime);

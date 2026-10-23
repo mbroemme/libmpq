@@ -109,6 +109,12 @@ final class Update {
                     "libmpq__update_replace_path");
     }
 
+    /** Immediately stage physical compaction; commit alone publishes it. */
+    void compact() {
+        ensureOpen();
+        checkStatus(libmpq__update_compact(handle), "libmpq__update_compact");
+    }
+
     /** Set an existing Windows FILETIME; shared rows only accept same-value no-ops. */
     void timestamp(string name, ulong filetime) {
         ensureOpen();

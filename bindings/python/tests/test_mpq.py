@@ -1610,3 +1610,40 @@ def test_transactional_timestamps(tmp_path, version, wrapped):
     with begin() as update:
         update.timestamp("voice", 1)
     assert path.read_bytes() == committed
+
+
+@pytest.mark.parametrize("version", [0, 1, 2, 3])
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_transactional_compaction(tmp_path, version, wrapped):
+    path = tmp_path / "compact.mpq"
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    create = (mpq.Writer.create_mpqe(path, code, version=version, max_files=8, attributes=mpq.ATTRIBUTE_FILETIME)
+              if wrapped else mpq.Writer(path, version=version, max_files=8, attributes=mpq.ATTRIBUTE_FILETIME))
+    with create as writer:
+        writer.add("voice", b"payload")
+        writer.add("discard", bytes(32768))
+    before = path.read_bytes()
+    begin = lambda: mpq.Update.begin_mpqe(path, code) if wrapped else mpq.Update(path)
+    with begin() as update:
+        update.remove("discard")
+        update.replace_data("voice", b"new")
+        update.rename("voice", "renamed")
+        update.change_identity("renamed", 0, 0, 1033, 2)
+        update.timestamp("renamed", 17, locale=1033, platform=2)
+        assert update.compact() is None
+        assert update.compact() is None
+        update.add_data("added", b"addition")
+        assert update.compact() is None
+        assert path.read_bytes() == before
+        update.commit()
+    opened = mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive(path)
+    with opened as archive:
+        assert archive["renamed"].read() == b"new"
+        assert archive["renamed"].attributes().filetime == 17
+        assert "discard" not in archive
+    after = path.read_bytes()
+    with begin() as update:
+        update.compact()
+    assert path.read_bytes() == after
+    with pytest.raises(mpq.LibmpqStateError):
+        update.compact()

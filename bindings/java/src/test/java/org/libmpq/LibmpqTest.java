@@ -36,6 +36,31 @@ import org.libmpq.ffi.LibmpqNative;
  */
 class LibmpqTest {
     @Test
+    void transactionalCompaction(@TempDir Path directory) throws Exception {
+        for (int version = 0; version < 4; ++version) {
+            Path path = directory.resolve("compact.mpq");
+            try (Archive writer = Archive.create(path,
+                    new ArchiveCreateOptions(version, 8, 512, 0, Mpq.ATTRIBUTE_FILETIME))) {
+                writer.add("voice", new byte[] {1, 2, 3}, null);
+                writer.add("discard", new byte[32768], null);
+            }
+            byte[] original = Files.readAllBytes(path);
+            try (MpqUpdate update = MpqUpdate.begin(path)) {
+                update.remove("discard");
+                update.timestamp("voice", 17L);
+                update.compact();
+                update.compact();
+                assertArrayEquals(original, Files.readAllBytes(path));
+                update.commit();
+            }
+            try (Archive archive = Archive.open(path)) {
+                assertEquals(17L, archive.attributes(archive.fileNumber("voice")).filetime());
+                assertThrows(LibmpqException.class, () -> archive.fileNumber("discard"));
+            }
+        }
+    }
+
+    @Test
     void transactionalTimestamps(@TempDir Path directory) throws Exception {
         for (int version : new int[] {Mpq.ARCHIVE_VERSION_ONE, Mpq.ARCHIVE_VERSION_TWO,
                                      Mpq.ARCHIVE_VERSION_THREE, Mpq.ARCHIVE_VERSION_FOUR}) {

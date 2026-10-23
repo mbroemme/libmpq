@@ -284,6 +284,7 @@ _configure("libmpq__update_rename_identity", ctypes.c_int32, _VOID_PTR, ctypes.c
            ctypes.c_char_p, ctypes.c_uint16, ctypes.c_uint16)
 _configure("libmpq__update_change_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
            ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint16)
+_configure("libmpq__update_compact", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__update_timestamp", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_uint64)
 _configure("libmpq__update_timestamp_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
            ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16)
@@ -542,6 +543,11 @@ class Update:
         libmpq.libmpq__update_add_path(
             self._update, _as_bytes(name), _as_bytes(source_path), self._options(options)
         )
+
+    def compact(self):
+        """Immediately stage physical compaction; commit alone publishes it."""
+        self._ensure_open()
+        libmpq.libmpq__update_compact(self._update)
 
     def timestamp(self, name, filetime, *, locale=None, platform=None):
         """Set an existing unsigned Windows FILETIME without changing the payload."""

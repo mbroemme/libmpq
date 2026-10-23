@@ -86,6 +86,12 @@ public final class MpqUpdate implements AutoCloseable {
         }
     }
 
+    /** Immediately stage physical compaction; commit alone publishes it. */
+    public void compact() throws LibmpqException {
+        checkOpen();
+        Support.check(LibmpqNative.updateCompact(handle));
+    }
+
     /** Set existing Windows FILETIME bits, with no filesystem time conversion. */
     public void timestamp(String name, long filetime) throws LibmpqException {
         checkOpen();

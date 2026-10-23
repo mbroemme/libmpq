@@ -561,3 +561,22 @@ Add operations create an absent filename using the locale/platform in
 selects an existing identity, retaining its tuple; storage options must match
 that tuple and cannot redirect selection. Change the tuple explicitly with
 `changeIdentity()`.
+
+Physical compaction is an immediate transaction stage:
+
+```d
+update.compact();
+```
+
+Call it after other mutations when final placement matters, then commit to
+publish. Supported packed representations, shared aliases and attributes are
+preserved. Required metadata capacity remains; no minimum size or reduction is
+guaranteed. Proven no-ops preserve bytes and signatures. Actual rebuilds remove
+stale signatures and regenerate integrity using the original raw-chunk policy.
+
+Unknown position-independent ciphertext can move opaquely; this does not verify
+plaintext. FIX_KEY relocation requires a usable key when its adjustment changes.
+Unsupported identities, ambiguous shared encryption, embedded wrappers and
+unrelated trailers are rejected. Budget disk space for a working stage and full
+candidate, plus encrypted MPQE publication where applicable. Native errors and
+transaction ownership follow the existing update conventions.

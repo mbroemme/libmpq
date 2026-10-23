@@ -1343,6 +1343,28 @@ private void testChangeIdentity() {
     }
 }
 
+private void testTransactionalCompaction() {
+    auto path = temporaryArchive("compact");
+    scope(exit) if (exists(path)) remove(path);
+    foreach (version_; 0u .. 4u) {
+        auto writer = Archive.create(path, ArchiveCreateOptions(version_, 8, 512, 0, ATTRIBUTE_FILETIME));
+        writer.add("voice", cast(const(ubyte)[]) "payload");
+        writer.add("discard", new ubyte[32768]);
+        writer.close();
+        auto before = read(path);
+        auto update = Update.begin(path);
+        update.remove("discard");
+        update.timestamp("voice", 17);
+        update.compact();
+        update.compact();
+        assert(read(path) == before);
+        update.commit();
+        auto archive = Archive.open(path);
+        assert(archive.file("voice").attributes().filetime == 17);
+        archive.close();
+    }
+}
+
 private void testTransactionalTimestamps() {
     auto path = temporaryArchive("timestamp");
     scope(exit) if (exists(path)) remove(path);
@@ -1380,6 +1402,7 @@ private void testTransactionalTimestamps() {
 }
 
 void main() {
+    testTransactionalCompaction();
     testTransactionalTimestamps();
     testChangeIdentity();
     testExactUpdateStages();
