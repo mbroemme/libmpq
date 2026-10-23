@@ -1493,3 +1493,10 @@ libmpq__block_read(
         archive, file_number, block_number, out_buf, out_size, transferred, NULL, NULL, NULL
     );
 }
+
+/* Immediately stage validated physical compaction without publishing. */
+int32_t
+libmpq__update_compact(mpq_update_s *update)
+{
+    return libmpq__update_transaction_compact(update);
+}

@@ -468,6 +468,35 @@ ordinary or exact lookup to find an existing identity and keeps its tuple;
 replacement options must match it and cannot redirect selection. Use
 `libmpq__update_change_identity()` to change an existing tuple explicitly.
 
+`libmpq__update_compact(update)` immediately stages physical compaction through
+identity-preserving packed reconstruction. Commit alone publishes it. Call it
+last when final layout matters: subsequent mutations can introduce gaps. Live
+payloads are placed densely without retaining source holes; shared aliases
+still reference one payload. Hash capacity and required metadata/raw storage
+remain, so neither a minimum archive size nor a size reduction is promised.
+
+When removing a weak signature, compaction edits `(listfile)` only if it lists
+that signature. Other lines and separators remain unchanged. Changed listfiles
+retain supported storage flags and recoverable compression policy; unsupported
+policies are rejected. Unchanged listfiles use packed copying, with FIX_KEY
+ciphertext adjusted only when relocation requires it.
+
+A proven already-compact stage remains byte-identical, including signatures.
+Actual reconstruction invalidates signatures, regenerates applicable integrity
+metadata and retains the generation, raw-chunk policy and supported attributes.
+Opaque non-FIX_KEY ciphertext can move unchanged without a filename, which
+establishes stored-byte preservation rather than plaintext verification. Moving
+FIX_KEY data requires a usable basename key when its effective key changes.
+Shared encrypted rows require known, key-compatible spellings for every alias.
+Unsupported or ambiguous identities, shared encryption provenance, embedded
+wrappers, unrelated trailers and physical patch/delete members are rejected.
+
+Compaction uses the current stage, including earlier identity and timestamp
+changes. Semantic rejection preserves that stage; existing operational adoption
+failures can leave it abort-only. Budget space for the original, working stage
+and full candidate; MPQE publication may also need an encrypted candidate.
+Existing cleanup, authentication and source-preservation guarantees apply.
+
 `libmpq__update_timestamp(update, name, filetime)` changes existing FILETIME
 metadata using ordinary lookup. Use `libmpq__update_timestamp_identity(update,
 name, filetime, locale, platform)` for exact selection without fallback.

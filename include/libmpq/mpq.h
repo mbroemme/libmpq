@@ -1028,6 +1028,20 @@ extern LIBMPQ_API int32_t libmpq__update_timestamp_identity(
 );
 
 /*
+ * Stage physical compaction immediately, retaining supported live identities,
+ * packed representations, attributes and raw policy. Required metadata capacity
+ * may remain; no minimum size or byte-count reduction is guaranteed. Proven
+ * already-compact archives are unchanged, including signatures. Actual rebuilds
+ * invalidate signatures. Unknown position-independent ciphertext may be copied
+ * opaquely; FIX_KEY relocation requires a usable key when its adjustment changes.
+ * Embedded wrappers, unrelated trailers and unsupported mappings return FORMAT.
+ * Semantic rejection preserves the stage; adoption errors may leave it abort-only.
+ * Commit alone publishes and consumes the transaction. Compact last when final
+ * placement matters: later mutations may reintroduce gaps.
+ */
+extern LIBMPQ_API int32_t libmpq__update_compact(mpq_update_s *update);
+
+/*
  * Validate and atomically publish staged changes. This consumes the update
  * handle even if publication fails; callers must not use it afterward.
  */

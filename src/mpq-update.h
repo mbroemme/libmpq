@@ -70,6 +70,7 @@ int32_t libmpq__update_transaction_timestamp(
     mpq_update_s *update, const char *filename, uint64_t filetime, uint8_t exact, uint16_t locale,
     uint16_t platform
 );
+int32_t libmpq__update_transaction_compact(mpq_update_s *update);
 const mpq_update_ops_s *libmpq__update_ops(const mpq_update_s *update);
 void libmpq__update_set_ops(mpq_update_s *update, const mpq_update_ops_s *ops);
 

@@ -1,0 +1,77 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__UPDATE_COMPACT 3 "2026-11-11" "libmpq 0.9.0" "libmpq Library Functions"
+.SH NAME
+libmpq__update_compact \- stage physical archive compaction
+.SH SYNOPSIS
+.nf
+#include <libmpq/mpq.h>
+
+int32_t libmpq__update_compact(mpq_update_s *update);
+.fi
+.SH DESCRIPTION
+Immediately reconstruct and validate the current transaction stage with densely
+placed live payloads. This call neither publishes nor consumes the update
+handle. Commit remains the sole publication operation. Invoke compaction after
+other mutations when final placement matters; later changes can introduce gaps.
+.PP
+Supported members retain their compressed representation, flags, attributes,
+FILETIME and identity associations. Shared classic aliases reference one
+physical payload. Classic hash capacity, probe slots, locales, platforms and
+deleted-slot semantics are preserved. Required metadata reservations and raw
+arrays remain; neither minimum size nor a reduction in total bytes is promised.
+.PP
+A complete layout and eligibility check can prove that the archive is already
+compact. Such a no-op preserves staged bytes and signatures without creating a
+candidate. It does not imply successful plaintext verification of every member.
+Actual reconstruction removes stale signatures and regenerates applicable
+structural and raw MD5 using the original v4 raw-chunk policy.
+.PP
+Supported standalone v1-v4 classic and representable HET/BET layouts reuse
+identity-preserving packed reconstruction. Unknown unencrypted and
+position-independent encrypted payloads can move as opaque stored bytes.
+Ciphertext copying is not plaintext verification. FIX_KEY relocation requires
+a usable basename key when its effective key changes; no name is fabricated.
+Every shared encrypted alias requires a known, key-compatible spelling.
+Ambiguous or insufficient shared encryption provenance is rejected.
+.PP
+Embedded prefixes, unrelated trailers, physical patch/delete members,
+contradictory or reduced hashes, unsupported BET/attributes metadata and
+overlapping physical ranges are rejected conservatively. Recognized strong
+signature trailers survive proven no-ops and are removed on reconstruction.
+Authenticated MPQE uses the existing plaintext stage and encrypted publication.
+.PP
+Temporary disk space is required for the working stage and a complete candidate,
+in addition to the original archive. MPQE publication can require another
+encrypted candidate. Memory for payload copying is bounded independently of
+unpacked file size. Cleanup remains best effort on persistent I/O failure;
+secure deletion and crash durability are not guaranteed.
+.PP
+Semantic rejection preserves the preceding valid stage. Existing operational
+adoption failures can leave the transaction abort-only. Abort and failed
+publication preserve the original under the normal transaction guarantees.
+.SH RETURN VALUE
+Returns 0 on success, including proven no-ops, or a negative libmpq error.
+.SH ERRORS
+An invalid or abort-only handle returns LIBMPQ_ERROR_EXIST. Malformed or
+unsupported layouts return LIBMPQ_ERROR_FORMAT. Unavailable required relocation
+keys return LIBMPQ_ERROR_DECRYPT. Size, allocation, read, write, seek and close
+failures propagate the established corresponding errors.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__update_begin (3),
+.BR libmpq__update_begin_mpqe (3),
+.BR libmpq__update_commit (3),
+.BR libmpq__update_abort (3)
