@@ -37,6 +37,9 @@ struct FileAttributes {
 /** Stored sector Adler-32 and zero or VERIFY_SECTOR_CRC mismatch bits. */
 struct BlockVerification { uint checksum; uint mismatches; }
 
+/** Member coverage masks, independent of signature trust or whole-archive integrity. */
+struct VerificationResult { uint checked; uint unavailable; uint mismatches; }
+
 /** The three Storm hash values used by MPQ name lookup. */
 struct StormHash { uint hash1; uint hash2; uint hash3; }
 
@@ -561,6 +564,19 @@ class File {
     this(Archive archive, char[] name) { this(archive, name.idup); }
 
     /** Return the public numeric entry index. */ uint no() const { return number; }
+
+    /** Return member coverage; optional filename supplies synchronous key context. */
+    VerificationResult verifyResult(uint flags = VERIFY_ALL, string filename = null) {
+        VerificationResult result;
+        import std.algorithm.searching : canFind;
+        if (filename.canFind('\0'))
+            throw new MPQException("File.verifyResult", ERROR_FORMAT);
+        checkStatus(libmpq__file_verify_ex(archiveRef.nativeHandle(), number,
+                    filename is null ? null : filename.toStringz, flags,
+                    &result.checked, &result.unavailable, &result.mismatches),
+                    "libmpq__file_verify_ex");
+        return result;
+    }
 
     /** Return mismatches as a subset of flags; missing values are skipped.
      * File checks require attributes; sector-only checks do not. Errors throw. */

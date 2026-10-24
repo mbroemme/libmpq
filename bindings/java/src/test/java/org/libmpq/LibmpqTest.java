@@ -36,6 +36,31 @@ import org.libmpq.ffi.LibmpqNative;
  */
 class LibmpqTest {
     @Test
+    void memberVerificationKeyContext(@TempDir Path directory) throws Exception {
+        byte[] payload = new byte[64];
+        for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i * 71 + i / 3);
+        for (int version = 0; version < 4; version++) {
+            Path path = directory.resolve("verification.mpq");
+            try (Archive writer = Archive.create(path,
+                    new ArchiveCreateOptions(version, 4, 512, 0,
+                        Mpq.ATTRIBUTE_CRC32 | Mpq.ATTRIBUTE_MD5))) {
+                writer.add("voice.bin", payload,
+                    new FileOptions(Mpq.FILE_FLAG_SINGLE | Mpq.FILE_FLAG_ENCRYPTED | 0x00020000,
+                                    0, 0, 1033, 2));
+            }
+            try (Archive archive = Archive.open(path)) {
+                int number = archive.fileNumber("voice.bin", 1033, 2);
+                assertEquals(Mpq.ERROR_DECRYPT,
+                    assertThrows(LibmpqException.class, () -> archive.verifyFileResult(number, 6)).code());
+                assertEquals(new Archive.VerificationResult(6, 0, 0),
+                    archive.verifyFileResult(number, 6, "voice.bin"));
+                assertEquals(Mpq.ERROR_DECRYPT,
+                    assertThrows(LibmpqException.class, () -> archive.verify(number, 6)).code());
+            }
+        }
+    }
+
+    @Test
     void transactionalSigning(@TempDir Path directory) throws Exception {
         for (int version = 0; version < 4; ++version) {
             for (boolean embedded : new boolean[] {false, true}) {
@@ -1110,6 +1135,15 @@ class LibmpqTest {
                                "mpq-v1-features.mpq");
         try (Archive archive = Archive.open(fixture)) {
             int number = archive.fileNumber(hash);
+            for (int flags = 0; flags < 16; flags++) {
+                Archive.VerificationResult coverage = archive.verifyFileResult(number, flags, "overview.txt");
+                assertEquals(flags & 6, coverage.checked());
+                assertEquals(flags & 9, coverage.unavailable());
+                assertEquals(0, coverage.mismatches());
+                assertEquals(coverage, archive.verifyFileResult(number, flags));
+            }
+            assertEquals(new Archive.VerificationResult(0, 6, 0),
+                archive.verifyFileResult(archive.fileNumber("(attributes)"), 6));
             byte[] data = archive.readFile(number);
             assertEquals(7, archive.attributes().orElseThrow());
             FileAttributes attributes = archive.attributes(number);

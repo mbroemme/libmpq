@@ -310,6 +310,7 @@ _configure("libmpq__archive_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32,
 _configure("libmpq__archive_sign", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR, ctypes.c_size_t)
 _configure("libmpq__file_attributes", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_FileAttributes))
 _configure("libmpq__file_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
+_configure("libmpq__file_verify_ex", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_char_p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__block_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__writer_timestamp", ctypes.c_int32, _VOID_PTR, ctypes.c_uint64)
 for _name in ("packed", "unpacked"):
@@ -770,6 +771,15 @@ class Patch:
             self.close()
         except BaseException:
             pass
+
+
+@dataclass(frozen=True)
+class VerificationResult:
+    """Member checksum coverage and mismatches, not whole-archive integrity."""
+
+    checked: int
+    unavailable: int
+    mismatches: int
 
 
 @dataclass(frozen=True)
@@ -1234,6 +1244,20 @@ class File:
             raise ValueError("verify flags must be an unsigned 32-bit integer")
         return _read_value(libmpq.libmpq__file_verify, ctypes.c_uint32,
                            self._archive._mpq, self.number, flags)
+
+    def verify_result(self, flags=VERIFY_ALL, *, filename=None):
+        """Return immutable checksum coverage; filename is optional key context."""
+        self._archive._ensure_open()
+        if not isinstance(flags, int) or not 0 <= flags <= 0xffffffff:
+            raise ValueError("verify flags must be an unsigned 32-bit integer")
+        name = None if filename is None else _as_bytes(filename)
+        if name is not None and b"\0" in name:
+            raise ValueError("filename contains NUL")
+        checked, unavailable, mismatches = (ctypes.c_uint32() for _ in range(3))
+        libmpq.libmpq__file_verify_ex(
+            self._archive._mpq, self.number, name, flags,
+            ctypes.byref(checked), ctypes.byref(unavailable), ctypes.byref(mismatches))
+        return VerificationResult(checked.value, unavailable.value, mismatches.value)
 
     def attributes(self):
         """Return stored attributes, raising if absent or malformed, without verification."""

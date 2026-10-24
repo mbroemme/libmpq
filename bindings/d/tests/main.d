@@ -107,6 +107,13 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
 
     const(ubyte)[] payload = cast(const(ubyte)[])"D binding regression\n";
     archive.add("hello.txt", payload);
+    ubyte[64] keyPayload;
+    foreach (i, ref value; keyPayload) value = cast(ubyte)(i * 71 + i / 3);
+    auto secureStorage = FileOptions.raw();
+    secureStorage.flags = FILE_FLAG_SINGLE | FILE_FLAG_ENCRYPTED | 0x00020000u;
+    secureStorage.locale = 1033;
+    secureStorage.platform = 2;
+    archive.add("voice.bin", keyPayload, secureStorage);
     ubyte[] repetitive = new ubyte[](12000);
     repetitive[] = cast(ubyte) 'D';
     auto checksummed = FileOptions.compressed(COMPRESSION_ZLIB, COMPRESSION_ZLIB);
@@ -131,6 +138,17 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
     auto reopened = Archive.open(path);
     scope(exit) { reopened.close(); remove(path); }
     auto hello = reopened.file("hello.txt");
+    auto secureEntry = reopened.file(reopened.fileNumber("voice.bin", 1033, 2));
+    bool missingKey;
+    try { secureEntry.verifyResult(6); }
+    catch (MPQException error) { missingKey = error.code == ERROR_DECRYPT; }
+    assert(missingKey);
+    auto coverage = secureEntry.verifyResult(6, "voice.bin");
+    assert(coverage.checked == 6 && coverage.unavailable == 0 && coverage.mismatches == 0);
+    missingKey = false;
+    try { secureEntry.verify(6); }
+    catch (MPQException error) { missingKey = error.code == ERROR_DECRYPT; }
+    assert(missingKey);
     assert(hello.read() == payload);
     assert(hello.unpackedSize() == payload.length);
     assert(hello.blockCount() > 0);
@@ -287,6 +305,14 @@ private void testFixture() {
     auto listfile = archive.file("(listfile)");
     assert(listfile.read().length > 0);
     assert(archive.file("overview.txt").verify() == 0);
+    foreach (uint flags; 0 .. 16) {
+        auto coverage = archive.file("overview.txt").verifyResult(flags, "overview.txt");
+        assert(coverage.checked == (flags & 6));
+        assert(coverage.unavailable == (flags & 9));
+        assert(coverage.mismatches == 0);
+    }
+    auto selfCoverage = archive.file("(attributes)").verifyResult(6);
+    assert(selfCoverage.checked == 0 && selfCoverage.unavailable == 6 && selfCoverage.mismatches == 0);
     // The (attributes) self-MD5 is an absent, all-zero placeholder.
     assert(archive.file("(attributes)").verify(VERIFY_FILE_MD5) == 0);
     assert(archive.fileNumber(Mpq.fileHash("(listfile)")) == listfile.no());
@@ -311,6 +337,14 @@ private void testMpqeFixture() {
     assert(archive.version_() == 1);
     assert(archive.file("overview.txt").read().length > 0);
     assert(archive.file("overview.txt").verify() == 0);
+    foreach (uint flags; 0 .. 16) {
+        auto coverage = archive.file("overview.txt").verifyResult(flags, "overview.txt");
+        assert(coverage.checked == (flags & 6));
+        assert(coverage.unavailable == (flags & 9));
+        assert(coverage.mismatches == 0);
+    }
+    auto selfCoverage = archive.file("(attributes)").verifyResult(6);
+    assert(selfCoverage.checked == 0 && selfCoverage.unavailable == 6 && selfCoverage.mismatches == 0);
     auto stream = archive.openStream("overview.txt");
     auto expected = archive.file("overview.txt").read();
     archive.close();

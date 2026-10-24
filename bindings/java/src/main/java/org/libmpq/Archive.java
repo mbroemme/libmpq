@@ -25,6 +25,30 @@ import org.libmpq.ffi.LibmpqNative;
  */
 public final class Archive implements AutoCloseable {
 
+    /** Member checksum coverage; masks use the existing VERIFY_* bits. */
+    public record VerificationResult(int checked, int unavailable, int mismatches) {}
+
+    public VerificationResult verifyFileResult(int number, int flags) throws LibmpqException {
+        return verifyFileResult(number, flags, null);
+    }
+
+    /** Optional filename provides key context for the selected number, not selection. */
+    public VerificationResult verifyFileResult(int number, int flags, String filename)
+            throws LibmpqException {
+        checkOpen();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment name = filename == null ? MemorySegment.NULL : Support.text(arena, filename);
+            MemorySegment checked = arena.allocate(ValueLayout.JAVA_INT);
+            MemorySegment unavailable = arena.allocate(ValueLayout.JAVA_INT);
+            MemorySegment mismatches = arena.allocate(ValueLayout.JAVA_INT);
+            Support.check(LibmpqNative.fileVerifyEx(handle, number, name, flags, checked,
+                                                    unavailable, mismatches));
+            return new VerificationResult(checked.get(ValueLayout.JAVA_INT, 0),
+                                          unavailable.get(ValueLayout.JAVA_INT, 0),
+                                          mismatches.get(ValueLayout.JAVA_INT, 0));
+        }
+    }
+
     /** Return weak and strong signature presence bits; malformed storage throws. */
     public int signatures() throws LibmpqException {
         checkOpen();

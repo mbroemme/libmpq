@@ -242,6 +242,8 @@ extern(C) {
     int libmpq__archive_sign(mpq_archive_s* archive, uint type,
                              const(ubyte)* key, size_t keySize);
     int libmpq__file_attributes(mpq_archive_s* archive, uint number, mpq_file_attributes_s* attributes);
+    int libmpq__file_verify_ex(mpq_archive_s* archive, uint number, const(char)* filename,
+                             uint flags, uint* checked, uint* unavailable, uint* mismatches);
     int libmpq__file_verify(mpq_archive_s* archive, uint number, uint flags, uint* mismatches);
     int libmpq__block_verify(mpq_archive_s* archive, uint number, uint block,
                             uint* checksum, uint* mismatches);

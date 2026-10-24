@@ -150,6 +150,7 @@ public final class LibmpqNative {
     private static final MethodHandle STREAM_SIZE;
     private static final MethodHandle STREAM_CLOSE;
     private static final MethodHandle FILE_VERIFY;
+    private static final MethodHandle FILE_VERIFY_EX;
     private static final MethodHandle ARCHIVE_SIGNATURES;
     private static final MethodHandle ARCHIVE_VERIFY;
     private static final MethodHandle ARCHIVE_SIGN;
@@ -173,6 +174,10 @@ public final class LibmpqNative {
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS));
         FILE_VERIFY = function(linker, lookup, "libmpq__file_verify",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, C_INT, ValueLayout.ADDRESS));
+        FILE_VERIFY_EX = function(linker, lookup, "libmpq__file_verify_ex",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS,
+                                  C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                  ValueLayout.ADDRESS));
         BLOCK_VERIFY = function(linker, lookup, "libmpq__block_verify",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, C_INT,
                                   ValueLayout.ADDRESS, ValueLayout.ADDRESS));
@@ -577,6 +582,13 @@ public final class LibmpqNative {
     /** Verify available checksums; mismatches receives a subset of flags, or zero on error. */
     public static int fileVerify(MemorySegment archive, int number, int flags, MemorySegment mismatches) {
         return callInt(FILE_VERIFY, archive, number, flags, mismatches);
+    }
+
+    public static int fileVerifyEx(MemorySegment archive, int number, MemorySegment filename,
+                                   int flags, MemorySegment checked, MemorySegment unavailable,
+                                   MemorySegment mismatches) {
+        return callInt(FILE_VERIFY_EX, archive, number, filename, flags, checked, unavailable,
+                       mismatches);
     }
 
     /** Return the stored sector Adler-32 and mismatch bit; both outputs are zero on error. */

@@ -615,3 +615,29 @@ trust. Independently verify with the matching public key and require zero
 mismatches as well as a successful call. Opaque ciphertext preservation does
 not establish plaintext correctness. Native temporary key copies are cleared
 where used; this does not promise erasure of managed-runtime key copies.
+
+Member checksum coverage is available separately from the legacy mismatch
+result:
+
+```d
+auto result = archive.file(number).verifyResult(VERIFY_ALL, "voice.bin");
+```
+
+The result contains `checked`, `unavailable` and `mismatches` masks. Complete
+matching coverage requires checked equal to the request and both other masks
+zero. Partial sector coverage may be both checked and unavailable. Missing
+logical metadata is unavailable; malformed metadata and read, key or decode
+failures raise the existing native error. Filename is optional key context for the
+selected number, never fallback selection; it is not cached in the parent.
+Circular internal zero placeholders and logical lossy ADPCM checks without
+decoded-byte provenance are unavailable. Ordinary CRC32 zero remains valid.
+Member verification establishes neither signature trust nor whole-archive
+integrity. Existing verification methods retain their behavior.
+
+For eligible nonempty v4 members, a nonzero raw chunk size declares required
+trailing RAW MD5 storage. Missing, truncated or overlapping arrays raise the
+existing native errors; adjacency and zero-filled bytes do not prove absence.
+RAW is unavailable only for older versions, zero raw size, empty stored data
+or delete markers. A matching unkeyed MD5 is not proof of provenance or
+cryptographic authenticity. Complete coverage requires successful native
+status, checked equal to the request, no unavailable checks and no mismatches.

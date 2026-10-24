@@ -1730,3 +1730,42 @@ def test_update_sign_clears_native_key_copy(tmp_path, monkeypatch, failure):
             update.sign(key)
     assert key == WEAK_PRIVATE_KEY
     assert len(captured) == 1 and bytes(captured[0]) == bytes(len(key))
+
+
+def test_member_verification_coverage():
+    with mpq.Archive(FIXTURES / "mpq-v1-features.mpq") as archive:
+        entry = archive["overview.txt"]
+        for flags in range(16):
+            result = entry.verify_result(flags, filename="overview.txt")
+            assert result.checked == flags & 6
+            assert result.unavailable == flags & 9
+            assert result.mismatches == 0
+            assert entry.verify(flags) == result.mismatches
+        result = archive["(attributes)"].verify_result(6)
+        assert result == mpq.VerificationResult(0, 6, 0)
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            entry.verify_result(filename="sparse.txt")
+        with pytest.raises(ValueError):
+            entry.verify_result(-1)
+        with pytest.raises(ValueError):
+            entry.verify_result(filename="bad\0name")
+        with pytest.raises(mpq.LibmpqFormatError):
+            entry.verify_result(16)
+
+
+@pytest.mark.parametrize("version", range(4))
+def test_verification_filename_key_context(tmp_path, version):
+    path = tmp_path / "verify-key.mpq"
+    payload = bytes((i * 71 + i // 3) % 256 for i in range(64))
+    storage = mpq.FileCreateOptions(
+        mpq.FILE_FLAG_SINGLE | mpq.FILE_FLAG_ENCRYPTED | 0x00020000, 0, 0, 1033, 2)
+    with mpq.Writer(path, version=version, max_files=4,
+                    attributes=mpq.ATTRIBUTE_CRC32 | mpq.ATTRIBUTE_MD5) as writer:
+        writer.add("voice.bin", payload, storage)
+    with mpq.Archive(path) as archive:
+        entry = archive[archive.file_number("voice.bin", locale=1033, platform=2)]
+        with pytest.raises(mpq.LibmpqDecryptError):
+            entry.verify_result(6)
+        assert entry.verify_result(6, filename="voice.bin") == mpq.VerificationResult(6, 0, 0)
+        with pytest.raises(mpq.LibmpqDecryptError):
+            entry.verify(6)
