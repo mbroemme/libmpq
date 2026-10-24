@@ -1120,3 +1120,34 @@ LD_LIBRARY_PATH="$PWD/src/.libs" \
 See [bindings/java/README.md](bindings/java/README.md) and
 [bindings/java/pom.xml](bindings/java/pom.xml) for Maven configuration,
 project metadata, and API information.
+
+Availability-aware member verification uses `libmpq__file_verify_ex()` with
+separate checked, unavailable and mismatch masks. On success their coverage
+union equals the request; partial sector coverage can set both coverage
+masks. Complete matching coverage requires checked equal to the request and
+both unavailable and mismatches zero. Operational errors clear all outputs.
+The legacy verifier retains its mismatch-only contract and skipped checks.
+
+The optional filename is borrowed decryption-key context for the selected
+canonical number, with no lookup fallback or parent key-cache changes. Exact
+selection remains a separate identity lookup. Missing logical attributes and
+inapplicable checks are unavailable; malformed metadata, read and decode errors
+remain errors. Nonzero v4 raw chunk size declares expected trailing RAW MD5
+arrays for eligible nonempty members. Missing, truncated or overlapping required
+arrays are errors, regardless of table order or adjacent storage. A matching
+unkeyed digest establishes neither provenance nor cryptographic authenticity.
+Circular zero CRC placeholders and logical ADPCM checks lacking proven
+decoded-byte provenance are unavailable. Ordinary CRC32 zero remains
+valid. Raw checks do not need plaintext keys. Member checks establish neither
+signature trust nor complete archive integrity. Archive metadata verification
+remains a separate phase.
+
+Extended RAW verification lazily copies live payload and metadata ranges into
+an immutable private index with sorted starts and prefix maximum ends. It costs
+O(N log N) preprocessing, O(N) memory and O(log N) per overlap query. Clones
+share completed indexes using the existing externally serialized lifetime
+contract; the last close frees them. Clones created before preprocessing can
+build their own index once. Named verification prepares the parent index
+before opening its key-isolated clone. Failed construction remains retryable.
+Index construction does not certify overlapping storage: queries still reject
+conflicts. The legacy verifier neither constructs nor queries this index.

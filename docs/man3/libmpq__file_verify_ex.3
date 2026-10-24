@@ -1,0 +1,108 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__FILE_VERIFY_EX 3 2026-11-13 "The MoPaQ archive library"
+.SH NAME
+libmpq__file_verify_ex \- report member checksum coverage and mismatches
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__file_verify_ex("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        uint32_t " "file_number,"
+.BI "        const char *" "filename,"
+.BI "        uint32_t " "verify_flags,"
+.BI "        uint32_t *" "checked,"
+.BI "        uint32_t *" "unavailable,"
+.BI "        uint32_t *" "mismatches"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Verify one selected canonical member using the existing LIBMPQ_VERIFY_SECTOR_CRC,
+LIBMPQ_VERIFY_FILE_CRC32, LIBMPQ_VERIFY_FILE_MD5 and LIBMPQ_VERIFY_RAW_MD5 bits.
+Unknown bits are rejected. Zero flags perform no checks after reader, file
+number and output-pointer validation.
+.PP
+The optional filename is synchronous borrowed basename-derived key context,
+not member selection. Resolve exact locale/platform identities with
+.BR libmpq__file_number_from_identity (3)
+first. Reliable contradictory filename identities are rejected; otherwise the
+name is a caller key hint, not proof of filename provenance. NULL retains
+anonymous key recovery. Supplied key context is isolated from the parent cache.
+FIX_KEY uses MPQ-relative offsets, including in embedded archives.
+.SS Coverage
+On success checked contains performed comparisons, unavailable contains absent,
+inapplicable or partially available checks, and mismatches is a subset of
+checked. Both coverage outputs are subsets of verify_flags, and their union
+is verify_flags. Partial sector coverage sets both checked and unavailable.
+A complete matching result requires all of the following:
+.nf
+    status == 0
+    checked == verify_flags
+    unavailable == 0
+    mismatches == 0
+.fi
+.PP
+Sector checks compare packed, decrypted sector bytes before decoding. Missing
+sector tables, zero/all-ones entries and inapplicable storage are unavailable.
+At least one usable comparison sets checked; any missing sector sets unavailable.
+.PP
+Missing attributes, omitted physical rows, absent checksum arrays and all-zero
+MD5 placeholders are unavailable. Valid BET-only members have no fabricated
+classic attributes. Ordinary CRC32 zero is available, including for empty data.
+Zero CRC32 placeholders are unavailable only for the attributes self row or a
+recognized weak signature member. Legacy file_verify retains literal comparisons.
+.PP
+Logical CRC32/MD5 are unavailable when actual ADPCM decoding is lossy: current
+attributes do not establish decoded-byte checksum provenance. Lossless blocks
+and files still compare normally. Sector and raw checks remain independent.
+Malformed metadata and read, key or decode failures remain operational errors.
+.PP
+Raw MD5 compares stored MPQ payload chunks after MPQE transport decoding without
+requiring plaintext keys. Older versions, zero raw size, zero stored length,
+and delete markers are unavailable. Nonzero v4 raw size establishes expected
+coverage for every eligible nonempty physical member. Missing or truncated
+required arrays are format/read errors, including when the payload ends at the
+archive boundary or another live structure starts at the expected array.
+Zero-filled bytes are compared as digests, never treated as absence. Overlapping
+or out-of-bounds required arrays remain errors. These are physical member checks,
+not verification of a reconstructed patch result. A matching unkeyed MD5 establishes
+neither digest provenance nor cryptographic authenticity.
+.PP
+A private immutable layout index is built lazily and reused. Preprocessing costs
+O(N log N) time and O(N) memory; each member overlap query costs O(log N).
+Reader clones share completed indexes and may outlive their parents. Allocation
+or construction failure publishes no partial index and leaves the handle usable.
+Index and clone lifetime operations retain the existing external serialization
+requirements; indexing does not establish that every stored range is valid.
+.PP
+Verification uses one decoded-block buffer and one shared traversal. SINGLE_UNIT
+storage may require a buffer as large as that logical member. This operation
+does not establish signature trust, structural metadata coverage or whole-archive
+integrity. VERIFY_ALL requests all member checks; it does not promise availability.
+.SH RETURN VALUE
+Zero means verification completed, even with unavailable checks or mismatches.
+Negative LIBMPQ_ERROR_* values report operational failures. All three required
+output pointers are cleared on failure when valid. Invalid pointers or file
+numbers return EXIST; writable handles return NOT_INITIALIZED; unknown flags
+and malformed metadata return FORMAT. Read, allocation, decryption and decoding
+failures retain their established errors.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__file_verify (3),
+.BR libmpq__block_verify (3),
+.BR libmpq__file_attributes (3),
+.BR libmpq__file_number_from_identity (3),
+.BR libmpq__archive_verify (3)

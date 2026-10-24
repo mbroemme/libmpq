@@ -499,6 +499,16 @@ int32_t libmpq__file_number_from_identity(
 .BI "        uint32_t *" "mismatches"
 .BI ");"
 .sp
+.BI "int32_t libmpq__file_verify_ex("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        uint32_t " "file_number,"
+.BI "        const char *" "filename,"
+.BI "        uint32_t " "verify_flags,"
+.BI "        uint32_t *" "checked,"
+.BI "        uint32_t *" "unavailable,"
+.BI "        uint32_t *" "mismatches"
+.BI ");"
+.sp
 .BI "int32_t libmpq__block_compression("
 .BI "        mpq_archive_s *" "archive,"
 .BI "        uint32_t " "file_number,"
@@ -610,6 +620,8 @@ staging files; cleanup after abnormal termination is best effort.
 Archive, file, and block queries expose sizes, flags, and version-100
 \fB(attributes)\fP rows. Complete lossless file reads automatically
 check available CRC32/MD5 and usable sector Adler-32 data.
+\fBlibmpq__file_verify_ex\fP(3) reports checked, unavailable and mismatch
+member checks; the optional name is key context, not selection.
 \fBlibmpq__file_verify\fP(3) performs selected explicit comparisons;
 lossy ADPCM may legitimately differ from source-byte checksums.
 libmpq__file_identity(3) enumerates filename identities and their CLASSIC/BET
@@ -708,7 +720,8 @@ Ordinary operations retain HET-first/classic first-hit resolution.
 .BR libmpq__file_read (3),
 .BR libmpq__file_size_packed (3),
 .BR libmpq__file_size_unpacked (3),
-.BR libmpq__file_verify (3)
+.BR libmpq__file_verify (3),
+.BR libmpq__file_verify_ex (3)
 .SS "Block Queries and Reads"
 .BR libmpq__block_compression (3),
 .BR libmpq__block_read (3),
