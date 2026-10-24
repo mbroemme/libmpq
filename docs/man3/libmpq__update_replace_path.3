@@ -34,6 +34,11 @@ distinct first- and later-sector compression masks; NULL selects default
 storage options. Supplied locale and platform must match the existing member
 or LIBMPQ_ERROR_FORMAT is returned. The original archive is not published
 until commit.
+.PP
+Discoverable embedded archives retain all prefix bytes and the original MPQ
+origin under the existing format restrictions. Named reconstruction rejects
+unrelated trailers; ordinary legacy v1/v2 operations retain their suffix policy.
+See libmpq__update_begin(3) for discovery and temporary-storage requirements.
 .SH RETURN VALUE
 Returns \fB0\fP on success, or a negative libmpq error.
 .SH ERRORS

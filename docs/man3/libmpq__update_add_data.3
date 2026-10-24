@@ -40,6 +40,11 @@ identity, subject to the existing filename collision rules. This operation
 accepts no selector and does not select an existing identity. Replacement
 instead uses ordinary or exact lookup to find an existing identity and retains
 that tuple; use libmpq__update_change_identity(3) to change a stored tuple.
+.PP
+Discoverable embedded archives retain all prefix bytes and the original MPQ
+origin under the existing format restrictions. Named reconstruction rejects
+unrelated trailers; ordinary legacy v1/v2 operations retain their suffix policy.
+See libmpq__update_begin(3) for discovery and temporary-storage requirements.
 .SH RETURN VALUE
 Returns zero on success or a negative libmpq error.
 .SH ERRORS

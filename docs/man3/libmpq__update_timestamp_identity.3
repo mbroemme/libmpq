@@ -62,6 +62,11 @@ Semantic rejection preserves the preceding valid stage. Operational failure
 during candidate adoption may leave the transaction abort-only. The original
 archive is unchanged before successful publication. This call does not consume
 the update handle; commit and abort retain their consuming behavior.
+.PP
+Discoverable embedded archives retain all prefix bytes and the original MPQ
+origin under the existing format restrictions. Named reconstruction rejects
+unrelated trailers; ordinary legacy v1/v2 operations retain their suffix policy.
+See libmpq__update_begin(3) for discovery and temporary-storage requirements.
 .SH RETURN VALUE
 Returns 0 on success, including validated no-ops, or a negative libmpq error.
 .SH ERRORS

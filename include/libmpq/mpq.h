@@ -917,8 +917,9 @@ extern LIBMPQ_API int32_t libmpq__update_change_identity(
 /*
  * Stage changes to an existing filesystem MPQ in a private working copy.
  * Changes reach the original only when commit atomically publishes that copy.
- * Supported legacy embedded updates retain their container prefix and
- * unrelated trailing bytes; v3/v4 reconstruction rejects embedded wrappers.
+ * Supported embedded updates retain their prefix and original MPQ origin.
+ * Legacy ordinary v1/v2 updates preserve supported unrelated trailing bytes;
+ * named reconstruction rejects unrelated trailers. Format restrictions remain.
  * Stale weak and strong signatures are removed on modification. MPQE archives
  * require the explicit authenticated update_begin_mpqe() entry point.
  * Known-target v3/v4 modifications can preserve supported unrelated unnamed

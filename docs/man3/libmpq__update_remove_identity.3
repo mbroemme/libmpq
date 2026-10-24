@@ -52,6 +52,11 @@ members and unsupported metadata or storage layouts are rejected.
 A rejected operation leaves the preceding valid stage available. The original
 archive remains unchanged until commit publishes a finalized working copy.
 Commit and abort consume the update handle, including on error.
+.PP
+Discoverable embedded archives retain all prefix bytes and the original MPQ
+origin under the existing format restrictions. Named reconstruction rejects
+unrelated trailers; ordinary legacy v1/v2 operations retain their suffix policy.
+See libmpq__update_begin(3) for discovery and temporary-storage requirements.
 .SH RETURN VALUE
 Returns 0 on success or a negative libmpq error.
 .SH ERRORS

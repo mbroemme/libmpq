@@ -54,8 +54,9 @@ extended hashes. Shared BET rows, ambiguous provenance and unsupported metadata
 are rejected. HET/BET-only entries cannot acquire classic locale/platform
 selectors; their only supported operation is an unchanged unqualified tuple.
 Special-member qualifier mutations are rejected, but valid identical-tuple
-requests remain no-ops. Existing reconstruction limits, including embedded
-wrappers and unrelated trailers, apply to actual changes.
+requests remain no-ops. Discoverable embedded prefixes and the original MPQ
+origin are preserved. Existing reconstruction limits, including unrelated
+trailers and unsupported metadata, apply to actual changes.
 .PP
 No selector or storage options are accepted: the old/new arguments identify
 the source and destination tuples. Add operations instead create an identity

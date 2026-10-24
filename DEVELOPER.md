@@ -434,15 +434,16 @@ if (status == 0) {
 
 Legacy embedded HM3W-style containers use the same scanner and update
 operations, regardless of `.w3x` or `.w3m` extension. Rebuilding retains the
-prefix and unrelated trailing bytes; stale weak and external strong signatures
-are removed. For an MPQE archive, use `libmpq__update_begin_mpqe()` with an
-explicit authentication code. It decodes into a private same-directory working
-MPQ; ordinary update operations apply unchanged. Commit re-encrypts and
-validates an encrypted sibling before atomic publication. No-op commit leaves
-the MPQE container byte-identical. Only the first 32 authentication bytes
-needed for the existing MPQE key derivation are copied into private state,
-then cleared on every consuming path. A crash may leave owner-only plaintext
-staging data.
+prefix and unrelated trailing bytes on the ordinary legacy route. Named
+reconstruction preserves supported prefixes but rejects unrelated trailers;
+stale weak and external strong signatures are removed. For an MPQE archive,
+use `libmpq__update_begin_mpqe()` with an explicit authentication code. It
+decodes into a private same-directory working MPQ; ordinary update operations
+apply unchanged. Commit re-encrypts and validates an encrypted sibling before
+atomic publication. No-op commit leaves the MPQE container byte-identical.
+Only the first 32 authentication bytes needed for the existing MPQE key
+derivation are copied into private state, then cleared on every consuming
+path. A crash may leave owner-only plaintext staging data.
 
 `libmpq__update_replace_path()` reads replacement data from a filesystem path.
 `libmpq__update_remove()` and `libmpq__update_rename()` affect existing named
@@ -505,8 +506,9 @@ and full candidate. Embedded assembly also retains a completed zero-origin
 MPQ temporary until the prefixed candidate is closed. MPQE publication may
 need an encrypted candidate; prefix bytes refer to the decoded logical source.
 Existing cleanup, authentication and source-preservation guarantees apply.
-This support is specific to compaction. Other embedded exact, identity,
-timestamp and modern v3/v4 mutation restrictions remain unchanged.
+Named transactional updates also preserve discoverable embedded prefixes and
+the original MPQ origin across v1-v4, within their existing format restrictions.
+They allow gaps; invoke compaction last when dense placement matters.
 
 `libmpq__update_timestamp(update, name, filetime)` changes existing FILETIME
 metadata using ordinary lookup. Use `libmpq__update_timestamp_identity(update,
@@ -520,10 +522,10 @@ staged bytes and signatures intact. Actual changes to rows shared by multiple
 identities, including unknown aliases, return FORMAT. Eligible changes retain
 packed payloads and offsets, regenerate attributes and physical integrity,
 preserve raw-chunk policy, and invalidate signatures under the normal update
-policy. Existing mixed-table, embedded and unsupported metadata restrictions
-remain. Semantic rejection retains the preceding stage; operational adoption
-failures can leave it abort-only. Set timestamps after ordinary replacement;
-exact replacement retains the selected timestamp.
+policy. Existing mixed-table and unsupported metadata restrictions remain.
+Semantic rejection retains the preceding stage; operational adoption failures
+can leave it abort-only. Set timestamps after ordinary replacement; exact
+replacement retains the selected timestamp.
 
 Exact identity operations use `libmpq__update_replace_data_identity()`,
 `libmpq__update_replace_path_identity()`, `libmpq__update_remove_identity()`
@@ -546,9 +548,10 @@ Unique HET/BET-only targets accept `(0, 0)` only. Ambiguous aliases or metadata
 are rejected, without discarding extended tables. Retained attributes and
 timestamps, v4 raw policy, and final-offset encryption are preserved.
 
-Exact operations use the reconstruction path for every generation. They
-reject embedded wrappers, unsupported metadata and unrelated trailers. A
-rejected stage leaves earlier valid changes available; the original remains
+Exact operations use the reconstruction path for every generation. Supported
+embedded prefixes and user-data relationships are retained byte-for-byte;
+unsupported metadata and unrelated trailers are rejected. A rejected stage
+leaves earlier valid changes available; the original remains
 unchanged until commit. Existing name-based operations retain their behavior.
 
 `libmpq__update_change_identity(update, name, old_locale, old_platform,
@@ -595,14 +598,13 @@ members; no filename-derived key is needed. V4 raw digests are checked and
 regenerated with the source chunk size. A partial listfile remains partial.
 
 Reduced or ambiguous extended hashes, incompatible provenance, BET-only rows
-with classic attributes, ambiguous named aliases, embedded v3/v4 wrappers,
-unrelated trailing data, and patch/delete members remain rejected. Extra
-header extensions, nonzero reserved BET record values and retained payloads
-that overlap the full header are also unsupported. Begin/abort and unchanged
-commits do not require reconstruction. Failed operations leave the previous
-staged archive unchanged. Legacy embedded updates and patch handling remain
-unchanged.
-Public file numbers may change after a rebuild.
+with classic attributes, ambiguous named aliases, unrelated trailing data, and
+patch/delete members remain rejected. Extra header extensions, nonzero
+reserved BET record values and retained payloads that overlap the full header
+are also unsupported. Begin/abort and unchanged commits do not require
+reconstruction. Failed operations leave the previous staged archive unchanged.
+Legacy embedded updates and patch handling remain unchanged. Public file
+numbers may change after a rebuild.
 
 In v3 and raw-disabled v4 rebuilds, untouched packed members retain their
 original positions, exact codec bytes, flags and encryption keys, including

@@ -77,9 +77,9 @@ adoption failures can leave the transaction abort-only. Prefix assembly is
 validated before adoption; pre-adoption failures preserve the previous stage. Abort and failed
 publication preserve the original under the normal transaction guarantees.
 .PP
-This extends compaction only. Existing restrictions on other embedded exact,
-identity, timestamp and modern v3/v4 mutations remain unchanged; supported
-legacy ordinary mutations retain their behavior. For MPQE, prefix preservation
+Named update reconstruction preserves the same supported embedded prefixes
+without imposing dense placement. Ordinary legacy v1/v2 updates retain their
+existing unrelated-suffix behavior. For MPQE, prefix preservation
 refers to the decoded logical source, using existing authenticated publication.
 .SH RETURN VALUE
 Returns 0 on success, including proven no-ops, or a negative libmpq error.

@@ -525,8 +525,9 @@ Mixed classic/HET/BET targets require consistent one-to-one mappings and
 complete hashes. Unique HET/BET-only targets accept zero selectors only.
 Unsupported or ambiguous metadata is rejected. A rejected operation preserves
 the previous valid stage; commit/abort consume the transaction. Exact rebuilds
-reject embedded archives and unsupported trailers, preserve source raw-chunk
-policy, and do not change existing name-based operations.
+preserve discoverable embedded prefixes and the original MPQ origin, reject
+unsupported trailers, and preserve source raw-chunk policy. Ordinary legacy
+v1/v2 updates retain their existing unrelated-suffix preservation.
 
 `Update.changeIdentity(name, locale, platform, newLocale, newPlatform)` uses
 `ushort` values: `locale` and `platform` select the old identity, while
@@ -581,7 +582,8 @@ Discovery uses 512-byte probes or a validated user-data pointer, which can
 identify an unaligned MPQ. FIX_KEY remains relative to the MPQ header. This is
 byte preservation, not a guarantee of arbitrary container validity. Unsupported
 identities, contradictory prefixes, ambiguous shared encryption and unrelated
-trailers are rejected. Other embedded mutation restrictions remain unchanged.
+trailers are rejected. Named mutations support the same discoverable prefixes
+within existing identity and metadata restrictions; compact last for density.
 
 Budget disk space for a working stage and full candidate. Embedded assembly
 also needs a completed zero-origin MPQ temporary; MPQE publication may require

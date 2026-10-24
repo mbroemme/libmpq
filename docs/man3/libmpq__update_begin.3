@@ -24,8 +24,10 @@ libmpq__update_begin \- begin a filesystem MPQ update transaction
 .SH DESCRIPTION
 Creates a same-directory private working copy of an existing regular MPQ or
 container with an embedded MPQ at \fIpath\fP. The original file is unchanged
-until commit. Embedded container prefixes and unrelated trailing bytes are
-preserved; stale weak and strong signatures are removed on modification. On
+until commit. Discoverable embedded prefixes and original MPQ-header positions
+are preserved. Ordinary legacy v1/v2 updates also retain supported unrelated
+trailing bytes; named reconstruction rejects unrelated trailers. Stale weak
+and strong signatures are removed on modification. On
 failure, \fI*update\fP is NULL. MPQE archives require
 \fBlibmpq__update_begin_mpqe\fP(3). The handle is consumed by commit or abort.
 .SH COMPATIBILITY
@@ -37,8 +39,17 @@ Unknown encrypted members retain their original offsets and packed bytes;
 no filename key is guessed. Partial listfiles remain partial.
 .PP
 Reduced or ambiguous hashes, incompatible aliases, BET-only classic attributes,
-embedded v3/v4 wrappers and patch members remain rejected without modifying
-the staged archive. Rebuilds retain their version and regenerate metadata.
+and patch members remain rejected without modifying the staged archive. Rebuilds retain their version and regenerate metadata.
+.PP
+Embedded support follows normal discovery: aligned MPQ origins or a validated
+MPQ user-data pointer, including unaligned pointer targets. Every prefix byte,
+user-data field and the original absolute MPQ-header position are retained.
+FIX_KEY uses MPQ-relative offsets, excluding the prefix. No arbitrary container
+repair is performed. Recognized strong trailers follow the existing signature
+policy. Validated no-ops preserve complete stage bytes and signatures.
+Embedded reconstruction needs both a completed zero-origin MPQ temporary and
+a full prefixed candidate before adoption. MPQE uses decoded prefix bytes and
+the existing authenticated publication path.
 Invalidated signatures are removed. Unchanged commits and aborts require no
 reconstruction. V4 preserves the source raw-chunk size, including zero, and
 regenerates structural and raw MD5 digests. Retained packed representations

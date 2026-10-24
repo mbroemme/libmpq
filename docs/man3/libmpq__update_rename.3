@@ -30,6 +30,11 @@ Renames an existing member in the private working copy. The new name must not
 already exist. Encrypted members are decoded under the old name and re-encoded
 under the new name so filename-derived keys remain correct. The original
 archive remains unchanged until commit.
+.PP
+Discoverable embedded archives retain all prefix bytes and the original MPQ
+origin under the existing format restrictions. Named reconstruction rejects
+unrelated trailers; ordinary legacy v1/v2 operations retain their suffix policy.
+See libmpq__update_begin(3) for discovery and temporary-storage requirements.
 .SH RETURN VALUE
 Returns \fB0\fP on success, or a negative libmpq error.
 .SH ERRORS

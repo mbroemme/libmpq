@@ -28,6 +28,11 @@ libmpq__update_remove \- remove a named member from a staged MPQ update
 Removes an existing named member from the private working copy. Other physical
 entries, including entries not listed in (listfile), retain their packed
 bytes. The original archive remains unchanged until commit.
+.PP
+Discoverable embedded archives retain all prefix bytes and the original MPQ
+origin under the existing format restrictions. Named reconstruction rejects
+unrelated trailers; ordinary legacy v1/v2 operations retain their suffix policy.
+See libmpq__update_begin(3) for discovery and temporary-storage requirements.
 .SH RETURN VALUE
 Returns \fB0\fP on success, or a negative libmpq error.
 .SH ERRORS
