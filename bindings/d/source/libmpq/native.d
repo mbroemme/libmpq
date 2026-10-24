@@ -353,6 +353,8 @@ extern(C) {
     int libmpq__update_rename_identity(mpq_update_s* update, const(char)* filename, const(char)* newFilename, ushort locale, ushort platform);
     int libmpq__update_change_identity(mpq_update_s* update, const(char)* filename,
         ushort locale, ushort platform, ushort newLocale, ushort newPlatform);
+    int libmpq__update_sign(mpq_update_s* update, uint signatureType,
+                          const(ubyte)* privateKey, size_t privateKeySize);
     int libmpq__update_compact(mpq_update_s* update);
     int libmpq__update_timestamp(mpq_update_s* update, const(char)* filename, ulong filetime);
     int libmpq__update_timestamp_identity(mpq_update_s* update, const(char)* filename,

@@ -284,6 +284,7 @@ _configure("libmpq__update_rename_identity", ctypes.c_int32, _VOID_PTR, ctypes.c
            ctypes.c_char_p, ctypes.c_uint16, ctypes.c_uint16)
 _configure("libmpq__update_change_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
            ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint16)
+_configure("libmpq__update_sign", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR, ctypes.c_size_t)
 _configure("libmpq__update_compact", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__update_timestamp", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_uint64)
 _configure("libmpq__update_timestamp_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
@@ -347,7 +348,7 @@ _configure("libmpq__block_read", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, cty
 
 
 def _sign_with_key(native_function, handle, signature_type, private_key):
-    """Pass a temporary raw key to the existing archive or patch signer."""
+    """Pass a temporary raw key to the existing native signer."""
     key = bytes(private_key)
     pointer = (ctypes.c_uint8 * len(key)).from_buffer_copy(key)
     try:
@@ -543,6 +544,11 @@ class Update:
         libmpq.libmpq__update_add_path(
             self._update, _as_bytes(name), _as_bytes(source_path), self._options(options)
         )
+
+    def sign(self, private_key, signature_type=SIGNATURE_WEAK):
+        """Immediately sign the private stage; independent verification needs a public key."""
+        self._ensure_open()
+        _sign_with_key(libmpq.libmpq__update_sign, self._update, signature_type, private_key)
 
     def compact(self):
         """Immediately stage physical compaction; commit alone publishes it."""

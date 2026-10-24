@@ -36,6 +36,50 @@ import org.libmpq.ffi.LibmpqNative;
  */
 class LibmpqTest {
     @Test
+    void transactionalSigning(@TempDir Path directory) throws Exception {
+        for (int version = 0; version < 4; ++version) {
+            for (boolean embedded : new boolean[] {false, true}) {
+                Path path = directory.resolve("sign.mpq");
+                try (Archive writer = Archive.create(path,
+                        new ArchiveCreateOptions(version, 8, 512, 0, Mpq.ATTRIBUTE_FILETIME))) {
+                    if (version == Mpq.ARCHIVE_VERSION_FOUR) writer.setRawChunkSize(0);
+                    writer.add("voice", new byte[] {1, 2, 3}, null);
+                }
+                if (embedded) {
+                    byte[] mpq = Files.readAllBytes(path);
+                    byte[] bytes = new byte[512 + mpq.length];
+                    System.arraycopy(mpq, 0, bytes, 512, mpq.length);
+                    Files.write(path, bytes);
+                }
+                byte[] before = Files.readAllBytes(path);
+                byte[] key = weakPrivateKey();
+                try (MpqUpdate update = MpqUpdate.begin(path)) {
+                    update.replaceData("voice", new byte[] {4, 5, 6}, null);
+                    update.rename("voice", "renamed");
+                    update.changeIdentity("renamed", 0, 0, 1033, 2);
+                    update.timestamp("renamed", 17, 1033, 2);
+                    update.compact();
+                    assertThrows(LibmpqException.class, () -> update.sign(new byte[127]));
+                    update.sign(key);
+                    assertArrayEquals(weakPrivateKey(), key);
+                    update.sign(Mpq.SIGNATURE_STRONG, strongPrivateKey());
+                    assertArrayEquals(before, Files.readAllBytes(path));
+                    update.commit();
+                }
+                try (Archive archive = Archive.open(path, -1)) {
+                    assertEquals(Mpq.SIGNATURE_WEAK | Mpq.SIGNATURE_STRONG, archive.signatures());
+                    assertEquals(0, archive.verify(weakPublicKey()));
+                    assertEquals(0, archive.verify(Mpq.SIGNATURE_STRONG, strongPublicKey()));
+                    assertEquals(17L, archive.attributes(archive.fileNumber("renamed", 1033, 2)).filetime());
+                }
+                byte[] committed = Files.readAllBytes(path);
+                try (MpqUpdate update = MpqUpdate.begin(path)) { update.sign(key); }
+                assertArrayEquals(committed, Files.readAllBytes(path));
+            }
+        }
+    }
+
+    @Test
     void transactionalCompaction(@TempDir Path directory) throws Exception {
         for (int version = 0; version < 4; ++version) {
             for (boolean embedded : new boolean[] {false, true}) {

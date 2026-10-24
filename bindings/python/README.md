@@ -508,3 +508,29 @@ Budget disk space for a working stage and full candidate. Embedded assembly
 also needs a completed zero-origin MPQ temporary; MPQE publication may require
 an encrypted candidate. MPQE prefix preservation refers to decoded bytes.
 Native errors and transaction ownership follow existing update conventions.
+
+Transactional signing applies immediately to the private stage. Commit alone
+publishes it; abort discards it. Supply raw big-endian `n || d` private keys:
+128 bytes for weak RSA-512/MD5 or 512 bytes for strong RSA-2048/SHA-1.
+Keys are consumed synchronously and are not retained for commit.
+
+```python
+with mpq.Update.begin(path) as update:
+    update.sign(private_key)  # weak by default
+    update.sign(strong_key, mpq.SIGNATURE_STRONG)
+    update.commit()
+```
+
+Weak then strong retains both signatures. Strong then weak removes the stale
+strong trailer. Repeating a type replaces it. Sign last, since later actual
+mutations invalidate signatures; validated no-ops preserve them. V4 weak
+signing requires raw chunks disabled. MPQE supports eligible weak signing
+only. Supported embedded archives retain their prefixes and origins, with
+HM3W prefix-inclusive hashing. Existing identity and storage restrictions
+apply, including preservation of supported `(listfile)` storage policy.
+
+Generation success does not establish public-key verification or external
+trust. Independently verify with the matching public key and require zero
+mismatches as well as a successful call. Opaque ciphertext preservation does
+not establish plaintext correctness. Native temporary key copies are cleared
+where used; this does not promise erasure of managed-runtime key copies.

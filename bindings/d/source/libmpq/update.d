@@ -109,6 +109,13 @@ final class Update {
                     "libmpq__update_replace_path");
     }
 
+    /** Immediately sign with a raw private key; no key is retained by the update. */
+    void sign(const(ubyte)[] privateKey, uint signatureType = SIGNATURE_WEAK) {
+        ensureOpen();
+        checkStatus(libmpq__update_sign(handle, signatureType, privateKey.ptr, privateKey.length),
+                    "libmpq__update_sign");
+    }
+
     /** Immediately stage physical compaction; commit alone publishes it. */
     void compact() {
         ensureOpen();

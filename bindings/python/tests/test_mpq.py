@@ -1651,3 +1651,82 @@ def test_transactional_compaction(tmp_path, version, wrapped, embedded):
     assert path.read_bytes() == after
     with pytest.raises(mpq.LibmpqStateError):
         update.compact()
+
+
+@pytest.mark.parametrize("version", [0, 1, 2, 3])
+@pytest.mark.parametrize("embedded,wrapped", [(False, False), (True, False), (False, True)])
+def test_transactional_signing(tmp_path, version, embedded, wrapped):
+    path = tmp_path / "sign.mpq"
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    create = (mpq.Writer.create_mpqe(path, code, version=version, max_files=8,
+                                   attributes=mpq.ATTRIBUTE_FILETIME)
+              if wrapped else mpq.Writer(path, version=version, max_files=8,
+                                         attributes=mpq.ATTRIBUTE_FILETIME))
+    with create as writer:
+        if version == 3:
+            writer.raw_chunk_size = 0
+        writer.add("voice", b"original")
+    prefix = b"HM3W" + bytes(508) if embedded else b""
+    if embedded:
+        path.write_bytes(prefix + path.read_bytes())
+    original = path.read_bytes()
+    begin = lambda: mpq.Update.begin_mpqe(path, code) if wrapped else mpq.Update(path)
+    private = bytearray(WEAK_PRIVATE_KEY)
+    with begin() as update:
+        update.replace_data("voice", b"replacement")
+        update.timestamp("voice", 17)
+        update.compact()
+        with pytest.raises(mpq.LibmpqError):
+            update.sign(private[:-1])
+        assert update.sign(private) is None
+        assert private == WEAK_PRIVATE_KEY
+        if wrapped:
+            with pytest.raises(mpq.LibmpqError):
+                update.sign(STRONG_PRIVATE_KEY, mpq.SIGNATURE_STRONG)
+        else:
+            update.sign(STRONG_PRIVATE_KEY, mpq.SIGNATURE_STRONG)
+        assert path.read_bytes() == original
+        update.commit()
+    opened = mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive(path)
+    with opened as archive:
+        assert archive.verify(WEAK_PUBLIC_KEY) == 0
+        assert archive.signatures() == (mpq.SIGNATURE_WEAK if wrapped else
+                                        mpq.SIGNATURE_WEAK | mpq.SIGNATURE_STRONG)
+        if not wrapped:
+            assert archive.verify(STRONG_PUBLIC_KEY, mpq.SIGNATURE_STRONG) == 0
+        assert archive["voice"].read() == b"replacement"
+        assert archive["voice"].attributes().filetime == 17
+    if embedded:
+        assert path.read_bytes()[:512] == prefix
+    committed = path.read_bytes()
+    with begin() as update:
+        update.sign(private)
+    assert path.read_bytes() == committed
+    with pytest.raises(mpq.LibmpqStateError):
+        update.sign(private)
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_update_sign_clears_native_key_copy(tmp_path, monkeypatch, failure):
+    path = tmp_path / "sign-key-copy.mpq"
+    with mpq.Writer(path) as writer:
+        writer.add("voice", b"payload")
+    captured = []
+    key = bytearray(WEAK_PRIVATE_KEY)
+
+    def signer(handle, signature_type, pointer, size):
+        assert handle and signature_type == mpq.SIGNATURE_WEAK
+        assert size == len(key) and bytes(pointer) == key
+        captured.append(pointer)
+        if failure:
+            raise RuntimeError("synthetic signer failure")
+
+    monkeypatch.setattr(mpq.libmpq, "libmpq__update_sign", signer)
+    with mpq.Update(path) as update:
+        if failure:
+            with pytest.raises(RuntimeError, match="synthetic signer failure"):
+                update.sign(key)
+        else:
+            update.sign(key)
+    assert key == WEAK_PRIVATE_KEY
+    assert len(captured) == 1 and bytes(captured[0]) == bytes(len(key))

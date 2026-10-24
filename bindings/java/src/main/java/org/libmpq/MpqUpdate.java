@@ -86,6 +86,25 @@ public final class MpqUpdate implements AutoCloseable {
         }
     }
 
+    /** Immediately sign the private stage with a caller-owned raw weak key. */
+    public void sign(byte[] privateKey) throws LibmpqException {
+        sign(Mpq.SIGNATURE_WEAK, privateKey);
+    }
+
+    /** Generate the requested signature now; commit alone publishes it. */
+    public void sign(int signatureType, byte[] privateKey) throws LibmpqException {
+        checkOpen();
+        Objects.requireNonNull(privateKey);
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment key = arena.allocateFrom(ValueLayout.JAVA_BYTE, privateKey);
+            try {
+                Support.check(LibmpqNative.updateSign(handle, signatureType, key, privateKey.length));
+            } finally {
+                key.fill((byte) 0);
+            }
+        }
+    }
+
     /** Immediately stage physical compaction; commit alone publishes it. */
     public void compact() throws LibmpqException {
         checkOpen();

@@ -1343,6 +1343,42 @@ private void testChangeIdentity() {
     }
 }
 
+private void testTransactionalSigning() {
+    auto path = temporaryArchive("sign");
+    scope(exit) if (exists(path)) remove(path);
+    foreach (version_; 0u .. 4u) {
+        auto writer = Archive.create(path, ArchiveCreateOptions(version_, 8, 512, 0, ATTRIBUTE_FILETIME));
+        if (version_ == ARCHIVE_VERSION_FOUR) writer.setRawChunkSize(0);
+        writer.add("voice", cast(const(ubyte)[]) "payload");
+        writer.close();
+        write(path, new ubyte[512] ~ cast(ubyte[]) read(path));
+        auto original = read(path);
+        auto update = Update.begin(path);
+        update.replaceData("voice", cast(const(ubyte)[]) "changed");
+        update.rename("voice", "renamed");
+        update.changeIdentity("renamed", 0, 0, 1033, 2);
+        update.timestamp("renamed", 17, 1033, 2);
+        update.compact();
+        auto key = weakPrivateKey();
+        update.sign(key);
+        assert(key == weakPrivateKey());
+        update.sign(strongPrivateKey(), SIGNATURE_STRONG);
+        assert(read(path) == original);
+        update.commit();
+        auto archive = Archive.open(path);
+        assert(archive.signatures() == (SIGNATURE_WEAK | SIGNATURE_STRONG));
+        assert(archive.verify(weakPublicKey()) == 0);
+        assert(archive.verify(strongPublicKey(), SIGNATURE_STRONG) == 0);
+        assert(archive.file(archive.fileNumber("renamed", 1033, 2)).attributes().filetime == 17);
+        archive.close();
+        auto committed = read(path);
+        update = Update.begin(path);
+        update.sign(key);
+        update.abort();
+        assert(read(path) == committed);
+    }
+}
+
 private void testTransactionalCompaction() {
     auto path = temporaryArchive("compact");
     scope(exit) if (exists(path)) remove(path);
@@ -1409,6 +1445,7 @@ private void testTransactionalTimestamps() {
 }
 
 void main() {
+    testTransactionalSigning();
     testTransactionalCompaction();
     testTransactionalTimestamps();
     testChangeIdentity();
