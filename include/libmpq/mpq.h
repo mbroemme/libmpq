@@ -712,6 +712,25 @@ extern LIBMPQ_API int32_t libmpq__file_verify(
 );
 
 /*
+ * Availability-aware member verification. Optional filename is borrowed key
+ * context, never selection; known contradictory identities are rejected.
+ * On success checked/unavailable cover all requested bits and can overlap for
+ * partial sector coverage. Mismatches are a subset of checked. Complete coverage
+ * requires checked == verify_flags, unavailable == 0 and mismatches == 0.
+ * All three outputs are zero on errors. Missing checks are unavailable; malformed
+ * metadata, decode/read failures and unavailable required keys remain errors.
+ * Circular zero checksum placeholders and logical checks without decoded-byte
+ * provenance for lossy ADPCM are unavailable. Raw checks remain independent.
+ * Nonzero v4 raw size requires trailing arrays for eligible nonempty members;
+ * missing, truncated or overlapping required storage is an operational error.
+ * This does not establish signature trust or whole-archive integrity.
+ */
+extern LIBMPQ_API int32_t libmpq__file_verify_ex(
+    mpq_archive_s *archive, uint32_t file_number, const char *filename, uint32_t verify_flags,
+    uint32_t *checked, uint32_t *unavailable, uint32_t *mismatches
+);
+
+/*
  * Read a complete logical file into a caller-provided output buffer.
  * The library decrypts and decompresses sectors as necessary and reports the
  * number of bytes copied through transferred. When available, stored CRC32

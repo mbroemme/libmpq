@@ -31,6 +31,7 @@
 #include "mpq-md5.h"
 #include "mpq-reader.h"
 #include "mpq-source.h"
+#include "mpq-verify.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -2444,10 +2445,18 @@ libmpq__reader_archive_clone(mpq_archive_s **clone, const mpq_archive_s *source)
             libmpq__source_discard(clone_source);
     }
 
-    return result == 0 ? libmpq__reader_archive_open_source(
-                             clone, source->filename, source->archive_offset, clone_source
-                         )
-                       : result;
+    if (result == 0)
+        result = libmpq__reader_archive_open_source(
+            clone, source->filename, source->archive_offset, clone_source
+        );
+    if (result == 0) {
+        result = libmpq__raw_index_share(*clone, source);
+        if (result != 0) {
+            (void)libmpq__archive_close(*clone);
+            *clone = NULL;
+        }
+    }
+    return result;
 }
 
 /*

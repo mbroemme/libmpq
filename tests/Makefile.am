@@ -178,13 +178,15 @@ test_file_LDADD = $(top_builddir)/src/mpq-source.lo $(PRIVATE_MPQE_LDADD) $(LDAD
 test_source_SOURCES = test-mpq-source.c $(COMMON_SOURCES)
 test_source_LDADD = $(test_file_LDADD)
 test_verify_SOURCES = test-mpq-verify.c $(COMMON_SOURCES)
-test_verify_LDADD = $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-block.lo $(top_builddir)/src/mpq-hash.lo $(top_builddir)/src/mpq-header.lo $(top_builddir)/src/mpq-source.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_EXT_TABLE_LDADD) $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
+test_verify_LDADD = $(test_attributes_LDADD)
 test_attributes_SOURCES = test-mpq-attributes.c $(COMMON_SOURCES)
-test_attributes_LDADD = $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-block.lo $(top_builddir)/src/mpq-hash.lo $(top_builddir)/src/mpq-header.lo $(top_builddir)/src/mpq-source.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_EXT_TABLE_LDADD) $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
+test_attributes_LDADD = $(PRIVATE_VERIFY_LDADD) $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-block.lo $(top_builddir)/src/mpq-hash.lo $(top_builddir)/src/mpq-header.lo $(top_builddir)/src/mpq-source.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_EXT_TABLE_LDADD) $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
+# Reader lifetime helpers live in the verifier, whose signature checks use the writer.
+PRIVATE_VERIFY_LDADD = $(top_builddir)/src/mpq-verify.lo $(top_builddir)/src/mpq-writer.lo $(top_builddir)/src/mpq-ext-table-builder.lo $(top_builddir)/src/mpq-signature.lo $(top_builddir)/src/mpq-rsa.lo $(top_builddir)/src/mpq-sha1.lo
 PRIVATE_EXT_TABLE_LDADD = $(top_builddir)/src/mpq-het.lo $(top_builddir)/src/mpq-bet.lo $(top_builddir)/src/mpq-bit.lo $(top_builddir)/src/mpq-ext-table.lo
 test_md5_SOURCES = test-mpq-md5.c $(COMMON_SOURCES)
 test_signature_SOURCES = test-mpq-signature.c $(COMMON_SOURCES)
-test_signature_LDADD = $(top_builddir)/src/mpq-rsa.lo $(top_builddir)/src/mpq-sha1.lo $(test_attributes_LDADD)
+test_signature_LDADD = $(test_attributes_LDADD)
 test_md5_LDADD = $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-endian.lo $(LDADD)
 test_compression_SOURCES = test-mpq-compression.c $(COMMON_SOURCES)
 test_compression_LDADD = $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
@@ -206,7 +208,7 @@ test_header_LDADD = \
 	$(top_builddir)/src/mpq-header.lo \
 	$(LDADD)
 test_fixtures_SOURCES = test-mpq-fixtures.c $(COMMON_SOURCES)
-test_fixtures_LDADD = $(top_builddir)/src/mpq-rsa.lo $(test_attributes_LDADD)
+test_fixtures_LDADD = $(test_attributes_LDADD)
 test_mpq_SOURCES = test-mpq-api.c $(COMMON_SOURCES)
 test_pkware_SOURCES = test-mpq-pkware.c \
 	../src/mpq-compression.c \
@@ -224,22 +226,12 @@ test_patch_writer_SOURCES = test-mpq-patch-writer.c $(COMMON_SOURCES)
 test_patch_writer_LDADD = \
 	$(top_builddir)/src/mpq-patch-writer.lo \
 	$(top_builddir)/src/mpq-patch-reader.lo \
-	$(top_builddir)/src/mpq-writer.lo \
-	$(top_builddir)/src/mpq-ext-table-builder.lo \
 	$(top_builddir)/src/mpq-stream.lo \
-	$(top_builddir)/src/mpq-signature.lo \
-	$(top_builddir)/src/mpq-rsa.lo \
-	$(top_builddir)/src/mpq-sha1.lo \
 	$(test_attributes_LDADD)
 test_update_SOURCES = test-mpq-update.c $(COMMON_SOURCES)
 test_update_LDADD = \
 	$(top_builddir)/src/mpq-update.lo \
-	$(top_builddir)/src/mpq-writer.lo \
-	$(top_builddir)/src/mpq-ext-table-builder.lo \
 	$(top_builddir)/src/mpq-stream.lo \
-	$(top_builddir)/src/mpq-signature.lo \
-	$(top_builddir)/src/mpq-rsa.lo \
-	$(top_builddir)/src/mpq-sha1.lo \
 	$(test_attributes_LDADD)
 test_wave_SOURCES = test-mpq-wave.c ../src/mpq-wave.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_writer_SOURCES = test-mpq-writer.c $(COMMON_SOURCES)
@@ -262,7 +254,7 @@ test_sparse_LDADD = $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
 # The legacy PKWARE dispatcher test also calls the production SPARSE codec.
 test_pkware_LDADD = $(top_builddir)/src/mpq-sparse.lo $(LDADD)
 
-test_writer_LDADD = $(top_builddir)/src/mpq-writer.lo $(top_builddir)/src/mpq-ext-table-builder.lo $(top_builddir)/src/mpq-signature.lo $(top_builddir)/src/mpq-rsa.lo $(top_builddir)/src/mpq-sha1.lo $(test_attributes_LDADD)
+test_writer_LDADD = $(test_attributes_LDADD)
 
 # Fixture-dependent tests resolve archives from the source tree, including
 # when Automake runs them from a separate VPATH or distcheck build directory.

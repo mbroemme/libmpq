@@ -79,10 +79,11 @@ struct mpq_archive
     uint8_t *het_data;
     uint8_t *bet_data;
 
-    mpq_map_s *mpq_map;                      /* Public file-number to canonical-entry mapping. */
-    uint32_t files;                          /* Number of valid extractable file entries. */
-    mpq_attributes_s *attributes;            /* Lazy validated reader attributes. */
-    int32_t attributes_error;                /* Cached absence or structural failure. */
+    mpq_map_s *mpq_map;              /* Public file-number to canonical-entry mapping. */
+    uint32_t files;                  /* Number of valid extractable file entries. */
+    mpq_attributes_s *attributes;    /* Lazy validated reader attributes. */
+    struct mpq_raw_index *raw_index; /* Immutable lazy RAW layout index; shared by clones. */
+    int32_t attributes_error;        /* Cached absence or structural failure. */
     mpq_file_attributes_s *write_attributes; /* Records indexed by physical block slot. */
     uint32_t write_attributes_flags;         /* Selected LIBMPQ_ATTRIBUTE_* arrays. */
     uint8_t write_internal;                  /* Finalization is adding generated internal files. */

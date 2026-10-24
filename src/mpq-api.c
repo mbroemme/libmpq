@@ -209,6 +209,17 @@ libmpq__file_verify(
     return libmpq__verify_file(archive, file_number, verify_flags, mismatches);
 }
 
+int32_t
+libmpq__file_verify_ex(
+    mpq_archive_s *archive, uint32_t file_number, const char *filename, uint32_t verify_flags,
+    uint32_t *checked, uint32_t *unavailable, uint32_t *mismatches
+)
+{
+    return libmpq__verify_file_ex(
+        archive, file_number, filename, verify_flags, checked, unavailable, mismatches, malloc
+    );
+}
+
 /* Explicitly verify one sector and return its stored checksum. */
 int32_t
 libmpq__block_verify(
@@ -791,6 +802,7 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
     }
 
     free(mpq_archive->mpq_map);
+    libmpq__raw_index_release(mpq_archive);
     libmpq__attributes_free(mpq_archive);
     free(mpq_archive->mpq_file);
     free(mpq_archive->mpq_hash);

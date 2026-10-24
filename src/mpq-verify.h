@@ -22,8 +22,32 @@
 
 #include <libmpq/mpq.h>
 
+/* Immutable copied ranges. Only externally serialized lifetime operations change refs. */
+typedef struct
+{
+    uint64_t start;
+    uint64_t end;
+    uint64_t maximum;
+} mpq_raw_interval_s;
+
+struct mpq_raw_index
+{
+    size_t references;
+    size_t count;
+    mpq_raw_interval_s intervals[];
+};
+
+/* Share only completed indexes; the final externally serialized owner releases them. */
+int32_t libmpq__raw_index_share(mpq_archive_s *destination, const mpq_archive_s *source);
+void libmpq__raw_index_release(mpq_archive_s *archive);
+
 int32_t libmpq__verify_file(
     mpq_archive_s *archive, uint32_t file_number, uint32_t verify_flags, uint32_t *mismatches
+);
+
+int32_t libmpq__verify_file_ex(
+    mpq_archive_s *archive, uint32_t file_number, const char *filename, uint32_t verify_flags,
+    uint32_t *checked, uint32_t *unavailable, uint32_t *mismatches, void *(*allocate)(size_t)
 );
 
 int32_t libmpq__verify_block(
