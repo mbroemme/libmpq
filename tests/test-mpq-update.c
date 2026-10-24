@@ -7309,6 +7309,20 @@ test_compaction_rejection(unsigned kind)
     TEST_CHECK(copy_file(path, before) == 0);
     TEST_CHECK(libmpq__update_begin(&update, path) == 0);
     TEST_CHECK(copy_file(libmpq__update_path(update), stage) == 0);
+    uint8_t signing_key[512];
+    test_strong_signature_private_key(signing_key);
+    TEST_CHECK(
+        libmpq__update_sign(update, LIBMPQ_SIGNATURE_STRONG, signing_key, sizeof(signing_key)) ==
+        (kind == 3 ? LIBMPQ_ERROR_READ : LIBMPQ_ERROR_FORMAT)
+    );
+    libmpq__rsa_clear(signing_key, sizeof(signing_key));
+    TEST_CHECK(
+        libmpq__update_sign(
+            update, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+            sizeof(test_signature_private_key)
+        ) == (kind == 3 ? LIBMPQ_ERROR_READ : LIBMPQ_ERROR_FORMAT)
+    );
+    TEST_CHECK(same_file(libmpq__update_path(update), stage));
     TEST_CHECK(
         libmpq__update_compact(update) == (kind == 3 ? LIBMPQ_ERROR_READ : LIBMPQ_ERROR_FORMAT)
     );
@@ -7468,6 +7482,631 @@ test_compaction_cache_mapping(uint32_t version, int single)
     return 0;
 }
 
+/* Signature presence is separate from verification with the deterministic matching public keys. */
+static int
+test_update_signed(
+    const char *path, uint32_t expected, unsigned form, const uint8_t *prefix, uint64_t origin
+)
+{
+    mpq_archive_s *archive = NULL;
+    uint32_t types;
+    uint32_t mismatches;
+    TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
+    TEST_CHECK(test_compact_prefix(archive, form, prefix, origin) == 0);
+    TEST_CHECK(libmpq__archive_signatures(archive, &types) == 0 && types == expected);
+    if (types & LIBMPQ_SIGNATURE_WEAK) {
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, LIBMPQ_SIGNATURE_WEAK, test_signature_public_key,
+                sizeof(test_signature_public_key), &mismatches
+            ) == 0 &&
+            mismatches == 0
+        );
+        uint8_t wrong[128];
+        memcpy(wrong, test_signature_public_key, sizeof(wrong));
+        memset(wrong + 64, 0, 64);
+        wrong[127] = 3;
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, LIBMPQ_SIGNATURE_WEAK, wrong, sizeof(wrong), &mismatches
+            ) == 0 &&
+            mismatches == LIBMPQ_SIGNATURE_WEAK
+        );
+        uint32_t number;
+        TEST_CHECK(
+            libmpq__file_number_from_identity(archive, LIBMPQ_SIGNATURE_NAME, 0, 0, &number) == 0
+        );
+        const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+        TEST_CHECK(
+            entry->packed_size == 72 && entry->unpacked_size == 72 &&
+            (entry->flags & ~(LIBMPQ_FLAG_EXISTS | LIBMPQ_FILE_FLAG_SINGLE)) == 0
+        );
+        if (archive->attributes != NULL || libmpq__attributes_load(archive) == 0) {
+            mpq_file_attributes_s attributes;
+            const uint8_t zero[16] = { 0 };
+            TEST_CHECK(libmpq__file_attributes(archive, number, &attributes) == 0);
+            TEST_CHECK(
+                attributes.crc32 == 0 && attributes.filetime == 0 &&
+                memcmp(attributes.md5, zero, sizeof(zero)) == 0
+            );
+        }
+    }
+    if (types & LIBMPQ_SIGNATURE_STRONG)
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
+                sizeof(test_strong_signature_public_key), &mismatches
+            ) == 0 &&
+            mismatches == 0
+        );
+    for (uint32_t i = 0; i < archive->files; ++i)
+        TEST_CHECK(
+            libmpq__file_verify(archive, i, LIBMPQ_VERIFY_RAW_MD5, &mismatches) == 0 &&
+            mismatches == 0
+        );
+    if (archive->het_data != NULL && archive->mpq_header_v4.raw_chunk_size != 0) {
+        TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_HET_SIGNATURE) == 0);
+        TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_BET_SIGNATURE) == 0);
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    return 0;
+}
+
+/* Sign finalized embedded candidates directly before any transaction adopts them. */
+static int
+test_update_sign_ranges(unsigned form)
+{
+    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_ONE, 4, 512, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    uint8_t prefix[4096] = { 0 };
+    uint64_t origin;
+    uint8_t strong[512];
+    char path[512];
+    TEST_CHECK(test_temp_path(path, sizeof(path), "sign-ranges") == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    TEST_CHECK(
+        libmpq__archive_sign(
+            archive, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+            sizeof(test_signature_private_key)
+        ) == 0
+    );
+    TEST_CHECK(libmpq__archive_add_data(archive, "voice", (const uint8_t *)"data", 4, NULL) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(test_compact_embed(path, form, 0, prefix, &origin) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
+    FILE *file = libmpq__file_open(path, "r+b");
+    TEST_CHECK(file != NULL);
+    TEST_CHECK(
+        libmpq__signature_sign_file(
+            archive, file, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+            sizeof(test_signature_private_key)
+        ) == 0
+    );
+    TEST_CHECK(fclose(file) == 0 && libmpq__archive_close(archive) == 0);
+    TEST_CHECK(test_update_signed(path, LIBMPQ_SIGNATURE_WEAK, form, prefix, origin) == 0);
+    test_strong_signature_private_key(strong);
+    TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
+    file = libmpq__file_open(path, "r+b");
+    TEST_CHECK(file != NULL);
+    TEST_CHECK(
+        libmpq__signature_sign_file(
+            archive, file, LIBMPQ_SIGNATURE_STRONG, strong, sizeof(strong)
+        ) == 0
+    );
+    TEST_CHECK(fclose(file) == 0 && libmpq__archive_close(archive) == 0);
+    TEST_CHECK(
+        test_update_signed(
+            path, LIBMPQ_SIGNATURE_WEAK | LIBMPQ_SIGNATURE_STRONG, form, prefix, origin
+        ) == 0
+    );
+    TEST_CHECK(remove(path) == 0);
+    return 0;
+}
+
+/* Pinned unknown FIX_KEY bytes, listfile policy and FILETIME survive signature ordering. */
+static int
+test_update_signing(uint32_t version, uint32_t raw, unsigned form, int wrapped, unsigned storage)
+{
+    mpq_archive_create_options_s create = { version, 8, 512,
+                                            LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED,
+                                            LIBMPQ_ATTRIBUTE_FILETIME | LIBMPQ_ATTRIBUTE_CRC32 |
+                                                LIBMPQ_ATTRIBUTE_MD5 };
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
+                                       LIBMPQ_FILE_FLAG_SECTOR_CRC | 0x20000u,
+                                   LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
+    mpq_file_options_s list_options = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    mpq_writer_s *member = NULL;
+    uint8_t payload[1025];
+    uint8_t prefix[4096] = { 0 };
+    uint64_t origin;
+    uint8_t list[1024];
+    size_t list_size = 0;
+    static const uint8_t line[] = "folder\\voice.bin\r\n\r\nother\n";
+    uint8_t packed[2048];
+    uint8_t actual[2048];
+    mpq_entry_s original;
+    uint8_t strong[512];
+    char path[512];
+    char before[512];
+    char stage[512];
+    uint32_t number;
+    uint32_t mismatch;
+    int32_t result;
+    test_payload(payload, sizeof(payload), 57);
+    test_strong_signature_private_key(strong);
+    for (unsigned i = 0; i < 12; ++i) {
+        memcpy(list + list_size, line, sizeof(line) - 1);
+        list_size += sizeof(line) - 1;
+    }
+    if (storage != 0) {
+        list_options.flags = LIBMPQ_FILE_FLAG_COMPRESS;
+        list_options.compression_first = list_options.compression_next = LIBMPQ_COMPRESSION_ZLIB;
+        if (storage > 1)
+            list_options.flags |= LIBMPQ_FILE_FLAG_ENCRYPTED;
+        if (storage > 2)
+            list_options.flags |= 0x20000u | LIBMPQ_FILE_FLAG_SINGLE;
+    }
+    TEST_CHECK(test_temp_path(path, sizeof(path), "update-sign") == 0);
+    TEST_CHECK(test_temp_path(before, sizeof(before), "update-sign-before") == 0);
+    TEST_CHECK(test_temp_path(stage, sizeof(stage), "update-sign-stage") == 0);
+    TEST_CHECK(
+        (wrapped ? libmpq__archive_create_mpqe(
+                       &archive, path, auth_code, sizeof(auth_code) - 1, &create
+                   )
+                 : libmpq__archive_create(&archive, path, &create)) == 0
+    );
+    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+        TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, raw) == 0);
+    TEST_CHECK(
+        libmpq__writer_begin(archive, "folder/voice.bin", sizeof(payload), &options, &member) == 0
+    );
+    TEST_CHECK(libmpq__writer_timestamp(member, 91) == 0);
+    TEST_CHECK(
+        libmpq__writer_write(member, payload, sizeof(payload)) == 0 &&
+        libmpq__writer_finish(member) == 0
+    );
+    TEST_CHECK(libmpq__archive_add_data(archive, "other", (const uint8_t *)"other", 5, NULL) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, LIBMPQ_LISTFILE_NAME, list, list_size, &list_options) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(test_compact_embed(path, form, wrapped, prefix, &origin) == 0);
+    TEST_CHECK(copy_file(path, before) == 0);
+    TEST_CHECK(
+        (wrapped ? libmpq__update_begin_mpqe(&update, path, auth_code, sizeof(auth_code) - 1)
+                 : libmpq__update_begin(&update, path)) == 0
+    );
+    TEST_CHECK(libmpq__archive_open(&archive, libmpq__update_path(update), -1) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "folder/voice.bin", &number) == 0);
+    original = archive->mpq_entry[archive->mpq_map[number].entry_index];
+    TEST_CHECK(original.packed_size <= sizeof(packed));
+    TEST_CHECK(
+        libmpq__source_read_at(
+            archive->source, origin + original.offset, packed, (size_t)original.packed_size
+        ) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(copy_file(libmpq__update_path(update), stage) == 0);
+    TEST_CHECK(
+        libmpq__update_sign(
+            update, 0, test_signature_private_key, sizeof(test_signature_private_key)
+        ) == LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(
+        libmpq__update_sign(update, LIBMPQ_SIGNATURE_WEAK, NULL, 128) == LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(
+        libmpq__update_sign(update, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key, 127) ==
+        LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(same_file(libmpq__update_path(update), stage));
+    if (raw != 0 || wrapped) {
+        result = libmpq__update_sign(
+            update, raw ? LIBMPQ_SIGNATURE_WEAK : LIBMPQ_SIGNATURE_STRONG,
+            raw ? test_signature_private_key : strong,
+            raw ? sizeof(test_signature_private_key) : sizeof(strong)
+        );
+        TEST_CHECK(result == LIBMPQ_ERROR_FORMAT && same_file(libmpq__update_path(update), stage));
+    }
+    if (raw == 0) {
+        TEST_CHECK(
+            libmpq__update_sign(
+                update, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+                sizeof(test_signature_private_key)
+            ) == 0
+        );
+        TEST_CHECK(
+            test_update_signed(
+                libmpq__update_path(update), LIBMPQ_SIGNATURE_WEAK, form, prefix, origin
+            ) == 0
+        );
+        TEST_CHECK(copy_file(libmpq__update_path(update), stage) == 0);
+        TEST_CHECK(libmpq__update_timestamp(update, "folder/voice.bin", 91) == 0);
+        TEST_CHECK(
+            libmpq__update_rename_identity(update, "folder/voice.bin", "FOLDER\\VOICE.BIN", 0, 0) ==
+            0
+        );
+        TEST_CHECK(libmpq__update_change_identity(update, "folder/voice.bin", 0, 0, 0, 0) == 0);
+        TEST_CHECK(same_file(libmpq__update_path(update), stage));
+        uint8_t bad[128];
+        memcpy(bad, test_signature_private_key, sizeof(bad));
+        memset(bad + 64, 0, 64);
+        bad[127] = 3;
+        TEST_CHECK(libmpq__update_sign(update, LIBMPQ_SIGNATURE_WEAK, bad, sizeof(bad)) == 0);
+        TEST_CHECK(libmpq__archive_open(&archive, libmpq__update_path(update), -1) == 0);
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, LIBMPQ_SIGNATURE_WEAK, test_signature_public_key,
+                sizeof(test_signature_public_key), &mismatch
+            ) == 0 &&
+            mismatch == LIBMPQ_SIGNATURE_WEAK
+        );
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+        TEST_CHECK(
+            libmpq__update_sign(
+                update, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+                sizeof(test_signature_private_key)
+            ) == 0
+        );
+        libmpq__rsa_clear(bad, sizeof(bad));
+    }
+    if (!wrapped) {
+        TEST_CHECK(
+            libmpq__update_sign(update, LIBMPQ_SIGNATURE_STRONG, strong, sizeof(strong)) == 0
+        );
+        TEST_CHECK(
+            test_update_signed(
+                libmpq__update_path(update),
+                LIBMPQ_SIGNATURE_STRONG | (raw == 0 ? LIBMPQ_SIGNATURE_WEAK : 0), form, prefix,
+                origin
+            ) == 0
+        );
+        TEST_CHECK(
+            libmpq__update_sign(update, LIBMPQ_SIGNATURE_STRONG, strong, sizeof(strong)) == 0
+        );
+        if (raw == 0) {
+            TEST_CHECK(
+                libmpq__update_sign(
+                    update, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+                    sizeof(test_signature_private_key)
+                ) == 0
+            );
+            TEST_CHECK(
+                test_update_signed(
+                    libmpq__update_path(update), LIBMPQ_SIGNATURE_WEAK, form, prefix, origin
+                ) == 0
+            );
+        }
+    }
+    TEST_CHECK(libmpq__archive_open(&archive, libmpq__update_path(update), -1) == 0);
+    TEST_CHECK(libmpq__file_number_from_identity(archive, "folder/voice.bin", 0, 0, &number) == 0);
+    const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+    TEST_CHECK(
+        entry->offset == original.offset && entry->packed_size == original.packed_size &&
+        entry->flags == original.flags
+    );
+    TEST_CHECK(
+        libmpq__source_read_at(
+            archive->source, origin + entry->offset, actual, (size_t)entry->packed_size
+        ) == 0
+    );
+    TEST_CHECK(memcmp(actual, packed, (size_t)entry->packed_size) == 0);
+    TEST_CHECK(check_named(archive, "folder/voice.bin", payload, sizeof(payload)) == 0);
+    mpq_file_attributes_s attributes;
+    TEST_CHECK(
+        libmpq__file_attributes(archive, number, &attributes) == 0 && attributes.filetime == 91
+    );
+    TEST_CHECK(libmpq__file_number(archive, LIBMPQ_LISTFILE_NAME, &number) == 0);
+    entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+    TEST_CHECK(entry->flags == (list_options.flags | LIBMPQ_FLAG_EXISTS));
+    uint8_t decoded[2048];
+    libmpq__off_t decoded_size;
+    libmpq__off_t received;
+    TEST_CHECK(libmpq__file_size_unpacked(archive, number, &decoded_size) == 0);
+    TEST_CHECK(
+        decoded_size == (libmpq__off_t)(list_size + (raw == 0 ? sizeof(LIBMPQ_SIGNATURE_NAME) : 0))
+    );
+    TEST_CHECK(libmpq__reader_offsets_acquire(archive, number, LIBMPQ_LISTFILE_NAME) == 0);
+    TEST_CHECK(
+        libmpq__file_read(archive, number, decoded, sizeof(decoded), &received) == 0 &&
+        received == decoded_size
+    );
+    TEST_CHECK(libmpq__reader_offsets_release(archive, number) == 0);
+    TEST_CHECK(memcmp(decoded, list, list_size) == 0);
+    if (raw == 0)
+        TEST_CHECK(
+            memcmp(
+                decoded + list_size, LIBMPQ_SIGNATURE_NAME "\n", sizeof(LIBMPQ_SIGNATURE_NAME)
+            ) == 0
+        );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(same_file(path, before));
+    TEST_CHECK(libmpq__update_commit(update) == 0);
+    TEST_CHECK(
+        (wrapped ? libmpq__update_begin_mpqe(&update, path, auth_code, sizeof(auth_code) - 1)
+                 : libmpq__update_begin(&update, path)) == 0
+    );
+    TEST_CHECK(
+        test_update_signed(
+            libmpq__update_path(update), raw == 0 ? LIBMPQ_SIGNATURE_WEAK : LIBMPQ_SIGNATURE_STRONG,
+            form, prefix, origin
+        ) == 0
+    );
+    TEST_CHECK(copy_file(path, before) == 0);
+    TEST_CHECK(libmpq__update_timestamp(update, "folder/voice.bin", 92) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, libmpq__update_path(update), -1) == 0);
+    uint32_t types;
+    TEST_CHECK(libmpq__archive_signatures(archive, &types) == 0 && types == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__update_abort(update) == 0 && same_file(path, before));
+    TEST_CHECK(
+        (wrapped ? libmpq__update_begin_mpqe(&update, path, auth_code, sizeof(auth_code) - 1)
+                 : libmpq__update_begin(&update, path)) == 0
+    );
+    TEST_CHECK(
+        libmpq__update_sign(
+            update, raw == 0 ? LIBMPQ_SIGNATURE_WEAK : LIBMPQ_SIGNATURE_STRONG,
+            raw == 0 ? test_signature_private_key : strong,
+            raw == 0 ? sizeof(test_signature_private_key) : sizeof(strong)
+        ) == 0
+    );
+    libmpq__update_set_ops(update, &(mpq_update_ops_s){ fflush, fclose, fail_publish });
+    TEST_CHECK(libmpq__update_commit(update) == LIBMPQ_ERROR_WRITE && same_file(path, before));
+    TEST_CHECK(remove(path) == 0 && remove(before) == 0 && remove(stage) == 0);
+    libmpq__rsa_clear(strong, sizeof(strong));
+    return 0;
+}
+
+/* Classic aliases stay shared; HET-only signing retains its stored provenance. */
+static int
+test_update_sign_layout(uint32_t version, unsigned layout, int failure)
+{
+    mpq_archive_create_options_s create = { version, 8, 512, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    uint8_t key[128];
+    uint8_t prefix[4096] = { 0 };
+    uint8_t strong[512];
+    mpq_hash_s rows[16];
+    uint32_t number;
+    char path[512];
+    char before[512];
+    char stage[512];
+    TEST_CHECK(test_temp_path(path, sizeof(path), "sign-layout") == 0);
+    TEST_CHECK(test_temp_path(before, sizeof(before), "sign-layout-before") == 0);
+    TEST_CHECK(test_temp_path(stage, sizeof(stage), "sign-layout-stage") == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+        TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 0) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, "chain-32", (const uint8_t *)"payload", 7, NULL) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+        TEST_CHECK(test_v4_source_layout(path, layout) == 0);
+    if (version < LIBMPQ_ARCHIVE_VERSION_THREE || layout == 1) {
+        uint32_t hashes[3];
+        TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+        TEST_CHECK(archive->mpq_header.hash_table_count == 16);
+        memcpy(rows, archive->mpq_hash, sizeof(rows));
+        TEST_CHECK(libmpq__file_number(archive, "chain-32", &number) == 0);
+        uint32_t block =
+            archive->mpq_entry[archive->mpq_map[number].entry_index].classic_source_index;
+        for (unsigned alias = 0; alias < 2; ++alias) {
+            libmpq__file_hash(
+                alias ? "unknown-alias" : "chain-32", &hashes[0], &hashes[1], &hashes[2]
+            );
+            uint32_t slot = hashes[0] & 15;
+            while (rows[slot].block_table_index < LIBMPQ_HASH_DELETED)
+                slot = (slot + 1) & 15;
+            rows[slot] = (mpq_hash_s){ hashes[1], hashes[2], alias ? 0 : 1033, 2, block };
+        }
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+        TEST_CHECK(test_alias_table_write(path, rows, 0) == 0);
+    }
+    TEST_CHECK(copy_file(path, before) == 0);
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+    TEST_CHECK(copy_file(libmpq__update_path(update), stage) == 0);
+    memcpy(key, test_signature_private_key, sizeof(key));
+    for (unsigned invalid = 0; invalid < 4; ++invalid) {
+        memcpy(key, test_signature_private_key, sizeof(key));
+        if (invalid == 0)
+            key[0] = 0;
+        if (invalid == 1)
+            key[63] &= 0xfe;
+        if (invalid == 2)
+            memset(key + 64, 0, 64);
+        if (invalid == 3)
+            memcpy(key + 64, key, 64);
+        TEST_CHECK(
+            libmpq__update_sign(update, LIBMPQ_SIGNATURE_WEAK, key, sizeof(key)) ==
+            LIBMPQ_ERROR_FORMAT
+        );
+        TEST_CHECK(same_file(libmpq__update_path(update), stage));
+    }
+    libmpq__rsa_clear(key, sizeof(key));
+    if (failure) {
+        libmpq__update_set_ops(
+            update, &(mpq_update_ops_s){ failure == 1 ? fail_flush : fflush,
+                                         failure == 2 ? fail_close : fclose, fail_publish }
+        );
+        TEST_CHECK(
+            libmpq__update_sign(
+                update, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+                sizeof(test_signature_private_key)
+            ) == (failure == 1 ? LIBMPQ_ERROR_WRITE : LIBMPQ_ERROR_CLOSE)
+        );
+        TEST_CHECK(same_file(libmpq__update_path(update), stage));
+        if (failure == 2)
+            TEST_CHECK(
+                libmpq__update_sign(
+                    update, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+                    sizeof(test_signature_private_key)
+                ) == LIBMPQ_ERROR_EXIST
+            );
+    } else {
+        TEST_CHECK(
+            libmpq__update_sign(
+                update, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+                sizeof(test_signature_private_key)
+            ) == 0
+        );
+        test_strong_signature_private_key(strong);
+        TEST_CHECK(
+            libmpq__update_sign(update, LIBMPQ_SIGNATURE_STRONG, strong, sizeof(strong)) == 0
+        );
+        libmpq__rsa_clear(strong, sizeof(strong));
+        TEST_CHECK(
+            test_update_signed(
+                libmpq__update_path(update), LIBMPQ_SIGNATURE_WEAK | LIBMPQ_SIGNATURE_STRONG, 0,
+                prefix, 0
+            ) == 0
+        );
+        TEST_CHECK(libmpq__archive_open(&archive, libmpq__update_path(update), 0) == 0);
+        TEST_CHECK(check_named(archive, "chain-32", (const uint8_t *)"payload", 7) == 0);
+        if (version < LIBMPQ_ARCHIVE_VERSION_THREE || layout == 1) {
+            uint32_t alias;
+            TEST_CHECK(
+                libmpq__file_number_from_identity(archive, "chain-32", 1033, 2, &number) == 0
+            );
+            TEST_CHECK(
+                libmpq__file_number_from_identity(archive, "unknown-alias", 0, 2, &alias) == 0 &&
+                alias == number
+            );
+            for (uint32_t slot = 0; slot < 16; ++slot) {
+                if (rows[slot].block_table_index < LIBMPQ_HASH_DELETED) {
+                    TEST_CHECK(
+                        archive->mpq_hash[slot].hash_a == rows[slot].hash_a &&
+                        archive->mpq_hash[slot].hash_b == rows[slot].hash_b &&
+                        archive->mpq_hash[slot].locale == rows[slot].locale &&
+                        archive->mpq_hash[slot].platform == rows[slot].platform
+                    );
+                }
+            }
+        }
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+        TEST_CHECK(libmpq__update_commit(update) == 0);
+        TEST_CHECK(
+            test_update_signed(
+                path, LIBMPQ_SIGNATURE_WEAK | LIBMPQ_SIGNATURE_STRONG, 0, prefix, 0
+            ) == 0
+        );
+        TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+    }
+    TEST_CHECK(libmpq__update_abort(update) == 0);
+    if (failure)
+        TEST_CHECK(same_file(path, before));
+    TEST_CHECK(remove(path) == 0 && remove(before) == 0 && remove(stage) == 0);
+    return 0;
+}
+
+/* Signing preserves learned key spellings for a later mutation or compaction. */
+static int
+test_update_sign_names(void)
+{
+    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_THREE, 8, 512, 0, 0 };
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_ENCRYPTED | 0x20000u, 0, 0, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    char path[512];
+    TEST_CHECK(test_temp_path(path, sizeof(path), "sign-names") == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "base", (const uint8_t *)"base", 4, NULL) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+    TEST_CHECK(
+        libmpq__update_add_data(update, "secret", (const uint8_t *)"secret", 6, &options) == 0
+    );
+    TEST_CHECK(
+        libmpq__update_sign(
+            update, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+            sizeof(test_signature_private_key)
+        ) == 0
+    );
+    TEST_CHECK(libmpq__update_compact(update) == 0);
+    TEST_CHECK(libmpq__update_commit(update) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(check_named(archive, "secret", (const uint8_t *)"secret", 6) == 0);
+    uint32_t signatures;
+    TEST_CHECK(libmpq__archive_signatures(archive, &signatures) == 0 && signatures == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0 && remove(path) == 0);
+    return 0;
+}
+
+/* Rewritten attributes retain their storage policy and physical-row associations. */
+static int
+test_update_sign_attributes(unsigned storage)
+{
+    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_THREE, 8, 512,
+                                            LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED, 0 };
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
+    const uint32_t flags =
+        LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 | LIBMPQ_ATTRIBUTE_FILETIME;
+    mpq_file_attributes_s attributes[2] = { { 0 } };
+    mpq_archive_s *archive = NULL;
+    mpq_update_s *update = NULL;
+    uint8_t *data = NULL;
+    size_t size;
+    uint8_t prefix[4096] = { 0 };
+    char path[512];
+    uint32_t number;
+    TEST_CHECK(test_temp_path(path, sizeof(path), "sign-attributes") == 0);
+    attributes[0].filetime = 91;
+    attributes[0].crc32 = (uint32_t)crc32(0, (const uint8_t *)"payload", 7);
+    mpq_md5_s md5;
+    libmpq__md5_init(&md5);
+    libmpq__md5_update(&md5, (const uint8_t *)"payload", 7);
+    libmpq__md5_final(&md5, attributes[0].md5);
+    if (storage != 0) {
+        options.flags = LIBMPQ_FILE_FLAG_COMPRESS;
+        options.compression_first = options.compression_next = LIBMPQ_COMPRESSION_ZLIB;
+    }
+    if (storage > 1)
+        options.flags |= LIBMPQ_FILE_FLAG_ENCRYPTED | 0x20000u;
+    if (storage == 2)
+        options.flags |= LIBMPQ_FILE_FLAG_SINGLE;
+    if (storage == 3)
+        options.flags |= LIBMPQ_FILE_FLAG_SECTOR_CRC;
+    TEST_CHECK(libmpq__attributes_serialize(attributes, 2, 1, flags, &data, &size) == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, "voice", (const uint8_t *)"payload", 7, NULL) == 0
+    );
+    archive->write_internal = 1;
+    TEST_CHECK(libmpq__writer_file_add(archive, LIBMPQ_ATTRIBUTES_NAME, data, size, &options) == 0);
+    archive->write_internal = 0;
+    free(data);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+    TEST_CHECK(
+        libmpq__update_sign(
+            update, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+            sizeof(test_signature_private_key)
+        ) == 0
+    );
+    TEST_CHECK(
+        test_update_signed(libmpq__update_path(update), LIBMPQ_SIGNATURE_WEAK, 0, prefix, 0) == 0
+    );
+    TEST_CHECK(libmpq__update_commit(update) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(libmpq__file_number(archive, LIBMPQ_ATTRIBUTES_NAME, &number) == 0);
+    TEST_CHECK(
+        archive->mpq_entry[archive->mpq_map[number].entry_index].flags ==
+        (options.flags | LIBMPQ_FLAG_EXISTS)
+    );
+    TEST_CHECK(libmpq__file_number(archive, "voice", &number) == 0);
+    mpq_file_attributes_s actual;
+    TEST_CHECK(
+        libmpq__file_attributes(archive, number, &actual) == 0 && actual.flags == flags &&
+        actual.filetime == 91 && actual.crc32 == attributes[0].crc32 &&
+        memcmp(actual.md5, attributes[0].md5, 16) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0 && remove(path) == 0);
+    return 0;
+}
+
 int
 main(void)
 {
@@ -7588,6 +8227,31 @@ main(void)
         }
         TEST_CHECK(test_timestamp_updates(version, 0x4000, 0, 0, 1, 3) == 0);
     }
+
+    TEST_CHECK(
+        libmpq__update_sign(
+            NULL, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+            sizeof(test_signature_private_key)
+        ) == LIBMPQ_ERROR_EXIST
+    );
+    for (unsigned storage = 0; storage < 4; ++storage)
+        TEST_CHECK(test_update_sign_attributes(storage) == 0);
+    TEST_CHECK(test_update_sign_names() == 0);
+    TEST_CHECK(test_update_sign_layout(0, 0, 0) == 0);
+    TEST_CHECK(test_update_sign_layout(1, 0, 0) == 0);
+    TEST_CHECK(test_update_sign_layout(3, 1, 0) == 0);
+    TEST_CHECK(test_update_sign_layout(3, 2, 0) == 0);
+    TEST_CHECK(test_update_sign_layout(0, 0, 1) == 0);
+    TEST_CHECK(test_update_sign_layout(0, 0, 2) == 0);
+    TEST_CHECK(test_update_sign_ranges(5) == 0);
+    TEST_CHECK(test_update_sign_ranges(6) == 0);
+    for (uint32_t version = 0; version < 4; ++version) {
+        for (unsigned form = 0; form <= 6; ++form)
+            TEST_CHECK(test_update_signing(version, 0, form, 0, form % 4) == 0);
+        TEST_CHECK(test_update_signing(version, 0, 5, 1, 3) == 0);
+    }
+    TEST_CHECK(test_update_signing(LIBMPQ_ARCHIVE_VERSION_FOUR, 17, 4, 0, 2) == 0);
+    TEST_CHECK(test_update_signing(LIBMPQ_ARCHIVE_VERSION_FOUR, 0x4000, 6, 0, 0) == 0);
 
     TEST_CHECK(libmpq__update_timestamp(NULL, "x", 0) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(
