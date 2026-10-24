@@ -1,0 +1,99 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__UPDATE_SIGN 3 2026-11-12 "The MoPaQ archive library"
+.SH NAME
+libmpq__update_sign \- sign the current private transaction stage
+.SH SYNOPSIS
+.nf
+#include <libmpq/mpq.h>
+
+int32_t libmpq__update_sign(
+        mpq_update_s *update,
+        uint32_t signature_type,
+        const uint8_t *private_key,
+        size_t private_key_size);
+.fi
+.SH DESCRIPTION
+Generate a signature immediately on a completed private candidate, validate
+its structure and preservation requirements, and adopt it as the current
+transaction stage. This call neither publishes nor consumes the transaction.
+Commit remains the only publication step. Signing should normally be last:
+a subsequent actual mutation applies existing signature invalidation rules,
+while validated no-ops preserve signatures and stage bytes.
+.PP
+The type must be exactly LIBMPQ_SIGNATURE_WEAK or LIBMPQ_SIGNATURE_STRONG.
+The borrowed key is raw big-endian n || d, using two 64-byte components for
+weak signing or two 256-byte components for strong signing. Key length and
+representation are validated synchronously. No key pointer or configuration
+is retained for commit. Temporary native signing buffers are cleared; the
+caller retains ownership of its unchanged key buffer.
+.PP
+Weak signing uses RSA-512/MD5 and the existing internal 72-byte (signature)
+member with reversed signature bytes. Its hash treats that member as zero;
+its CRC32, MD5 and FILETIME follow the existing zero-valued conventions.
+An absent member is added through identity-preserving reconstruction.
+Retained packed payloads and attributes are preserved, including supported
+storage policies for regenerated internal members. If necessary, a
+signature entry is appended to (listfile), retaining unrelated bytes and
+supported storage policy. Unsupported metadata/storage policies are rejected.
+.PP
+Strong signing uses RSA-2048/SHA-1 and an external 260-byte NGIS trailer.
+It copies the archive core unchanged, including any weak signature, and
+replaces only a recognized strong trailer. Only the plain archive-range
+strong digest variant is generated; filename-dependent variants are not.
+.PP
+Weak followed by strong retains both signatures. Strong followed by weak
+removes the stale strong trailer. Repeating a type replaces that signature;
+re-signing is not a byte-preserving no-op. Unrelated trailing data and
+unsupported physical patch/delete or contradictory identity metadata are
+rejected. Weak reconstruction retains existing full-hash and mapping limits.
+.PP
+Discoverable embedded archives preserve every prefix byte, the original MPQ
+origin and validated user-data relationships. Signing occurs after prefix
+assembly. HM3W uses the established prefix-inclusive hash range. FIX_KEY
+continues to use MPQ-relative offsets.
+.PP
+V4 weak signing is supported only with raw chunks disabled. The raw policy
+is never changed automatically. Plain strong signing supports either raw
+policy. MPQE transactions permit eligible weak signing of the plaintext stage
+and use existing authenticated publication; strong signing is unsupported.
+.PP
+Success means generation and structural validation, not independent public-key
+verification or external trust. A representable but mathematically inconsistent
+private exponent need not be detected. To independently verify the published
+archive, call libmpq__archive_verify(3) with the corresponding public key and
+require both status == 0 and mismatches == 0. Arbitrary caller keys do not
+establish Blizzard trust. Opaque ciphertext preservation does not verify
+plaintext.
+.PP
+Pre-adoption failure preserves the previous valid stage. Qualifying adoption
+failures retain the existing abort-only lifecycle. Abort and failed publication
+preserve the original source under the transaction guarantees. Private staging
+requires temporary disk space for the candidate and, for embedded weak
+reconstruction, prefix assembly.
+.SH RETURN VALUE
+Returns 0 on success or a negative libmpq error.
+.SH ERRORS
+Invalid or inactive handles use LIBMPQ_ERROR_EXIST. Invalid type, key size or
+representation, unsupported signing combinations, malformed metadata and
+unrepresentable layouts use LIBMPQ_ERROR_FORMAT. Allocation, size, read,
+write, close and publication failures use the existing corresponding errors.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__archive_sign (3),
+.BR libmpq__patch_sign (3),
+.BR libmpq__archive_verify (3),
+.BR libmpq__update_commit (3),
+.BR libmpq__update_abort (3)

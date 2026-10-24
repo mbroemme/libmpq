@@ -199,6 +199,10 @@ int32_t libmpq__stream_open_name_identity(
 .BI "        uint16_t " "new_platform"
 .BI ");"
 .sp
+int32_t libmpq__update_sign(
+        mpq_update_s *update, uint32_t signature_type,
+        const uint8_t *private_key, size_t private_key_size);
+.sp
 int32_t libmpq__update_compact(mpq_update_s *update);
 int32_t libmpq__update_timestamp(
         mpq_update_s *update, const char *filename, uint64_t filetime);
@@ -649,6 +653,7 @@ Ordinary operations retain HET-first/classic first-hit resolution.
 .BR libmpq__update_begin (3),
 .BR libmpq__update_begin_mpqe (3),
 .BR libmpq__update_change_identity (3),
+.BR libmpq__update_sign (3),
 .BR libmpq__update_compact (3),
 .BR libmpq__update_timestamp (3),
 .BR libmpq__update_timestamp_identity (3),

@@ -580,7 +580,7 @@ extern LIBMPQ_API int32_t libmpq__archive_verify(
 /*
  * Configure weak or strong signing on a writable archive using a copied key.
  * Signing occurs during archive close; this call does not consume the handle.
- * Public v4 writers reject weak signing because it conflicts with raw digests.
+ * V4 writers permit weak signing only when raw chunks are disabled.
  * MPQE writers reject external strong signing.
  */
 extern LIBMPQ_API int32_t libmpq__archive_sign(
@@ -1008,6 +1008,24 @@ libmpq__update_rename(mpq_update_s *update, const char *old_filename, const char
 extern LIBMPQ_API int32_t libmpq__update_rename_identity(
     mpq_update_s *update, const char *old_filename, const char *new_filename, uint16_t locale,
     uint16_t platform
+);
+
+/*
+ * Immediately sign the current private stage with exactly WEAK or STRONG.
+ * Raw private keys are big-endian n || d: 128 bytes for weak, 512 for strong.
+ * Key storage is borrowed synchronously and never retained in the transaction.
+ * Success validates generated storage and applicable structural/raw integrity,
+ * not cryptographic trust or key-pair validity; verify with archive_verify().
+ * Weak signing invalidates strong trailers and requires v4 raw chunks disabled.
+ * Strong signing preserves existing weak bytes and is unsupported for MPQE.
+ * The handle is not consumed; commit alone publishes. Sign after other changes.
+ * Pre-adoption failure preserves the preceding stage; adoption close failures
+ * retain existing abort-only behavior. Subsequent actual mutations invalidate
+ * signatures, while existing validated no-ops preserve them.
+ */
+extern LIBMPQ_API int32_t libmpq__update_sign(
+    mpq_update_s *update, uint32_t signature_type, const uint8_t *private_key,
+    size_t private_key_size
 );
 
 /*

@@ -3375,10 +3375,72 @@ update_compact_bytes(
     return result;
 }
 
-/* Remove only signature lines; all other bytes, including separators, are retained. */
+/* Reproduce an internal member's observable storage policy through the existing writer. */
 static int32_t
-update_compact_listfile(
-    mpq_archive_s *archive, uint32_t number, uint8_t **data, size_t *size,
+update_internal_options(
+    mpq_archive_s *archive, uint32_t number, const char *name, size_t size,
+    mpq_file_options_s *options
+)
+{
+    int32_t result;
+    const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+    options->flags = entry->flags & ~LIBMPQ_FLAG_EXISTS;
+    mpq_file_identity_s identity;
+    result = libmpq__file_identity(archive, name, 0, &identity);
+    if (result != 0)
+        return result;
+    options->locale = identity.locale;
+    options->platform = identity.platform;
+    if (entry->flags & LIBMPQ_FILE_FLAG_COMPRESS) {
+        result = libmpq__reader_offsets_acquire(archive, number, name);
+        if (result != 0)
+            return result;
+        for (uint32_t block = 0; block < libmpq__reader_count_file_blocks(archive, number);
+             ++block) {
+            uint32_t method;
+            result = libmpq__reader_block_compression(archive, number, block, &method);
+            if (result != 0)
+                break;
+            if (method == 0)
+                continue; /* A raw fallback sector does not identify a codec. */
+            if (!libmpq__compression_allowed(
+                    archive->mpq_header.version, method, LIBMPQ_COMPRESSION_POLICY_EXTENDED
+                ) ||
+                (method & (LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO))) {
+                result = LIBMPQ_ERROR_FORMAT;
+                break;
+            }
+            uint32_t *policy =
+                block == 0 ? &options->compression_first : &options->compression_next;
+            if (*policy != 0 && *policy != method) {
+                result = LIBMPQ_ERROR_FORMAT;
+                break;
+            }
+            *policy = method;
+        }
+        update_result(&result, libmpq__reader_offsets_release(archive, number));
+        if (result != 0)
+            return result;
+        if (libmpq__reader_count_file_blocks(archive, number) == 1)
+            options->compression_next = options->compression_first;
+        if (options->compression_next == 0) {
+            result = LIBMPQ_ERROR_FORMAT;
+            return result;
+        }
+    }
+    if ((options->flags & LIBMPQ_FILE_FLAG_SECTOR_CRC) &&
+        (size == 0 || (options->flags & LIBMPQ_FILE_FLAG_SINGLE) ||
+         !(options->flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE)))) {
+        result = LIBMPQ_ERROR_FORMAT;
+        return result;
+    }
+    return 0;
+}
+
+/* Add/remove signature lines while retaining unrelated bytes and separators. */
+static int32_t
+update_signature_listfile(
+    mpq_archive_s *archive, uint32_t number, uint8_t add, uint8_t **data, size_t *size,
     mpq_file_options_s *options
 )
 {
@@ -3386,6 +3448,7 @@ update_compact_listfile(
     size_t length = 0;
     size_t used = 0;
     uint8_t changed = 0;
+    uint8_t found = 0;
     int32_t result = update_read_named(archive, LIBMPQ_LISTFILE_NAME, &original, &length);
     if (result != 0)
         return result;
@@ -3418,66 +3481,37 @@ update_compact_listfile(
                      libmpq__crypto_hash_string((char *)original + begin, 0x200) ==
                          libmpq__crypto_hash_string(LIBMPQ_SIGNATURE_NAME, 0x200);
         original[end] = saved;
-        if (remove)
+        found |= remove != 0;
+        if (remove && !add)
             changed = 1;
         else {
             memmove(original + used, original + begin, pos - begin);
             used += pos - begin;
         }
     }
+    if (add && !found) {
+        size_t extra = sizeof(LIBMPQ_SIGNATURE_NAME) + 1;
+        if (used > SIZE_MAX - extra - 1) {
+            result = LIBMPQ_ERROR_SIZE;
+            goto done;
+        }
+        uint8_t *expanded = realloc(original, used + extra + 1);
+        if (expanded == NULL) {
+            result = LIBMPQ_ERROR_MALLOC;
+            goto done;
+        }
+        original = expanded;
+        if (used != 0 && original[used - 1] != '\n' && original[used - 1] != '\r')
+            original[used++] = '\n';
+        memcpy(original + used, LIBMPQ_SIGNATURE_NAME "\n", sizeof(LIBMPQ_SIGNATURE_NAME));
+        used += sizeof(LIBMPQ_SIGNATURE_NAME);
+        changed = 1;
+    }
     if (!changed)
         goto done;
-    const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
-    options->flags = entry->flags & ~LIBMPQ_FLAG_EXISTS;
-    mpq_file_identity_s identity;
-    result = libmpq__file_identity(archive, LIBMPQ_LISTFILE_NAME, 0, &identity);
+    result = update_internal_options(archive, number, LIBMPQ_LISTFILE_NAME, used, options);
     if (result != 0)
         goto done;
-    options->locale = identity.locale;
-    options->platform = identity.platform;
-    if (entry->flags & LIBMPQ_FILE_FLAG_COMPRESS) {
-        result = libmpq__reader_offsets_acquire(archive, number, LIBMPQ_LISTFILE_NAME);
-        if (result != 0)
-            goto done;
-        for (uint32_t block = 0; block < libmpq__reader_count_file_blocks(archive, number);
-             ++block) {
-            uint32_t method;
-            result = libmpq__reader_block_compression(archive, number, block, &method);
-            if (result != 0)
-                break;
-            if (method == 0)
-                continue; /* A raw fallback sector does not identify a codec. */
-            if (!libmpq__compression_allowed(
-                    archive->mpq_header.version, method, LIBMPQ_COMPRESSION_POLICY_EXTENDED
-                ) ||
-                (method & (LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO))) {
-                result = LIBMPQ_ERROR_FORMAT;
-                break;
-            }
-            uint32_t *policy =
-                block == 0 ? &options->compression_first : &options->compression_next;
-            if (*policy != 0 && *policy != method) {
-                result = LIBMPQ_ERROR_FORMAT;
-                break;
-            }
-            *policy = method;
-        }
-        update_result(&result, libmpq__reader_offsets_release(archive, number));
-        if (result != 0)
-            goto done;
-        if (libmpq__reader_count_file_blocks(archive, number) == 1)
-            options->compression_next = options->compression_first;
-        if (options->compression_next == 0) {
-            result = LIBMPQ_ERROR_FORMAT;
-            goto done;
-        }
-    }
-    if ((options->flags & LIBMPQ_FILE_FLAG_SECTOR_CRC) &&
-        (used == 0 || (options->flags & LIBMPQ_FILE_FLAG_SINGLE) ||
-         !(options->flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE)))) {
-        result = LIBMPQ_ERROR_FORMAT;
-        goto done;
-    }
     *data = original;
     *size = used;
     original = NULL;
@@ -3614,6 +3648,30 @@ update_open_candidate(
         *candidate = NULL;
     }
     return result;
+}
+
+/* Adopt a validated sibling without publishing or retaining operation-specific state. */
+static int32_t
+update_adopt_candidate(mpq_update_s *update, FILE **file, char **temporary, char **path)
+{
+    if (update->ops->flush(update->working) != 0)
+        return LIBMPQ_ERROR_WRITE;
+    FILE *previous = update->working;
+    update->working = NULL;
+    if (update->ops->close(previous) != 0)
+        return LIBMPQ_ERROR_CLOSE;
+    int32_t result = libmpq__directory_remove(update->directory, update->temporary);
+    if (result != 0)
+        return result;
+    free(update->temporary);
+    free(update->working_path);
+    update->working = *file;
+    update->temporary = *temporary;
+    update->working_path = *path;
+    update->dirty = 1;
+    *file = NULL;
+    *temporary = *path = NULL;
+    return 0;
 }
 
 /* Compact the current stage through the shared writer, then adopt only a validated candidate. */
@@ -3825,7 +3883,7 @@ libmpq__update_transaction_compact(mpq_update_s *update)
     if (dense)
         goto done;
     if (signature != UINT32_MAX && listfile != UINT32_MAX) {
-        result = update_compact_listfile(archive, listfile, &list, &list_size, &list_options);
+        result = update_signature_listfile(archive, listfile, 0, &list, &list_size, &list_options);
         if (result != 0)
             goto done;
     }
@@ -4115,27 +4173,9 @@ libmpq__update_transaction_compact(mpq_update_s *update)
         result = LIBMPQ_ERROR_OPEN;
         goto done;
     }
-    if (update->ops->flush(update->working) != 0) {
-        result = LIBMPQ_ERROR_WRITE;
-        goto done;
-    }
-    FILE *previous = update->working;
-    update->working = NULL;
-    if (update->ops->close(previous) != 0) {
-        result = LIBMPQ_ERROR_CLOSE;
-        goto done;
-    }
-    result = libmpq__directory_remove(update->directory, update->temporary);
+    result = update_adopt_candidate(update, &file, &temporary, &path);
     if (result != 0)
         goto done;
-    free(update->temporary);
-    free(update->working_path);
-    update->working = file;
-    update->temporary = temporary;
-    update->working_path = path;
-    update->dirty = 1;
-    file = NULL;
-    temporary = path = NULL;
     for (uint32_t i = 0; i < update->known_count; ++i)
         free(update->known_names[i]);
     free(update->known_names);
@@ -4164,6 +4204,507 @@ done:
     free(positions);
     free(attributes);
     free(list);
+    free(temporary);
+    free(path);
+    return result;
+}
+
+/* Internal members must have one neutral identity and an exclusive physical association. */
+static int32_t
+update_sign_special(mpq_archive_s *archive, const char *name, uint32_t *number)
+{
+    mpq_file_identity_s identity;
+    int32_t result = libmpq__file_identity(archive, name, 0, &identity);
+    if (result != 0)
+        return result;
+    *number = identity.file_number;
+    if (identity.locale != 0 || identity.platform != 0 ||
+        (archive->het_data != NULL && !(identity.flags & LIBMPQ_IDENTITY_BET)) ||
+        libmpq__file_identity(archive, name, 1, &identity) != LIBMPQ_ERROR_EXIST)
+        return LIBMPQ_ERROR_FORMAT;
+    const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[*number].entry_index];
+    if ((entry->source_mask & LIBMPQ_ENTRY_SOURCE_CLASSIC) != 0 &&
+        update_block_references(archive, entry->classic_source_index) != 1)
+        return LIBMPQ_ERROR_FORMAT;
+    return 0;
+}
+
+/* Physical signing validates layout/integrity without recovering opaque member names or keys. */
+static int32_t
+update_sign_source(mpq_archive_s *archive, uint64_t *extent, uint32_t *signatures)
+{
+    uint8_t dense;
+    int32_t result = libmpq__archive_signature_extent(archive, extent);
+    if (result == 0)
+        result = libmpq__archive_signatures(archive, signatures);
+    if (result != 0)
+        return result;
+    if (archive->archive_offset < 0 ||
+        *extent > (uint64_t)INT64_MAX - (uint64_t)archive->archive_offset ||
+        *extent != libmpq__header_archive_size(&archive->mpq_header, &archive->mpq_header_v3))
+        return LIBMPQ_ERROR_FORMAT;
+    uint64_t end = (uint64_t)archive->archive_offset + *extent;
+    if (end > archive->file_size ||
+        archive->file_size - end !=
+            ((*signatures & LIBMPQ_SIGNATURE_STRONG) ? LIBMPQ_STRONG_TRAILER_SIZE : 0))
+        return LIBMPQ_ERROR_FORMAT;
+    result = update_compact_layout(archive, &dense);
+    if (result == 0)
+        result = update_compact_hashes(archive);
+    if (result != 0)
+        return result;
+    result = libmpq__attributes_load(archive);
+    if (result != 0 && result != LIBMPQ_ERROR_EXIST)
+        return result;
+    if (archive->attributes != NULL && (archive->attributes->flags & ~LIBMPQ_ATTRIBUTES_ALL) != 0)
+        return LIBMPQ_ERROR_FORMAT;
+    for (uint32_t i = 0; i < archive->files; ++i) {
+        const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[i].entry_index];
+        uint32_t mismatch;
+        if ((entry->flags & (LIBMPQ_FILE_FLAG_PATCH_FILE | LIBMPQ_FILE_FLAG_DELETE_MARKER)) != 0)
+            return LIBMPQ_ERROR_FORMAT;
+        if (entry->source_mask & LIBMPQ_ENTRY_SOURCE_BET) {
+            mpq_bet_entry_s record;
+            result = libmpq__bet_record_decode(&archive->mpq_bet, entry->bet_source_index, &record);
+            if (result != 0 || record.unknown != 0)
+                return result != 0 ? result : LIBMPQ_ERROR_FORMAT;
+        }
+        if (archive->attributes != NULL) {
+            mpq_file_attributes_s attributes;
+            result = libmpq__file_attributes(archive, i, &attributes);
+            if (result != 0 || attributes.patch_bit)
+                return result != 0 ? result : LIBMPQ_ERROR_FORMAT;
+        }
+        result = libmpq__file_verify(archive, i, LIBMPQ_VERIFY_RAW_MD5, &mismatch);
+        if (result != 0 || mismatch != 0)
+            return result != 0 ? result : LIBMPQ_ERROR_READ;
+    }
+    if (archive->het_data != NULL && archive->mpq_header_v4.raw_chunk_size != 0) {
+        result = libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_HET_SIGNATURE);
+        if (result == 0)
+            result = libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_BET_SIGNATURE);
+        if (result != 0)
+            return result;
+    }
+    if (*signatures & LIBMPQ_SIGNATURE_WEAK) {
+        uint32_t number;
+        result = update_sign_special(archive, LIBMPQ_SIGNATURE_NAME, &number);
+        if (result != 0)
+            return result;
+        if (archive->attributes != NULL) {
+            mpq_file_attributes_s attributes;
+            const uint8_t zero[16] = { 0 };
+            result = libmpq__file_attributes(archive, number, &attributes);
+            if (result != 0 || attributes.crc32 != 0 || attributes.filetime != 0 ||
+                memcmp(attributes.md5, zero, sizeof(zero)) != 0)
+                return result != 0 ? result : LIBMPQ_ERROR_FORMAT;
+        }
+    }
+    return 0;
+}
+
+/* Compare stored physical ranges with bounded memory; no plaintext trust is implied. */
+static int32_t
+update_sign_bytes(mpq_archive_s *source, mpq_archive_s *candidate, uint64_t offset, uint64_t size)
+{
+    uint8_t before[16384];
+    uint8_t after[16384];
+    if (offset > source->file_size || size > source->file_size - offset ||
+        offset > candidate->file_size || size > candidate->file_size - offset)
+        return LIBMPQ_ERROR_FORMAT;
+    while (size != 0) {
+        size_t take = size < sizeof(before) ? (size_t)size : sizeof(before);
+        int32_t result = libmpq__source_read_at(source->source, offset, before, take);
+        if (result == 0)
+            result = libmpq__source_read_at(candidate->source, offset, after, take);
+        if (result != 0)
+            return result;
+        if (memcmp(before, after, take) != 0)
+            return LIBMPQ_ERROR_READ;
+        offset += take;
+        size -= take;
+    }
+    return 0;
+}
+
+/* Add only the absent weak member, preserving physical payloads through the shared writer. */
+static int32_t
+update_sign_rebuild(
+    mpq_update_s *update, mpq_archive_s *source, const mpq_prefix_info_s *prefix, char **temporary,
+    char **path, mpq_archive_s **candidate
+)
+{
+    mpq_archive_s *writer = NULL;
+    FILE *file = NULL;
+    uint32_t count = source->files;
+    uint32_t attribute = UINT32_MAX;
+    uint32_t listfile = UINT32_MAX;
+    uint32_t flags = source->attributes != NULL ? source->attributes->flags : 0;
+    uint32_t *rows = NULL;
+    uint64_t *hashes = NULL;
+    char **names = NULL;
+    mpq_file_attributes_s *mapped = NULL;
+    uint8_t *list = NULL;
+    size_t list_size = 0;
+    mpq_file_options_s list_options = { 0 };
+    mpq_file_options_s attribute_options = { 0 };
+    int32_t result;
+    if (count == UINT32_MAX || ((uint64_t)count + 1) * sizeof(*mapped) > SIZE_MAX)
+        return LIBMPQ_ERROR_SIZE;
+    result = update_sign_special(source, LIBMPQ_ATTRIBUTES_NAME, &attribute);
+    if (result != 0 && result != LIBMPQ_ERROR_EXIST)
+        return result;
+    result = update_sign_special(source, LIBMPQ_LISTFILE_NAME, &listfile);
+    if (result != 0 && result != LIBMPQ_ERROR_EXIST)
+        return result;
+    if (listfile != UINT32_MAX) {
+        result = update_signature_listfile(source, listfile, 1, &list, &list_size, &list_options);
+        if (result != 0)
+            return result;
+    }
+    rows = calloc((size_t)count + 1, sizeof(*rows));
+    hashes = calloc((size_t)count + 1, sizeof(*hashes));
+    names = calloc((size_t)count + 1, sizeof(*names));
+    mapped = calloc((size_t)count + 1, sizeof(*mapped));
+    if (rows == NULL || hashes == NULL || names == NULL || mapped == NULL) {
+        result = LIBMPQ_ERROR_MALLOC;
+        goto done;
+    }
+    result = libmpq__directory_temporary_reopenable(
+        update->directory, ".libmpq-sign-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", 1, temporary, &file
+    );
+    if (result != 0)
+        goto done;
+    *path = update_working_path(update->working_path, *temporary);
+    if (*path == NULL) {
+        result = LIBMPQ_ERROR_MALLOC;
+        goto done;
+    }
+    mpq_archive_create_options_s create = { source->mpq_header.version, count + 1,
+                                            source->block_size,
+                                            LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED, 0 };
+    result = source->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR
+                 ? libmpq__writer_archive_create_v4(&writer, *path, file, &create, 0)
+                 : libmpq__writer_archive_create_file(&writer, *path, file, &create);
+    file = NULL;
+    if (result != 0)
+        goto done;
+    result = libmpq__writer_identity_init(writer, source);
+    if (result != 0)
+        goto done;
+    uint64_t extent = libmpq__header_archive_size(&source->mpq_header, &source->mpq_header_v3);
+    if (extent == 0 || extent > INT64_MAX ||
+        libmpq__file_seek(writer->fp, (libmpq__off_t)(extent - 1), SEEK_SET) != 0 ||
+        fputc(0, writer->fp) == EOF) {
+        result = LIBMPQ_ERROR_WRITE;
+        goto done;
+    }
+    for (uint32_t i = 0; i < count; ++i) {
+        if (i == attribute || (i == listfile && list != NULL))
+            continue;
+        mpq_file_attributes_s attributes = { 0 };
+        if (flags != 0) {
+            result = libmpq__file_attributes(source, i, &attributes);
+            if (result != 0)
+                goto done;
+        }
+        rows[i] = writer->write_next_block;
+        mapped[rows[i]] = attributes;
+        result = libmpq__writer_preserve_member(writer, source, i, flags ? &attributes : NULL);
+        if (result != 0)
+            goto done;
+        hashes[i] = writer->write_identity->source_hashes[source->mpq_map[i].entry_index];
+    }
+    if (libmpq__file_seek(writer->fp, 0, SEEK_END) != 0) {
+        result = LIBMPQ_ERROR_SEEK;
+        goto done;
+    }
+    const uint8_t zero[LIBMPQ_SIGNATURE_SIZE] = { 0 };
+    const mpq_file_options_s raw = { 0 };
+    writer->write_internal = 1;
+    result = libmpq__writer_file_add(writer, LIBMPQ_SIGNATURE_NAME, zero, sizeof(zero), &raw);
+    if (result != 0)
+        goto done;
+    if (list != NULL) {
+        rows[listfile] = writer->write_next_block;
+        names[listfile] = (char *)LIBMPQ_LISTFILE_NAME;
+        if (flags != 0) {
+            result = libmpq__file_attributes(source, listfile, &mapped[rows[listfile]]);
+            if (result != 0)
+                goto done;
+            if (flags & LIBMPQ_ATTRIBUTE_CRC32)
+                mapped[rows[listfile]].crc32 = (uint32_t)crc32(0, list, (uInt)list_size);
+            if (flags & LIBMPQ_ATTRIBUTE_MD5) {
+                mpq_md5_s md5;
+                libmpq__md5_init(&md5);
+                libmpq__md5_update(&md5, list, list_size);
+                libmpq__md5_final(&md5, mapped[rows[listfile]].md5);
+            }
+        }
+        result =
+            libmpq__writer_file_add(writer, LIBMPQ_LISTFILE_NAME, list, list_size, &list_options);
+        if (result == 0)
+            result = libmpq__writer_identity_bind(writer, source, listfile);
+        if (result != 0)
+            goto done;
+    }
+    if (attribute != UINT32_MAX) {
+        uint8_t *data = NULL;
+        size_t size;
+        uint32_t row = writer->write_next_block;
+        rows[attribute] = row;
+        names[attribute] = (char *)LIBMPQ_ATTRIBUTES_NAME;
+        result = libmpq__attributes_serialize(
+            mapped,
+            source->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_THREE ? row + 1
+                                                                       : writer->write_capacity,
+            row, flags, &data, &size
+        );
+        if (result == 0)
+            result = update_internal_options(
+                source, attribute, LIBMPQ_ATTRIBUTES_NAME, size, &attribute_options
+            );
+        if (result == 0)
+            result = libmpq__writer_file_add(
+                writer, LIBMPQ_ATTRIBUTES_NAME, data, size, &attribute_options
+            );
+        free(data);
+        if (result == 0)
+            result = libmpq__writer_identity_bind(writer, source, attribute);
+        if (result != 0)
+            goto done;
+    }
+    writer->write_internal = 0;
+    result = libmpq__archive_close(writer);
+    writer = NULL;
+    if (result == 0)
+        result = update_open_candidate(update, source, prefix, temporary, path, candidate);
+    if (result != 0)
+        goto done;
+    if ((*candidate)->files != count + 1) {
+        result = LIBMPQ_ERROR_FORMAT;
+        goto done;
+    }
+    result =
+        update_check_unknowns(source, *candidate, names, rows, hashes, flags, UINT32_MAX, NULL);
+    if (result != 0)
+        goto done;
+    for (uint32_t i = 0; i < count; ++i) {
+        if (names[i] == NULL)
+            continue;
+        uint32_t number;
+        result = update_sign_special(*candidate, names[i], &number);
+        if (result != 0)
+            goto done;
+        const mpq_entry_s *entry =
+            &(*candidate)->mpq_entry[(*candidate)->mpq_map[number].entry_index];
+        if (!(entry->source_mask & LIBMPQ_ENTRY_SOURCE_CLASSIC) ||
+            entry->classic_source_index != rows[i]) {
+            result = LIBMPQ_ERROR_FORMAT;
+            goto done;
+        }
+        const mpq_file_options_s *storage = i == listfile ? &list_options : &attribute_options;
+        if (entry->flags != (storage->flags | LIBMPQ_FLAG_EXISTS)) {
+            result = LIBMPQ_ERROR_FORMAT;
+            goto done;
+        }
+        result = libmpq__reader_offsets_acquire(*candidate, number, names[i]);
+        if (result != 0)
+            goto done;
+        for (uint32_t block = 0; block < libmpq__reader_count_file_blocks(*candidate, number);
+             ++block) {
+            uint32_t method;
+            result = libmpq__reader_block_compression(*candidate, number, block, &method);
+            if (result != 0 ||
+                ((entry->flags & LIBMPQ_FILE_FLAG_COMPRESS) && method != 0 &&
+                 method != (block == 0 ? storage->compression_first : storage->compression_next))) {
+                result = result != 0 ? result : LIBMPQ_ERROR_FORMAT;
+                break;
+            }
+        }
+        update_result(&result, libmpq__reader_offsets_release(*candidate, number));
+        if (result != 0)
+            goto done;
+        if (i == listfile) {
+            uint8_t *decoded = NULL;
+            size_t size;
+            result = update_read_named(*candidate, LIBMPQ_LISTFILE_NAME, &decoded, &size);
+            if (result == 0 && (size != list_size || memcmp(decoded, list, size) != 0 ||
+                                entry->flags != (list_options.flags | LIBMPQ_FLAG_EXISTS)))
+                result = LIBMPQ_ERROR_FORMAT;
+            free(decoded);
+            if (result != 0)
+                goto done;
+            if (flags != 0) {
+                mpq_file_attributes_s actual;
+                const mpq_file_attributes_s *expected = &mapped[rows[i]];
+                result = libmpq__file_attributes(*candidate, number, &actual);
+                if (result == 0 &&
+                    (actual.flags != expected->flags || actual.patch_bit != expected->patch_bit ||
+                     actual.filetime != expected->filetime || actual.crc32 != expected->crc32 ||
+                     memcmp(actual.md5, expected->md5, 16) != 0))
+                    result = LIBMPQ_ERROR_FORMAT;
+                if (result != 0)
+                    goto done;
+            }
+        }
+    }
+done:
+    if (writer != NULL) {
+        libmpq__writer_file_abort(writer->write_current);
+        writer->write_current = NULL;
+        (void)libmpq__archive_close(writer);
+    }
+    if (file != NULL)
+        update_result(&result, fclose(file) == 0 ? 0 : LIBMPQ_ERROR_CLOSE);
+    free(rows);
+    free(hashes);
+    free(names);
+    free(mapped);
+    free(list);
+    return result;
+}
+
+/*
+ * Generate now, validate storage/preservation, then adopt.
+ * Private keys never enter update state.
+ */
+int32_t
+libmpq__update_transaction_sign(
+    mpq_update_s *update, uint32_t type, const uint8_t *key, size_t key_size
+)
+{
+    mpq_archive_s *source = NULL;
+    mpq_archive_s *candidate = NULL;
+    mpq_prefix_info_s prefix;
+    FILE *file = NULL;
+    char *temporary = NULL;
+    char *path = NULL;
+    uint64_t extent;
+    uint32_t signatures;
+    uint32_t expected;
+    uint64_t changed = UINT64_MAX;
+    int32_t result;
+    uint8_t rebuilt = 0;
+    if (update == NULL || update->working == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if ((type == LIBMPQ_SIGNATURE_WEAK     ? libmpq__rsa_weak_key_validate(key, key_size)
+         : type == LIBMPQ_SIGNATURE_STRONG ? libmpq__rsa_strong_key_validate(key, key_size)
+                                           : LIBMPQ_ERROR_FORMAT) != 0 ||
+        (type == LIBMPQ_SIGNATURE_STRONG && update->mpqe))
+        return LIBMPQ_ERROR_FORMAT;
+    if (fflush(update->working) != 0)
+        return LIBMPQ_ERROR_WRITE;
+    result = libmpq__archive_open(&source, update->working_path, -1);
+    if (result != 0)
+        return result;
+    result = libmpq__reader_archive_prefix_info(source, &prefix);
+    if (result == 0)
+        result = update_sign_source(source, &extent, &signatures);
+    if (result != 0)
+        goto done;
+    if (type == LIBMPQ_SIGNATURE_WEAK && source->mpq_header_v4.raw_chunk_size != 0) {
+        result = LIBMPQ_ERROR_FORMAT;
+        goto done;
+    }
+    expected = type == LIBMPQ_SIGNATURE_WEAK ? LIBMPQ_SIGNATURE_WEAK
+                                             : signatures | LIBMPQ_SIGNATURE_STRONG;
+    rebuilt = type == LIBMPQ_SIGNATURE_WEAK && !(signatures & LIBMPQ_SIGNATURE_WEAK);
+    if (rebuilt) {
+        result = update_sign_rebuild(update, source, &prefix, &temporary, &path, &candidate);
+        if (result != 0)
+            goto done;
+    } else {
+        result = libmpq__directory_temporary_reopenable(
+            update->directory, ".libmpq-sign-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", 1, &temporary, &file
+        );
+        if (result != 0)
+            goto done;
+        path = update_working_path(update->working_path, temporary);
+        if (path == NULL) {
+            result = LIBMPQ_ERROR_MALLOC;
+            goto done;
+        }
+        result = update_copy_range(source, file, 0, prefix.origin + extent);
+        if (result == 0 && fflush(file) != 0)
+            result = LIBMPQ_ERROR_WRITE;
+        update_result(&result, fclose(file) == 0 ? 0 : LIBMPQ_ERROR_CLOSE);
+        file = NULL;
+        if (result == 0)
+            result = libmpq__archive_open(&candidate, path, -1);
+        if (result != 0)
+            goto done;
+    }
+    if (type == LIBMPQ_SIGNATURE_WEAK) {
+        uint32_t number;
+        result = update_sign_special(candidate, LIBMPQ_SIGNATURE_NAME, &number);
+        if (result != 0)
+            goto done;
+        changed = prefix.origin +
+                  candidate->mpq_entry[candidate->mpq_map[number].entry_index].offset +
+                  LIBMPQ_SIGNATURE_PREFIX_SIZE;
+    }
+    file = libmpq__file_open(path, "r+b");
+    if (file == NULL) {
+        result = LIBMPQ_ERROR_OPEN;
+        goto done;
+    }
+    result = libmpq__signature_sign_file(candidate, file, type, key, key_size);
+    update_result(&result, fclose(file) == 0 ? 0 : LIBMPQ_ERROR_CLOSE);
+    file = NULL;
+    if (result != 0)
+        goto done;
+    result = libmpq__archive_close(candidate);
+    candidate = NULL;
+    if (result == 0)
+        result = libmpq__archive_open(&candidate, path, -1);
+    if (result == 0)
+        result = update_validate_prefix(source, candidate, &prefix);
+    uint64_t candidate_extent;
+    uint32_t candidate_signatures;
+    if (result == 0)
+        result = update_sign_source(candidate, &candidate_extent, &candidate_signatures);
+    if (result == 0 && candidate_signatures != expected)
+        result = LIBMPQ_ERROR_FORMAT;
+    if (result == 0 && !rebuilt) {
+        uint64_t core = prefix.origin + extent;
+        if (candidate_extent != extent || candidate->files != source->files)
+            result = LIBMPQ_ERROR_FORMAT;
+        else if (type == LIBMPQ_SIGNATURE_STRONG)
+            result = update_sign_bytes(source, candidate, 0, core);
+        else {
+            result = update_sign_bytes(source, candidate, 0, changed);
+            if (result == 0)
+                result = update_sign_bytes(
+                    source, candidate, changed + LIBMPQ_RSA_SIZE, core - changed - LIBMPQ_RSA_SIZE
+                );
+        }
+    }
+    if (result != 0)
+        goto done;
+    result = libmpq__archive_close(candidate);
+    candidate = NULL;
+    if (result == 0) {
+        result = libmpq__archive_close(source);
+        source = NULL;
+    }
+    if (result != 0)
+        goto done;
+    file = libmpq__file_open(path, "r+b");
+    if (file == NULL) {
+        result = LIBMPQ_ERROR_OPEN;
+        goto done;
+    }
+    result = update_adopt_candidate(update, &file, &temporary, &path);
+done:
+    if (candidate != NULL)
+        (void)libmpq__archive_close(candidate);
+    if (source != NULL)
+        (void)libmpq__archive_close(source);
+    if (file != NULL)
+        update_result(&result, fclose(file) == 0 ? 0 : LIBMPQ_ERROR_CLOSE);
+    if (temporary != NULL)
+        update_result(&result, libmpq__directory_remove(update->directory, temporary));
     free(temporary);
     free(path);
     return result;

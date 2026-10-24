@@ -395,6 +395,13 @@ libmpq__update_rename_identity(
     return libmpq__update_transaction_rename_identity(update, name, new_name, locale, platform);
 }
 
+/* Sign the current private stage; commit remains the only publication operation. */
+int32_t
+libmpq__update_sign(mpq_update_s *update, uint32_t type, const uint8_t *key, size_t key_size)
+{
+    return libmpq__update_transaction_sign(update, type, key, key_size);
+}
+
 /* Change an existing row timestamp without changing its stored payload. */
 int32_t
 libmpq__update_timestamp(mpq_update_s *update, const char *filename, uint64_t filetime)

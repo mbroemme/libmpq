@@ -469,6 +469,27 @@ ordinary or exact lookup to find an existing identity and keeps its tuple;
 replacement options must match it and cannot redirect selection. Use
 `libmpq__update_change_identity()` to change an existing tuple explicitly.
 
+`libmpq__update_sign(update, type, private_key, size)` signs the current
+private stage immediately. Commit remains the only publication step. Supply
+raw big-endian `n || d`: 128 bytes for RSA-512/MD5 weak signing or 512 bytes
+for RSA-2048/SHA-1 strong signing. The key is borrowed synchronously and is
+not retained for commit. Success validates generation and archive structure;
+independent verification requires `libmpq__archive_verify()` with a matching
+public key, returning both status zero and zero mismatches. Caller-generated
+signatures do not establish external trust.
+
+Strong signing copies the complete archive core and replaces its recognized
+`NGIS` trailer, preserving any weak signature. Weak signing adds or replaces
+`(signature)` and removes a stale strong trailer. Missing weak members use
+existing identity-preserving reconstruction; `(listfile)` changes only when
+its signature entry is absent, retaining unrelated formatting and supported
+storage policy. Existing mapping and metadata restrictions apply. Embedded
+prefixes and origins are preserved; HM3W hashes include the prefix. Weak
+signing requires v4 raw chunks disabled; MPQE supports eligible weak signing
+only. Sign after other mutations, including compaction. Later actual changes
+invalidate signatures, while validated no-ops preserve them. Private candidates
+need temporary disk space; errors before adoption preserve the valid stage.
+
 `libmpq__update_compact(update)` immediately stages physical compaction through
 identity-preserving packed reconstruction. Commit alone publishes it. Call it
 last when final layout matters: subsequent mutations can introduce gaps. Live
