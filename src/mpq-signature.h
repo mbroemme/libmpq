@@ -23,6 +23,7 @@
 #include <libmpq/mpq.h>
 
 #include "mpq-rsa.h"
+#include <stdio.h>
 
 #define LIBMPQ_SIGNATURE_PREFIX_SIZE 8u
 #define LIBMPQ_SIGNATURE_SIZE (LIBMPQ_SIGNATURE_PREFIX_SIZE + LIBMPQ_RSA_SIZE)
@@ -37,6 +38,9 @@ int32_t libmpq__signature_verify(
 );
 int32_t libmpq__signature_configure(
     mpq_archive_s *archive, uint32_t type, const uint8_t *key, size_t key_size
+);
+int32_t libmpq__signature_sign_file(
+    mpq_archive_s *archive, FILE *file, uint32_t type, const uint8_t *key, size_t key_size
 );
 int32_t libmpq__signature_finish(mpq_archive_s *archive, uint64_t size);
 #endif /* LIBMPQ_SIGNATURE_H */
