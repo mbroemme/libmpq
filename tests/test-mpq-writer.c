@@ -2741,6 +2741,17 @@ test_public_raw_policy(uint32_t chunk, uint8_t mpqe)
         (chunk == 0 ? LIBMPQ_ERROR_EXIST : 0)
     );
     TEST_CHECK(libmpq__file_number(archive, "raw", &number) == 0);
+    {
+        uint32_t checked;
+        uint32_t unavailable;
+        TEST_CHECK(
+            libmpq__file_verify_ex(
+                archive, number, NULL, LIBMPQ_VERIFY_RAW_MD5, &checked, &unavailable, &mismatches
+            ) == 0
+        );
+        TEST_CHECK(checked == (chunk != 0 && size != 0 ? LIBMPQ_VERIFY_RAW_MD5 : 0));
+        TEST_CHECK(unavailable == (LIBMPQ_VERIFY_RAW_MD5 & ~checked) && mismatches == 0);
+    }
     TEST_CHECK(
         libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &mismatches) == 0 && mismatches == 0
     );

@@ -233,6 +233,19 @@ test_fixture_wave(mpq_archive_s *archive, const uint8_t *raw, size_t raw_size, u
     if (libmpq__file_verify(archive, number, LIBMPQ_VERIFY_SECTOR_CRC, &verification) != 0 ||
         verification != 0)
         goto cleanup;
+    {
+        uint32_t checked;
+        uint32_t unavailable;
+        if (libmpq__file_verify_ex(
+                archive, number, name, LIBMPQ_VERIFY_ALL, &checked, &unavailable, &verification
+            ) != 0 ||
+            checked != LIBMPQ_VERIFY_SECTOR_CRC || unavailable != 14 || verification != 0)
+            goto cleanup;
+
+        /* Literal legacy source-byte comparisons remain available to callers. */
+        if (libmpq__file_verify(archive, number, 6, &verification) != 0 || verification != 6)
+            goto cleanup;
+    }
     for (block = 0; block < blocks; ++block) {
         uint32_t start = get_le32(table + block * 4U);
         uint32_t end = get_le32(table + (block + 1U) * 4U);

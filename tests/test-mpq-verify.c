@@ -24,6 +24,7 @@
 #include "mpq-md5.h"
 #include "mpq-reader.h"
 #include "mpq-source.h"
+#include "mpq-verify.h"
 #include "test-mpq-helper.h"
 
 #include <stdio.h>
@@ -192,7 +193,7 @@ test_sectors(
         checksum = (uint32_t)adler32(0, packed + position, (uInt)size_packed);
         if (i == 0 && (corrupt & LIBMPQ_VERIFY_SECTOR_CRC))
             checksum ^= 1;
-        if (absent == 2)
+        if (absent == 2 || (absent == 3 && i != 0))
             checksum = i % 2 ? UINT32_MAX : 0;
         libmpq__store_le32(checksums + i * 4, checksum);
         if (encrypted)
@@ -245,7 +246,7 @@ test_sectors(
         uint32_t stored = UINT32_MAX;
         bits = UINT32_MAX;
         status = libmpq__block_verify(archive, number, i, &stored, &bits);
-        if (absent) {
+        if (absent && (absent != 3 || i != 0)) {
             REQUIRE(status == LIBMPQ_ERROR_EXIST && stored == 0 && bits == 0);
         } else {
             REQUIRE(status == 0 && stored == libmpq__load_le32(checksums + i * 4));
@@ -256,6 +257,29 @@ test_sectors(
     REQUIRE(check_block_error(archive, number, sectors, LIBMPQ_ERROR_EXIST) == 0);
     REQUIRE(check_block_error(archive, UINT32_MAX, 0, LIBMPQ_ERROR_EXIST) == 0);
     for (request = 0; request <= LIBMPQ_VERIFY_ALL; ++request) {
+        uint32_t checked = UINT32_MAX;
+        uint32_t unavailable = UINT32_MAX;
+        uint32_t expected_checked = request & ~LIBMPQ_VERIFY_RAW_MD5;
+        uint32_t expected_bits = request & corrupt;
+
+        if (!attributes)
+            expected_checked &= ~(LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5);
+        if (absent && absent != 3)
+            expected_checked &= ~LIBMPQ_VERIFY_SECTOR_CRC;
+        expected_bits &= expected_checked;
+        REQUIRE(
+            libmpq__file_verify_ex(archive, number, NULL, request, &checked, &unavailable, &bits) ==
+            0
+        );
+        REQUIRE(checked == expected_checked);
+        REQUIRE(
+            unavailable ==
+            ((request & ~checked) | (absent == 3 ? request & LIBMPQ_VERIFY_SECTOR_CRC : 0))
+        );
+        REQUIRE(bits == expected_bits);
+        REQUIRE((bits & ~checked) == 0 && (checked | unavailable) == request);
+    }
+    for (request = 0; request <= LIBMPQ_VERIFY_ALL; ++request) {
         bits = UINT32_MAX;
         status = libmpq__file_verify(archive, number, request, &bits);
         if (!attributes && (request & (LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5))) {
@@ -263,7 +287,7 @@ test_sectors(
             continue;
         }
         expected = request & corrupt;
-        if (absent)
+        if (absent && absent != 3)
             expected &= ~LIBMPQ_VERIFY_SECTOR_CRC;
         REQUIRE(status == 0 && bits == expected);
         REQUIRE((bits & ~request) == 0);
@@ -271,7 +295,7 @@ test_sectors(
     }
     REQUIRE(
         libmpq__file_read(archive, number, output, sizeof(output), &transferred) ==
-        ((!absent && (corrupt & LIBMPQ_VERIFY_SECTOR_CRC) != 0) ||
+        (((!absent || absent == 3) && (corrupt & LIBMPQ_VERIFY_SECTOR_CRC) != 0) ||
                  (attributes &&
                   (corrupt & (LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5)) != 0)
              ? LIBMPQ_ERROR_READ
@@ -365,8 +389,19 @@ test_sectors(
         failure.reads = 0;
         bits = UINT32_MAX;
         status = libmpq__file_verify(archive, number, LIBMPQ_VERIFY_SECTOR_CRC, &bits);
-        failure_restore(archive->source, &failure);
         REQUIRE(status == LIBMPQ_ERROR_READ && bits == 0 && failure.reads == 1);
+        {
+            uint32_t checked = UINT32_MAX;
+            uint32_t unavailable = UINT32_MAX;
+            failure.reads = 0;
+            REQUIRE(
+                libmpq__file_verify_ex(
+                    archive, number, NULL, LIBMPQ_VERIFY_ALL, &checked, &unavailable, &bits
+                ) == LIBMPQ_ERROR_READ
+            );
+            REQUIRE(checked == 0 && unavailable == 0 && bits == 0 && failure.reads == 1);
+        }
+        failure_restore(archive->source, &failure);
         REQUIRE(archive->mpq_file[number] == NULL);
     }
     if (!absent) {
@@ -530,6 +565,20 @@ test_writer_checksums(uint32_t version, uint32_t storage, size_t size, int mpqe)
         goto cleanup;
     }
     REQUIRE(libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &bits) == 0 && bits == 0);
+    {
+        uint32_t checked;
+        uint32_t unavailable;
+        REQUIRE(
+            libmpq__file_verify_ex(
+                archive, number, NULL, LIBMPQ_VERIFY_ALL, &checked, &unavailable, &bits
+            ) == 0
+        );
+        REQUIRE(
+            checked == ((LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5) |
+                        (eligible && size != 0 ? LIBMPQ_VERIFY_SECTOR_CRC : 0))
+        );
+        REQUIRE(unavailable == (LIBMPQ_VERIFY_ALL & ~checked) && bits == 0);
+    }
     REQUIRE(libmpq__file_read(archive, number, output, sizeof(output), &transferred) == 0);
     REQUIRE(transferred == (libmpq__off_t)size && memcmp(plain, output, size) == 0);
     if (eligible) {
@@ -630,9 +679,10 @@ cleanup:
  * its key is available. The inspection must leave that outer reference alive.
  */
 static int
-test_single_compression(void)
+test_single_compression(int fix_key)
 {
-    mpq_archive_create_options_s options = { 1, 1, 512, 0, 0 };
+    mpq_archive_create_options_s options = { 1, 2, 512, 0,
+                                             LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 };
     mpq_file_options_s file = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SINGLE |
                                     LIBMPQ_FILE_FLAG_ENCRYPTED,
                                 LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
@@ -646,6 +696,8 @@ test_single_compression(void)
     int result = 0;
     char path[256] = { 0 };
 
+    if (fix_key)
+        file.flags |= 0x00020000u;
     memset(plain, 'a', sizeof(plain));
     REQUIRE(test_temp_path(path, sizeof(path), "single-compression") == 0);
     REQUIRE(libmpq__archive_create(&archive, path, &options) == 0);
@@ -664,6 +716,35 @@ test_single_compression(void)
     stream = NULL;
     REQUIRE(libmpq__block_compression(archive, 0, 0, &method) == LIBMPQ_ERROR_DECRYPT);
     REQUIRE(method == 0 && archive->mpq_file[0] == NULL);
+    {
+        uint32_t checked = UINT32_MAX;
+        uint32_t unavailable = UINT32_MAX;
+        uint32_t mismatches = UINT32_MAX;
+        REQUIRE(
+            libmpq__file_verify_ex(
+                archive, 0, NULL, LIBMPQ_VERIFY_FILE_CRC32, &checked, &unavailable, &mismatches
+            ) == LIBMPQ_ERROR_DECRYPT
+        );
+        REQUIRE(checked == 0 && unavailable == 0 && mismatches == 0);
+        REQUIRE(
+            libmpq__file_verify_ex(
+                archive, 0, "payload", LIBMPQ_VERIFY_ALL, &checked, &unavailable, &mismatches
+            ) == 0
+        );
+        REQUIRE(checked == (LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5));
+        REQUIRE(unavailable == (LIBMPQ_VERIFY_SECTOR_CRC | LIBMPQ_VERIFY_RAW_MD5));
+        REQUIRE(mismatches == 0 && archive->mpq_file[0] == NULL);
+        REQUIRE(
+            libmpq__file_verify_ex(
+                archive, 0, "wrong", LIBMPQ_VERIFY_ALL, &checked, &unavailable, &mismatches
+            ) == LIBMPQ_ERROR_EXIST
+        );
+        REQUIRE(checked == 0 && unavailable == 0 && mismatches == 0);
+        REQUIRE(
+            libmpq__file_verify(archive, 0, LIBMPQ_VERIFY_FILE_CRC32, &mismatches) ==
+            LIBMPQ_ERROR_DECRYPT
+        );
+    }
     REQUIRE(libmpq__reader_offsets_acquire(archive, 0, "payload") == 0);
     REQUIRE(libmpq__block_compression(archive, 0, 0, &method) == 0);
     REQUIRE(method == LIBMPQ_COMPRESSION_ZLIB);
@@ -720,6 +801,441 @@ cleanup:
     return result;
 }
 
+/* Exercise output atomicity, empty checksums and circular metadata independently. */
+static int
+test_verification_coverage(uint32_t version)
+{
+    mpq_archive_create_options_s options = { version, 5, 512, 0,
+                                             LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 };
+    mpq_file_options_s secure = {
+        LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0, 1033, 2
+    };
+    mpq_archive_s *archive = NULL;
+    char path[256] = { 0 };
+    static const uint8_t crc_zero[] = { 0x9d, 0x0a, 0xd9, 0x6d };
+    uint8_t data[64];
+    uint32_t number;
+    uint32_t checked;
+    uint32_t unavailable;
+    uint32_t bits;
+    int32_t status;
+    int result = 0;
+
+    test_payload(data, sizeof(data), 71);
+    REQUIRE(test_temp_path(path, sizeof(path), "verify-coverage") == 0);
+    REQUIRE(libmpq__archive_create(&archive, path, &options) == 0);
+    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+        REQUIRE(libmpq__archive_raw_chunk_size_set(archive, 0) == 0);
+    REQUIRE(
+        libmpq__archive_sign(
+            archive, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+            sizeof(test_signature_private_key)
+        ) == 0
+    );
+    REQUIRE(crc32(0, crc_zero, sizeof(crc_zero)) == 0);
+    REQUIRE(
+        libmpq__archive_add_data(archive, "crc-zero.bin", crc_zero, sizeof(crc_zero), NULL) == 0
+    );
+    REQUIRE(libmpq__archive_add_data(archive, "empty", NULL, 0, NULL) == 0);
+    REQUIRE(libmpq__archive_add_data(archive, "secure.bin", data, sizeof(data), &secure) == 0);
+    status = libmpq__archive_close(archive);
+    archive = NULL;
+    REQUIRE(status == 0);
+    REQUIRE(libmpq__archive_open(&archive, path, 0) == 0);
+    REQUIRE(libmpq__file_number(archive, "crc-zero.bin", &number) == 0);
+    REQUIRE(libmpq__file_verify_ex(archive, number, NULL, 6, &checked, &unavailable, &bits) == 0);
+    REQUIRE(checked == 6 && unavailable == 0 && bits == 0);
+    REQUIRE(libmpq__file_number(archive, "empty", &number) == 0);
+    REQUIRE(
+        libmpq__file_verify_ex(
+            archive, number, NULL, LIBMPQ_VERIFY_ALL, &checked, &unavailable, &bits
+        ) == 0
+    );
+    REQUIRE(checked == 6 && unavailable == 9 && bits == 0);
+    REQUIRE(libmpq__file_number(archive, "(attributes)", &number) == 0);
+    REQUIRE(libmpq__file_verify_ex(archive, number, NULL, 6, &checked, &unavailable, &bits) == 0);
+    REQUIRE(checked == 0 && unavailable == 6 && bits == 0);
+    REQUIRE(libmpq__file_verify(archive, number, 2, &bits) == 0 && bits == 2);
+    REQUIRE(libmpq__file_number(archive, "(signature)", &number) == 0);
+    REQUIRE(libmpq__file_verify_ex(archive, number, NULL, 6, &checked, &unavailable, &bits) == 0);
+    REQUIRE(checked == 0 && unavailable == 6 && bits == 0);
+    REQUIRE(libmpq__file_verify(archive, number, 2, &bits) == 0 && bits == 2);
+    REQUIRE(libmpq__file_number_from_identity(archive, "secure.bin", 1033, 2, &number) == 0);
+    REQUIRE(
+        libmpq__file_verify_ex(archive, number, "secure.bin", 6, &checked, &unavailable, &bits) == 0
+    );
+    REQUIRE(checked == 6 && unavailable == 0 && bits == 0);
+    REQUIRE(archive->mpq_file[number] == NULL);
+    REQUIRE(
+        libmpq__file_verify_ex(archive, number, NULL, 6, &checked, &unavailable, &bits) ==
+        LIBMPQ_ERROR_DECRYPT
+    );
+    REQUIRE(checked == 0 && unavailable == 0 && bits == 0);
+    REQUIRE(
+        libmpq__file_verify_ex(archive, number, "empty", 6, &checked, &unavailable, &bits) ==
+        LIBMPQ_ERROR_EXIST
+    );
+    REQUIRE(checked == 0 && unavailable == 0 && bits == 0);
+    REQUIRE(libmpq__file_verify_ex(archive, number, NULL, 0, &checked, &unavailable, &bits) == 0);
+    REQUIRE(checked == 0 && unavailable == 0 && bits == 0);
+    checked = unavailable = bits = UINT32_MAX;
+    REQUIRE(
+        libmpq__file_verify_ex(archive, number, NULL, 16, &checked, &unavailable, &bits) ==
+        LIBMPQ_ERROR_FORMAT
+    );
+    REQUIRE(checked == 0 && unavailable == 0 && bits == 0);
+    checked = unavailable = bits = UINT32_MAX;
+    REQUIRE(
+        libmpq__file_verify_ex(archive, UINT32_MAX, NULL, 0, &checked, &unavailable, &bits) ==
+        LIBMPQ_ERROR_EXIST
+    );
+    REQUIRE(checked == 0 && unavailable == 0 && bits == 0);
+    checked = unavailable = UINT32_MAX;
+    REQUIRE(
+        libmpq__file_verify_ex(archive, number, NULL, 0, &checked, &unavailable, NULL) ==
+        LIBMPQ_ERROR_EXIST
+    );
+    REQUIRE(checked == 0 && unavailable == 0);
+cleanup:
+    if (archive != NULL)
+        (void)libmpq__archive_close(archive);
+    if (path[0] != 0)
+        remove(path);
+    return result;
+}
+
+/* Small wire images independently place tables, payloads and expected digest storage. */
+enum
+{
+    RAW_VALID,
+    RAW_CORRUPT,
+    RAW_START,
+    RAW_INTERIOR,
+    RAW_ORDER_START,
+    RAW_ORDER_INTERIOR,
+    RAW_END,
+    RAW_PARTIAL,
+    RAW_ZEROS,
+    RAW_PADDING,
+    RAW_SHARED,
+    RAW_EMPTY,
+    RAW_DELETE,
+    RAW_UNUSED,
+    RAW_ZERO_NEIGHBOR,
+    RAW_NESTED
+};
+
+typedef struct
+{
+    uint8_t bytes[1024];
+    size_t size;
+    uint64_t reads;
+    int fail;
+} raw_image_s;
+
+/* Exact callback reads also expose unwanted I/O during layout preprocessing. */
+static int32_t
+raw_image_read(void *context, libmpq__off_t offset, uint8_t *buffer, size_t size)
+{
+    raw_image_s *image = context;
+
+    if (image->fail || offset < 0 || (uint64_t)offset > image->size ||
+        size > image->size - (size_t)offset)
+        return LIBMPQ_ERROR_READ;
+    image->reads++;
+    memcpy(buffer, image->bytes + (size_t)offset, size);
+    return 0;
+}
+
+/* Deliberate conflicts retain correct structural digests and ordinary discovery. */
+static int
+raw_image_build(raw_image_s *image, unsigned mode, uint32_t chunk, size_t base)
+{
+    static const uint8_t digest_x[16] = { 0x9d, 0xd4, 0xe4, 0x61, 0x26, 0x8c, 0x80, 0x34,
+                                          0xf5, 0xc8, 0x56, 0x4e, 0x15, 0x5c, 0x67, 0xa6 };
+    uint8_t *header;
+    uint8_t *hashes;
+    uint8_t *blocks;
+    uint32_t offsets[3] = { 384, 401, 418 };
+    uint32_t lengths[3] = { 1, 1, 1 };
+    uint32_t flags[3] = { 0x81000000u, 0x81000000u, 0x81000000u };
+    size_t extent = 435;
+    mpq_md5_s md5;
+
+    memset(image, 0, sizeof(*image));
+    header = image->bytes + base;
+    hashes = header + 208;
+    blocks = header + 336;
+    memset(hashes, 0xff, 128);
+    for (uint32_t i = 0; i < 3; i++) {
+        header[offsets[i]] = 'x';
+        memcpy(header + offsets[i] + 1, digest_x, 16);
+    }
+    if (mode == RAW_CORRUPT || mode == RAW_START)
+        header[385] ^= 1;
+    if (mode == RAW_START || mode == RAW_ORDER_START || mode == RAW_ORDER_INTERIOR)
+        offsets[1] = 385;
+    if (mode == RAW_INTERIOR)
+        offsets[1] = 386;
+    if (mode == RAW_ORDER_START || mode == RAW_ORDER_INTERIOR) {
+        offsets[2] = 386;
+        if (mode == RAW_ORDER_INTERIOR) {
+            offsets[1] = 386;
+            offsets[2] = 385;
+        }
+    }
+    if (mode == RAW_END || mode == RAW_PARTIAL) {
+        extent = mode == RAW_END ? 385 : 393;
+        flags[1] = flags[2] = 0;
+    }
+    if (mode == RAW_ZEROS || mode == RAW_PADDING)
+        memset(header + 385, mode == RAW_ZEROS ? 0 : 'P', 16);
+    if (mode == RAW_SHARED)
+        offsets[1] = 384;
+    if (mode == RAW_EMPTY)
+        lengths[0] = 0;
+    if (mode == RAW_DELETE)
+        flags[0] |= LIBMPQ_FILE_FLAG_DELETE_MARKER;
+    if (mode == RAW_UNUSED) {
+        flags[1] = 0;
+        offsets[1] = 385;
+    }
+    if (mode == RAW_ZERO_NEIGHBOR) {
+        offsets[1] = 385;
+        lengths[1] = 0;
+    }
+    if (mode == RAW_NESTED) {
+        offsets[1] = 380;
+        lengths[1] = 20;
+        offsets[2] = 384;
+    }
+    for (uint32_t i = 0; i < 3; i++) {
+        uint32_t h1;
+        uint32_t h2;
+        uint32_t h3;
+        uint32_t slot;
+        uint32_t row = mode == RAW_ORDER_INTERIOR && i != 0 ? 3 - i : i;
+        char name[3] = { 'f', (char)('0' + i), 0 };
+
+        libmpq__file_hash(name, &h1, &h2, &h3);
+        slot = h1 % 8;
+        while (libmpq__load_le32(hashes + slot * 16 + 12) != UINT32_MAX)
+            slot = (slot + 1) % 8;
+        libmpq__store_le32(hashes + slot * 16, h2);
+        libmpq__store_le32(hashes + slot * 16 + 4, h3);
+        libmpq__store_le32(hashes + slot * 16 + 8, 0);
+        libmpq__store_le32(hashes + slot * 16 + 12, mode == RAW_SHARED && i == 1 ? 0 : row);
+        libmpq__store_le32(blocks + i * 16, offsets[i]);
+        libmpq__store_le32(blocks + i * 16 + 4, lengths[i]);
+        libmpq__store_le32(blocks + i * 16 + 8, lengths[i]);
+        libmpq__store_le32(blocks + i * 16 + 12, flags[i]);
+    }
+    TEST_CHECK(
+        libmpq__crypto_encrypt_block(
+            hashes, 128, libmpq__crypto_hash_string("(hash table)", 0x300)
+        ) == 0
+    );
+    TEST_CHECK(
+        libmpq__crypto_encrypt_block(
+            blocks, 48, libmpq__crypto_hash_string("(block table)", 0x300)
+        ) == 0
+    );
+    libmpq__store_le32(header, 0x1a51504d);
+    libmpq__store_le32(header + 4, 208);
+    libmpq__store_le32(header + 8, (uint32_t)extent);
+    libmpq__store_le16(header + 12, 3);
+    libmpq__store_le16(header + 14, 3);
+    libmpq__store_le32(header + 16, 208);
+    libmpq__store_le32(header + 20, 336);
+    libmpq__store_le32(header + 24, 8);
+    libmpq__store_le32(header + 28, 3);
+    libmpq__store_le64(header + 44, extent);
+    libmpq__store_le64(header + 68, 128);
+    libmpq__store_le64(header + 76, 48);
+    libmpq__store_le32(header + 108, chunk);
+    libmpq__md5_init(&md5);
+    libmpq__md5_update(&md5, blocks, 48);
+    libmpq__md5_final(&md5, header + 112);
+    libmpq__md5_init(&md5);
+    libmpq__md5_update(&md5, hashes, 128);
+    libmpq__md5_final(&md5, header + 128);
+    libmpq__md5_init(&md5);
+    libmpq__md5_update(&md5, header, 192);
+    libmpq__md5_final(&md5, header + 192);
+    image->size = base + extent;
+    return 0;
+}
+
+/* Legacy results are controls; extended failures must clear every coverage output. */
+static int
+test_raw_layout(unsigned mode, uint32_t chunk, size_t base)
+{
+    raw_image_s image;
+    mpq_archive_s *archive = NULL;
+    mpq_archive_s *clone = NULL;
+    struct mpq_raw_index *index;
+    uint32_t checked = UINT32_MAX;
+    uint32_t unavailable = UINT32_MAX;
+    uint32_t bits = UINT32_MAX;
+    uint32_t alias;
+    int malformed = mode == RAW_START || mode == RAW_INTERIOR || mode == RAW_ORDER_START ||
+                    mode == RAW_ORDER_INTERIOR || mode == RAW_END || mode == RAW_PARTIAL ||
+                    mode == RAW_NESTED;
+    uint32_t mismatch = mode == RAW_CORRUPT || mode == RAW_ZEROS || mode == RAW_PADDING ? 8 : 0;
+    uint32_t applicable = chunk != 0 && mode != RAW_EMPTY && mode != RAW_DELETE ? 8 : 0;
+    int32_t status;
+
+    TEST_CHECK(raw_image_build(&image, mode, chunk, base) == 0);
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &archive, &image, raw_image_read, (libmpq__off_t)image.size, -1, NULL
+        ) == 0
+    );
+    TEST_CHECK(archive->archive_offset == (libmpq__off_t)base);
+    TEST_CHECK(archive->raw_index == NULL);
+    status = libmpq__file_verify_ex(archive, 0, NULL, 8, &checked, &unavailable, &bits);
+    TEST_CHECK(status == (malformed && applicable ? LIBMPQ_ERROR_FORMAT : 0));
+    TEST_CHECK(checked == (malformed ? 0 : applicable));
+    TEST_CHECK(unavailable == (malformed ? 0 : 8u & ~applicable));
+    TEST_CHECK(bits == (malformed || !applicable ? 0 : mismatch));
+    status = libmpq__file_verify(archive, 0, 8, &bits);
+    TEST_CHECK(status == (mode == RAW_END || mode == RAW_PARTIAL ? LIBMPQ_ERROR_FORMAT : 0));
+    TEST_CHECK(bits == (mode == RAW_START || mismatch ? 8u : 0));
+    if (!malformed && applicable) {
+        index = archive->raw_index;
+        TEST_CHECK(index != NULL && index->references == 1);
+        TEST_CHECK(libmpq__archive_clone(&clone, archive) == 0);
+        TEST_CHECK(clone->raw_index == index && index->references == 2);
+        TEST_CHECK(libmpq__file_verify_ex(archive, 0, "f0", 8, &checked, &unavailable, &bits) == 0);
+        TEST_CHECK(archive->raw_index == index && index->references == 2);
+        TEST_CHECK(checked == 8 && unavailable == 0 && bits == mismatch);
+        if (mode == RAW_SHARED) {
+            TEST_CHECK(
+                libmpq__file_number_from_identity(archive, "f1", 0, 0, &alias) == 0 && alias == 0
+            );
+            TEST_CHECK(
+                libmpq__file_verify_ex(archive, alias, "f1", 8, &checked, &unavailable, &bits) == 0
+            );
+            TEST_CHECK(checked == 8 && unavailable == 0 && bits == 0);
+        }
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+        archive = NULL;
+        TEST_CHECK(index->references == 1);
+        TEST_CHECK(libmpq__file_verify_ex(clone, 0, NULL, 8, &checked, &unavailable, &bits) == 0);
+        TEST_CHECK(checked == 8 && unavailable == 0 && bits == mismatch);
+        TEST_CHECK(libmpq__archive_close(clone) == 0);
+    } else {
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+    }
+    return 0;
+}
+
+static size_t raw_allocation_size;
+
+/* Fail only the injected index allocation, without replacing process-global malloc. */
+static void *
+raw_allocation_fail(size_t size)
+{
+    raw_allocation_size = size;
+    return NULL;
+}
+
+/* Close the underlying adapter but still report its finalization error. */
+static int32_t
+raw_close_failure(void *context)
+{
+    read_failure_s *failure = context;
+
+    failure->reads++;
+    if (failure->backend.close != NULL)
+        (void)failure->backend.close(failure->backend.context);
+    return LIBMPQ_ERROR_CLOSE;
+}
+
+/* Cover failed construction, retries, shared lifetime and clone failure cleanup. */
+static int
+test_raw_index_failures(void)
+{
+    raw_image_s image;
+    mpq_archive_s *archive = NULL;
+    mpq_archive_s *clone = NULL;
+    struct mpq_raw_index *index;
+    uint32_t checked = UINT32_MAX;
+    uint32_t unavailable = UINT32_MAX;
+    uint32_t bits = UINT32_MAX;
+    uint64_t reads;
+    uint64_t old_offset;
+    uint32_t old_count;
+
+    TEST_CHECK(raw_image_build(&image, RAW_VALID, 17, 0) == 0);
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &archive, &image, raw_image_read, (libmpq__off_t)image.size, 0, NULL
+        ) == 0
+    );
+    reads = image.reads;
+    TEST_CHECK(
+        libmpq__verify_file_ex(
+            archive, 0, NULL, 8, &checked, &unavailable, &bits, raw_allocation_fail
+        ) == LIBMPQ_ERROR_MALLOC
+    );
+    TEST_CHECK(checked == 0 && unavailable == 0 && bits == 0 && archive->raw_index == NULL);
+    TEST_CHECK(
+        raw_allocation_size == sizeof(struct mpq_raw_index) + 9 * sizeof(mpq_raw_interval_s)
+    );
+    TEST_CHECK(image.reads == reads);
+    old_offset = archive->mpq_entry[1].offset;
+    archive->mpq_entry[1].offset = UINT64_MAX;
+    TEST_CHECK(
+        libmpq__verify_file_ex(archive, 0, NULL, 8, &checked, &unavailable, &bits, malloc) ==
+        LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(checked == 0 && unavailable == 0 && bits == 0 && archive->raw_index == NULL);
+    archive->mpq_entry[1].offset = old_offset;
+    old_count = archive->entry_count;
+    archive->entry_count = UINT32_MAX;
+    TEST_CHECK(
+        libmpq__verify_file_ex(
+            archive, 0, NULL, 8, &checked, &unavailable, &bits, raw_allocation_fail
+        ) == (((uint64_t)UINT32_MAX + 6 >
+               (SIZE_MAX - sizeof(struct mpq_raw_index)) / sizeof(mpq_raw_interval_s))
+                  ? LIBMPQ_ERROR_SIZE
+                  : LIBMPQ_ERROR_MALLOC)
+    );
+    TEST_CHECK(checked == 0 && unavailable == 0 && bits == 0 && archive->raw_index == NULL);
+    archive->entry_count = old_count;
+    TEST_CHECK(libmpq__file_verify_ex(archive, 0, NULL, 8, &checked, &unavailable, &bits) == 0);
+    TEST_CHECK(checked == 8 && unavailable == 0 && bits == 0);
+    index = archive->raw_index;
+    index->references = SIZE_MAX;
+    TEST_CHECK(libmpq__archive_clone(&clone, archive) == LIBMPQ_ERROR_SIZE && clone == NULL);
+    index->references = 1;
+    image.fail = 1;
+    TEST_CHECK(
+        libmpq__file_verify_ex(archive, 0, "f0", 8, &checked, &unavailable, &bits) ==
+        LIBMPQ_ERROR_READ
+    );
+    TEST_CHECK(checked == 0 && unavailable == 0 && bits == 0);
+    TEST_CHECK(archive->raw_index == index && index->references == 1);
+    image.fail = 0;
+    TEST_CHECK(
+        libmpq__verify_file_ex(
+            archive, 0, NULL, 8, &checked, &unavailable, &bits, raw_allocation_fail
+        ) == 0
+    );
+    TEST_CHECK(checked == 8 && unavailable == 0 && bits == 0 && archive->raw_index == index);
+    {
+        read_failure_s failure;
+
+        failure.reads = 0;
+        failure_install(archive->source, &failure, fail_read);
+        archive->source->backend.close = raw_close_failure;
+        TEST_CHECK(libmpq__archive_close(archive) == LIBMPQ_ERROR_CLOSE);
+        TEST_CHECK(failure.reads == 1);
+    }
+    return 0;
+}
+
 int
 main(void)
 {
@@ -741,8 +1257,20 @@ main(void)
                                         LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED,
                                         LIBMPQ_FILE_FLAG_IMPLODE | LIBMPQ_FILE_FLAG_ENCRYPTED };
 
+    for (unsigned mode = RAW_VALID; mode <= RAW_NESTED; ++mode)
+        for (size_t base = 0; base <= 512; base += 512)
+            TEST_CHECK(test_raw_layout(mode, 17, base) == 0);
+    for (size_t i = 0; i < 4; i++) {
+        static const uint32_t chunks[] = { 1, 17, 0x4000, UINT32_MAX };
+        TEST_CHECK(test_raw_layout(RAW_VALID, chunks[i], 0) == 0);
+    }
+    TEST_CHECK(test_raw_layout(RAW_VALID, 0, 0) == 0);
+    TEST_CHECK(test_raw_index_failures() == 0);
     TEST_CHECK(check_block_error(NULL, 0, 0, LIBMPQ_ERROR_EXIST) == 0);
-    TEST_CHECK(test_single_compression() == 0);
+    for (version = 0; version <= 3; ++version)
+        TEST_CHECK(test_verification_coverage(version) == 0);
+    TEST_CHECK(test_single_compression(0) == 0);
+    TEST_CHECK(test_single_compression(1) == 0);
     TEST_CHECK(test_short_encrypted_stream() == 0);
     TEST_CHECK(libmpq__block_compression(NULL, 0, 0, &value) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(value == 0);
@@ -762,7 +1290,7 @@ main(void)
                 for (corrupt = 0; corrupt <= (LIBMPQ_VERIFY_ALL & ~LIBMPQ_VERIFY_RAW_MD5);
                      ++corrupt)
                     TEST_CHECK(test_sectors(version, encrypted, compressed, corrupt, 1, 0) == 0);
-    for (absent = 0; absent <= 2; ++absent)
+    for (absent = 0; absent <= 3; ++absent)
         TEST_CHECK(test_sectors(1, 1, 1, LIBMPQ_VERIFY_SECTOR_CRC, 0, absent) == 0);
     TEST_CHECK(test_sectors(1, 0, 1, 0, 0, 0) == 0);
     for (version = 0; version <= 1; ++version)

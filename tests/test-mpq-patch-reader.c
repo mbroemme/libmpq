@@ -3527,6 +3527,17 @@ test_v4_views(uint32_t base_version, uint32_t layer_version, int bet_only, int w
         TEST_CHECK(
             libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) == 0 && bits == 0
         );
+        {
+            uint32_t checked;
+            uint32_t unavailable;
+            TEST_CHECK(
+                libmpq__file_verify_ex(
+                    archive, number, "keep.bin", LIBMPQ_VERIFY_ALL, &checked, &unavailable, &bits
+                ) == 0
+            );
+            TEST_CHECK((checked | unavailable) == LIBMPQ_VERIFY_ALL && bits == 0);
+            TEST_CHECK((unavailable & LIBMPQ_VERIFY_RAW_MD5) != 0);
+        }
         if (!bet_only) {
             TEST_CHECK(
                 libmpq__file_attributes(archive, number, &attributes) == 0 &&

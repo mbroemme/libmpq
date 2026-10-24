@@ -587,6 +587,17 @@ test_v3_mixed_rows(uint32_t classic_count, uint32_t bet_count, int live_sources,
                 exact == 0
             );
             TEST_CHECK(libmpq__file_identity(archive, name, 1, &identity) == LIBMPQ_ERROR_EXIST);
+            if (!attributes) {
+                uint32_t checked;
+                uint32_t unavailable;
+                uint32_t mismatches;
+                TEST_CHECK(
+                    libmpq__file_verify_ex(
+                        archive, number, name, 6, &checked, &unavailable, &mismatches
+                    ) == 0
+                );
+                TEST_CHECK(checked == 0 && unavailable == 6 && mismatches == 0);
+            }
         }
         if (i < classic_count && !(live_sources && i == 1)) {
             TEST_CHECK(snprintf(name, sizeof(name), "classic-%u.bin", i) > 0);
@@ -1719,6 +1730,17 @@ test_filename_provenance(uint32_t version)
                 ) == 0 &&
                 number == identity.file_number
             );
+            {
+                uint32_t checked;
+                uint32_t unavailable;
+                uint32_t mismatches;
+                TEST_CHECK(
+                    libmpq__file_verify_ex(
+                        archive, number, identities[i].name, 6, &checked, &unavailable, &mismatches
+                    ) == 0
+                );
+                TEST_CHECK((checked | unavailable) == 6 && mismatches == 0);
+            }
             TEST_CHECK(
                 libmpq__stream_open_name_identity(
                     archive, identities[i].name, identities[i].locale, identities[i].platform,
@@ -2673,6 +2695,22 @@ test_v4_raw_md5(uint32_t chunk_size, int compressed, int encrypted, int single, 
     TEST_CHECK(
         libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) == 0 && bits == 0
     );
+    {
+        uint32_t checked;
+        uint32_t unavailable;
+        TEST_CHECK(
+            libmpq__file_verify_ex(
+                archive, number, "folder/payload.bin", LIBMPQ_VERIFY_ALL, &checked, &unavailable,
+                &bits
+            ) == 0
+        );
+        TEST_CHECK(
+            checked == (6u | (chunk_size != 0 ? LIBMPQ_VERIFY_RAW_MD5 : 0) |
+                        (compressed && !single ? LIBMPQ_VERIFY_SECTOR_CRC : 0))
+        );
+        TEST_CHECK(unavailable == (LIBMPQ_VERIFY_ALL & ~checked) && bits == 0);
+        TEST_CHECK(archive->mpq_file[number] == NULL);
+    }
     TEST_CHECK(libmpq__stream_open_name(archive, "folder/payload.bin", &stream) == 0);
 
     /* Named streams own independent clones; logical checks need this archive's key cache. */
@@ -2704,6 +2742,18 @@ test_v4_raw_md5(uint32_t chunk_size, int compressed, int encrypted, int single, 
         TEST_CHECK(source.reads == reads);
     }
     if (chunk_size == 0) {
+        uint32_t checked;
+        uint32_t unavailable;
+
+        /* A live next member begins at required raw storage: malformed, not unavailable. */
+        archive->mpq_header_v4.raw_chunk_size = 17;
+        TEST_CHECK(
+            libmpq__file_verify_ex(
+                archive, number, NULL, LIBMPQ_VERIFY_RAW_MD5, &checked, &unavailable, &bits
+            ) == LIBMPQ_ERROR_FORMAT
+        );
+        TEST_CHECK(checked == 0 && unavailable == 0 && bits == 0);
+        archive->mpq_header_v4.raw_chunk_size = 0;
         TEST_CHECK(libmpq__archive_close(archive) == 0);
         return 0;
     }
@@ -2729,6 +2779,19 @@ test_v4_raw_md5(uint32_t chunk_size, int compressed, int encrypted, int single, 
             libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) == 0 &&
             bits == LIBMPQ_VERIFY_RAW_MD5
         );
+        {
+            uint32_t checked;
+            uint32_t unavailable;
+            TEST_CHECK(
+                libmpq__file_verify_ex(
+                    archive, number, NULL, LIBMPQ_VERIFY_RAW_MD5, &checked, &unavailable, &bits
+                ) == 0
+            );
+            TEST_CHECK(
+                checked == LIBMPQ_VERIFY_RAW_MD5 && unavailable == 0 &&
+                bits == LIBMPQ_VERIFY_RAW_MD5
+            );
+        }
         if (i == 3)
             TEST_CHECK(
                 libmpq__file_verify(
@@ -2744,6 +2807,16 @@ test_v4_raw_md5(uint32_t chunk_size, int compressed, int encrypted, int single, 
         libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) == LIBMPQ_ERROR_READ &&
         bits == 0
     );
+    {
+        uint32_t checked = UINT32_MAX;
+        uint32_t unavailable = UINT32_MAX;
+        TEST_CHECK(
+            libmpq__file_verify_ex(
+                archive, number, NULL, LIBMPQ_VERIFY_RAW_MD5, &checked, &unavailable, &bits
+            ) == LIBMPQ_ERROR_READ
+        );
+        TEST_CHECK(checked == 0 && unavailable == 0 && bits == 0);
+    }
     source.fail_at = base + entry->offset;
     TEST_CHECK(
         libmpq__file_verify(archive, number, LIBMPQ_VERIFY_RAW_MD5, &bits) == LIBMPQ_ERROR_READ &&
@@ -2770,6 +2843,16 @@ test_v4_raw_md5(uint32_t chunk_size, int compressed, int encrypted, int single, 
                 LIBMPQ_ERROR_FORMAT &&
             bits == 0
         );
+        {
+            uint32_t checked = UINT32_MAX;
+            uint32_t unavailable = UINT32_MAX;
+            TEST_CHECK(
+                libmpq__file_verify_ex(
+                    archive, number, NULL, LIBMPQ_VERIFY_RAW_MD5, &checked, &unavailable, &bits
+                ) == LIBMPQ_ERROR_FORMAT
+            );
+            TEST_CHECK(checked == 0 && unavailable == 0 && bits == 0);
+        }
         archive->mpq_header_v3.archive_size = extent;
         archive->file_size = base + digest_offset + chunks * 16 - 1;
         TEST_CHECK(
@@ -3318,6 +3401,19 @@ test_v4_mpqe_read_only(int raw, int embedded)
         ) == 0
     );
     TEST_CHECK(libmpq__file_number(archive, "folder/payload.bin", &number) == 0);
+    {
+        uint32_t checked;
+        uint32_t unavailable;
+        uint32_t mismatches;
+        TEST_CHECK(
+            libmpq__file_verify_ex(
+                archive, number, "folder/payload.bin", LIBMPQ_VERIFY_ALL, &checked, &unavailable,
+                &mismatches
+            ) == 0
+        );
+        TEST_CHECK((checked | unavailable) == LIBMPQ_VERIFY_ALL && mismatches == 0);
+    }
+
     TEST_CHECK(libmpq__stream_open_name(archive, "folder/payload.bin", &stream) == 0);
     if (raw) {
         uint32_t bits = UINT32_MAX;

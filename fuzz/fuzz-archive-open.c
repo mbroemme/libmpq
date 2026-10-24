@@ -111,6 +111,17 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             libmpq__file_size_packed(archive, number, &packed) == 0 && unpacked >= 0 &&
             unpacked <= 65536 && packed >= 0 && packed <= 65536 &&
             libmpq__file_flags(archive, number, &flags) == 0) {
+            uint32_t checked;
+            uint32_t unavailable;
+            uint32_t mismatches;
+            int32_t status = libmpq__file_verify_ex(
+                archive, number, "overview.txt", LIBMPQ_VERIFY_ALL, &checked, &unavailable,
+                &mismatches
+            );
+            if ((status != 0 && (checked | unavailable | mismatches) != 0) ||
+                (status == 0 &&
+                 ((checked | unavailable) != LIBMPQ_VERIFY_ALL || (mismatches & ~checked) != 0)))
+                abort();
             if ((flags & LIBMPQ_FILE_FLAG_PATCH_FILE) != 0) {
                 libmpq__off_t payload_size;
 

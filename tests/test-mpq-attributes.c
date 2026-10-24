@@ -186,6 +186,19 @@ test_roundtrip(uint32_t version, uint32_t flags, int mpqe)
         (flags ? 0 : LIBMPQ_ERROR_EXIST)
     );
     REQUIRE(found == 0);
+    {
+        uint32_t checked;
+        uint32_t unavailable;
+        uint32_t expected = ((flags & 1) ? LIBMPQ_VERIFY_FILE_CRC32 : 0) |
+                            ((flags & 4) ? LIBMPQ_VERIFY_FILE_MD5 : 0);
+        REQUIRE(
+            libmpq__file_verify_ex(
+                archive, number, NULL, LIBMPQ_VERIFY_ALL, &checked, &unavailable, &found
+            ) == 0
+        );
+        REQUIRE(checked == expected && unavailable == (LIBMPQ_VERIFY_ALL & ~expected));
+        REQUIRE(found == 0);
+    }
     REQUIRE(libmpq__file_verify(archive, number, 0, &found) == 0 && found == 0);
     REQUIRE(libmpq__file_verify(archive, number, 16, &found) == LIBMPQ_ERROR_FORMAT && found == 0);
     REQUIRE(libmpq__file_read(archive, number, output, sizeof(output), &transferred) == 0);
@@ -280,6 +293,18 @@ test_manual(int malformed, uint32_t storage)
         (malformed ? LIBMPQ_ERROR_FORMAT : 0)
     );
     REQUIRE(flags == (malformed ? 0 : LIBMPQ_VERIFY_FILE_CRC32));
+    {
+        uint32_t checked = UINT32_MAX;
+        uint32_t unavailable = UINT32_MAX;
+        REQUIRE(
+            libmpq__file_verify_ex(
+                archive, number, NULL, LIBMPQ_VERIFY_ALL, &checked, &unavailable, &flags
+            ) == (malformed ? LIBMPQ_ERROR_FORMAT : 0)
+        );
+        REQUIRE(checked == (malformed ? 0 : LIBMPQ_VERIFY_FILE_CRC32));
+        REQUIRE(unavailable == (malformed ? 0 : (LIBMPQ_VERIFY_ALL & ~checked)));
+        REQUIRE(flags == (malformed ? 0 : LIBMPQ_VERIFY_FILE_CRC32));
+    }
     REQUIRE(
         libmpq__file_read(archive, number, output, 3, &transferred) ==
         (malformed ? 0 : LIBMPQ_ERROR_READ)
@@ -431,6 +456,17 @@ test_zero_md5_placeholder(void)
     REQUIRE(libmpq__file_attributes(archive, number, &attributes) == 0);
     REQUIRE(attributes.flags == LIBMPQ_ATTRIBUTE_CRC32);
     REQUIRE(memcmp(attributes.md5, zero, sizeof(zero)) == 0);
+    {
+        uint32_t checked;
+        uint32_t unavailable;
+        REQUIRE(
+            libmpq__file_verify_ex(
+                archive, number, NULL, LIBMPQ_VERIFY_ALL, &checked, &unavailable, &mismatches
+            ) == 0
+        );
+        REQUIRE(checked == LIBMPQ_VERIFY_FILE_CRC32);
+        REQUIRE(unavailable == (LIBMPQ_VERIFY_ALL & ~checked) && mismatches == 0);
+    }
     mismatches = UINT32_MAX;
     REQUIRE(libmpq__file_verify(archive, number, LIBMPQ_VERIFY_ALL, &mismatches) == 0);
     REQUIRE(mismatches == 0);
