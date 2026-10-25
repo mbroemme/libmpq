@@ -153,6 +153,7 @@ public final class LibmpqNative {
     private static final MethodHandle FILE_VERIFY_EX;
     private static final MethodHandle ARCHIVE_SIGNATURES;
     private static final MethodHandle ARCHIVE_VERIFY;
+    private static final MethodHandle ARCHIVE_VERIFY_EX;
     private static final MethodHandle ARCHIVE_SIGN;
     private static final MethodHandle BLOCK_VERIFY;
     private static final MethodHandle BLOCK_SIZE_UNPACKED;
@@ -168,6 +169,8 @@ public final class LibmpqNative {
         ARCHIVE_VERIFY = function(linker, lookup, "libmpq__archive_verify",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS,
                                   C_SIZE_T, ValueLayout.ADDRESS));
+        ARCHIVE_VERIFY_EX = function(linker, lookup, "libmpq__archive_verify_ex", FunctionDescriptor.of(C_INT,
+            ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
         ARCHIVE_SIGN = function(linker, lookup, "libmpq__archive_sign",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, C_INT, ValueLayout.ADDRESS, C_SIZE_T));
         FILE_ATTRIBUTES = function(linker, lookup, "libmpq__file_attributes",
@@ -568,6 +571,11 @@ public final class LibmpqNative {
     public static int archiveVerify(MemorySegment archive, int flags, MemorySegment key,
                                     long size, MemorySegment mismatches) {
         return callInt(ARCHIVE_VERIFY, archive, flags, key, nativeSizeT(size), mismatches);
+    }
+
+    public static int archiveVerifyEx(MemorySegment archive, int flags, MemorySegment checked,
+                                     MemorySegment unavailable, MemorySegment mismatches) {
+        return callInt(ARCHIVE_VERIFY_EX, archive, flags, checked, unavailable, mismatches);
     }
 
     public static int archiveSign(MemorySegment archive, int flags, MemorySegment key, long size) {

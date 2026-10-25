@@ -43,6 +43,15 @@ public final class Mpq {
     /** Request raw stored MPQ v4 member chunk MD5 comparison. */
     public static final int VERIFY_RAW_MD5 = 0x8;
     /** All available sector, logical-file and raw-member checks. */
+    public static final int VERIFY_METADATA_HEADER_MD5 = 0x00000100;
+    public static final int VERIFY_METADATA_HASH_MD5 = 0x00000200;
+    public static final int VERIFY_METADATA_BLOCK_MD5 = 0x00000400;
+    public static final int VERIFY_METADATA_HI_BLOCK_MD5 = 0x00000800;
+    public static final int VERIFY_METADATA_HET_MD5 = 0x00001000;
+    public static final int VERIFY_METADATA_BET_MD5 = 0x00002000;
+    public static final int VERIFY_METADATA_HET_RAW_MD5 = 0x00004000;
+    public static final int VERIFY_METADATA_BET_RAW_MD5 = 0x00008000;
+    public static final int VERIFY_METADATA_ALL = 0x0000ff00;
     public static final int VERIFY_ALL =
         VERIFY_SECTOR_CRC | VERIFY_FILE_CRC32 | VERIFY_FILE_MD5 | VERIFY_RAW_MD5;
     public static final int SIGNATURE_WEAK = 0x00000001;

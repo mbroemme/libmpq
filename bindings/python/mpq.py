@@ -49,6 +49,15 @@ VERIFY_FILE_CRC32 = 0x02
 VERIFY_FILE_MD5 = 0x04
 VERIFY_RAW_MD5 = 0x08
 VERIFY_ALL = VERIFY_SECTOR_CRC | VERIFY_FILE_CRC32 | VERIFY_FILE_MD5 | VERIFY_RAW_MD5
+VERIFY_METADATA_HEADER_MD5 = 0x00000100
+VERIFY_METADATA_HASH_MD5 = 0x00000200
+VERIFY_METADATA_BLOCK_MD5 = 0x00000400
+VERIFY_METADATA_HI_BLOCK_MD5 = 0x00000800
+VERIFY_METADATA_HET_MD5 = 0x00001000
+VERIFY_METADATA_BET_MD5 = 0x00002000
+VERIFY_METADATA_HET_RAW_MD5 = 0x00004000
+VERIFY_METADATA_BET_RAW_MD5 = 0x00008000
+VERIFY_METADATA_ALL = 0x0000ff00
 SIGNATURE_WEAK = 0x01
 SIGNATURE_STRONG = 0x02
 COMPRESSION_POLICY_STANDARD = 0
@@ -307,6 +316,8 @@ _configure("libmpq__archive_attributes", ctypes.c_int32, _VOID_PTR, ctypes.POINT
 _configure("libmpq__archive_signatures", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__archive_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR,
            ctypes.c_size_t, ctypes.POINTER(ctypes.c_uint32))
+_configure("libmpq__archive_verify_ex", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32,
+           ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32))
 _configure("libmpq__archive_sign", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR, ctypes.c_size_t)
 _configure("libmpq__file_attributes", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.POINTER(_FileAttributes))
 _configure("libmpq__file_verify", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
@@ -1500,6 +1511,17 @@ class Archive:
         else:
             _identity_call("libmpq__stream_open_name", selected, self._mpq, _as_bytes(member), ctypes.byref(stream))
         return MpqStream(stream, self._source_state)
+
+    def verify_result(self, flags=VERIFY_METADATA_ALL):
+        """Compare stored archive metadata against opened references, not signatures."""
+        self._ensure_open()
+        if not isinstance(flags, int) or not 0 <= flags <= 0xffffffff:
+            raise ValueError("verify flags must be an unsigned 32-bit integer")
+        checked, unavailable, mismatches = (ctypes.c_uint32() for _ in range(3))
+        libmpq.libmpq__archive_verify_ex(
+            self._mpq, flags, ctypes.byref(checked), ctypes.byref(unavailable),
+            ctypes.byref(mismatches))
+        return VerificationResult(checked.value, unavailable.value, mismatches.value)
 
     def verify(self, public_key, signature_type=SIGNATURE_WEAK):
         """Return mismatch bits using a weak 128-byte or strong 512-byte public key."""

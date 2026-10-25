@@ -172,6 +172,15 @@ enum VERIFY_SECTOR_CRC = 0x1u;
 enum VERIFY_FILE_CRC32 = 0x2u;
 enum VERIFY_FILE_MD5 = 0x4u;
 enum VERIFY_RAW_MD5 = 0x8u;
+enum VERIFY_METADATA_HEADER_MD5 = 0x00000100u;
+enum VERIFY_METADATA_HASH_MD5 = 0x00000200u;
+enum VERIFY_METADATA_BLOCK_MD5 = 0x00000400u;
+enum VERIFY_METADATA_HI_BLOCK_MD5 = 0x00000800u;
+enum VERIFY_METADATA_HET_MD5 = 0x00001000u;
+enum VERIFY_METADATA_BET_MD5 = 0x00002000u;
+enum VERIFY_METADATA_HET_RAW_MD5 = 0x00004000u;
+enum VERIFY_METADATA_BET_RAW_MD5 = 0x00008000u;
+enum VERIFY_METADATA_ALL = 0x0000ff00u;
 enum VERIFY_ALL = VERIFY_SECTOR_CRC | VERIFY_FILE_CRC32 | VERIFY_FILE_MD5 | VERIFY_RAW_MD5;
 enum SIGNATURE_WEAK = 0x00000001u;
 enum SIGNATURE_STRONG = 0x00000002u;
@@ -181,6 +190,15 @@ alias LIBMPQ_VERIFY_SECTOR_CRC = VERIFY_SECTOR_CRC;
 alias LIBMPQ_VERIFY_FILE_CRC32 = VERIFY_FILE_CRC32;
 alias LIBMPQ_VERIFY_FILE_MD5 = VERIFY_FILE_MD5;
 alias LIBMPQ_VERIFY_RAW_MD5 = VERIFY_RAW_MD5;
+alias LIBMPQ_VERIFY_METADATA_HEADER_MD5 = VERIFY_METADATA_HEADER_MD5;
+alias LIBMPQ_VERIFY_METADATA_HASH_MD5 = VERIFY_METADATA_HASH_MD5;
+alias LIBMPQ_VERIFY_METADATA_BLOCK_MD5 = VERIFY_METADATA_BLOCK_MD5;
+alias LIBMPQ_VERIFY_METADATA_HI_BLOCK_MD5 = VERIFY_METADATA_HI_BLOCK_MD5;
+alias LIBMPQ_VERIFY_METADATA_HET_MD5 = VERIFY_METADATA_HET_MD5;
+alias LIBMPQ_VERIFY_METADATA_BET_MD5 = VERIFY_METADATA_BET_MD5;
+alias LIBMPQ_VERIFY_METADATA_HET_RAW_MD5 = VERIFY_METADATA_HET_RAW_MD5;
+alias LIBMPQ_VERIFY_METADATA_BET_RAW_MD5 = VERIFY_METADATA_BET_RAW_MD5;
+alias LIBMPQ_VERIFY_METADATA_ALL = VERIFY_METADATA_ALL;
 alias LIBMPQ_VERIFY_ALL = VERIFY_ALL;
 
 /** 40-byte naturally aligned native result; unavailable/reserved fields are zero. */
@@ -237,6 +255,8 @@ extern(C) {
     /** Optional metadata queries and explicit writer FILETIME. */
     int libmpq__archive_attributes(mpq_archive_s* archive, uint* flags);
     int libmpq__archive_signatures(mpq_archive_s* archive, uint* signatures);
+    int libmpq__archive_verify_ex(mpq_archive_s* archive, uint flags,
+        uint* checked, uint* unavailable, uint* mismatches);
     int libmpq__archive_verify(mpq_archive_s* archive, uint flags,
                                const(ubyte)* key, size_t keySize, uint* mismatches);
     int libmpq__archive_sign(mpq_archive_s* archive, uint type,

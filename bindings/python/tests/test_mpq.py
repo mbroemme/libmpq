@@ -1769,3 +1769,68 @@ def test_verification_filename_key_context(tmp_path, version):
         assert entry.verify_result(6, filename="voice.bin") == mpq.VerificationResult(6, 0, 0)
         with pytest.raises(mpq.LibmpqDecryptError):
             entry.verify(6)
+
+
+@pytest.mark.parametrize("version", range(1, 5))
+def test_archive_verification_result(version):
+    source = io.BytesIO((FIXTURES / f"mpq-v{version}-features.mpq").read_bytes())
+    with mpq.Archive.open_io(source, source.getbuffer().nbytes) as archive:
+        result = archive.verify_result()
+        assert result.checked | result.unavailable == mpq.VERIFY_METADATA_ALL
+        assert not result.checked & result.unavailable
+        assert result.mismatches == 0
+        if version < 4:
+            assert result.checked == 0
+        else:
+            assert result.checked & mpq.VERIFY_METADATA_HEADER_MD5
+            source.getbuffer()[192] ^= 1
+            changed = archive.verify_result(mpq.VERIFY_METADATA_HEADER_MD5)
+            assert changed == mpq.VerificationResult(0x100, 0, 0x100)
+            source.getbuffer()[192] ^= 1
+        assert archive.verify_result(0) == mpq.VerificationResult(0, 0, 0)
+        with pytest.raises(mpq.LibmpqFormatError):
+            archive.verify_result(mpq.VERIFY_ALL)
+        with pytest.raises(ValueError):
+            archive.verify_result(-1)
+    with pytest.raises(mpq.LibmpqError):
+        archive.verify_result()
+
+
+def test_archive_metadata_independent_md5():
+    wire = (FIXTURES / "mpq-v4-features.mpq").read_bytes()
+    assert hashlib.md5(wire[:192]).digest() == wire[192:208]
+    hash_low, block_low = struct.unpack_from("<II", wire, 16)
+    high_offset, hash_high, block_high = struct.unpack_from("<QHH", wire, 32)
+    bet, het = struct.unpack_from("<QQ", wire, 52)
+    positions = [hash_low | hash_high << 32, block_low | block_high << 32,
+                 high_offset, het, bet]
+    sizes = struct.unpack_from("<QQQQQ", wire, 68)
+    reference_offsets = [128, 112, 144, 176, 160]
+    expected_checked = mpq.VERIFY_METADATA_HEADER_MD5
+    raw_size = struct.unpack_from("<I", wire, 108)[0]
+    for index, (position, size, reference) in enumerate(zip(positions, sizes, reference_offsets)):
+        expected = wire[reference:reference + 16]
+        if position and expected != bytes(16):
+            assert hashlib.md5(wire[position:position + size]).digest() == expected
+            expected_checked |= 0x200 << index
+        if index >= 3 and position and size and raw_size:
+            for chunk_index, offset in enumerate(range(0, size, raw_size)):
+                actual = hashlib.md5(wire[position + offset:position + min(size, offset + raw_size)]).digest()
+                reference = position + size + 16 * chunk_index
+                assert actual == wire[reference:reference + 16]
+            expected_checked |= 0x4000 << (index - 3)
+    with mpq.Archive.open_io(io.BytesIO(wire), len(wire)) as archive:
+        assert archive.verify_result() == mpq.VerificationResult(
+            expected_checked, mpq.VERIFY_METADATA_ALL & ~expected_checked, 0)
+    # Explicit optional hi-block storage yields all eight available checks.
+    extended = bytearray(wire)
+    high_position = len(extended)
+    high_table = bytes(2 * struct.unpack_from("<I", wire, 28)[0])
+    extended.extend(high_table)
+    struct.pack_into("<Q", extended, 32, high_position)
+    struct.pack_into("<Q", extended, 44, len(extended))
+    struct.pack_into("<Q", extended, 84, len(high_table))
+    extended[144:160] = hashlib.md5(high_table).digest()
+    extended[192:208] = hashlib.md5(extended[:192]).digest()
+    with mpq.Archive.open_io(io.BytesIO(extended), len(extended)) as archive:
+        assert archive.verify_result() == mpq.VerificationResult(mpq.VERIFY_METADATA_ALL, 0, 0)

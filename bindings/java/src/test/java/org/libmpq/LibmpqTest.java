@@ -1127,6 +1127,47 @@ class LibmpqTest {
         }
     }
 
+    @Test
+    void archiveMetadataCoverage() throws Exception {
+        for (int version = 1; version <= 4; ++version) {
+            Path fixture = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures",
+                                   "mpq-v" + version + "-features.mpq");
+            try (Archive archive = Archive.open(fixture)) {
+                var result = archive.verifyResult();
+                assertEquals(Mpq.VERIFY_METADATA_ALL, result.checked() | result.unavailable());
+                assertEquals(0, result.checked() & result.unavailable());
+                assertEquals(0, result.mismatches());
+                if (version < 4) assertEquals(0, result.checked());
+                else assertTrue((result.checked() & Mpq.VERIFY_METADATA_HEADER_MD5) != 0);
+                assertEquals(new Archive.VerificationResult(0, 0, 0), archive.verifyResult(0));
+                assertThrows(LibmpqException.class, () -> archive.verifyResult(Mpq.VERIFY_ALL));
+            }
+        }
+    }
+
+    @Test
+    void archiveMetadataSourceFailures(@TempDir Path directory) throws Exception {
+        Path fixture = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures",
+                               "mpq-v4-features.mpq");
+        Path working = directory.resolve("metadata.mpq");
+        Files.copy(fixture, working);
+        try (var channel = new FailingChannel(Files.newByteChannel(working,
+                java.nio.file.StandardOpenOption.READ, java.nio.file.StandardOpenOption.WRITE))) {
+            channel.fail = false;
+            try (Archive archive = Archive.openSource(channel, "metadata.mpq")) {
+                channel.position(192);
+                byte[] original = new byte[1];
+                channel.read(ByteBuffer.wrap(original));
+                channel.position(192);
+                channel.write(ByteBuffer.wrap(new byte[] { (byte)(original[0] ^ 1) }));
+                assertEquals(new Archive.VerificationResult(0x100, 0, 0x100),
+                             archive.verifyResult(Mpq.VERIFY_METADATA_HEADER_MD5));
+                channel.fail = true;
+                assertThrows(LibmpqException.class, () -> archive.verifyResult());
+            }
+        }
+    }
+
     /** Resolves a Storm hash and reads a known fixture through the facade. */
     @Test
     void hashesAndReadsFixture() throws Exception {
@@ -1255,9 +1296,13 @@ class LibmpqTest {
     /** Channel wrapper that proves Java read failures do not escape the FFM upcall. */
     private static final class FailingChannel implements SeekableByteChannel {
         private final SeekableByteChannel delegate;
+        private boolean fail = true;
 
         FailingChannel(SeekableByteChannel delegate) { this.delegate = delegate; }
-        @Override public int read(ByteBuffer target) throws IOException { throw new IOException("failure"); }
+        @Override public int read(ByteBuffer target) throws IOException {
+            if (fail) throw new IOException("failure");
+            return delegate.read(target);
+        }
         @Override public int write(ByteBuffer source) throws IOException { return delegate.write(source); }
         @Override public long position() throws IOException { return delegate.position(); }
         @Override public SeekableByteChannel position(long value) throws IOException {

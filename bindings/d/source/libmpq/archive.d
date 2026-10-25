@@ -110,6 +110,14 @@ class Archive {
         return result;
     }
 
+    /** Fresh metadata coverage, distinct from digital signature verification. */
+    VerificationResult verifyResult(uint flags = VERIFY_METADATA_ALL) {
+        VerificationResult result;
+        checkStatus(libmpq__archive_verify_ex(nativeHandle(), flags,
+            &result.checked, &result.unavailable, &result.mismatches), "libmpq__archive_verify_ex");
+        return result;
+    }
+
     /** Verify a weak signature and return mismatch bits. */
     uint verify(const(ubyte)[] publicKey) {
         return verify(publicKey, SIGNATURE_WEAK);
