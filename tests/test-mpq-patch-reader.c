@@ -3820,6 +3820,18 @@ test_v3_noop_view(int v4)
         TEST_CHECK(libmpq__archive_open(&noop, patch_path, 0) == 0);
         for (size_t count = 0; count < 2; count++) {
             TEST_CHECK(libmpq__archive_open_patch(&snapshot, input, &noop, NULL, count) == 0);
+            {
+                uint32_t checked;
+                uint32_t unavailable;
+                uint32_t mismatches;
+                TEST_CHECK(
+                    libmpq__archive_verify_ex(
+                        snapshot, LIBMPQ_VERIFY_METADATA_ALL, &checked, &unavailable, &mismatches
+                    ) == 0
+                );
+                TEST_CHECK((checked | unavailable) == LIBMPQ_VERIFY_METADATA_ALL);
+                TEST_CHECK((checked & unavailable) == 0 && mismatches == 0);
+            }
             TEST_CHECK(libmpq__source_read_at(snapshot->source, 0, actual, size) == 0);
             TEST_CHECK(memcmp(actual, original, size) == 0);
             TEST_CHECK(libmpq__file_number(snapshot, "unlisted.txt", &signatures) == 0);

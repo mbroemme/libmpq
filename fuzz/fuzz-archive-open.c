@@ -105,6 +105,19 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         uint32_t number;
         uint32_t flags;
 
+        {
+            uint32_t checked;
+            uint32_t unavailable;
+            uint32_t mismatches;
+            int32_t status = libmpq__archive_verify_ex(
+                archive, LIBMPQ_VERIFY_METADATA_ALL, &checked, &unavailable, &mismatches
+            );
+            if ((status != 0 && (checked | unavailable | mismatches) != 0) ||
+                (status == 0 && ((checked | unavailable) != LIBMPQ_VERIFY_METADATA_ALL ||
+                                 (checked & unavailable) != 0 || (mismatches & ~checked) != 0)))
+                abort();
+        }
+
         /* Streams cache a whole single-unit member, even for a tiny read. */
         if (libmpq__file_number(archive, "overview.txt", &number) == 0 &&
             libmpq__file_size_unpacked(archive, number, &unpacked) == 0 &&

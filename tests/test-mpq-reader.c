@@ -2059,6 +2059,10 @@ reader_v4_read_at(void *context, libmpq__off_t offset, uint8_t *buffer, size_t s
     reader_v4_source_s *source = context;
     uint64_t start;
     uint64_t end = source->base + source->size;
+
+    /* An impossible signed offset selects deterministic backend allocation failure. */
+    if (source->fail_at == UINT64_MAX)
+        return LIBMPQ_ERROR_MALLOC;
     ++source->reads;
     if (size > source->max_read)
         source->max_read = size;
@@ -2075,6 +2079,191 @@ reader_v4_read_at(void *context, libmpq__off_t offset, uint8_t *buffer, size_t s
         libmpq__store_le32(buffer + 4, 16);
         libmpq__store_le32(buffer + 8, 512);
         libmpq__store_le32(buffer + 12, 16);
+    }
+    if (source->base == 96 || source->base == 608) {
+        uint64_t user = source->base == 96 ? 0 : 512;
+        uint8_t header[16];
+        libmpq__store_le32(header, LIBMPQ_USER_DATA_HEADER);
+        libmpq__store_le32(header + 4, 32);
+        libmpq__store_le32(header + 8, 96);
+        libmpq__store_le32(header + 12, 24);
+        for (size_t i = 0; i < size; ++i)
+            if (start + i >= user && start + i - user < sizeof(header))
+                buffer[i] = header[start + i - user];
+    }
+    return 0;
+}
+
+/* Fresh comparisons must not turn changed references into unavailable checks. */
+static int
+reader_metadata_checks(reader_v4_source_s *source, mpq_archive_s *archive)
+{
+    uint32_t checked;
+    uint32_t unavailable;
+    uint32_t mismatches;
+    uint32_t available = LIBMPQ_VERIFY_METADATA_ALL & ~LIBMPQ_VERIFY_METADATA_HI_BLOCK_MD5;
+    const size_t fields[6] = { 192, 128, 112, 144, 176, 160 };
+    uint64_t objects[6] = {
+        0, archive->mpq_header.hash_table_offset,   archive->mpq_header.block_table_offset,
+        0, archive->mpq_header_v3.het_table_offset, archive->mpq_header_v3.bet_table_offset
+    };
+    mpq_header_s saved_header = archive->mpq_header;
+    mpq_header_v3_s saved_v3 = archive->mpq_header_v3;
+    mpq_header_v4_s saved_v4 = archive->mpq_header_v4;
+    unsigned reads = source->reads;
+
+    if (saved_v4.raw_chunk_size == 0)
+        available &= ~(LIBMPQ_VERIFY_METADATA_HET_RAW_MD5 | LIBMPQ_VERIFY_METADATA_BET_RAW_MD5);
+    for (uint32_t mask = 0; mask < 256; ++mask) {
+        uint32_t flags = mask << 8;
+        TEST_CHECK(
+            libmpq__archive_verify_ex(archive, flags, &checked, &unavailable, &mismatches) == 0
+        );
+        TEST_CHECK(checked == (flags & available));
+        TEST_CHECK(unavailable == (flags & ~available) && mismatches == 0);
+        if (mask == 0)
+            TEST_CHECK(source->reads == reads);
+    }
+    TEST_CHECK(archive->raw_index == NULL);
+    TEST_CHECK(memcmp(&saved_header, &archive->mpq_header, sizeof(saved_header)) == 0);
+    TEST_CHECK(memcmp(&saved_v4, &archive->mpq_header_v4, sizeof(saved_v4)) == 0);
+    for (unsigned i = 0; i < 6; ++i) {
+        uint32_t bit = LIBMPQ_VERIFY_METADATA_HEADER_MD5 << i;
+        if (i == 3)
+            continue;
+        source->bytes[objects[i]] ^= 1;
+        TEST_CHECK(
+            libmpq__archive_verify_ex(archive, bit, &checked, &unavailable, &mismatches) == 0
+        );
+        TEST_CHECK(checked == bit && unavailable == 0 && mismatches == bit);
+        source->bytes[objects[i]] ^= 1;
+        for (unsigned zero = 0; zero < 2; ++zero) {
+            uint8_t saved[16];
+            memcpy(saved, source->bytes + fields[i], sizeof(saved));
+            if (zero)
+                memset(source->bytes + fields[i], 0, sizeof(saved));
+            else
+                source->bytes[fields[i]] ^= 1;
+            TEST_CHECK(
+                libmpq__archive_verify_ex(archive, bit, &checked, &unavailable, &mismatches) == 0
+            );
+            TEST_CHECK(checked == bit && unavailable == 0 && mismatches == bit);
+            memcpy(source->bytes + fields[i], saved, sizeof(saved));
+        }
+    }
+
+    /* Changed live geometry is not adopted from header bytes. */
+    source->bytes[16] ^= 1;
+    TEST_CHECK(libmpq__archive_verify_ex(archive, 0x200, &checked, &unavailable, &mismatches) == 0);
+    TEST_CHECK(checked == 0x200 && unavailable == 0 && mismatches == 0);
+    source->bytes[16] ^= 1;
+    source->bytes[archive->mpq_header.hash_table_offset] ^= 1;
+    source->fail_at = source->base + archive->mpq_header.block_table_offset;
+    checked = unavailable = mismatches = UINT32_MAX;
+    TEST_CHECK(
+        libmpq__archive_verify_ex(archive, 0x600, &checked, &unavailable, &mismatches) ==
+        LIBMPQ_ERROR_READ
+    );
+    TEST_CHECK(checked == 0 && unavailable == 0 && mismatches == 0);
+    source->fail_at = 0;
+    source->bytes[archive->mpq_header.hash_table_offset] ^= 1;
+    source->fail_at = UINT64_MAX;
+    TEST_CHECK(
+        libmpq__archive_verify_ex(
+            archive, LIBMPQ_VERIFY_METADATA_ALL, &checked, &unavailable, &mismatches
+        ) == LIBMPQ_ERROR_MALLOC
+    );
+    TEST_CHECK((checked | unavailable | mismatches) == 0);
+    source->fail_at = 0;
+    for (unsigned bad = 0; bad < 3; ++bad) {
+        uint32_t flags = bad == 0 ? LIBMPQ_VERIFY_ALL : bad == 1 ? 0x10000 : UINT32_MAX;
+        checked = unavailable = mismatches = UINT32_MAX;
+        TEST_CHECK(
+            libmpq__archive_verify_ex(archive, flags, &checked, &unavailable, &mismatches) ==
+            LIBMPQ_ERROR_FORMAT
+        );
+        TEST_CHECK((checked | unavailable | mismatches) == 0);
+    }
+    if (saved_v4.raw_chunk_size != 0) {
+        uint64_t digest = objects[4] + saved_v4.het_table_size;
+        uint64_t count = (saved_v4.het_table_size - 1) / saved_v4.raw_chunk_size + 1;
+        uint32_t bit = LIBMPQ_VERIFY_METADATA_HET_RAW_MD5;
+        for (uint64_t n = 0; n < count; ++n) {
+            source->bytes[digest + n * 16] ^= 1;
+            TEST_CHECK(
+                libmpq__archive_verify_ex(archive, bit, &checked, &unavailable, &mismatches) == 0
+            );
+            TEST_CHECK(checked == bit && unavailable == 0 && mismatches == bit);
+            source->bytes[digest + n * 16] ^= 1;
+        }
+        {
+            mpq_entry_s first = archive->mpq_entry[0];
+            mpq_entry_s second = archive->mpq_entry[1];
+            uint8_t expected[16];
+            memcpy(expected, source->bytes + digest, sizeof(expected));
+            memset(source->bytes + digest, 0, sizeof(expected));
+            TEST_CHECK(
+                libmpq__archive_verify_ex(archive, bit, &checked, &unavailable, &mismatches) == 0
+            );
+            TEST_CHECK(checked == bit && unavailable == 0 && mismatches == bit);
+            memcpy(source->bytes + digest, expected, sizeof(expected));
+            archive->mpq_entry[1] = first;
+            TEST_CHECK(
+                libmpq__archive_verify_ex(archive, bit, &checked, &unavailable, &mismatches) == 0
+            );
+            TEST_CHECK(checked == bit && unavailable == 0 && mismatches == 0);
+            archive->mpq_entry[1] = second;
+            archive->mpq_entry[0].offset = digest;
+            archive->mpq_entry[0].packed_size = 1;
+            for (unsigned order = 0; order < 2; ++order) {
+                TEST_CHECK(
+                    libmpq__archive_verify_ex(archive, bit, &checked, &unavailable, &mismatches) ==
+                    LIBMPQ_ERROR_FORMAT
+                );
+                TEST_CHECK((checked | unavailable | mismatches) == 0);
+                mpq_entry_s swap = archive->mpq_entry[0];
+                archive->mpq_entry[0] = archive->mpq_entry[1];
+                archive->mpq_entry[1] = swap;
+            }
+            archive->mpq_entry[0].flags = 0;
+            TEST_CHECK(
+                libmpq__archive_verify_ex(archive, bit, &checked, &unavailable, &mismatches) == 0
+            );
+            archive->mpq_entry[0] = first;
+            archive->mpq_entry[0].offset = digest - 1;
+            archive->mpq_entry[0].packed_size = 1;
+            TEST_CHECK(
+                libmpq__archive_verify_ex(archive, bit, &checked, &unavailable, &mismatches) ==
+                LIBMPQ_ERROR_FORMAT
+            );
+            TEST_CHECK((checked | unavailable | mismatches) == 0);
+            archive->mpq_entry[0] = first;
+        }
+        for (unsigned overlap = 0; overlap < 2; ++overlap) {
+            archive->mpq_header_v3.bet_table_offset = digest + overlap;
+            TEST_CHECK(
+                libmpq__archive_verify_ex(archive, bit, &checked, &unavailable, &mismatches) ==
+                LIBMPQ_ERROR_FORMAT
+            );
+            TEST_CHECK((checked | unavailable | mismatches) == 0);
+            archive->mpq_header_v3 = saved_v3;
+        }
+        for (unsigned short_array = 0; short_array < 2; ++short_array) {
+            archive->mpq_header_v3.archive_size = digest + (short_array ? count * 16 - 1 : 0);
+            TEST_CHECK(
+                libmpq__archive_verify_ex(archive, bit, &checked, &unavailable, &mismatches) ==
+                LIBMPQ_ERROR_FORMAT
+            );
+            TEST_CHECK((checked | unavailable | mismatches) == 0);
+        }
+        archive->mpq_header_v3 = saved_v3;
+        source->fail_at = source->base + digest;
+        TEST_CHECK(
+            libmpq__archive_verify_ex(archive, bit, &checked, &unavailable, &mismatches) ==
+            LIBMPQ_ERROR_READ
+        );
+        TEST_CHECK((checked | unavailable | mismatches) == 0);
+        source->fail_at = 0;
     }
     return 0;
 }
@@ -2107,10 +2296,11 @@ test_v4_ext_raw(uint32_t chunk_size, int compressed, uint64_t base)
     TEST_CHECK(remove(path) == 0);
     TEST_CHECK(
         libmpq__archive_open_io(
-            &archive, &source, reader_v4_read_at, (libmpq__off_t)(base + size), (libmpq__off_t)base,
-            NULL
+            &archive, &source, reader_v4_read_at, (libmpq__off_t)(base + size),
+            base == 96 || base == 608 ? -1 : (libmpq__off_t)base, NULL
         ) == 0
     );
+    TEST_CHECK(reader_metadata_checks(&source, archive) == 0);
     TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, 0) == LIBMPQ_ERROR_FORMAT);
     for (unsigned table = 0; table < 2; ++table) {
         uint32_t signature = table == 0 ? LIBMPQ_HET_SIGNATURE : LIBMPQ_BET_SIGNATURE;
@@ -2211,6 +2401,60 @@ reader_v4_header(reader_v4_source_s *source)
     return 0;
 }
 
+/* Empty declared tables have a real MD5(empty), unlike absent optional tables. */
+static int
+test_metadata_empty(void)
+{
+    static const uint8_t empty[16] = { 0xd4, 0x1d, 0x8c, 0xd9, 0x8f, 0x00, 0xb2, 0x04,
+                                       0xe9, 0x80, 0x09, 0x98, 0xec, 0xf8, 0x42, 0x7e };
+    reader_v4_source_s source = { 0 };
+    mpq_archive_s *archive = NULL;
+    uint32_t checked = 1;
+    uint32_t unavailable = 1;
+    uint32_t mismatches = 1;
+
+    source.header = (mpq_header_s){ LIBMPQ_HEADER,
+                                    LIBMPQ_HEADER_V4_WIRE_SIZE,
+                                    208,
+                                    LIBMPQ_ARCHIVE_VERSION_FOUR,
+                                    3,
+                                    208,
+                                    208,
+                                    0,
+                                    0 };
+    source.size = source.v3.archive_size = 208;
+    memcpy(source.v4.hash_table_md5, empty, 16);
+    memcpy(source.v4.block_table_md5, empty, 16);
+    TEST_CHECK(reader_v4_header(&source) == 0);
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &archive, &source, reader_v4_read_at, (libmpq__off_t)source.size, 0, NULL
+        ) == 0
+    );
+    TEST_CHECK(
+        libmpq__archive_verify_ex(
+            archive, LIBMPQ_VERIFY_METADATA_ALL, &checked, &unavailable, &mismatches
+        ) == 0
+    );
+    TEST_CHECK(checked == 0x600 && unavailable == (LIBMPQ_VERIFY_METADATA_ALL & ~0x600u));
+    TEST_CHECK(mismatches == 0);
+    source.bytes[128] ^= 1;
+    TEST_CHECK(libmpq__archive_verify_ex(archive, 0x600, &checked, &unavailable, &mismatches) == 0);
+    TEST_CHECK(checked == 0x600 && unavailable == 0 && mismatches == 0x200);
+    TEST_CHECK(
+        libmpq__archive_verify_ex(archive, 0, NULL, &unavailable, &mismatches) == LIBMPQ_ERROR_EXIST
+    );
+    TEST_CHECK(unavailable == 0 && mismatches == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    checked = unavailable = mismatches = 1;
+    TEST_CHECK(
+        libmpq__archive_verify_ex(NULL, 0, &checked, &unavailable, &mismatches) ==
+        LIBMPQ_ERROR_EXIST
+    );
+    TEST_CHECK((checked | unavailable | mismatches) == 0);
+    return 0;
+}
+
 /* Hand-place classic tables around a payload without invoking an archive writer. */
 static int
 test_v4_independent_layout(void)
@@ -2282,6 +2526,21 @@ test_v4_independent_layout(void)
                 (libmpq__off_t)source.base, NULL
             ) == 0
         );
+        {
+            uint32_t checked;
+            uint32_t unavailable;
+            uint32_t mismatches;
+            uint32_t present = variant >= 2 ? 0x0f00 : 0;
+            TEST_CHECK(
+                libmpq__archive_verify_ex(
+                    archive, LIBMPQ_VERIFY_METADATA_ALL, &checked, &unavailable, &mismatches
+                ) == 0
+            );
+            TEST_CHECK(
+                checked == present && unavailable == (LIBMPQ_VERIFY_METADATA_ALL & ~present)
+            );
+            TEST_CHECK(mismatches == 0);
+        }
         TEST_CHECK(archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR);
         TEST_CHECK(archive->mpq_header_v4.hash_table_size == 64);
         TEST_CHECK(archive->mpq_header_v4.block_table_size == 16);
@@ -3400,6 +3659,17 @@ test_v4_mpqe_read_only(int raw, int embedded)
             sizeof(auth), NULL
         ) == 0
     );
+    {
+        uint32_t checked;
+        uint32_t unavailable;
+        uint32_t mismatches;
+        TEST_CHECK(
+            libmpq__archive_verify_ex(
+                archive, LIBMPQ_VERIFY_METADATA_ALL, &checked, &unavailable, &mismatches
+            ) == 0
+        );
+        TEST_CHECK((checked | unavailable) == LIBMPQ_VERIFY_METADATA_ALL && mismatches == 0);
+    }
     TEST_CHECK(libmpq__file_number(archive, "folder/payload.bin", &number) == 0);
     {
         uint32_t checked;
@@ -3767,6 +4037,11 @@ main(void)
 {
     TEST_CHECK(test_compressed_classic_mixed() == 0);
     TEST_CHECK(test_compressed_classic() == 0);
+    TEST_CHECK(test_v4_ext_raw(17, 0, 96) == 0);
+    TEST_CHECK(test_v4_ext_raw(17, 1, 608) == 0);
+    TEST_CHECK(test_v4_ext_raw(17, 0, 0) == 0);
+    TEST_CHECK(test_v4_ext_raw(0x4000, 0, 512) == 0);
+    TEST_CHECK(test_v4_ext_raw(UINT32_MAX, 1, 0) == 0);
     TEST_CHECK(test_v4_ext_raw(0, 0, 0) == 0);
     TEST_CHECK(test_v4_ext_raw(1, 0, 0) == 0);
     TEST_CHECK(test_v4_ext_raw(3, 0, 512) == 0);
@@ -3823,6 +4098,7 @@ main(void)
     TEST_CHECK(test_v3_patch_payload() == 0);
     TEST_CHECK(test_v3_transaction_setup() == 0);
     TEST_CHECK(test_v3_reserved_update() == 0);
+    TEST_CHECK(test_metadata_empty() == 0);
     TEST_CHECK(test_v4_independent_layout() == 0);
     {
         static const uint32_t methods[] = { LIBMPQ_COMPRESSION_ZLIB,
