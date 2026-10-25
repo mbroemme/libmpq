@@ -142,6 +142,16 @@ libmpq__archive_verify(
     return libmpq__signature_verify(archive, flags, key, key_size, mismatches);
 }
 
+/* Metadata coverage is independent of digital signature verification. */
+int32_t
+libmpq__archive_verify_ex(
+    mpq_archive_s *archive, uint32_t flags, uint32_t *checked, uint32_t *unavailable,
+    uint32_t *mismatches
+)
+{
+    return libmpq__verify_archive_ex(archive, flags, checked, unavailable, mismatches);
+}
+
 int32_t
 libmpq__archive_sign(mpq_archive_s *archive, uint32_t type, const uint8_t *key, size_t key_size)
 {

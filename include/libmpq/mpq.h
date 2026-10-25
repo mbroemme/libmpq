@@ -250,6 +250,21 @@ enum
     (LIBMPQ_VERIFY_SECTOR_CRC | LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5 | \
      LIBMPQ_VERIFY_RAW_MD5)
 
+/* Archive structural and trailing RAW metadata checks, a separate domain. */
+#define LIBMPQ_VERIFY_METADATA_HEADER_MD5 0x00000100u
+#define LIBMPQ_VERIFY_METADATA_HASH_MD5 0x00000200u
+#define LIBMPQ_VERIFY_METADATA_BLOCK_MD5 0x00000400u
+#define LIBMPQ_VERIFY_METADATA_HI_BLOCK_MD5 0x00000800u
+#define LIBMPQ_VERIFY_METADATA_HET_MD5 0x00001000u
+#define LIBMPQ_VERIFY_METADATA_BET_MD5 0x00002000u
+#define LIBMPQ_VERIFY_METADATA_HET_RAW_MD5 0x00004000u
+#define LIBMPQ_VERIFY_METADATA_BET_RAW_MD5 0x00008000u
+#define LIBMPQ_VERIFY_METADATA_ALL                                            \
+    (LIBMPQ_VERIFY_METADATA_HEADER_MD5 | LIBMPQ_VERIFY_METADATA_HASH_MD5 |    \
+     LIBMPQ_VERIFY_METADATA_BLOCK_MD5 | LIBMPQ_VERIFY_METADATA_HI_BLOCK_MD5 | \
+     LIBMPQ_VERIFY_METADATA_HET_MD5 | LIBMPQ_VERIFY_METADATA_BET_MD5 |        \
+     LIBMPQ_VERIFY_METADATA_HET_RAW_MD5 | LIBMPQ_VERIFY_METADATA_BET_RAW_MD5)
+
 /*
  * Signature type bits returned by libmpq__archive_signatures() and accepted
  * by signing and verification APIs.
@@ -575,6 +590,26 @@ extern LIBMPQ_API int32_t libmpq__archive_signatures(mpq_archive_s *archive, uin
 extern LIBMPQ_API int32_t libmpq__archive_verify(
     mpq_archive_s *archive, uint32_t verify_flags, const uint8_t *public_key,
     size_t public_key_size, uint32_t *mismatches
+);
+
+/*
+ * Fresh archive structural/RAW metadata comparisons against opened reference
+ * descriptors. Separate from archive_verify() digital signature verification
+ * and file_verify_ex() member checks; not whole-archive verification or trust.
+ * Request only METADATA flags. Zero requests perform no comparison. On success
+ * checked and unavailable partition the request, with mismatches a subset of
+ * checked. Complete matching coverage requires status == 0, checked == flags,
+ * unavailable == 0 and mismatches == 0. Errors clear all non-NULL outputs.
+ * Absent structural digests/tables are unavailable; required v4 HET/BET RAW
+ * arrays missing, truncated or overlapping are errors. Present empty tables
+ * with supplied digests compare MD5(empty). Stored reference changes mismatch.
+ * Reads use the source abstraction and original validated offsets/digests;
+ * the backing source must remain stable. No concurrent-change snapshot or
+ * uncached filesystem audit is promised. MD5 does not establish authenticity.
+ */
+extern LIBMPQ_API int32_t libmpq__archive_verify_ex(
+    mpq_archive_s *archive, uint32_t verify_flags, uint32_t *checked, uint32_t *unavailable,
+    uint32_t *mismatches
 );
 
 /*

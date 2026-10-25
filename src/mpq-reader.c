@@ -226,9 +226,7 @@ libmpq__reader_verify_ext_raw_md5(mpq_archive_s *archive, uint32_t signature)
     uint64_t digest_end;
     uint64_t base;
     uint32_t chunk_size;
-    uint8_t buffer[16384];
-    uint8_t actual[LIBMPQ_MD5_SIZE];
-    uint8_t expected[LIBMPQ_MD5_SIZE];
+    uint32_t mismatch;
     int32_t result;
     if (archive == NULL)
         return LIBMPQ_ERROR_EXIST;
@@ -293,30 +291,9 @@ libmpq__reader_verify_ext_raw_md5(mpq_archive_s *archive, uint32_t signature)
     }
     position += base;
     digest_position += base;
-    while (size != 0) {
-        uint64_t remaining = size < chunk_size ? size : chunk_size;
-        mpq_md5_s md5;
-        size -= remaining;
-        libmpq__md5_init(&md5);
-        while (remaining != 0) {
-            size_t take = remaining < sizeof(buffer) ? (size_t)remaining : sizeof(buffer);
-            result = libmpq__source_read_at(archive->source, position, buffer, take);
-            if (result != 0)
-                return result;
-            libmpq__md5_update(&md5, buffer, take);
-            position += take;
-            remaining -= take;
-        }
-        libmpq__md5_final(&md5, actual);
-        result =
-            libmpq__source_read_at(archive->source, digest_position, expected, sizeof(expected));
-        if (result != 0)
-            return result;
-        if (memcmp(actual, expected, sizeof(actual)) != 0)
-            return LIBMPQ_ERROR_FORMAT;
-        digest_position += sizeof(expected);
-    }
-    return 0;
+    return libmpq__verify_raw_chunks(
+        archive, position, size, digest_position, chunk_size, 1, &mismatch
+    );
 }
 
 /* V4 table positions are independent; decoded classic geometry remains count-based. */

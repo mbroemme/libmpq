@@ -1,0 +1,94 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__ARCHIVE_VERIFY_EX 3 2026-11-16 "The MoPaQ archive library"
+.SH NAME
+libmpq__archive_verify_ex \- compare stored archive metadata and report coverage
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__archive_verify_ex("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        uint32_t " "verify_flags,"
+.BI "        uint32_t *" "checked,"
+.BI "        uint32_t *" "unavailable,"
+.BI "        uint32_t *" "mismatches"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Execute fresh MD5 comparisons of serialized MPQ metadata against the opened
+archive's validated reference descriptors. This operation is distinct from
+.BR libmpq__archive_verify (3),
+which verifies digital signatures using a public key, and
+.BR libmpq__file_verify_ex (3),
+which verifies individual members. The _ex suffix does not imply that these
+archive functions verify the same integrity domain.
+.PP
+Combine any of LIBMPQ_VERIFY_METADATA_HEADER_MD5, LIBMPQ_VERIFY_METADATA_HASH_MD5,
+LIBMPQ_VERIFY_METADATA_BLOCK_MD5, LIBMPQ_VERIFY_METADATA_HI_BLOCK_MD5,
+LIBMPQ_VERIFY_METADATA_HET_MD5, LIBMPQ_VERIFY_METADATA_BET_MD5,
+LIBMPQ_VERIFY_METADATA_HET_RAW_MD5 and LIBMPQ_VERIFY_METADATA_BET_RAW_MD5.
+LIBMPQ_VERIFY_METADATA_ALL requests all eight. Other bits, including member
+verification flags and signature selectors, are rejected. Zero flags perform
+no integrity comparison after handle and output validation.
+.PP
+The six structural checks hash original stored bytes, including encrypted or
+compressed table representations. Each supplied expected digest is compared
+with the opened reference and with the digest of the stored object. Changes
+to stored reference fields are mismatches, including zeroing a previously
+present field. Changed header geometry is never adopted. Present empty tables
+with supplied references compare MD5 of the empty sequence.
+.PP
+Older versions, absent optional tables and all-zero structural reference fields
+are unavailable. HET/BET trailing RAW arrays are unavailable for older versions,
+absent tables or zero raw chunk size. With nonzero v4 raw chunk size, present
+nonempty HET/BET tables require complete trailing arrays. Missing, truncated,
+overlapping or arithmetically invalid required storage is an operational error;
+readable zero-filled or arbitrary checksum bytes are actually compared.
+.SS Results
+On success checked and unavailable partition the requested mask, and mismatches
+is a subset of checked. The two coverage masks never overlap. A checksum
+mismatch returns success with its bit set, not an operational error.
+Complete matching requested coverage requires:
+.nf
+    status == 0
+    checked == verify_flags
+    unavailable == 0
+    mismatches == 0
+.fi
+.PP
+All three outputs are required. Any operational failure clears all non-NULL
+outputs, including results of earlier comparisons in the same call.
+.SS Source and scope
+Reads use the existing source abstraction and original MPQ-relative descriptors,
+with the handle's own embedded origin or MPQE logical decoding. Prefix bytes
+are not header/table input. The backing source must remain stable. This is
+neither an atomic snapshot under concurrent writes nor an uncached filesystem
+audit. Reopen a stable source to adopt changed archive geometry.
+.PP
+Matching unkeyed MD5 values do not establish authenticity or provenance.
+This operation does not verify every member, listfile completeness, semantic
+attributes, signatures, arbitrary container prefixes or MPQE transport
+authenticity. Existing reader structures and mappings remain unchanged.
+.SH RETURN VALUE
+Zero means requested comparisons completed, possibly with unavailable checks
+or mismatches. LIBMPQ_ERROR_EXIST indicates invalid required pointers;
+LIBMPQ_ERROR_NOT_INITIALIZED rejects writer handles; LIBMPQ_ERROR_FORMAT
+rejects unknown flags or malformed required geometry. Existing source read,
+seek and size errors propagate. The archive remains caller-owned.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__archive_verify (3),
+.BR libmpq__file_verify_ex (3)

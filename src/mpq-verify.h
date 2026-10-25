@@ -41,6 +41,17 @@ struct mpq_raw_index
 int32_t libmpq__raw_index_share(mpq_archive_s *destination, const mpq_archive_s *source);
 void libmpq__raw_index_release(mpq_archive_s *archive);
 
+/* Bounded stored-byte comparisons; callers validate geometry and absolute ranges. */
+int32_t libmpq__verify_raw_chunks(
+    mpq_archive_s *archive, uint64_t position, uint64_t size, uint64_t digest_position,
+    uint32_t chunk_size, int stop_on_mismatch, uint32_t *mismatch
+);
+
+int32_t libmpq__verify_archive_ex(
+    mpq_archive_s *archive, uint32_t flags, uint32_t *checked, uint32_t *unavailable,
+    uint32_t *mismatches
+);
+
 int32_t libmpq__verify_file(
     mpq_archive_s *archive, uint32_t file_number, uint32_t verify_flags, uint32_t *mismatches
 );

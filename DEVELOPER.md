@@ -1158,3 +1158,27 @@ build their own index once. Named verification prepares the parent index
 before opening its key-isolated clone. Failed construction remains retryable.
 Index construction does not certify overlapping storage: queries still reject
 conflicts. The legacy verifier neither constructs nor queries this index.
+
+### Archive metadata verification
+
+Archive metadata verification uses `libmpq__archive_verify_ex()` and the eight
+`LIBMPQ_VERIFY_METADATA_*` bits, combined by `LIBMPQ_VERIFY_METADATA_ALL`.
+It performs fresh bounded reads of stored header/table representations against
+opened descriptors, checking both object digests and stored reference fields.
+Present empty tables with supplied digests compare MD5(empty). Missing optional
+metadata is unavailable; required nonzero-v4 HET/BET RAW arrays that are missing,
+truncated or overlapping are errors. Changed reference fields mismatch rather
+than becoming unavailable. No newly changed geometry is adopted.
+
+The result masks partition requested checks into checked and unavailable, with
+mismatches a subset of checked. Complete matching coverage requires successful
+status, checked equal to the request, no unavailable checks and no mismatches.
+Errors clear all outputs. Zero flags perform no comparisons. Existing member
+`VERIFY_ALL` remains unchanged and is rejected by archive metadata verification.
+
+The source must remain stable; source reads do not promise uncached filesystem
+access or an atomic snapshot of concurrent writes. Embedded offsets and MPQE
+logical reads use existing source handling. Unkeyed MD5 establishes neither
+provenance nor authenticity, MPQE transport authentication or whole-archive
+integrity. `archive_verify()` remains public-key signature verification;
+`file_verify_ex()` remains member verification.

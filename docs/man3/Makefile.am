@@ -26,6 +26,7 @@ man_MANS = \
 	libmpq__archive_size_packed.3 \
 	libmpq__archive_size_unpacked.3 \
 	libmpq__archive_verify.3 \
+	libmpq__archive_verify_ex.3 \
 	libmpq__archive_version.3 \
 	libmpq__block_compression.3 \
 	libmpq__block_read.3 \

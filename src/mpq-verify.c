@@ -31,6 +31,285 @@
 #include <string.h>
 #include <zlib.h>
 
+/* Hash original stored bytes with a fixed buffer, including the empty sequence. */
+static int32_t
+metadata_hash(mpq_archive_s *archive, uint64_t position, uint64_t size, uint8_t *digest)
+{
+    uint8_t buffer[16384];
+    mpq_md5_s context;
+
+    libmpq__md5_init(&context);
+    while (size != 0) {
+        size_t take = size < sizeof(buffer) ? (size_t)size : sizeof(buffer);
+        int32_t status = libmpq__source_read_at(archive->source, position, buffer, take);
+        if (status != 0)
+            return status;
+        libmpq__md5_update(&context, buffer, take);
+        position += take;
+        size -= take;
+    }
+    libmpq__md5_final(&context, digest);
+    return 0;
+}
+
+/* Preserve legacy early FORMAT while allowing public callers to collect mismatches. */
+int32_t
+libmpq__verify_raw_chunks(
+    mpq_archive_s *archive, uint64_t position, uint64_t size, uint64_t digest_position,
+    uint32_t chunk_size, int stop_on_mismatch, uint32_t *mismatch
+)
+{
+    *mismatch = 0;
+    if (chunk_size == 0)
+        return LIBMPQ_ERROR_FORMAT;
+    while (size != 0) {
+        uint64_t take = size < chunk_size ? size : chunk_size;
+        uint8_t actual[LIBMPQ_MD5_SIZE];
+        uint8_t expected[LIBMPQ_MD5_SIZE];
+        int32_t status = metadata_hash(archive, position, take, actual);
+        if (status != 0)
+            return status;
+        status =
+            libmpq__source_read_at(archive->source, digest_position, expected, sizeof(expected));
+        if (status != 0)
+            return status;
+        if (memcmp(actual, expected, sizeof(actual)) != 0) {
+            *mismatch = 1;
+            if (stop_on_mismatch)
+                return LIBMPQ_ERROR_FORMAT;
+        }
+        position += take;
+        size -= take;
+        digest_position += sizeof(expected);
+    }
+    return 0;
+}
+
+/* Reference descriptors remain archive-relative, even for embedded/decoded sources. */
+static int32_t
+metadata_range(const mpq_archive_s *archive, uint64_t position, uint64_t size)
+{
+    uint64_t extent = libmpq__header_archive_size(&archive->mpq_header, &archive->mpq_header_v3);
+    uint64_t base;
+
+    if (archive->archive_offset < 0 || position > extent || size > extent - position)
+        return LIBMPQ_ERROR_FORMAT;
+    base = (uint64_t)archive->archive_offset;
+    if (base > INT64_MAX || position > (uint64_t)INT64_MAX - base ||
+        size > (uint64_t)INT64_MAX - base - position)
+        return LIBMPQ_ERROR_FORMAT;
+    if (base > archive->file_size || position > archive->file_size - base ||
+        size > archive->file_size - base - position)
+        return LIBMPQ_ERROR_READ;
+    return 0;
+}
+
+/* Include the entire applicable RAW reservation; unused rows reserve nothing. */
+static int32_t
+metadata_conflict(uint64_t start, uint64_t end, uint64_t position, uint64_t size, uint32_t chunk)
+{
+    uint64_t tail = 0;
+
+    if (size == 0)
+        return 0;
+    if (chunk != 0) {
+        uint64_t count = (size - 1) / chunk + 1;
+        if (count > UINT64_MAX / LIBMPQ_MD5_SIZE)
+            return LIBMPQ_ERROR_FORMAT;
+        tail = count * LIBMPQ_MD5_SIZE;
+    }
+    if (size > UINT64_MAX - position || tail > UINT64_MAX - position - size)
+        return LIBMPQ_ERROR_FORMAT;
+    return position < end && position + size + tail > start ? LIBMPQ_ERROR_FORMAT : 0;
+}
+
+/* At most two arrays are requested: one bounded metadata sweep each, no new cache. */
+static int32_t
+metadata_raw_geometry(
+    mpq_archive_s *archive, const uint64_t *positions, const uint64_t *sizes, size_t target,
+    uint64_t *digest_position
+)
+{
+    uint32_t chunk = archive->mpq_header_v4.raw_chunk_size;
+    uint64_t count = (sizes[target] - 1) / chunk + 1;
+    uint64_t bytes;
+    uint64_t end;
+    int32_t status = metadata_range(archive, positions[target], sizes[target]);
+
+    if (status != 0)
+        return status;
+    if (count > UINT64_MAX / LIBMPQ_MD5_SIZE)
+        return LIBMPQ_ERROR_FORMAT;
+    bytes = count * LIBMPQ_MD5_SIZE;
+    *digest_position = positions[target] + sizes[target];
+    status = metadata_range(archive, *digest_position, bytes);
+    if (status != 0)
+        return status;
+    end = *digest_position + bytes;
+    status = metadata_conflict(*digest_position, end, 0, archive->mpq_header.header_size, 0);
+    for (size_t i = 0; status == 0 && i < 5; ++i) {
+        if (i != target)
+            status = metadata_conflict(
+                *digest_position, end, positions[i], sizes[i], i >= 3 ? chunk : 0
+            );
+    }
+    for (uint32_t i = 0; status == 0 && i < archive->entry_count; ++i) {
+        const mpq_entry_s *entry = &archive->mpq_entry[i];
+        if ((entry->flags & LIBMPQ_FLAG_EXISTS) != 0)
+            status = metadata_conflict(
+                *digest_position, end, entry->offset, entry->packed_size,
+                (entry->flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) != 0 ? 0 : chunk
+            );
+    }
+    return status;
+}
+
+/* Fresh comparisons against opened descriptors; results publish only on completion. */
+int32_t
+libmpq__verify_archive_ex(
+    mpq_archive_s *archive, uint32_t flags, uint32_t *checked, uint32_t *unavailable,
+    uint32_t *mismatches
+)
+{
+    uint64_t positions[5];
+    uint64_t sizes[5];
+    const mpq_header_v4_s *v4;
+    const uint8_t *expected[6];
+    const uint8_t *current[6];
+    uint8_t wire[LIBMPQ_HEADER_V4_WIRE_SIZE];
+    mpq_header_v4_s stored;
+    uint32_t done = 0;
+    uint32_t absent = 0;
+    uint32_t different = 0;
+    int read_header = 0;
+    int32_t status;
+
+    if (checked != NULL)
+        *checked = 0;
+    if (unavailable != NULL)
+        *unavailable = 0;
+    if (mismatches != NULL)
+        *mismatches = 0;
+    if (archive == NULL || checked == NULL || unavailable == NULL || mismatches == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (archive->write_mode)
+        return LIBMPQ_ERROR_NOT_INITIALIZED;
+    if ((flags & ~LIBMPQ_VERIFY_METADATA_ALL) != 0)
+        return LIBMPQ_ERROR_FORMAT;
+    if (flags == 0)
+        return 0;
+    if (archive->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_FOUR) {
+        *unavailable = flags;
+        return 0;
+    }
+    v4 = &archive->mpq_header_v4;
+    positions[0] = archive->mpq_header.hash_table_offset |
+                   ((uint64_t)archive->mpq_header_ex.hash_table_offset_high << 32);
+    positions[1] = archive->mpq_header.block_table_offset |
+                   ((uint64_t)archive->mpq_header_ex.block_table_offset_high << 32);
+    positions[2] = archive->mpq_header_ex.extended_offset;
+    positions[3] = archive->mpq_header_v3.het_table_offset;
+    positions[4] = archive->mpq_header_v3.bet_table_offset;
+    sizes[0] = v4->hash_table_size;
+    sizes[1] = v4->block_table_size;
+    sizes[2] = v4->hi_block_table_size;
+    sizes[3] = v4->het_table_size;
+    sizes[4] = v4->bet_table_size;
+    expected[0] = v4->header_md5;
+    expected[1] = v4->hash_table_md5;
+    expected[2] = v4->block_table_md5;
+    expected[3] = v4->hi_block_table_md5;
+    expected[4] = v4->het_table_md5;
+    expected[5] = v4->bet_table_md5;
+    current[0] = stored.header_md5;
+    current[1] = stored.hash_table_md5;
+    current[2] = stored.block_table_md5;
+    current[3] = stored.hi_block_table_md5;
+    current[4] = stored.het_table_md5;
+    current[5] = stored.bet_table_md5;
+    for (size_t i = 0; i < 8; ++i) {
+        uint32_t bit = LIBMPQ_VERIFY_METADATA_HEADER_MD5 << i;
+        uint64_t position;
+        uint64_t size;
+        uint8_t actual[LIBMPQ_MD5_SIZE];
+        static const uint8_t zero[LIBMPQ_MD5_SIZE] = { 0 };
+
+        if ((flags & bit) == 0)
+            continue;
+        if (i < 6) {
+            position = i == 0 ? 0 : positions[i - 1];
+            size = i == 0 ? LIBMPQ_HEADER_V4_MD5_INPUT_SIZE : sizes[i - 1];
+            if (i != 0 && position == 0 && size != 0)
+                return LIBMPQ_ERROR_FORMAT;
+            if (i != 0 && position == 0 && size == 0) {
+                if (memcmp(expected[i], zero, sizeof(zero)) != 0)
+                    return LIBMPQ_ERROR_FORMAT;
+                absent |= bit;
+                continue;
+            }
+            if (i != 0 && position < archive->mpq_header.header_size)
+                return LIBMPQ_ERROR_FORMAT;
+            status = metadata_range(archive, position, size);
+            if (status != 0)
+                return status;
+            if (memcmp(expected[i], zero, sizeof(zero)) == 0) {
+                absent |= bit;
+                continue;
+            }
+            if (!read_header) {
+                status = metadata_range(archive, 0, sizeof(wire));
+                if (status != 0)
+                    return status;
+                status = libmpq__source_read_at(
+                    archive->source, (uint64_t)archive->archive_offset, wire, sizeof(wire)
+                );
+                if (status != 0)
+                    return status;
+                status = libmpq__header_v4_decode(
+                    &stored, wire + LIBMPQ_HEADER_V3_WIRE_SIZE, LIBMPQ_HEADER_V4_EX_WIRE_SIZE
+                );
+                if (status != 0)
+                    return status;
+                read_header = 1;
+            }
+            status =
+                metadata_hash(archive, (uint64_t)archive->archive_offset + position, size, actual);
+            if (status != 0)
+                return status;
+            done |= bit;
+            if (memcmp(actual, expected[i], sizeof(actual)) != 0 ||
+                memcmp(current[i], expected[i], sizeof(actual)) != 0)
+                different |= bit;
+        } else {
+            size_t target = i - 3;
+            uint64_t digest;
+            uint32_t mismatch;
+            if (v4->raw_chunk_size == 0 || (positions[target] == 0 && sizes[target] == 0)) {
+                absent |= bit;
+                continue;
+            }
+            if (positions[target] < archive->mpq_header.header_size || sizes[target] == 0)
+                return LIBMPQ_ERROR_FORMAT;
+            status = metadata_raw_geometry(archive, positions, sizes, target, &digest);
+            if (status != 0)
+                return status;
+            status = libmpq__verify_raw_chunks(
+                archive, (uint64_t)archive->archive_offset + positions[target], sizes[target],
+                (uint64_t)archive->archive_offset + digest, v4->raw_chunk_size, 0, &mismatch
+            );
+            if (status != 0)
+                return status;
+            done |= bit;
+            if (mismatch)
+                different |= bit;
+        }
+    }
+    *checked = done;
+    *unavailable = absent;
+    *mismatches = different;
+    return 0;
+}
+
 /* Sort only the copied layout; canonical rows and hash/probe identities stay unchanged. */
 static int
 raw_interval_compare(const void *left, const void *right)

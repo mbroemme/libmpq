@@ -379,6 +379,14 @@ int32_t libmpq__update_timestamp_identity(
 .BI "        uint32_t *" "mismatches"
 .BI ");"
 .sp
+.BI "int32_t libmpq__archive_verify_ex("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        uint32_t " "verify_flags,"
+.BI "        uint32_t *" "checked,"
+.BI "        uint32_t *" "unavailable,"
+.BI "        uint32_t *" "mismatches"
+.BI ");"
+.sp
 .BI "int32_t libmpq__archive_sign("
 .BI "        mpq_archive_s *" "archive,"
 .BI "        uint32_t " "signature_type,"
@@ -617,6 +625,11 @@ rejection for v4 output with nonzero raw-chunk size. No external strong-signatur
 transport is defined. Creation and transactional updates use private plaintext
 staging files; cleanup after abnormal termination is best effort.
 .SS "Metadata and Integrity"
+\fBlibmpq__archive_verify_ex\fP(3) freshly compares stored header/table MD5
+references and HET/BET trailing RAW arrays against opened descriptors, using
+LIBMPQ_VERIFY_METADATA_* flags. It reports checked, unavailable and mismatch
+masks. This differs from signature-only archive_verify() and member-level
+file_verify_ex(); none alone guarantees whole-archive integrity or trust.
 Archive, file, and block queries expose sizes, flags, and version-100
 \fB(attributes)\fP rows. Complete lossless file reads automatically
 check available CRC32/MD5 and usable sector Adler-32 data.
@@ -698,6 +711,7 @@ Ordinary operations retain HET-first/classic first-hit resolution.
 .SS "Signatures"
 .BR libmpq__archive_signatures (3),
 .BR libmpq__archive_verify (3),
+.BR libmpq__archive_verify_ex (3),
 .BR libmpq__archive_sign (3)
 .SS "Archive Metadata"
 .BR libmpq__archive_attributes (3),
