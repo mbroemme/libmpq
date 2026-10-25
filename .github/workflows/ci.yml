@@ -335,6 +335,48 @@ jobs:
               -fvisibility=hidden
           done
 
+  c-standards:
+    name: C standard (${{ matrix.compiler }}, ${{ matrix.standard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container:
+      image: debian:trixie-slim
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        standard: [c99, c11, c17, c23, gnu23]
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install native build dependencies
+        run: |
+          set -euxo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            build-essential \
+            ca-certificates \
+            clang \
+            git \
+            libbz2-dev \
+            liblzma-dev \
+            libtool \
+            zlib1g-dev
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check compiler and run native tests
+        run: |
+          set -euxo pipefail
+          scripts/check-c-standards '${{ matrix.compiler }}' '${{ matrix.standard }}'
+
   sanitizers:
     name: Sanitizers (ASan, UBSan, LSan)
     needs: lint
@@ -483,7 +525,7 @@ jobs:
     name: Big-endian (s390x)
     needs: lint
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash

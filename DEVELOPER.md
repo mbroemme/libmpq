@@ -857,6 +857,13 @@ Build and test in a disposable checkout or build environment. See
 inventory and regeneration. Fuzzing instructions and input contracts are in
 [fuzz/README.md](fuzz/README.md).
 
+Run `scripts/check` for source formatting and lint checks. Run
+`scripts/check-c-standards` separately for strict GCC and Clang builds and
+native tests across C99, C11, C17, C23 and GNU23, or select one combination
+with `scripts/check-c-standards gcc c99`. These tests use optimized builds
+with warnings treated as errors. CI runs each combination in its own matrix
+job so repeated native suites do not exhaust the lint job's time budget.
+
 ### Transaction failure coverage
 
 Private fault hooks cover staged flush/close and final publication, including

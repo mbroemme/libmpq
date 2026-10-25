@@ -17,6 +17,23 @@
 
 set -euo pipefail
 
+compilers=(gcc clang)
+standards=(c99 c11 c17 c23 gnu23)
+if (($# != 0 && $# != 2)); then
+	printf 'Usage: %s [gcc|clang c99|c11|c17|c23|gnu23]\n' "${0##*/}" >&2
+	exit 2
+fi
+if (($# == 2)); then
+	case "$1" in
+		gcc|clang) compilers=("$1") ;;
+		*) printf 'Unsupported compiler: %s\n' "$1" >&2; exit 2 ;;
+	esac
+	case "$2" in
+		c99|c11|c17|c23|gnu23) standards=("$2") ;;
+		*) printf 'Unsupported C standard: %s\n' "$2" >&2; exit 2 ;;
+	esac
+fi
+
 readonly project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly temp_root="$(mktemp -d "${TMPDIR:-/tmp}/libmpq-c-standards.XXXXXX")"
 
@@ -31,17 +48,21 @@ cd "${temp_root}/tree"
 
 sh autogen.sh >/dev/null
 
-for compiler in gcc clang; do
+for compiler in "${compilers[@]}"; do
 	if ! command -v "${compiler}" >/dev/null 2>&1; then
+		if (($# == 2)); then
+			printf 'Required compiler not found: %s\n' "${compiler}" >&2
+			exit 1
+		fi
 		printf 'Skipping unavailable compiler: %s\n' "${compiler}"
 		continue
 	fi
 
-	for standard in c99 c11 c17 c23 gnu23; do
+	for standard in "${standards[@]}"; do
 		printf 'Checking %s with %s...\n' "${standard}" "${compiler}"
 		./configure --disable-static --enable-shared \
 			CC="${compiler}" \
-			CFLAGS="-std=${standard} -Wall -Wextra -Wpedantic -Werror" >/dev/null
+			CFLAGS="-O2 -g -std=${standard} -Wall -Wextra -Wpedantic -Werror" >/dev/null
 		make clean >/dev/null 2>&1 || true
 		make -j"$(nproc)" >/dev/null
 		make check >/dev/null
