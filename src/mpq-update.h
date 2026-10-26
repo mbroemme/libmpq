@@ -31,6 +31,9 @@ typedef struct mpq_update_ops
     int (*flush)(FILE *file);
     int (*close)(FILE *file);
     int32_t (*publish)(mpq_directory_s *directory, const char *temporary, const char *destination);
+
+    /* Optional free-compatible allocator for preparing filename provenance. */
+    void *(*allocate_names)(size_t size);
 } mpq_update_ops_s;
 
 int32_t libmpq__update_transaction_begin(mpq_update_s **update, const char *path);

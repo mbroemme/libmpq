@@ -1838,3 +1838,25 @@ def test_archive_metadata_independent_md5():
 
 def test_key_flag_constant():
     assert mpq.FILE_FLAG_KEY == 0x00020000
+
+
+@pytest.mark.parametrize("version", range(4))
+def test_transaction_filename_provenance(tmp_path, version):
+    path = tmp_path / "provenance.mpq"
+    payload = bytes((i * 71 + i // 3) & 255 for i in range(403))
+    flags = mpq.FILE_FLAG_SINGLE | mpq.FILE_FLAG_ENCRYPTED | mpq.FILE_FLAG_KEY
+    options = mpq.FileCreateOptions(flags, 0, 0, 0, 0)
+    with mpq.Writer(path, version=version, max_files=8,
+                    attributes=mpq.ATTRIBUTE_FILETIME) as writer:
+        writer.add("voice", payload, options)
+        writer.add("other", b"unchanged")
+    with mpq.Update.begin(path) as update:
+        update.replace_data("voice", payload, options)
+        update.change_identity("other", 0, 0, 1033, 2)
+        update.rename("voice", "renamed", locale=0, platform=0)
+        update.timestamp("other", 17, locale=1033, platform=2)
+        update.compact()
+        update.commit()
+    with mpq.Archive(path) as archive:
+        with archive.open_stream("renamed", locale=0, platform=0) as stream:
+            assert stream.read() == payload

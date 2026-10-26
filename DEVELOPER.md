@@ -1188,3 +1188,10 @@ encryption-key derivation. It modifies `ENCRYPTED`; it does not enable encryptio
 on its own. The effective key is `(basename_key + uint32(MPQ-relative offset))
 XOR uint32(uncompressed size)`, with modulo-2^32 arithmetic. Embedded prefixes
 are excluded from this offset. The flag provides no integrity guarantee.
+
+Transaction filename knowledge consists of owned spellings, not cached file
+numbers. Before adopting a reconstruction, live spellings are resolved against
+the candidate and copied into replacement provenance. Failed preparation leaves
+the preceding stage and provenance intact. Removed spellings are discarded;
+compatible live aliases remain subject to the existing encryption-provenance
+checks. Validated no-ops neither learn names nor rebuild a stage.

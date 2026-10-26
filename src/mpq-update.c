@@ -91,7 +91,8 @@ struct mpq_update
 #endif
 };
 
-static const mpq_update_ops_s default_update_ops = { fflush, fclose, libmpq__directory_replace };
+static const mpq_update_ops_s default_update_ops = { fflush, fclose, libmpq__directory_replace,
+                                                     malloc };
 
 static void
 update_result(int32_t *result, int32_t next)
@@ -1248,6 +1249,95 @@ update_names_equal(const char *first, const char *second)
     } while (1);
 }
 
+/* Release a private list of owned spellings, independent of canonical row numbers. */
+static void
+update_free_names(char **names, uint32_t count)
+{
+    if (names == NULL)
+        return;
+    for (uint32_t i = 0; i < count; ++i)
+        free(names[i]);
+    free(names);
+}
+
+/*
+ * Revalidate strings against the candidate before consuming the previous stage.
+ * Existence does not certify alias/key compatibility: compaction still performs
+ * its full identity/provenance checks. Exact bytes distinguish classic slashes.
+ */
+static int32_t
+update_prepare_names(
+    mpq_update_s *update, mpq_archive_s *candidate, char *const *supplied, uint32_t supplied_count,
+    const char *first, const char *second, char ***out, uint32_t *out_count
+)
+{
+    uint64_t capacity = (uint64_t)update->known_count + supplied_count + 2;
+    uint32_t count = 0;
+    char **names;
+    void *(*allocate)(size_t) = update->ops->allocate_names;
+    int32_t result = 0;
+
+    *out = NULL;
+    *out_count = 0;
+    if (capacity > UINT32_MAX || capacity > SIZE_MAX / sizeof(*names))
+        return LIBMPQ_ERROR_SIZE;
+    if (allocate == NULL)
+        allocate = malloc;
+    names = allocate((size_t)capacity * sizeof(*names));
+    if (names == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    for (uint64_t i = 0; i < capacity; ++i) {
+        const char *name = i < update->known_count ? update->known_names[i]
+                           : i < capacity - 2      ? supplied[i - update->known_count]
+                           : i == capacity - 2     ? first
+                                                   : second;
+        uint32_t number;
+        uint32_t existing;
+        if (name == NULL)
+            continue;
+        result = libmpq__file_number(candidate, name, &number);
+        if (result == LIBMPQ_ERROR_EXIST) {
+            result = 0;
+            continue;
+        }
+        if (result != 0)
+            break;
+        for (existing = 0; existing < count; ++existing)
+            if (strcmp(names[existing], name) == 0)
+                break;
+        if (existing != count)
+            continue;
+        size_t size = strlen(name);
+        if (size == SIZE_MAX) {
+            result = LIBMPQ_ERROR_SIZE;
+            break;
+        }
+        names[count] = allocate(size + 1);
+        if (names[count] == NULL) {
+            result = LIBMPQ_ERROR_MALLOC;
+            break;
+        }
+        memcpy(names[count++], name, size + 1);
+    }
+    if (result != 0) {
+        update_free_names(names, count);
+        return result;
+    }
+    *out = names;
+    *out_count = count;
+    return 0;
+}
+
+/* Install only after successful candidate adoption; ownership transfers exactly once. */
+static void
+update_adopt_names(mpq_update_s *update, char ***names, uint32_t count)
+{
+    update_free_names(update->known_names, update->known_count);
+    update->known_names = *names;
+    update->known_count = count;
+    *names = NULL;
+}
+
 /* Resolve names to public file numbers; never derive names from table hashes. */
 static int32_t
 update_record_name(mpq_archive_s *archive, char **names, const char *name)
@@ -1787,6 +1877,8 @@ update_rebuild_named(
     uint64_t expected_size = 0;
     uint8_t *list_data = NULL;
     size_t list_size = 0;
+    char **prepared_names = NULL;
+    uint32_t prepared_count = 0;
     int32_t result;
     uint64_t extent = libmpq__header_archive_size(&archive->mpq_header, &archive->mpq_header_v3);
 
@@ -2347,6 +2439,12 @@ update_rebuild_named(
         if (result != 0)
             goto done;
     }
+    result = update_prepare_names(
+        update, check, names, count, old_name, action == LIBMPQ_UPDATE_RENAME ? new_name : NULL,
+        &prepared_names, &prepared_count
+    );
+    if (result != 0)
+        goto done;
     result = libmpq__archive_close(check);
     check = NULL;
     if (result != 0)
@@ -2355,26 +2453,6 @@ update_rebuild_named(
     if (file == NULL) {
         result = LIBMPQ_ERROR_OPEN;
         goto done;
-    }
-    if (exact == NULL && (action == LIBMPQ_UPDATE_ADD || action == LIBMPQ_UPDATE_RENAME)) {
-        char *name = malloc(strlen(action == LIBMPQ_UPDATE_ADD ? old_name : new_name) + 1);
-        if (name == NULL) {
-            result = LIBMPQ_ERROR_MALLOC;
-            goto done;
-        }
-        memcpy(
-            name, action == LIBMPQ_UPDATE_ADD ? old_name : new_name,
-            strlen(action == LIBMPQ_UPDATE_ADD ? old_name : new_name) + 1
-        );
-        if (action == LIBMPQ_UPDATE_ADD)
-            names[count] = name;
-        else {
-            free(names[target]);
-            names[target] = name;
-        }
-    } else if (exact == NULL && action == LIBMPQ_UPDATE_REMOVE) {
-        free(names[target]);
-        names[target] = NULL;
     }
     result = libmpq__archive_close(archive);
     *source = NULL;
@@ -2399,26 +2477,16 @@ update_rebuild_named(
         goto done;
     free(update->temporary);
     free(update->working_path);
-    for (uint32_t i = 0; i < update->known_count; ++i)
-        free(update->known_names[i]);
-    free(update->known_names);
     update->working = file;
     update->temporary = temporary;
     update->working_path = path;
-    if (exact != NULL) {
-        for (uint32_t i = 0; i <= count; ++i)
-            free(names[i]);
-        free(names);
-        names = NULL;
-    }
-    update->known_names = names;
-    update->known_count = exact != NULL ? 0 : count + 1;
+    update_adopt_names(update, &prepared_names, prepared_count);
     update->dirty = 1;
-    names = NULL;
     temporary = NULL;
     path = NULL;
     file = NULL;
 done:
+    update_free_names(prepared_names, prepared_count);
     if (writer != NULL) {
         libmpq__writer_file_abort(writer->write_current);
         writer->write_current = NULL;
@@ -2474,6 +2542,8 @@ update_apply(
     uint32_t attribute_flags = 0;
     size_t list_size = 0;
     size_t attribute_size = 0;
+    char **prepared_names = NULL;
+    uint32_t prepared_count = 0;
     int32_t result;
     uint8_t has_list = 0;
     uint8_t has_attributes = 0;
@@ -2858,6 +2928,12 @@ update_apply(
         );
     if (result != 0)
         goto done;
+    result = update_prepare_names(
+        update, check, NULL, 0, old_name, action == LIBMPQ_UPDATE_RENAME ? new_name : NULL,
+        &prepared_names, &prepared_count
+    );
+    if (result != 0)
+        goto done;
     result = libmpq__archive_close(check);
     check = NULL;
     if (result != 0)
@@ -2898,10 +2974,12 @@ update_apply(
         rebuilt_path = NULL;
         free(previous_temporary);
         free(previous_path);
+        update_adopt_names(update, &prepared_names, prepared_count);
         update->dirty = 1;
     }
 
 done:
+    update_free_names(prepared_names, prepared_count);
     if (check != NULL)
         (void)libmpq__archive_close(check);
     if (archive != NULL)
@@ -3708,6 +3786,8 @@ libmpq__update_transaction_compact(mpq_update_s *update)
     uint32_t retained = 0;
     uint8_t dense = 0;
     uint64_t next;
+    char **prepared_names = NULL;
+    uint32_t prepared_count = 0;
     int32_t result;
     if (update == NULL || update->working == NULL)
         return LIBMPQ_ERROR_EXIST;
@@ -4161,6 +4241,11 @@ libmpq__update_transaction_compact(mpq_update_s *update)
             }
         }
     }
+    result = update_prepare_names(
+        update, check, names, count, NULL, NULL, &prepared_names, &prepared_count
+    );
+    if (result != 0)
+        goto done;
     result = libmpq__archive_close(check);
     check = NULL;
     if (result != 0)
@@ -4177,13 +4262,9 @@ libmpq__update_transaction_compact(mpq_update_s *update)
     result = update_adopt_candidate(update, &file, &temporary, &path);
     if (result != 0)
         goto done;
-    for (uint32_t i = 0; i < update->known_count; ++i)
-        free(update->known_names[i]);
-    free(update->known_names);
-    update->known_names = names;
-    update->known_count = count;
-    names = NULL;
+    update_adopt_names(update, &prepared_names, prepared_count);
 done:
+    update_free_names(prepared_names, prepared_count);
     libmpq__writer_identity_free(&identity_check);
     if (check != NULL)
         (void)libmpq__archive_close(check);
@@ -4585,6 +4666,8 @@ libmpq__update_transaction_sign(
     uint32_t signatures;
     uint32_t expected;
     uint64_t changed = UINT64_MAX;
+    char **prepared_names = NULL;
+    uint32_t prepared_count = 0;
     int32_t result;
     uint8_t rebuilt = 0;
     if (update == NULL || update->working == NULL)
@@ -4683,6 +4766,11 @@ libmpq__update_transaction_sign(
     }
     if (result != 0)
         goto done;
+    result = update_prepare_names(
+        update, candidate, NULL, 0, NULL, NULL, &prepared_names, &prepared_count
+    );
+    if (result != 0)
+        goto done;
     result = libmpq__archive_close(candidate);
     candidate = NULL;
     if (result == 0) {
@@ -4697,7 +4785,10 @@ libmpq__update_transaction_sign(
         goto done;
     }
     result = update_adopt_candidate(update, &file, &temporary, &path);
+    if (result == 0)
+        update_adopt_names(update, &prepared_names, prepared_count);
 done:
+    update_free_names(prepared_names, prepared_count);
     if (candidate != NULL)
         (void)libmpq__archive_close(candidate);
     if (source != NULL)
