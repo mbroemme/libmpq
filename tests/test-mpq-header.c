@@ -502,7 +502,9 @@ test_v3_classic(uint32_t header_size, uint64_t shift, uint64_t base, int adjuste
         uint32_t key =
             (libmpq__crypto_hash_string("payload.bin", 0x300) + header_size + 82) ^ 9000u;
         TEST_CHECK(libmpq__crypto_decrypt_block(raw, 16, table_key) == 0);
-        libmpq__store_le32(raw + 12, LIBMPQ_FLAG_EXISTS | LIBMPQ_FLAG_ENCRYPTED | 0x00020000u);
+        libmpq__store_le32(
+            raw + 12, LIBMPQ_FLAG_EXISTS | LIBMPQ_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY
+        );
         TEST_CHECK(libmpq__crypto_encrypt_block(raw, 16, table_key) == 0);
         for (uint32_t i = 0, position = 0; position < sizeof(expected); ++i) {
             uint32_t size = sizeof(expected) - position;

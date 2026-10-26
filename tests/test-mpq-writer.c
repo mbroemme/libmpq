@@ -1325,7 +1325,7 @@ test_v3_writer(uint32_t count, bool compress_tables, uint64_t position)
         if ((i >= 3 && i != 7) || high)
             storage.flags |= LIBMPQ_FILE_FLAG_ENCRYPTED;
         if ((i >= 4 && i != 7) || high)
-            storage.flags |= 0x00020000u;
+            storage.flags |= LIBMPQ_FILE_FLAG_KEY;
         if (i >= 6)
             storage.flags |= LIBMPQ_FILE_FLAG_SINGLE;
         if (i >= 2)
@@ -1614,7 +1614,7 @@ test_v4_copy_errors(unsigned int which)
     mpq_archive_s *source = NULL;
     mpq_archive_s *writer = NULL;
     uint8_t data[1024] = { 1 };
-    mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0, 0, 0 };
+    mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0, 0, 0 };
     writer_copy_source_fault_s read_fault;
     mpq_io_backend_s backend;
     uint32_t number;
@@ -1992,8 +1992,8 @@ test_v4_public(int mpqe, int empty)
         empty ? 0 : LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 | LIBMPQ_ATTRIBUTE_FILETIME
     };
     mpq_file_options_s storage[] = {
-        { LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0, 0, 0 },
-        { LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SINGLE | 0x00020000u, 0, 0, 0, 0 },
+        { LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0, 0, 0 },
+        { LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_KEY, 0, 0, 0, 0 },
         { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SECTOR_CRC,
           LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 }
     };
@@ -2136,20 +2136,21 @@ test_v4_writer(uint32_t chunk_size, int empty, uint64_t position)
                                           0x95, 0x64, 0x90, 0x38, 0x40, 0x8b, 0x5f, 0x33 };
     static const char *names[] = { "abc",    "empty",  "sector", "single", "folder/reference.bin",
                                    "normal", "zipped", "lzma" };
-    mpq_file_options_s storage[] = { { 0, 0, 0, 0, 0 },
-                                     { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 },
-                                     { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SECTOR_CRC,
-                                       LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 },
-                                     { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SINGLE,
-                                       LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 },
-                                     { LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0, 0, 0 },
-                                     { LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SINGLE, 0, 0,
-                                       0, 0 },
-                                     { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-                                           LIBMPQ_FILE_FLAG_SECTOR_CRC | 0x00020000u,
-                                       LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 },
-                                     { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SINGLE,
-                                       LIBMPQ_COMPRESSION_LZMA, LIBMPQ_COMPRESSION_LZMA, 0, 0 } };
+    mpq_file_options_s storage[] = {
+        { 0, 0, 0, 0, 0 },
+        { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 },
+        { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SECTOR_CRC, LIBMPQ_COMPRESSION_ZLIB,
+          LIBMPQ_COMPRESSION_ZLIB, 0, 0 },
+        { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SINGLE, LIBMPQ_COMPRESSION_ZLIB,
+          LIBMPQ_COMPRESSION_ZLIB, 0, 0 },
+        { LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0, 0, 0 },
+        { LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 },
+        { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SECTOR_CRC |
+              LIBMPQ_FILE_FLAG_KEY,
+          LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 },
+        { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SINGLE, LIBMPQ_COMPRESSION_LZMA,
+          LIBMPQ_COMPRESSION_LZMA, 0, 0 }
+    };
     mpq_archive_create_options_s options = {
         LIBMPQ_ARCHIVE_VERSION_FOUR, 16, 512, empty ? 0 : LIBMPQ_ARCHIVE_CREATE_LISTFILE,
         empty ? 0 : LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 | LIBMPQ_ATTRIBUTE_FILETIME
@@ -2564,7 +2565,7 @@ test_finalize_cursor(uint32_t version, unsigned metadata, int mpqe, int empty)
         version, empty ? 1024 : 8, 512, (metadata & 1) != 0 ? LIBMPQ_ARCHIVE_CREATE_LISTFILE : 0,
         (metadata & 2) != 0 ? LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 : 0
     };
-    mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0, 0, 0 };
+    mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0, 0, 0 };
     mpq_archive_s *archive = NULL;
     mpq_stream_s *stream = NULL;
     char path[512];
@@ -2682,7 +2683,7 @@ test_public_raw_policy(uint32_t chunk, uint8_t mpqe)
     mpq_file_options_s invalid = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE, 0, 0, 0,
                                    0 };
     mpq_file_options_s secure = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-                                      LIBMPQ_FILE_FLAG_SECTOR_CRC | 0x20000u,
+                                      LIBMPQ_FILE_FLAG_SECTOR_CRC | LIBMPQ_FILE_FLAG_KEY,
                                   LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
     mpq_archive_s *archive = NULL;
     mpq_writer_s *writer = NULL;

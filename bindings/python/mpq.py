@@ -65,6 +65,7 @@ COMPRESSION_POLICY_EXTENDED = 1
 FILE_FLAG_IMPLODE = 0x00000100
 FILE_FLAG_COMPRESS = 0x00000200
 FILE_FLAG_ENCRYPTED = 0x00010000
+FILE_FLAG_KEY = 0x00020000
 FILE_FLAG_PATCH_FILE = 0x00100000
 FILE_FLAG_SINGLE = 0x01000000
 FILE_FLAG_DELETE_MARKER = 0x02000000
@@ -494,7 +495,11 @@ class Update:
 
     @classmethod
     def begin_mpqe(cls, path, auth_code):
-        """Begin an authenticated MPQE update using the same transaction API."""
+        """Begin an MPQE transport update.
+
+        Transport decoding/encryption does not independently authenticate an
+        archive or guarantee detection of an incorrect authentication code.
+        """
         code = _auth_code_bytes(auth_code)
         pointer = (ctypes.c_uint8 * len(code)).from_buffer_copy(code) if code else None
         update = cls.__new__(cls)

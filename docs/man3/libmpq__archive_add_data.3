@@ -32,6 +32,13 @@ Adds \fIsize\fP bytes from caller-owned \fIbuffer\fP under \fIfilename\fP.
 The call begins, writes, and finishes one member using the same file options
 as the streaming writer. NULL \fIoptions\fP selects writer defaults; the
 buffer need only remain valid until this call returns.
+.PP
+The \fBLIBMPQ_FILE_FLAG_KEY\fP storage flag (0x00020000) selects
+offset- and size-adjusted encryption-key derivation. It modifies
+\fBLIBMPQ_FILE_FLAG_ENCRYPTED\fP and does not enable encryption by itself.
+The basename-derived key is adjusted by the MPQ-relative member offset and
+uncompressed size; an embedded prefix is excluded. This flag provides no
+integrity guarantee.
 .SH RETURN VALUE
 Returns \fB0\fP after the member is staged in the writer
 archive, or a negative libmpq error. Archive publication still requires

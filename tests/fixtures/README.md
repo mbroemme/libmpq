@@ -179,7 +179,7 @@ input required by the independent v3 base recipe.
 | --- | --- | --- |
 | `mpq-v3-features.mpq` | Mixed classic/HET-BET codecs, BET-only empty tail and weak signature | `1a9912f063fa2a2090f561ffd01c7163d0657b4b38cac6e67b72aa359b1e3c15` |
 | `mpq-v3-features.mpqe` | MPQE -> v3 -> HET/BET read/stream composition | `b75e011f111b05e6fdaa53c70252540f13ca683ac0fee6c17dd78add8fed2f03` |
-| `mpq-v3-features-patch.mpq` | V3 COPY/BSD0 layer, BET-only deletion and encrypted FIX_KEY members | `031ae2155f0c126f02711f8078b259b2b23f2607fcbfbfe02e1ae1956a1885e5` |
+| `mpq-v3-features-patch.mpq` | V3 COPY/BSD0 layer, BET-only deletion and encrypted KEY members | `031ae2155f0c126f02711f8078b259b2b23f2607fcbfbfe02e1ae1956a1885e5` |
 
 ### Base archive
 
@@ -203,7 +203,7 @@ test key, zero-length members, repeated small reads, seeks, streams, and
 HET/classic lookup equivalence.
 
 HET/BET-only and compressed-table variants are generated at runtime, not
-committed fixtures. Classic-only tails, conflicting metadata, FIX_KEY reads,
+committed fixtures. Classic-only tails, conflicting metadata, KEY reads,
 offsets above 4 GiB, malformed mappings, strict table limits, table keys, and
 extent ordering are covered by separate runtime reader tests. A 64-bit field
 in the committed BET is not a multi-gigabyte fixture.
@@ -229,14 +229,14 @@ listfile and attributes plus these operations:
 | --- | --- |
 | `overview.txt` | COPY -> `Version three patch\n` |
 | `zlib.txt` | BSD0 -> original bytes with byte 17 XORed by `0x5a` |
-| `encrypted-compress.txt` | Compressed FIX_KEY COPY -> `Encrypted synthetic v3 patch member.\n` repeated 32 times |
+| `encrypted-compress.txt` | Compressed KEY COPY -> `Encrypted synthetic v3 patch member.\n` repeated 32 times |
 | `zero.bin` | Delete the unlisted BET-only base tail |
-| `folder/reference.bin` | Add 32 `B` bytes, encrypted single-unit FIX_KEY storage |
+| `folder/reference.bin` | Add 32 `B` bytes, encrypted single-unit KEY storage |
 
 The deletion supplies the unlisted tail's required name for complete base
 reconstruction. The recipe reuses private fixture/PTCH writers and the BSD0
 encoder with the normal v3 archive writer; the dedicated public patch writer
-cannot add new members or request FIX_KEY. No public API is extended.
+cannot add new members or request KEY. No public API is extended.
 
 CRC32/MD5 describe final replacement bytes. Replacement/addition FILETIME
 values are fixed at `132537600000000000 + index * 10000000`; internal and
@@ -247,7 +247,7 @@ Normal tests compare the regenerated recipe with committed bytes, validate
 public PTCH size/read/integrity, and materialize 17 logical entries.
 Replacements/addition match the table; `zero.bin` and stale signatures are absent.
 Eleven unchanged codec/audio members retain exact decoded bytes, flags, and
-packed sizes. Tests check streams, HET/classic identity, and independent FIX_KEY
+packed sizes. Tests check streams, HET/classic identity, and independent KEY
 ciphertext before/after relocation. This fixture also seeds archive-open fuzzing.
 
 The v3 patch fixture is unsigned, like the legacy patch fixtures.
@@ -299,7 +299,7 @@ is present. The attributes contain CRC32, MD5 and FILETIME arrays.
 | Member | Exact logical content and storage |
 | --- | --- |
 | `overview.txt` | `Synthetic MPQ v4 overview.\n`, 27 bytes, raw single-unit |
-| `large.bin` | 16,421 bytes; byte `i` is `(i * 37 + 11) & 255`, uncompressed sector-based encryption with FIX_KEY |
+| `large.bin` | 16,421 bytes; byte `i` is `(i * 37 + 11) & 255`, uncompressed sector-based encryption with KEY |
 | `folder/sector.txt` | 8,192 bytes; byte `i` is `65 + i % 23`, zlib-compressed encrypted sectors with sector Adler-32 checksums |
 | `remove.txt` | `Delete this synthetic member.\n`, 30 bytes, raw single-unit |
 | `empty.bin` | Zero bytes, single-unit |
@@ -336,9 +336,9 @@ or public interface is involved.
 | --- | --- |
 | `overview.txt` | COPY -> `Version four patch\n` |
 | `folder/sector.txt` | BSD0 -> original 8,192 bytes with byte 17 XORed by `0x5a` |
-| `large.bin` | Compressed FIX_KEY COPY -> `Encrypted synthetic v4 patch member.\n` repeated 32 times |
+| `large.bin` | Compressed KEY COPY -> `Encrypted synthetic v4 patch member.\n` repeated 32 times |
 | `remove.txt` | Delete marker |
-| `folder/reference.bin` | Add 32 `B` bytes, encrypted single-unit FIX_KEY storage |
+| `folder/reference.bin` | Add 32 `B` bytes, encrypted single-unit KEY storage |
 
 The patch contains seven live entries, including generated listfile and
 attributes. Replacement CRC32/MD5 describe final logical bytes; patch-info
@@ -352,7 +352,7 @@ match the table. Tests check exact bytes, public PTCH APIs, raw MD5, row
 identity and removal of unresolved patch/delete flags. Separate fixture-copy
 transactions exercise abort preservation and v4 update/checksum regeneration.
 Existing runtime tests retain malformed extents, truncated reads, publication
-failures and independent FIX_KEY ciphertext checks.
+failures and independent KEY ciphertext checks.
 
 ### Regeneration
 

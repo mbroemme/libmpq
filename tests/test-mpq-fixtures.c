@@ -1137,8 +1137,9 @@ test_v3_patch_fixture(void)
         }
         if (i == 2)
             TEST_CHECK(
-                (flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u)) ==
-                (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u)
+                (flags &
+                 (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)) ==
+                (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)
             );
         if (i != 0) {
             libmpq__off_t packed;
@@ -1202,7 +1203,7 @@ build_v4_fixture(const char *path, int mpqe)
         mpq_writer_s *file = NULL;
         mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
         if (i == 1)
-            storage.flags = LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u;
+            storage.flags = LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY;
         if (i == 2) {
             storage.flags = LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
                             LIBMPQ_FILE_FLAG_SECTOR_CRC;
@@ -1306,8 +1307,8 @@ test_v4_fixture(const char *path, int mpqe)
             TEST_CHECK(data[j] == (i == 1 ? (uint8_t)(j * 37 + 11) : (uint8_t)('A' + j % 23)));
         if (i == 1)
             TEST_CHECK(
-                (entry->flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u)) ==
-                (LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u)
+                (entry->flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)) ==
+                (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)
             );
         if (i == 2)
             TEST_CHECK(

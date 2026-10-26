@@ -1110,7 +1110,7 @@ def test_v4_fixture_read_update(tmp_path, encrypted):
             with archive.open_stream(name) as stream:
                 assert stream.read() == payload
                 assert entry.verify(mpq.VERIFY_RAW_MD5 if entry.encrypted else mpq.VERIFY_ALL) == 0
-        assert archive["large.bin"].flags & 0x00020000
+        assert archive["large.bin"].flags & mpq.FILE_FLAG_KEY
         with archive.open_stream("folder/sector.txt") as stream:
             stream.seek(4090)
             assert stream.read(32) == expected["folder/sector.txt"][4090:4122]
@@ -1255,7 +1255,7 @@ def test_patch_ordinary_additions(tmp_path, version, wrapped, mixed):
         writer.add("remove.txt", b"remove")
     original = base_path.read_bytes()
     secure = mpq.FileCreateOptions.compressed(mpq.COMPRESSION_ZLIB, mpq.COMPRESSION_ZLIB)
-    secure.flags |= mpq.FILE_FLAG_ENCRYPTED | 0x00020000 | mpq.FILE_FLAG_SECTOR_CRC
+    secure.flags |= mpq.FILE_FLAG_ENCRYPTED | mpq.FILE_FLAG_KEY | mpq.FILE_FLAG_SECTOR_CRC
     opener = (lambda: mpq.Patch.begin_mpqe(base_path, output, code)) if wrapped else lambda: mpq.Patch(base_path, output)
     with opener() as patch:
         with pytest.raises(mpq.LibmpqNotFoundError):
@@ -1394,7 +1394,7 @@ def test_exact_identities(tmp_path, version, wrapped):
     path = tmp_path / "identities.mpq"
     code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
     create = (lambda: mpq.Writer.create_mpqe(path, code, version=version)) if wrapped else lambda: mpq.Writer(path, version=version)
-    options = mpq.FileCreateOptions(mpq.FILE_FLAG_COMPRESS | mpq.FILE_FLAG_ENCRYPTED | 0x20000,
+    options = mpq.FileCreateOptions(mpq.FILE_FLAG_COMPRESS | mpq.FILE_FLAG_ENCRYPTED | mpq.FILE_FLAG_KEY,
                                     mpq.COMPRESSION_ZLIB, mpq.COMPRESSION_ZLIB, 0, 0)
     with create() as writer:
         writer.add("dir/voice.bin", b"neutral", options)
@@ -1437,7 +1437,7 @@ def test_exact_extended_identity_sources(tmp_path, version, wrapped):
     path = tmp_path / "exact-source.mpq"
     code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
     create = (lambda: mpq.Writer.create_mpqe(path, code, version=version, sector_size=512)) if wrapped else lambda: mpq.Writer(path, version=version, sector_size=512)
-    options = mpq.FileCreateOptions(mpq.FILE_FLAG_COMPRESS | mpq.FILE_FLAG_ENCRYPTED | 0x20000,
+    options = mpq.FileCreateOptions(mpq.FILE_FLAG_COMPRESS | mpq.FILE_FLAG_ENCRYPTED | mpq.FILE_FLAG_KEY,
                                     mpq.COMPRESSION_ZLIB, mpq.COMPRESSION_ZLIB, 0, 0)
     payload = b"exact neutral content" * 100
     with create() as writer:
@@ -1516,7 +1516,7 @@ def test_change_identity(tmp_path, version, wrapped):
               else mpq.Writer(path, version=version))
     with create as writer:
         options = mpq.FileCreateOptions.raw()
-        options.flags = mpq.FILE_FLAG_ENCRYPTED | 0x20000
+        options.flags = mpq.FILE_FLAG_ENCRYPTED | mpq.FILE_FLAG_KEY
         writer.add("voice", b"neutral", options)
         writer.add("other", b"other")
         if classic:
@@ -1758,7 +1758,7 @@ def test_verification_filename_key_context(tmp_path, version):
     path = tmp_path / "verify-key.mpq"
     payload = bytes((i * 71 + i // 3) % 256 for i in range(64))
     storage = mpq.FileCreateOptions(
-        mpq.FILE_FLAG_SINGLE | mpq.FILE_FLAG_ENCRYPTED | 0x00020000, 0, 0, 1033, 2)
+        mpq.FILE_FLAG_SINGLE | mpq.FILE_FLAG_ENCRYPTED | mpq.FILE_FLAG_KEY, 0, 0, 1033, 2)
     with mpq.Writer(path, version=version, max_files=4,
                     attributes=mpq.ATTRIBUTE_CRC32 | mpq.ATTRIBUTE_MD5) as writer:
         writer.add("voice.bin", payload, storage)
@@ -1834,3 +1834,7 @@ def test_archive_metadata_independent_md5():
     extended[192:208] = hashlib.md5(extended[:192]).digest()
     with mpq.Archive.open_io(io.BytesIO(extended), len(extended)) as archive:
         assert archive.verify_result() == mpq.VerificationResult(mpq.VERIFY_METADATA_ALL, 0, 0)
+
+
+def test_key_flag_constant():
+    assert mpq.FILE_FLAG_KEY == 0x00020000

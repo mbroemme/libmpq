@@ -298,7 +298,9 @@ main(void)
              policy <= LIBMPQ_COMPRESSION_POLICY_EXTENDED; ++policy) {
             TEST_CHECK(test_policy_writer(version, policy, LIBMPQ_FILE_FLAG_ENCRYPTED) == 0);
             TEST_CHECK(
-                test_policy_writer(version, policy, LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u) == 0
+                test_policy_writer(
+                    version, policy, LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY
+                ) == 0
             );
             TEST_CHECK(test_policy_writer(version, policy, LIBMPQ_FILE_FLAG_SINGLE) == 0);
             TEST_CHECK(

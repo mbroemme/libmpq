@@ -44,7 +44,7 @@ and patch members remain rejected without modifying the staged archive. Rebuilds
 Embedded support follows normal discovery: aligned MPQ origins or a validated
 MPQ user-data pointer, including unaligned pointer targets. Every prefix byte,
 user-data field and the original absolute MPQ-header position are retained.
-FIX_KEY uses MPQ-relative offsets, excluding the prefix. No arbitrary container
+KEY uses MPQ-relative offsets, excluding the prefix. No arbitrary container
 repair is performed. Recognized strong trailers follow the existing signature
 policy. Validated no-ops preserve complete stage bytes and signatures.
 Embedded reconstruction needs both a completed zero-origin MPQ temporary and

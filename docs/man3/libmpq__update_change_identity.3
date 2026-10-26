@@ -43,7 +43,7 @@ when metadata is rebuilt, as for other transactional operations.
 .PP
 Ordinary member offsets, packed bytes, storage flags, attributes and timestamps
 are preserved. Payloads are neither detached nor re-encoded. A tuple change
-requires no encryption or FIX_KEY transformation because it changes neither
+requires no encryption or KEY transformation because it changes neither
 the basename nor the physical member offset. Source raw-chunk policy is
 retained, and applicable raw and structural digests are regenerated. An
 unchanged listfile is also preserved unless signature invalidation requires

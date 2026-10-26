@@ -99,12 +99,12 @@ write_at(FILE *fp, uint64_t offset, const void *data, size_t size)
     return 0;
 }
 
-/* FIX_KEY uses the basename key and the already-final archive-relative payload position. */
+/* KEY uses the basename key and the already-final archive-relative payload position. */
 static uint32_t
 writer_file_key(const mpq_writer_s *writer)
 {
     uint32_t key = libmpq__crypto_file_key(writer->name);
-    if ((writer->options.flags & 0x00020000u) != 0)
+    if ((writer->options.flags & LIBMPQ_FILE_FLAG_KEY) != 0)
         key = (key + (uint32_t)(writer->payload_offset - writer->prefix_size)) ^
               (writer->patch_file ? writer->patch_result_size : (uint32_t)writer->expected);
     return key;
@@ -763,7 +763,8 @@ libmpq__writer_preserve_member(
 {
     const uint32_t supported = LIBMPQ_FLAG_EXISTS | LIBMPQ_FILE_FLAG_ENCRYPTED |
                                LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_SECTOR_CRC |
-                               LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE | 0x00020000u;
+                               LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE |
+                               LIBMPQ_FILE_FLAG_KEY;
     const mpq_entry_s *entry;
     uint32_t mismatches;
     uint8_t modified = 0;
@@ -845,8 +846,8 @@ libmpq__writer_relocate_member(
     if (libmpq__file_seek(writer->fp, 0, SEEK_END) != 0 ||
         (output = libmpq__file_tell(writer->fp)) < 0)
         return LIBMPQ_ERROR_SEEK;
-    if ((entry.flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u)) ==
-            (LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u) &&
+    if ((entry.flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)) ==
+            (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY) &&
         (uint32_t)output != (uint32_t)entry.offset && entry.packed_size != 0) {
         if (name == NULL)
             return LIBMPQ_ERROR_DECRYPT;
@@ -890,7 +891,8 @@ writer_copy_member_checked(
 {
     const uint32_t supported = LIBMPQ_FLAG_EXISTS | LIBMPQ_FILE_FLAG_ENCRYPTED |
                                LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_SECTOR_CRC |
-                               LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE | 0x00020000u;
+                               LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE |
+                               LIBMPQ_FILE_FLAG_KEY;
     mpq_entry_s entry;
     mpq_file_s *file;
     libmpq__off_t output;
@@ -980,7 +982,7 @@ writer_copy_member_checked(
     if ((entry.flags & LIBMPQ_FILE_FLAG_ENCRYPTED) != 0) {
         old_key = file->seed;
         new_key = libmpq__crypto_file_key(new_name);
-        if ((entry.flags & 0x00020000u) != 0)
+        if ((entry.flags & LIBMPQ_FILE_FLAG_KEY) != 0)
             new_key = (new_key + (uint32_t)output) ^ (uint32_t)entry.unpacked_size;
     }
 

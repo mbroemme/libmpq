@@ -28,7 +28,7 @@ Open a read-only logical stream for exactly the requested filename identity.
 Selection occurs on the owned archive/source clone that backs the stream.
 It is never reselected through ordinary name lookup, and no locale-neutral
 fallback occurs. The supplied filename is retained for basename-derived
-MPQ encryption, including FIX_KEY; no full-path-key fallback is added.
+MPQ encryption, including KEY; no full-path-key fallback is added.
 .PP
 Compression, single-unit/sector storage, custom read-at sources and MPQE
 use the existing stream path. The result survives parent archive closure.

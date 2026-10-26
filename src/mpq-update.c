@@ -872,10 +872,10 @@ update_encode(
     /*
      * output is plaintext (also for MPQE). Its current position is the copy
      * destination; the standalone staging archive starts at zero, so subtract
-     * only the source archive's prefix. FIX_KEY must use this final relative
+     * only the source archive's prefix. KEY must use this final relative
      * position, not the staging writer's independently reserved payload start.
      */
-    if ((file_options->flags & 0x00020000u) != 0) {
+    if ((file_options->flags & LIBMPQ_FILE_FLAG_KEY) != 0) {
         libmpq__off_t staging = libmpq__file_tell(writer->fp);
         measured = libmpq__file_tell(output);
         if (staging < 0 || measured < 0 || measured < archive->archive_offset ||
@@ -2104,7 +2104,7 @@ update_rebuild_named(
             uint8_t *decoded = NULL;
             size_t decoded_size;
             options.flags = entry->flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SINGLE |
-                                            LIBMPQ_FILE_FLAG_SECTOR_CRC | 0x00020000u);
+                                            LIBMPQ_FILE_FLAG_SECTOR_CRC | LIBMPQ_FILE_FLAG_KEY);
             if (entry->flags & LIBMPQ_FLAG_COMPRESS_MULTI) {
                 options.flags |= LIBMPQ_FILE_FLAG_COMPRESS;
                 options.compression_first = options.compression_next = LIBMPQ_COMPRESSION_ZLIB;
@@ -2732,7 +2732,7 @@ update_apply(
             uint32_t original_flags = archive->mpq_block[block].flags;
 
             options.flags = original_flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SINGLE |
-                                              LIBMPQ_FILE_FLAG_SECTOR_CRC | 0x00020000u);
+                                              LIBMPQ_FILE_FLAG_SECTOR_CRC | LIBMPQ_FILE_FLAG_KEY);
             if ((original_flags & LIBMPQ_FLAG_COMPRESS_MULTI) != 0) {
                 options.flags |= LIBMPQ_FILE_FLAG_COMPRESS;
                 options.compression_first = LIBMPQ_COMPRESSION_ZLIB;
@@ -3282,7 +3282,7 @@ update_compact_names(
     return result;
 }
 
-/* Compare stored bytes, including the exact expected FIX_KEY ciphertext transformation. */
+/* Compare stored bytes, including the exact expected KEY ciphertext transformation. */
 static int32_t
 update_compact_bytes(
     mpq_archive_s *source, mpq_archive_s *check, uint32_t number, uint32_t output, const char *name
@@ -3293,8 +3293,8 @@ update_compact_bytes(
     uint8_t before[16384];
     uint8_t after[16384];
     uint64_t offset = 0;
-    uint8_t rekey = (a->flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u)) ==
-                        (LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u) &&
+    uint8_t rekey = (a->flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)) ==
+                        (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY) &&
                     (uint32_t)a->offset != (uint32_t)b->offset && a->packed_size != 0;
     mpq_file_s *file = NULL;
     uint32_t key = 0;
@@ -3680,7 +3680,8 @@ libmpq__update_transaction_compact(mpq_update_s *update)
 {
     const uint32_t supported = LIBMPQ_FLAG_EXISTS | LIBMPQ_FILE_FLAG_ENCRYPTED |
                                LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_SECTOR_CRC |
-                               LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE | 0x00020000u;
+                               LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE |
+                               LIBMPQ_FILE_FLAG_KEY;
     mpq_archive_s *archive = NULL;
     mpq_archive_s *writer = NULL;
     mpq_archive_s *check = NULL;
@@ -3911,8 +3912,8 @@ libmpq__update_transaction_compact(mpq_update_s *update)
             continue;
         const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[i].entry_index];
         positions[i] = next;
-        if ((entry->flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u)) ==
-                (LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u) &&
+        if ((entry->flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)) ==
+                (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY) &&
             entry->packed_size != 0 && (uint32_t)next != (uint32_t)entry->offset &&
             names[i] == NULL) {
             result = LIBMPQ_ERROR_DECRYPT;

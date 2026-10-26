@@ -94,6 +94,7 @@ private void testVersionAndErrors() {
 }
 
 private void testCreateReadAndMetadata(uint archiveVersion) {
+    static assert(FILE_FLAG_KEY == 0x00020000);
     auto path = temporaryArchive(archiveVersion == ARCHIVE_VERSION_ONE ? "v1" : "v2");
     auto options = archiveVersion == ARCHIVE_VERSION_ONE ?
         ArchiveCreateOptions.v1() : ArchiveCreateOptions.v2();
@@ -110,7 +111,7 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
     ubyte[64] keyPayload;
     foreach (i, ref value; keyPayload) value = cast(ubyte)(i * 71 + i / 3);
     auto secureStorage = FileOptions.raw();
-    secureStorage.flags = FILE_FLAG_SINGLE | FILE_FLAG_ENCRYPTED | 0x00020000u;
+    secureStorage.flags = FILE_FLAG_SINGLE | FILE_FLAG_ENCRYPTED | FILE_FLAG_KEY;
     secureStorage.locale = 1033;
     secureStorage.platform = 2;
     archive.add("voice.bin", keyPayload, secureStorage);
@@ -1129,7 +1130,7 @@ private void testPatchAdditions() {
             patch.addData("new.bin", payload);
             patch.addData("empty.bin", null);
             auto secure = FileOptions.compressed(COMPRESSION_ZLIB, COMPRESSION_ZLIB);
-            secure.flags |= FILE_FLAG_ENCRYPTED | 0x20000;
+            secure.flags |= FILE_FLAG_ENCRYPTED | FILE_FLAG_KEY;
             patch.addPath("path.bin", source, secure);
             failed = false;
             try { patch.addData("NEW.BIN", payload); }
@@ -1236,7 +1237,7 @@ private void testExactIdentities() {
         auto fileOptions = FileOptions.raw();
         fileOptions.flags = FILE_FLAG_ENCRYPTED;
         writer.add("voice", cast(const(ubyte)[])"neutral", fileOptions);
-        fileOptions.flags |= 0x20000;
+        fileOptions.flags |= FILE_FLAG_KEY;
         fileOptions.locale = 0x409;
         fileOptions.platform = 1;
         writer.add("voice", cast(const(ubyte)[])"localized", fileOptions);
@@ -1332,7 +1333,7 @@ private void testChangeIdentity() {
         auto writer = Archive.create(path, create);
         bool classic = version_ <= ARCHIVE_VERSION_TWO;
         auto options = FileOptions.raw();
-        options.flags = FILE_FLAG_ENCRYPTED | 0x20000;
+        options.flags = FILE_FLAG_ENCRYPTED | FILE_FLAG_KEY;
         writer.add("voice", cast(const(ubyte)[])"neutral", options);
         writer.add("other", cast(const(ubyte)[])"other");
         if (classic) {

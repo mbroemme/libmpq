@@ -201,7 +201,9 @@ with mpq.Update.begin("archive.mpq") as update:
     update.commit()
 ```
 
-Use the same `Update` methods for MPQE after an authenticated begin:
+MPQE transport decoding/encryption does not independently authenticate an archive
+or guarantee detection of an incorrect authentication code. Use the same
+`Update` methods for MPQE after transport decoding:
 
 ```python
 with mpq.Update.begin_mpqe("archive.mpqe", auth_code) as update:
@@ -250,7 +252,7 @@ duplicates raise the existing not-found/existence exception, while ambiguous
 hash/locale identities raise a format exception. Use replacement for existing
 base members, even after removal. A staged addition cannot then be replaced
 or removed. Empty bytes are valid. Existing storage options support compression
-and encryption/FIX_KEY; patch/delete flags are rejected. Inputs are borrowed
+and encryption/KEY; patch/delete flags are rejected. Inputs are borrowed
 only during the call. Before-output validation preserves valid stages;
 partial output errors prevent publication. Addition-only patches compose
 through `Archive.open_patch()` without a metadata marker.
@@ -495,10 +497,10 @@ guaranteed. Proven no-ops preserve bytes and signatures. Actual rebuilds remove
 stale signatures and regenerate integrity using the original raw-chunk policy.
 
 Unknown position-independent ciphertext can move opaquely; this does not verify
-plaintext. FIX_KEY relocation requires a usable key when its adjustment changes.
+plaintext. KEY relocation requires a usable key when its adjustment changes.
 Discoverable embedded prefixes retain all bytes and the MPQ-header position.
 Discovery uses 512-byte probes or a validated user-data pointer, which can
-identify an unaligned MPQ. FIX_KEY remains relative to the MPQ header. This is
+identify an unaligned MPQ. KEY remains relative to the MPQ header. This is
 byte preservation, not a guarantee of arbitrary container validity. Unsupported
 identities, contradictory prefixes, ambiguous shared encryption and unrelated
 trailers are rejected. Named mutations support the same discoverable prefixes
@@ -585,6 +587,12 @@ Errors clear all outputs. Zero flags perform no comparisons. Existing member
 The source must remain stable; source reads do not promise uncached filesystem
 access or an atomic snapshot of concurrent writes. Embedded offsets and MPQE
 logical reads use existing source handling. Unkeyed MD5 establishes neither
-provenance nor authenticity, MPQE transport authentication or whole-archive
+provenance nor authenticity, MPQE transport authenticity or whole-archive
 integrity. `archive_verify()` remains public-key signature verification;
 `file_verify_ex()` remains member verification.
+
+`FILE_FLAG_KEY` (`0x00020000`) selects offset- and size-adjusted
+encryption-key derivation. It modifies `ENCRYPTED`; it does not enable encryption
+on its own. The effective key is `(basename_key + uint32(MPQ-relative offset))
+XOR uint32(uncompressed size)`, with modulo-2^32 arithmetic. Embedded prefixes
+are excluded from this offset. The flag provides no integrity guarantee.

@@ -161,7 +161,7 @@ capacity, while v3 uses completed rows, including the valid zero-row case.
 Finalization rewrites the base, v2 extension, and v3 extension using the
 canonical little-endian header encoders, then follows existing flush/signature
 handling. The v3 archive-size field is authoritative; the legacy size word
-stores its low 32 bits explicitly. V3 FIX_KEY encryption uses the final file
+stores its low 32 bits explicitly. V3 KEY encryption uses the final file
 offset and unpacked size, and payloads are never moved afterward. Legacy v1/v2
 writer behavior remains unchanged.
 
@@ -184,7 +184,7 @@ using bounded rereads of the readable, seekable output stream. These arrays
 occupy physical space but do not increase member packed sizes. HET/BET
 finalization also reserves and writes trailing raw digest arrays after each
 final stored envelope, without increasing its stored-table size. Members are
-not subsequently relocated, so FIX_KEY uses the final output offset before raw
+not subsequently relocated, so KEY uses the final output offset before raw
 hashing.
 
 Original-offset packed imports are rejected for raw-enabled output: their
@@ -199,7 +199,7 @@ V4 transactional rebuilds preserve the source `raw_chunk_size`, including
 zero. With raw chunks enabled, retained members keep their packed representation,
 including ADPCM, mixed sector methods and sector CRC data. The writer copies
 stored bytes at final offsets without recompression, transforming encryption
-only when the basename or FIX_KEY offset changes. Sector tables use key minus
+only when the basename or KEY offset changes. Sector tables use key minus
 one and sectors use key plus index; trailing CRC data stays unencrypted. Raw
 MD5 arrays are regenerated over the final stored bytes and excluded from packed
 sizes. Available raw digests are checked before publication. Named lossless
@@ -733,11 +733,11 @@ points past the checksum table. The table is never encrypted and uses zlib
 only when this reduces its size. Empty, raw, and single-unit files ignore the
 flag. Ordinary writing without this flag and normal extraction are unchanged.
 
-## File encryption and FIX_KEY
+## File encryption and KEY
 
 For an encrypted file, the file-key hash uses only the basename after the
 final `/` or `\`, with classic hash case normalization. Directory components
-do not participate. If FIX_KEY is set, use
+do not participate. If KEY is set, use
 `(base_key + (uint32_t)file_pos) ^ (uint32_t)file_size`. Decrypt the offset
 table with `key - 1` and sector *i* with `key + i`. Encryption processes
 little-endian 32-bit words; use explicit `uint32_t` wraparound. A filename is
@@ -803,12 +803,12 @@ v3/v4 bases with classic-backed, mixed, or BET-only replacement/deletion
 targets when their filenames are supplied by the caller. Classic-backed
 targets retain their unambiguous classic locale/platform identity; BET-only
 targets use zero for both because BET carries neither field. Filenames are
-never reconstructed from hashes. Physical metadata and encryption/FIX_KEY
+never reconstructed from hashes. Physical metadata and encryption/KEY
 reads use canonical entries and validated source mappings, without fabricating
 classic rows. The existing writer emits the version-appropriate header,
 HET/BET and classic tables with shared row identity, patch-info prefixes, PTCH
 bodies and delete markers. V4 patch output also generates structural and
-raw-chunk MD5; FIX_KEY patch encryption uses the final member offset and
+raw-chunk MD5; KEY patch encryption uses the final member offset and
 reconstructed target size. Existing compression, encryption and signature
 options retain their meanings. Ordered patch-view materialization supports
 v3/v4 bases with classic-backed, mixed, or BET-only members. Names come from
@@ -830,7 +830,7 @@ member, not the reconstructed contents; v3 intermediates have no raw MD5 arrays.
 
 Unchanged packed members retain their original archive-relative offsets,
 compression and encryption. Modified contents pass through the normal writer,
-including basename-derived keys and FIX_KEY adjustment at final output offsets.
+including basename-derived keys and KEY adjustment at final output offsets.
 Representable compression masks and classic locale/platform identities are
 preserved; modified files requiring lossy recompression or incompatible
 later-sector compression masks are rejected. Existing writer size limits also
@@ -868,11 +868,11 @@ private decoded MPQ archives, not newly published MPQE containers. The patch-vie
 composition entry points remain private; public patch creation accepts a
 standalone plain MPQ base and may produce MPQE output.
 
-Encrypted PTCH reads reopen independent member caches and derive FIX_KEY from
+Encrypted PTCH reads reopen independent member caches and derive KEY from
 the original member before shifting past its plaintext patch-info prefix.
 Modified output members use basename keys and final archive-relative offsets,
 including when input archives have container prefixes. The public dedicated
-patch writer accepts FIX_KEY storage options for MPQ v1/v2/v3/v4 output.
+patch writer accepts KEY storage options for MPQ v1/v2/v3/v4 output.
 
 Signature presence is not proof of validity. Callers must explicitly verify
 input archives with the required public key; patch-view composition does not
@@ -1094,7 +1094,7 @@ Ordinary v3/v4 creation emits mixed HET/BET and classic tables. Transactions
 with incomplete names preserve the source table representations: classic probe
 slots remain fixed, and complete normalized 64-bit HET/BET identities can be
 serialized without filenames. Unknown packed members stay at their original
-offsets, preserving ciphertext and FIX_KEY; v4 raw digests are regenerated.
+offsets, preserving ciphertext and KEY; v4 raw digests are regenerated.
 Ambiguous or reduced hashes, incompatible row provenance and unrepresentable
 metadata remain rejected. The same writer rebuilds all tables without
 inventing names or a complete listfile.

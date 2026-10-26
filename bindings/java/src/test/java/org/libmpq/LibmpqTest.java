@@ -36,6 +36,11 @@ import org.libmpq.ffi.LibmpqNative;
  */
 class LibmpqTest {
     @Test
+    void keyFlagConstant() {
+        assertEquals(0x00020000, Mpq.FILE_FLAG_KEY);
+    }
+
+    @Test
     void memberVerificationKeyContext(@TempDir Path directory) throws Exception {
         byte[] payload = new byte[64];
         for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i * 71 + i / 3);
@@ -45,7 +50,7 @@ class LibmpqTest {
                     new ArchiveCreateOptions(version, 4, 512, 0,
                         Mpq.ATTRIBUTE_CRC32 | Mpq.ATTRIBUTE_MD5))) {
                 writer.add("voice.bin", payload,
-                    new FileOptions(Mpq.FILE_FLAG_SINGLE | Mpq.FILE_FLAG_ENCRYPTED | 0x00020000,
+                    new FileOptions(Mpq.FILE_FLAG_SINGLE | Mpq.FILE_FLAG_ENCRYPTED | Mpq.FILE_FLAG_KEY,
                                     0, 0, 1033, 2));
             }
             try (Archive archive = Archive.open(path)) {
@@ -184,7 +189,7 @@ class LibmpqTest {
             boolean classic = version <= Mpq.ARCHIVE_VERSION_TWO;
             try (Archive writer = Archive.create(path, new ArchiveCreateOptions(version, 8, 4096, 0))) {
                 writer.add("voice", "neutral".getBytes(StandardCharsets.UTF_8),
-                        new FileOptions(Mpq.FILE_FLAG_ENCRYPTED | 0x20000, 0, 0, 0, 0));
+                        new FileOptions(Mpq.FILE_FLAG_ENCRYPTED | Mpq.FILE_FLAG_KEY, 0, 0, 0, 0));
                 writer.add("other", "other".getBytes(StandardCharsets.UTF_8), null);
                 if (classic) writer.add("voice", "localized".getBytes(StandardCharsets.UTF_8),
                         new FileOptions(0, 0, 0, 0x411, 2));
@@ -280,7 +285,7 @@ class LibmpqTest {
             var options = new ArchiveCreateOptions(version, 8, 4096, 0);
             try (Archive writer = Archive.create(path, options)) {
                 writer.add("voice", "neutral".getBytes(), new FileOptions(Mpq.FILE_FLAG_ENCRYPTED, 0, 0, 0, 0));
-                writer.add("voice", "localized".getBytes(), new FileOptions(Mpq.FILE_FLAG_ENCRYPTED | 0x20000, 0, 0, 0x409, 1));
+                writer.add("voice", "localized".getBytes(), new FileOptions(Mpq.FILE_FLAG_ENCRYPTED | Mpq.FILE_FLAG_KEY, 0, 0, 0x409, 1));
             }
             Archive archive = Archive.open(path);
             var variants = archive.variants("voice");
@@ -390,7 +395,7 @@ class LibmpqTest {
                         patch.addData("new.bin", payload);
                         patch.addData("empty.bin", new byte[0]);
                         patch.addPath("path.bin", source, new FileOptions(
-                            Mpq.FILE_FLAG_COMPRESS | Mpq.FILE_FLAG_ENCRYPTED | 0x20000,
+                            Mpq.FILE_FLAG_COMPRESS | Mpq.FILE_FLAG_ENCRYPTED | Mpq.FILE_FLAG_KEY,
                             Mpq.COMPRESSION_ZLIB, Mpq.COMPRESSION_ZLIB, 0, 0));
                         assertThrows(LibmpqException.class, () -> patch.addData("NEW.BIN", payload));
                         assertThrows(LibmpqException.class, () -> patch.remove("new.bin"));

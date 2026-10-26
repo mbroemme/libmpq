@@ -240,7 +240,7 @@ test_directory_members(void)
                 if (i < 2)
                     storage.flags = LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED;
                 if ((i & 1u) != 0)
-                    storage.flags |= 0x00020000u;
+                    storage.flags |= LIBMPQ_FILE_FLAG_KEY;
                 memcpy(payload, "RIFF", 4);
                 libmpq__store_le32(payload + 4, (uint32_t)(i < 2 ? 400 : sizeof(payload)) - 8);
                 TEST_CHECK(

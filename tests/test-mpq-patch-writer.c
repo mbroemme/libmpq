@@ -1341,7 +1341,7 @@ test_public_patch_storage(uint32_t version, uint32_t flags)
         TEST_CHECK(memcmp(body_tag, "PTCH", sizeof(body_tag)) != 0);
     else if ((flags & LIBMPQ_FILE_FLAG_COMPRESS) == 0)
         TEST_CHECK(memcmp(body_tag, "PTCH", sizeof(body_tag)) == 0);
-    if ((flags & 0x00020000u) != 0) {
+    if ((flags & LIBMPQ_FILE_FLAG_KEY) != 0) {
         uint8_t first[4];
         uint32_t key;
 
@@ -2154,7 +2154,7 @@ static int
 test_v3_patch_creation(uint32_t flags, uint8_t mpqe)
 {
     return test_extended_patch_source(
-        flags, mpqe, 0, LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u,
+        flags, mpqe, 0, LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY,
         LIBMPQ_ARCHIVE_VERSION_THREE
     );
 }
@@ -2214,7 +2214,7 @@ test_public_v4_chain(uint32_t base_version, uint32_t first_version, int mpqe)
         mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED,
                                        LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
         uint32_t mismatch;
-        storage.flags |= 0x00020000u;
+        storage.flags |= LIBMPQ_FILE_FLAG_KEY;
         TEST_CHECK(test_chain_source(paths[1], version, i, expected) == 0);
         TEST_CHECK(
             (mpqe && i == 0 ? libmpq__patch_begin_mpqe(
@@ -2355,7 +2355,7 @@ test_public_additions(uint32_t version, uint8_t mpqe, uint8_t mixed)
     mpq_archive_s *physical = NULL;
     mpq_archive_s *result = NULL;
     mpq_file_options_s secure = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-                                      LIBMPQ_FILE_FLAG_SECTOR_CRC | 0x00020000u,
+                                      LIBMPQ_FILE_FLAG_SECTOR_CRC | LIBMPQ_FILE_FLAG_KEY,
                                   LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
     mpq_file_options_s single = secure;
     mpq_file_options_s invalid = { LIBMPQ_FILE_FLAG_PATCH_FILE, 0, 0, 0, 0 };
@@ -2872,21 +2872,21 @@ main(void)
     TEST_CHECK(test_delta_selection(1, LIBMPQ_ARCHIVE_VERSION_FOUR) == 0);
     TEST_CHECK(
         test_extended_patch_source(
-            LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0,
-            LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u,
+            LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0,
+            LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY,
             LIBMPQ_ARCHIVE_VERSION_FOUR
         ) == 0
     );
     TEST_CHECK(
         test_extended_patch_source(
-            LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 1, 0,
+            LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 1, 0,
             LIBMPQ_FILE_FLAG_SINGLE, LIBMPQ_ARCHIVE_VERSION_FOUR
         ) == 0
     );
     TEST_CHECK(
         test_extended_patch_source(
             LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED, 0, 1,
-            LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u,
+            LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY,
             LIBMPQ_ARCHIVE_VERSION_FOUR
         ) == 0
     );
@@ -2919,7 +2919,7 @@ main(void)
     TEST_CHECK(
         test_v3_patch_source(
             LIBMPQ_FILE_FLAG_SINGLE, 0, 3,
-            LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u
+            LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY
         ) == 0
     );
     TEST_CHECK(test_v3_patch_source(LIBMPQ_FILE_FLAG_SINGLE, 0, 1, LIBMPQ_FILE_FLAG_SINGLE) == 0);
@@ -2932,13 +2932,13 @@ main(void)
     TEST_CHECK(
         test_v3_patch_source(
             LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED, 0, 1,
-            LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u
+            LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY
         ) == 0
     );
     TEST_CHECK(
         test_v3_patch_source(
             LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED, 1, 1,
-            LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u
+            LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY
         ) == 0
     );
     TEST_CHECK(test_public_mpqe_patch() == 0);
@@ -2961,13 +2961,13 @@ main(void)
          ++version) {
         TEST_CHECK(
             test_public_patch_storage(
-                version, LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u
+                version, LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY
             ) == 0
         );
         TEST_CHECK(
             test_public_patch_storage(
                 version, LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-                             LIBMPQ_FILE_FLAG_SECTOR_CRC | 0x00020000u
+                             LIBMPQ_FILE_FLAG_SECTOR_CRC | LIBMPQ_FILE_FLAG_KEY
             ) == 0
         );
     }

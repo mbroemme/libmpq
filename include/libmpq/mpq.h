@@ -152,6 +152,12 @@ typedef int32_t (*libmpq_read_at_fn)(
 #define LIBMPQ_FILE_FLAG_IMPLODE 0x00000100u
 #define LIBMPQ_FILE_FLAG_COMPRESS 0x00000200u
 #define LIBMPQ_FILE_FLAG_ENCRYPTED 0x00010000u
+
+/*
+ * Select offset- and size-adjusted encryption-key derivation. This flag
+ * has no encryption effect without LIBMPQ_FILE_FLAG_ENCRYPTED.
+ */
+#define LIBMPQ_FILE_FLAG_KEY 0x00020000u
 #define LIBMPQ_FILE_FLAG_SINGLE 0x01000000u
 
 /* Reader-visible patch and deletion entries; these are not writer options. */
@@ -975,7 +981,7 @@ extern LIBMPQ_API int32_t libmpq__update_change_identity(
  * Legacy ordinary v1/v2 updates preserve supported unrelated trailing bytes;
  * named reconstruction rejects unrelated trailers. Format restrictions remain.
  * Stale weak and strong signatures are removed on modification. MPQE archives
- * require the explicit authenticated update_begin_mpqe() entry point.
+ * require the explicit transport-decoding update_begin_mpqe() entry point.
  * Known-target v3/v4 modifications can preserve supported unrelated unnamed
  * entries with complete normalized hashes and consistent canonical provenance
  * where applicable. Ambiguous aliases, reduced hashes, and unrepresentable
@@ -985,10 +991,12 @@ extern LIBMPQ_API int32_t libmpq__update_change_identity(
 extern LIBMPQ_API int32_t libmpq__update_begin(mpq_update_s **update, const char *path);
 
 /*
- * Begin an authenticated MPQE update using a private plaintext working copy.
+ * Begin an MPQE transport update using a private plaintext working copy.
  * The caller's authentication code is borrowed only during this call; at
  * least 32 bytes are required. Commit re-encrypts and atomically publishes
- * the updated archive. A crash can leave a private plaintext temporary file.
+ * the updated archive. Transport decoding does not independently authenticate
+ * a structurally plausible archive or guarantee detection of an incorrect code.
+ * A crash can leave a private plaintext temporary file.
  */
 extern LIBMPQ_API int32_t libmpq__update_begin_mpqe(
     mpq_update_s **update, const char *archive_path, const uint8_t *auth_code, size_t auth_code_size
@@ -1106,7 +1114,7 @@ extern LIBMPQ_API int32_t libmpq__update_timestamp_identity(
  * may remain; no minimum size or byte-count reduction is guaranteed. Proven
  * already-compact archives are unchanged, including signatures. Actual rebuilds
  * invalidate signatures. Unknown position-independent ciphertext may be copied
- * opaquely; FIX_KEY relocation requires a usable key when its adjustment changes.
+ * opaquely; KEY relocation requires a usable key when its adjustment changes.
  * Discoverable embedded prefixes retain their bytes and original MPQ origin.
  * Unrelated trailers and unsupported prefix metadata or mappings return FORMAT.
  * Semantic rejection preserves the stage; adoption errors may leave it abort-only.

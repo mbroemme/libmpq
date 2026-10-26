@@ -578,10 +578,10 @@ patch_read_incremental(
         goto done;
     physical = clone->mpq_map[number].entry_index;
     block = &clone->mpq_entry[physical];
-    if (name != NULL && (block->flags & (LIBMPQ_FLAG_ENCRYPTED | 0x00020000u)) ==
-                            (LIBMPQ_FLAG_ENCRYPTED | 0x00020000u)) {
+    if (name != NULL && (block->flags & (LIBMPQ_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)) ==
+                            (LIBMPQ_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)) {
 
-        /* The body view moves past the prefix; FIX_KEY still describes the original member. */
+        /* The body view moves past the prefix; KEY still describes the original member. */
         key = (libmpq__crypto_file_key(name) + (uint32_t)block->offset) ^
               (uint32_t)block->unpacked_size;
         seed = &key;
@@ -1877,7 +1877,7 @@ patch_named_storage(
 
     options->flags = canonical->flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SINGLE |
                                          LIBMPQ_FILE_FLAG_SECTOR_CRC | LIBMPQ_FILE_FLAG_COMPRESS |
-                                         LIBMPQ_FILE_FLAG_IMPLODE | 0x00020000u);
+                                         LIBMPQ_FILE_FLAG_IMPLODE | LIBMPQ_FILE_FLAG_KEY);
     options->locale = entry->locale;
     options->platform = entry->platform;
     if ((options->flags & LIBMPQ_FILE_FLAG_COMPRESS) == 0)

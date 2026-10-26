@@ -801,8 +801,8 @@ patch_add_validate(mpq_patch_writer_s *state, const char *name, const mpq_file_o
     uint64_t name_hash = 0;
     int32_t result;
     const uint32_t supported = LIBMPQ_FILE_FLAG_IMPLODE | LIBMPQ_FILE_FLAG_COMPRESS |
-                               LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u | LIBMPQ_FILE_FLAG_SINGLE |
-                               LIBMPQ_FILE_FLAG_SECTOR_CRC;
+                               LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY |
+                               LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_SECTOR_CRC;
 
     if (state == NULL)
         return LIBMPQ_ERROR_EXIST;
@@ -939,7 +939,7 @@ libmpq__patch_writer_replace(
         if (options->locale != locale || options->platform != platform ||
             (options->flags &
              ~(LIBMPQ_FILE_FLAG_IMPLODE | LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-               LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_SECTOR_CRC | 0x00020000u)) != 0)
+               LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_SECTOR_CRC | LIBMPQ_FILE_FLAG_KEY)) != 0)
             return LIBMPQ_ERROR_FORMAT;
         storage = *options;
     } else {

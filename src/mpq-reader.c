@@ -1513,7 +1513,7 @@ libmpq__reader_offsets_acquire_key(
                 result = reader_name_key(name, &seed);
                 if (result != 0)
                     return result;
-                if (mpq_archive->mpq_entry[index].flags & 0x00020000u)
+                if (mpq_archive->mpq_entry[index].flags & LIBMPQ_FILE_FLAG_KEY)
                     seed = (seed + (uint32_t)mpq_archive->mpq_entry[index].offset) ^
                            (uint32_t)mpq_archive->mpq_entry[index].unpacked_size;
             }
@@ -1560,7 +1560,7 @@ libmpq__reader_offsets_acquire_key(
             result = reader_name_key(name, &seed);
             if (result != 0)
                 goto error;
-            if (mpq_archive->mpq_entry[entry_index].flags & 0x00020000u)
+            if (mpq_archive->mpq_entry[entry_index].flags & LIBMPQ_FILE_FLAG_KEY)
                 seed = (seed + (uint32_t)mpq_archive->mpq_entry[entry_index].offset) ^
                        (uint32_t)mpq_archive->mpq_entry[entry_index].unpacked_size;
         }

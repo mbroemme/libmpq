@@ -228,7 +228,7 @@ defaults. These calls require base-absent, unstaged identities. Existing names
 or ambiguous hash/locale identities throw `LibmpqException`; name NULs are
 rejected before the native call. Empty byte arrays are valid. Use replacement
 for an existing base member, even after removal. Staged additions cannot be
-replaced or removed. Compression, encryption/FIX_KEY and sector CRC reuse
+replaced or removed. Compression, encryption/KEY and sector CRC reuse
 `FileOptions`; patch/delete flags are rejected. Native arenas own the borrowed
 bytes and strings during each call. Validation preserves earlier valid stages;
 partial output failures prevent publication. Addition-only artifacts compose
@@ -467,10 +467,10 @@ guaranteed. Proven no-ops preserve bytes and signatures. Actual rebuilds remove
 stale signatures and regenerate integrity using the original raw-chunk policy.
 
 Unknown position-independent ciphertext can move opaquely; this does not verify
-plaintext. FIX_KEY relocation requires a usable key when its adjustment changes.
+plaintext. KEY relocation requires a usable key when its adjustment changes.
 Discoverable embedded prefixes retain all bytes and the MPQ-header position.
 Discovery uses 512-byte probes or a validated user-data pointer, which can
-identify an unaligned MPQ. FIX_KEY remains relative to the MPQ header. This is
+identify an unaligned MPQ. KEY remains relative to the MPQ header. This is
 byte preservation, not a guarantee of arbitrary container validity. Unsupported
 identities, contradictory prefixes, ambiguous shared encryption and unrelated
 trailers are rejected. Named mutations support the same discoverable prefixes
@@ -561,3 +561,9 @@ logical reads use existing source handling. Unkeyed MD5 establishes neither
 provenance nor authenticity, MPQE transport authentication or whole-archive
 integrity. `archive_verify()` remains public-key signature verification;
 `file_verify_ex()` remains member verification.
+
+`Mpq.FILE_FLAG_KEY` (`0x00020000`) selects offset- and size-adjusted
+encryption-key derivation. It modifies `ENCRYPTED`; it does not enable encryption
+on its own. The effective key is `(basename_key + uint32(MPQ-relative offset))
+XOR uint32(uncompressed size)`, with modulo-2^32 arithmetic. Embedded prefixes
+are excluded from this offset. The flag provides no integrity guarantee.

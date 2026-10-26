@@ -142,7 +142,7 @@ reader_v3_fixture(
     source->shift = shift;
     source->base = base;
     if ((encrypted & 1) != 0)
-        flags |= LIBMPQ_FLAG_ENCRYPTED | 0x00020000u;
+        flags |= LIBMPQ_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY;
     if (!empty) {
         for (i = 0; i < 9000; i++)
             source->bytes[68 + i] = (uint8_t)(i * 17u + i / 31u);
@@ -2594,7 +2594,7 @@ reader_v4_fixture(
     if (encrypted)
         file_options.flags |= LIBMPQ_FILE_FLAG_ENCRYPTED;
     if (encrypted == 2)
-        file_options.flags |= 0x00020000u;
+        file_options.flags |= LIBMPQ_FILE_FLAG_KEY;
     if (single)
         file_options.flags |= LIBMPQ_FILE_FLAG_SINGLE;
     if (attributes && compressed && !single)
@@ -2878,7 +2878,7 @@ reader_v4_raw_fixture(
         uint32_t position = 0;
         if (size == 0)
             continue;
-        TEST_CHECK((blocks[i].flags & 0x00020000u) == 0);
+        TEST_CHECK((blocks[i].flags & LIBMPQ_FILE_FLAG_KEY) == 0);
         TEST_CHECK(offset <= original.size && size <= original.size - offset);
         TEST_CHECK(size <= sizeof(source->bytes) - source->size);
         blocks[i].offset = (uint32_t)source->size;

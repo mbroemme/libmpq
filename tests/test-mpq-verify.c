@@ -679,7 +679,7 @@ cleanup:
  * its key is available. The inspection must leave that outer reference alive.
  */
 static int
-test_single_compression(int fix_key)
+test_single_compression(int key)
 {
     mpq_archive_create_options_s options = { 1, 2, 512, 0,
                                              LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 };
@@ -696,8 +696,8 @@ test_single_compression(int fix_key)
     int result = 0;
     char path[256] = { 0 };
 
-    if (fix_key)
-        file.flags |= 0x00020000u;
+    if (key)
+        file.flags |= LIBMPQ_FILE_FLAG_KEY;
     memset(plain, 'a', sizeof(plain));
     REQUIRE(test_temp_path(path, sizeof(path), "single-compression") == 0);
     REQUIRE(libmpq__archive_create(&archive, path, &options) == 0);
@@ -808,7 +808,7 @@ test_verification_coverage(uint32_t version)
     mpq_archive_create_options_s options = { version, 5, 512, 0,
                                              LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 };
     mpq_file_options_s secure = {
-        LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0, 1033, 2
+        LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0, 1033, 2
     };
     mpq_archive_s *archive = NULL;
     char path[256] = { 0 };

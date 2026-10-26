@@ -107,6 +107,7 @@ public final class Mpq {
     public static final int IDENTITY_BET = 0x00000002;
     /** MPQ flag for encrypted storage. */
     public static final int FILE_FLAG_ENCRYPTED = 0x00010000;
+    public static final int FILE_FLAG_KEY = 0x00020000;
     /** Member stores a PTCH payload rather than final target bytes. */
     public static final int FILE_FLAG_PATCH_FILE = 0x00100000;
     /** Member deletes a file in a patch view. */

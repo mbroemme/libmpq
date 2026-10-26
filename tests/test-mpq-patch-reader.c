@@ -466,7 +466,7 @@ generate_feature_patch_fixture(const char *path, int v4)
         }
         storage.flags = i == 0 ? LIBMPQ_FILE_FLAG_SINGLE : LIBMPQ_FILE_FLAG_COMPRESS;
         if (i == 2)
-            storage.flags |= LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u;
+            storage.flags |= LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY;
         storage.compression_first = storage.compression_next = i == 0 ? 0 : LIBMPQ_COMPRESSION_ZLIB;
         TEST_CHECK(
             libmpq__writer_patch_file_add(
@@ -496,9 +496,9 @@ generate_feature_patch_fixture(const char *path, int v4)
         );
         TEST_CHECK(libmpq__writer_patch_delete_marker(writer, "zero.bin", 0, 0) == 0);
     }
-    storage =
-        (mpq_file_options_s){ LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0,
-                              0, 0, 0 };
+    storage = (mpq_file_options_s){
+        LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0, 0, 0
+    };
     TEST_CHECK(
         libmpq__archive_add_data(writer, "folder/reference.bin", added, sizeof(added), &storage) ==
         0
@@ -2647,8 +2647,8 @@ check_relocated_patch_cipher(
     TEST_CHECK(offset == archive->mpq_entry[archive->mpq_map[number].entry_index].offset);
     TEST_CHECK(libmpq__load_le32(record + 4) == size && libmpq__load_le32(record + 8) == size);
     TEST_CHECK(
-        (flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u)) ==
-        (LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u)
+        (flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)) ==
+        (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)
     );
     TEST_CHECK((flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE)) == 0);
     TEST_CHECK(libmpq__load_le16(header + 14) <= 15);
@@ -2746,7 +2746,7 @@ test_v3_committed_patch(void)
     TEST_CHECK(
         check_v3_materialized_member(
             patch, "folder/reference.bin", added, sizeof(added),
-            LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SINGLE | 0x00020000u
+            LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_KEY
         ) == 0
     );
     TEST_CHECK(check_relocated_patch_cipher(patch, added, sizeof(added), added_offset) == 0);
@@ -2818,7 +2818,7 @@ test_v3_chain(uint32_t flags, uint8_t bet_only, int v4)
     uint8_t *unchanged = NULL;
     size_t base_size;
     size_t unchanged_size;
-    uint8_t signed_inputs = !bet_only && (flags & 0x00020000u) != 0;
+    uint8_t signed_inputs = !bet_only && (flags & LIBMPQ_FILE_FLAG_KEY) != 0;
 
     TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "chain-v3-base") == 0);
     for (size_t i = 0; i < 4; i++) {
@@ -2965,7 +2965,7 @@ test_v3_chain(uint32_t flags, uint8_t bet_only, int v4)
                                             : 3u) +
                                   (bet_only ? 0u : 1u)
         );
-        if ((flags & (0x00020000u | LIBMPQ_FILE_FLAG_COMPRESS)) == 0x00020000u)
+        if ((flags & (LIBMPQ_FILE_FLAG_KEY | LIBMPQ_FILE_FLAG_COMPRESS)) == LIBMPQ_FILE_FLAG_KEY)
             TEST_CHECK(
                 check_relocated_patch_cipher(
                     archive, contents[count < 4 ? count : 3], sizes[count < 4 ? count : 3],
@@ -3112,7 +3112,7 @@ test_v3_chain(uint32_t flags, uint8_t bet_only, int v4)
                 libmpq__patch_view_archive(view), name, contents[3], sizes[3], flags
             ) == 0
         );
-        if ((flags & (0x00020000u | LIBMPQ_FILE_FLAG_COMPRESS)) == 0x00020000u)
+        if ((flags & (LIBMPQ_FILE_FLAG_KEY | LIBMPQ_FILE_FLAG_COMPRESS)) == LIBMPQ_FILE_FLAG_KEY)
             TEST_CHECK(
                 check_relocated_patch_cipher(
                     libmpq__patch_view_archive(view), contents[3], sizes[3], original_offset
@@ -3132,7 +3132,7 @@ test_v3_chain(uint32_t flags, uint8_t bet_only, int v4)
                 libmpq__patch_view_archive(view), name, contents[3], sizes[3], flags
             ) == 0
         );
-        if ((flags & (0x00020000u | LIBMPQ_FILE_FLAG_COMPRESS)) == 0x00020000u)
+        if ((flags & (LIBMPQ_FILE_FLAG_KEY | LIBMPQ_FILE_FLAG_COMPRESS)) == LIBMPQ_FILE_FLAG_KEY)
             TEST_CHECK(
                 check_relocated_patch_cipher(
                     libmpq__patch_view_archive(view), contents[3], sizes[3], original_offset
@@ -3269,7 +3269,7 @@ test_v4_compact_legacy(void)
                     uint32_t key = libmpq__crypto_file_key(name);
                     TEST_CHECK(key == 0xa25af234u);
                     blocks[0].flags |=
-                        LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SINGLE | 0x00020000u;
+                        LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_KEY;
                     key = (key + blocks[0].offset) ^ blocks[0].unpacked_size;
                     TEST_CHECK(libmpq__crypto_encrypt_block(image + end, sizeof(kept), key) == 0);
                 }
@@ -3407,7 +3407,7 @@ test_v4_views(uint32_t base_version, uint32_t layer_version, int bet_only, int w
         bet_only ? 0 : LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 | LIBMPQ_ATTRIBUTE_FILETIME
     };
     mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-                                       LIBMPQ_FILE_FLAG_SECTOR_CRC | 0x00020000u,
+                                       LIBMPQ_FILE_FLAG_SECTOR_CRC | LIBMPQ_FILE_FLAG_KEY,
                                    LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
     uint32_t number;
     uint32_t files;
@@ -3578,9 +3578,10 @@ test_v3_materialization(
     uint8_t before[9000];
     uint8_t after[9000];
     size_t member_size = (flags & LIBMPQ_FILE_FLAG_SINGLE) != 0 ? 1024 : sizeof(before);
-    size_t after_size = (flags & 0x00020000u) != 0 && (flags & LIBMPQ_FILE_FLAG_COMPRESS) == 0
-                            ? member_size - 17
-                            : member_size;
+    size_t after_size =
+        (flags & LIBMPQ_FILE_FLAG_KEY) != 0 && (flags & LIBMPQ_FILE_FLAG_COMPRESS) == 0
+            ? member_size - 17
+            : member_size;
     uint8_t *payload = NULL;
     size_t payload_size;
     uint8_t *base_image = NULL;
@@ -3711,7 +3712,7 @@ test_v3_materialization(
         TEST_CHECK(
             archive->mpq_entry[archive->mpq_map[number].entry_index].offset != original_offset
         );
-        if ((flags & 0x00020000u) != 0 && (flags & LIBMPQ_FILE_FLAG_COMPRESS) == 0)
+        if ((flags & LIBMPQ_FILE_FLAG_KEY) != 0 && (flags & LIBMPQ_FILE_FLAG_COMPRESS) == 0)
             TEST_CHECK(
                 check_relocated_patch_cipher(archive, after, after_size, original_offset) == 0
             );
@@ -3965,7 +3966,7 @@ test_opened_owned_inputs(int mode)
     mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_FOUR, 8, 4096,
                                              LIBMPQ_ARCHIVE_CREATE_LISTFILE, 0 };
     mpq_file_options_s storage = {
-        LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0, 0, 0
+        LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0, 0, 0
     };
     mpq_archive_s *inputs[3] = { NULL, NULL, NULL };
     mpq_archive_s *result = NULL;
@@ -4567,12 +4568,14 @@ main(int argc, char **argv)
     );
     TEST_CHECK(
         test_v3_materialization(
-            1, 1, LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0, 0
+            1, 1, LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0,
+            0, 0
         ) == 0
     );
     TEST_CHECK(
         test_v3_materialization(
-            1, 0, LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0, 0
+            1, 0, LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0,
+            0
         ) == 0
     );
     TEST_CHECK(test_v3_materialization(0, 0, LIBMPQ_FILE_FLAG_SINGLE, 1, 0, 0) == 0);
@@ -4580,30 +4583,38 @@ main(int argc, char **argv)
     TEST_CHECK(test_v3_materialization(1, 0, LIBMPQ_FILE_FLAG_SINGLE, 0, 1, 0) == 0);
     TEST_CHECK(
         test_v3_materialization(
-            0, 1, LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0, 1
+            0, 1, LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0,
+            1
         ) == 0
     );
     TEST_CHECK(
-        test_v3_materialization(0, 1, LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0, 1) == 0
+        test_v3_materialization(0, 1, LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0, 1) ==
+        0
     );
     TEST_CHECK(test_v3_noop_view(0) == 0);
     TEST_CHECK(test_v3_noop_view(1) == 0);
     TEST_CHECK(test_v3_chain(LIBMPQ_FILE_FLAG_SINGLE, 0, 0) == 0);
     TEST_CHECK(test_v3_chain(LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED, 1, 0) == 0);
     TEST_CHECK(
-        test_v3_chain(LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0) == 0
+        test_v3_chain(
+            LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0
+        ) == 0
     );
-    TEST_CHECK(test_v3_chain(LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 1, 0) == 0);
+    TEST_CHECK(test_v3_chain(LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 1, 0) == 0);
     TEST_CHECK(
-        test_v3_chain(LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0) ==
-        0
+        test_v3_chain(
+            LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0
+        ) == 0
     );
     TEST_CHECK(
-        test_v3_chain(LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 1) ==
-        0
+        test_v3_chain(
+            LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 1
+        ) == 0
     );
     TEST_CHECK(
-        test_v3_chain(LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 1, 1) == 0
+        test_v3_chain(
+            LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 1, 1
+        ) == 0
     );
     return 0;
 }

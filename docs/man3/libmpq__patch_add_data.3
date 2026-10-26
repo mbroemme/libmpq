@@ -35,7 +35,7 @@ need no metadata marker when explicitly supplied to
 \fBlibmpq__archive_open_patch\fP().
 .PP
 NULL \fIoptions\fP selects ordinary writer defaults. Existing compression,
-encryption, FIX_KEY, single-unit, sector CRC and representable locale/platform
+encryption, KEY, single-unit, sector CRC and representable locale/platform
 options are supported. PATCH_FILE, DELETE_MARKER and unsupported flags are
 rejected. The common finalizer generates v4 structural and raw-chunk MD5 over
 final stored bytes, using the existing public 16 KiB raw-chunk default.

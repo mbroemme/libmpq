@@ -1588,7 +1588,7 @@ test_generic_add(uint32_t version, int mpqe, int metadata)
         create.attributes = 0;
     }
     if (version >= LIBMPQ_ARCHIVE_VERSION_THREE)
-        storage.flags |= 0x00020000u;
+        storage.flags |= LIBMPQ_FILE_FLAG_KEY;
     TEST_CHECK(test_temp_path(path, sizeof(path), "generic-add") == 0);
     TEST_CHECK(
         (mpqe ? libmpq__archive_create_mpqe(
@@ -1775,7 +1775,7 @@ test_v3_metadata_rollback(void)
                                             LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 |
                                                 LIBMPQ_ATTRIBUTE_FILETIME };
     mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-                                       0x00020000u,
+                                       LIBMPQ_FILE_FLAG_KEY,
                                    LIBMPQ_COMPRESSION_LZMA, LIBMPQ_COMPRESSION_LZMA, 0, 0 };
     mpq_update_ops_s ops = { fflush, fclose, fail_publish };
     mpq_archive_s *archive = NULL;
@@ -1880,7 +1880,7 @@ test_v3_retained_operations(void)
         if (i != 0)
             options.flags |= LIBMPQ_FILE_FLAG_ENCRYPTED;
         if (i == 2)
-            options.flags |= 0x00020000u;
+            options.flags |= LIBMPQ_FILE_FLAG_KEY;
         TEST_CHECK(
             libmpq__archive_add_data(
                 archive, keep[i], payload, (libmpq__off_t)lengths[i], &options
@@ -2098,7 +2098,7 @@ test_v3_normalized_update(int mpqe)
     mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_THREE, 8, 512,
                                             LIBMPQ_ARCHIVE_CREATE_LISTFILE, 0 };
     mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-                                       0x00020000u,
+                                       LIBMPQ_FILE_FLAG_KEY,
                                    LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
     mpq_archive_s *archive = NULL;
     mpq_update_s *update = NULL;
@@ -2249,7 +2249,7 @@ check_serialized_member_key(
             archive->mpq_het.header.entry_count == count
         );
     }
-    if ((flags & 0x00020000u) != 0)
+    if ((flags & LIBMPQ_FILE_FLAG_KEY) != 0)
         key = (base_key + (uint32_t)position) ^ (uint32_t)size;
     TEST_CHECK(packed_size <= sizeof(packed) && size <= sizeof(decoded));
     TEST_CHECK(
@@ -2350,7 +2350,7 @@ test_directory_encrypted_updates(uint32_t version, int mpqe, int embedded, uint3
     const char *names[] = { "folder\\reference.bin", "folder\\renamed.bin", "other\\renamed.bin" };
     mpq_archive_create_options_s create = { version, 8, 512, LIBMPQ_ARCHIVE_CREATE_LISTFILE, 0 };
     mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-                                       0x00020000u,
+                                       LIBMPQ_FILE_FLAG_KEY,
                                    LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
     mpq_archive_s *archive = NULL;
     mpq_update_s *update = NULL;
@@ -2412,8 +2412,8 @@ test_directory_encrypted_updates(uint32_t version, int mpqe, int embedded, uint3
             TEST_CHECK(number == classic_number);
             TEST_CHECK(libmpq__file_flags(archive, number, &flags) == 0);
             TEST_CHECK(
-                (flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u)) ==
-                (storage_flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u))
+                (flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)) ==
+                (storage_flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY))
             );
         }
         TEST_CHECK(libmpq__archive_close(archive) == 0);
@@ -2432,9 +2432,9 @@ test_directory_encrypted_updates(uint32_t version, int mpqe, int embedded, uint3
 
 /* A compact external-style archive has no writer-reserved 512-byte payload gap. */
 static int
-test_compact_fix_key_update(uint32_t version)
+test_compact_key_update(uint32_t version)
 {
-    const char *path = "update-compact-fix-key.mpq";
+    const char *path = "update-compact-key.mpq";
     const char *name = "folder\\reference.bin";
     uint8_t wire[108] = { 0 };
     uint32_t header_size = version == LIBMPQ_ARCHIVE_VERSION_ONE ? 32 : 44;
@@ -2444,7 +2444,7 @@ test_compact_fix_key_update(uint32_t version)
     mpq_archive_s *archive = NULL;
     mpq_update_s *update = NULL;
     mpq_file_options_s storage = {
-        LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0, 0, 0
+        LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0, 0, 0
     };
     memset(payload, 'C', sizeof(payload));
     libmpq__store_le32(wire, 0x1a51504du);
@@ -2488,16 +2488,16 @@ test_compact_fix_key_update(uint32_t version)
     return 0;
 }
 
-/* A patch prefix is plaintext; FIX_KEY uses the member start and reconstructed size. */
+/* A patch prefix is plaintext; KEY uses the member start and reconstructed size. */
 static int
-test_fix_key_patch_prefix(int single)
+test_key_patch_prefix(int single)
 {
-    const char *path = "update-fix-key-prefix.mpq";
+    const char *path = "update-key-prefix.mpq";
     const char *name = "folder\\reference.bin";
     mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_THREE, 4, 512,
                                             LIBMPQ_ARCHIVE_CREATE_LISTFILE, 0 };
     mpq_file_options_s storage = {
-        LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0, 0, 0
+        LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0, 0, 0
     };
     mpq_archive_s *archive = NULL;
     mpq_update_s *update = NULL;
@@ -2543,7 +2543,7 @@ test_fix_key_patch_prefix(int single)
     );
     {
         mpq_file_options_s cache_storage = {
-            LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u, 0, 0, 0, 0
+            LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0, 0, 0
         };
         TEST_CHECK(
             libmpq__archive_add_data(
@@ -2635,12 +2635,12 @@ test_fix_key_patch_prefix(int single)
         TEST_CHECK(archive->mpq_file[cached_number] == NULL);
     }
     TEST_CHECK(libmpq__archive_close(archive) == 0);
-    TEST_CHECK(copy_file(path, "update-fix-key-prefix-reference.mpq") == 0);
+    TEST_CHECK(copy_file(path, "update-key-prefix-reference.mpq") == 0);
     TEST_CHECK(libmpq__update_begin(&update, path) == 0);
     TEST_CHECK(libmpq__update_rename(update, name, "other\\reference.bin") == LIBMPQ_ERROR_FORMAT);
     TEST_CHECK(libmpq__update_abort(update) == 0);
-    TEST_CHECK(same_file(path, "update-fix-key-prefix-reference.mpq"));
-    TEST_CHECK(remove(path) == 0 && remove("update-fix-key-prefix-reference.mpq") == 0);
+    TEST_CHECK(same_file(path, "update-key-prefix-reference.mpq"));
+    TEST_CHECK(remove(path) == 0 && remove("update-key-prefix-reference.mpq") == 0);
     return 0;
 }
 
@@ -2708,7 +2708,7 @@ test_v4_updates(uint32_t chunk, unsigned layout, int mpqe)
                           LIBMPQ_ATTRIBUTE_PATCH_BIT
     };
     mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-                                       LIBMPQ_FILE_FLAG_SECTOR_CRC | 0x00020000u,
+                                       LIBMPQ_FILE_FLAG_SECTOR_CRC | LIBMPQ_FILE_FLAG_KEY,
                                    LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
     mpq_archive_s *archive = NULL;
     mpq_update_s *update = NULL;
@@ -3034,7 +3034,7 @@ test_v4_preserved_packed(uint32_t chunk, uint32_t encryption, unsigned kind)
         libmpq__source_read_at(archive->source, after.offset, actual, (size_t)after.packed_size) ==
         0
     );
-    if ((encryption & 0x00020000u) != 0 && before.offset != after.offset) {
+    if ((encryption & LIBMPQ_FILE_FLAG_KEY) != 0 && before.offset != after.offset) {
         uint32_t old_key = (0xa25af234u + (uint32_t)before.offset) ^ (uint32_t)before.unpacked_size;
         uint32_t new_key = (0xa25af234u + (uint32_t)after.offset) ^ (uint32_t)after.unpacked_size;
         uint32_t blocks = kind == 2 ? 1 : count - 1;
@@ -3117,7 +3117,7 @@ test_unknown_members(uint32_t version, unsigned layout, uint32_t chunk, int mpqe
     mpq_archive_create_options_s create = { version, 16, 512, 0,
                                             layout == 2 ? 0 : LIBMPQ_ATTRIBUTES_ALL & 7 };
     mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-                                       LIBMPQ_FILE_FLAG_SECTOR_CRC | 0x00020000u,
+                                       LIBMPQ_FILE_FLAG_SECTOR_CRC | LIBMPQ_FILE_FLAG_KEY,
                                    LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
     mpq_archive_s *archive = NULL;
     mpq_update_s *update = NULL;
@@ -3771,7 +3771,7 @@ test_change_identity_updates(uint32_t version, uint32_t raw_size, uint8_t single
                                             LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 |
                                                 LIBMPQ_ATTRIBUTE_FILETIME };
     mpq_file_options_s options = { LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_COMPRESS |
-                                       0x20000u,
+                                       LIBMPQ_FILE_FLAG_KEY,
                                    LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
     mpq_update_ops_s failing = { fflush, fclose, fail_publish };
     mpq_archive_s *archive = NULL;
@@ -3958,7 +3958,7 @@ typedef struct
     uint8_t prefix[4096];
 } exact_alias_snapshot_s;
 
-/* Check final FIX_KEY ciphertext directly, separately from named stream decoding. */
+/* Check final KEY ciphertext directly, separately from named stream decoding. */
 static int
 test_exact_ciphertext(
     const char *path, const char *name, uint16_t locale, uint16_t platform, const uint8_t *expected,
@@ -3979,8 +3979,8 @@ test_exact_ciphertext(
     TEST_CHECK(entry->offset != original_offset && entry->packed_size == size);
     TEST_CHECK(entry->unpacked_size == size);
     TEST_CHECK(
-        entry->flags ==
-        (LIBMPQ_FLAG_EXISTS | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SINGLE | 0x20000u)
+        entry->flags == (LIBMPQ_FLAG_EXISTS | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SINGLE |
+                         LIBMPQ_FILE_FLAG_KEY)
     );
     key = (basename_key + (uint32_t)entry->offset) ^ (uint32_t)size;
     TEST_CHECK(
@@ -4173,8 +4173,9 @@ test_exact_cross_names(uint32_t version, uint32_t raw_size, int mixed, unsigned 
     mpq_archive_create_options_s create = { version, 128, 1024, 0,
                                             LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 |
                                                 LIBMPQ_ATTRIBUTE_FILETIME };
-    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | 0x20000u,
-                                   0, 0, 0, 0 };
+    mpq_file_options_s options = {
+        LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0, 0, 0
+    };
     mpq_update_ops_s failing = { fflush, fclose, fail_publish };
     exact_alias_snapshot_s original = { 0 };
     mpq_archive_s *archive = NULL;
@@ -4551,7 +4552,7 @@ test_exact_updates(uint32_t version, uint32_t chunk, unsigned layout, uint8_t si
         layout == 2 ? 0 : LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 | LIBMPQ_ATTRIBUTE_FILETIME
     };
     mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-                                       0x20000u,
+                                       LIBMPQ_FILE_FLAG_KEY,
                                    LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
     mpq_update_ops_s failing = { fflush, fclose, fail_publish };
     mpq_archive_s *archive = NULL;
@@ -4862,7 +4863,7 @@ test_identity_access(uint32_t version, uint32_t chunk, unsigned layout, uint8_t 
 {
     mpq_archive_create_options_s create = { version, 8, single ? 4096 : 512, 0, 0 };
     mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-                                       0x00020000u,
+                                       LIBMPQ_FILE_FLAG_KEY,
                                    LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
     mpq_archive_s *archive = NULL;
     mpq_stream_s *stream = NULL;
@@ -5139,7 +5140,7 @@ test_alias_probe_update(uint32_t version, uint32_t chunk, int mixed)
                                             LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 |
                                                 LIBMPQ_ATTRIBUTE_FILETIME };
     mpq_file_options_s encrypted = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-                                         LIBMPQ_FILE_FLAG_SECTOR_CRC | 0x00020000u,
+                                         LIBMPQ_FILE_FLAG_SECTOR_CRC | LIBMPQ_FILE_FLAG_KEY,
                                      LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
     mpq_file_options_s named = { 0, 0, 0, 0x415, 4 };
     mpq_archive_s *archive = NULL;
@@ -5532,7 +5533,7 @@ test_timestamp_updates(
                                             LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED,
                                             LIBMPQ_ATTRIBUTE_FILETIME | LIBMPQ_ATTRIBUTE_CRC32 |
                                                 LIBMPQ_ATTRIBUTE_MD5 };
-    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_ENCRYPTED | 0x20000u |
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY |
                                        LIBMPQ_FILE_FLAG_COMPRESS,
                                    LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
     mpq_archive_s *archive = NULL;
@@ -5693,7 +5694,8 @@ test_timestamp_aliases(uint32_t version, uint32_t raw)
     mpq_archive_s *archive = NULL;
     mpq_update_s *update = NULL;
     mpq_hash_s rows[16];
-    mpq_file_options_s encrypted = { LIBMPQ_FILE_FLAG_ENCRYPTED | 0x20000u, 0, 0, 0, 0 };
+    mpq_file_options_s encrypted = { LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0, 0,
+                                     0 };
     uint32_t hashes[3];
     uint32_t slot;
     uint32_t number;
@@ -6365,7 +6367,7 @@ test_compaction(uint32_t version, uint32_t raw, unsigned encryption, int wrapped
     if (encryption != 0)
         options.flags |= LIBMPQ_FILE_FLAG_ENCRYPTED;
     if (encryption == 2)
-        options.flags |= 0x00020000u;
+        options.flags |= LIBMPQ_FILE_FLAG_KEY;
     TEST_CHECK(test_temp_path(path, sizeof(path), "compact") == 0);
     TEST_CHECK(test_temp_path(snapshot, sizeof(snapshot), "compact-original") == 0);
     TEST_CHECK(test_temp_path(stage, sizeof(stage), "compact-stage") == 0);
@@ -6531,7 +6533,7 @@ test_compaction_opaque(uint32_t version, unsigned layout, unsigned encryption, u
     if (encryption)
         options.flags |= LIBMPQ_FILE_FLAG_ENCRYPTED;
     if (encryption == 2 || encryption == 6)
-        options.flags |= 0x00020000u;
+        options.flags |= LIBMPQ_FILE_FLAG_KEY;
     TEST_CHECK(test_temp_path(path, sizeof(path), "compact-opaque") == 0);
     TEST_CHECK(test_temp_path(stage, sizeof(stage), "compact-opaque-before") == 0);
     TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
@@ -6707,7 +6709,7 @@ test_compaction_listfile(uint32_t version, unsigned storage, int signature, int 
         options.flags =
             LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SECTOR_CRC;
         if (storage == 3)
-            options.flags |= 0x00020000u;
+            options.flags |= LIBMPQ_FILE_FLAG_KEY;
     }
     if (storage == 7) {
         options.flags = LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SECTOR_CRC;
@@ -7103,13 +7105,13 @@ test_compaction_adpcm(uint32_t version, unsigned form)
     return 0;
 }
 
-/* Unknown FIX_KEY bytes stay intact on no-ops and metadata-only relocation. */
+/* Unknown KEY bytes stay intact on no-ops and metadata-only relocation. */
 static int
 test_compact_embedded_noop(uint32_t version, int wrapped, int gap)
 {
     mpq_archive_create_options_s create = { version, 4, 512, 0, 0 };
     mpq_file_options_s options = {
-        LIBMPQ_FILE_FLAG_ENCRYPTED | 0x00020000u | LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0
+        LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY | LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0
     };
     mpq_archive_s *archive = NULL;
     mpq_update_s *update = NULL;
@@ -7340,7 +7342,7 @@ test_compaction_qualified(uint32_t version, unsigned form)
                                             LIBMPQ_ATTRIBUTE_FILETIME | LIBMPQ_ATTRIBUTE_CRC32 |
                                                 LIBMPQ_ATTRIBUTE_MD5 };
     mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-                                       0x20000u,
+                                       LIBMPQ_FILE_FLAG_KEY,
                                    LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
     uint64_t origin;
     uint8_t prefix[4096] = { 0 };
@@ -7445,7 +7447,7 @@ test_compaction_cache_mapping(uint32_t version, int single)
                                             LIBMPQ_ATTRIBUTE_FILETIME | LIBMPQ_ATTRIBUTE_CRC32 |
                                                 LIBMPQ_ATTRIBUTE_MD5 };
     mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-                                       0x20000u,
+                                       LIBMPQ_FILE_FLAG_KEY,
                                    LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
     mpq_archive_s *archive = NULL;
     mpq_update_s *update = NULL;
@@ -7603,7 +7605,7 @@ test_update_sign_ranges(unsigned form)
     return 0;
 }
 
-/* Pinned unknown FIX_KEY bytes, listfile policy and FILETIME survive signature ordering. */
+/* Pinned unknown KEY bytes, listfile policy and FILETIME survive signature ordering. */
 static int
 test_update_signing(uint32_t version, uint32_t raw, unsigned form, int wrapped, unsigned storage)
 {
@@ -7612,7 +7614,7 @@ test_update_signing(uint32_t version, uint32_t raw, unsigned form, int wrapped, 
                                             LIBMPQ_ATTRIBUTE_FILETIME | LIBMPQ_ATTRIBUTE_CRC32 |
                                                 LIBMPQ_ATTRIBUTE_MD5 };
     mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
-                                       LIBMPQ_FILE_FLAG_SECTOR_CRC | 0x20000u,
+                                       LIBMPQ_FILE_FLAG_SECTOR_CRC | LIBMPQ_FILE_FLAG_KEY,
                                    LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
     mpq_file_options_s list_options = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
     mpq_archive_s *archive = NULL;
@@ -7646,7 +7648,7 @@ test_update_signing(uint32_t version, uint32_t raw, unsigned form, int wrapped, 
         if (storage > 1)
             list_options.flags |= LIBMPQ_FILE_FLAG_ENCRYPTED;
         if (storage > 2)
-            list_options.flags |= 0x20000u | LIBMPQ_FILE_FLAG_SINGLE;
+            list_options.flags |= LIBMPQ_FILE_FLAG_KEY | LIBMPQ_FILE_FLAG_SINGLE;
     }
     TEST_CHECK(test_temp_path(path, sizeof(path), "update-sign") == 0);
     TEST_CHECK(test_temp_path(before, sizeof(before), "update-sign-before") == 0);
@@ -8007,7 +8009,7 @@ static int
 test_update_sign_names(void)
 {
     mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_THREE, 8, 512, 0, 0 };
-    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_ENCRYPTED | 0x20000u, 0, 0, 0, 0 };
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0, 0, 0 };
     mpq_archive_s *archive = NULL;
     mpq_update_s *update = NULL;
     char path[512];
@@ -8064,7 +8066,7 @@ test_update_sign_attributes(unsigned storage)
         options.compression_first = options.compression_next = LIBMPQ_COMPRESSION_ZLIB;
     }
     if (storage > 1)
-        options.flags |= LIBMPQ_FILE_FLAG_ENCRYPTED | 0x20000u;
+        options.flags |= LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY;
     if (storage == 2)
         options.flags |= LIBMPQ_FILE_FLAG_SINGLE;
     if (storage == 3)
@@ -8380,7 +8382,7 @@ main(void)
         for (unsigned encryption = 0; encryption < 3; ++encryption) {
             uint32_t flags = encryption ? LIBMPQ_FILE_FLAG_ENCRYPTED : 0;
             if (encryption == 2)
-                flags |= 0x00020000u;
+                flags |= LIBMPQ_FILE_FLAG_KEY;
             TEST_CHECK(test_v4_preserved_packed(0, flags, kind) == 0);
             TEST_CHECK(test_v4_preserved_packed(0x4000, flags, kind) == 0);
             TEST_CHECK(test_v4_preserved_packed(17, flags, kind) == 0);
@@ -8422,17 +8424,17 @@ main(void)
     TEST_CHECK(test_v3_metadata_rollback() == 0);
     TEST_CHECK(test_v3_normalized_update(0) == 0);
     TEST_CHECK(test_v3_normalized_update(1) == 0);
-    TEST_CHECK(test_compact_fix_key_update(LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
-    TEST_CHECK(test_compact_fix_key_update(LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
-    TEST_CHECK(test_fix_key_patch_prefix(0) == 0);
-    TEST_CHECK(test_fix_key_patch_prefix(1) == 0);
+    TEST_CHECK(test_compact_key_update(LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
+    TEST_CHECK(test_compact_key_update(LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
+    TEST_CHECK(test_key_patch_prefix(0) == 0);
+    TEST_CHECK(test_key_patch_prefix(1) == 0);
     for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_FOUR;
          ++version) {
         for (int mpqe = 0; mpqe < 2; ++mpqe) {
             for (int embedded = 0; embedded < 2; ++embedded) {
                 for (unsigned flags = 0; flags < 4; ++flags) {
                     uint32_t storage = LIBMPQ_FILE_FLAG_ENCRYPTED;
-                    storage |= (flags & 1) != 0 ? 0x00020000u : 0;
+                    storage |= (flags & 1) != 0 ? LIBMPQ_FILE_FLAG_KEY : 0;
                     storage |=
                         (flags & 2) != 0 ? LIBMPQ_FILE_FLAG_SINGLE : LIBMPQ_FILE_FLAG_COMPRESS;
                     TEST_CHECK(

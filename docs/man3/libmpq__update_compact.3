@@ -42,7 +42,7 @@ structural and raw MD5 using the original v4 raw-chunk policy.
 Supported v1-v4 classic and representable HET/BET layouts reuse
 identity-preserving packed reconstruction. Unknown unencrypted and
 position-independent encrypted payloads can move as opaque stored bytes.
-Ciphertext copying is not plaintext verification. FIX_KEY relocation requires
+Ciphertext copying is not plaintext verification. KEY relocation requires
 a usable basename key when its effective key changes; no name is fabricated.
 Every shared encrypted alias requires a known, key-compatible spelling.
 Ambiguous or insufficient shared encryption provenance is rejected.
@@ -55,7 +55,7 @@ header bytes and padding are retained unchanged. Arbitrary payload bytes are
 not scanned for incidental MPQ signatures. Unaligned origins without a
 discoverable user-data pointer and contradictory prefix metadata are rejected.
 Only supported MPQ relationships and prefix bytes are preserved; arbitrary
-executable/container validity is not guaranteed. FIX_KEY adjustments use
+executable/container validity is not guaranteed. KEY adjustments use
 MPQ-relative member offsets and never include prefix length.
 .PP
 Unrelated trailers, physical patch/delete members,
