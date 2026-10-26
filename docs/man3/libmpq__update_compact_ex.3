@@ -1,0 +1,105 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__UPDATE_COMPACT_EX 3 "2026-11-16" "libmpq 0.9.0" "libmpq Library Functions"
+.SH NAME
+libmpq__update_compact_ex \- compact with externally known archive filenames
+.SH SYNOPSIS
+.nf
+#include <libmpq/mpq.h>
+
+int32_t libmpq__update_compact_ex(
+        mpq_update_s *update,
+        const char *const *filenames,
+        size_t filename_count);
+.fi
+.SH DESCRIPTION
+Immediately compact the current private transaction stage using the same
+physical planner, packed writer, validation and adoption as
+.BR libmpq__update_compact (3).
+Commit alone publishes; this call does not consume the update handle.
+No minimum archive size or reduction in total bytes is guaranteed.
+.PP
+The array and every NUL-terminated string are borrowed only for the synchronous
+call. Zero count is identical to ordinary compaction and does not dereference
+filenames, whether NULL or non-NULL. Nonzero input requires a non-NULL array
+and non-NULL, nonempty entries. Counts and merged ownership capacities must
+fit the existing private uint32_t counters and pointer-array allocation sizes.
+.PP
+Every supplied spelling must resolve through strict current-stage identity
+validation before a candidate is constructed. Missing entries are errors;
+they are not silently ignored or replaced by another spelling or identity.
+Valid case variants and exact-byte duplicates are accepted. Distinct classic
+slash spellings are not normalized. Localized-only names and all matching
+locale/platform variants are preserved. Full, unambiguous BET-only identities
+are accepted without fabricated classic tuples; reduced or contradictory
+provenance is rejected.
+.PP
+Names augment transaction-known spellings and the existing internal listfile.
+They do not create or add entries to that listfile. All live references to a
+shared encrypted payload need sufficient compatible key provenance. Different
+aliases can share one payload when their basename-derived keys agree; no alias
+is discarded, detached or duplicated to make compaction succeed. Valid names
+alone do not guarantee that the layout is reconstructible or the plaintext
+correct. Existing format, metadata, trailer and encrypted-member restrictions
+remain. KEY adjustment uses MPQ-relative member position and uncompressed size,
+excluding any embedded prefix.
+.PP
+After actual candidate validation, all still-valid supplied spellings are
+revalidated and copied into replacement transaction-owned knowledge before
+adoption. Ownership transfers only after successful adoption. No caller
+pointers, old canonical numbers or tuple indices are retained. Distinct aliases
+are retained, not only one representative per physical payload.
+.PP
+A proven already-compact archive still validates every supplied entry and all
+existing compaction eligibility. It returns without creating a candidate,
+rewriting bytes, invalidating signatures, changing the working path, changing
+dirty state or retaining new names. A later call may require the same names
+again. A prior mutation's dirty state is preserved.
+.PP
+Semantic rejection and pre-adoption failures preserve the previous valid stage
+and filename knowledge. All temporary name allocations are released. Existing
+qualifying candidate-adoption errors may leave the transaction abort-only;
+there is no new recovery or publication guarantee. Abort and failed publication
+retain the existing original-source guarantees. Ordinary clean-commit behavior
+and ordinary named-update alias restrictions are unchanged. Compact last when
+final layout matters; later supported mutations may introduce gaps.
+.PP
+Supported embedded prefix/user-data preservation, MPQE publication, signatures,
+raw integrity, attributes and bounded payload copying follow ordinary
+compaction. Budget disk space for the working stage and candidate, with the
+existing extra embedded/MPQE temporaries where applicable.
+.SH EXAMPLE
+.nf
+const char *names[] = { "voice", "left/data" };
+int32_t status = libmpq__update_compact_ex(update, names, 2);
+/* Check status, then commit to publish or abort to discard. */
+.fi
+.SH RETURN VALUE
+Returns 0 for a validated compaction or no-op, or a negative libmpq error.
+.SH ERRORS
+LIBMPQ_ERROR_EXIST reports an invalid/abort-only update, a NULL array with
+nonzero count, a NULL/empty entry, or an absent filename. LIBMPQ_ERROR_FORMAT
+reports ambiguous/reduced/contradictory identity provenance, incompatible shared
+keys or unsupported layout/metadata. LIBMPQ_ERROR_DECRYPT reports unavailable
+required key provenance. LIBMPQ_ERROR_SIZE reports unrepresentable capacity;
+LIBMPQ_ERROR_MALLOC reports allocation failure. Existing open, read, write,
+seek and close errors propagate. No entry from a failed batch is installed.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__update_compact (3),
+.BR libmpq__update_begin (3),
+.BR libmpq__update_commit (3),
+.BR libmpq__update_abort (3),
+.BR libmpq__file_identity (3)

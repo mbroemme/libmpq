@@ -497,6 +497,27 @@ payloads are placed densely without retaining source holes; shared aliases
 still reference one payload. Hash capacity and required metadata/raw storage
 remain, so neither a minimum archive size nor a size reduction is promised.
 
+`libmpq__update_compact_ex(update, filenames, filename_count)` uses the same
+engine, adding borrowed filename context to transaction-known names and the
+internal listfile. NULL/zero and non-NULL/zero input are exactly ordinary
+compaction; the array is not dereferenced for zero count. Nonzero input is one
+atomic batch: every nonempty spelling must pass strict current-stage identity
+resolution. Missing entries fail with EXIST; ambiguous/reduced provenance or
+incompatible encrypted aliases fail with FORMAT. Counts, pointer allocations
+and merged name capacities are checked before narrowing. Valid names do not
+make unsupported layouts eligible or establish plaintext correctness.
+
+All matching locale/platform identities and compatible aliases remain intact.
+Hints never add listfile entries or normalize classic slash spellings. After
+actual candidate adoption, n.1 provenance retains owned copies of every valid
+supplied alias, not merely the canonical row representative. Preparation and
+candidate validation precede previous-stage consumption. Semantic/pre-adoption
+failure installs no new names; existing abort-only adoption boundaries remain.
+A true no-op still validates input but changes no bytes, path, signatures, dirty
+state or knowledge. Callers may need to supply the same names again. This is not
+a separate registration lifecycle and does not change ordinary clean commits
+or the ordinary named-update collector's distinct-alias restrictions.
+
 When removing a weak signature, compaction edits `(listfile)` only if it lists
 that signature. Other lines and separators remain unchanged. Changed listfiles
 retain supported storage flags and recoverable compression policy; unsupported

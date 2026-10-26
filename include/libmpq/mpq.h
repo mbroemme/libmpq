@@ -1124,6 +1124,32 @@ extern LIBMPQ_API int32_t libmpq__update_timestamp_identity(
 extern LIBMPQ_API int32_t libmpq__update_compact(mpq_update_s *update);
 
 /*
+ * Compact with additional externally known filenames. The array and strings are
+ * borrowed synchronously; zero count is identical to update_compact(), without
+ * dereferencing filenames. Nonzero input requires non-NULL, nonempty names.
+ * Every supplied spelling must resolve through strict identity validation in
+ * the current stage. Missing names return EXIST; ambiguous/reduced unsupported
+ * provenance and incompatible shared encryption keys return FORMAT. Valid names
+ * do not guarantee reconstruction eligibility or plaintext correctness.
+ *
+ * Names augment transaction knowledge and the internal listfile without changing
+ * that listfile. All matching locale/platform identities and compatible aliases
+ * remain subject to existing compaction restrictions. Actual adoption retains
+ * owned copies of all still-valid supplied spellings, never caller pointers or
+ * old file numbers. Preparation precedes adoption; semantic/pre-adoption failure
+ * preserves the previous stage and knowledge. Existing abort-only adoption
+ * failure boundaries remain. Allocation/capacity errors return MALLOC/SIZE.
+ *
+ * A validated no-op changes neither bytes, signatures, working path, dirty state
+ * nor filename knowledge; inputs are still validated, but new names are not
+ * retained. A later call may need the same spellings again. Commit alone
+ * publishes; this operation does not consume the transaction.
+ */
+extern LIBMPQ_API int32_t libmpq__update_compact_ex(
+    mpq_update_s *update, const char *const *filenames, size_t filename_count
+);
+
+/*
  * Validate and atomically publish staged changes. This consumes the update
  * handle even if publication fails; callers must not use it afterward.
  */

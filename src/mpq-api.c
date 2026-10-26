@@ -1527,5 +1527,12 @@ libmpq__block_read(
 int32_t
 libmpq__update_compact(mpq_update_s *update)
 {
-    return libmpq__update_transaction_compact(update);
+    return libmpq__update_transaction_compact(update, NULL, 0);
+}
+
+/* Supply borrowed spellings to the same immediate compaction engine. */
+int32_t
+libmpq__update_compact_ex(mpq_update_s *update, const char *const *filenames, size_t filename_count)
+{
+    return libmpq__update_transaction_compact(update, filenames, filename_count);
 }

@@ -204,6 +204,10 @@ int32_t libmpq__update_sign(
         const uint8_t *private_key, size_t private_key_size);
 .sp
 int32_t libmpq__update_compact(mpq_update_s *update);
+.sp
+int32_t libmpq__update_compact_ex(
+        mpq_update_s *update, const char *const *filenames, size_t filename_count);
+.sp
 int32_t libmpq__update_timestamp(
         mpq_update_s *update, const char *filename, uint64_t filetime);
 .sp
@@ -680,6 +684,7 @@ Ordinary operations retain HET-first/classic first-hit resolution.
 .BR libmpq__update_change_identity (3),
 .BR libmpq__update_sign (3),
 .BR libmpq__update_compact (3),
+.BR libmpq__update_compact_ex (3),
 .BR libmpq__update_timestamp (3),
 .BR libmpq__update_timestamp_identity (3),
 .BR libmpq__update_commit (3),

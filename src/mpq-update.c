@@ -1268,10 +1268,13 @@ update_free_names(char **names, uint32_t count)
 static int32_t
 update_prepare_names(
     mpq_update_s *update, mpq_archive_s *candidate, char *const *supplied, uint32_t supplied_count,
-    const char *first, const char *second, char ***out, uint32_t *out_count
+    const char *const *filenames, uint32_t filename_count, const char *first, const char *second,
+    char ***out, uint32_t *out_count
 )
 {
-    uint64_t capacity = (uint64_t)update->known_count + supplied_count + 2;
+    uint64_t collected_end = (uint64_t)update->known_count + supplied_count;
+    uint64_t filenames_end = collected_end + filename_count;
+    uint64_t capacity = filenames_end + 2;
     uint32_t count = 0;
     char **names;
     void *(*allocate)(size_t) = update->ops->allocate_names;
@@ -1288,14 +1291,19 @@ update_prepare_names(
         return LIBMPQ_ERROR_MALLOC;
     for (uint64_t i = 0; i < capacity; ++i) {
         const char *name = i < update->known_count ? update->known_names[i]
-                           : i < capacity - 2      ? supplied[i - update->known_count]
-                           : i == capacity - 2     ? first
+                           : i < collected_end     ? supplied[i - update->known_count]
+                           : i < filenames_end     ? filenames[i - collected_end]
+                           : i == filenames_end    ? first
                                                    : second;
         uint32_t number;
         uint32_t existing;
         if (name == NULL)
             continue;
-        result = libmpq__file_number(candidate, name, &number);
+        if (i >= collected_end && i < filenames_end) {
+            mpq_file_identity_s identity;
+            result = libmpq__file_identity(candidate, name, 0, &identity);
+        } else
+            result = libmpq__file_number(candidate, name, &number);
         if (result == LIBMPQ_ERROR_EXIST) {
             result = 0;
             continue;
@@ -2440,8 +2448,8 @@ update_rebuild_named(
             goto done;
     }
     result = update_prepare_names(
-        update, check, names, count, old_name, action == LIBMPQ_UPDATE_RENAME ? new_name : NULL,
-        &prepared_names, &prepared_count
+        update, check, names, count, NULL, 0, old_name,
+        action == LIBMPQ_UPDATE_RENAME ? new_name : NULL, &prepared_names, &prepared_count
     );
     if (result != 0)
         goto done;
@@ -2929,7 +2937,7 @@ update_apply(
     if (result != 0)
         goto done;
     result = update_prepare_names(
-        update, check, NULL, 0, old_name, action == LIBMPQ_UPDATE_RENAME ? new_name : NULL,
+        update, check, NULL, 0, NULL, 0, old_name, action == LIBMPQ_UPDATE_RENAME ? new_name : NULL,
         &prepared_names, &prepared_count
     );
     if (result != 0)
@@ -3277,7 +3285,7 @@ done:
 static int32_t
 update_compact_name(
     mpq_archive_s *archive, char **names, uint8_t *known_slots, uint32_t slot_count,
-    const char *name
+    const char *name, void *(*allocate)(size_t)
 )
 {
     uint32_t hashes[3];
@@ -3293,7 +3301,16 @@ update_compact_name(
             libmpq__crypto_file_key(names[number]) != libmpq__crypto_file_key(name))
             return LIBMPQ_ERROR_FORMAT;
         if (names[number] == NULL) {
-            names[number] = libmpq__string_duplicate(name);
+            if (allocate == NULL)
+                names[number] = libmpq__string_duplicate(name);
+            else {
+                size_t length = strlen(name);
+                if (length == SIZE_MAX)
+                    return LIBMPQ_ERROR_SIZE;
+                names[number] = allocate(length + 1);
+                if (names[number] != NULL)
+                    memcpy(names[number], name, length + 1);
+            }
             if (names[number] == NULL)
                 return LIBMPQ_ERROR_MALLOC;
         }
@@ -3326,7 +3343,7 @@ update_compact_names(
     for (uint32_t i = 0; result == 0 && i < update->known_count; ++i)
         if (update->known_names[i] != NULL) {
             result = update_compact_name(
-                archive, names, known_slots, slot_count, update->known_names[i]
+                archive, names, known_slots, slot_count, update->known_names[i], NULL
             );
             if (result == LIBMPQ_ERROR_EXIST)
                 result = 0;
@@ -3351,7 +3368,7 @@ update_compact_names(
         }
         memcpy(name, list + start, position - start);
         name[position - start] = 0;
-        result = update_compact_name(archive, names, known_slots, slot_count, name);
+        result = update_compact_name(archive, names, known_slots, slot_count, name, NULL);
         if (result == LIBMPQ_ERROR_EXIST)
             result = LIBMPQ_ERROR_FORMAT;
         free(name);
@@ -3754,7 +3771,9 @@ update_adopt_candidate(mpq_update_s *update, FILE **file, char **temporary, char
 
 /* Compact the current stage through the shared writer, then adopt only a validated candidate. */
 int32_t
-libmpq__update_transaction_compact(mpq_update_s *update)
+libmpq__update_transaction_compact(
+    mpq_update_s *update, const char *const *filenames, size_t filename_count
+)
 {
     const uint32_t supported = LIBMPQ_FLAG_EXISTS | LIBMPQ_FILE_FLAG_ENCRYPTED |
                                LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_SECTOR_CRC |
@@ -3791,6 +3810,18 @@ libmpq__update_transaction_compact(mpq_update_s *update)
     int32_t result;
     if (update == NULL || update->working == NULL)
         return LIBMPQ_ERROR_EXIST;
+    if (filename_count != 0) {
+        if (filenames == NULL)
+            return LIBMPQ_ERROR_EXIST;
+        if (filename_count > UINT32_MAX || filename_count > SIZE_MAX / sizeof(*filenames))
+            return LIBMPQ_ERROR_SIZE;
+        uint64_t capacity = (uint64_t)update->known_count + filename_count + 2;
+        if (capacity > UINT32_MAX || capacity > SIZE_MAX / sizeof(*filenames))
+            return LIBMPQ_ERROR_SIZE;
+        for (size_t i = 0; i < filename_count; ++i)
+            if (filenames[i] == NULL || filenames[i][0] == '\0')
+                return LIBMPQ_ERROR_EXIST;
+    }
     if (fflush(update->working) != 0)
         return LIBMPQ_ERROR_WRITE;
     result = libmpq__archive_open(&archive, update->working_path, -1);
@@ -3834,6 +3865,13 @@ libmpq__update_transaction_compact(mpq_update_s *update)
         result = LIBMPQ_ERROR_SIZE;
         goto done;
     }
+    if (filename_count != 0) {
+        uint64_t capacity = (uint64_t)update->known_count + count + filename_count + 2;
+        if (capacity > UINT32_MAX || capacity > SIZE_MAX / sizeof(*names)) {
+            result = LIBMPQ_ERROR_SIZE;
+            goto done;
+        }
+    }
     names = calloc((size_t)count + 1, sizeof(*names));
     known_slots = calloc(classic_count ? classic_count : 1, 1);
     rows = malloc(((size_t)count + 1) * sizeof(*rows));
@@ -3849,6 +3887,13 @@ libmpq__update_transaction_compact(mpq_update_s *update)
     result = update_compact_names(update, archive, names, known_slots, classic_count);
     if (result != 0)
         goto done;
+    for (size_t i = 0; i < filename_count; ++i) {
+        result = update_compact_name(
+            archive, names, known_slots, classic_count, filenames[i], update->ops->allocate_names
+        );
+        if (result != 0)
+            goto done;
+    }
     (void)libmpq__file_number(archive, LIBMPQ_SIGNATURE_NAME, &signature);
     (void)libmpq__file_number(archive, LIBMPQ_ATTRIBUTES_NAME, &attribute);
     (void)libmpq__file_number(archive, LIBMPQ_LISTFILE_NAME, &listfile);
@@ -3862,8 +3907,9 @@ libmpq__update_transaction_compact(mpq_update_s *update)
         }
     }
     if (listfile != UINT32_MAX) {
-        result =
-            update_compact_name(archive, names, known_slots, classic_count, LIBMPQ_LISTFILE_NAME);
+        result = update_compact_name(
+            archive, names, known_slots, classic_count, LIBMPQ_LISTFILE_NAME, NULL
+        );
         if (result != 0)
             goto done;
     }
@@ -4242,7 +4288,8 @@ libmpq__update_transaction_compact(mpq_update_s *update)
         }
     }
     result = update_prepare_names(
-        update, check, names, count, NULL, NULL, &prepared_names, &prepared_count
+        update, check, names, count, filenames, (uint32_t)filename_count, NULL, NULL,
+        &prepared_names, &prepared_count
     );
     if (result != 0)
         goto done;
@@ -4767,7 +4814,7 @@ libmpq__update_transaction_sign(
     if (result != 0)
         goto done;
     result = update_prepare_names(
-        update, candidate, NULL, 0, NULL, NULL, &prepared_names, &prepared_count
+        update, candidate, NULL, 0, NULL, 0, NULL, NULL, &prepared_names, &prepared_count
     );
     if (result != 0)
         goto done;
