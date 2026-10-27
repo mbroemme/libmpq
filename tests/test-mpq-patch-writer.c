@@ -1272,7 +1272,7 @@ test_public_patch_path_abort(void)
 
 /* Public storage options must survive normal MPQ decoding before PTCH parsing. */
 static int
-test_public_patch_storage(uint32_t version, uint32_t flags)
+test_public_patch_storage_size(uint32_t version, uint32_t flags, int oversized)
 {
     char base_path[1024];
     char patch_path[1024];
@@ -1289,7 +1289,8 @@ test_public_patch_storage(uint32_t version, uint32_t flags)
     uint8_t body_tag[4];
     uint8_t replacement[10000];
     size_t replacement_size =
-        (flags & LIBMPQ_FILE_FLAG_SINGLE) != 0 || version >= LIBMPQ_ARCHIVE_VERSION_THREE
+        oversized ? 9001
+        : (flags & LIBMPQ_FILE_FLAG_SINGLE) != 0 || version >= LIBMPQ_ARCHIVE_VERSION_THREE
             ? 1024
             : sizeof(replacement);
     uint8_t *image = NULL;
@@ -1420,6 +1421,13 @@ test_public_patch_storage(uint32_t version, uint32_t flags)
     TEST_CHECK(remove(patch_path) == 0);
     TEST_CHECK(remove(base_path) == 0);
     return 0;
+}
+
+/* Original storage regressions retain their previous input sizes. */
+static int
+test_public_patch_storage(uint32_t version, uint32_t flags)
+{
+    return test_public_patch_storage_size(version, flags, 0);
 }
 
 /* Publish an authenticated patch while retaining ordinary patch entry semantics. */
@@ -2424,6 +2432,8 @@ test_public_additions(uint32_t version, uint8_t mpqe, uint8_t mixed)
     single.flags |= LIBMPQ_FILE_FLAG_SINGLE;
     single.flags &= ~LIBMPQ_FILE_FLAG_SECTOR_CRC;
     TEST_CHECK(libmpq__patch_add_data(patch, "single.bin", data, 307, &single) == 0);
+    TEST_CHECK(libmpq__patch_add_data(patch, "oversized.bin", data, sizeof(data), &single) == 0);
+    TEST_CHECK(libmpq__patch_add_path(patch, "oversized-path.bin", source_path, &single) == 0);
     invalid = (mpq_file_options_s){ LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 1033, 1 };
     TEST_CHECK(
         libmpq__patch_add_data(patch, "localized.txt", new_data, sizeof(new_data) - 1, &invalid) ==
@@ -2466,6 +2476,15 @@ test_public_additions(uint32_t version, uint8_t mpqe, uint8_t mixed)
     TEST_CHECK(check_file(physical, "added/data.bin", data, sizeof(data)) == 0);
     TEST_CHECK(check_file(physical, "from-path.bin", data, sizeof(data)) == 0);
     TEST_CHECK(check_file(physical, "single.bin", data, 307) == 0);
+    TEST_CHECK(check_file(physical, "oversized.bin", data, sizeof(data)) == 0);
+    TEST_CHECK(check_file(physical, "oversized-path.bin", data, sizeof(data)) == 0);
+    TEST_CHECK(libmpq__file_number(physical, "oversized.bin", &number) == 0);
+    TEST_CHECK(libmpq__file_flags(physical, number, &flags) == 0);
+    TEST_CHECK((flags & LIBMPQ_FILE_FLAG_SINGLE) != 0);
+    TEST_CHECK((flags & LIBMPQ_FILE_FLAG_SECTOR_CRC) == 0);
+    TEST_CHECK(libmpq__file_blocks(physical, number, &flags) == 0 && flags == 1);
+    TEST_CHECK(libmpq__file_size_unpacked(physical, number, &size) == 0 && size == sizeof(data));
+
     TEST_CHECK(libmpq__file_number(physical, "added/data.bin", &number) == 0);
     TEST_CHECK(libmpq__file_size_packed(physical, number, &size) == 0 && size == sizeof(data));
     TEST_CHECK(
@@ -2492,6 +2511,8 @@ test_public_additions(uint32_t version, uint8_t mpqe, uint8_t mixed)
     TEST_CHECK(check_file(result, "added/data.bin", data, sizeof(data)) == 0);
     TEST_CHECK(check_file(result, "from-path.bin", data, sizeof(data)) == 0);
     TEST_CHECK(check_file(result, "single.bin", data, 307) == 0);
+    TEST_CHECK(check_file(result, "oversized.bin", data, sizeof(data)) == 0);
+    TEST_CHECK(check_file(result, "oversized-path.bin", data, sizeof(data)) == 0);
     TEST_CHECK(libmpq__file_number(result, "empty.bin", &number) == 0);
     TEST_CHECK(libmpq__file_size_unpacked(result, number, &size) == 0 && size == 0);
     TEST_CHECK(
@@ -2821,6 +2842,15 @@ test_patch_raw_policy(uint32_t chunk, uint8_t mpqe)
 int
 main(void)
 {
+    for (uint32_t version = 0; version < 4; version++) {
+        TEST_CHECK(test_public_patch_storage_size(version, LIBMPQ_FILE_FLAG_SINGLE, 1) == 0);
+        TEST_CHECK(
+            test_public_patch_storage_size(
+                version,
+                LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 1
+            ) == 0
+        );
+    }
     const uint32_t sizes[] = { 0, 1, 17, 0x4000, UINT32_MAX };
     uint32_t size = UINT32_MAX;
     TEST_CHECK(libmpq__patch_raw_chunk_size_get(NULL, &size) == LIBMPQ_ERROR_EXIST && size == 0);

@@ -261,6 +261,63 @@ test_round_trip(
     return 0;
 }
 
+/* Pure size checks cover unallocatable boundaries without claiming giant buffers. */
+static int
+test_candidate_bounds(void)
+{
+    const size_t sizes[] = {
+        0,       1, 7, 4097, 9001, 16777216, INT32_MAX, (size_t)UINT32_MAX / 2, (size_t)UINT32_MAX,
+        SIZE_MAX
+    };
+    const uint32_t masks[] = { LIBMPQ_COMPRESSION_SPARSE, LIBMPQ_COMPRESSION_HUFFMAN,
+                               LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_BZIP2,
+                               LIBMPQ_COMPRESSION_PKZIP };
+    for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
+        for (size_t j = 0; j < sizeof(masks) / sizeof(masks[0]); j++) {
+            uint64_t n = sizes[i];
+            uint64_t wanted = n;
+            int32_t status = 0;
+            if (n > UINT32_MAX)
+                status = LIBMPQ_ERROR_SIZE;
+            else if (masks[j] == LIBMPQ_COMPRESSION_SPARSE) {
+                if (n < 7 || n > INT32_MAX)
+                    status = LIBMPQ_ERROR_UNPACK;
+                else
+                    wanted = n - 2;
+            } else if (masks[j] == LIBMPQ_COMPRESSION_HUFFMAN) {
+                wanted = 2 * n + 64;
+                if (wanted > SIZE_MAX || wanted > UINT32_MAX)
+                    status = LIBMPQ_ERROR_SIZE;
+            } else {
+                wanted = n + n / 100 + 1024;
+                if (wanted > SIZE_MAX || ((masks[j] == LIBMPQ_COMPRESSION_ZLIB ||
+                                           masks[j] == LIBMPQ_COMPRESSION_BZIP2) &&
+                                          wanted > UINT32_MAX))
+                    status = LIBMPQ_ERROR_SIZE;
+            }
+            size_t actual = 123;
+            TEST_CHECK(libmpq__compression_candidate_size(sizes[i], masks[j], &actual) == status);
+            TEST_CHECK(actual == (status == 0 ? (size_t)wanted : 0));
+        }
+    }
+    size_t actual;
+    TEST_CHECK(libmpq__compression_candidate_size(1, 0, &actual) == LIBMPQ_ERROR_FORMAT);
+    TEST_CHECK(
+        libmpq__compression_candidate_size(1, LIBMPQ_COMPRESSION_ZLIB, NULL) == LIBMPQ_ERROR_FORMAT
+    );
+    uint32_t bound = (UINT32_MAX - 64u) / 2;
+    TEST_CHECK(
+        libmpq__compression_candidate_size(bound, LIBMPQ_COMPRESSION_HUFFMAN, &actual) == 0 &&
+        actual == (size_t)bound * 2 + 64
+    );
+    TEST_CHECK(
+        libmpq__compression_candidate_size(
+            (size_t)bound + 1, LIBMPQ_COMPRESSION_HUFFMAN, &actual
+        ) == LIBMPQ_ERROR_SIZE
+    );
+    return 0;
+}
+
 /* Exercise allowed compression selections and rejected codec masks. */
 int
 main(void)
@@ -272,6 +329,7 @@ main(void)
                                    0 };
 
     TEST_CHECK(test_temp_path(path, sizeof(path), "compression") == 0);
+    TEST_CHECK(test_candidate_bounds() == 0);
     TEST_CHECK(test_policies() == 0);
     TEST_CHECK(test_modern_sector_semantics() == 0);
     TEST_CHECK(

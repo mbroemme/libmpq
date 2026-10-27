@@ -25,9 +25,11 @@
 /* Exercise deterministic writer output and generated writer/readback properties. */
 #include "mpq-archive.h"
 #include "mpq-bet.h"
+#include "mpq-compression.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"
 #include "mpq-mpqe.h"
+#include "mpq-pkware.h"
 #include "mpq-reader.h"
 #include "mpq-signature.h"
 #include "mpq-source.h"
@@ -686,8 +688,7 @@ property_mode_supported(
     }
     if (payload_size < 8U && (mode->options.flags & LIBMPQ_FILE_FLAG_ENCRYPTED) != 0)
         return 0;
-    if (payload_size > sector_size && (mode->options.flags & LIBMPQ_FILE_FLAG_SINGLE) != 0)
-        return 0;
+    (void)sector_size; /* SINGLE now buffers its complete declared logical unit. */
     return 1;
 }
 
@@ -2924,10 +2925,578 @@ test_public_raw_signing(uint8_t mpqe)
     return 0;
 }
 
+/* Named streaming supplies the basename key even for encrypted tiny units. */
+static int
+single_check_file(mpq_archive_s *archive, const char *name, const uint8_t *expected, size_t size)
+{
+    mpq_stream_s *stream = NULL;
+    uint8_t *actual = malloc(size ? size : 1);
+    libmpq__off_t transferred = 0;
+    int32_t result =
+        actual == NULL ? LIBMPQ_ERROR_MALLOC : libmpq__stream_open_name(archive, name, &stream);
+    if (result == 0)
+        result = libmpq__stream_read(stream, actual, (libmpq__off_t)size, &transferred);
+    if (result == 0 && (transferred != (libmpq__off_t)size || memcmp(actual, expected, size) != 0))
+        result = LIBMPQ_ERROR_READ;
+    if (stream != NULL) {
+        int32_t closed = libmpq__stream_close(stream);
+        if (result == 0)
+            result = closed;
+    }
+    free(actual);
+    return result;
+}
+
+#ifdef LIBMPQ_TEST_WRAP_ALLOC
+
+/* Linker wrapping keeps allocation vetoes local to this regression executable. */
+void *__real_malloc(size_t size);
+void *__real_calloc(size_t count, size_t size);
+void *__real_realloc(void *pointer, size_t size);
+void __real_free(void *pointer);
+static void *single_allocations[128];
+static unsigned single_live;
+static unsigned single_calls;
+static int single_fail = -1;
+static int single_tracking;
+static size_t single_veto;
+static size_t single_denied;
+
+static int
+single_allocation_fail(size_t size)
+{
+    if (!single_tracking)
+        return 0;
+    if (single_veto != 0 && size > single_veto) {
+        single_denied = size;
+        return 1;
+    }
+    return (int)single_calls++ == single_fail;
+}
+
+static void *
+single_allocation_record(void *pointer)
+{
+    if (single_tracking && pointer != NULL) {
+        for (unsigned i = 0; i < 128; i++)
+            if (single_allocations[i] == NULL) {
+                single_allocations[i] = pointer;
+                single_live++;
+                return pointer;
+            }
+        abort();
+    }
+    return pointer;
+}
+
+void *
+__wrap_malloc(size_t size)
+{
+    return single_allocation_fail(size) ? NULL : single_allocation_record(__real_malloc(size));
+}
+
+void *
+__wrap_calloc(size_t count, size_t size)
+{
+    if (count != 0 && size > SIZE_MAX / count)
+        return NULL;
+    return single_allocation_fail(count * size)
+               ? NULL
+               : single_allocation_record(__real_calloc(count, size));
+}
+
+static void
+single_allocation_forget(void *pointer)
+{
+    for (unsigned i = 0; pointer != NULL && i < 128; i++)
+        if (single_allocations[i] == pointer) {
+            single_allocations[i] = NULL;
+            single_live--;
+            break;
+        }
+}
+
+void
+__wrap_free(void *pointer)
+{
+    single_allocation_forget(pointer);
+    __real_free(pointer);
+}
+
+void *
+__wrap_realloc(void *pointer, size_t size)
+{
+    if (single_allocation_fail(size))
+        return NULL;
+    unsigned slot;
+    for (slot = 0; slot < 128; slot++)
+        if (single_allocations[slot] == pointer)
+            break;
+    int tracked = pointer != NULL && slot < 128;
+    void *result = __real_realloc(pointer, size);
+    if (result != NULL) {
+        if (tracked) {
+            single_allocations[slot] = result;
+        } else
+            single_allocation_record(result);
+    }
+    return result;
+}
+
+/* Begin and encode failures release every tracked allocation without global hooks. */
+static int
+test_single_allocations(void)
+{
+    uint8_t payload[9001];
+    test_payload(payload, sizeof(payload), 43);
+    for (unsigned mode = 0; mode < 4; mode++)
+        for (int failure = 0; failure < 12; failure++) {
+            mpq_archive_s *archive = NULL;
+            mpq_writer_s *writer = NULL;
+            mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_FOUR, 8, 4096, 0, 0 };
+            mpq_file_options_s options = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
+            char path[512];
+            TEST_CHECK(test_temp_path(path, sizeof(path), "single-alloc") == 0);
+            TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+            TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 0) == 0);
+            if (mode == 2) {
+                options.flags |= LIBMPQ_FILE_FLAG_COMPRESS;
+                options.compression_first = options.compression_next = LIBMPQ_COMPRESSION_ZLIB;
+            } else if (mode == 3)
+                options.flags |= LIBMPQ_FILE_FLAG_IMPLODE;
+            single_calls = 0;
+            single_fail = failure;
+            single_tracking = 1;
+            if (mode != 0)
+                single_tracking = 0;
+            int32_t begun = libmpq__writer_file_begin(
+                archive, "single-name", sizeof(payload), &options, &writer
+            );
+            single_tracking = 0;
+            if (mode == 0 && begun != 0) {
+                TEST_CHECK(
+                    begun == LIBMPQ_ERROR_MALLOC && archive->write_current == NULL &&
+                    single_live == 0
+                );
+                TEST_CHECK(
+                    libmpq__writer_file_begin(archive, "recovered", 1, &options, &writer) == 0
+                );
+                TEST_CHECK(libmpq__writer_file_write(writer, payload, 1) == 0);
+                TEST_CHECK(libmpq__writer_file_finish(writer) == 0);
+                TEST_CHECK(libmpq__archive_close(archive) == 0);
+            } else {
+                TEST_CHECK(begun == 0);
+                single_calls = 0;
+                single_tracking = mode != 0;
+                int32_t written = libmpq__writer_file_write(writer, payload, sizeof(payload));
+                single_tracking = 0;
+                TEST_CHECK(written == 0 || written == LIBMPQ_ERROR_MALLOC);
+                TEST_CHECK(libmpq__writer_file_finish(writer) == written);
+
+                /* Successful finish transfers the owned name to the archive. */
+                if (written == 0 && mode == 0) {
+                    TEST_CHECK(single_live == 1 && archive->write_names[0] != NULL);
+                    single_allocation_forget(archive->write_names[0]);
+                }
+                TEST_CHECK(single_live == 0);
+                TEST_CHECK(
+                    archive->write_current == NULL && archive->write_next_block == (written == 0)
+                );
+                TEST_CHECK(libmpq__archive_close(archive) == written);
+                if (written == 0) {
+                    TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
+                    TEST_CHECK(
+                        single_check_file(archive, "single-name", payload, sizeof(payload)) == 0
+                    );
+                    TEST_CHECK(libmpq__archive_close(archive) == 0);
+                }
+            }
+            TEST_CHECK(remove(path) == 0);
+        }
+    for (uint32_t version = 0; version < 4; version++) {
+        mpq_archive_s *archive = NULL;
+        mpq_writer_s *writer = NULL;
+        mpq_archive_create_options_s create = { version, 8, 4096, 0, 0 };
+        mpq_file_options_s options = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
+        const libmpq__off_t sizes[] = { INT32_MAX, (libmpq__off_t)INT32_MAX + 1, UINT32_MAX,
+                                        (libmpq__off_t)UINT32_MAX + 1, INT64_MAX };
+        char path[512];
+        TEST_CHECK(test_temp_path(path, sizeof(path), "single-limits") == 0);
+        TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+        for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
+            single_fail = -1;
+            single_veto = 1048576;
+            single_denied = 0;
+            single_tracking = 1;
+            int32_t result =
+                libmpq__writer_file_begin(archive, "huge", sizes[i], &options, &writer);
+            single_tracking = 0;
+            TEST_CHECK(result == (i == 0 ? LIBMPQ_ERROR_MALLOC : LIBMPQ_ERROR_SIZE));
+            TEST_CHECK(single_denied == (i == 0 ? (size_t)INT32_MAX : 0));
+            TEST_CHECK(single_live == 0 && archive->write_current == NULL);
+        }
+        archive->write_sector_size = UINT32_C(0x80000000);
+        single_tracking = 1;
+        single_denied = 0;
+        int32_t result = libmpq__writer_file_begin(
+            archive, "legacy", (libmpq__off_t)INT32_MAX + 1, &options, &writer
+        );
+        single_tracking = 0;
+        single_veto = 0;
+        TEST_CHECK(result == LIBMPQ_ERROR_MALLOC && single_denied == UINT32_C(0x80000000));
+        TEST_CHECK(single_live == 0 && archive->write_current == NULL);
+        TEST_CHECK(libmpq__archive_close(archive) == 0 && remove(path) == 0);
+    }
+    return 0;
+}
+#endif
+
+/* Compare actual serialized SINGLE bytes against a complete-unit encoding. */
+#define SINGLE_CHECK(condition)                           \
+    do {                                                  \
+        if (!(condition)) {                               \
+            test_failure(__FILE__, __LINE__, #condition); \
+            goto cleanup;                                 \
+        }                                                 \
+    } while (0)
+static int
+test_single_unit(uint32_t version, size_t size, unsigned mode, int mpqe, uint32_t raw_size)
+{
+    static const uint32_t methods[] = { 0,
+                                        0,
+                                        0,
+                                        LIBMPQ_COMPRESSION_ZLIB,
+                                        LIBMPQ_COMPRESSION_ZLIB,
+                                        LIBMPQ_COMPRESSION_BZIP2,
+                                        LIBMPQ_COMPRESSION_LZMA,
+                                        LIBMPQ_COMPRESSION_HUFFMAN,
+                                        0,
+                                        LIBMPQ_COMPRESSION_SPARSE,
+                                        LIBMPQ_COMPRESSION_SPARSE | LIBMPQ_COMPRESSION_HUFFMAN |
+                                            LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_PKZIP };
+    static const size_t chunks[] = { SIZE_MAX, 1, 3, 997, 4096, 4097, 31 };
+    mpq_archive_create_options_s create = { version, 16, 4096,
+                                            LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED,
+                                            LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 |
+                                                LIBMPQ_ATTRIBUTE_FILETIME };
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_SECTOR_CRC,
+                                   methods[mode], methods[mode], 0, 0 };
+    mpq_archive_s *archive = NULL;
+    uint8_t *payload = malloc(size ? size : 1);
+    uint8_t *encoded = NULL;
+    uint8_t *stored = NULL;
+    uint8_t *expected = NULL;
+    uint8_t emitted = 0;
+    size_t packed_size = size;
+    char path[512] = { 0 };
+    int32_t result;
+    int status = 1;
+    SINGLE_CHECK(payload != NULL);
+    test_payload(payload, size, mode == 4 ? 43 : 7);
+    if (mode == 1 || mode == 2 || mode == 4)
+        options.flags |= LIBMPQ_FILE_FLAG_ENCRYPTED;
+    if (mode == 2 || mode == 4)
+        options.flags |= LIBMPQ_FILE_FLAG_KEY;
+    if (methods[mode])
+        options.flags |= LIBMPQ_FILE_FLAG_COMPRESS;
+    if (mode == 8)
+        options.flags |= LIBMPQ_FILE_FLAG_IMPLODE;
+    if (methods[mode] && !libmpq__archive_compression_allowed(
+                             version, methods[mode], LIBMPQ_COMPRESSION_POLICY_EXTENDED
+                         )) {
+        status = 0;
+        goto cleanup;
+    }
+    if (methods[mode]) {
+        result = libmpq__compression_encode_sector(
+            payload, size, methods[mode],
+            version == LIBMPQ_ARCHIVE_VERSION_FOUR ? LIBMPQ_ARCHIVE_VERSION_THREE : version,
+            LIBMPQ_COMPRESSION_POLICY_EXTENDED, &encoded, &packed_size, &emitted
+        );
+    } else if (mode == 8) {
+        uint32_t packed = 0;
+        result = libmpq__pkzip_compress(payload, (uint32_t)size, &encoded, &packed);
+        packed_size = packed;
+        if (result == 0 && packed_size >= size) {
+            free(encoded);
+            encoded = NULL;
+            packed_size = size;
+        }
+    } else
+        result = 0;
+    if (result == 0 && encoded == NULL) {
+        encoded = malloc(size ? size : 1);
+        if (encoded != NULL)
+            memcpy(encoded, payload, size);
+        else
+            result = LIBMPQ_ERROR_MALLOC;
+    }
+    SINGLE_CHECK(result == 0);
+    stored = malloc(packed_size ? packed_size : 1);
+    expected = malloc(packed_size ? packed_size : 1);
+    SINGLE_CHECK(stored != NULL && expected != NULL);
+    SINGLE_CHECK(test_temp_path(path, sizeof(path), "oversized-single") == 0);
+    SINGLE_CHECK(
+        (mpqe ? libmpq__archive_create_mpqe(
+                    &archive, path, mpqe_auth_code, sizeof(mpqe_auth_code) - 1, &create
+                )
+              : libmpq__archive_create(&archive, path, &create)) == 0
+    );
+    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+        SINGLE_CHECK(libmpq__archive_raw_chunk_size_set(archive, raw_size) == 0);
+    unsigned cases = size > 65537 ? 1 : sizeof(chunks) / sizeof(chunks[0]);
+    for (unsigned i = 0; i < cases; i++) {
+        char name[32];
+        mpq_writer_s *writer = NULL;
+        snprintf(name, sizeof(name), "unit-%u", i);
+        SINGLE_CHECK(
+            libmpq__writer_begin(archive, name, (libmpq__off_t)size, &options, &writer) == 0
+        );
+        SINGLE_CHECK(writer->data_capacity == (size > 4096 ? size : 4096));
+        SINGLE_CHECK(
+            writer->block_count == 1 && writer->offsets == NULL && writer->checksums == NULL
+        );
+        SINGLE_CHECK(libmpq__writer_timestamp(writer, UINT64_C(0x8000000000000000) + i) == 0);
+        SINGLE_CHECK(libmpq__writer_write(writer, NULL, 0) == 0);
+        for (size_t position = 0; position < size;) {
+            size_t take = size - position < chunks[i] ? size - position : chunks[i];
+            SINGLE_CHECK(
+                libmpq__writer_write(writer, payload + position, (libmpq__off_t)take) == 0
+            );
+            position += take;
+        }
+        SINGLE_CHECK(writer->sector_index == (size >= 4096 ? 1u : 0u));
+        SINGLE_CHECK(libmpq__writer_write(writer, payload, 1) == LIBMPQ_ERROR_SIZE);
+        SINGLE_CHECK(libmpq__writer_finish(writer) == 0);
+    }
+    result = libmpq__archive_close(archive);
+    archive = NULL;
+    SINGLE_CHECK(result == 0);
+    SINGLE_CHECK(
+        (mpqe ? libmpq__archive_open_mpqe(
+                    &archive, path, -1, mpqe_auth_code, sizeof(mpqe_auth_code) - 1
+                )
+              : libmpq__archive_open(&archive, path, -1)) == 0
+    );
+    for (unsigned i = 0; i < cases; i++) {
+        char name[32];
+        uint32_t number;
+        uint32_t blocks;
+        uint32_t flags;
+        uint32_t checked;
+        uint32_t unavailable;
+        uint32_t mismatches;
+        mpq_file_attributes_s attributes;
+        snprintf(name, sizeof(name), "unit-%u", i);
+        SINGLE_CHECK(libmpq__file_number(archive, name, &number) == 0);
+        const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+        SINGLE_CHECK(libmpq__file_blocks(archive, number, &blocks) == 0 && blocks == 1);
+        SINGLE_CHECK(libmpq__file_flags(archive, number, &flags) == 0);
+        SINGLE_CHECK(
+            flags == (LIBMPQ_FLAG_EXISTS | (options.flags & ~LIBMPQ_FILE_FLAG_SECTOR_CRC))
+        );
+        SINGLE_CHECK(entry->packed_size == packed_size && entry->unpacked_size == size);
+        SINGLE_CHECK(libmpq__reader_offsets_acquire(archive, number, name) == 0);
+        SINGLE_CHECK(
+            archive->mpq_file[number]->packed_offset_count == 2 &&
+            archive->mpq_file[number]->packed_offset[0] == 0 &&
+            archive->mpq_file[number]->packed_offset[1] == packed_size
+        );
+        SINGLE_CHECK(libmpq__reader_offsets_release(archive, number) == 0);
+        SINGLE_CHECK(
+            libmpq__source_read_at(
+                archive->source, (uint64_t)archive->archive_offset + entry->offset, stored,
+                packed_size
+            ) == 0
+        );
+        memcpy(expected, encoded, packed_size);
+        if (options.flags & LIBMPQ_FILE_FLAG_ENCRYPTED) {
+            uint32_t key = libmpq__crypto_file_key(name);
+            if (options.flags & LIBMPQ_FILE_FLAG_KEY)
+                key = (key + (uint32_t)entry->offset) ^ (uint32_t)size;
+            libmpq__crypto_encrypt_block(expected, (uint32_t)packed_size, key);
+        }
+        SINGLE_CHECK(memcmp(stored, expected, packed_size) == 0);
+        SINGLE_CHECK(
+            libmpq__file_attributes(archive, number, &attributes) == 0 &&
+            attributes.filetime == UINT64_C(0x8000000000000000) + i
+        );
+        SINGLE_CHECK(
+            libmpq__file_verify_ex(
+                archive, number, name, LIBMPQ_VERIFY_ALL, &checked, &unavailable, &mismatches
+            ) == 0 &&
+            mismatches == 0 && (checked | unavailable) == LIBMPQ_VERIFY_ALL &&
+            (checked & (LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5)) ==
+                (LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5)
+        );
+        SINGLE_CHECK(single_check_file(archive, name, payload, size) == 0);
+    }
+    uint32_t checked;
+    uint32_t unavailable;
+    uint32_t mismatches;
+    SINGLE_CHECK(
+        libmpq__archive_verify_ex(
+            archive, LIBMPQ_VERIFY_METADATA_ALL, &checked, &unavailable, &mismatches
+        ) == 0 &&
+        mismatches == 0
+    );
+    result = libmpq__archive_close(archive);
+    archive = NULL;
+    SINGLE_CHECK(result == 0 && remove(path) == 0);
+    status = 0;
+cleanup:
+    if (archive != NULL)
+        (void)libmpq__archive_close(archive);
+    if (path[0] != '\0')
+        (void)remove(path);
+    free(expected);
+    free(stored);
+    free(encoded);
+    free(payload);
+    return status;
+}
+
+#undef SINGLE_CHECK
+
+/* An incomplete oversized unit never reaches the payload stream or member tables. */
+static int
+test_single_incomplete(uint32_t version)
+{
+    mpq_archive_create_options_s create = { version, 8, 4096, 0, 0 };
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_writer_s *writer = NULL;
+    char path[512];
+    uint8_t data[4097] = { 3 };
+    TEST_CHECK(test_temp_path(path, sizeof(path), "single-incomplete") == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    libmpq__off_t position = libmpq__file_tell(archive->fp);
+    TEST_CHECK(libmpq__writer_begin(archive, "incomplete", 9001, &options, &writer) == 0);
+    TEST_CHECK(libmpq__writer_write(writer, data, sizeof(data)) == 0);
+    TEST_CHECK(writer->sector_index == 0 && libmpq__file_tell(archive->fp) == position);
+    TEST_CHECK(libmpq__writer_finish(writer) == LIBMPQ_ERROR_SIZE);
+    TEST_CHECK(
+        archive->write_current == NULL && archive->write_next_block == 0 &&
+        libmpq__file_tell(archive->fp) == position
+    );
+    if (version != LIBMPQ_ARCHIVE_VERSION_FOUR)
+        TEST_CHECK(libmpq__archive_add_data(archive, "recovery", data, 1, &options) == 0);
+    else
+        TEST_CHECK(
+            libmpq__archive_add_data(archive, "recovery", data, 1, &options) == LIBMPQ_ERROR_SIZE
+        );
+    TEST_CHECK(
+        libmpq__archive_close(archive) ==
+        (version == LIBMPQ_ARCHIVE_VERSION_FOUR ? LIBMPQ_ERROR_SIZE : 0)
+    );
+    TEST_CHECK(remove(path) == 0);
+    return 0;
+}
+
+#ifdef __GLIBC__
+typedef struct
+{
+    writer_v3_fault_s stream;
+    unsigned failure;
+    int armed;
+} single_io_fault_s;
+
+static ssize_t
+single_io_read(void *context, char *output, size_t size)
+{
+    single_io_fault_s *fault = context;
+    if (fault->armed && fault->failure == 1)
+        return -1;
+    return writer_v4_fault_read(&fault->stream, output, size);
+}
+
+static ssize_t
+single_io_write(void *context, const char *input, size_t size)
+{
+    return writer_v4_partial_write(&((single_io_fault_s *)context)->stream, input, size);
+}
+
+static int
+single_io_seek(void *context, off64_t *offset, int origin)
+{
+    single_io_fault_s *fault = context;
+    if (fault->armed && fault->failure == 2 && origin == SEEK_SET && *offset == 208)
+        return -1;
+    return writer_v3_fault_seek(&fault->stream, offset, origin);
+}
+
+static int
+single_io_close(void *context)
+{
+    return writer_v3_fault_close(&((single_io_fault_s *)context)->stream);
+}
+
+/* Fail payload/digest storage, raw reads/seeks, or abandon a still-incomplete unit. */
+static int
+test_single_io(unsigned failure)
+{
+    cookie_io_functions_t ops = { single_io_read, single_io_write, single_io_seek,
+                                  single_io_close };
+    single_io_fault_s fault = { { { 0 }, 0, 0, SIZE_MAX, 0, 0 }, failure, 0 };
+    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_FOUR, 8, 4096, 0, 0 };
+    mpq_file_options_s options = {
+        LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0, 0, 0
+    };
+    mpq_archive_s *archive = NULL;
+    mpq_writer_s *writer = NULL;
+    uint8_t data[9001] = { 1 };
+    FILE *file = fopencookie(&fault, "w+b", ops);
+    TEST_CHECK(file != NULL && setvbuf(file, NULL, _IONBF, 0) == 0);
+    TEST_CHECK(libmpq__writer_archive_create_v4(&archive, "single-io", file, &create, 0x4000) == 0);
+    TEST_CHECK(libmpq__writer_file_begin(archive, "data", sizeof(data), &options, &writer) == 0);
+    if (failure == 4) {
+        TEST_CHECK(libmpq__writer_file_write(writer, data, 4097) == 0);
+        TEST_CHECK(libmpq__archive_close(archive) == LIBMPQ_ERROR_SIZE && fault.stream.closed);
+        return 0;
+    }
+    if (failure == 0)
+        fault.stream.fail_at = 208 + 37;
+    int32_t written = libmpq__writer_file_write(writer, data, sizeof(data));
+    TEST_CHECK(written == (failure == 0 ? LIBMPQ_ERROR_WRITE : 0));
+    fault.armed = 1;
+    if (failure == 3)
+        fault.stream.fail_at = 208 + sizeof(data) + 7;
+    int32_t expected = failure == 1   ? LIBMPQ_ERROR_READ
+                       : failure == 2 ? LIBMPQ_ERROR_SEEK
+                                      : LIBMPQ_ERROR_WRITE;
+    if (failure == 0)
+        TEST_CHECK(libmpq__writer_file_write(writer, NULL, 0) == expected);
+    TEST_CHECK(libmpq__writer_file_finish(writer) == expected);
+    TEST_CHECK(archive->write_current == NULL && archive->write_next_block == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == expected && fault.stream.closed);
+    return 0;
+}
+#endif
+
 int
 main(void)
 {
+#ifdef LIBMPQ_TEST_WRAP_ALLOC
+    TEST_CHECK(test_single_allocations() == 0);
+#endif
+#ifdef __GLIBC__
+    for (unsigned failure = 0; failure < 5; failure++)
+        TEST_CHECK(test_single_io(failure) == 0);
+#endif
+    const size_t single_sizes[] = { 0, 1, 4095, 4096, 4097, 8192, 9001, 65537 };
     const uint32_t raw_sizes[] = { 0, 1, 17, 0x4000, UINT32_MAX };
+    for (uint32_t version = 0; version < 4; version++) {
+        TEST_CHECK(test_single_incomplete(version) == 0);
+        for (size_t size = 0; size < sizeof(single_sizes) / sizeof(single_sizes[0]); size++)
+            for (unsigned mode = 0; mode < 11; mode++)
+                TEST_CHECK(test_single_unit(version, single_sizes[size], mode, 0, 17) == 0);
+        TEST_CHECK(test_single_unit(version, 9001, 4, 1, 17) == 0);
+        TEST_CHECK(test_single_unit(version, 1048576, 4, 0, 17) == 0);
+    }
+    TEST_CHECK(test_single_unit(3, 16777216, 2, 0, 0x4000) == 0);
+    TEST_CHECK(test_single_unit(0, 17825792, 0, 0, 0) == 0);
+    for (size_t i = 0; i < sizeof(raw_sizes) / sizeof(raw_sizes[0]); i++)
+        TEST_CHECK(test_single_unit(3, 9001, 4, 0, raw_sizes[i]) == 0);
     TEST_CHECK(test_public_raw_lock() == 0);
     for (uint8_t mpqe = 0; mpqe < 2; mpqe++) {
         for (size_t i = 0; i < sizeof(raw_sizes) / sizeof(raw_sizes[0]); i++)

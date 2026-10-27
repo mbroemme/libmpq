@@ -167,4 +167,19 @@ if(BUILD_TESTING)
             WORKING_DIRECTORY "${test_work_dir}"
         )
     endforeach()
+
+    # Keep allocation fault injection in a Linux test executable, never in production.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_executable(test-writer-alloc tests/test-mpq-writer.c tests/test-mpq-helper.c)
+        target_include_directories(test-writer-alloc PRIVATE src tests)
+        target_compile_definitions(test-writer-alloc PRIVATE LIBMPQ_TEST_WRAP_ALLOC=1
+            FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+        target_link_libraries(test-writer-alloc PRIVATE mpq mpq-core)
+        target_link_options(test-writer-alloc PRIVATE
+            -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free)
+        file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test-work/writer-alloc")
+        add_test(NAME writer-alloc COMMAND test-writer-alloc)
+        set_tests_properties(writer-alloc PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test-work/writer-alloc")
+    endif()
 endif()

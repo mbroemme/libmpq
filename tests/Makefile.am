@@ -40,6 +40,13 @@ check_PROGRAMS = \
 	test-update \
 	test-wave \
 	test-writer
+if LINUX_ALLOC_TESTS
+check_PROGRAMS += test-writer-alloc
+test_writer_alloc_SOURCES = test-mpq-writer.c $(COMMON_SOURCES)
+test_writer_alloc_CPPFLAGS = $(AM_CPPFLAGS) -DLIBMPQ_TEST_WRAP_ALLOC=1
+test_writer_alloc_LDFLAGS = $(AM_LDFLAGS) -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free
+test_writer_alloc_LDADD = $(test_writer_LDADD)
+endif
 TESTS = $(check_PROGRAMS)
 
 # The update regression creates working archives in the build directory.
