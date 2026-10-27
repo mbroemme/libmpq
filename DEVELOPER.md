@@ -252,6 +252,19 @@ Use `libmpq__writer_write()`, `libmpq__writer_timestamp()`, and
 Use `libmpq__archive_add_data()` to add an in-memory source in one call, or
 `libmpq__archive_add_path()` to add a filesystem-path source.
 
+SINGLE storage is independent of the archive sector size. A newly oversized
+unit buffers its complete declared input, is encoded/encrypted once, and remains
+one logical block without a sector-offset or sector-CRC table. The new path is
+limited to min(INT32_MAX, UINT32_MAX, SIZE_MAX) by current representation and
+one-block reader transfer types, with additional codec and output-extent checks.
+Existing inputs fitting a configured sector retain their prior behavior.
+Encoding may require several times the input size in memory. There is no fixed
+MiB cap or library-managed memory budget. Applications handling untrusted sizes
+should apply their own resource limits. Normal allocation failures are reported
+where the runtime returns control; this does not guarantee survival of OOM
+termination. Existing codec/version restrictions and ADPCM SINGLE rejection,
+KEY adjustments, generated listfile defaults and physical patch defaults remain.
+
 ### Writer compression policy
 
 For MPQ v2+ creation, `LIBMPQ_COMPRESSION_LZMA` is an exclusive API selector,

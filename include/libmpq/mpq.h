@@ -146,6 +146,12 @@ typedef int32_t (*libmpq_read_at_fn)(
  * multi-compression container whose stages come from the compression masks.
  * ENCRYPTED applies per-file sector encryption after packing; SINGLE stores
  * the file as one unit and is incompatible with sector-level ADPCM options.
+ * SINGLE is independent of archive sector size. A newly oversized unit must
+ * fit INT32_MAX, UINT32_MAX and SIZE_MAX plus applicable codec/output bounds.
+ * Complete-unit encoding can allocate several times its logical input size;
+ * there is no fixed MiB cap or library-managed memory budget. Callers processing
+ * untrusted sizes should impose their own resource limits. Allocation errors
+ * are reported when the runtime returns control; OOM survival is not guaranteed.
  * LIBMPQ_FILE_FLAG_LOCALE is a zero-valued compatibility marker; locale and
  * platform identity are supplied by the corresponding structure members.
  */
