@@ -1860,3 +1860,70 @@ def test_transaction_filename_provenance(tmp_path, version):
     with mpq.Archive(path) as archive:
         with archive.open_stream("renamed", locale=0, platform=0) as stream:
             assert stream.read() == payload
+
+
+@pytest.mark.parametrize("version", range(4))
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_compact_external_filenames(tmp_path, version, wrapped):
+    path = tmp_path / "compact-names.mpq"
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    payload = bytes((i * 71 + i // 3) & 255 for i in range(403))
+    options = mpq.FileCreateOptions(
+        mpq.FILE_FLAG_SINGLE | mpq.FILE_FLAG_ENCRYPTED | mpq.FILE_FLAG_KEY, 0, 0, 1033, 2)
+    create = (mpq.Writer.create_mpqe(path, code, version=version, max_files=8,
+                                    attributes=mpq.ATTRIBUTE_FILETIME | mpq.ATTRIBUTE_MD5)
+              if wrapped else mpq.Writer(path, version=version, max_files=8,
+                                        attributes=mpq.ATTRIBUTE_FILETIME | mpq.ATTRIBUTE_MD5))
+    with create as writer:
+        writer.add("obsolete", bytes(32768))
+        writer.add("voice", payload, options)
+    begin = lambda: (mpq.Update.begin_mpqe(path, code) if wrapped else mpq.Update.begin(path))
+    with begin() as preparation:
+        preparation.remove("obsolete")
+        preparation.commit()
+    before = path.read_bytes()
+    update = begin()
+    try:
+        for empty in [None, []]:
+            with pytest.raises(mpq.LibmpqDecryptError):
+                update.compact(empty)
+        for scalar in ["voice", b"voice", Path("voice")]:
+            with pytest.raises(TypeError):
+                update.compact(scalar)
+        for invalid in [["voice", None], ["voice", ""], ["voice", "bad\0name"]]:
+            with pytest.raises(ValueError):
+                update.compact(invalid)
+        with pytest.raises(TypeError):
+            update.compact(["voice", object()])
+        with pytest.raises(mpq.LibmpqNotFoundError):
+            update.compact(["voice", "missing"])
+        # A failed late element must not have installed the preceding valid name.
+        with pytest.raises(mpq.LibmpqDecryptError):
+            update.compact()
+        class Once:
+            calls = 0
+            def __iter__(self):
+                self.calls += 1
+                assert self.calls == 1
+                yield Path("voice")
+                yield "VOICE"
+                yield b"voice"
+        names = Once()
+        assert update.compact(names) is None
+        assert names.calls == 1
+        del names
+        gc.collect()
+        assert update.compact([]) is None
+        assert update.compact() is None
+        assert path.read_bytes() == before
+        update.commit()
+        with pytest.raises(mpq.LibmpqStateError):
+            update.compact(["voice"])
+    finally:
+        update.close()
+    with (mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive(path)) as archive:
+        with archive.open_stream("voice", locale=1033, platform=2) as stream:
+            assert stream.read() == payload
+        number = archive.file_number("voice", locale=1033, platform=2)
+        result = archive[number].verify_result(mpq.VERIFY_FILE_MD5, filename="voice")
+        assert result == mpq.VerificationResult(mpq.VERIFY_FILE_MD5, 0, 0)

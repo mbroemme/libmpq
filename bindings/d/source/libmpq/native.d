@@ -380,6 +380,8 @@ extern(C) {
     int libmpq__update_sign(mpq_update_s* update, uint signatureType,
                           const(ubyte)* privateKey, size_t privateKeySize);
     int libmpq__update_compact(mpq_update_s* update);
+    int libmpq__update_compact_ex(mpq_update_s* update,
+                                 const(char*)* filenames, size_t filename_count);
     int libmpq__update_timestamp(mpq_update_s* update, const(char)* filename, ulong filetime);
     int libmpq__update_timestamp_identity(mpq_update_s* update, const(char)* filename,
                                         ulong filetime, ushort locale, ushort platform);

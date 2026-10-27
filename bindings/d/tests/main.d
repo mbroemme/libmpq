@@ -1488,6 +1488,70 @@ private void testTransactionalTimestamps() {
     }
 }
 
+private void testCompactExternalFilenames() {
+    import core.memory : GC;
+    foreach (version_; 0u .. 4u) foreach (wrapped; [false, true]) {
+        auto path = temporaryArchive("compact-names");
+        scope(exit) if (exists(path)) remove(path);
+        auto code = cast(const(ubyte)[]) "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+        auto options = ArchiveCreateOptions(version_, 8, 512, 0, ATTRIBUTE_FILETIME);
+        auto writer = wrapped ? Archive.createMpqe(path, code, options) : Archive.create(path, options);
+        ubyte[403] payload;
+        foreach (i, ref value; payload) value = cast(ubyte)(i * 71 + i / 3);
+        writer.add("obsolete", new ubyte[32768]);
+        auto storage = FileOptions.raw();
+        storage.flags = FILE_FLAG_SINGLE | FILE_FLAG_ENCRYPTED | FILE_FLAG_KEY;
+        storage.locale = 1033;
+        storage.platform = 2;
+        writer.add("voice", payload, storage);
+        writer.close();
+        auto preparation = wrapped ? Update.beginMpqe(path, code) : Update.begin(path);
+        preparation.remove("obsolete");
+        preparation.commit();
+        auto before = read(path);
+        auto update = wrapped ? Update.beginMpqe(path, code) : Update.begin(path);
+        scope(exit) update.close();
+        bool failed;
+        try { update.compact(); }
+        catch (MPQException e) { failed = e.code == ERROR_DECRYPT; }
+        assert(failed);
+        failed = false;
+        try { update.compact(cast(string[]) null); }
+        catch (MPQException e) { failed = e.code == ERROR_DECRYPT; }
+        assert(failed);
+        foreach (bad; ["", "bad\0name", "missing"]) {
+            failed = false;
+            try { update.compact(["voice", bad]); }
+            catch (MPQException e) {
+                failed = e.code == (bad.length == 0 || bad == "missing" ? ERROR_EXIST : ERROR_FORMAT);
+            }
+            assert(failed);
+        }
+        failed = false;
+        try { update.compact(); }
+        catch (MPQException e) { failed = e.code == ERROR_DECRYPT; }
+        assert(failed);
+        string[] names = ["voice".idup, "VOICE".idup, "voice".idup];
+        update.compact(names);
+        names[] = "discarded";
+        GC.collect();
+        update.compact([]);
+        update.compact();
+        assert(read(path) == before);
+        update.commit();
+        failed = false;
+        try { update.compact(["voice"]); }
+        catch (MPQException e) { failed = e.code == ERROR_NOT_INITIALIZED; }
+        assert(failed);
+        auto archive = wrapped ? Archive.openMpqe(path, code) : Archive.open(path);
+        auto stream = archive.openStream("voice", 1033, 2);
+        ubyte[403] actual;
+        assert(stream.read(actual) == actual.length && actual == payload);
+        stream.close();
+        archive.close();
+    }
+}
+
 void main() {
     {
         auto root = environment.get("LIBMPQ_SOURCE_DIR", ".");
@@ -1509,6 +1573,7 @@ void main() {
     }
     testTransactionalSigning();
     testTransactionalCompaction();
+    testCompactExternalFilenames();
     testTransactionalTimestamps();
     testChangeIdentity();
     testExactUpdateStages();

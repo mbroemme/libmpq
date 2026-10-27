@@ -36,6 +36,60 @@ import org.libmpq.ffi.LibmpqNative;
  */
 class LibmpqTest {
     @Test
+    void compactExternalFilenames(@TempDir Path directory) throws Exception {
+        byte[] payload = new byte[403];
+        for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i * 71 + i / 3);
+        for (int version = 0; version < 4; version++) {
+            Path path = directory.resolve("compact-names.mpq");
+            try (Archive writer = Archive.create(path,
+                    new ArchiveCreateOptions(version, 8, 512, 0, Mpq.ATTRIBUTE_FILETIME))) {
+                writer.add("obsolete", new byte[32768], null);
+                writer.add("voice", payload, new FileOptions(
+                    Mpq.FILE_FLAG_SINGLE | Mpq.FILE_FLAG_ENCRYPTED | Mpq.FILE_FLAG_KEY,
+                    0, 0, 1033, 2));
+            }
+            try (MpqUpdate preparation = MpqUpdate.begin(path)) {
+                preparation.remove("obsolete");
+                preparation.commit();
+            }
+            byte[] before = Files.readAllBytes(path);
+            try (MpqUpdate update = MpqUpdate.begin(path)) {
+                assertEquals(Mpq.ERROR_DECRYPT,
+                    assertThrows(LibmpqException.class, update::compact).code());
+                assertEquals(Mpq.ERROR_DECRYPT,
+                    assertThrows(LibmpqException.class, () -> update.compact(List.of())).code());
+                assertThrows(NullPointerException.class, () -> update.compact(null));
+                assertThrows(NullPointerException.class,
+                    () -> update.compact(Arrays.asList("voice", null)));
+                assertThrows(IllegalArgumentException.class,
+                    () -> update.compact(List.of("voice", "")));
+                assertThrows(IllegalArgumentException.class,
+                    () -> update.compact(List.of("voice", "bad\0name")));
+                assertEquals(Mpq.ERROR_EXIST,
+                    assertThrows(LibmpqException.class,
+                        () -> update.compact(List.of("voice", "missing"))).code());
+                assertEquals(Mpq.ERROR_DECRYPT,
+                    assertThrows(LibmpqException.class, update::compact).code());
+                java.util.ArrayList<String> names = new java.util.ArrayList<>(List.of("voice", "VOICE", "voice"));
+                update.compact(names);
+                names.clear();
+                System.gc();
+                update.compact(List.of());
+                update.compact();
+                assertArrayEquals(before, Files.readAllBytes(path));
+                update.commit();
+                assertThrows(IllegalStateException.class, () -> update.compact(List.of("voice")));
+            }
+            try (Archive archive = Archive.open(path);
+                    MpqStream stream = archive.openStream("voice", 1033, 2)) {
+                byte[] actual = new byte[payload.length];
+                assertEquals(actual.length, stream.read(actual));
+                assertArrayEquals(payload, actual);
+            }
+        }
+    }
+
+    @Test
     void keyFlagConstant() {
         assertEquals(0x00020000, Mpq.FILE_FLAG_KEY);
     }

@@ -296,6 +296,8 @@ _configure("libmpq__update_change_identity", ctypes.c_int32, _VOID_PTR, ctypes.c
            ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint16)
 _configure("libmpq__update_sign", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, _BYTE_PTR, ctypes.c_size_t)
 _configure("libmpq__update_compact", ctypes.c_int32, _VOID_PTR)
+_configure("libmpq__update_compact_ex", ctypes.c_int32, _VOID_PTR,
+           ctypes.POINTER(ctypes.c_char_p), ctypes.c_size_t)
 _configure("libmpq__update_timestamp", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_uint64)
 _configure("libmpq__update_timestamp_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
            ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16)
@@ -567,10 +569,32 @@ class Update:
         self._ensure_open()
         _sign_with_key(libmpq.libmpq__update_sign, self._update, signature_type, private_key)
 
-    def compact(self):
-        """Immediately stage physical compaction; commit alone publishes it."""
+    def compact(self, filenames=None):
+        """Stage compaction with optional strictly validated filename spellings.
+
+        Names are copied only after actual candidate adoption, never on a no-op.
+        Commit alone publishes the result. Names do not guarantee eligibility.
+        """
         self._ensure_open()
-        libmpq.libmpq__update_compact(self._update)
+        if filenames is None:
+            libmpq.libmpq__update_compact(self._update)
+            return
+        if isinstance(filenames, (str, bytes, os.PathLike)):
+            raise TypeError("filenames must be an iterable of filenames")
+        values = tuple(filenames)
+        pointer_limit = ctypes.c_size_t(-1).value // ctypes.sizeof(ctypes.c_char_p)
+        if len(values) > min(0xffffffff, pointer_limit):
+            raise ValueError("filename count is not representable")
+        encoded = []
+        for value in values:
+            if value is None:
+                raise ValueError("filenames must not contain None")
+            name = _as_bytes(value)
+            if not name or b"\0" in name:
+                raise ValueError("filenames must be nonempty and contain no NUL")
+            encoded.append(name)
+        names = (ctypes.c_char_p * len(encoded))(*encoded) if encoded else None
+        libmpq.libmpq__update_compact_ex(self._update, names, len(encoded))
 
     def timestamp(self, name, filetime, *, locale=None, platform=None):
         """Set an existing unsigned Windows FILETIME without changing the payload."""

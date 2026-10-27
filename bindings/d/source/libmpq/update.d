@@ -11,6 +11,7 @@
 module libmpq.update;
 
 import std.string : toStringz;
+import core.memory : GC;
 import libmpq.errors : MPQException, checkStatus;
 import libmpq.native;
 import libmpq.options : FileOptions;
@@ -120,6 +121,31 @@ final class Update {
     void compact() {
         ensureOpen();
         checkStatus(libmpq__update_compact(handle), "libmpq__update_compact");
+    }
+
+    /** Compact with strictly validated names; only actual adoption retains copies. */
+    void compact(const(string)[] filenames) {
+        ensureOpen();
+        struct Inputs {
+            const(char)*[] names;
+        }
+        auto inputs = new Inputs;
+        GC.addRoot(cast(void*) inputs);
+        scope(exit) GC.removeRoot(cast(void*) inputs);
+        if (filenames.length > uint.max || filenames.length > size_t.max / (const(char)*).sizeof)
+            throw new MPQException("filename count", ERROR_SIZE);
+        inputs.names.length = filenames.length;
+        foreach (i, name; filenames) {
+            if (name.length == 0)
+                throw new MPQException("empty filename", ERROR_EXIST);
+            foreach (character; name)
+                if (character == 0)
+                    throw new MPQException("NUL filename", ERROR_FORMAT);
+            inputs.names[i] = toStringz(name);
+        }
+        checkStatus(libmpq__update_compact_ex(handle,
+                    inputs.names.length == 0 ? null : inputs.names.ptr, inputs.names.length),
+                    "libmpq__update_compact_ex");
     }
 
     /** Set an existing Windows FILETIME; shared rows only accept same-value no-ops. */

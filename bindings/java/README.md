@@ -458,7 +458,24 @@ Physical compaction is an immediate transaction stage:
 
 ```java
 update.compact();
+update.compact(List.of("voice", "left/data"));
 ```
+
+Optional filename context augments transaction knowledge and the internal
+listfile without editing that listfile. The native call strictly validates the
+whole batch before reconstruction; missing/empty names, ambiguous identities
+and incompatible encrypted aliases are rejected atomically. Valid names alone
+do not guarantee relocation eligibility or plaintext correctness. Distinct
+classic slash spellings and locale/platform variants retain existing rules.
+Caller buffers are borrowed only until return. Actual adoption retains owned
+copies of all still-valid spellings; failures and true no-ops retain no new
+names. No-ops preserve bytes, path, signatures and prior dirty state. Later calls
+may require the same names again. Existing pre-adoption preservation and
+abort-only adoption boundaries remain.
+
+The List overload rejects a null list or null/empty/NUL entries; an empty
+list is ordinary compaction. Conversion uses a snapshot and one confined Arena
+with the existing native size_t representation.
 
 Call it after other mutations when final placement matters, then commit to
 publish. Supported packed representations, shared aliases and attributes are

@@ -12,6 +12,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Objects;
 import org.libmpq.ffi.LibmpqNative;
 
@@ -109,6 +110,24 @@ public final class MpqUpdate implements AutoCloseable {
     public void compact() throws LibmpqException {
         checkOpen();
         Support.check(LibmpqNative.updateCompact(handle));
+    }
+
+    /** Compact with borrowed filename context; only actual adoption retains names. */
+    public void compact(List<String> filenames) throws LibmpqException {
+        checkOpen();
+        String[] names = Objects.requireNonNull(filenames, "filenames").toArray(String[]::new);
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment nativeNames = names.length == 0 ? MemorySegment.NULL
+                : arena.allocate(ValueLayout.ADDRESS, names.length);
+            for (int i = 0; i < names.length; i++) {
+                String name = Objects.requireNonNull(names[i], "filename");
+                if (name.isEmpty() || name.indexOf('\0') >= 0) {
+                    throw new IllegalArgumentException("filenames must be nonempty and contain no NUL");
+                }
+                nativeNames.setAtIndex(ValueLayout.ADDRESS, i, Support.text(arena, name));
+            }
+            Support.check(LibmpqNative.updateCompactEx(handle, nativeNames, names.length));
+        }
     }
 
     /** Set existing Windows FILETIME bits, with no filesystem time conversion. */
