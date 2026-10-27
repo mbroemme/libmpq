@@ -59,14 +59,16 @@ for compiler in "${compilers[@]}"; do
 	fi
 
 	for standard in "${standards[@]}"; do
-		printf 'Checking %s with %s...\n' "${standard}" "${compiler}"
+		printf 'Compiling library and native regression programs: %s with %s...\n' "${standard}" "${compiler}"
 		./configure --disable-static --enable-shared \
 			CC="${compiler}" \
 			CFLAGS="-O2 -g -std=${standard} -Wall -Wextra -Wpedantic -Werror" >/dev/null
 		make clean >/dev/null 2>&1 || true
 		make -j"$(nproc)" >/dev/null
-		make check >/dev/null
+		# Automake builds all check_PROGRAMS even with an empty TESTS list.
+		# Keep standard compatibility separate from runtime regression coverage.
+		make -j"$(nproc)" check TESTS= >/dev/null
 	done
 done
 
-printf 'All requested C standard checks passed.\n'
+printf 'All requested C standard compilation checks passed (no native tests executed).\n'

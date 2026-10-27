@@ -892,11 +892,25 @@ inventory and regeneration. Fuzzing instructions and input contracts are in
 [fuzz/README.md](fuzz/README.md).
 
 Run `scripts/check` for source formatting and lint checks. Run
-`scripts/check-c-standards` separately for strict GCC and Clang builds and
-native tests across C99, C11, C17, C23 and GNU23, or select one combination
-with `scripts/check-c-standards gcc c99`. These tests use optimized builds
-with warnings treated as errors. CI runs each combination in its own matrix
-job so repeated native suites do not exhaust the lint job's time budget.
+`scripts/check-c-standards` separately for strict GCC and Clang compilation
+across C99, C11, C17, C23 and GNU23, or select one combination with
+`scripts/check-c-standards gcc c99`. Each optimized build treats warnings as
+errors and compiles and links every native regression program. Automake's
+`make check TESTS=` builds all `check_PROGRAMS` without executing `TESTS`;
+these checks establish compilation compatibility, not runtime test success.
+Lint uses the same build-only mechanism to collect test compile commands for
+clang-tidy.
+
+CI retains full native runtime suites for the ordinary optimized Linux GCC
+build, Clang ASan/UBSan/LSan, GCC coverage, big-endian s390x, Windows MSVC and
+MinGW on both architectures/linkages, and the glibc, musl and macOS SDK
+configurations. The ordinary Linux Clang build compiles regression programs
+without repeating the full suite. Instrumented coverage still executes all
+native tests before collecting gcovr reports. Packaging and release workflows
+keep their independent platform runtime checks and installed-consumer tests.
+No large-file assertions are skipped or changed; runtime validation with
+multi-gigabyte files should use disk-backed working directories rather than
+memory-backed temporary storage.
 
 ### Transaction failure coverage
 

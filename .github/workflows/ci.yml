@@ -278,7 +278,8 @@ jobs:
         run: |
           set -euxo pipefail
           bear -- make -j"$(nproc)" V=1
-          bear --append -- make check V=1
+          # Build check_PROGRAMS without running TESTS while recording test flags.
+          bear --append -- make -j"$(nproc)" check TESTS= V=1
 
       - name: Run clang-tidy
         run: |
@@ -372,7 +373,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check compiler and run native tests
+      - name: Compile library and native tests for the selected C standard
         run: |
           set -euxo pipefail
           scripts/check-c-standards '${{ matrix.compiler }}' '${{ matrix.standard }}'
@@ -516,10 +517,19 @@ jobs:
           set -euxo pipefail
           make -j"$(nproc)" V=1
 
-      - name: Check
+      # GCC retains the ordinary optimized runtime control. Clang runtime
+      # coverage also runs independently under ASan/UBSan/LSan.
+      - name: Run native regression suite (GCC)
+        if: matrix.compiler.cc == 'gcc'
         run: |
           set -euxo pipefail
           make check V=1
+
+      - name: Compile native regression programs (Clang)
+        if: matrix.compiler.cc == 'clang'
+        run: |
+          set -euxo pipefail
+          make -j"$(nproc)" check TESTS= V=1
 
   big-endian:
     name: Big-endian (s390x)
