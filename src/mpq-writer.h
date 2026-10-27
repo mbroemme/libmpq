@@ -58,8 +58,9 @@ int32_t libmpq__writer_preserve_member(
 
 /*
  * A live writer owns the state for one file being streamed into an archive.
- * It buffers at most one archive sector, applies the selected compression and
- * encryption options when that sector is flushed, and records packed offsets
+ * It buffers one archive sector or one complete oversized SINGLE unit, applies
+ * the selected compression and encryption options when that unit is flushed,
+ * and records packed offsets
  * for compressed files. The archive owns the active writer through
  * mpq_archive.write_current; the writer is released after file finish or an
  * aborted write, and must not outlive its parent archive.
@@ -68,8 +69,9 @@ struct mpq_writer
 {
     mpq_archive_s *archive;           /* Parent archive that owns the output stream. */
     char *name;                       /* File name used for hashing and encryption keys. */
-    uint8_t *data;                    /* Buffer for the current uncompressed input sector. */
+    uint8_t *data;                    /* Buffer for the current uncompressed input unit. */
     uint32_t data_size;               /* Number of valid bytes currently buffered in data. */
+    uint32_t data_capacity;           /* Sector size, or declared oversized SINGLE size. */
     uint32_t sector_index;            /* Index of the next sector to flush. */
     uint32_t block_count;             /* Number of sectors expected for this file. */
     uint64_t payload_offset;          /* Archive offset where this file's payload begins. */

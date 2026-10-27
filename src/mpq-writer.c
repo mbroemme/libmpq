@@ -159,6 +159,11 @@ stream_flush_sector(mpq_writer_s *writer)
         return result;
     }
 
+    if (packed_size > UINT32_MAX || packed_size > UINT64_MAX - writer->packed_total) {
+        free(packed);
+        return LIBMPQ_ERROR_SIZE;
+    }
+
     /* Sector checksums cover packed bytes before payload encryption. */
     if (writer->checksums != NULL)
         writer->checksums[writer->sector_index] = (uint32_t)adler32(0, packed, (uInt)packed_size);
@@ -297,6 +302,9 @@ stream_finish(mpq_writer_s *writer)
     } else {
         total = writer->packed_total;
     }
+
+    if (total > UINT64_MAX - writer->payload_offset || writer->payload_offset + total > INT64_MAX)
+        return LIBMPQ_ERROR_SIZE;
 
     /* Restore the append position after rewriting the table at the file start. */
     if (libmpq__file_seek(archive->fp, (writer->payload_offset + total), SEEK_SET) < 0)
@@ -2022,7 +2030,18 @@ writer_file_begin(
             }
         }
     }
-    w->data = malloc(a->write_sector_size ? a->write_sector_size : 1);
+    w->data_capacity = a->write_sector_size;
+    if ((options->flags & LIBMPQ_FILE_FLAG_SINGLE) != 0 && (uint64_t)size > w->data_capacity) {
+
+        /* New one-block output must remain representable by the existing reader. */
+        if ((uint64_t)size > INT32_MAX || (uint64_t)size > UINT32_MAX ||
+            (uint64_t)size > SIZE_MAX) {
+            free(w);
+            return LIBMPQ_ERROR_SIZE;
+        }
+        w->data_capacity = (uint32_t)size;
+    }
+    w->data = malloc(w->data_capacity ? w->data_capacity : 1);
     w->name = libmpq__string_duplicate(name);
     if (w->data == NULL || w->name == NULL) {
         free(w->data);
@@ -2152,8 +2171,8 @@ libmpq__writer_file_begin(
 
 /*
  * Append caller-provided bytes and flush complete sectors immediately.
- * The input is copied into a single sector buffer, so memory use is bounded
- * independently of the total file size.
+ * Sectorized input retains its sector buffer. An oversized SINGLE accumulates
+ * the complete declared unit before its one compression/encryption pass.
  */
 int32_t
 libmpq__writer_file_write(mpq_writer_s *w, const uint8_t *buffer, libmpq__off_t size)
@@ -2163,9 +2182,9 @@ libmpq__writer_file_write(mpq_writer_s *w, const uint8_t *buffer, libmpq__off_t 
     if (!w || (!buffer && size != 0) || size < 0 || size > w->expected - w->written)
         return LIBMPQ_ERROR_SIZE;
 
-    /* Fill the current sector, flushing exactly when it reaches capacity. */
+    /* Fill one input unit; SINGLE capacity is independent of archive sectors. */
     while (size != 0) {
-        uint32_t room = w->archive->write_sector_size - w->data_size;
+        uint32_t room = w->data_capacity - w->data_size;
         uint32_t take = (uint32_t)((size < room) ? size : room);
         if (w->attributes.flags & LIBMPQ_ATTRIBUTE_CRC32)
             w->attributes.crc32 = (uint32_t)crc32(w->attributes.crc32, buffer, take);
@@ -2176,7 +2195,7 @@ libmpq__writer_file_write(mpq_writer_s *w, const uint8_t *buffer, libmpq__off_t 
         w->written += take;
         buffer += take;
         size -= take;
-        if (w->data_size == w->archive->write_sector_size) {
+        if (w->data_size == w->data_capacity) {
             int32_t result = stream_flush_sector(w);
             if (result < 0) {
                 if (w->archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR)
@@ -2220,6 +2239,10 @@ libmpq__writer_file_finish(mpq_writer_s *w)
         return LIBMPQ_ERROR_EXIST;
     if (w->archive->write_error != 0) {
         result = w->archive->write_error;
+    } else if (w->data_capacity > w->archive->write_sector_size && w->written != w->expected) {
+
+        /* Never encode a partial oversized SINGLE as a completed unit. */
+        result = LIBMPQ_ERROR_SIZE;
     } else if (w->data_size != 0 || w->expected == 0) {
         result = stream_flush_sector(w);
     } else {

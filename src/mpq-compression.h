@@ -116,6 +116,9 @@ int32_t libmpq__compression_allowed(
     uint32_t format_version, uint32_t mask, libmpq_compression_policy_t policy
 );
 
+/* Check one stage's candidate arithmetic and native codec capacities before allocation. */
+int32_t libmpq__compression_candidate_size(size_t input_size, uint32_t mask, size_t *capacity);
+
 /*
  * Encode one sector through the requested codec chain.
  *

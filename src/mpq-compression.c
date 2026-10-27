@@ -634,6 +634,43 @@ libmpq__compression_allowed(
               LIBMPQ_COMPRESSION_WAVE_STEREO)) == 0;
 }
 
+/* Bound the actual current stage, without imposing its limits on earlier input. */
+int32_t
+libmpq__compression_candidate_size(size_t input_size, uint32_t mask, size_t *capacity)
+{
+    size_t size;
+    if (capacity == NULL)
+        return LIBMPQ_ERROR_FORMAT;
+    *capacity = 0;
+    if (input_size > UINT32_MAX)
+        return LIBMPQ_ERROR_SIZE;
+    if (mask == LIBMPQ_COMPRESSION_SPARSE) {
+        if (input_size < 7 || input_size > INT32_MAX)
+            return LIBMPQ_ERROR_UNPACK;
+        size = input_size - 2;
+    } else if (mask == LIBMPQ_COMPRESSION_HUFFMAN) {
+        if (input_size > (SIZE_MAX - 64) / 2 || input_size > (UINT32_MAX - 64u) / 2)
+            return LIBMPQ_ERROR_SIZE;
+        size = input_size * 2 + 64;
+    } else {
+        if (mask != LIBMPQ_COMPRESSION_ZLIB && mask != LIBMPQ_COMPRESSION_BZIP2 &&
+            mask != LIBMPQ_COMPRESSION_PKZIP && mask != LIBMPQ_COMPRESSION_WAVE_MONO &&
+            mask != LIBMPQ_COMPRESSION_WAVE_STEREO)
+            return LIBMPQ_ERROR_FORMAT;
+        if (input_size > SIZE_MAX - input_size / 100 ||
+            input_size + input_size / 100 > SIZE_MAX - 1024)
+            return LIBMPQ_ERROR_SIZE;
+        size = input_size + input_size / 100 + 1024;
+        if ((mask == LIBMPQ_COMPRESSION_ZLIB &&
+             ((uint64_t)input_size > (uInt)-1 || (uint64_t)size > (uInt)-1)) ||
+            (mask == LIBMPQ_COMPRESSION_BZIP2 &&
+             ((uint64_t)input_size > UINT_MAX || (uint64_t)size > UINT_MAX)))
+            return LIBMPQ_ERROR_SIZE;
+    }
+    *capacity = size;
+    return 0;
+}
+
 /*
  * Apply one selected compression backend and replace the current buffer.
  * Each backend receives the current stage output and returns a newly owned
@@ -643,20 +680,14 @@ static int32_t
 compression_stage(uint8_t **data, size_t *size, uint32_t mask)
 {
     uint8_t *out;
-    size_t out_size = *size + (*size / 100) + 1024;
+    size_t out_size;
     z_stream z;
     bz_stream b;
     int result;
 
-    if (mask == LIBMPQ_COMPRESSION_SPARSE) {
-        if (*size < 7 || *size > INT32_MAX)
-            return LIBMPQ_ERROR_UNPACK;
-
-        /* Keep only a candidate that can save the required two stage bytes. */
-        out_size = *size - 2;
-    }
-    if (mask == LIBMPQ_COMPRESSION_HUFFMAN)
-        out_size = *size * 2 + 64;
+    int32_t bounded = libmpq__compression_candidate_size(*size, mask, &out_size);
+    if (bounded != 0)
+        return bounded;
     out = malloc(out_size ? out_size : 1);
     if (out == NULL)
         return LIBMPQ_ERROR_MALLOC;
@@ -730,7 +761,11 @@ compression_stage(uint8_t **data, size_t *size, uint32_t mask)
             free(out);
             return LIBMPQ_ERROR_UNPACK;
         }
-        out_size = z.total_out;
+        if ((uint64_t)z.total_out > out_size) {
+            free(out);
+            return LIBMPQ_ERROR_SIZE;
+        }
+        out_size = (size_t)z.total_out;
     } else {
         memset(&b, 0, sizeof(b));
         b.next_in = (char *)*data;
@@ -751,7 +786,11 @@ compression_stage(uint8_t **data, size_t *size, uint32_t mask)
             free(out);
             return LIBMPQ_ERROR_UNPACK;
         }
-        out_size = b.total_out_lo32;
+        if (b.total_out_hi32 != 0 || (uint64_t)b.total_out_lo32 > out_size) {
+            free(out);
+            return LIBMPQ_ERROR_SIZE;
+        }
+        out_size = (size_t)b.total_out_lo32;
     }
     free(*data);
     *data = out;
@@ -780,6 +819,8 @@ libmpq__compression_encode_sector(
 
     if (!libmpq__compression_allowed(format_version, requested, policy))
         return LIBMPQ_ERROR_FORMAT;
+    if (input_size > UINT32_MAX)
+        return LIBMPQ_ERROR_SIZE;
     if (requested == LIBMPQ_COMPRESSION_LZMA)
         return encode_lzma(input, input_size, output, output_size, emitted_mask);
     data = malloc(input_size ? input_size : 1);
@@ -827,11 +868,15 @@ libmpq__compression_encode_sector(
         size = input_size;
         *emitted_mask = 0;
     }
-    if (*emitted_mask == 0 || size + 1 >= input_size) {
+    if (*emitted_mask == 0 || size >= input_size || input_size - size <= 1) {
         *emitted_mask = 0;
         *output = data;
         *output_size = size;
     } else {
+        if (size == SIZE_MAX || size >= UINT32_MAX) {
+            free(data);
+            return LIBMPQ_ERROR_SIZE;
+        }
         uint8_t *packed = realloc(data, size + 1);
         if (packed == NULL) {
             free(data);

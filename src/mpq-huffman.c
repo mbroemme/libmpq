@@ -1193,5 +1193,7 @@ libmpq__huffman_encode(
     }
     while (os->out_pos < 4)
         os->out_buf[os->out_pos++] = 0;
+    if (os->out_pos > INT32_MAX)
+        return LIBMPQ_ERROR_SIZE;
     return (int32_t)os->out_pos;
 }
