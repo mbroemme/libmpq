@@ -36,6 +36,37 @@ import org.libmpq.ffi.LibmpqNative;
  */
 class LibmpqTest {
     @Test
+    void oversizedSingleWriter(@TempDir Path directory) throws Exception {
+        byte[] payload = new byte[9001];
+        for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i * 71 + i / 3);
+        Path source = directory.resolve("input.bin");
+        Files.write(source, payload);
+        FileOptions options = new FileOptions(Mpq.FILE_FLAG_SINGLE | Mpq.FILE_FLAG_ENCRYPTED |
+            Mpq.FILE_FLAG_KEY | Mpq.FILE_FLAG_COMPRESS, Mpq.COMPRESSION_ZLIB, Mpq.COMPRESSION_ZLIB, 0, 0);
+        for (int version = 0; version < 4; version++) {
+            Path path = directory.resolve("single-" + version + ".mpq");
+            try (Archive writer = Archive.create(path, new ArchiveCreateOptions(version, 8, 4096, 0, 0))) {
+                writer.add("data", payload, options);
+                writer.addPath("path", source, options);
+                try (MpqFileWriter stream = writer.begin("incremental", payload.length, options)) {
+                    for (int at = 0; at < payload.length; at += 3)
+                        stream.write(Arrays.copyOfRange(payload, at, Math.min(at + 3, payload.length)));
+                    assertThrows(IllegalArgumentException.class, () -> stream.write(new byte[] {1}));
+                }
+            }
+            try (Archive archive = Archive.open(path)) {
+                for (String name : List.of("data", "path", "incremental")) {
+                    try (MpqStream stream = archive.openStream(name)) {
+                        byte[] actual = new byte[payload.length];
+                        assertEquals(actual.length, stream.read(actual));
+                        assertArrayEquals(payload, actual);
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     void compactExternalFilenames(@TempDir Path directory) throws Exception {
         byte[] payload = new byte[403];
         for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i * 71 + i / 3);

@@ -60,6 +60,19 @@ need it, serializes seek/read callbacks, and never closes the channel.
 
     Archive archive = Archive.openSource(channel, "data.mpq");
 
+`FILE_FLAG_SINGLE` storage is independent of the archive sector size. A newly oversized
+unit buffers its complete declared input, is encoded/encrypted once, and remains
+one logical block without a sector-offset or sector-CRC table. The new path is
+limited to min(INT32_MAX, UINT32_MAX, SIZE_MAX) by current representation and
+one-block reader transfer types, with additional codec and output-extent checks.
+Existing inputs fitting a configured sector retain their prior behavior.
+Encoding may require several times the input size in memory. There is no fixed
+MiB cap or library-managed memory budget. Applications handling untrusted sizes
+should apply their own resource limits. Normal allocation failures are reported
+where the runtime returns control; this does not guarantee survival of OOM
+termination. Existing codec/version restrictions and ADPCM SINGLE rejection,
+KEY adjustments, generated listfile defaults and physical patch defaults remain.
+
 ## Archive creation and compression policy
 
 MPQE creation uses a private plaintext temporary file before atomically

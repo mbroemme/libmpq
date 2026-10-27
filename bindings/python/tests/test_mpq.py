@@ -1927,3 +1927,46 @@ def test_compact_external_filenames(tmp_path, version, wrapped):
         number = archive.file_number("voice", locale=1033, platform=2)
         result = archive[number].verify_result(mpq.VERIFY_FILE_MD5, filename="voice")
         assert result == mpq.VerificationResult(mpq.VERIFY_FILE_MD5, 0, 0)
+
+
+@pytest.mark.parametrize("version", range(4))
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_oversized_single_writer(tmp_path, version, wrapped):
+    path = tmp_path / "single.mpq"
+    source = tmp_path / "input.bin"
+    payload = bytes((i * 71 + i // 3) & 255 for i in range(9001))
+    source.write_bytes(payload)
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    options = mpq.FileCreateOptions(
+        mpq.FILE_FLAG_SINGLE | mpq.FILE_FLAG_ENCRYPTED | mpq.FILE_FLAG_KEY |
+        mpq.FILE_FLAG_COMPRESS, mpq.COMPRESSION_ZLIB, mpq.COMPRESSION_ZLIB)
+    create = (mpq.Writer.create_mpqe(path, code, version=version, max_files=8)
+              if wrapped else mpq.Writer(path, version=version, max_files=8))
+    with create as writer:
+        writer.add("data", payload, options)
+        writer.add_path("path", source, options)
+        stream = writer.begin("incremental", len(payload), options)
+        for position in range(0, len(payload), 3):
+            stream.write(payload[position:position + 3])
+        with pytest.raises(ValueError):
+            stream.write(b"excess")
+        stream.finish()
+        with pytest.raises(mpq.LibmpqStateError):
+            stream.write(b"")
+    with (mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive(path)) as archive:
+        for name in ["data", "path", "incremental"]:
+            with archive.open_stream(name) as stream:
+                assert stream.read() == payload
+            number = archive.file_number(name)
+            assert archive[number].blocks == 1
+    # Incomplete finish consumes the stream and retains native SIZE translation.
+    writer = mpq.Writer(tmp_path / "incomplete.mpq", version=version, max_files=4)
+    stream = writer.begin("incomplete", 9001, options)
+    stream.write(payload[:4097])
+    with pytest.raises(mpq.LibmpqSizeError):
+        stream.finish()
+    if version == mpq.ARCHIVE_VERSION_FOUR:
+        with pytest.raises(mpq.LibmpqSizeError):
+            writer.close()
+    else:
+        writer.close()

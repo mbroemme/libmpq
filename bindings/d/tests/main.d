@@ -1552,7 +1552,41 @@ private void testCompactExternalFilenames() {
     }
 }
 
+private void testOversizedSingleWriter() {
+    auto input = temporaryArchive("single-input");
+    ubyte[] payload = new ubyte[9001];
+    foreach (i, ref value; payload) value = cast(ubyte) (i * 71 + i / 3);
+    write(input, payload);
+    scope(exit) if (exists(input)) remove(input);
+    foreach (version_; 0u .. 4u) {
+        auto path = temporaryArchive("single-writer");
+        auto options = FileOptions(FILE_FLAG_SINGLE | FILE_FLAG_ENCRYPTED | FILE_FLAG_KEY |
+            FILE_FLAG_COMPRESS, COMPRESSION_ZLIB, COMPRESSION_ZLIB, 0, 0);
+        auto writer = Archive.create(path, ArchiveCreateOptions(version_, 8, 4096, 0, 0));
+        writer.add("data", payload, options);
+        writer.addPath("path", input, options);
+        auto stream = writer.begin("incremental", payload.length, options);
+        for (size_t at = 0; at < payload.length; at += 3)
+            stream.write(payload[at .. (at + 3 < payload.length ? at + 3 : payload.length)]);
+        bool failed;
+        try { stream.write([cast(ubyte) 1]); } catch (MPQException e) { failed = e.code == ERROR_SIZE; }
+        assert(failed);
+        stream.finish();
+        writer.close();
+        auto archive = Archive.open(path);
+        foreach (name; ["data", "path", "incremental"]) {
+            auto source = archive.openStream(name);
+            ubyte[] actual = new ubyte[payload.length];
+            assert(source.read(actual) == actual.length && actual == payload);
+            source.close();
+        }
+        archive.close();
+        remove(path);
+    }
+}
+
 void main() {
+    testOversizedSingleWriter();
     {
         auto root = environment.get("LIBMPQ_SOURCE_DIR", ".");
         auto source = new MemorySource(cast(ubyte[]) read(buildPath(root, "tests", "fixtures", "mpq-v4-features.mpq")));
