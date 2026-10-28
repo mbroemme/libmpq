@@ -579,7 +579,9 @@ jobs:
     name: GCC coverage
     needs: lint
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+
+    # Preserve O0 branch visibility and budget measured runtime plus setup margin.
+    timeout-minutes: 35
     container:
       image: debian:trixie-slim
     defaults:
@@ -630,7 +632,9 @@ jobs:
         run: |
           set -euxo pipefail
           make -j"$(nproc)" V=1
-          make check V=1
+
+          # Bound concurrent regression memory/I/O while overlapping independent tests.
+          make -j2 check V=1
 
       - name: Generate coverage reports
         run: |

@@ -912,6 +912,19 @@ No large-file assertions are skipped or changed; runtime validation with
 multi-gigabyte files should use disk-backed working directories rather than
 memory-backed temporary storage.
 
+GCC coverage retains `-O0 -g --coverage` to preserve source line and branch
+visibility. Its complete native suite runs with two Automake workers to overlap
+independent regression programs without unbounded concurrent memory or I/O.
+The 35-minute job budget includes the CPU-heavy transaction/signature tests,
+setup, compilation, report generation and uploads; parallelism does not shorten
+the longest individual test.
+
+The coverage job uses `debian:trixie-slim` and its packaged gcovr 7.2.
+Direct gcovr invocations process the actual large RSA execution counters without
+extra counter-limit options. Source selection and coverage requirements remain
+unchanged. XML, JSON, HTML, badges and PR/Pages consumers retain their existing
+interfaces.
+
 ### Transaction failure coverage
 
 Private fault hooks cover staged flush/close and final publication, including
