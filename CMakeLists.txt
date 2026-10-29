@@ -149,6 +149,51 @@ if(BUILD_TESTING)
         writer
     )
 
+    # Archive the existing objects so the linker can extract only the modules
+    # still needed after the instrumented replacements have been linked.
+    add_library(mpq-fault-base STATIC $<TARGET_OBJECTS:mpq-core>)
+    set_target_properties(mpq-fault-base PROPERTIES LINKER_LANGUAGE C)
+
+    # Recompile just the four modules that own the tested allocations.
+    add_library(mpq-fault-alloc OBJECT
+        src/mpq-writer.c
+        src/mpq-file.c
+        src/mpq-compression.c
+        src/mpq-pkware.c
+    )
+    target_include_directories(mpq-fault-alloc PRIVATE include src)
+    target_link_libraries(mpq-fault-alloc PRIVATE ${codec_libraries})
+    target_compile_definitions(mpq-fault-alloc PRIVATE LIBMPQ_TEST_ALLOC_INTERCEPT)
+    set_target_properties(mpq-fault-alloc PROPERTIES C_VISIBILITY_PRESET hidden)
+
+    set(alloc_header "${CMAKE_CURRENT_SOURCE_DIR}/tests/test-mpq-helper.h")
+    if(MSVC)
+        target_compile_options(mpq-fault-alloc PRIVATE "/FI${alloc_header}")
+    else()
+        target_compile_options(mpq-fault-alloc PRIVATE -include "${alloc_header}")
+    endif()
+
+    # Compile plain API wrappers so calls resolve to the replacements in this
+    # executable. Linking the shared library would use its ordinary wrappers
+    # and owners instead. Place the replacements before the base archive.
+    add_executable(test-writer-alloc
+        tests/test-mpq-writer-alloc.c
+        tests/test-mpq-helper.c
+        src/mpq-api.c
+        $<TARGET_OBJECTS:mpq-fault-alloc>
+    )
+    target_include_directories(test-writer-alloc PRIVATE include src tests)
+    target_compile_definitions(test-writer-alloc PRIVATE VERSION="${PROJECT_VERSION}")
+    target_link_libraries(test-writer-alloc PRIVATE mpq-fault-base ${codec_libraries})
+    if(WIN32)
+        target_link_libraries(test-writer-alloc PRIVATE bcrypt advapi32)
+    endif()
+
+    set(alloc_work_dir "${CMAKE_CURRENT_BINARY_DIR}/test-work/writer-alloc")
+    file(MAKE_DIRECTORY "${alloc_work_dir}")
+    add_test(NAME writer-alloc COMMAND test-writer-alloc)
+    set_tests_properties(writer-alloc PROPERTIES WORKING_DIRECTORY "${alloc_work_dir}")
+
     foreach(module IN LISTS test_modules)
         add_executable(test-${module}
             tests/test-mpq-${module}.c
@@ -168,18 +213,4 @@ if(BUILD_TESTING)
         )
     endforeach()
 
-    # Keep allocation fault injection in a Linux test executable, never in production.
-    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        add_executable(test-writer-alloc tests/test-mpq-writer.c tests/test-mpq-helper.c)
-        target_include_directories(test-writer-alloc PRIVATE src tests)
-        target_compile_definitions(test-writer-alloc PRIVATE LIBMPQ_TEST_WRAP_ALLOC=1
-            FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
-        target_link_libraries(test-writer-alloc PRIVATE mpq mpq-core)
-        target_link_options(test-writer-alloc PRIVATE
-            -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free)
-        file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test-work/writer-alloc")
-        add_test(NAME writer-alloc COMMAND test-writer-alloc)
-        set_tests_properties(writer-alloc PROPERTIES
-            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test-work/writer-alloc")
-    endif()
 endif()

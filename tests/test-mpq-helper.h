@@ -21,6 +21,36 @@
 #ifndef LIBMPQ_TEST_HELPER_H
 #define LIBMPQ_TEST_HELPER_H
 
+/* Only the fault driver and replacement objects need the allocator interface. */
+#if defined(LIBMPQ_TEST_ALLOC_INTERCEPT) || defined(LIBMPQ_TEST_ALLOC_IMPLEMENTATION)
+
+/* Configuration feature-test macros must precede every system header. */
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
+#include <stddef.h>
+#include <stdlib.h>
+#ifdef _WIN32
+#include <malloc.h>
+#endif
+
+/* Implemented only by test-writer-alloc; no allocator symbols enter libmpq. */
+void *test_writer_malloc(size_t size, const char *file, unsigned line);
+void *test_writer_calloc(size_t count, size_t size, const char *file, unsigned line);
+void *test_writer_realloc(void *pointer, size_t size, const char *file, unsigned line);
+void test_writer_free(void *pointer);
+
+#ifdef LIBMPQ_TEST_ALLOC_INTERCEPT
+#define malloc(size) test_writer_malloc(size, __FILE__, __LINE__)
+#define calloc(count, size) test_writer_calloc(count, size, __FILE__, __LINE__)
+#define realloc(pointer, size) test_writer_realloc(pointer, size, __FILE__, __LINE__)
+#define free(pointer) test_writer_free(pointer)
+#endif
+#endif
+
+/* Forced inclusion must leave ordinary test fixtures out of replacement objects. */
+#ifndef LIBMPQ_TEST_ALLOC_INTERCEPT
 #include <libmpq/mpq.h>
 
 #include <stddef.h>
@@ -118,6 +148,9 @@ int test_read_path(const char *path, uint8_t **data, size_t *size);
 void test_payload(uint8_t *data, size_t size, uint32_t seed);
 void test_sparse_payload(uint8_t *data, size_t size);
 int test_sha256(const uint8_t *data, size_t size, char output[65]);
+int test_archive_check_name(
+    mpq_archive_s *archive, const char *name, const uint8_t *expected, size_t size
+);
 int test_archive_read(mpq_archive_s *archive, uint32_t number, uint8_t **data, size_t *size);
 int test_archive_offsets(mpq_archive_s *archive, uint32_t number, uint32_t **offsets);
 int test_archive_verify_offsets(mpq_archive_s *archive, uint32_t number, uint32_t verify_flags);
@@ -127,3 +160,4 @@ int test_add_archive(mpq_archive_s **archive, const char *path, uint32_t version
 void test_strong_signature_private_key(uint8_t key[512]);
 
 #endif
+#endif /* LIBMPQ_TEST_HELPER_H */

@@ -460,3 +460,27 @@ test_getcwd(void)
     return getcwd(NULL, 0);
 #endif
 }
+
+/* Named streaming supplies the basename key even for encrypted tiny units. */
+int
+test_archive_check_name(
+    mpq_archive_s *archive, const char *name, const uint8_t *expected, size_t size
+)
+{
+    mpq_stream_s *stream = NULL;
+    uint8_t *actual = malloc(size ? size : 1);
+    libmpq__off_t transferred = 0;
+    int32_t result =
+        actual == NULL ? LIBMPQ_ERROR_MALLOC : libmpq__stream_open_name(archive, name, &stream);
+    if (result == 0)
+        result = libmpq__stream_read(stream, actual, (libmpq__off_t)size, &transferred);
+    if (result == 0 && (transferred != (libmpq__off_t)size || memcmp(actual, expected, size) != 0))
+        result = LIBMPQ_ERROR_READ;
+    if (stream != NULL) {
+        int32_t closed = libmpq__stream_close(stream);
+        if (result == 0)
+            result = closed;
+    }
+    free(actual);
+    return result;
+}

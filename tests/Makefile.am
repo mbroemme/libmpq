@@ -39,14 +39,8 @@ check_PROGRAMS = \
 	test-patch-writer \
 	test-update \
 	test-wave \
-	test-writer
-if LINUX_ALLOC_TESTS
-check_PROGRAMS += test-writer-alloc
-test_writer_alloc_SOURCES = test-mpq-writer.c $(COMMON_SOURCES)
-test_writer_alloc_CPPFLAGS = $(AM_CPPFLAGS) -DLIBMPQ_TEST_WRAP_ALLOC=1
-test_writer_alloc_LDFLAGS = $(AM_LDFLAGS) -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free
-test_writer_alloc_LDADD = $(test_writer_LDADD)
-endif
+	test-writer \
+	test-writer-alloc
 TESTS = $(check_PROGRAMS)
 
 # The update regression creates working archives in the build directory.
@@ -242,6 +236,28 @@ test_update_LDADD = \
 	$(test_attributes_LDADD)
 test_wave_SOURCES = test-mpq-wave.c ../src/mpq-wave.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_writer_SOURCES = test-mpq-writer.c $(COMMON_SOURCES)
+test_writer_LDADD = $(test_attributes_LDADD)
+
+# Compile only the four allocation owners with the forced helper header.
+check_LTLIBRARIES = libmpq-fault-alloc.la
+libmpq_fault_alloc_la_SOURCES = \
+	../src/mpq-writer.c \
+	../src/mpq-file.c \
+	../src/mpq-compression.c \
+	../src/mpq-pkware.c
+libmpq_fault_alloc_la_CPPFLAGS = $(AM_CPPFLAGS) -I$(top_builddir) \
+	-DLIBMPQ_TEST_ALLOC_INTERCEPT -include "$(abs_srcdir)/test-mpq-helper.h"
+$(libmpq_fault_alloc_la_OBJECTS): $(srcdir)/test-mpq-helper.h
+
+# Local API wrappers call the replacements. The base archive then supplies
+# the remaining objects without loading the production shared library.
+test_writer_alloc_SOURCES = test-mpq-writer-alloc.c ../src/mpq-api.c $(COMMON_SOURCES)
+test_writer_alloc_CPPFLAGS = $(AM_CPPFLAGS) -I$(top_builddir)
+test_writer_alloc_LDADD = libmpq-fault-alloc.la $(top_builddir)/src/libmpq-fault-base.a
+
+# Bootstrap the base for direct test builds. Recursive check builds src first.
+$(top_builddir)/src/libmpq-fault-base.a:
+	$(MAKE) -C $(top_builddir)/src libmpq-fault-base.a
 
 # Reuse the library's already-built hidden MPQE helper objects for private checks.
 PRIVATE_MPQE_LDADD = $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-endian.lo
@@ -260,8 +276,6 @@ test_sparse_LDADD = $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
 
 # The legacy PKWARE dispatcher test also calls the production SPARSE codec.
 test_pkware_LDADD = $(top_builddir)/src/mpq-sparse.lo $(LDADD)
-
-test_writer_LDADD = $(test_attributes_LDADD)
 
 # Fixture-dependent tests resolve archives from the source tree, including
 # when Automake runs them from a separate VPATH or distcheck build directory.

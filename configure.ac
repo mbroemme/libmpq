@@ -24,9 +24,6 @@ AS_CASE(
 )
 AM_CONDITIONAL([ENABLE_FUZZING], [test "x$enable_fuzzing" = xyes])
 
-# ELF linker wrapping injects writer allocation failures only in a Linux test.
-AM_CONDITIONAL([LINUX_ALLOC_TESTS], [case "$host_os" in linux*) true;; *) false;; esac])
-
 # Check for the required build tools.
 AC_USE_SYSTEM_EXTENSIONS
 AC_PROG_CC

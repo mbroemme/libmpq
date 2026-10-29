@@ -265,6 +265,24 @@ where the runtime returns control; this does not guarantee survival of OOM
 termination. Existing codec/version restrictions and ADPCM SINGLE rejection,
 KEY adjustments, generated listfile defaults and physical patch defaults remain.
 
+The ordinary `test-writer` regression exercises the production library and its
+normal private objects. A separate focused `test-writer-alloc` executable runs
+portable deterministic allocation faults without repeating the full writer
+matrix. Only four private replacement modules (writer, filename, compression
+and PKWARE) receive a test-owned forced header through compiler options;
+production sources and installed artifacts have no test dependencies or runtime
+allocation dispatch. The focused executable uses its own plain API wrapper and
+a private static archive of already-built production objects, with ordinary
+archive extraction selecting only the unaffected modules. No full core is
+recompiled and no linker interception is required.
+
+The same 33 native executables are registered on every platform. C-standard
+compile-only checks build all of them; sanitizer and coverage runs execute the
+focused fault scenarios too. Output identifies reached allocation sites, and
+huge-input tests veto allocations before allocating. Caller ownership, realloc
+failure and recovery assertions are retained in the focused driver. Test-only
+archives, headers and replacement objects are never installed.
+
 ### Writer compression policy
 
 For MPQ v2+ creation, `LIBMPQ_COMPRESSION_LZMA` is an exclusive API selector,

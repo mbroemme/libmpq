@@ -83,3 +83,10 @@ GENERAL_SRCS = \
 	mpq-verify.c \
 	mpq-wave.c \
 	mpq-writer.c
+
+# Only this Makefile owns libmpq_la_OBJECTS. Package those existing objects
+# for the focused test, even when the installed static library is disabled.
+libmpq-fault-base.a: $(libmpq_la_OBJECTS)
+	$(LIBTOOL) --mode=link $(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(libmpq_la_OBJECTS)
+check-local: libmpq-fault-base.a
+CLEANFILES = libmpq-fault-base.a
