@@ -48,7 +48,7 @@ signing behavior.
 This call does not consume the patch handle, including when configuration
 fails. It does not modify the base archive.
 .PP
-After finish, open the patch with the ordinary MPQ or authenticated MPQE
+After finish, open the patch with the ordinary MPQ or MPQE
 reader. Use libmpq__archive_signatures(3) and libmpq__archive_verify(3)
 to inspect and verify its signatures. No separate patch verification API exists.
 .SH RETURN VALUE

@@ -35,6 +35,13 @@ libmpq__writer_finish(3). Only one writer may be active per archive. The archive
 must outlive the writer. Closing the archive with an active writer reports an
 error and discards that writer; neither handle may then be reused.
 .PP
+Ordinary writes accept LIBMPQ_FILE_FLAG_IMPLODE, LIBMPQ_FILE_FLAG_COMPRESS,
+LIBMPQ_FILE_FLAG_ENCRYPTED, LIBMPQ_FILE_FLAG_KEY, LIBMPQ_FILE_FLAG_SINGLE and
+LIBMPQ_FILE_FLAG_SECTOR_CRC. Unsupported bits, including PATCH_FILE and
+DELETE_MARKER, return LIBMPQ_ERROR_FORMAT. IMPLODE and COMPRESS are mutually
+exclusive. KEY without ENCRYPTED has no encryption effect. Existing codec
+restrictions apply.
+.PP
 Add LIBMPQ_FILE_FLAG_SECTOR_CRC to options.flags to generate sector Adler-32
 checksums for sectorized COMPRESS or IMPLODE files. Checksums cover packed
 bytes before encryption. The checksum table follows the data and is not

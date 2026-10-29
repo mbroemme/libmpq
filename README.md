@@ -43,7 +43,7 @@ API.
   listfiles and attributes, and encrypted file payloads.
 * Add raw, single-unit, sectorized, and multi-sector files through streaming,
   memory-buffer, and filesystem-path APIs.
-* Modify filesystem MPQs, embedded MPQ containers, and authenticated MPQE
+* Modify filesystem MPQs, embedded MPQ containers, and MPQE-wrapped
   archives transactionally with named-file add, replace, remove, and rename.
 * Create MPQ or MPQE-wrapped replacement and deletion patch archives without
   changing the base MPQ; apply COPY/BSD0 multi-layer chains through internal
@@ -348,7 +348,7 @@ encryption, sectors, and compression, see the [MPQ format guide](MPQ.md).
 * Encrypted random-access writing is not supported.
 
 See [MPQ.md](MPQ.md) for MPQE signatures and patch namespace format behavior,
-and [DEVELOPER.md](DEVELOPER.md) for authentication and prefix-discovery policy.
+and [DEVELOPER.md](DEVELOPER.md) for MPQE transport and prefix-discovery policy.
 
 ## Contributing
 

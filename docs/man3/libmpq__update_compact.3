@@ -80,7 +80,7 @@ publication preserve the original under the normal transaction guarantees.
 Named update reconstruction preserves the same supported embedded prefixes
 without imposing dense placement. Ordinary legacy v1/v2 updates retain their
 existing unrelated-suffix behavior. For MPQE, prefix preservation
-refers to the decoded logical source, using existing authenticated publication.
+refers to the decoded logical source, using existing MPQE re-encryption and publication.
 .PP
 Use \fBlibmpq__update_compact_ex\fP() to supply a synchronous array of known
 filenames for unlisted encrypted KEY members and aliases. Its zero-count form

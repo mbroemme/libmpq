@@ -53,9 +53,10 @@ set in \fI*mismatches\fP if the signature does not match; it is clear
 when it matches. On failure the function returns a negative libmpq error
 and leaves a non-NULL mismatch output zero.
 .SH ERRORS
-An absent requested signature or NULL required argument returns
-\fBLIBMPQ_ERROR_EXIST\fP. Invalid flags, key representation, or
-signature storage return \fBLIBMPQ_ERROR_FORMAT\fP. Writer handles return
+An absent requested signature, NULL archive, or NULL mismatch output returns
+\fBLIBMPQ_ERROR_EXIST\fP. For a valid reader and output, a NULL key, invalid
+flags, invalid key representation, or malformed signature storage returns
+\fBLIBMPQ_ERROR_FORMAT\fP. Writer handles return
 \fBLIBMPQ_ERROR_NOT_INITIALIZED\fP. Read, allocation, and other
 lower-level errors may also propagate.
 .SH SEE ALSO

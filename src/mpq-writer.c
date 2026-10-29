@@ -1621,6 +1621,9 @@ libmpq__writer_validate_options(const mpq_archive_create_options_s *options)
     if (options->sector_size &&
         (options->sector_size < 512 || (options->sector_size & (options->sector_size - 1)) != 0))
         return LIBMPQ_ERROR_FORMAT;
+    if ((options->flags &
+         ~(LIBMPQ_ARCHIVE_CREATE_LISTFILE | LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED)) != 0)
+        return LIBMPQ_ERROR_FORMAT;
     if ((options->attributes & ~LIBMPQ_ATTRIBUTES_ALL) != 0)
         return LIBMPQ_ERROR_FORMAT;
     if (options->attributes != 0 && options->max_files != 0 &&
@@ -1945,6 +1948,11 @@ writer_file_begin(
     }
     if (options == NULL)
         options = &defaults;
+    if (!a->write_patch_mode &&
+        (options->flags &
+         ~(LIBMPQ_FILE_FLAG_IMPLODE | LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
+           LIBMPQ_FILE_FLAG_KEY | LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_SECTOR_CRC)) != 0)
+        return LIBMPQ_ERROR_FORMAT;
     if ((options->flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) != 0 &&
         (!a->write_patch_mode || options->flags != LIBMPQ_FILE_FLAG_DELETE_MARKER || size != 0))
         return LIBMPQ_ERROR_FORMAT;
@@ -2353,7 +2361,7 @@ libmpq__writer_patch_delete_marker(
 }
 
 /*
- * Add a filesystem file while keeping only one input sector in memory.
+ * Add a filesystem file with bounded input reads. The writer may buffer a full SINGLE unit.
  * The source length is determined first so the streaming writer can enforce
  * its declared size while reading bounded chunks from disk.
  */

@@ -44,8 +44,7 @@ another identity are rejected. Unique HET/BET-only targets accept only zero
 locale and platform. Unknown unrelated members retain packed bytes and
 identities. Extended tables are never discarded to permit an operation.
 .PP
-These operations use transactional reconstruction. Embedded archives and
-unrecognized trailers are unsupported on this path. Existing archive
+These operations use transactional reconstruction. Existing archive
 version, v4 raw-chunk policy and supported metadata are preserved. Special
 members and unsupported metadata or storage layouts are rejected.
 .PP
@@ -54,7 +53,7 @@ archive remains unchanged until commit publishes a finalized working copy.
 Commit and abort consume the update handle, including on error.
 .PP
 Discoverable embedded archives retain all prefix bytes and the original MPQ
-origin under the existing format restrictions. Named reconstruction rejects
+origin, including validated user-data relationships. Named reconstruction rejects
 unrelated trailers; ordinary legacy v1/v2 operations retain their suffix policy.
 See libmpq__update_begin(3) for discovery and temporary-storage requirements.
 .SH RETURN VALUE

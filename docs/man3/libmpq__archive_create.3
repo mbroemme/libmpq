@@ -34,7 +34,9 @@ destination directly and does not provide transactional rollback on failure.
 .SS "Creation Options"
 The options select a fixed entry capacity, sector size, archive version,
 and optional generated (listfile). NULL \fIoptions\fP uses the built-in
-archive-creation defaults.
+archive-creation defaults. The accepted options.flags bits are
+LIBMPQ_ARCHIVE_CREATE_LISTFILE and LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED.
+Any other flag bit returns LIBMPQ_ERROR_FORMAT before opening the destination.
 .PP
 LIBMPQ_ARCHIVE_VERSION_THREE selects MPQ v3 with a 0x44-byte header,
 HET/BET and classic hash/block tables sharing the same logical rows.

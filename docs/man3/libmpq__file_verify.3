@@ -61,6 +61,9 @@ Empty files use the standard empty CRC32 and MD5 values.
 .PP
 The implementation reads one logical block at a time; a single-unit file
 requires its full unpacked block buffer. FILETIME and PATCH_BIT are not verified.
+The current LIBMPQ_VERIFY_ALL includes RAW_MD5 (0xF). Binaries compiled
+with the v0.8.1 header keep their compiled-in 0x7 mask. Recompiling those
+callers can add raw checksum work, skipped coverage, or errors.
 .SS "Sector Adler-32"
 MPQ sector CRCs are Adler-32 checksums over stored sectors after decryption
 and before decompression. Their table may be compressed but is not encrypted.

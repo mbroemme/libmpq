@@ -33,10 +33,12 @@ The original archive handle may be closed
 after cloning, and each clone must be closed independently with
 \fBlibmpq__archive_close\fP().
 .PP
-Cloning is independent-handle support, not snapshot semantics. The backing
-source must remain readable and unchanged while clones are created or used.
-The source handle itself remains unsafe for concurrent operations; create one
-clone per worker instead.
+The backing source must remain readable and unchanged while clones are
+created or used. Serialize calls on each handle. Related handles can share
+non-atomic references to a temporary source or verification index. Externally
+serialize operations that acquire or release those references, including
+cloning, lazy verification and closing. Synchronize access to shared callback
+contexts and keep them alive until all dependent handles are closed.
 .SH RETURN VALUE
 On success, *\fIclone\fP is set to a new handle and zero is returned. On
 failure, *\fIclone\fP is set to NULL and the open, seek, read, format, or

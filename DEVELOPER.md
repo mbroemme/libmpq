@@ -221,7 +221,7 @@ The public creation APIs accept versions through `LIBMPQ_ARCHIVE_VERSION_FOUR`
 1024 entries, and 4096-byte sectors; explicit capacity, sector size,
 compression policy, listfile, attributes, timestamps, and signing options
 retain their meanings. MPQE creation uses the same writer and unchanged
-authentication/wrapping. Public v4 creation defaults to 16 KiB (`0x4000`) raw
+transport encryption. Public v4 creation defaults to 16 KiB (`0x4000`) raw
 chunks and generates structural and raw-chunk MD5 digests automatically.
 Transactions preserve the source raw-chunk size, including zero.
 
@@ -282,6 +282,15 @@ focused fault scenarios too. Output identifies reached allocation sites, and
 huge-input tests veto allocations before allocating. Caller ownership, realloc
 failure and recovery assertions are retained in the focused driver. Test-only
 archives, headers and replacement objects are never installed.
+
+Archive creation accepts only `LIBMPQ_ARCHIVE_CREATE_LISTFILE` and
+`LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED`. Ordinary member writes accept
+`IMPLODE`, `COMPRESS`, `ENCRYPTED`, `KEY`, `SINGLE` and `SECTOR_CRC` from
+the public file flag set. An unsupported bit returns `LIBMPQ_ERROR_FORMAT`.
+The existing codec and combination rules still apply. `KEY` alone has no
+encryption effect, and the writer ignores sector CRC requests for empty,
+single-unit or uncompressed storage. Dedicated physical patch APIs handle
+patch members and delete markers separately.
 
 ### Writer compression policy
 
@@ -578,7 +587,7 @@ failures can leave it abort-only. Budget space for the original, working stage
 and full candidate. Embedded assembly also retains a completed zero-origin
 MPQ temporary until the prefixed candidate is closed. MPQE publication may
 need an encrypted candidate; prefix bytes refer to the decoded logical source.
-Existing cleanup, authentication and source-preservation guarantees apply.
+Existing cleanup, decoding checks and source-preservation guarantees apply.
 Named transactional updates also preserve discoverable embedded prefixes and
 the original MPQ origin across v1-v4, within their existing format restrictions.
 They allow gaps; invoke compaction last when dense placement matters.
@@ -702,7 +711,7 @@ shifted payload view.
 
 Modified weak signatures and strong trailers are removed, following existing
 update policy. They are never presented as valid after a rebuild. MPQE uses
-the existing authenticated staging and atomic rewrapping path. Rebuild or
+the existing plaintext staging and atomic MPQE rewrapping path. Rebuild or
 publication failure preserves the original destination. Failures before staged
 ownership transfer preserve the previous stage. If closing the previous staged
 stream fails after validation, the stream is consumed and cleared: further
@@ -771,7 +780,7 @@ temporary output. Finish and abort consume the handle even when they report an
 error; the pointer must not be reused. Patch creation does not rename
 members. Public patch creation currently requires an ordinary filesystem MPQ
 base; this restriction does not apply to public patch composition, which
-accepts authenticated MPQE sources. PTCH COPY/BSD0 encoding and validation are
+accepts MPQE sources decoded with the supplied code. PTCH COPY/BSD0 encoding and validation are
 described in [MPQ.md](MPQ.md#patch-archives-and-ptchbsd0). Existing base
 members are read with their plaintext names, so encrypted members can supply
 their filename-derived keys.
@@ -813,7 +822,7 @@ output; finish and abort retain their consuming semantics.
 ### Patch composition
 
 `libmpq__archive_open_patch()` composes already-open ordinary MPQ and
-authenticated MPQE archives, including custom read-at sources, as the base
+MPQE-wrapped archives, including custom read-at sources, as the base
 and ordered patch layers. Open each MPQE input with its own explicit
 authentication code. The private `mpq-patch-reader` layer materializes a
 temporary read-only archive view; later layers override earlier ones, delete
@@ -853,7 +862,7 @@ rejected rather than silently omitted. Unnamed legacy base members and their
 packed data remain intact. V3/v4 named materialization requires complete,
 unambiguous names for every retained member and rejects missing coverage,
 aliases/locales or reserved metadata it cannot represent. V4 bases and patch
-layers are read-only inputs, including authenticated MPQE and mixed-version
+layers are read-only inputs, including MPQE and mixed-version
 chains. Changed intermediates are v3 and regenerate HET/BET plus classic tables
 through the existing writer; modified encrypted members use their final output
 offsets. Raw MD5 verifies a physical source member; it is unavailable on
@@ -883,11 +892,14 @@ view; consumed handles are never closed twice. Temporary-file deletion is
 best effort when the filesystem refuses removal. Source archives remain
 unchanged.
 
-### Game-neutral authentication and namespace policy
+### Game-neutral MPQE and namespace policy
 
 libmpq does not embed product-specific Blizzard MPQE keys. Callers provide
 authentication material explicitly for each MPQE source or output; the existing
 decoder and writer derive the working key without retaining caller-owned data.
+MPQE carries no independent authentication tag. Opening a decoded archive
+checks its MPQ structure. Member verification and digital signatures provide
+separate checks, and a plausible wrong-code decode can pass structural checks.
 The library also avoids StormLib-specific known-key or key-selection modes and
 WoW/SC2/game-installation-specific patch-prefix heuristics. It uses
 deterministic format-derived names, such as a recoverable `(patch_metadata)`
@@ -963,7 +975,7 @@ callers of each library's public API to inspect the same archive and member
 names. For manual extraction, use separate temporary output directories
 outside the repository and compare lengths and `sha256sum` results. Include
 both flat and directory member names, especially encrypted and KEY
-members. Check missing-member errors, wrong MPQE authentication and truncated
+members. Check missing-member errors, incorrect MPQE codes and truncated
 local copies without modifying the original archive. These checks remain
 manual; no real Blizzard archive validation is implied by the synthetic suite.
 Patch members require a matching base to compare the applied result; decoded
@@ -982,13 +994,13 @@ The eleven module-specific benchmarks are non-installed developer tools:
 - `bench-reader` measures single-file and many-file archive open, name lookup,
   and full-file extraction for stored, zlib, and encrypted workloads.
 - `bench-source` compares file-backed and custom-memory-I/O open, extraction,
-  focused stream reads, callback granularity, and authenticated MPQE access.
+  focused stream reads, callback granularity, and MPQE decoding and reads.
 - `bench-stream` measures stream open, sequential and incremental reads, and
   forward, backward, and random seeks on stored, compressed, and encrypted
   members.
 - `bench-writer` measures ordinary archive creation, one-shot and streaming
   member writes, many-small-file insertion, and archive finalization.
-- `bench-mpqe` measures MPQE encoding, authenticated open, and transport reads
+- `bench-mpqe` measures MPQE encoding, MPQE open, and transport reads
   alongside equivalent ordinary-MPQ diagnostic cases.
 - `bench-verify` measures sector Adler-32, CRC32/MD5 `(attributes)`, automatic
   extraction checks, and explicit file verification.
@@ -998,7 +1010,7 @@ The eleven module-specific benchmarks are non-installed developer tools:
   mixed chains.
 - `bench-patch-writer` measures patch staging and COPY/BSD0 transform selection.
 - `bench-update` measures transactional update begin, operation, and commit for
-  ordinary MPQ, embedded HM3W-style, and authenticated MPQE archives.
+  ordinary MPQ, embedded HM3W-style, and MPQE-wrapped archives.
 
 From a disposable build tree, build and run all benchmarks with:
 
@@ -1258,7 +1270,7 @@ Errors clear all outputs. Zero flags perform no comparisons. Existing member
 The source must remain stable; source reads do not promise uncached filesystem
 access or an atomic snapshot of concurrent writes. Embedded offsets and MPQE
 logical reads use existing source handling. Unkeyed MD5 establishes neither
-provenance nor authenticity, MPQE transport authentication or whole-archive
+provenance nor authenticity, MPQE transport authenticity or whole-archive
 integrity. `archive_verify()` remains public-key signature verification;
 `file_verify_ex()` remains member verification.
 

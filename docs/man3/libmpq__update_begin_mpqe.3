@@ -14,7 +14,7 @@
 .\" along with this file; if not, see <https://www.gnu.org/licenses/>.
 .TH LIBMPQ__UPDATE_BEGIN_MPQE 3 2026-09-29 "The MoPaQ archive library"
 .SH NAME
-libmpq__update_begin_mpqe \- begin an authenticated MPQE update transaction
+libmpq__update_begin_mpqe \- begin an MPQE update transaction
 .SH SYNOPSIS
 .nf
 .B #include <libmpq/mpq.h>
@@ -29,7 +29,7 @@ libmpq__update_begin_mpqe \- begin an authenticated MPQE update transaction
 .SH DESCRIPTION
 Opens an existing filesystem MPQE archive with the explicit caller-supplied
 authentication code. At least 32 bytes are required. The code is borrowed only
-during this call; libmpq keeps the minimal private authentication data needed
+during this call; libmpq keeps the minimal private key material needed
 to re-encrypt on commit and clears it when the transaction is consumed.
 .PP
 The decoded MPQ is staged in a same-directory, owner-only plaintext temporary
@@ -52,7 +52,9 @@ failure, \fI*update\fP is NULL.
 .SH ERRORS
 Missing or short authentication data returns \fBLIBMPQ_ERROR_DECRYPT\fP. Wrong
 credentials, invalid archives, allocation, and backing I/O failures return
-existing negative libmpq errors.
+existing negative libmpq errors if decoding or MPQ validation fails.
+MPQE has no independent authentication tag, so a wrong code is not
+guaranteed to be detected.
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__update_begin (3),

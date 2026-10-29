@@ -51,7 +51,8 @@ extern "C" {
  * so callers can distinguish I/O, format, allocation, size, and unpacking
  * failures without relying on a process-global error variable. Functions
  * that return a pointer or have a void result document their separate result
- * behavior at the declaration site.
+ * behavior at the declaration site. libmpq__archive_compression_allowed
+ * returns 1 for an allowed combination and 0 otherwise.
  */
 #define LIBMPQ_ERROR_OPEN (-1)            /* File open failed. */
 #define LIBMPQ_ERROR_CLOSE (-2)           /* File close failed. */
@@ -60,8 +61,8 @@ extern "C" {
 #define LIBMPQ_ERROR_WRITE (-5)           /* File write failed. */
 #define LIBMPQ_ERROR_MALLOC (-6)          /* Memory allocation failed. */
 #define LIBMPQ_ERROR_FORMAT (-7)          /* Archive format is invalid. */
-#define LIBMPQ_ERROR_NOT_INITIALIZED (-8) /* Library initialization is missing. */
-#define LIBMPQ_ERROR_SIZE (-9)            /* Caller-provided buffer is too small. */
+#define LIBMPQ_ERROR_NOT_INITIALIZED (-8) /* Handle is not ready or is in the wrong mode. */
+#define LIBMPQ_ERROR_SIZE (-9)            /* Buffer, size, or representation limit. */
 #define LIBMPQ_ERROR_EXIST (-10)          /* Archive, file, or block does not exist. */
 #define LIBMPQ_ERROR_DECRYPT (-11)        /* Decryption seed is unknown. */
 #define LIBMPQ_ERROR_UNPACK (-12)         /* File unpacking failed. */
@@ -137,6 +138,8 @@ typedef int32_t (*libmpq_read_at_fn)(
 
 /* Opt into EXTENDED writer compression; absence selects STANDARD. */
 #define LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED 0x00000002u
+
+/* Creation accepts only the two flags above, alone or combined. */
 
 /* File storage and compression constants. */
 
@@ -253,7 +256,11 @@ enum
 #define LIBMPQ_ATTRIBUTE_MD5 0x04u
 #define LIBMPQ_ATTRIBUTE_PATCH_BIT 0x08u
 
-/* Shared bits for requested checks and reported mismatches, not attributes. */
+/*
+ * Shared bits for requested checks and reported mismatches, not attributes.
+ * VERIFY_ALL is 0xF. Binaries compiled with v0.8.1 retain their 0x7 mask.
+ * Recompilation adds RAW_MD5, which can add work, be unavailable, or fail.
+ */
 #define LIBMPQ_VERIFY_SECTOR_CRC 0x00000001u
 #define LIBMPQ_VERIFY_FILE_CRC32 0x00000002u
 #define LIBMPQ_VERIFY_FILE_MD5 0x00000004u
@@ -321,10 +328,12 @@ typedef struct
  * chainable pipeline mask. Locale and platform participate in duplicate
  * detection and hash lookup; replacement requires them to match the existing
  * member. The structure is copied when a file writer is started.
+ * Ordinary writes accept IMPLODE, COMPRESS, ENCRYPTED, KEY, SINGLE and
+ * SECTOR_CRC. Unsupported flag bits return LIBMPQ_ERROR_FORMAT.
  */
 typedef struct mpq_file_options
 {
-    uint32_t flags;             /* LIBMPQ_FILE_FLAG_* storage, compression, and encryption bits. */
+    uint32_t flags;             /* LIBMPQ_FILE_FLAG_* storage bits. */
     uint32_t compression_first; /* Multi-compression mask applied to the first sector. */
     uint32_t compression_next;  /* Multi-compression mask applied to later sectors. */
     uint16_t locale;            /* MPQ locale identifier used for lookup and duplicate checks. */
@@ -397,8 +406,8 @@ extern LIBMPQ_API int32_t libmpq__archive_compression_allowed(
 
 /*
  * Open an MPQ archive from a path and return a newly allocated read handle.
- * A negative archive_offset requests embedded-header scanning; a nonnegative
- * value restricts parsing to that absolute byte offset in the backing source. On
+ * Use archive_offset -1 for embedded-header scanning. A nonnegative value
+ * restricts parsing to that absolute byte offset in the backing source. On
  * success the caller owns the handle and must close it. On failure the output
  * handle is set to NULL and the function returns a negative LIBMPQ_ERROR_* code.
  */
@@ -410,7 +419,7 @@ extern LIBMPQ_API int32_t libmpq__archive_open(
  * Open an MPQ from a caller-owned exact random-access byte source. The source
  * is borrowed: context, including NULL for stateless callbacks, and callback
  * state must remain valid through archive close and any derived clones.
- * Negative archive_offset enables header scan. source_name is optional and is
+ * Only archive_offset -1 enables header scanning. source_name is optional and is
  * copied into archive-owned storage as the logical archive name. Its basename
  * is used for legacy strong-signature verification; omit it when unavailable.
  */
@@ -442,7 +451,7 @@ extern LIBMPQ_API int32_t libmpq__archive_open_mpqe(
 /*
  * Open an MPQE-wrapped MPQ through a caller-owned exact random-access source.
  * The source ownership and lifetime rules, including optional copied source_name,
- * match libmpq__archive_open_io().
+ * match libmpq__archive_open_io(), including the -1 scan sentinel.
  */
 extern LIBMPQ_API int32_t libmpq__archive_open_mpqe_io(
     mpq_archive_s **mpq_archive, void *context, libmpq_read_at_fn read_at,
@@ -529,6 +538,11 @@ libmpq__archive_raw_chunk_size_get(mpq_archive_s *archive, uint32_t *raw_chunk_s
  * Custom-I/O callback context remains caller-owned and must outlive all
  * derived clones and streams. Both handles are independently closable;
  * the backing source must remain readable and unchanged.
+ * Serialize calls on each handle. Externally serialize operations on related
+ * clones and streams that can acquire or release shared state, including
+ * lazy verification, cloning and closing. Shared references are non-atomic.
+ * Keep callback contexts valid and synchronize any concurrent callbacks.
+ * Library-owned temporary sources can remain live until the last owner closes.
  */
 extern LIBMPQ_API int32_t libmpq__archive_clone(mpq_archive_s **clone, mpq_archive_s *source);
 
@@ -597,7 +611,8 @@ extern LIBMPQ_API int32_t libmpq__archive_signatures(mpq_archive_s *archive, uin
 
 /*
  * Verify exactly one requested signature using a caller-owned public key.
- * Store a cryptographic mismatch in *mismatches; the archive is not consumed.
+ * Store a cryptographic mismatch in *mismatches. A NULL public key returns
+ * LIBMPQ_ERROR_FORMAT with a valid reader and mismatch output.
  */
 extern LIBMPQ_API int32_t libmpq__archive_verify(
     mpq_archive_s *archive, uint32_t verify_flags, const uint8_t *public_key,
@@ -643,7 +658,9 @@ extern LIBMPQ_API int32_t libmpq__archive_sign(
  * against locale and platform variants in the archive. The returned number
  * is suitable for the size, property, block, and read APIs. This preserves
  * HET-first/classic first-hit lookup. Use libmpq__file_number_from_identity for exact
- * locale/platform selection with a cleared output on failure.
+ * locale/platform selection with a cleared output on failure. File numbers
+ * belong to the opened archive representation. Resolve names or identities
+ * again after reopening an archive rebuilt by an update.
  */
 extern LIBMPQ_API int32_t
 libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *number);
@@ -926,8 +943,8 @@ extern LIBMPQ_API int32_t libmpq__writer_timestamp(mpq_writer_s *writer, uint64_
 
 /*
  * Append source bytes to an active file writer.
- * The writer buffers at most one sector and flushes complete sectors through
- * the selected compression and encryption pipeline. The call fails if the
+ * Sectorized writes buffer at most one input sector. Oversized SINGLE writes
+ * buffer the entire declared unit and encode it once. The call fails if the
  * input would exceed the size declared by libmpq__writer_begin.
  */
 extern LIBMPQ_API int32_t
@@ -952,10 +969,9 @@ extern LIBMPQ_API int32_t libmpq__archive_add_data(
 );
 
 /*
- * Add a filesystem file to a writer archive without requiring the whole source
- * file in memory. The source is read in bounded chunks, while the archive
- * entry uses the supplied name and storage options. The source file is read
- * only; it is never modified by this operation.
+ * Add a filesystem file to a writer archive using bounded source reads.
+ * Oversized SINGLE writes still buffer the full input, and encoding can
+ * require additional full-sized buffers. The source file is read-only.
  */
 extern LIBMPQ_API int32_t libmpq__archive_add_path(
     mpq_archive_s *mpq_archive, const char *filename, const char *source_path,
@@ -1046,7 +1062,8 @@ extern LIBMPQ_API int32_t libmpq__update_replace_data_identity(
 );
 
 /*
- * Stage replacement from a filesystem path; the source remains caller-owned.
+ * Stage replacement from a filesystem path. A NULL source_path returns
+ * LIBMPQ_ERROR_EXIST. The source remains caller-owned.
  * NULL options select native defaults and preserve locale/platform identity.
  */
 extern LIBMPQ_API int32_t libmpq__update_replace_path(

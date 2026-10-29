@@ -106,7 +106,7 @@ existing MPQE archive. Crash cleanup is best effort. `Update.addData` and
 fail and replacement remains existing-only. V3/v4 updates can retain unrelated
 unnamed members with sufficient stored identities; see the
 [transaction limits](../../DEVELOPER.md#transactional-modification).
-Remove-then-add uses the same ordinary or authenticated transaction.
+Remove-then-add uses the same ordinary or MPQE transaction.
 
 ### Compression policy
 
@@ -219,7 +219,8 @@ update.rename("old.txt", "new.txt");
 update.commit();
 ```
 
-Use the same `Update` methods for authenticated MPQE transactions:
+Use the same `Update` methods for MPQE transactions. The transport has no independent
+authentication tag. A wrong code can still yield a structurally plausible MPQ.
 
 ```d
 auto update = Update.beginMpqe("archive.mpqe", authCode);
@@ -696,7 +697,7 @@ Errors clear all outputs. Zero flags perform no comparisons. Existing member
 The source must remain stable; source reads do not promise uncached filesystem
 access or an atomic snapshot of concurrent writes. Embedded offsets and MPQE
 logical reads use existing source handling. Unkeyed MD5 establishes neither
-provenance nor authenticity, MPQE transport authentication or whole-archive
+provenance nor authenticity, MPQE transport authenticity or whole-archive
 integrity. `archive_verify()` remains public-key signature verification;
 `file_verify_ex()` remains member verification.
 

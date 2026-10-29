@@ -76,8 +76,8 @@ KEY adjustments, generated listfile defaults and physical patch defaults remain.
 ## Archive creation and compression policy
 
 MPQE creation uses a private plaintext temporary file before atomically
-replacing the destination. Use `MpqUpdate.beginMpqe` for authenticated changes
-to an existing MPQE archive. Crash cleanup is best effort.
+replacing the destination. Use `MpqUpdate.beginMpqe` to stage changes
+to MPQE archives. Crash cleanup is best effort.
 
 Creation defaults to `Mpq.COMPRESSION_POLICY_STANDARD`. Set
 `Mpq.ARCHIVE_CREATE_COMPRESSION_EXTENDED` in `ArchiveCreateOptions.flags`
@@ -190,7 +190,8 @@ try (MpqUpdate update = MpqUpdate.begin(Path.of("archive.mpq"))) {
 }
 ```
 
-The same `MpqUpdate` methods work for authenticated MPQE updates:
+The same `MpqUpdate` methods work for MPQE updates. The transport has no independent
+authentication tag. A wrong code can still yield a structurally plausible MPQ.
 
 ```java
 try (MpqUpdate update = MpqUpdate.beginMpqe(Path.of("archive.mpqe"), authCode)) {
@@ -588,7 +589,7 @@ Errors clear all outputs. Zero flags perform no comparisons. Existing member
 The source must remain stable; source reads do not promise uncached filesystem
 access or an atomic snapshot of concurrent writes. Embedded offsets and MPQE
 logical reads use existing source handling. Unkeyed MD5 establishes neither
-provenance nor authenticity, MPQE transport authentication or whole-archive
+provenance nor authenticity, MPQE transport authenticity or whole-archive
 integrity. `archive_verify()` remains public-key signature verification;
 `file_verify_ex()` remains member verification.
 

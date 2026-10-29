@@ -3247,6 +3247,60 @@ test_single_io(unsigned failure)
 }
 #endif
 
+/* Reject unsupported public write options before touching output or member state. */
+static int
+test_writer_flag_admission(uint32_t version)
+{
+    mpq_archive_s *archive = NULL;
+    mpq_writer_s *writer = NULL;
+    const uint8_t payload[] = { 1, 2, 3, 4 };
+    mpq_archive_create_options_s create = { version, 8, 4096, 0x80000000u, 0 };
+    const uint32_t invalid[] = { LIBMPQ_FILE_FLAG_PATCH_FILE, LIBMPQ_FILE_FLAG_DELETE_MARKER,
+                                 LIBMPQ_FLAG_EXISTS, 0x40000000u };
+    char path[512];
+
+    TEST_CHECK(test_temp_path(path, sizeof(path), "writer-flags") == 0);
+    FILE *file = fopen(path, "wb");
+    TEST_CHECK(file != NULL);
+    TEST_CHECK(fwrite(payload, 1, sizeof(payload), file) == sizeof(payload));
+    TEST_CHECK(fclose(file) == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == LIBMPQ_ERROR_FORMAT);
+    TEST_CHECK(archive == NULL);
+    uint8_t *original = NULL;
+    size_t original_size = 0;
+    TEST_CHECK(test_read_path(path, &original, &original_size) == 0);
+    TEST_CHECK(original_size == sizeof(payload) && memcmp(original, payload, original_size) == 0);
+    free(original);
+
+    create.flags = LIBMPQ_ARCHIVE_CREATE_LISTFILE | LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED;
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        mpq_file_options_s options = { invalid[i], 0, 0, 0, 0 };
+        TEST_CHECK(
+            libmpq__writer_begin(archive, "member", sizeof(payload), &options, &writer) ==
+            LIBMPQ_ERROR_FORMAT
+        );
+        TEST_CHECK(archive->write_current == NULL && archive->write_next_block == 0);
+    }
+
+    /* KEY alone is retained and does not encrypt. SECTOR_CRC is ignored for SINGLE. */
+    mpq_file_options_s options = {
+        LIBMPQ_FILE_FLAG_KEY | LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_SECTOR_CRC, 0, 0, 0, 0
+    };
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, "member", payload, sizeof(payload), &options) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
+    uint32_t number, flags;
+    TEST_CHECK(libmpq__file_number(archive, "member", &number) == 0);
+    TEST_CHECK(libmpq__file_flags(archive, number, &flags) == 0);
+    TEST_CHECK(flags == (LIBMPQ_FLAG_EXISTS | LIBMPQ_FILE_FLAG_KEY | LIBMPQ_FILE_FLAG_SINGLE));
+    TEST_CHECK(test_archive_check_name(archive, "member", payload, sizeof(payload)) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0 && remove(path) == 0);
+    return 0;
+}
+
 int
 main(void)
 {
@@ -3257,6 +3311,7 @@ main(void)
     const size_t single_sizes[] = { 0, 1, 4095, 4096, 4097, 8192, 9001, 65537 };
     const uint32_t raw_sizes[] = { 0, 1, 17, 0x4000, UINT32_MAX };
     for (uint32_t version = 0; version < 4; version++) {
+        TEST_CHECK(test_writer_flag_admission(version) == 0);
         TEST_CHECK(test_single_incomplete(version) == 0);
         for (size_t size = 0; size < sizeof(single_sizes) / sizeof(single_sizes[0]); size++)
             for (unsigned mode = 0; mode < 11; mode++)

@@ -369,6 +369,8 @@ libmpq__update_replace_path(
     const mpq_file_options_s *options
 )
 {
+    if (source_path == NULL)
+        return LIBMPQ_ERROR_EXIST;
     return libmpq__update_transaction_replace(update, filename, NULL, 0, source_path, options);
 }
 

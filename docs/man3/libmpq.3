@@ -623,7 +623,10 @@ public key. Writer signing is configured with
 performed at finalization. No default or product-specific keys are
 built in.
 .SS MPQE
-MPQE operations require explicit caller-supplied authentication material.
+MPQE uses the supplied code for transport decoding and encryption. It has
+no independent authentication tag. Successful decoding and MPQ structural
+checks do not guarantee that a wrong code was detected. Member checksums
+and archive signatures are separate checks.
 Internal weak signatures work in MPQE-wrapped MPQs, subject to the existing
 rejection for v4 output with nonzero raw-chunk size. No external strong-signature
 transport is defined. Creation and transactional updates use private plaintext
@@ -645,6 +648,25 @@ libmpq__file_identity(3) enumerates filename identities and their CLASSIC/BET
 provenance without merging locale/platform aliases. Explicit identity
 file-number lookup and named streams select exactly, including neutral (0,0).
 Ordinary operations retain HET-first/classic first-hit resolution.
+.SH THREAD SAFETY AND OWNERSHIP
+Serialize operations on each handle. Clones and streams have their own
+handles but may share non-atomic references to temporary sources and
+verification state. Externally serialize operations on related handles that
+acquire or release shared references, including cloning, lazy verification
+and closing. Keep borrowed custom I/O contexts alive until the last
+dependent handle closes and synchronize shared callback access.
+Library-owned temporary sources can remain live until the last owner closes.
+A consumed close, commit or abort handle cannot be reused, including when
+the consuming operation returns an error.
+.PP
+Canonical file numbers belong to the opened representation. Resolve names
+or identities again after reopening an archive rebuilt by a transaction.
+.PP
+\fBLIBMPQ_VERIFY_ALL\fP expands to 0xF in the current header. Applications
+built with v0.8.1 retain their compiled-in 0x7 mask. Recompiling adds
+\fBLIBMPQ_VERIFY_RAW_MD5\fP, which can add work, be unavailable or return
+an error. This changes recompiled caller behavior without changing an ELF
+symbol or function signature.
 .SH SEE ALSO
 .SS "Utility and Compression Policy"
 .BR libmpq__version (3),

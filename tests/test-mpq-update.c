@@ -8925,6 +8925,27 @@ test_single_updates(uint32_t version, unsigned form, int wrapped)
     );
     TEST_CHECK(libmpq__update_add_data(update, "added", payload, sizeof(payload), &added) == 0);
     TEST_CHECK(libmpq__update_add_path(update, "from-path", input, &added) == 0);
+    TEST_CHECK(copy_file(libmpq__update_path(update), stage) == 0);
+    TEST_CHECK(libmpq__update_replace_path(update, "added", NULL, &added) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(same_file(libmpq__update_path(update), stage) && same_file(path, source));
+
+    mpq_file_options_s unsupported = added;
+    unsupported.flags |= LIBMPQ_FILE_FLAG_PATCH_FILE;
+    TEST_CHECK(
+        libmpq__update_replace_data(update, "added", payload, sizeof(payload), &unsupported) ==
+        LIBMPQ_ERROR_FORMAT
+    );
+    TEST_CHECK(same_file(libmpq__update_path(update), stage) && same_file(path, source));
+
+    TEST_CHECK(libmpq__update_replace_data(update, "added", NULL, 0, NULL) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, libmpq__update_path(update), -1) == 0);
+    uint32_t empty_number;
+    libmpq__off_t empty_size;
+    TEST_CHECK(libmpq__file_number(archive, "added", &empty_number) == 0);
+    TEST_CHECK(
+        libmpq__file_size_unpacked(archive, empty_number, &empty_size) == 0 && empty_size == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
     TEST_CHECK(libmpq__update_replace_path(update, "added", input, &added) == 0);
     TEST_CHECK(copy_file(libmpq__update_path(update), stage) == 0);
     mpq_file_options_s bad = options;

@@ -49,7 +49,7 @@ repair is performed. Recognized strong trailers follow the existing signature
 policy. Validated no-ops preserve complete stage bytes and signatures.
 Embedded reconstruction needs both a completed zero-origin MPQ temporary and
 a full prefixed candidate before adoption. MPQE uses decoded prefix bytes and
-the existing authenticated publication path.
+the existing MPQE re-encryption and publication path.
 Invalidated signatures are removed. Unchanged commits and aborts require no
 reconstruction. V4 preserves the source raw-chunk size, including zero, and
 regenerates structural and raw MD5 digests. Retained packed representations
