@@ -706,3 +706,15 @@ encryption-key derivation. It modifies `ENCRYPTED`; it does not enable encryptio
 on its own. The effective key is `(basename_key + uint32(MPQ-relative offset))
 XOR uint32(uncompressed size)`, with modulo-2^32 arithmetic. Embedded prefixes
 are excluded from this offset. The flag provides no integrity guarantee.
+
+### Caller-owned output
+
+`Archive.createSink(writeAt, options, readAt, flush)` accepts exact
+positioned delegates for a fresh empty sink. The final two delegates are
+optional, but v4 and signing require read-back. Borrowed slices must not
+escape a callback. Reads must observe prior writes and zero-filled gaps.
+An optional flush runs after successful finalization. Close explicitly to
+receive failures and release rooted delegate state. The caller retains
+ownership, and chooses persistence and publication. Failed operations can
+leave partial output. Oversized SINGLE still buffers the complete input
+unit.

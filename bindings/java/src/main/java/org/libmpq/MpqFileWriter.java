@@ -22,16 +22,18 @@ public final class MpqFileWriter implements AutoCloseable {
 
     /** Set Windows FILETIME bits, not Unix time, without importing filesystem metadata. */
     public void timestamp(long filetime) throws LibmpqException {
-        if (handle == null || handle.equals(MemorySegment.NULL))
+        if (!archive.isOpenForWriter() || handle == null || handle.equals(MemorySegment.NULL))
             throw new IllegalStateException("Writer is finished");
         Support.check(LibmpqNative.writerTimestamp(handle, filetime));
     }
+    private final Archive archive;
     private MemorySegment handle;
     private final long expected;
     private long written;
 
     /** Wraps the native writer handle and records its declared size. */
-    MpqFileWriter(MemorySegment handle, long expected) {
+    MpqFileWriter(Archive archive, MemorySegment handle, long expected) {
+        this.archive = archive;
         this.handle = handle;
         this.expected = expected;
     }
@@ -46,7 +48,7 @@ public final class MpqFileWriter implements AutoCloseable {
      * @throws IllegalStateException if the writer has already been finished
      */
     public void write(byte[] data) throws LibmpqException {
-        if (handle == null || handle.equals(MemorySegment.NULL)) {
+        if (!archive.isOpenForWriter() || handle == null || handle.equals(MemorySegment.NULL)) {
             throw new IllegalStateException("Writer is finished");
         }
         if (data.length > expected - written) {
@@ -68,7 +70,7 @@ public final class MpqFileWriter implements AutoCloseable {
      */
     public void finish() throws LibmpqException {
         MemorySegment current = handle;
-        if (current == null || current.equals(MemorySegment.NULL)) {
+        if (!archive.isOpenForWriter() || current == null || current.equals(MemorySegment.NULL)) {
             return;
         }
         handle = MemorySegment.NULL;

@@ -171,6 +171,7 @@ public final class Archive implements AutoCloseable {
     }
     private MemorySegment handle;
     private SourceState sourceState;
+    private SinkState sinkState;
 
     /** Wraps a newly returned native archive handle. */
     private Archive(MemorySegment handle) {
@@ -315,6 +316,39 @@ public final class Archive implements AutoCloseable {
             Support.check(LibmpqNative.archiveCreate(output, Support.text(arena, path.toString()),
                                                       nativeOptions));
             return new Archive(LibmpqNative.getAddress(output));
+        }
+    }
+
+    /**
+     * Creates an archive in a borrowed, initially empty seekable channel.
+     * The channel must supply zero-filled gaps. V4 and signing require readBack.
+     * The caller closes or flushes the channel after successful archive close.
+     */
+    public static Archive createSink(SeekableByteChannel sink, boolean readBack, ArchiveCreateOptions options)
+        throws LibmpqException {
+        if (options == null) {
+            options = ArchiveCreateOptions.defaults();
+        }
+        Archive archive = new Archive(MemorySegment.NULL);
+        SinkState state = new SinkState(sink, readBack);
+        boolean success = false;
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
+            MemorySegment nativeOptions = arena.allocate(LibmpqNative.ARCHIVE_OPTIONS);
+            LibmpqNative.setArchiveOptions(nativeOptions, options.version(),
+                                            Support.uint32(options.maxFiles(), "maxFiles"),
+                                            Support.uint32(options.sectorSize(), "sectorSize"),
+                                            options.flags(), options.attributes());
+            Support.check(LibmpqNative.archiveCreateIo(output, MemorySegment.NULL, state.read,
+                                                        state.write, MemorySegment.NULL, nativeOptions));
+            archive.handle = LibmpqNative.getAddress(output);
+            archive.sinkState = state;
+            success = true;
+            return archive;
+        } finally {
+            if (!success) {
+                state.release();
+            }
         }
     }
 
@@ -790,7 +824,7 @@ public final class Archive implements AutoCloseable {
             MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
             Support.check(LibmpqNative.writerBegin(handle, Support.text(arena, name), size,
                                                   fileOptions(arena, options), output));
-            return new MpqFileWriter(LibmpqNative.getAddress(output), size);
+            return new MpqFileWriter(this, LibmpqNative.getAddress(output), size);
         }
     }
 
@@ -808,11 +842,19 @@ public final class Archive implements AutoCloseable {
         try {
             Support.check(LibmpqNative.archiveClose(current));
         } finally {
+            if (sinkState != null) {
+                sinkState.release();
+                sinkState = null;
+            }
             if (sourceState != null) {
                 sourceState.release();
                 sourceState = null;
             }
         }
+    }
+
+    boolean isOpenForWriter() {
+        return handle != null && !handle.equals(MemorySegment.NULL);
     }
 
     /** Returns the live native handle for package-private writer operations. */

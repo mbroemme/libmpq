@@ -87,6 +87,8 @@ _VOID_PTR = ctypes.c_void_p
 _READ_AT_FN = ctypes.CFUNCTYPE(
     ctypes.c_int32, _VOID_PTR, _OFF_T, _BYTE_PTR, ctypes.c_size_t
 )
+_WRITE_AT_FN = _READ_AT_FN
+_FLUSH_FN = ctypes.CFUNCTYPE(ctypes.c_int32, _VOID_PTR)
 
 
 class _FileAttributes(ctypes.Structure):
@@ -261,6 +263,8 @@ _configure("libmpq__archive_open_io", ctypes.c_int32, ctypes.POINTER(_VOID_PTR),
 _configure("libmpq__archive_open_mpqe_io", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), _VOID_PTR,
            _READ_AT_FN, _OFF_T, _OFF_T, _BYTE_PTR, ctypes.c_size_t, ctypes.c_char_p)
 _configure("libmpq__archive_create", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _VOID_PTR)
+_configure("libmpq__archive_create_io", ctypes.c_int32, ctypes.POINTER(_VOID_PTR),
+           _VOID_PTR, _READ_AT_FN, _WRITE_AT_FN, _FLUSH_FN, _VOID_PTR)
 _configure("libmpq__archive_create_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _BYTE_PTR, ctypes.c_size_t, _VOID_PTR)
 _configure("libmpq__writer_begin", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _OFF_T, _VOID_PTR, ctypes.POINTER(_VOID_PTR))
 _configure("libmpq__writer_write", ctypes.c_int32, _VOID_PTR, _BYTE_PTR, _OFF_T)
@@ -896,7 +900,8 @@ class WriterFile:
         """Finalize the stream; native state becomes invalid even on failure."""
         if self._writer:
             writer, self._writer = self._writer, None
-            libmpq.libmpq__writer_finish(writer)
+            if self._archive._opened:
+                libmpq.libmpq__writer_finish(writer)
 
     def close(self):
         """Finish the stream and report native errors for incomplete streams."""
@@ -904,7 +909,7 @@ class WriterFile:
 
     def _ensure_open(self):
         """Reject writes after native finalization."""
-        if not self._writer:
+        if not self._writer or not self._archive._opened:
             raise LibmpqStateError(ERROR_NOT_INITIALIZED, "writer is closed")
 
     def __enter__(self):
@@ -921,6 +926,52 @@ class WriterFile:
                 raise
 
 
+class _SinkState:
+    """Retain caller-owned output and the synchronous ctypes thunks."""
+
+    def __init__(self, sink):
+        if not callable(getattr(sink, "write_at", None)):
+            raise TypeError("sink must provide write_at(offset, data)")
+        self.sink = sink
+        self.abandoned = False
+        self.write = _WRITE_AT_FN(self._write_at)
+        self.read = (_READ_AT_FN(self._read_at) if callable(getattr(sink, "read_at", None))
+                     else _READ_AT_FN())
+        self.flush = (_FLUSH_FN(self._flush) if callable(getattr(sink, "flush", None))
+                      else _FLUSH_FN())
+
+    def release(self):
+        self.sink = self.read = self.write = self.flush = None
+
+    def _write_at(self, context, offset, buffer, size):
+        try:
+            if not self.abandoned and self.sink.write_at(offset, ctypes.string_at(buffer, size)) == size:
+                return 0
+        except BaseException:
+            pass
+        return ERROR_WRITE
+
+    def _read_at(self, context, offset, buffer, size):
+        try:
+            if not self.abandoned:
+                data = memoryview(self.sink.read_at(offset, size)).tobytes()
+                if len(data) == size:
+                    ctypes.memmove(buffer, data, size)
+                    return 0
+        except BaseException:
+            pass
+        return ERROR_READ
+
+    def _flush(self, context):
+        try:
+            if not self.abandoned:
+                self.sink.flush()
+                return 0
+        except BaseException:
+            pass
+        return ERROR_CLOSE
+
+
 class Writer:
     """Closeable seekable archive creator."""
 
@@ -930,6 +981,26 @@ class Writer:
         self._mpq = _VOID_PTR()
         libmpq.libmpq__archive_create(ctypes.byref(self._mpq), _as_bytes(filename), ctypes.byref(options))
         self.filename, self._opened = filename, True
+
+    @classmethod
+    def create_io(cls, sink, version=ARCHIVE_VERSION_ONE, max_files=0, sector_size=0,
+                  flags=0, attributes=0):
+        """Create in an empty borrowed sink with positioned writes and optional reads/flush."""
+        options = ArchiveCreateOptions(version, max_files, sector_size, flags, attributes)
+        writer = cls.__new__(cls)
+        writer._mpq, writer._opened = _VOID_PTR(), False
+        writer.filename = None
+        state = _SinkState(sink)
+        try:
+            libmpq.libmpq__archive_create_io(
+                ctypes.byref(writer._mpq), None, state.read, state.write, state.flush,
+                ctypes.byref(options),
+            )
+        except BaseException:
+            state.release()
+            raise
+        writer._sink_state, writer._opened = state, True
+        return writer
 
     @classmethod
     def create_mpqe(cls, filename, auth_code, version=ARCHIVE_VERSION_ONE,
@@ -987,7 +1058,13 @@ class Writer:
         """Finalize and close the archive; repeated calls are harmless."""
         if self._opened:
             archive, self._mpq, self._opened = self._mpq, _VOID_PTR(), False
-            libmpq.libmpq__archive_close(archive)
+            try:
+                libmpq.libmpq__archive_close(archive)
+            finally:
+                state = getattr(self, "_sink_state", None)
+                if state is not None:
+                    state.release()
+                self._sink_state = None
 
     def _ensure_open(self):
         """Reject archive writes after close."""
@@ -1006,6 +1083,9 @@ class Writer:
     def __del__(self):
         """Best-effort cleanup that never raises during garbage collection."""
         try:
+            state = getattr(self, "_sink_state", None)
+            if state is not None:
+                state.abandoned = True
             self.close()
         except Exception:
             pass

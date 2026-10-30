@@ -1970,3 +1970,53 @@ def test_oversized_single_writer(tmp_path, version, wrapped):
             writer.close()
     else:
         writer.close()
+
+
+def test_create_io_writer_lifetime():
+    class Sink:
+        def __init__(self):
+            self.data = io.BytesIO()
+            self.flushes = 0
+
+        def write_at(self, offset, data):
+            self.data.seek(offset)
+            return self.data.write(data)
+
+        def read_at(self, offset, size):
+            self.data.seek(offset)
+            return self.data.read(size)
+
+        def flush(self):
+            self.flushes += 1
+
+    sink = Sink()
+    payload = b"callback storage" * 1000
+    with mpq.Writer.create_io(sink, version=mpq.ARCHIVE_VERSION_FOUR) as archive:
+        with archive.begin("hello", len(payload)) as writer:
+            writer.write(payload[:4321])
+            writer.write(payload[4321:])
+    assert sink.flushes == 1
+    wire = sink.data.getvalue()
+    with mpq.Archive.open_io(io.BytesIO(wire), len(wire)) as archive:
+        with archive.open_stream("hello") as reader:
+            assert reader.read() == payload
+
+    sink = Sink()
+    archive = mpq.Writer.create_io(sink)
+    member = archive.begin("incomplete", 100)
+    with pytest.raises(mpq.LibmpqError) as caught:
+        archive.close()
+    assert caught.value.code == mpq.ERROR_SIZE
+    member.close()
+    archive.close()
+    assert sink.flushes == 0
+
+    class FailingSink(Sink):
+        def flush(self):
+            raise OSError("controlled flush failure")
+
+    archive = mpq.Writer.create_io(FailingSink())
+    with pytest.raises(mpq.LibmpqError) as caught:
+        archive.close()
+    assert caught.value.code == mpq.ERROR_CLOSE
+    archive.close()

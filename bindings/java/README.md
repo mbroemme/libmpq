@@ -598,3 +598,14 @@ encryption-key derivation. It modifies `ENCRYPTED`; it does not enable encryptio
 on its own. The effective key is `(basename_key + uint32(MPQ-relative offset))
 XOR uint32(uncompressed size)`, with modulo-2^32 arithmetic. Embedded prefixes
 are excluded from this offset. The flag provides no integrity guarantee.
+
+### Caller-owned output
+
+Use `Archive.createSink(channel, readBack, options)` with an initially
+empty seekable channel that provides zero-filled gaps. Set `readBack` to
+true only for a readable channel. V4 and signing require it. The adapter
+performs exact positioned transfers and keeps the channel open through
+archive close and afterward. Use try-with-resources for checked archive
+finalization. The caller may flush, publish or close the channel separately.
+Failed output may contain partial bytes. Oversized SINGLE still buffers
+the complete input unit.

@@ -36,6 +36,37 @@ import org.libmpq.ffi.LibmpqNative;
  */
 class LibmpqTest {
     @Test
+    void createSinkOwnership(@TempDir Path directory) throws Exception {
+        Path path = directory.resolve("sink.mpq");
+        byte[] payload = "positioned output".repeat(800).getBytes(StandardCharsets.US_ASCII);
+        try (SeekableByteChannel channel = Files.newByteChannel(path,
+                java.nio.file.StandardOpenOption.CREATE_NEW, java.nio.file.StandardOpenOption.WRITE,
+                java.nio.file.StandardOpenOption.READ)) {
+            try (Archive writer = Archive.createSink(channel, true,
+                    new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_FOUR, 32, 4096, 0, 0))) {
+                try (MpqFileWriter member = writer.begin("output", payload.length, FileOptions.raw())) {
+                    member.write(payload);
+                }
+            }
+            assertTrue(channel.isOpen());
+            try (Archive reader = Archive.openSource(channel, null)) {
+                assertArrayEquals(payload, reader.readFile(reader.fileNumber("output")));
+            }
+        }
+        Path aborted = directory.resolve("aborted.mpq");
+        try (SeekableByteChannel channel = Files.newByteChannel(aborted,
+                java.nio.file.StandardOpenOption.CREATE_NEW, java.nio.file.StandardOpenOption.WRITE)) {
+            Archive writer = Archive.createSink(channel, false, null);
+            MpqFileWriter member = writer.begin("unfinished", 15, FileOptions.raw());
+            assertThrows(LibmpqException.class, writer::close);
+            assertTrue(channel.isOpen());
+            assertThrows(IllegalStateException.class, () -> member.write(new byte[1]));
+            member.close();
+            writer.close();
+        }
+    }
+
+    @Test
     void oversizedSingleWriter(@TempDir Path directory) throws Exception {
         byte[] payload = new byte[9001];
         for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i * 71 + i / 3);

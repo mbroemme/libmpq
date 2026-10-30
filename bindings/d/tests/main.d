@@ -1585,7 +1585,41 @@ private void testOversizedSingleWriter() {
     }
 }
 
+private void testCreateSink() {
+    ubyte[] output;
+    uint flushes;
+    auto writer = Archive.createSink((off_t offset, scope const(ubyte)[] data) {
+        const auto end = cast(size_t) offset + data.length;
+        if (output.length < end)
+            output.length = end;
+        output[cast(size_t) offset .. end] = data;
+    }, ArchiveCreateOptions(ARCHIVE_VERSION_FOUR), (off_t offset, scope ubyte[] data) {
+        data[] = output[cast(size_t) offset .. cast(size_t) offset + data.length];
+    }, () { ++flushes; });
+    const ubyte[] data = [3, 8, 4, 7];
+    auto member = writer.begin("output", data.length);
+    member.write(data[0 .. 2]);
+    member.write(data[2 .. $]);
+    member.finish();
+    writer.close();
+    assert(flushes == 1);
+    auto reader = Archive.openSource(new MemorySource(output));
+    assert(reader.file("output").read() == data);
+    reader.close();
+
+    bool failed;
+    try {
+        Archive.createSink((off_t offset, scope const(ubyte)[] bytes) {
+            throw new Exception("controlled callback failure");
+        });
+    } catch (MPQException) {
+        failed = true;
+    }
+    assert(failed);
+}
+
 void main() {
+    testCreateSink();
     testOversizedSingleWriter();
     {
         auto root = environment.get("LIBMPQ_SOURCE_DIR", ".");

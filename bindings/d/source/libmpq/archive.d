@@ -95,6 +95,62 @@ sourceReadAt(void* context, off_t offset, ubyte* buffer, size_t size)
     }
 }
 
+/** Exact positioned write into a borrowed sink. Throw on incomplete transfer. */
+alias MpqWriteAt = void delegate(off_t offset, scope const(ubyte)[] buffer);
+/** Exact positioned read. Fill the full borrowed slice or throw. */
+alias MpqReadAt = void delegate(off_t offset, scope ubyte[] buffer);
+/** Optional final sink operation. Throw on failure. */
+alias MpqFlushSink = void delegate();
+
+private class SinkState {
+    MpqWriteAt writeAt;
+    MpqReadAt readAt;
+    MpqFlushSink flush;
+    bool closed;
+
+    this(MpqWriteAt writeAt, MpqReadAt readAt, MpqFlushSink flush) {
+        this.writeAt = writeAt;
+        this.readAt = readAt;
+        this.flush = flush;
+    }
+}
+
+private extern(C) int sinkWriteAt(void* context, off_t offset, const(ubyte)* buffer, size_t size) {
+    try {
+        auto state = cast(SinkState) context;
+        if (state.closed)
+            return ERROR_WRITE;
+        state.writeAt(offset, buffer[0 .. size]);
+        return 0;
+    } catch (Throwable) {
+        return ERROR_WRITE;
+    }
+}
+
+private extern(C) int sinkReadAt(void* context, off_t offset, ubyte* buffer, size_t size) {
+    try {
+        auto state = cast(SinkState) context;
+        if (state.closed)
+            return ERROR_READ;
+        state.readAt(offset, buffer[0 .. size]);
+        return 0;
+    } catch (Throwable) {
+        return ERROR_READ;
+    }
+}
+
+private extern(C) int sinkFlush(void* context) {
+    try {
+        auto state = cast(SinkState) context;
+        if (state.closed)
+            return ERROR_CLOSE;
+        state.flush();
+        return 0;
+    } catch (Throwable) {
+        return ERROR_CLOSE;
+    }
+}
+
 /**
  * An opened or newly created MPQ archive.
  *
@@ -152,6 +208,7 @@ class Archive {
     private mpq_archive_s* handle;
     private bool closed;
     private SourceState sourceState;
+    private SinkState sinkState;
 
     /** Open an archive, optionally at a specific embedded offset. */
     this(string path, off_t offset = -1) {
@@ -222,6 +279,30 @@ class Archive {
                                             &nativeOptions),
                     "libmpq__archive_create");
         return new Archive(result);
+    }
+
+    /**
+     * Create a fresh archive over exact positioned output delegates.
+     * The owner supplies an empty sink with zero-filled gaps. Read-back is
+     * required for v4 and signing. Explicit close finalizes without owning
+     * or closing the sink. Delegates must not retain the borrowed slices.
+     */
+    static Archive createSink(MpqWriteAt writeAt,
+                               ArchiveCreateOptions options = ArchiveCreateOptions.v1(),
+                               MpqReadAt readAt = null, MpqFlushSink flush = null) {
+        if (writeAt is null)
+            throw new MPQException("Archive.createSink", ERROR_EXIST);
+        auto state = new SinkState(writeAt, readAt, flush);
+        GC.addRoot(cast(void*) state);
+        scope(failure) GC.removeRoot(cast(void*) state);
+        auto nativeOptions = options.nativeOptions();
+        auto archive = new Archive(cast(mpq_archive_s*) null);
+        checkStatus(libmpq__archive_create_io(&archive.handle, cast(void*) state,
+                    readAt is null ? null : &sinkReadAt, &sinkWriteAt,
+                    flush is null ? null : &sinkFlush, &nativeOptions),
+                    "libmpq__archive_create_io");
+        archive.sinkState = state;
+        return archive;
     }
 
     /** Create a new MPQE-wrapped archive with borrowed authentication bytes. */
@@ -310,12 +391,29 @@ class Archive {
         closed = true;
         handle = null;
         sourceState = null;
+        releaseSink();
         checkStatus(status, "libmpq__archive_close");
     }
 
     /** Best-effort destructor cleanup; errors cannot be thrown here. */
     ~this() {
-        if (!closed && handle !is null) libmpq__archive_close(handle);
+        if (!closed && handle !is null) {
+            if (sinkState !is null)
+                sinkState.closed = true;
+            libmpq__archive_close(handle);
+        }
+        releaseSink();
+    }
+
+    private void releaseSink() {
+        if (sinkState !is null) {
+            sinkState.closed = true;
+            sinkState.writeAt = null;
+            sinkState.readAt = null;
+            sinkState.flush = null;
+            GC.removeRoot(cast(void*) sinkState);
+            sinkState = null;
+        }
     }
 
     /** Return whether this wrapper has released its native archive. */
@@ -442,7 +540,7 @@ class Archive {
         ensureOpen(); auto nativeOptions = options.nativeOptions(); mpq_writer_s* writer;
         checkStatus(libmpq__writer_begin(handle, toStringz(name), size, &nativeOptions, &writer),
                     "libmpq__writer_begin");
-        return new MpqFileWriter(writer, size);
+        return new MpqFileWriter(writer, size, sinkState);
     }
 
     /** Return the raw native handle for advanced ABI integrations. */
@@ -722,7 +820,12 @@ class MpqFileWriter {
         checkStatus(libmpq__writer_timestamp(handle, filetime), "libmpq__writer_timestamp");
     }
     private mpq_writer_s* handle; private off_t declaredSize; private off_t writtenSize; private bool finishedState;
-    private this(mpq_writer_s* handle, off_t declaredSize) { this.handle = handle; this.declaredSize = declaredSize; }
+    private SinkState sinkState;
+    private this(mpq_writer_s* handle, off_t declaredSize, SinkState sinkState) {
+        this.handle = handle;
+        this.declaredSize = declaredSize;
+        this.sinkState = sinkState;
+    }
 
     /** Append bytes; the input array is borrowed only for this call. */
     void write(const(ubyte)[] data) {
@@ -745,13 +848,19 @@ class MpqFileWriter {
     /** Return the declared unpacked size. */ off_t declared() const { return declaredSize; }
     /** Finish an active stream, matching D's explicit resource-close pattern. */
     void close() {
-        if (finishedState) return;
+        if (finishedState || (sinkState !is null && sinkState.closed)) return;
         auto current = handle;
         handle = null;
         finishedState = true;
         checkStatus(libmpq__writer_finish(current), "libmpq__writer_finish");
     }
     /** Best-effort destructor cleanup; destructors cannot report errors. */
-    ~this() { if (!finishedState && handle !is null) libmpq__writer_finish(handle); }
-    private void ensureActive() { if (finishedState || handle is null) throw new MPQException("MpqFileWriter", ERROR_NOT_INITIALIZED); }
+    ~this() {
+        if (sinkState is null && !finishedState && handle !is null)
+            libmpq__writer_finish(handle);
+    }
+    private void ensureActive() {
+        if (finishedState || handle is null || (sinkState !is null && sinkState.closed))
+            throw new MPQException("MpqFileWriter", ERROR_NOT_INITIALIZED);
+    }
 }

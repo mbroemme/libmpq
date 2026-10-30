@@ -78,6 +78,7 @@ public final class LibmpqNative {
     private static final MethodHandle ARCHIVE_OPEN_IO;
     private static final MethodHandle ARCHIVE_OPEN_MPQE_IO;
     private static final MethodHandle ARCHIVE_CREATE;
+    private static final MethodHandle ARCHIVE_CREATE_IO;
     private static final MethodHandle ARCHIVE_CREATE_MPQE;
     private static final MethodHandle WRITER_BEGIN;
     private static final MethodHandle WRITER_WRITE;
@@ -209,6 +210,10 @@ public final class LibmpqNative {
                                                               ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                                               C_LONG, C_LONG, ValueLayout.ADDRESS,
                                                               C_SIZE_T, ValueLayout.ADDRESS));
+        ARCHIVE_CREATE_IO = function(linker, lookup, "libmpq__archive_create_io",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                  ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                  ValueLayout.ADDRESS));
         ARCHIVE_CREATE = function(linker, lookup, "libmpq__archive_create",
                                   FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                         ValueLayout.ADDRESS, ValueLayout.ADDRESS));
@@ -540,6 +545,26 @@ public final class LibmpqNative {
             C_INT, ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS, C_SIZE_T
         ), arena);
     }
+    /** Creates an upcall for exact positioned sink transfers. */
+    public static MemorySegment sinkTransferUpcall(MethodHandle target, Arena arena) {
+        if (C_SIZE_T.carrier() == int.class) {
+            try {
+                MethodHandle unsigned = java.lang.invoke.MethodHandles.publicLookup().findStatic(
+                    Integer.class, "toUnsignedLong", java.lang.invoke.MethodType.methodType(long.class, int.class));
+                target = java.lang.invoke.MethodHandles.filterArguments(target, 3, unsigned);
+            } catch (ReflectiveOperationException error) {
+                throw new IllegalStateException("Unable to adapt size_t", error);
+            }
+        }
+        return readAtUpcall(target, arena);
+    }
+
+    /** Create over caller-owned callbacks. */
+    public static int archiveCreateIo(MemorySegment out, MemorySegment context, MemorySegment readAt,
+                                      MemorySegment writeAt, MemorySegment flush, MemorySegment options) {
+        return callInt(ARCHIVE_CREATE_IO, out, context, readAt, writeAt, flush, options);
+    }
+
     /** Calls {@code libmpq__archive_create} with a native options struct. */
     public static int archiveCreate(MemorySegment out, MemorySegment path, MemorySegment options) {
         return callInt(ARCHIVE_CREATE, out, path, options);

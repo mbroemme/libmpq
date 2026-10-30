@@ -136,6 +136,10 @@ extern(C) struct mpq_patch_s;
 
 alias libmpq_read_at_fn = extern(C) int function(void* context, off_t offset,
                                                   ubyte* buffer, size_t size);
+alias libmpq_write_at_fn = extern(C) int function(void* context, off_t offset,
+                                                 const(ubyte)* buffer, size_t size);
+alias libmpq_flush_fn = extern(C) int function(void* context);
+
 
 enum LIBMPQ_SEEK_SET = 0;
 enum LIBMPQ_SEEK_CUR = 1;
@@ -302,6 +306,10 @@ extern(C) {
     /** Create an archive using the supplied native option structure. */
     int libmpq__archive_create(mpq_archive_s** archive, const(char)* path,
                                const(mpq_archive_create_options_s)* options);
+    int libmpq__archive_create_io(mpq_archive_s** archive, void* context,
+                                  libmpq_read_at_fn read_at, libmpq_write_at_fn write_at,
+                                  libmpq_flush_fn flush,
+                                  const(mpq_archive_create_options_s)* options);
     int libmpq__archive_create_mpqe(mpq_archive_s** archive, const(char)* path,
                                     const(ubyte)* auth_code,
                                     size_t auth_code_size,

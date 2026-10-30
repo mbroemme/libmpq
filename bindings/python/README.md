@@ -626,3 +626,16 @@ encryption-key derivation. It modifies `ENCRYPTED`; it does not enable encryptio
 on its own. The effective key is `(basename_key + uint32(MPQ-relative offset))
 XOR uint32(uncompressed size)`, with modulo-2^32 arithmetic. Embedded prefixes
 are excluded from this offset. The flag provides no integrity guarantee.
+
+### Caller-owned output
+
+Use `Writer.create_io(sink, ...)` with the same options as `Writer`.
+The empty sink implements `write_at(offset, data)` and returns the exact
+byte count. V4 and signing require `read_at(offset, size)` to return the
+complete range. An optional `flush()` runs after successful finalization.
+Backfills preserve unrelated bytes, unwritten gaps read as zeros, and
+read-back sees previous writes immediately. Close the writer explicitly
+or use `with`. The caller retains and closes the sink. Callback exceptions
+become libmpq I/O errors. Failed output may be partial. The writer provides
+no atomic publication or durability guarantee. An oversized SINGLE still
+buffers the complete input unit.
