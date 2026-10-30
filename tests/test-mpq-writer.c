@@ -3423,6 +3423,490 @@ test_writer_flag_admission(uint32_t version)
     return 0;
 }
 
+typedef struct
+{
+    FILE *file;
+    uint8_t *bytes;
+    size_t capacity;
+    uint64_t extent;
+    uint64_t high_offset;
+    uint8_t high[64];
+    unsigned reads;
+    unsigned writes;
+    unsigned flushes;
+    unsigned flushed_writes;
+    int32_t read_error;
+    int32_t write_error;
+    int32_t flush_error;
+    uint64_t fail_at;
+    int deny_growth;
+} writer_sink_s;
+
+/* Return a complete range or a deliberate callback failure. */
+static int32_t
+sink_read(void *context, libmpq__off_t offset, uint8_t *data, size_t size)
+{
+    writer_sink_s *sink = context;
+    uint64_t start = (uint64_t)offset;
+
+    sink->reads++;
+    if (sink->read_error != 0)
+        return sink->read_error;
+    if (offset < 0 || start > sink->extent || size > sink->extent - start)
+        return LIBMPQ_ERROR_READ;
+    if (sink->file != NULL) {
+        if (libmpq__file_seek(sink->file, start, SEEK_SET) != 0 ||
+            fread(data, 1, size, sink->file) != size)
+            return LIBMPQ_ERROR_READ;
+    } else if (sink->high_offset != 0 && start >= sink->high_offset) {
+        memcpy(data, sink->high + (start - sink->high_offset), size);
+    } else if (start < sink->capacity && size <= sink->capacity - start) {
+        memcpy(data, sink->bytes + start, size);
+    } else {
+        memset(data, 0, size);
+    }
+    return 0;
+}
+
+/* Keep storage and both sparse and dense extent bookkeeping in the caller. */
+static int32_t
+sink_write(void *context, libmpq__off_t offset, const uint8_t *data, size_t size)
+{
+    writer_sink_s *sink = context;
+    uint64_t start = (uint64_t)offset;
+    uint64_t end = start + size;
+
+    sink->writes++;
+    if (sink->write_error != 0 && start == sink->fail_at) {
+
+        /* Model a short transfer by retaining only its first byte. */
+        if (sink->write_error > 0 && start < sink->capacity && size != 0)
+            sink->bytes[start] = data[0];
+        return sink->write_error;
+    }
+    if (sink->file != NULL) {
+        if (libmpq__file_seek(sink->file, start, SEEK_SET) != 0 ||
+            fwrite(data, 1, size, sink->file) != size)
+            return LIBMPQ_ERROR_WRITE;
+    } else if (sink->high_offset != 0 && start >= sink->high_offset) {
+        if (end - sink->high_offset > sizeof(sink->high))
+            return LIBMPQ_ERROR_SIZE;
+        memcpy(sink->high + (start - sink->high_offset), data, size);
+    } else {
+        if (end > SIZE_MAX)
+            return LIBMPQ_ERROR_SIZE;
+        if (end > sink->capacity) {
+            uint8_t *bytes;
+            if (sink->deny_growth)
+                return LIBMPQ_ERROR_MALLOC;
+            bytes = realloc(sink->bytes, (size_t)end);
+            if (bytes == NULL)
+                return LIBMPQ_ERROR_MALLOC;
+            memset(bytes + sink->capacity, 0, (size_t)end - sink->capacity);
+            sink->bytes = bytes;
+            sink->capacity = (size_t)end;
+        }
+        memcpy(sink->bytes + start, data, size);
+    }
+    if (sink->extent < end)
+        sink->extent = end;
+    return 0;
+}
+
+static int32_t
+sink_flush(void *context)
+{
+    writer_sink_s *sink = context;
+    sink->flushes++;
+    sink->flushed_writes = sink->writes;
+    return sink->flush_error;
+}
+
+static int32_t
+fail_stateless_write(void *context, libmpq__off_t offset, const uint8_t *data, size_t size)
+{
+    if (context != NULL || offset != 0 || data == NULL || size == 0)
+        return LIBMPQ_ERROR_FORMAT;
+    return LIBMPQ_ERROR_OPEN;
+}
+
+/* NULL context is sufficient when the adapter owns its state separately. */
+static writer_sink_s stateless_sink;
+
+static int32_t
+stateless_write(void *context, libmpq__off_t offset, const uint8_t *data, size_t size)
+{
+    if (context != NULL)
+        return LIBMPQ_ERROR_FORMAT;
+    return sink_write(&stateless_sink, offset, data, size);
+}
+
+/* Inspect exact bytes, metadata and independent public verification on each sink. */
+static int
+test_sink_parity(uint32_t version, int empty)
+{
+    mpq_archive_create_options_s options = {
+        version, 64, 4096, empty ? 0 : LIBMPQ_ARCHIVE_CREATE_LISTFILE,
+        empty ? 0 : LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 | LIBMPQ_ATTRIBUTE_FILETIME
+    };
+    const mpq_file_options_s storage[] = {
+        { 0, 0, 0, 0, 0 },
+        { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_SECTOR_CRC,
+          LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 },
+        { LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED |
+              LIBMPQ_FILE_FLAG_KEY,
+          LIBMPQ_COMPRESSION_BZIP2, LIBMPQ_COMPRESSION_BZIP2, 0, 0 }
+    };
+    const char *names[] = { "raw", "sectors", "single" };
+    writer_sink_s sinks[2] = { { 0 }, { 0 } };
+    mpq_archive_s *archive;
+    uint8_t data[9001];
+    uint8_t actual[9001];
+    uint8_t *wire;
+    size_t size;
+    char path[512];
+
+    for (size_t i = 0; i < sizeof(data); ++i)
+        data[i] = (uint8_t)(i % 47);
+    TEST_CHECK(test_temp_path(path, sizeof(path), "sink-parity") == 0);
+    sinks[1].file = tmpfile();
+    TEST_CHECK(sinks[1].file != NULL);
+    for (unsigned mode = 0; mode < 3; ++mode) {
+        writer_sink_s *sink = mode == 0 ? NULL : &sinks[mode - 1];
+        if (sink == NULL)
+            TEST_CHECK(libmpq__archive_create(&archive, path, &options) == 0);
+        else
+            TEST_CHECK(
+                libmpq__archive_create_io(
+                    &archive, sink, version == LIBMPQ_ARCHIVE_VERSION_FOUR ? sink_read : NULL,
+                    sink_write, mode == 2 ? sink_flush : NULL, &options
+                ) == 0
+            );
+        for (unsigned i = 0; !empty && i < 3; ++i) {
+            mpq_writer_s *writer;
+            TEST_CHECK(
+                libmpq__writer_begin(archive, names[i], sizeof(data), &storage[i], &writer) == 0
+            );
+            TEST_CHECK(libmpq__writer_timestamp(writer, UINT64_C(132271296001234567)) == 0);
+            TEST_CHECK(libmpq__writer_write(writer, data, 3777) == 0);
+            TEST_CHECK(libmpq__writer_write(writer, data + 3777, sizeof(data) - 3777) == 0);
+            TEST_CHECK(libmpq__writer_finish(writer) == 0);
+        }
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+    }
+    TEST_CHECK(sinks[0].flushes == 0 && sinks[1].flushes == 1);
+    TEST_CHECK((sinks[0].reads != 0) == (version == LIBMPQ_ARCHIVE_VERSION_FOUR));
+    TEST_CHECK(test_read_path(path, &wire, &size) == 0);
+    for (unsigned mode = 0; mode < 2; ++mode) {
+        writer_sink_s *sink = &sinks[mode];
+        uint8_t *bytes = malloc(size);
+        uint32_t count;
+
+        TEST_CHECK(bytes != NULL && sink->extent == size);
+        TEST_CHECK(sink_read(sink, 0, bytes, size) == 0 && memcmp(bytes, wire, size) == 0);
+        free(bytes);
+        TEST_CHECK(libmpq__archive_open_io(&archive, sink, sink_read, size, 0, NULL) == 0);
+        TEST_CHECK(libmpq__archive_files(archive, &count) == 0 && count == (empty ? 0u : 5u));
+        if (!empty && version >= LIBMPQ_ARCHIVE_VERSION_THREE)
+            TEST_CHECK(archive->het_data != NULL && archive->bet_data != NULL);
+        if (version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+            uint32_t checked;
+            uint32_t unavailable;
+            uint32_t mismatch;
+            TEST_CHECK(
+                libmpq__archive_verify_ex(
+                    archive, LIBMPQ_VERIFY_METADATA_ALL, &checked, &unavailable, &mismatch
+                ) == 0
+            );
+            TEST_CHECK((checked & LIBMPQ_VERIFY_METADATA_HEADER_MD5) != 0 && mismatch == 0);
+            TEST_CHECK((checked | unavailable) == LIBMPQ_VERIFY_METADATA_ALL);
+        }
+        for (unsigned i = 0; !empty && i < 3; ++i) {
+            mpq_stream_s *stream;
+            mpq_file_attributes_s attributes;
+            libmpq__off_t got;
+            libmpq__off_t offset;
+            uint32_t n;
+            uint32_t flags;
+            uint32_t checked;
+            uint32_t unavailable;
+            uint32_t mismatch;
+            uint32_t verify = LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5;
+
+            if (i == 1)
+                verify |= LIBMPQ_VERIFY_SECTOR_CRC;
+            if (version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+                verify |= LIBMPQ_VERIFY_RAW_MD5;
+            TEST_CHECK(libmpq__file_number(archive, names[i], &n) == 0);
+            TEST_CHECK(libmpq__file_flags(archive, n, &flags) == 0);
+            TEST_CHECK((flags & ~LIBMPQ_FLAG_EXISTS) == storage[i].flags);
+            TEST_CHECK(libmpq__file_offset(archive, n, &offset) == 0 && offset > 0);
+            TEST_CHECK(libmpq__file_attributes(archive, n, &attributes) == 0);
+            TEST_CHECK(attributes.filetime == UINT64_C(132271296001234567));
+            TEST_CHECK(
+                libmpq__file_verify_ex(
+                    archive, n, names[i], verify, &checked, &unavailable, &mismatch
+                ) == 0
+            );
+            TEST_CHECK(checked == verify && unavailable == 0 && mismatch == 0);
+            TEST_CHECK(libmpq__stream_open_name(archive, names[i], &stream) == 0);
+            TEST_CHECK(libmpq__stream_read(stream, actual, sizeof(actual), &got) == 0);
+            TEST_CHECK(
+                got == (libmpq__off_t)sizeof(data) && memcmp(actual, data, sizeof(data)) == 0
+            );
+            TEST_CHECK(libmpq__stream_close(stream) == 0);
+        }
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+    }
+    TEST_CHECK(fclose(sinks[1].file) == 0 && remove(path) == 0);
+    free(sinks[0].bytes);
+    free(wire);
+    return 0;
+}
+
+/* RAW-disabled v4 still requires a read capability, but unsigned output does not read. */
+static int
+test_sink_raw_disabled(void)
+{
+    const mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_FOUR, 16, 4096, 0, 0 };
+    writer_sink_s sink = { 0 };
+    mpq_archive_s *archive;
+    const uint8_t data = 0x61;
+
+    TEST_CHECK(
+        libmpq__archive_create_io(&archive, &sink, sink_read, sink_write, NULL, &options) == 0
+    );
+    TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 0) == 0);
+    sink.read_error = LIBMPQ_ERROR_READ;
+    TEST_CHECK(libmpq__archive_add_data(archive, "member", &data, sizeof(data), NULL) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(sink.reads == 0);
+    free(sink.bytes);
+    return 0;
+}
+
+/* Prove sparse output beyond 4 GiB without creating a large physical file. */
+static int
+test_sink_high(void)
+{
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_TWO, 16, 4096, 0, 0 };
+    const uint8_t data[] = { 25, 77, 91, 2, 5 };
+    writer_sink_s sink = { 0 };
+    mpq_archive_s *archive;
+    libmpq__off_t offset;
+    libmpq__off_t got;
+    uint8_t actual[sizeof(data)];
+    uint32_t n;
+
+    sink.high_offset = UINT64_C(0x100000011);
+    TEST_CHECK(libmpq__archive_create_io(&archive, &sink, NULL, sink_write, NULL, &options) == 0);
+    TEST_CHECK(libmpq__writer_output_seek(archive, sink.high_offset, SEEK_SET) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "sparse", data, sizeof(data), NULL) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(sink.extent == sink.high_offset + sizeof(data) && sink.capacity < 4096);
+    TEST_CHECK(libmpq__archive_open_io(&archive, &sink, sink_read, sink.extent, 0, NULL) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "sparse", &n) == 0);
+    TEST_CHECK(
+        libmpq__file_offset(archive, n, &offset) == 0 && (uint64_t)offset == sink.high_offset
+    );
+    TEST_CHECK(archive->mpq_block_ex[0].offset_high == 1 && archive->mpq_block[0].offset == 17);
+    TEST_CHECK(libmpq__file_read(archive, n, actual, sizeof(actual), &got) == 0);
+    TEST_CHECK(got == (libmpq__off_t)sizeof(data) && memcmp(actual, data, sizeof(data)) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    free(sink.bytes);
+    return 0;
+}
+
+/* Verify signed output and exact final flush order using existing synthetic keys. */
+static int
+test_sink_signature(uint32_t version, int fault)
+{
+    mpq_archive_create_options_s options = { version, 16, 4096, 0, 0 };
+    uint8_t signing_key[512];
+    uint8_t data[9] = { 1 };
+    writer_sink_s sink = { 0 };
+    mpq_archive_s *archive;
+    uint32_t mismatch;
+    uint32_t signatures;
+    uint64_t core_offset;
+    const int weak = version != LIBMPQ_ARCHIVE_VERSION_FOUR;
+
+    TEST_CHECK(
+        libmpq__archive_create_io(&archive, &sink, sink_read, sink_write, sink_flush, &options) == 0
+    );
+    TEST_CHECK(libmpq__archive_add_data(archive, "member", data, sizeof(data), NULL) == 0);
+    if (weak)
+        TEST_CHECK(
+            libmpq__archive_sign(
+                archive, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+                sizeof(test_signature_private_key)
+            ) == 0
+        );
+    if (fault == 0) {
+        test_strong_signature_private_key(signing_key);
+        TEST_CHECK(
+            libmpq__archive_sign(
+                archive, LIBMPQ_SIGNATURE_STRONG, signing_key, sizeof(signing_key)
+            ) == 0
+        );
+    }
+    if (fault == 1)
+        sink.read_error = 1;
+    if (fault == 2) {
+        sink.fail_at = archive->write_signature_offset + 8;
+        sink.write_error = LIBMPQ_ERROR_SEEK;
+    }
+    TEST_CHECK(
+        libmpq__archive_close(archive) == (fault == 1   ? LIBMPQ_ERROR_READ
+                                           : fault == 2 ? LIBMPQ_ERROR_SEEK
+                                                        : 0)
+    );
+    TEST_CHECK(sink.flushes == (fault == 0 ? 1u : 0u));
+    TEST_CHECK(fault != 0 || sink.flushed_writes == sink.writes);
+    if (fault == 0) {
+        core_offset = sink.extent - 260;
+        TEST_CHECK(memcmp(sink.bytes + core_offset, "NGIS", 4) == 0);
+        TEST_CHECK(libmpq__archive_open_io(&archive, &sink, sink_read, sink.extent, 0, NULL) == 0);
+        TEST_CHECK(libmpq__archive_signatures(archive, &signatures) == 0);
+        TEST_CHECK(signatures == (weak ? 3u : 2u));
+        if (weak) {
+            TEST_CHECK(
+                libmpq__archive_verify(
+                    archive, LIBMPQ_SIGNATURE_WEAK, test_signature_public_key,
+                    sizeof(test_signature_public_key), &mismatch
+                ) == 0
+            );
+            TEST_CHECK(mismatch == 0);
+        }
+        TEST_CHECK(
+            libmpq__archive_verify(
+                archive, LIBMPQ_SIGNATURE_STRONG, test_strong_signature_public_key,
+                sizeof(test_strong_signature_public_key), &mismatch
+            ) == 0
+        );
+        TEST_CHECK(mismatch == 0 && libmpq__archive_close(archive) == 0);
+    }
+    free(sink.bytes);
+    return 0;
+}
+
+/* Inject errors at controlled operations and verify that close preserves the first error. */
+static int
+test_sink_failures(void)
+{
+    const mpq_archive_create_options_s v2 = { LIBMPQ_ARCHIVE_VERSION_TWO, 16, 4096, 0, 0 };
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_FOUR, 16, 4096, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_writer_s *writer;
+    writer_sink_s sink = { 0 };
+    const uint8_t data[4096] = { 1 };
+    const mpq_file_options_s compressed = { LIBMPQ_FILE_FLAG_COMPRESS, LIBMPQ_COMPRESSION_ZLIB,
+                                            LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
+    const int32_t errors[] = { LIBMPQ_ERROR_SIZE,  LIBMPQ_ERROR_SIZE,  LIBMPQ_ERROR_MALLOC,
+                               LIBMPQ_ERROR_WRITE, LIBMPQ_ERROR_READ,  LIBMPQ_ERROR_SEEK,
+                               LIBMPQ_ERROR_SEEK,  LIBMPQ_ERROR_CLOSE, LIBMPQ_ERROR_SIZE };
+
+    TEST_CHECK(
+        libmpq__archive_create_io(NULL, &sink, NULL, sink_write, NULL, &options) ==
+        LIBMPQ_ERROR_EXIST
+    );
+    TEST_CHECK(
+        libmpq__archive_create_io(&archive, &sink, NULL, NULL, NULL, &options) == LIBMPQ_ERROR_EXIST
+    );
+    TEST_CHECK(
+        libmpq__archive_create_io(&archive, &sink, NULL, sink_write, NULL, &options) ==
+        LIBMPQ_ERROR_EXIST
+    );
+    options.sector_size = 511;
+    TEST_CHECK(
+        libmpq__archive_create_io(&archive, &sink, NULL, sink_write, NULL, &options) ==
+        LIBMPQ_ERROR_FORMAT
+    );
+    options = v2;
+    options.max_files = UINT32_C(0x20000000);
+    TEST_CHECK(
+        libmpq__archive_create_io(&archive, &sink, NULL, sink_write, NULL, &options) ==
+        LIBMPQ_ERROR_SIZE
+    );
+    TEST_CHECK(archive == NULL && sink.writes == 0);
+    TEST_CHECK(
+        libmpq__archive_create_io(&archive, NULL, NULL, fail_stateless_write, NULL, &v2) ==
+        LIBMPQ_ERROR_OPEN
+    );
+    TEST_CHECK(archive == NULL);
+    TEST_CHECK(libmpq__archive_create_io(&archive, NULL, NULL, stateless_write, NULL, &v2) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0 && stateless_sink.extent != 0);
+    free(stateless_sink.bytes);
+    for (unsigned i = 0; i < sizeof(errors) / sizeof(errors[0]); ++i) {
+        unsigned writes;
+        memset(&sink, 0, sizeof(sink));
+        options = v2;
+        if (i == 4)
+            options.version = LIBMPQ_ARCHIVE_VERSION_FOUR;
+        TEST_CHECK(
+            libmpq__archive_create_io(
+                &archive, &sink, i == 4 ? sink_read : NULL, sink_write, sink_flush, &options
+            ) == 0
+        );
+        if (i == 0 || i == 1) {
+            TEST_CHECK(libmpq__archive_sign(archive, UINT32_MAX, NULL, 0) == LIBMPQ_ERROR_FORMAT);
+            TEST_CHECK(
+                libmpq__archive_sign(
+                    archive, LIBMPQ_SIGNATURE_WEAK, test_signature_private_key,
+                    sizeof(test_signature_private_key)
+                ) == LIBMPQ_ERROR_EXIST
+            );
+            TEST_CHECK(libmpq__writer_begin(archive, "discard", sizeof(data), NULL, &writer) == 0);
+            if (i == 0) {
+                TEST_CHECK(libmpq__writer_write(writer, data, 3) == 0);
+                writes = sink.writes;
+                TEST_CHECK(libmpq__writer_finish(writer) == LIBMPQ_ERROR_SIZE);
+                TEST_CHECK(sink.writes == writes);
+            }
+        } else if (i == 2 || i == 3) {
+            sink.deny_growth = i == 2;
+            sink.write_error = i == 3 ? 1 : 0;
+            sink.fail_at = archive->write_io->position;
+            TEST_CHECK(libmpq__writer_begin(archive, "failure", sizeof(data), NULL, &writer) == 0);
+            TEST_CHECK(libmpq__writer_write(writer, data, sizeof(data)) == errors[i]);
+            writes = sink.writes;
+            TEST_CHECK(libmpq__writer_write(writer, NULL, 1) == errors[i]);
+            TEST_CHECK(libmpq__writer_finish(writer) == errors[i] && sink.writes == writes);
+        } else if (i == 4) {
+            sink.read_error = LIBMPQ_ERROR_READ;
+            TEST_CHECK(
+                libmpq__archive_add_data(archive, "raw", data, sizeof(data), NULL) == errors[i]
+            );
+            TEST_CHECK(sink.reads == 1);
+        } else if (i == 5) {
+            sink.fail_at = archive->write_io->position;
+            sink.write_error = LIBMPQ_ERROR_SEEK;
+            TEST_CHECK(
+                libmpq__archive_add_data(archive, "offsets", data, sizeof(data), &compressed) ==
+                errors[i]
+            );
+        } else if (i == 6) {
+            sink.fail_at = 0;
+            sink.write_error = LIBMPQ_ERROR_SEEK;
+        } else if (i == 7) {
+            sink.flush_error = 1;
+        } else {
+            writes = sink.writes;
+            TEST_CHECK(
+                libmpq__writer_output_seek(archive, UINT64_MAX, SEEK_SET) == LIBMPQ_ERROR_SEEK
+            );
+            TEST_CHECK(
+                libmpq__writer_output_write_at(archive, INT64_MAX, data, 1) == LIBMPQ_ERROR_SIZE
+            );
+            TEST_CHECK(sink.writes == writes);
+        }
+        TEST_CHECK(libmpq__archive_close(archive) == errors[i]);
+        TEST_CHECK(sink.flushes == (i == 7 ? 1u : 0u));
+        free(sink.bytes);
+    }
+    return 0;
+}
+
 int
 main(void)
 {
@@ -3548,5 +4032,17 @@ main(void)
     TEST_CHECK(
         test_mpqe_writer_fault(MPQE_WRITER_FAULT_PUBLISH, 0x0f, LIBMPQ_ARCHIVE_VERSION_ONE) == 0
     );
+    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_FOUR;
+         ++version) {
+        TEST_CHECK(test_sink_parity(version, 0) == 0);
+        TEST_CHECK(test_sink_parity(version, 1) == 0);
+    }
+    TEST_CHECK(test_sink_raw_disabled() == 0);
+    TEST_CHECK(test_sink_high() == 0);
+    TEST_CHECK(test_sink_signature(LIBMPQ_ARCHIVE_VERSION_TWO, 0) == 0);
+    TEST_CHECK(test_sink_signature(LIBMPQ_ARCHIVE_VERSION_FOUR, 0) == 0);
+    TEST_CHECK(test_sink_signature(LIBMPQ_ARCHIVE_VERSION_TWO, 1) == 0);
+    TEST_CHECK(test_sink_signature(LIBMPQ_ARCHIVE_VERSION_TWO, 2) == 0);
+    TEST_CHECK(test_sink_failures() == 0);
     return 0;
 }
