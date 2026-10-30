@@ -306,22 +306,18 @@ stream_finish(mpq_writer_s *writer)
     if (total > UINT64_MAX - writer->payload_offset || writer->payload_offset + total > INT64_MAX)
         return LIBMPQ_ERROR_SIZE;
 
+    if (writer->payload_offset < writer->prefix_size || total > UINT32_MAX - writer->prefix_size ||
+        (uint64_t)writer->expected > UINT32_MAX)
+        return LIBMPQ_ERROR_SIZE;
+    block_offset = writer->payload_offset - writer->prefix_size;
+    if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE
+            ? writer->payload_offset > UINT32_MAX
+            : block_offset >> 32 > UINT16_MAX)
+        return LIBMPQ_ERROR_SIZE;
+
     /* Restore the append position after rewriting the table at the file start. */
     if (libmpq__file_seek(archive->fp, (writer->payload_offset + total), SEEK_SET) < 0)
         return LIBMPQ_ERROR_SEEK;
-    if (writer->payload_offset < writer->prefix_size ||
-        (writer->prefix_size != 0 && total > UINT32_MAX - writer->prefix_size))
-        return LIBMPQ_ERROR_SIZE;
-    block_offset = writer->payload_offset - writer->prefix_size;
-    if (archive->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_THREE) {
-        if (block_offset >> 32 > UINT16_MAX || total > UINT32_MAX - writer->prefix_size ||
-            (uint64_t)writer->expected > UINT32_MAX)
-            return LIBMPQ_ERROR_SIZE;
-    } else if (writer->payload_offset > UINT32_MAX || total > UINT32_MAX ||
-               writer->expected > UINT32_MAX)
-        return archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE
-                   ? LIBMPQ_ERROR_SIZE
-                   : (writer->payload_offset >> 32 > UINT16_MAX ? LIBMPQ_ERROR_SIZE : 0);
 
     result = writer_raw_md5(archive, block_offset, total + writer->prefix_size);
     if (result != 0)
@@ -1439,13 +1435,13 @@ finalize_archive(mpq_archive_s *a)
     end = (uint64_t)libmpq__file_tell(a->fp);
     if (end > INT64_MAX)
         return LIBMPQ_ERROR_SEEK;
-    if (end > UINT32_MAX && a->mpq_header.version < LIBMPQ_ARCHIVE_VERSION_THREE)
+    if (end > UINT32_MAX && a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE)
         return LIBMPQ_ERROR_SIZE;
     memset(header, 0, sizeof(header));
     wire_header = a->mpq_header;
     wire_header.mpq_magic = LIBMPQ_HEADER;
 
-    /* Full v3 headers use the low legacy word and authoritative uint64_t size. */
+    /* V2 readers use physical bounds and hi-block offsets. V3/v4 also store the full extent. */
     wire_header.archive_size = (uint32_t)(end & UINT32_MAX);
     result = libmpq__header_encode(&wire_header, header, sizeof(header));
     if (result < 0)
@@ -1983,7 +1979,7 @@ writer_file_begin(
     if (w == NULL)
         return LIBMPQ_ERROR_MALLOC;
     if ((uint64_t)size > SIZE_MAX || a->write_next_block >= a->write_capacity ||
-        (a->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_THREE && (uint64_t)size > UINT32_MAX)) {
+        (a->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_TWO && (uint64_t)size > UINT32_MAX)) {
         free(w);
         return LIBMPQ_ERROR_SIZE;
     }

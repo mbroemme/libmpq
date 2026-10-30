@@ -1262,6 +1262,128 @@ test_v3_failures(void)
 }
 #endif
 
+/* Use sparse seeks to exercise the 32-bit boundary with small real payloads. */
+static int
+test_v2_writer_high_offsets(void)
+{
+    const uint64_t positions[] = { (uint64_t)UINT32_MAX - 8, UINT32_MAX, (uint64_t)UINT32_MAX + 8 };
+    const char *names[] = { "below", "at", "above", "empty" };
+    const uint8_t payload[] = { 0x91, 0x82, 0x73, 0x64, 0x55, 0x46, 0x37, 0x28 };
+    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_TWO, 8, 4096,
+                                            LIBMPQ_ARCHIVE_CREATE_LISTFILE,
+                                            LIBMPQ_ATTRIBUTE_FILETIME };
+    mpq_archive_s *archive = NULL;
+    mpq_writer_s *writer = NULL;
+    char path[512];
+    uint8_t header[44], blocks[8 * 16], highs[8 * 2], actual[sizeof(payload)];
+    uint32_t files;
+
+    TEST_CHECK(test_temp_path(path, sizeof(path), "v2-boundary") == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    for (uint32_t i = 0; i < 3; ++i) {
+        TEST_CHECK(libmpq__file_seek(archive->fp, (libmpq__off_t)positions[i], SEEK_SET) == 0);
+        TEST_CHECK(libmpq__writer_begin(archive, names[i], sizeof(payload), NULL, &writer) == 0);
+        TEST_CHECK(libmpq__writer_timestamp(writer, i + 1) == 0);
+        TEST_CHECK(libmpq__writer_write(writer, payload, 3) == 0);
+        TEST_CHECK(libmpq__writer_write(writer, payload + 3, sizeof(payload) - 3) == 0);
+        TEST_CHECK(libmpq__writer_finish(writer) == 0);
+        TEST_CHECK(archive->write_current == NULL && archive->write_next_block == i + 1);
+    }
+    TEST_CHECK(libmpq__archive_add_data(archive, names[3], NULL, 0, NULL) == 0);
+    TEST_CHECK(archive->write_next_block == 4);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+
+    /* Inspect serialized classic rows and hi words independently of archive opening. */
+    FILE *fp = libmpq__file_open(path, "rb");
+    TEST_CHECK(fp != NULL && fread(header, 1, sizeof(header), fp) == sizeof(header));
+    TEST_CHECK(libmpq__load_le32(header + 4) == sizeof(header));
+    TEST_CHECK(libmpq__load_le16(header + 12) == LIBMPQ_ARCHIVE_VERSION_TWO);
+    TEST_CHECK(libmpq__load_le32(header + 28) == 8);
+    TEST_CHECK(libmpq__file_seek(fp, 0, SEEK_END) == 0);
+    libmpq__off_t extent = libmpq__file_tell(fp);
+    TEST_CHECK(extent > UINT32_MAX && libmpq__load_le32(header + 8) == (uint32_t)extent);
+    TEST_CHECK(libmpq__file_seek(fp, libmpq__load_le32(header + 20), SEEK_SET) == 0);
+    TEST_CHECK(fread(blocks, 1, sizeof(blocks), fp) == sizeof(blocks));
+    libmpq__crypto_decrypt_block(
+        blocks, sizeof(blocks), libmpq__crypto_hash_string("(block table)", 0x300)
+    );
+    TEST_CHECK(libmpq__file_seek(fp, (libmpq__off_t)libmpq__load_le64(header + 32), SEEK_SET) == 0);
+    TEST_CHECK(fread(highs, 1, sizeof(highs), fp) == sizeof(highs));
+    for (uint32_t i = 0; i < 4; ++i) {
+        uint64_t offset = i < 3 ? positions[i] : positions[2] + sizeof(payload);
+        size_t size = i < 3 ? sizeof(payload) : 0;
+        TEST_CHECK(libmpq__load_le32(blocks + i * 16) == (uint32_t)offset);
+        TEST_CHECK(libmpq__load_le16(highs + i * 2) == offset >> 32);
+        TEST_CHECK(libmpq__load_le32(blocks + i * 16 + 4) == size);
+        TEST_CHECK(libmpq__load_le32(blocks + i * 16 + 8) == size);
+        TEST_CHECK(libmpq__file_seek(fp, (libmpq__off_t)offset, SEEK_SET) == 0);
+        TEST_CHECK(fread(actual, 1, size, fp) == size && memcmp(actual, payload, size) == 0);
+    }
+    TEST_CHECK(fclose(fp) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
+    TEST_CHECK(libmpq__archive_files(archive, &files) == 0 && files == 6);
+    for (uint32_t i = 0; i < 4; ++i) {
+        uint32_t number;
+        libmpq__off_t offset;
+        mpq_file_attributes_s attrs;
+        TEST_CHECK(libmpq__file_number(archive, names[i], &number) == 0);
+        TEST_CHECK(libmpq__file_offset(archive, number, &offset) == 0);
+        TEST_CHECK((uint64_t)offset == (i < 3 ? positions[i] : positions[2] + sizeof(payload)));
+        TEST_CHECK(libmpq__file_attributes(archive, number, &attrs) == 0);
+        TEST_CHECK((attrs.flags & LIBMPQ_ATTRIBUTE_FILETIME) && attrs.filetime == (i + 1) % 4);
+        TEST_CHECK(
+            test_archive_check_name(archive, names[i], payload, i < 3 ? sizeof(payload) : 0) == 0
+        );
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == 0 && remove(path) == 0);
+    return 0;
+}
+
+/* Probe unrepresentable rows without writing at enormous physical positions. */
+static int
+test_v2_writer_invalid_extent(void)
+{
+    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_TWO, 8, 4096, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_writer_s *writer = NULL;
+    char path[512];
+    uint32_t files, number;
+    libmpq__off_t offset;
+
+    TEST_CHECK(test_temp_path(path, sizeof(path), "v2-invalid-extent") == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    TEST_CHECK(
+        libmpq__writer_begin(archive, "unpacked", (libmpq__off_t)UINT32_MAX + 1, NULL, &writer) ==
+        LIBMPQ_ERROR_SIZE
+    );
+    TEST_CHECK(writer == NULL && archive->write_current == NULL);
+    TEST_CHECK(libmpq__writer_begin(archive, "packed", 0, NULL, &writer) == 0);
+    writer->packed_total = (uint64_t)UINT32_MAX + 1;
+    TEST_CHECK(libmpq__writer_finish(writer) == LIBMPQ_ERROR_SIZE);
+    TEST_CHECK(archive->write_current == NULL && archive->write_next_block == 0);
+    TEST_CHECK(libmpq__writer_begin(archive, "position", 0, NULL, &writer) == 0);
+    writer->payload_offset = UINT64_C(1) << 48;
+    TEST_CHECK(libmpq__writer_finish(writer) == LIBMPQ_ERROR_SIZE);
+    TEST_CHECK(archive->write_current == NULL && archive->write_next_block == 0);
+
+    /* Seeking alone changes the position, but an empty member need not extend EOF. */
+    TEST_CHECK(libmpq__file_seek(archive->fp, (libmpq__off_t)UINT32_MAX + 1, SEEK_SET) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "empty", NULL, 0, NULL) == 0);
+    TEST_CHECK(archive->write_next_block == 1 && archive->write_error == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
+    TEST_CHECK(libmpq__archive_files(archive, &files) == 0 && files == 1);
+    TEST_CHECK(libmpq__file_number(archive, "unpacked", &number) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__file_number(archive, "packed", &number) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__file_number(archive, "position", &number) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__file_number(archive, "empty", &number) == 0);
+    TEST_CHECK(libmpq__file_offset(archive, number, &offset) == 0);
+    TEST_CHECK(offset == (libmpq__off_t)UINT32_MAX + 1);
+    TEST_CHECK(test_archive_check_name(archive, "empty", (const uint8_t *)"", 0) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0 && remove(path) == 0);
+    return 0;
+}
+
 static int
 test_v3_writer(uint32_t count, bool compress_tables, uint64_t position)
 {
@@ -3357,6 +3479,8 @@ main(void)
     TEST_CHECK(test_v4_writer(512, 0, 0) == 0);
     TEST_CHECK(test_v4_writer(UINT32_MAX, 0, UINT64_C(0x100000000)) == 0);
     TEST_CHECK(test_legacy_writer_capacity(LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
+    TEST_CHECK(test_v2_writer_high_offsets() == 0);
+    TEST_CHECK(test_v2_writer_invalid_extent() == 0);
     TEST_CHECK(test_legacy_writer_capacity(LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
 #ifdef __GLIBC__
     TEST_CHECK(test_v3_failures() == 0);
