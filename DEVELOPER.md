@@ -1286,3 +1286,19 @@ the candidate and copied into replacement provenance. Failed preparation leaves
 the preceding stage and provenance intact. Removed spellings are discarded;
 compatible live aliases remain subject to the existing encryption-provenance
 checks. Validated no-ops neither learn names nor rebuild a stage.
+
+### Caller-owned archive output
+
+`libmpq__archive_create_io()` shares the archive and member encoders with
+path output. An optional descriptor tracks the output cursor and maximum
+successful write end. Read-back for v4 RAW MD5 and signing observes the
+sink directly. V4 requires a read callback at creation. Older generations
+may omit it for unsigned writing. The optional flush runs after metadata
+and signatures. Callbacks transfer exact ranges and supply zero-filled
+gaps without requiring the writer to pad sparse storage.
+
+The caller retains the initially empty sink and callback context through
+consuming close. A terminal error prevents further output callbacks.
+The library leaves disposal, persistence and publication to the caller.
+Sectorized writes retain existing bounded input buffers. Oversized SINGLE
+still buffers the complete input unit and any codec workspace.

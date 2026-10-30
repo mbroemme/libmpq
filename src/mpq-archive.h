@@ -53,6 +53,7 @@ struct mpq_writer_identity;
 struct mpq_archive
 {
     FILE *fp;                     /* Backing file handle used only by writers. */
+    mpq_writer_io_s *write_io;    /* Optional borrowed fresh-output backend. */
     struct mpq_source *source;    /* Read-only random-access source provider for readers. */
     char *filename;               /* Path or optional logical name retained by the archive. */
     uint64_t file_device;         /* Device or Windows volume identity. */
@@ -94,7 +95,7 @@ struct mpq_archive
     uint8_t write_raw_locked;       /* Member begin, signing or finalization fixed raw policy. */
     uint8_t write_finalized;        /* Whether the final header and tables were written. */
     uint8_t write_ext_compress;     /* Extended-table finalization may compress payloads. */
-    int32_t write_error;            /* Terminal private v4 serialization error, if any. */
+    int32_t write_error;            /* Terminal writer serialization error, if any. */
     uint8_t write_signature;        /* Caller requested weak signing. */
     uint8_t write_strong_signature; /* Caller requested plain strong signing. */
     uint64_t write_signature_offset;

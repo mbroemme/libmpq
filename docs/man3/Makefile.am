@@ -11,6 +11,7 @@ man_MANS = \
 	libmpq__archive_close.3 \
 	libmpq__archive_compression_allowed.3 \
 	libmpq__archive_create.3 \
+	libmpq__archive_create_io.3 \
 	libmpq__archive_create_mpqe.3 \
 	libmpq__archive_files.3 \
 	libmpq__archive_offset.3 \

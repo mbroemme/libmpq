@@ -281,6 +281,16 @@ libmpq__archive_create(
     return libmpq__writer_archive_create(out, path, options);
 }
 
+/* Create a fresh MPQ through the shared writer using caller-owned I/O. */
+int32_t
+libmpq__archive_create_io(
+    mpq_archive_s **archive, void *context, libmpq_read_at_fn read_at, libmpq_write_at_fn write_at,
+    libmpq_flush_fn flush, const mpq_archive_create_options_s *options
+)
+{
+    return libmpq__writer_archive_create_io(archive, context, read_at, write_at, flush, options);
+}
+
 /* Create an MPQE-wrapped archive through the normal writer and private final transform. */
 int32_t
 libmpq__archive_create_mpqe(
@@ -779,6 +789,7 @@ libmpq__archive_close(mpq_archive_s *mpq_archive)
         if (mpq_archive->fp != NULL && fclose(mpq_archive->fp) < 0 && result == 0)
             result = LIBMPQ_ERROR_CLOSE;
         libmpq__writer_mpqe_cleanup(mpq_archive);
+        free(mpq_archive->write_io);
         libmpq__rsa_clear(
             mpq_archive->write_signature_key, sizeof(mpq_archive->write_signature_key)
         );

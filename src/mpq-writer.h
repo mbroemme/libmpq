@@ -25,6 +25,7 @@
 #include "mpq-hash.h"
 #include "mpq-md5.h"
 #include "mpq-mpqe.h"
+#include "mpq-source.h"
 #include <libmpq/mpq.h>
 #include <stdio.h>
 
@@ -194,5 +195,17 @@ int32_t libmpq__writer_mpqe_transform_file(
     FILE *input, FILE *output, const uint8_t key[LIBMPQ_MPQE_CHUNK_SIZE]
 );
 void libmpq__writer_mpqe_cleanup(mpq_archive_s *archive);
+
+/* Create a writer over a borrowed, initially empty sink. */
+int32_t libmpq__writer_archive_create_io(
+    mpq_archive_s **archive, void *context, libmpq_read_at_fn read_at, libmpq_write_at_fn write_at,
+    libmpq_flush_fn flush, const mpq_archive_create_options_s *options
+);
+int32_t libmpq__writer_output_seek(mpq_archive_s *archive, uint64_t offset, int origin);
+int32_t
+libmpq__writer_output_borrow_source(mpq_archive_s *archive, mpq_source_s *source, uint64_t size);
+int32_t libmpq__writer_output_write_at(
+    mpq_archive_s *archive, uint64_t offset, const void *data, size_t size
+);
 
 #endif /* LIBMPQ_WRITER_H */

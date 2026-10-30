@@ -87,16 +87,122 @@ next_power_two(uint32_t value)
 }
 
 /*
- * Write one byte range at an absolute archive offset.
- * Seeking and writing are treated as one archive operation so short writes
- * and positioning failures are converted to the library's write error.
+ * FILE writers keep their existing cursor rules. A borrowed sink implements
+ * exact positioned transfers, while the writer maintains cursor and extent.
  */
-static int32_t
-write_at(FILE *fp, uint64_t offset, const void *data, size_t size)
+int32_t
+libmpq__writer_output_seek(mpq_archive_s *archive, uint64_t offset, int origin)
 {
-    if (libmpq__file_seek(fp, offset, SEEK_SET) < 0 || (size && fwrite(data, 1, size, fp) != size))
-        return LIBMPQ_ERROR_WRITE;
+    mpq_writer_io_s *io = archive->write_io;
+
+    if (io == NULL)
+        return libmpq__file_seek(archive->fp, offset, origin);
+    if (origin == SEEK_END && offset == 0)
+        offset = io->extent;
+    else if (origin != SEEK_SET || offset > INT64_MAX)
+        return LIBMPQ_ERROR_SEEK;
+    io->position = offset;
     return 0;
+}
+
+static libmpq__off_t
+writer_output_tell(mpq_archive_s *archive)
+{
+    return archive->write_io == NULL ? libmpq__file_tell(archive->fp)
+                                     : (libmpq__off_t)archive->write_io->position;
+}
+
+static int32_t
+writer_output_callback_status(mpq_archive_s *archive, int32_t status, int32_t fallback)
+{
+    if (status > 0)
+        status = fallback;
+    if (status != 0 && archive->write_error == 0)
+        archive->write_error = status;
+    return status;
+}
+
+static int32_t
+writer_output_write(mpq_archive_s *archive, const void *data, size_t size)
+{
+    mpq_writer_io_s *io = archive->write_io;
+    int32_t status;
+
+    if (io == NULL)
+        return size == 0 || fwrite(data, 1, size, archive->fp) == size ? 0 : LIBMPQ_ERROR_WRITE;
+    if (archive->write_error != 0)
+        return archive->write_error;
+    if ((uint64_t)size > (uint64_t)INT64_MAX - io->position)
+        return writer_output_callback_status(archive, LIBMPQ_ERROR_SIZE, LIBMPQ_ERROR_WRITE);
+    if (size == 0)
+        return 0;
+    status = writer_output_callback_status(
+        archive, io->write_at(io->context, (libmpq__off_t)io->position, data, size),
+        LIBMPQ_ERROR_WRITE
+    );
+    if (status == 0) {
+        io->position += size;
+        if (io->position > io->extent)
+            io->extent = io->position;
+    }
+    return status;
+}
+
+int32_t
+libmpq__writer_output_write_at(
+    mpq_archive_s *archive, uint64_t offset, const void *data, size_t size
+)
+{
+    if (archive->write_io != NULL) {
+        if (archive->write_error != 0)
+            return archive->write_error;
+        if (offset > INT64_MAX || (uint64_t)size > (uint64_t)INT64_MAX - offset)
+            return writer_output_callback_status(archive, LIBMPQ_ERROR_SIZE, LIBMPQ_ERROR_WRITE);
+    }
+    if (libmpq__writer_output_seek(archive, offset, SEEK_SET) != 0)
+        return LIBMPQ_ERROR_WRITE;
+    return writer_output_write(archive, data, size);
+}
+
+static int32_t
+writer_output_read_at(void *context, uint64_t offset, uint8_t *data, size_t size)
+{
+    mpq_archive_s *archive = context;
+    mpq_writer_io_s *io = archive->write_io;
+
+    if (io == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (archive->write_error != 0)
+        return archive->write_error;
+    if (io->read_at == NULL || offset > io->extent || (uint64_t)size > io->extent - offset)
+        return writer_output_callback_status(archive, LIBMPQ_ERROR_READ, LIBMPQ_ERROR_READ);
+    if (size == 0)
+        return 0;
+    return writer_output_callback_status(
+        archive, io->read_at(io->context, (libmpq__off_t)offset, data, size), LIBMPQ_ERROR_READ
+    );
+}
+
+/* Read completed stored ranges without transferring ownership of the sink. */
+int32_t
+libmpq__writer_output_borrow_source(mpq_archive_s *archive, mpq_source_s *source, uint64_t size)
+{
+    if (archive->write_io == NULL)
+        return libmpq__source_borrow_file(source, archive->fp, size);
+    if (size > archive->write_io->extent)
+        return LIBMPQ_ERROR_READ;
+    source->size = size;
+    source->backend.size = size;
+    source->backend.context = archive;
+    source->backend.read_at = writer_output_read_at;
+    return 0;
+}
+
+/* A callback sink already exposes prior writes to read-back. */
+static int32_t
+writer_output_prepare_read(mpq_archive_s *archive)
+{
+    return archive->write_io == NULL && fflush(archive->fp) != 0 ? LIBMPQ_ERROR_WRITE : 0;
 }
 
 /* KEY uses the basename key and the already-final archive-relative payload position. */
@@ -174,7 +280,7 @@ stream_flush_sector(mpq_writer_s *writer)
             packed, (uint32_t)packed_size, writer_file_key(writer) + writer->sector_index
         );
     if (writer->offsets) {
-        libmpq__off_t position = libmpq__file_tell(archive->fp);
+        libmpq__off_t position = writer_output_tell(archive);
 
         if (position < 0) {
             free(packed);
@@ -183,9 +289,10 @@ stream_flush_sector(mpq_writer_s *writer)
         writer->offsets[writer->sector_index] =
             (uint32_t)((uint64_t)position - writer->payload_offset);
     }
-    if (fwrite(packed, 1, packed_size, archive->fp) != packed_size) {
+    result = writer_output_write(archive, packed, packed_size);
+    if (result != 0) {
         free(packed);
-        return LIBMPQ_ERROR_WRITE;
+        return result;
     }
     writer->packed_total += packed_size;
     if (writer->sector_index == 0 &&
@@ -239,9 +346,9 @@ stream_write_checksums(mpq_writer_s *writer)
     if (result == 0) {
         if (packed_size > UINT32_MAX - writer->offsets[writer->block_count])
             result = LIBMPQ_ERROR_SIZE;
-        else if (fwrite(packed, 1, packed_size, writer->archive->fp) != packed_size)
-            result = LIBMPQ_ERROR_WRITE;
-        else {
+        else
+            result = writer_output_write(writer->archive, packed, packed_size);
+        if (result == 0) {
             writer->packed_total += packed_size;
             writer->offsets[writer->block_count + 1] =
                 writer->offsets[writer->block_count] + (uint32_t)packed_size;
@@ -294,7 +401,7 @@ stream_finish(mpq_writer_s *writer)
             libmpq__store_le32(table + i * 4, writer->offsets[i]);
         if (writer->options.flags & LIBMPQ_FILE_FLAG_ENCRYPTED)
             libmpq__crypto_encrypt_block(table, (uint32_t)table_size, writer_file_key(writer) - 1);
-        result = write_at(archive->fp, writer->payload_offset, table, table_size);
+        result = libmpq__writer_output_write_at(archive, writer->payload_offset, table, table_size);
         free(table);
         if (result < 0)
             return result;
@@ -316,7 +423,7 @@ stream_finish(mpq_writer_s *writer)
         return LIBMPQ_ERROR_SIZE;
 
     /* Restore the append position after rewriting the table at the file start. */
-    if (libmpq__file_seek(archive->fp, (writer->payload_offset + total), SEEK_SET) < 0)
+    if (libmpq__writer_output_seek(archive, (writer->payload_offset + total), SEEK_SET) < 0)
         return LIBMPQ_ERROR_SEEK;
 
     result = writer_raw_md5(archive, block_offset, total + writer->prefix_size);
@@ -699,6 +806,7 @@ writer_raw_md5(mpq_archive_s *archive, uint64_t offset, uint64_t size)
     uint8_t buffer[16384];
     uint8_t digest[LIBMPQ_MD5_SIZE];
     int32_t result;
+    mpq_source_s source = { 0 };
     if (archive->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_FOUR || chunk_size == 0 || size == 0)
         return 0;
     chunks = (size - 1) / chunk_size + 1;
@@ -706,30 +814,39 @@ writer_raw_md5(mpq_archive_s *archive, uint64_t offset, uint64_t size)
     end = digest_position;
     if (result != 0 || writer_layout_advance(&end, chunks, LIBMPQ_MD5_SIZE) != 0)
         return LIBMPQ_ERROR_SIZE;
-    if (fflush(archive->fp) != 0)
+    if (writer_output_prepare_read(archive) != 0)
         return LIBMPQ_ERROR_WRITE;
+    if (archive->write_io != NULL) {
+        result = libmpq__writer_output_borrow_source(archive, &source, digest_position);
+        if (result != 0)
+            return result;
+    }
     while (remaining != 0) {
         uint64_t in_chunk = remaining < chunk_size ? remaining : chunk_size;
         mpq_md5_s md5;
         remaining -= in_chunk;
         libmpq__md5_init(&md5);
-        if (libmpq__file_seek(archive->fp, position, SEEK_SET) != 0)
+        if (archive->write_io == NULL && libmpq__file_seek(archive->fp, position, SEEK_SET) != 0)
             return LIBMPQ_ERROR_SEEK;
         while (in_chunk != 0) {
             size_t take = in_chunk < sizeof(buffer) ? (size_t)in_chunk : sizeof(buffer);
-            if (fread(buffer, 1, take, archive->fp) != take)
-                return LIBMPQ_ERROR_READ;
+
+            result = archive->write_io != NULL
+                         ? libmpq__source_read_at(&source, position, buffer, take)
+                         : (fread(buffer, 1, take, archive->fp) == take ? 0 : LIBMPQ_ERROR_READ);
+            if (result != 0)
+                return result;
             libmpq__md5_update(&md5, buffer, take);
             in_chunk -= take;
             position += take;
         }
         libmpq__md5_final(&md5, digest);
-        result = write_at(archive->fp, digest_position, digest, sizeof(digest));
+        result = libmpq__writer_output_write_at(archive, digest_position, digest, sizeof(digest));
         if (result != 0)
             return result;
         digest_position += sizeof(digest);
     }
-    return libmpq__file_seek(archive->fp, end, SEEK_SET) == 0 ? 0 : LIBMPQ_ERROR_SEEK;
+    return libmpq__writer_output_seek(archive, end, SEEK_SET) == 0 ? 0 : LIBMPQ_ERROR_SEEK;
 }
 
 /* Copy a checked stored range, optionally continuing one sector's re-encryption state. */
@@ -750,8 +867,9 @@ writer_copy_range(
         if (old_key != new_key)
             libmpq__crypto_reencrypt_block(buffer, take, state);
         *modified = 1;
-        if (fwrite(buffer, 1, take, writer->fp) != take)
-            return LIBMPQ_ERROR_WRITE;
+        result = writer_output_write(writer, buffer, take);
+        if (result != 0)
+            return result;
         position += take;
         size -= take;
     }
@@ -808,12 +926,12 @@ libmpq__writer_preserve_member(
         );
     if (result != 0)
         return result;
-    if (libmpq__file_seek(writer->fp, 0, SEEK_END) != 0 ||
-        (reserved = libmpq__file_tell(writer->fp)) < 0)
+    if (libmpq__writer_output_seek(writer, 0, SEEK_END) != 0 ||
+        (reserved = writer_output_tell(writer)) < 0)
         return LIBMPQ_ERROR_SEEK;
     if (end > (uint64_t)reserved)
         return LIBMPQ_ERROR_SIZE;
-    if (libmpq__file_seek(writer->fp, (libmpq__off_t)entry->offset, SEEK_SET) != 0)
+    if (libmpq__writer_output_seek(writer, (libmpq__off_t)entry->offset, SEEK_SET) != 0)
         return LIBMPQ_ERROR_SEEK;
     result = writer_copy_range(writer, source, entry, 0, entry->packed_size, 0, 0, &modified);
     if (result == 0)
@@ -847,8 +965,8 @@ libmpq__writer_relocate_member(
     int32_t result;
     if (writer->write_error != 0)
         return writer->write_error;
-    if (libmpq__file_seek(writer->fp, 0, SEEK_END) != 0 ||
-        (output = libmpq__file_tell(writer->fp)) < 0)
+    if (libmpq__writer_output_seek(writer, 0, SEEK_END) != 0 ||
+        (output = writer_output_tell(writer)) < 0)
         return LIBMPQ_ERROR_SEEK;
     if ((entry.flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)) ==
             (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY) &&
@@ -967,8 +1085,8 @@ writer_copy_member_checked(
             result = LIBMPQ_ERROR_READ;
         goto done;
     }
-    if (libmpq__file_seek(writer->fp, 0, SEEK_END) != 0 ||
-        (output = libmpq__file_tell(writer->fp)) < 0) {
+    if (libmpq__writer_output_seek(writer, 0, SEEK_END) != 0 ||
+        (output = writer_output_tell(writer)) < 0) {
         result = LIBMPQ_ERROR_SEEK;
         goto done;
     }
@@ -1115,7 +1233,7 @@ finalize_extended_tables(mpq_archive_s *a)
         if (result != 0)
             goto done;
     }
-    if (libmpq__file_seek(a->fp, 0, SEEK_END) < 0 || (current = libmpq__file_tell(a->fp)) < 0) {
+    if (libmpq__writer_output_seek(a, 0, SEEK_END) < 0 || (current = writer_output_tell(a)) < 0) {
         result = LIBMPQ_ERROR_SEEK;
         goto done;
     }
@@ -1189,11 +1307,11 @@ finalize_extended_tables(mpq_archive_s *a)
     a->mpq_header_ex.block_table_offset_high = (uint16_t)(block_position >> 32);
     a->mpq_header.block_table_count = classic ? a->write_next_block : 0;
     a->mpq_header_ex.extended_offset = high ? high_position : 0;
-    result = write_at(a->fp, position, stored[0], sizes[0]);
+    result = libmpq__writer_output_write_at(a, position, stored[0], sizes[0]);
     if (result == 0)
         result = writer_raw_md5(a, position, sizes[0]);
     if (result == 0)
-        result = write_at(a->fp, bet_position, stored[1], sizes[1]);
+        result = libmpq__writer_output_write_at(a, bet_position, stored[1], sizes[1]);
     if (result == 0)
         result = writer_raw_md5(a, bet_position, sizes[1]);
 done:
@@ -1236,12 +1354,13 @@ finalize_archive(mpq_archive_s *a)
     /* Append beyond existing payloads and any sparse legacy table reservation. */
     {
         libmpq__off_t position;
-        if (libmpq__file_seek(a->fp, 0, SEEK_END) < 0 || (position = libmpq__file_tell(a->fp)) < 0)
+        if (libmpq__writer_output_seek(a, 0, SEEK_END) < 0 ||
+            (position = writer_output_tell(a)) < 0)
             return LIBMPQ_ERROR_SEEK;
         if (a->write_data_offset > INT64_MAX)
             return LIBMPQ_ERROR_SIZE;
         if ((uint64_t)position < a->write_data_offset &&
-            libmpq__file_seek(a->fp, (libmpq__off_t)a->write_data_offset, SEEK_SET) < 0)
+            libmpq__writer_output_seek(a, (libmpq__off_t)a->write_data_offset, SEEK_SET) < 0)
             return LIBMPQ_ERROR_SEEK;
     }
     a->write_internal = 1;
@@ -1323,7 +1442,8 @@ finalize_archive(mpq_archive_s *a)
     if (a->write_identity != NULL && a->mpq_header.version < LIBMPQ_ARCHIVE_VERSION_THREE) {
         libmpq__off_t position;
         uint64_t tables;
-        if (libmpq__file_seek(a->fp, 0, SEEK_END) != 0 || (position = libmpq__file_tell(a->fp)) < 0)
+        if (libmpq__writer_output_seek(a, 0, SEEK_END) != 0 ||
+            (position = writer_output_tell(a)) < 0)
             return LIBMPQ_ERROR_SEEK;
         tables = (uint64_t)position;
         a->mpq_header.hash_table_offset = (uint32_t)tables;
@@ -1369,14 +1489,14 @@ finalize_archive(mpq_archive_s *a)
         if (bytes != 0)
             writer_md5(raw, bytes, a->mpq_header_v4.hash_table_md5);
     }
-    if (write_at(
-            a->fp,
+    if (libmpq__writer_output_write_at(
+            a,
             a->mpq_header.hash_table_offset |
                 ((uint64_t)a->mpq_header_ex.hash_table_offset_high << 32),
             raw, bytes
         ) < 0) {
         free(raw);
-        return LIBMPQ_ERROR_WRITE;
+        return a->write_error != 0 ? a->write_error : LIBMPQ_ERROR_WRITE;
     }
     free(raw);
 
@@ -1398,14 +1518,14 @@ finalize_archive(mpq_archive_s *a)
         if (bytes != 0)
             writer_md5(raw, bytes, a->mpq_header_v4.block_table_md5);
     }
-    if (write_at(
-            a->fp,
+    if (libmpq__writer_output_write_at(
+            a,
             a->mpq_header.block_table_offset |
                 ((uint64_t)a->mpq_header_ex.block_table_offset_high << 32),
             raw, bytes
         ) < 0) {
         free(raw);
-        return LIBMPQ_ERROR_WRITE;
+        return a->write_error != 0 ? a->write_error : LIBMPQ_ERROR_WRITE;
     }
     free(raw);
     if (a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO ||
@@ -1424,15 +1544,15 @@ finalize_archive(mpq_archive_s *a)
             a->mpq_header_v4.hi_block_table_size = bytes;
             writer_md5(raw, bytes, a->mpq_header_v4.hi_block_table_md5);
         }
-        if (write_at(a->fp, a->mpq_header_ex.extended_offset, raw, bytes) < 0) {
+        if (libmpq__writer_output_write_at(a, a->mpq_header_ex.extended_offset, raw, bytes) < 0) {
             free(raw);
-            return LIBMPQ_ERROR_WRITE;
+            return a->write_error != 0 ? a->write_error : LIBMPQ_ERROR_WRITE;
         }
         free(raw);
     }
-    if (libmpq__file_seek(a->fp, 0, SEEK_END) < 0)
+    if (libmpq__writer_output_seek(a, 0, SEEK_END) < 0)
         return LIBMPQ_ERROR_SEEK;
-    end = (uint64_t)libmpq__file_tell(a->fp);
+    end = (uint64_t)writer_output_tell(a);
     if (end > INT64_MAX)
         return LIBMPQ_ERROR_SEEK;
     if (end > UINT32_MAX && a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE)
@@ -1478,10 +1598,20 @@ finalize_archive(mpq_archive_s *a)
         writer_md5(header, LIBMPQ_HEADER_V4_MD5_INPUT_SIZE, a->mpq_header_v4.header_md5);
         memcpy(header + LIBMPQ_HEADER_V4_MD5_OFFSET, a->mpq_header_v4.header_md5, LIBMPQ_MD5_SIZE);
     }
-    if (write_at(a->fp, 0, header, a->mpq_header.header_size) < 0 || fflush(a->fp) != 0)
+    result = libmpq__writer_output_write_at(a, 0, header, a->mpq_header.header_size);
+    if (result != 0)
+        return result;
+    if (writer_output_prepare_read(a) != 0)
         return LIBMPQ_ERROR_WRITE;
     {
         int32_t result = libmpq__signature_finish(a, end);
+        if (result != 0)
+            return result;
+    }
+    if (a->write_io != NULL && a->write_io->flush != NULL) {
+        result = writer_output_callback_status(
+            a, a->write_io->flush(a->write_io->context), LIBMPQ_ERROR_CLOSE
+        );
         if (result != 0)
             return result;
     }
@@ -1632,7 +1762,7 @@ libmpq__writer_validate_options(const mpq_archive_create_options_s *options)
 static int32_t
 writer_archive_create_handle(
     mpq_archive_s **out, const char *path, FILE *file, const mpq_archive_create_options_s *options,
-    uint8_t dense
+    uint8_t dense, const mpq_writer_io_s *io
 )
 {
     mpq_archive_create_options_s defaults = { LIBMPQ_ARCHIVE_VERSION_ONE, 1024, 4096, 0, 0 };
@@ -1641,9 +1771,10 @@ writer_archive_create_handle(
     uint32_t header_size;
     uint64_t offset;
     uint8_t *zero;
+    int32_t result;
     bool extended;
 
-    if (out == NULL || path == NULL)
+    if (out == NULL || (path == NULL && io == NULL))
         return LIBMPQ_ERROR_EXIST;
     *out = NULL;
     if (options == NULL)
@@ -1661,16 +1792,25 @@ writer_archive_create_handle(
         return LIBMPQ_ERROR_MALLOC;
     }
     a->write_mpqe_directory = NULL;
-    a->fp = file;
-    if (a->fp == NULL)
-        a->fp = libmpq__file_open(path, "w+b");
-    a->filename = libmpq__string_duplicate(path);
-    if (a->fp == NULL || a->filename == NULL) {
-        if (a->fp != NULL)
-            (void)fclose(a->fp);
-        free(a->filename);
-        free(a);
-        return LIBMPQ_ERROR_OPEN;
+    if (io != NULL) {
+        a->write_io = malloc(sizeof(*a->write_io));
+        if (a->write_io == NULL) {
+            free(a);
+            return LIBMPQ_ERROR_MALLOC;
+        }
+        *a->write_io = *io;
+    } else {
+        a->fp = file;
+        if (a->fp == NULL)
+            a->fp = libmpq__file_open(path, "w+b");
+        a->filename = libmpq__string_duplicate(path);
+        if (a->fp == NULL || a->filename == NULL) {
+            if (a->fp != NULL)
+                (void)fclose(a->fp);
+            free(a->filename);
+            free(a);
+            return LIBMPQ_ERROR_OPEN;
+        }
     }
     a->write_mode = 1;
     a->write_capacity = options->max_files ? options->max_files : 1024;
@@ -1702,6 +1842,16 @@ writer_archive_create_handle(
      */
     if (options->version == LIBMPQ_ARCHIVE_VERSION_ONE && libmpq__attributes_write_flags(a))
         a->mpq_header.hash_table_offset += 16;
+    if (io != NULL && ((uint64_t)a->mpq_header.hash_table_offset +
+                               (uint64_t)a->write_hash_capacity * LIBMPQ_HASH_ENTRY_WIRE_SIZE >
+                           UINT32_MAX ||
+                       (uint64_t)a->write_capacity * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE > UINT32_MAX ||
+                       (uint64_t)a->write_capacity * sizeof(*a->write_names) > SIZE_MAX ||
+                       (libmpq__attributes_write_flags(a) != 0 &&
+                        (uint64_t)a->write_capacity * sizeof(*a->write_attributes) > SIZE_MAX))) {
+        result = LIBMPQ_ERROR_SIZE;
+        goto create_failure;
+    }
     a->mpq_header.block_table_offset =
         a->mpq_header.hash_table_offset + a->write_hash_capacity * LIBMPQ_HASH_ENTRY_WIRE_SIZE;
     a->mpq_header_ex.extended_offset = 0;
@@ -1713,10 +1863,8 @@ writer_archive_create_handle(
     }
     offset = extended || dense ? header_size : (offset + 511) & ~UINT64_C(511);
     if (options->version == LIBMPQ_ARCHIVE_VERSION_ONE && offset > UINT32_MAX) {
-        fclose(a->fp);
-        free(a->filename);
-        free(a);
-        return LIBMPQ_ERROR_SIZE;
+        result = LIBMPQ_ERROR_SIZE;
+        goto create_failure;
     }
     a->mpq_hash = calloc(a->write_hash_capacity, sizeof(*a->mpq_hash));
     a->mpq_block = calloc(a->write_capacity, sizeof(*a->mpq_block));
@@ -1726,50 +1874,38 @@ writer_archive_create_handle(
     a->write_platforms = calloc(a->write_capacity, sizeof(*a->write_platforms));
     if (!a->mpq_hash || !a->mpq_block || !a->mpq_block_ex || !a->write_names || !a->write_locales ||
         !a->write_platforms) {
-        fclose(a->fp);
-        free(a->filename);
-        free(a->mpq_hash);
-        free(a->mpq_block);
-        free(a->mpq_block_ex);
-        free(a->write_names);
-        free(a->write_locales);
-        free(a->write_platforms);
-        free(a);
-        return LIBMPQ_ERROR_MALLOC;
+        result = LIBMPQ_ERROR_MALLOC;
+        goto create_failure;
     }
     for (i = 0; i < a->write_hash_capacity; i++)
         a->mpq_hash[i].block_table_index = LIBMPQ_HASH_FREE;
     zero = calloc(1, (size_t)(offset > 4096 ? 4096 : offset));
-    if (zero == NULL || fwrite(zero, 1, (size_t)(offset > 4096 ? 4096 : offset), a->fp) !=
-                            (size_t)(offset > 4096 ? 4096 : offset)) {
-        free(zero);
-        fclose(a->fp);
-        free(a->filename);
-        free(a->mpq_hash);
-        free(a->mpq_block);
-        free(a->mpq_block_ex);
-        free(a->write_names);
-        free(a->write_locales);
-        free(a->write_platforms);
-        free(a);
-        return LIBMPQ_ERROR_WRITE;
-    }
+    result = zero == NULL ? (io == NULL ? LIBMPQ_ERROR_WRITE : LIBMPQ_ERROR_MALLOC)
+                          : writer_output_write(a, zero, (size_t)(offset > 4096 ? 4096 : offset));
     free(zero);
-    if (libmpq__file_seek(a->fp, offset, SEEK_SET) < 0) {
-        fclose(a->fp);
-        free(a->filename);
-        free(a->mpq_hash);
-        free(a->mpq_block);
-        free(a->mpq_block_ex);
-        free(a->write_names);
-        free(a->write_locales);
-        free(a->write_platforms);
-        free(a);
-        return LIBMPQ_ERROR_SEEK;
+    if (result != 0)
+        goto create_failure;
+    if (libmpq__writer_output_seek(a, offset, SEEK_SET) < 0) {
+        result = LIBMPQ_ERROR_SEEK;
+        goto create_failure;
     }
     a->write_data_offset = offset;
     *out = a;
     return 0;
+
+create_failure:
+    if (a->fp != NULL)
+        (void)fclose(a->fp);
+    free(a->filename);
+    free(a->mpq_hash);
+    free(a->mpq_block);
+    free(a->mpq_block_ex);
+    free(a->write_names);
+    free(a->write_locales);
+    free(a->write_platforms);
+    free(a->write_io);
+    free(a);
+    return result;
 }
 
 /* Create an ordinary seekable MPQ directly at its requested destination. */
@@ -1795,7 +1931,32 @@ libmpq__writer_archive_create_file(
         return libmpq__writer_archive_create_v4(
             out, path, file, options, LIBMPQ_WRITER_V4_RAW_CHUNK_SIZE
         );
-    return writer_archive_create_handle(out, path, file, options, 0);
+    return writer_archive_create_handle(out, path, file, options, 0, NULL);
+}
+
+/* Borrow a fresh sink without opening, publishing or freeing caller storage. */
+int32_t
+libmpq__writer_archive_create_io(
+    mpq_archive_s **out, void *context, libmpq_read_at_fn read_at, libmpq_write_at_fn write_at,
+    libmpq_flush_fn flush, const mpq_archive_create_options_s *options
+)
+{
+    mpq_writer_io_s io = { context, read_at, write_at, flush, 0, 0 };
+    int32_t result;
+
+    if (out == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *out = NULL;
+    if (write_at == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    if (libmpq__writer_validate_options(options) != 0)
+        return LIBMPQ_ERROR_FORMAT;
+    if (options != NULL && options->version == LIBMPQ_ARCHIVE_VERSION_FOUR && read_at == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    result = writer_archive_create_handle(out, NULL, NULL, options, 0, &io);
+    if (result == 0 && options != NULL && options->version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+        (*out)->mpq_header_v4.raw_chunk_size = LIBMPQ_WRITER_V4_RAW_CHUNK_SIZE;
+    return result;
 }
 
 /* Dense transactions append tables after packed payloads, without source reservations. */
@@ -1805,7 +1966,7 @@ libmpq__writer_archive_create_compact(
     uint32_t raw_chunk_size
 )
 {
-    int32_t result = writer_archive_create_handle(out, path, file, options, 1);
+    int32_t result = writer_archive_create_handle(out, path, file, options, 1, NULL);
     if (result == 0)
         (*out)->mpq_header_v4.raw_chunk_size = raw_chunk_size;
     return result;
@@ -1827,7 +1988,7 @@ libmpq__writer_archive_create_v4(
             (void)fclose(file);
         return LIBMPQ_ERROR_FORMAT;
     }
-    result = writer_archive_create_handle(out, path, file, options, 0);
+    result = writer_archive_create_handle(out, path, file, options, 0, NULL);
     if (result == 0)
         (*out)->mpq_header_v4.raw_chunk_size = raw_chunk_size;
     return result;
@@ -2083,7 +2244,7 @@ writer_file_begin(
                          : (uint32_t)((size + a->write_sector_size - 1) / a->write_sector_size);
     if (w->block_count == 0)
         w->block_count = 1;
-    w->payload_offset = (uint64_t)libmpq__file_tell(a->fp);
+    w->payload_offset = (uint64_t)writer_output_tell(a);
     if (w->payload_offset > (uint64_t)INT64_MAX - prefix_size) {
         free(w->data);
         free(w->name);
@@ -2093,7 +2254,7 @@ writer_file_begin(
     if (prefix_size != 0) {
         int32_t result;
         a->write_raw_locked = 1;
-        result = write_at(a->fp, w->payload_offset, prefix, prefix_size);
+        result = libmpq__writer_output_write_at(a, w->payload_offset, prefix, prefix_size);
 
         if (result != 0) {
             if (a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR)
@@ -2122,6 +2283,12 @@ writer_file_begin(
             return LIBMPQ_ERROR_SIZE;
         }
         table_size = (size_t)entries * 4;
+        if (a->write_io != NULL && table_size > (uint64_t)INT64_MAX - w->payload_offset) {
+            free(w->data);
+            free(w->name);
+            free(w);
+            return LIBMPQ_ERROR_SIZE;
+        }
         w->offsets = calloc((size_t)allocated, sizeof(*w->offsets));
         if (w->offsets == NULL) {
             if (prefix_size != 0 && a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR)
@@ -2135,10 +2302,11 @@ writer_file_begin(
         w->offsets[0] = (uint32_t)table_size;
         if (crc)
             w->checksums = w->offsets + (size_t)entries;
-        a->write_raw_locked = 1;
-        if (libmpq__file_seek(a->fp, (w->payload_offset + table_size), SEEK_SET) < 0) {
+        if (a->write_io == NULL)
+            a->write_raw_locked = 1;
+        if (libmpq__writer_output_seek(a, (w->payload_offset + table_size), SEEK_SET) < 0) {
             if (a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
-                (prefix_size != 0 || ferror(a->fp)))
+                (prefix_size != 0 || (a->fp != NULL && ferror(a->fp))))
                 a->write_error = LIBMPQ_ERROR_SEEK;
             free(w->offsets);
             free(w->data);
@@ -2202,7 +2370,9 @@ libmpq__writer_file_write(mpq_writer_s *w, const uint8_t *buffer, libmpq__off_t 
         if (w->data_size == w->data_capacity) {
             int32_t result = stream_flush_sector(w);
             if (result < 0) {
-                if (w->archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+                if (w->archive->write_error == 0 &&
+                    (w->archive->write_io != NULL ||
+                     w->archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR))
                     w->archive->write_error = result;
                 return result;
             }
@@ -2243,9 +2413,10 @@ libmpq__writer_file_finish(mpq_writer_s *w)
         return LIBMPQ_ERROR_EXIST;
     if (w->archive->write_error != 0) {
         result = w->archive->write_error;
-    } else if (w->data_capacity > w->archive->write_sector_size && w->written != w->expected) {
+    } else if (w->written != w->expected &&
+               (w->archive->write_io != NULL || w->data_capacity > w->archive->write_sector_size)) {
 
-        /* Never encode a partial oversized SINGLE as a completed unit. */
+        /* Do not encode an incomplete callback member or oversized SINGLE. */
         result = LIBMPQ_ERROR_SIZE;
     } else if (w->data_size != 0 || w->expected == 0) {
         result = stream_flush_sector(w);
@@ -2254,7 +2425,9 @@ libmpq__writer_file_finish(mpq_writer_s *w)
     }
     if (result == 0)
         result = stream_finish(w);
-    if (result != 0 && w->archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+    if (result != 0 && w->archive->write_error == 0 &&
+        (w->archive->write_io != NULL ||
+         w->archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR))
         w->archive->write_error = result;
     w->archive->write_current = NULL;
     free(w->name);
@@ -2294,7 +2467,15 @@ libmpq__writer_file_add(
 )
 {
     mpq_writer_s *w;
-    int32_t result = libmpq__writer_file_begin(a, name, size, options, &w);
+    int32_t result;
+
+    if (a != NULL && a->write_io != NULL) {
+        if (a->write_error != 0)
+            return a->write_error;
+        if (data == NULL && size > 0)
+            return LIBMPQ_ERROR_SIZE;
+    }
+    result = libmpq__writer_file_begin(a, name, size, options, &w);
     if (result < 0)
         return result;
     result = libmpq__writer_file_write(w, data, size);
@@ -2372,6 +2553,8 @@ libmpq__writer_file_add_path(
     size_t got;
     int32_t result;
     mpq_writer_s *writer;
+    if (a != NULL && a->write_io != NULL && a->write_error != 0)
+        return a->write_error;
     fp = libmpq__file_open(source, "rb");
     if (!fp)
         return LIBMPQ_ERROR_OPEN;
@@ -2385,6 +2568,7 @@ libmpq__writer_file_add_path(
         fclose(fp);
         return result;
     }
+    a = writer->archive;
     while (!feof(fp) && !ferror(fp)) {
         got = fread(buffer, 1, sizeof(buffer), fp);
         if (got == 0)
@@ -2393,14 +2577,16 @@ libmpq__writer_file_add_path(
         if (result < 0)
             break;
     }
-    if (ferror(fp))
+    if (ferror(fp) && (a->write_io == NULL || result == 0))
         result = LIBMPQ_ERROR_READ;
-    fclose(fp);
+    if (fclose(fp) != 0 && a->write_io != NULL && result == 0)
+        result = LIBMPQ_ERROR_CLOSE;
     if (result == 0)
         result = libmpq__writer_file_finish(writer);
     else {
-        if (a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR && a->write_error == 0 &&
-            writer->packed_total != 0)
+        if (a->write_error == 0 &&
+            (a->write_io != NULL ||
+             (a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR && writer->packed_total != 0)))
             a->write_error = result;
         libmpq__writer_file_abort(writer);
     }

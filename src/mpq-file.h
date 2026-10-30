@@ -25,6 +25,17 @@
 
 typedef struct mpq_directory mpq_directory_s;
 
+/* Borrowed operations and tracked extent for a fresh writer sink. */
+typedef struct
+{
+    void *context;
+    libmpq_read_at_fn read_at;
+    libmpq_write_at_fn write_at;
+    libmpq_flush_fn flush;
+    uint64_t position;
+    uint64_t extent;
+} mpq_writer_io_s;
+
 /* Paths use UTF-8 on Windows. All streams are opened in binary mode. */
 FILE *libmpq__file_open(const char *path, const char *mode);
 int32_t libmpq__file_seek(FILE *file, uint64_t offset, int origin);

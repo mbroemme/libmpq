@@ -113,6 +113,18 @@ typedef int32_t (*libmpq_read_at_fn)(
     void *context, libmpq__off_t offset, uint8_t *buffer, size_t size
 );
 
+/*
+ * Write exactly size bytes at a nonnegative absolute offset. Buffer is borrowed
+ * for the synchronous call. Return zero for exact success or a negative
+ * LIBMPQ_ERROR_* value, including when only part of the range was written.
+ */
+typedef int32_t (*libmpq_write_at_fn)(
+    void *context, libmpq__off_t offset, const uint8_t *buffer, size_t size
+);
+
+/* Optional final sink operation. Return zero or a negative LIBMPQ_ERROR_* value. */
+typedef int32_t (*libmpq_flush_fn)(void *context);
+
 /* Archive format and creation constants. */
 
 /*
@@ -493,6 +505,26 @@ extern LIBMPQ_API int32_t libmpq__archive_open_patch(
 extern LIBMPQ_API int32_t libmpq__archive_create(
     mpq_archive_s **mpq_archive, const char *mpq_filename,
     const mpq_archive_create_options_s *options
+);
+
+/*
+ * Create a v1-v4 MPQ in an initially empty caller-owned sink at origin zero.
+ * Write-at is required. V4 creation and all signing require read-at.
+ * Reads must see previous writes and zero-filled gaps. Successful writes
+ * extend the sink to the maximum write end and preserve unrelated bytes.
+ * The optional flush runs once after successful finalization and signing.
+ * Positive read, write and flush statuses map to READ, WRITE and CLOSE.
+ *
+ * The caller retains storage and context through consuming archive_close(),
+ * including on failure. The library never closes or publishes the sink.
+ * Callbacks run synchronously and must not re-enter this writer. Serialize
+ * shared I/O externally. Callback and admitted-member failures are terminal.
+ * Failed output may remain partial. Success does not guarantee durability.
+ * Failure clears *archive when the pointer is provided.
+ */
+extern LIBMPQ_API int32_t libmpq__archive_create_io(
+    mpq_archive_s **archive, void *context, libmpq_read_at_fn read_at, libmpq_write_at_fn write_at,
+    libmpq_flush_fn flush, const mpq_archive_create_options_s *options
 );
 
 /*
