@@ -731,3 +731,17 @@ The optional flush delegate runs after successful transport output. A private
 plaintext stage supplies read-back, including v4 verification data. Keep the
 caller-owned sink available through explicit close and release it separately.
 MPQE encoding does not independently authenticate the archive.
+
+### Fixed-size range replacement
+
+An update can replace several plaintext ranges in one staged operation.
+Offsets are zero-based and must fit inside the existing member. Later ranges
+win when they overlap, and commit publishes the result.
+
+```d
+update.replaceRanges("member.bin", [ReplaceRange(100, [cast(ubyte) 1, 2])]);
+update.replaceRanges("member.bin", 1033, 0, [ReplaceRange(4096, [cast(ubyte) 3])]);
+```
+
+Supported lossless members retain encryption and storage policies; the native
+writer rebuilds the selected member. SINGLE requires full-unit buffering.

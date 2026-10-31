@@ -1486,6 +1486,10 @@ def test_exact_update_stages(tmp_path, version, wrapped):
         with pytest.raises(mpq.LibmpqNotFoundError):
             update.replace_data("voice", b"stale", locale=locale, platform=platform)
         update.replace_path("renamed", source, locale=locale, platform=platform)
+        update.replace_ranges("renamed", [(0, bytearray(b"XY")), (1, memoryview(b"Z"))])
+        update.replace_ranges("renamed", [(0, b"pa")], locale=locale, platform=platform)
+        with pytest.raises(OverflowError):
+            update.replace_ranges("renamed", [(1 << 63, b"X")])
         assert path.read_bytes() == original
         update.commit()
     with (mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive(path)) as archive:

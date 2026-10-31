@@ -418,6 +418,11 @@ class LibmpqTest {
                 update.rename("voice", "renamed", locale, platform);
                 assertThrows(LibmpqException.class, () -> update.remove("voice", locale, platform));
                 update.replacePath("renamed", locale, platform, source, null);
+                update.replaceRanges("renamed", List.of(new MpqUpdate.ReplaceRange(0, new byte[] {'X'})));
+                update.replaceRanges("renamed", locale, platform,
+                        List.of(new MpqUpdate.ReplaceRange(0, new byte[] {'p'})));
+                assertThrows(LibmpqException.class, () -> update.replaceRanges("renamed",
+                        List.of(new MpqUpdate.ReplaceRange(-1, new byte[] {'q'}))));
                 assertArrayEquals(original, Files.readAllBytes(path));
                 update.commit();
             }

@@ -1299,6 +1299,13 @@ private void testExactUpdateStages() {
         catch (MPQException e) { failed = e.code == ERROR_EXIST; }
         assert(failed);
         update.replacePath("renamed", locale, platform, source);
+        update.replaceRanges("renamed", [ReplaceRange(0, cast(const(ubyte)[])"XY")]);
+        update.replaceRanges("renamed", locale, platform,
+                             [ReplaceRange(0, cast(const(ubyte)[])"pa")]);
+        failed = false;
+        try { update.replaceRanges("renamed", [ReplaceRange(-1, cast(const(ubyte)[])"Z")]); }
+        catch (MPQException e) { failed = e.code == ERROR_SEEK; }
+        assert(failed);
         assert(read(path) == original);
         update.commit();
         auto archive = Archive.open(path);

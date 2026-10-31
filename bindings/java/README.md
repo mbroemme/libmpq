@@ -622,3 +622,17 @@ Supply an empty caller-owned channel. Write access is sufficient for every
 archive generation. Close emits the final MPQE transport and leaves the channel
 open. The caller controls persistence and publication. MPQE encoding does not
 independently authenticate the archive.
+
+### Fixed-size range replacement
+
+An update can replace several plaintext ranges in one staged operation.
+Offsets are zero-based and must fit inside the existing member. Later ranges
+win when they overlap, and commit publishes the result.
+
+```java
+update.replaceRanges("member.bin", List.of(new MpqUpdate.ReplaceRange(100, new byte[] {1, 2})));
+update.replaceRanges("member.bin", 1033, 0, List.of(new MpqUpdate.ReplaceRange(4096, new byte[] {3})));
+```
+
+Supported lossless members retain encryption and storage policies; the native
+writer rebuilds the selected member. SINGLE requires full-unit buffering.

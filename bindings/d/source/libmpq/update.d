@@ -16,6 +16,12 @@ import libmpq.errors : MPQException, checkStatus;
 import libmpq.native;
 import libmpq.options : FileOptions;
 
+/** A fixed-size logical plaintext replacement. */
+struct ReplaceRange {
+    off_t offset;
+    const(ubyte)[] data;
+}
+
 /** A transaction whose uncommitted changes are aborted on destruction. */
 final class Update {
     private mpq_update_s* handle;
@@ -36,6 +42,32 @@ final class Update {
                     authCode.length == 0 ? null : authCode.ptr, authCode.length),
                     "libmpq__update_begin_mpqe");
         return new Update(result);
+    }
+
+    /** Apply ordered replacements using ordinary filename lookup. */
+    void replaceRanges(string name, const(ReplaceRange)[] ranges) {
+        ensureOpen();
+        auto nativeRanges = rangeVector(ranges);
+        checkStatus(libmpq__update_replace_ranges(handle, toStringz(name),
+                    nativeRanges.ptr, nativeRanges.length), "libmpq__update_replace_ranges");
+    }
+
+    /** Apply ordered replacements to a single exact identity. */
+    void replaceRanges(string name, ushort locale, ushort platform,
+                       const(ReplaceRange)[] ranges) {
+        ensureOpen();
+        auto nativeRanges = rangeVector(ranges);
+        checkStatus(libmpq__update_replace_ranges_identity(handle, toStringz(name),
+                    locale, platform, nativeRanges.ptr, nativeRanges.length),
+                    "libmpq__update_replace_ranges_identity");
+    }
+
+    private static mpq_update_replace_range_s[] rangeVector(const(ReplaceRange)[] ranges) {
+        auto nativeRanges = new mpq_update_replace_range_s[ranges.length];
+        foreach (i, range; ranges) {
+            nativeRanges[i] = mpq_update_replace_range_s(range.offset, range.data.ptr, range.data.length);
+        }
+        return nativeRanges;
     }
 
     /** Stage a new member with native defaults; duplicate names fail. */

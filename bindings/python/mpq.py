@@ -284,6 +284,14 @@ _configure("libmpq__archive_close", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__update_begin", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p)
 _configure("libmpq__update_begin_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p,
            _BYTE_PTR, ctypes.c_size_t)
+class _ReplaceRange(ctypes.Structure):
+    _fields_ = [("offset", _OFF_T), ("data", _BYTE_PTR), ("size", ctypes.c_size_t)]
+
+
+_configure("libmpq__update_replace_ranges", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
+           ctypes.POINTER(_ReplaceRange), ctypes.c_size_t)
+_configure("libmpq__update_replace_ranges_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
+           ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(_ReplaceRange), ctypes.c_size_t)
 _configure("libmpq__update_replace_data", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _BYTE_PTR, _OFF_T, _VOID_PTR)
 _configure("libmpq__update_replace_data_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
            ctypes.c_uint16, ctypes.c_uint16, _BYTE_PTR, _OFF_T, _VOID_PTR)
@@ -535,6 +543,28 @@ class Update:
         self._stage_data(name, data, options,
                          lambda update, name, data, size, options:
                              _identity_call("libmpq__update_replace_data", selected, update, name, data, size, options))
+
+    def replace_ranges(self, name, ranges, *, locale=None, platform=None):
+        """Replace fixed-size plaintext ranges in order, with later ranges winning."""
+        self._ensure_open()
+        selected = _identity_selection(locale, platform)
+        entries = tuple(ranges)
+        native = (_ReplaceRange * len(entries))()
+        buffers = []
+        for index, (offset, data) in enumerate(entries):
+            offset = operator.index(offset)
+            if not -(1 << 63) <= offset < (1 << 63):
+                raise OverflowError("range offset must fit a signed 64-bit integer")
+            with memoryview(data) as view:
+                if view.nbytes:
+                    data = view if view.c_contiguous else view.tobytes()
+                    buffer = (ctypes.c_uint8 * view.nbytes).from_buffer_copy(data)
+                    buffers.append(buffer)
+                    native[index] = _ReplaceRange(offset, buffer, view.nbytes)
+                else:
+                    native[index] = _ReplaceRange(offset, None, 0)
+        _identity_call("libmpq__update_replace_ranges", selected, self._update,
+                       _as_bytes(name), native if entries else None, len(entries))
 
     def add_data(self, name, data, options=None):
         """Stage a new member; duplicate names fail without changing the transaction."""

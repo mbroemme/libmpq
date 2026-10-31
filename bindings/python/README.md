@@ -654,3 +654,17 @@ Close emits only MPQE transport. The private plaintext stage supplies read-back,
 so the sink can be write-only even for v4. Keep the sink available through close.
 The caller owns the storage and decides how to publish it. MPQE encoding does
 not independently authenticate the archive.
+
+### Fixed-size range replacement
+
+An update can replace several plaintext ranges in one staged operation.
+Offsets are zero-based and must fit inside the existing member. Later ranges
+win when they overlap, and commit publishes the result.
+
+```python
+update.replace_ranges("member.bin", [(100, b"ABC"), (101, b"xy")])
+update.replace_ranges("member.bin", [(4096, b"XYZ")], locale=1033, platform=0)
+```
+
+Supported lossless members retain encryption and storage policies; the native
+writer rebuilds the selected member. SINGLE requires full-unit buffering.

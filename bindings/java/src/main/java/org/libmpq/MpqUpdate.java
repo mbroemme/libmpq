@@ -67,6 +67,48 @@ public final class MpqUpdate implements AutoCloseable {
         }
     }
 
+    /** Immutable replacement bytes at a logical offset. */
+    public record ReplaceRange(long offset, byte[] data) {
+        public ReplaceRange {
+            data = data.clone();
+        }
+
+        @Override
+        public byte[] data() {
+            return data.clone();
+        }
+    }
+
+    /** Stage fixed-size replacements using ordinary filename lookup. */
+    public void replaceRanges(String name, List<ReplaceRange> ranges) throws LibmpqException {
+        replaceRanges(name, (short) 0, (short) 0, ranges, false);
+    }
+
+    /** Stage fixed-size replacements for one exact locale/platform identity. */
+    public void replaceRanges(String name, int locale, int platform, List<ReplaceRange> ranges)
+            throws LibmpqException {
+        replaceRanges(name, selector(locale), selector(platform), ranges, true);
+    }
+
+    private void replaceRanges(String name, short locale, short platform,
+                               List<ReplaceRange> ranges, boolean exact) throws LibmpqException {
+        checkOpen();
+        List<ReplaceRange> entries = List.copyOf(ranges);
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment nativeName = Support.text(arena, name);
+            MemorySegment nativeRanges = LibmpqNative.allocateReplaceRanges(arena, entries.size());
+            for (int i = 0; i < entries.size(); i++) {
+                ReplaceRange range = entries.get(i);
+                LibmpqNative.setReplaceRange(nativeRanges, i, range.offset(),
+                        Support.bytes(arena, range.data), range.data.length);
+            }
+            Support.check(exact
+                    ? LibmpqNative.updateReplaceRangesIdentity(handle, nativeName, locale, platform,
+                            nativeRanges, entries.size())
+                    : LibmpqNative.updateReplaceRanges(handle, nativeName, nativeRanges, entries.size()));
+        }
+    }
+
     /** Stage replacement from bytes; null options use native defaults. */
     public void replaceData(String name, byte[] data, FileOptions options) throws LibmpqException {
         checkOpen();

@@ -91,6 +91,8 @@ public final class LibmpqNative {
     private static final MethodHandle ARCHIVE_CLOSE;
     private static final MethodHandle UPDATE_BEGIN;
     private static final MethodHandle UPDATE_BEGIN_MPQE;
+    private static final MethodHandle UPDATE_REPLACE_RANGES;
+    private static final MethodHandle UPDATE_REPLACE_RANGES_IDENTITY;
     private static final MethodHandle UPDATE_REPLACE_DATA;
     private static final MethodHandle UPDATE_REPLACE_DATA_IDENTITY;
     private static final MethodHandle UPDATE_ADD_DATA;
@@ -261,6 +263,12 @@ public final class LibmpqNative {
         UPDATE_BEGIN_MPQE = function(linker, lookup, "libmpq__update_begin_mpqe",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                       ValueLayout.ADDRESS, C_SIZE_T));
+        UPDATE_REPLACE_RANGES = function(linker, lookup, "libmpq__update_replace_ranges",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                  ValueLayout.ADDRESS, C_SIZE_T));
+        UPDATE_REPLACE_RANGES_IDENTITY = function(linker, lookup, "libmpq__update_replace_ranges_identity",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                  C_SHORT, C_SHORT, ValueLayout.ADDRESS, C_SIZE_T));
         UPDATE_REPLACE_DATA = function(linker, lookup, "libmpq__update_replace_data",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                       ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS));
@@ -441,6 +449,47 @@ public final class LibmpqNative {
     }
 
     /** Converts a non-negative Java length without truncating native size_t. */
+    private static final ValueLayout.OfLong RANGE_OFFSET =
+            C_LONG.withByteAlignment(canonicalValueLayout("long long").byteAlignment());
+    private static final long RANGE_ALIGNMENT = Math.max(
+            RANGE_OFFSET.byteAlignment(),
+            Math.max(ValueLayout.ADDRESS.byteAlignment(), C_SIZE_T.byteAlignment()));
+    private static final long RANGE_DATA = align(C_LONG.byteSize(), ValueLayout.ADDRESS.byteAlignment());
+    private static final long RANGE_SIZE = align(RANGE_DATA + ValueLayout.ADDRESS.byteSize(),
+            C_SIZE_T.byteAlignment());
+    private static final long RANGE_STRIDE = align(RANGE_SIZE + C_SIZE_T.byteSize(), RANGE_ALIGNMENT);
+
+    private static long align(long size, long alignment) {
+        return (size + alignment - 1) & -alignment;
+    }
+
+    public static MemorySegment allocateReplaceRanges(Arena arena, int count) {
+        return count == 0 ? MemorySegment.NULL : arena.allocate(RANGE_STRIDE * count, RANGE_ALIGNMENT);
+    }
+
+    public static void setReplaceRange(MemorySegment ranges, int index, long offset,
+                                       MemorySegment data, int size) {
+        long base = RANGE_STRIDE * index;
+        ranges.set(RANGE_OFFSET, base, offset);
+        ranges.set(ValueLayout.ADDRESS, base + RANGE_DATA, data);
+        if (C_SIZE_T instanceof ValueLayout.OfInt narrow) {
+            ranges.set(narrow, base + RANGE_SIZE, size);
+        } else {
+            ranges.set((ValueLayout.OfLong) C_SIZE_T, base + RANGE_SIZE, (long) size);
+        }
+    }
+
+    public static int updateReplaceRanges(MemorySegment update, MemorySegment name,
+                                          MemorySegment ranges, int count) {
+        return callInt(UPDATE_REPLACE_RANGES, update, name, ranges, nativeSizeT(count));
+    }
+
+    public static int updateReplaceRangesIdentity(MemorySegment update, MemorySegment name,
+            short locale, short platform, MemorySegment ranges, int count) {
+        return callInt(UPDATE_REPLACE_RANGES_IDENTITY, update, name, locale, platform,
+                ranges, nativeSizeT(count));
+    }
+
     private static Object nativeSizeT(long value) {
         Class<?> carrier = C_SIZE_T.carrier();
 

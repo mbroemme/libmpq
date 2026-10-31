@@ -155,6 +155,12 @@ extern(C) struct mpq_archive_create_options_s {
 }
 
 /** Native layout passed to file-add and file-begin operations. */
+extern(C) struct mpq_update_replace_range_s {
+    off_t offset;
+    const(ubyte)* data;
+    size_t size;
+}
+
 extern(C) struct mpq_file_options_s {
     uint flags;
     uint compression_first;
@@ -363,6 +369,10 @@ extern(C) {
     int libmpq__update_begin(mpq_update_s** update, const(char)* path);
     int libmpq__update_begin_mpqe(mpq_update_s** update, const(char)* path,
                                   const(ubyte)* auth_code, size_t auth_code_size);
+    int libmpq__update_replace_ranges(mpq_update_s* update, const(char)* filename,
+        const(mpq_update_replace_range_s)* ranges, size_t rangeCount);
+    int libmpq__update_replace_ranges_identity(mpq_update_s* update, const(char)* filename,
+        ushort locale, ushort platform, const(mpq_update_replace_range_s)* ranges, size_t rangeCount);
     int libmpq__update_replace_data(mpq_update_s* update, const(char)* filename,
                                     const(ubyte)* data, off_t size,
                                     const(mpq_file_options_s)* options);
