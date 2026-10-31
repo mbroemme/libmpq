@@ -41,6 +41,58 @@
 #include <unistd.h>
 #endif
 
+/* Select an anchor path in the system temporary directory without creating it. */
+char *
+libmpq__file_temporary_anchor(void)
+{
+#ifdef _WIN32
+    DWORD capacity = GetTempPathW(0, NULL);
+    wchar_t *wide;
+    char *directory;
+    DWORD length;
+    int bytes;
+
+    if (capacity == 0)
+        return NULL;
+    wide = malloc((size_t)capacity * sizeof(*wide));
+    if (wide == NULL)
+        return NULL;
+    length = GetTempPathW(capacity, wide);
+    if (length == 0 || length >= capacity) {
+        free(wide);
+        return NULL;
+    }
+    bytes = WideCharToMultiByte(CP_UTF8, 0, wide, -1, NULL, 0, NULL, NULL);
+    directory = bytes > 0 ? malloc((size_t)bytes + sizeof("libmpq-temporary-anchor")) : NULL;
+    if (directory != NULL) {
+        if (WideCharToMultiByte(CP_UTF8, 0, wide, -1, directory, bytes, NULL, NULL) == 0) {
+            free(directory);
+            directory = NULL;
+        } else {
+            strcat(directory, "libmpq-temporary-anchor");
+        }
+    }
+    free(wide);
+    return directory;
+#else
+    const char *directory = getenv("TMPDIR");
+    size_t length;
+    char *anchor;
+
+    if (directory == NULL || directory[0] != '/')
+        directory = "/tmp";
+    length = strlen(directory);
+    if (length > SIZE_MAX - sizeof("/libmpq-temporary-anchor"))
+        return NULL;
+    anchor = malloc(length + sizeof("/libmpq-temporary-anchor"));
+    if (anchor != NULL) {
+        memcpy(anchor, directory, length);
+        memcpy(anchor + length, "/libmpq-temporary-anchor", sizeof("/libmpq-temporary-anchor"));
+    }
+    return anchor;
+#endif
+}
+
 /* Both backends require the same 32-character random suffix placeholder. */
 static int
 valid_template(const char *suffix)

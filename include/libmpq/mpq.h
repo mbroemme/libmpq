@@ -545,6 +545,23 @@ extern LIBMPQ_API int32_t libmpq__archive_create_mpqe(
 );
 
 /*
+ * Create a fresh MPQE-wrapped archive in caller-owned storage. Code is
+ * borrowed during creation and must contain at least 32 bytes. Plaintext
+ * stages in a private temporary file. Only consuming archive close emits
+ * transport bytes, then optionally flushes after successful finalization.
+ * Sink read-back is optional for all versions and is never used. The logical
+ * stage supplies read-back for RAW MD5 and permitted weak signatures.
+ * Strong signing remains unsupported by the MPQE writer.
+ * The sink contract is otherwise the same as libmpq__archive_create_io().
+ * MPQE transport provides encryption without independent authentication.
+ */
+extern LIBMPQ_API int32_t libmpq__archive_create_mpqe_io(
+    mpq_archive_s **archive, void *context, libmpq_read_at_fn read_at, libmpq_write_at_fn write_at,
+    libmpq_flush_fn flush, const uint8_t *code, size_t code_size,
+    const mpq_archive_create_options_s *options
+);
+
+/*
  * Set writable v4 raw-MD5 chunk size before any member begins, signing succeeds
  * or finalization starts. All uint32_t values are allowed; zero disables member
  * and HET/BET raw arrays. The default remains 0x4000. Repeated unlocked calls

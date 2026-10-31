@@ -1,0 +1,83 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__ARCHIVE_CREATE_MPQE_IO 3 2026-11-18 "The MoPaQ archive library"
+.SH NAME
+libmpq__archive_create_mpqe_io \- create MPQE transport in caller-owned storage
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__archive_create_mpqe_io("
+.BI "        mpq_archive_s **" "archive,"
+.BI "        void *" "context,"
+.BI "        libmpq_read_at_fn " "read_at,"
+.BI "        libmpq_write_at_fn " "write_at,"
+.BI "        libmpq_flush_fn " "flush,"
+.BI "        const uint8_t *" "code,"
+.BI "        size_t " "code_size,"
+.BI "        const mpq_archive_create_options_s *" "options"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Create a fresh MPQ v1 through v4 and write its MPQE transport into an initially
+empty caller-owned sink at logical offset zero. NULL options select the defaults
+of
+.BR libmpq__archive_create (3).
+The code must contain at least 32 bytes. The writer borrows the code during
+creation, derives a private working key and clears it during cleanup.
+.PP
+The logical MPQ is staged in an owner-only file in the system temporary
+directory. The stage supplies read-back for v4 RAW MD5 and permitted weak
+signatures. Strong signing remains unsupported for MPQE creation. Weak signing
+for v4 requires RAW chunks to be disabled. Oversized SINGLE members still
+require full-unit buffering.
+.PP
+The required write callback is called only during consuming archive close.
+It receives sequential ranges of encrypted transport. The read callback may be
+NULL for all versions and is never invoked. The optional flush runs once after
+successful writes and stage cleanup. The sink, context and callback pointers
+remain borrowed through close, including failed close. A NULL context is valid.
+Transfers must be exact, and callbacks must not re-enter the active writer.
+See
+.BR libmpq__archive_create_io (3)
+for offset, buffer lifetime and synchronization rules.
+.PP
+The library never closes, frees, truncates, deletes or publishes caller storage.
+Its own stage is closed before removal. A crash or cleanup failure can leave a
+private plaintext stage behind. A failed close can leave partial or complete
+transport in the sink. The caller controls disposal, publication and
+persistence. MPQE encryption does not independently authenticate an archive.
+.SH RETURN VALUE
+Zero on success. Creation clears a provided output pointer before validation.
+A missing output pointer or write callback returns
+.BR LIBMPQ_ERROR_EXIST .
+A missing or short code returns
+.BR LIBMPQ_ERROR_DECRYPT .
+Invalid options return
+.BR LIBMPQ_ERROR_FORMAT .
+Temporary storage and serialization failures return the corresponding libmpq
+error. Close consumes the handle and preserves the first failure.
+Negative callback errors propagate. A positive write status maps to
+.B LIBMPQ_ERROR_WRITE
+and a positive flush status maps to
+.BR LIBMPQ_ERROR_CLOSE .
+The writer stops issuing callbacks after a failure.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__archive_create_io (3),
+.BR libmpq__archive_create_mpqe (3),
+.BR libmpq__archive_open_mpqe_io (3),
+.BR libmpq__archive_close (3),
+.BR libmpq__archive_sign (3)

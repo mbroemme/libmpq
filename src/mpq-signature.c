@@ -441,7 +441,7 @@ libmpq__signature_configure(mpq_archive_s *a, uint32_t type, const uint8_t *key,
         if (a->write_mpqe || a->write_strong_signature ||
             libmpq__rsa_strong_key_validate(key, key_size) != 0)
             return LIBMPQ_ERROR_FORMAT;
-        if (a->write_io != NULL && a->write_io->read_at == NULL)
+        if (a->fp == NULL && a->write_io != NULL && a->write_io->read_at == NULL)
             return LIBMPQ_ERROR_EXIST;
         memcpy(a->write_strong_signature_key, key, LIBMPQ_RSA_STRONG_KEY_SIZE);
         a->write_strong_signature = 1;
@@ -463,7 +463,7 @@ libmpq__signature_configure(mpq_archive_s *a, uint32_t type, const uint8_t *key,
             a->mpq_hash[i].hash_b == h3)
             return LIBMPQ_ERROR_FORMAT;
     }
-    if (a->write_io != NULL && a->write_io->read_at == NULL)
+    if (a->fp == NULL && a->write_io != NULL && a->write_io->read_at == NULL)
         return LIBMPQ_ERROR_EXIST;
     result = libmpq__writer_file_add(a, LIBMPQ_SIGNATURE_NAME, zero, sizeof(zero), &options);
     if (result != 0)
@@ -593,7 +593,7 @@ libmpq__signature_finish(mpq_archive_s *a, uint64_t size)
 {
     mpq_source_s source = { 0 };
     int32_t result = 0;
-    mpq_archive_s *writer = a->write_io != NULL ? a : NULL;
+    mpq_archive_s *writer = a->fp == NULL && a->write_io != NULL ? a : NULL;
 
     if (a->write_signature || a->write_strong_signature)
         result = libmpq__writer_output_borrow_source(a, &source, size);

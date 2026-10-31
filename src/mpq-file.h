@@ -43,6 +43,7 @@ libmpq__off_t libmpq__file_tell(FILE *file);
 int32_t libmpq__file_handle_identity(FILE *file, uint64_t *device, uint64_t *inode);
 char *libmpq__string_duplicate(const char *text);
 char *libmpq__file_absolute_path(const char *path);
+char *libmpq__file_temporary_anchor(void);
 
 /* Retain the destination directory until publication and cleanup finish. */
 int32_t libmpq__directory_open(const char *path, mpq_directory_s **directory, char **name);

@@ -291,6 +291,19 @@ libmpq__archive_create_io(
     return libmpq__writer_archive_create_io(archive, context, read_at, write_at, flush, options);
 }
 
+/* Transform the private MPQ stage into borrowed output during close. */
+int32_t
+libmpq__archive_create_mpqe_io(
+    mpq_archive_s **archive, void *context, libmpq_read_at_fn read_at, libmpq_write_at_fn write_at,
+    libmpq_flush_fn flush, const uint8_t *code, size_t code_size,
+    const mpq_archive_create_options_s *options
+)
+{
+    return libmpq__writer_archive_create_mpqe_io(
+        archive, context, read_at, write_at, flush, code, code_size, options
+    );
+}
+
 /* Create an MPQE-wrapped archive through the normal writer and private final transform. */
 int32_t
 libmpq__archive_create_mpqe(

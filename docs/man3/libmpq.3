@@ -101,6 +101,17 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        const mpq_archive_create_options_s *" "options"
 .BI ");"
 .sp
+.BI "int32_t libmpq__archive_create_mpqe_io("
+.BI "        mpq_archive_s **" "archive,"
+.BI "        void *" "context,"
+.BI "        libmpq_read_at_fn " "read_at,"
+.BI "        libmpq_write_at_fn " "write_at,"
+.BI "        libmpq_flush_fn " "flush,"
+.BI "        const uint8_t *" "code,"
+.BI "        size_t " "code_size,"
+.BI "        const mpq_archive_create_options_s *" "options"
+.BI ");"
+.sp
 .BI "int32_t libmpq__archive_raw_chunk_size_get("
 .BI "        mpq_archive_s *" "archive,"
 .BI "        uint32_t *" "raw_chunk_size"
@@ -590,6 +601,9 @@ Patch-file members instead expose their decoded, unapplied PTCH bodies through
 .SS "Archive Creation and Writers"
 Create MPQ v1/v2/v3/v4 archives with \fBlibmpq__archive_create\fP(3).
 Use \fBlibmpq__archive_create_io\fP(3) for a fresh caller-owned sink.
+Use \fBlibmpq__archive_create_mpqe_io\fP(3) to send MPQE transport to an
+initially empty caller-owned sink at archive close. A private plaintext MPQ
+stage handles all read-back for integrity and signing.
 Add complete buffers or paths with the archive-add calls, or use the
 writer begin/write/finish lifecycle for streamed members. Writer finish
 consumes the member writer; archive close finalizes and consumes the
@@ -694,6 +708,7 @@ symbol or function signature.
 .BR libmpq__archive_create (3),
 .BR libmpq__archive_create_io (3),
 .BR libmpq__archive_create_mpqe (3),
+.BR libmpq__archive_create_mpqe_io (3),
 .BR libmpq__archive_raw_chunk_size_set (3),
 .BR libmpq__archive_add_data (3),
 .BR libmpq__archive_add_path (3),

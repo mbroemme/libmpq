@@ -45,10 +45,6 @@
 #include <string.h>
 #include <zlib.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
 #define LIBMPQ_PATCH_HEADER_SIZE 68u
 #define LIBMPQ_PATCH_BSDIFF_HEADER_SIZE 32u
 #define LIBMPQ_PATCH_COPY_SIZE 65536u
@@ -364,58 +360,6 @@ patch_temporary_path(const char *absolute, const char *temporary)
     memcpy(path, absolute, directory_size);
     memcpy(path + directory_size, temporary, name_size + 1);
     return path;
-}
-
-/* Select a process temporary directory, separate from the read-only base. */
-static char *
-patch_temporary_anchor(void)
-{
-#ifdef _WIN32
-    DWORD capacity = GetTempPathW(0, NULL);
-    wchar_t *wide;
-    char *directory;
-    DWORD length;
-    int bytes;
-
-    if (capacity == 0)
-        return NULL;
-    wide = malloc((size_t)capacity * sizeof(*wide));
-    if (wide == NULL)
-        return NULL;
-    length = GetTempPathW(capacity, wide);
-    if (length == 0 || length >= capacity) {
-        free(wide);
-        return NULL;
-    }
-    bytes = WideCharToMultiByte(CP_UTF8, 0, wide, -1, NULL, 0, NULL, NULL);
-    directory = bytes > 0 ? malloc((size_t)bytes + sizeof("libmpq-patch-view-anchor")) : NULL;
-    if (directory != NULL) {
-        if (WideCharToMultiByte(CP_UTF8, 0, wide, -1, directory, bytes, NULL, NULL) == 0) {
-            free(directory);
-            directory = NULL;
-        } else {
-            strcat(directory, "libmpq-patch-view-anchor");
-        }
-    }
-    free(wide);
-    return directory;
-#else
-    const char *directory = getenv("TMPDIR");
-    size_t length;
-    char *anchor;
-
-    if (directory == NULL || directory[0] != '/')
-        directory = "/tmp";
-    length = strlen(directory);
-    if (length > SIZE_MAX - sizeof("/libmpq-patch-view-anchor"))
-        return NULL;
-    anchor = malloc(length + sizeof("/libmpq-patch-view-anchor"));
-    if (anchor != NULL) {
-        memcpy(anchor, directory, length);
-        memcpy(anchor + length, "/libmpq-patch-view-anchor", sizeof("/libmpq-patch-view-anchor"));
-    }
-    return anchor;
-#endif
 }
 
 /* Copy a bounded physical container range without interpreting its contents. */
@@ -2609,7 +2553,7 @@ patch_view_compose(
             goto error;
         }
     }
-    absolute = patch_temporary_anchor();
+    absolute = libmpq__file_temporary_anchor();
     if (absolute == NULL) {
         status = LIBMPQ_ERROR_MALLOC;
         goto error;

@@ -30,6 +30,7 @@
 #include <stdio.h>
 
 #define LIBMPQ_WRITER_V4_RAW_CHUNK_SIZE 0x4000u
+#define LIBMPQ_WRITER_MPQE_BATCH_SIZE (256u * LIBMPQ_MPQE_CHUNK_SIZE)
 
 /* Configure writable v4 output only before its raw policy becomes fixed. */
 int32_t libmpq__writer_set_raw_chunk_size(mpq_archive_s *archive, uint32_t raw_chunk_size);
@@ -145,6 +146,11 @@ int32_t libmpq__writer_archive_create_v4(
     uint32_t raw_chunk_size
 );
 
+int32_t libmpq__writer_archive_create_mpqe_io(
+    mpq_archive_s **out, void *context, libmpq_read_at_fn read_at, libmpq_write_at_fn write_at,
+    libmpq_flush_fn flush, const uint8_t *code, size_t code_size,
+    const mpq_archive_create_options_s *options
+);
 int32_t libmpq__writer_archive_create_mpqe(
     mpq_archive_s **out, const char *path, const uint8_t *auth_code, size_t auth_code_size,
     const mpq_archive_create_options_s *options

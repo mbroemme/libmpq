@@ -1302,3 +1302,12 @@ consuming close. A terminal error prevents further output callbacks.
 The library leaves disposal, persistence and publication to the caller.
 Sectorized writes retain existing bounded input buffers. Oversized SINGLE
 still buffers the complete input unit and any codec workspace.
+
+`libmpq__archive_create_mpqe_io()` uses an owner-only plaintext stage in the
+system temporary directory. The existing MPQE transform streams its encrypted
+bytes to the caller's sink during consuming close in batches of up to 16 KiB.
+The transform still uses 64-byte cipher blocks and writes only the actual
+transport bytes. RAW MD5 and permitted signing read from the private stage. The final
+sink needs only positioned writes and can optionally flush after successful
+stage cleanup. This output has the same non-atomic publication contract as
+`libmpq__archive_create_io()`.
