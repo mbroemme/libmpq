@@ -289,6 +289,22 @@ int32_t libmpq__update_timestamp_identity(
 .BI "        const char *" "filename, const char *" "source_path,"
 .BI "        const mpq_file_options_s *" "options);"
 .sp
+.BI "int32_t libmpq__update_replace_ranges("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename,"
+.BI "        const mpq_update_replace_range_s *" "ranges,"
+.BI "        size_t " "range_count"
+.BI ");"
+.sp
+.BI "int32_t libmpq__update_replace_ranges_identity("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename,"
+.BI "        uint16_t " "locale,"
+.BI "        uint16_t " "platform,"
+.BI "        const mpq_update_replace_range_s *" "ranges,"
+.BI "        size_t " "range_count"
+.BI ");"
+.sp
 .BI "int32_t libmpq__update_replace_path("
 .BI "        mpq_update_s *" "update,"
 .BI "        const char *" "filename,"
@@ -744,6 +760,8 @@ symbol or function signature.
 .BR libmpq__update_replace_data_identity (3),
 .BR libmpq__update_add_data (3),
 .BR libmpq__update_add_path (3),
+.BR libmpq__update_replace_ranges (3),
+.BR libmpq__update_replace_ranges_identity (3),
 .BR libmpq__update_replace_path (3),
 .BR libmpq__update_replace_path_identity (3)
 .SS "Patch Archives"

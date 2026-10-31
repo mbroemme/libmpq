@@ -331,6 +331,14 @@ typedef struct
     uint32_t attributes;  /* LIBMPQ_ATTRIBUTE_* arrays; zero disables attributes generation. */
 } mpq_archive_create_options_s;
 
+/* One borrowed plaintext replacement range. Offsets are relative to the member. */
+typedef struct mpq_update_replace_range
+{
+    libmpq__off_t offset;
+    const uint8_t *data;
+    size_t size;
+} mpq_update_replace_range_s;
+
 /*
  * Options controlling how one archive member is stored by writer, add,
  * replacement, and patch-creation operations. Compression masks select the
@@ -1124,6 +1132,24 @@ extern LIBMPQ_API int32_t libmpq__update_replace_path(
 extern LIBMPQ_API int32_t libmpq__update_replace_path_identity(
     mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform,
     const char *source_path, const mpq_file_options_s *options
+);
+
+/*
+ * Stage fixed-size logical replacements using ordinary replacement lookup.
+ * Ranges and data are borrowed through this synchronous call. Later ranges
+ * win on overlap. Empty operations validate selection and bounds, then leave
+ * the stage untouched. Only commit publishes changes. SINGLE may require
+ * a full logical unit in memory. Unsupported and lossy storage is rejected.
+ */
+extern LIBMPQ_API int32_t libmpq__update_replace_ranges(
+    mpq_update_s *update, const char *filename, const mpq_update_replace_range_s *ranges,
+    size_t range_count
+);
+
+/* The exact form selects only the given locale/platform tuple. */
+extern LIBMPQ_API int32_t libmpq__update_replace_ranges_identity(
+    mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform,
+    const mpq_update_replace_range_s *ranges, size_t range_count
 );
 
 /* Stage removal of one named member without consuming the update handle. */

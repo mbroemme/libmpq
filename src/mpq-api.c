@@ -411,6 +411,30 @@ libmpq__update_replace_path_identity(
     );
 }
 
+/* Use the same first-hit lookup as ordinary replacement. */
+int32_t
+libmpq__update_replace_ranges(
+    mpq_update_s *update, const char *filename, const mpq_update_replace_range_s *ranges,
+    size_t range_count
+)
+{
+    return libmpq__update_transaction_replace_ranges(
+        update, filename, 0, 0, 0, ranges, range_count
+    );
+}
+
+/* Select an exact locale/platform tuple before applying the same range engine. */
+int32_t
+libmpq__update_replace_ranges_identity(
+    mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform,
+    const mpq_update_replace_range_s *ranges, size_t range_count
+)
+{
+    return libmpq__update_transaction_replace_ranges(
+        update, filename, 1, locale, platform, ranges, range_count
+    );
+}
+
 int32_t
 libmpq__update_remove(mpq_update_s *update, const char *filename)
 {

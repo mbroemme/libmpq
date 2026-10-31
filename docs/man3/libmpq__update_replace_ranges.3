@@ -1,0 +1,80 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__UPDATE_REPLACE_RANGES 3 2026-11-18 "The MoPaQ archive library"
+.SH NAME
+libmpq__update_replace_ranges \- replace fixed-size ranges in a named staged MPQ member
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.B typedef struct mpq_update_replace_range {
+.B "    libmpq__off_t offset;"
+.B "    const uint8_t *data;"
+.B "    size_t size;"
+.B } mpq_update_replace_range_s;
+.sp
+.BI "int32_t libmpq__update_replace_ranges("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename,"
+.BI "        const mpq_update_replace_range_s *" "ranges,"
+.BI "        size_t " "range_count"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Selects a member using the same first-hit lookup as
+libmpq__update_replace_data(3). Use libmpq__update_replace_ranges_identity(3)
+for a particular locale/platform tuple or an eligible shared classic row.
+.PP
+Each descriptor holds a zero-based logical offset, a data pointer and a
+byte count. Offsets refer to the member at the start of this call. Ranges
+can overlap or arrive in any order. Later entries override earlier ones.
+The logical length remains fixed. NULL data is valid for a zero-length
+range. NULL ranges is valid with a zero count. The array and payload bytes
+are borrowed until the call returns.
+.PP
+An empty batch and a batch of valid zero-length ranges preserve the current
+stage and signatures. A nonempty batch preserves untouched plaintext,
+encryption, KEY, supported storage and checksum policies, and FILETIME.
+Lossless tagged compression can use a different method. File integrity
+metadata is regenerated under the archive's current policy. Existing
+signatures are invalidated under the ordinary update rules.
+.PP
+Sectorized data is read and re-encoded in bounded payload buffers, with
+separate sector metadata and range-plan allocations. SINGLE uses full-unit
+buffers. Existing candidate reconstruction can copy unrelated packed members.
+.PP
+Lossy ADPCM sectors, physical patch and delete members, managed internal
+members, and ambiguous or unsupported layouts are rejected. Embedded and MPQE
+updates retain their existing eligibility and publication rules. High-offset
+MPQ v2 extents beyond the transaction implementation's 32-bit limit are
+rejected for nonempty range replacements.
+.PP
+Commit alone publishes the candidate. A failure before adoption preserves the
+previous stage. Qualifying failures during adoption leave the update
+abort-only. See libmpq__update_commit(3) and libmpq__update_abort(3).
+.SH RETURN VALUE
+Returns \fB0\fP on success or a negative libmpq error.
+.SH ERRORS
+LIBMPQ_ERROR_EXIST indicates a missing argument or live identity.
+LIBMPQ_ERROR_SEEK indicates a negative range offset.
+LIBMPQ_ERROR_SIZE indicates a range outside the member, unrepresentable
+capacity, or an unsupported size or extent.
+LIBMPQ_ERROR_FORMAT indicates an unsupported representation or ambiguous
+identity. LIBMPQ_ERROR_READ also covers checksum or validation mismatches.
+Allocation, decryption, codec and I/O errors are reported by the transaction.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__update_commit (3),
+.BR libmpq__update_replace_ranges_identity (3)

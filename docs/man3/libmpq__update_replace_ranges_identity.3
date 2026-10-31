@@ -1,0 +1,52 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__UPDATE_REPLACE_RANGES_IDENTITY 3 2026-11-18 "The MoPaQ archive library"
+.SH NAME
+libmpq__update_replace_ranges_identity \- replace fixed-size ranges in one exact staged MPQ identity
+.SH SYNOPSIS
+.nf
+.B #include <libmpq/mpq.h>
+.sp
+.BI "int32_t libmpq__update_replace_ranges_identity("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename,"
+.BI "        uint16_t " "locale,"
+.BI "        uint16_t " "platform,"
+.BI "        const mpq_update_replace_range_s *" "ranges,"
+.BI "        size_t " "range_count"
+.BI ");"
+.fi
+.SH DESCRIPTION
+Selects the exact \fIfilename\fP, \fIlocale\fP and \fIplatform\fP tuple.
+The neutral tuple (0, 0) is exact. Other identities sharing safely detachable
+classic storage retain their original content. Unsupported or ambiguous
+extended identity provenance returns LIBMPQ_ERROR_FORMAT.
+.PP
+Range validation, lossless storage, ownership, resource use and transaction
+rules are the same as for libmpq__update_replace_ranges(3).
+.SH RETURN VALUE
+Returns \fB0\fP on success or a negative libmpq error.
+.SH ERRORS
+LIBMPQ_ERROR_EXIST indicates a missing argument or live identity.
+LIBMPQ_ERROR_SEEK indicates a negative range offset.
+LIBMPQ_ERROR_SIZE indicates a range outside the member, unrepresentable
+capacity, or an unsupported size or extent.
+LIBMPQ_ERROR_FORMAT indicates an unsupported representation or ambiguous
+identity. LIBMPQ_ERROR_READ also covers checksum or validation mismatches.
+Allocation, decryption, codec and I/O errors are reported by the transaction.
+.SH SEE ALSO
+.BR libmpq (3),
+.BR libmpq__update_commit (3),
+.BR libmpq__update_replace_ranges (3)
