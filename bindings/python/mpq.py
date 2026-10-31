@@ -265,6 +265,8 @@ _configure("libmpq__archive_open_mpqe_io", ctypes.c_int32, ctypes.POINTER(_VOID_
 _configure("libmpq__archive_create", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _VOID_PTR)
 _configure("libmpq__archive_create_io", ctypes.c_int32, ctypes.POINTER(_VOID_PTR),
            _VOID_PTR, _READ_AT_FN, _WRITE_AT_FN, _FLUSH_FN, _VOID_PTR)
+_configure("libmpq__archive_create_mpqe_io", ctypes.c_int32, ctypes.POINTER(_VOID_PTR),
+           _VOID_PTR, _READ_AT_FN, _WRITE_AT_FN, _FLUSH_FN, _BYTE_PTR, ctypes.c_size_t, _VOID_PTR)
 _configure("libmpq__archive_create_mpqe", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, _BYTE_PTR, ctypes.c_size_t, _VOID_PTR)
 _configure("libmpq__writer_begin", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, _OFF_T, _VOID_PTR, ctypes.POINTER(_VOID_PTR))
 _configure("libmpq__writer_write", ctypes.c_int32, _VOID_PTR, _BYTE_PTR, _OFF_T)
@@ -987,15 +989,33 @@ class Writer:
                   flags=0, attributes=0):
         """Create in an empty borrowed sink with positioned writes and optional reads/flush."""
         options = ArchiveCreateOptions(version, max_files, sector_size, flags, attributes)
+        return cls._create_sink(sink, options)
+
+    @classmethod
+    def create_mpqe_io(cls, sink, auth_code, version=ARCHIVE_VERSION_ONE, max_files=0,
+                       sector_size=0, flags=0, attributes=0):
+        """Emit an MPQE transport to a borrowed sink at close. Read-back is unnecessary."""
+        options = ArchiveCreateOptions(version, max_files, sector_size, flags, attributes)
+        return cls._create_sink(sink, options, _auth_code_bytes(auth_code))
+
+    @classmethod
+    def _create_sink(cls, sink, options, code=None):
         writer = cls.__new__(cls)
         writer._mpq, writer._opened = _VOID_PTR(), False
         writer.filename = None
         state = _SinkState(sink)
         try:
-            libmpq.libmpq__archive_create_io(
-                ctypes.byref(writer._mpq), None, state.read, state.write, state.flush,
-                ctypes.byref(options),
-            )
+            if code is None:
+                libmpq.libmpq__archive_create_io(
+                    ctypes.byref(writer._mpq), None, state.read, state.write, state.flush,
+                    ctypes.byref(options),
+                )
+            else:
+                pointer = (ctypes.c_uint8 * len(code)).from_buffer_copy(code) if code else None
+                libmpq.libmpq__archive_create_mpqe_io(
+                    ctypes.byref(writer._mpq), None, state.read, state.write, state.flush,
+                    pointer, len(code), ctypes.byref(options),
+                )
         except BaseException:
             state.release()
             raise

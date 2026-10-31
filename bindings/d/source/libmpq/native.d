@@ -310,6 +310,10 @@ extern(C) {
                                   libmpq_read_at_fn read_at, libmpq_write_at_fn write_at,
                                   libmpq_flush_fn flush,
                                   const(mpq_archive_create_options_s)* options);
+    int libmpq__archive_create_mpqe_io(mpq_archive_s** archive, void* context,
+                                       libmpq_read_at_fn readAt, libmpq_write_at_fn writeAt,
+                                       libmpq_flush_fn flush, const(ubyte)* code, size_t codeSize,
+                                       const(mpq_archive_create_options_s)* options);
     int libmpq__archive_create_mpqe(mpq_archive_s** archive, const(char)* path,
                                     const(ubyte)* auth_code,
                                     size_t auth_code_size,

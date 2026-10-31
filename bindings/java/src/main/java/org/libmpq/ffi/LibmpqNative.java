@@ -79,6 +79,7 @@ public final class LibmpqNative {
     private static final MethodHandle ARCHIVE_OPEN_MPQE_IO;
     private static final MethodHandle ARCHIVE_CREATE;
     private static final MethodHandle ARCHIVE_CREATE_IO;
+    private static final MethodHandle ARCHIVE_CREATE_MPQE_IO;
     private static final MethodHandle ARCHIVE_CREATE_MPQE;
     private static final MethodHandle WRITER_BEGIN;
     private static final MethodHandle WRITER_WRITE;
@@ -214,6 +215,14 @@ public final class LibmpqNative {
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                   ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                                   ValueLayout.ADDRESS));
+        ARCHIVE_CREATE_MPQE_IO = function(
+            linker, lookup, "libmpq__archive_create_mpqe_io",
+            FunctionDescriptor.of(
+                C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, C_SIZE_T,
+                ValueLayout.ADDRESS
+            )
+        );
         ARCHIVE_CREATE = function(linker, lookup, "libmpq__archive_create",
                                   FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                         ValueLayout.ADDRESS, ValueLayout.ADDRESS));
@@ -563,6 +572,18 @@ public final class LibmpqNative {
     public static int archiveCreateIo(MemorySegment out, MemorySegment context, MemorySegment readAt,
                                       MemorySegment writeAt, MemorySegment flush, MemorySegment options) {
         return callInt(ARCHIVE_CREATE_IO, out, context, readAt, writeAt, flush, options);
+    }
+
+    /** Creates a staged MPQE archive that emits transport bytes to callbacks at close. */
+    public static int archiveCreateMpqeIo(
+        MemorySegment out, MemorySegment context, MemorySegment readAt, MemorySegment writeAt,
+        MemorySegment flush, MemorySegment code, long codeSize, MemorySegment options
+    )
+    {
+        return callInt(
+            ARCHIVE_CREATE_MPQE_IO, out, context, readAt, writeAt, flush, code,
+            nativeSizeT(codeSize), options
+        );
     }
 
     /** Calls {@code libmpq__archive_create} with a native options struct. */

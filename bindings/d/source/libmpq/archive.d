@@ -290,6 +290,19 @@ class Archive {
     static Archive createSink(MpqWriteAt writeAt,
                                ArchiveCreateOptions options = ArchiveCreateOptions.v1(),
                                MpqReadAt readAt = null, MpqFlushSink flush = null) {
+        return createSinkInternal(writeAt, options, readAt, flush, null, false);
+    }
+
+    /** Create MPQE transport output at close over a borrowed write-only sink. */
+    static Archive createMpqeSink(MpqWriteAt writeAt, const(ubyte)[] authCode,
+                                   ArchiveCreateOptions options = ArchiveCreateOptions.v1(),
+                                   MpqFlushSink flush = null) {
+        return createSinkInternal(writeAt, options, null, flush, authCode, true);
+    }
+
+    private static Archive createSinkInternal(MpqWriteAt writeAt, ArchiveCreateOptions options,
+                                              MpqReadAt readAt, MpqFlushSink flush,
+                                              const(ubyte)[] authCode, bool wrapped) {
         if (writeAt is null)
             throw new MPQException("Archive.createSink", ERROR_EXIST);
         auto state = new SinkState(writeAt, readAt, flush);
@@ -297,10 +310,17 @@ class Archive {
         scope(failure) GC.removeRoot(cast(void*) state);
         auto nativeOptions = options.nativeOptions();
         auto archive = new Archive(cast(mpq_archive_s*) null);
-        checkStatus(libmpq__archive_create_io(&archive.handle, cast(void*) state,
-                    readAt is null ? null : &sinkReadAt, &sinkWriteAt,
-                    flush is null ? null : &sinkFlush, &nativeOptions),
-                    "libmpq__archive_create_io");
+        if (wrapped) {
+            checkStatus(libmpq__archive_create_mpqe_io(&archive.handle, cast(void*) state,
+                        null, &sinkWriteAt, flush is null ? null : &sinkFlush,
+                        authCode.ptr, authCode.length, &nativeOptions),
+                        "libmpq__archive_create_mpqe_io");
+        } else {
+            checkStatus(libmpq__archive_create_io(&archive.handle, cast(void*) state,
+                        readAt is null ? null : &sinkReadAt, &sinkWriteAt,
+                        flush is null ? null : &sinkFlush, &nativeOptions),
+                        "libmpq__archive_create_io");
+        }
         archive.sinkState = state;
         return archive;
     }

@@ -326,6 +326,21 @@ public final class Archive implements AutoCloseable {
      */
     public static Archive createSink(SeekableByteChannel sink, boolean readBack, ArchiveCreateOptions options)
         throws LibmpqException {
+        return createSink(sink, readBack, options, null);
+    }
+
+    /** Creates an MPQE transport at close. The borrowed channel needs only write access. */
+    public static Archive
+    createMpqeSink(SeekableByteChannel sink, byte[] authCode, ArchiveCreateOptions options)
+        throws LibmpqException
+    {
+        return createSink(sink, false, options, Objects.requireNonNull(authCode, "authCode"));
+    }
+
+    private static Archive createSink(
+        SeekableByteChannel sink, boolean readBack, ArchiveCreateOptions options, byte[] authCode
+    ) throws LibmpqException
+    {
         if (options == null) {
             options = ArchiveCreateOptions.defaults();
         }
@@ -339,8 +354,17 @@ public final class Archive implements AutoCloseable {
                                             Support.uint32(options.maxFiles(), "maxFiles"),
                                             Support.uint32(options.sectorSize(), "sectorSize"),
                                             options.flags(), options.attributes());
-            Support.check(LibmpqNative.archiveCreateIo(output, MemorySegment.NULL, state.read,
-                                                        state.write, MemorySegment.NULL, nativeOptions));
+            if (authCode == null) {
+                Support.check(LibmpqNative.archiveCreateIo(
+                    output, MemorySegment.NULL, state.read, state.write, MemorySegment.NULL,
+                    nativeOptions
+                ));
+            } else {
+                Support.check(LibmpqNative.archiveCreateMpqeIo(
+                    output, MemorySegment.NULL, MemorySegment.NULL, state.write, MemorySegment.NULL,
+                    Support.bytes(arena, authCode), authCode.length, nativeOptions
+                ));
+            }
             archive.handle = LibmpqNative.getAddress(output);
             archive.sinkState = state;
             success = true;

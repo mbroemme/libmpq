@@ -2020,3 +2020,68 @@ def test_create_io_writer_lifetime():
         archive.close()
     assert caught.value.code == mpq.ERROR_CLOSE
     archive.close()
+
+
+def test_create_mpqe_io_writer_lifetime():
+    code = bytearray(b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001")
+    expected_code = bytes(code)
+    batch = 16 * 1024
+    payload = b"MPQE positioned output" * 4000
+
+    class Sink:
+        def __init__(self, fault=None):
+            self.data = io.BytesIO()
+            self.writes = self.flushes = 0
+            self.fault = fault
+            self.transfers = []
+
+        def write_at(self, offset, data):
+            self.writes += 1
+            self.transfers.append((offset, len(data)))
+            self.data.seek(offset)
+            if self.fault == "write" and self.writes == 2:
+                return self.data.write(data[:1])
+            return self.data.write(data)
+
+        def flush(self):
+            self.flushes += 1
+            if self.fault == "flush":
+                raise OSError("controlled flush failure")
+
+    sink = Sink()
+    with pytest.raises(mpq.LibmpqError) as caught:
+        mpq.Writer.create_mpqe_io(sink, expected_code[:-1])
+    assert caught.value.code == mpq.ERROR_DECRYPT
+    assert sink.writes == sink.flushes == 0
+
+    with mpq.Writer.create_mpqe_io(sink, code, version=mpq.ARCHIVE_VERSION_FOUR) as archive:
+        code[:] = b"x" * len(code)
+        with archive.begin("hello", len(payload)) as writer:
+            writer.write(payload[:4321])
+            writer.write(payload[4321:])
+        assert sink.writes == sink.flushes == 0
+    assert sink.flushes == 1
+    wire = sink.data.getvalue()
+    assert sink.writes == (len(wire) + batch - 1) // batch
+    assert sink.transfers == [
+        (at, min(batch, len(wire) - at)) for at in range(0, len(wire), batch)
+    ]
+    assert not wire.startswith(b"MPQ\x1a")
+    with mpq.Archive.open_mpqe_io(io.BytesIO(wire), len(wire), expected_code) as archive:
+        with archive.open_stream("hello") as reader:
+            assert reader.read() == payload
+
+    for fault, error, flushes in (("write", mpq.ERROR_WRITE, 0), ("flush", mpq.ERROR_CLOSE, 1)):
+        sink = Sink(fault)
+        archive = mpq.Writer.create_mpqe_io(sink, expected_code)
+        if fault == "write":
+            archive.add("large", payload)
+        with pytest.raises(mpq.LibmpqError) as caught:
+            archive.close()
+        assert caught.value.code == error
+        writes = sink.writes
+        archive.close()
+        assert sink.writes == writes and sink.flushes == flushes
+        if fault == "write":
+            assert writes == 2 and len(sink.data.getvalue()) == batch + 1
+            assert sink.transfers == [(0, batch), (batch, batch)]

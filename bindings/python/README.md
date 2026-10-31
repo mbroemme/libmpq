@@ -639,3 +639,18 @@ or use `with`. The caller retains and closes the sink. Callback exceptions
 become libmpq I/O errors. Failed output may be partial. The writer provides
 no atomic publication or durability guarantee. An oversized SINGLE still
 buffers the complete input unit.
+
+### Writing MPQE to a caller-owned sink
+
+Use `Writer.create_mpqe_io(sink, auth_code, ...)` with the same writer options.
+For example, with a sink implementing `write_at` and optionally `flush`:
+
+```python
+with Writer.create_mpqe_io(sink, auth_code, version=ARCHIVE_VERSION_FOUR) as archive:
+    archive.add("payload.bin", payload)
+```
+
+Close emits only MPQE transport. The private plaintext stage supplies read-back,
+so the sink can be write-only even for v4. Keep the sink available through close.
+The caller owns the storage and decides how to publish it. MPQE encoding does
+not independently authenticate the archive.

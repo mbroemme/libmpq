@@ -718,3 +718,16 @@ receive failures and release rooted delegate state. The caller retains
 ownership, and chooses persistence and publication. Failed operations can
 leave partial output. Oversized SINGLE still buffers the complete input
 unit.
+
+### Writing MPQE to a sink
+
+```d
+auto writer = Archive.createMpqeSink(writeAt, authCode, options, flush);
+writer.add("payload.bin", payload);
+writer.close();
+```
+
+The optional flush delegate runs after successful transport output. A private
+plaintext stage supplies read-back, including v4 verification data. Keep the
+caller-owned sink available through explicit close and release it separately.
+MPQE encoding does not independently authenticate the archive.

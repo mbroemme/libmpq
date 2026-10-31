@@ -66,6 +66,53 @@ class LibmpqTest {
         }
     }
 
+    @Test void createMpqeSinkOwnership(@TempDir Path directory) throws Exception
+    {
+        Path path = directory.resolve("sink.mpqe");
+        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
+        byte[] payload = "wrapped output".repeat(6400).getBytes(StandardCharsets.US_ASCII);
+        try (
+            var channel = new FailingChannel(Files.newByteChannel(
+                path, java.nio.file.StandardOpenOption.CREATE_NEW,
+                java.nio.file.StandardOpenOption.WRITE
+            ))
+        ) {
+            assertThrows(
+                LibmpqException.class,
+                () -> Archive.createMpqeSink(channel, Arrays.copyOf(code, 31), null)
+            );
+            assertEquals(0, channel.size());
+            try (
+                Archive writer = Archive.createMpqeSink(
+                    channel, code,
+                    new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_FOUR, 32, 4096, 0, 0)
+                )
+            ) {
+                try (
+                    MpqFileWriter member = writer.begin("output", payload.length, FileOptions.raw())
+                ) {
+                    member.write(payload);
+                }
+                assertEquals(0, channel.size());
+            }
+            assertTrue(channel.isOpen());
+            assertTrue(channel.size() > 0);
+            assertEquals(16 * 1024, channel.largestWrite);
+            assertTrue(channel.writeCalls < channel.size() / 1024);
+        }
+        try (SeekableByteChannel channel = Files.newByteChannel(path);
+             Archive reader = Archive.openMpqeSource(channel, code, null, 0)) {
+            assertArrayEquals(payload, reader.readFile(reader.fileNumber("output")));
+        }
+
+        try (SeekableByteChannel channel = Files.newByteChannel(path)) {
+            Archive writer = Archive.createMpqeSink(channel, code, null);
+            assertThrows(LibmpqException.class, writer::close);
+            assertTrue(channel.isOpen());
+            writer.close();
+        }
+    }
+
     @Test
     void oversizedSingleWriter(@TempDir Path directory) throws Exception {
         byte[] payload = new byte[9001];
@@ -1414,17 +1461,23 @@ class LibmpqTest {
         }
     }
 
-    /** Channel wrapper that proves Java read failures do not escape the FFM upcall. */
+    /** Injects read failures and records the requests through the FFM adapter. */
     private static final class FailingChannel implements SeekableByteChannel {
         private final SeekableByteChannel delegate;
         private boolean fail = true;
+        private int writeCalls;
+        private int largestWrite;
 
         FailingChannel(SeekableByteChannel delegate) { this.delegate = delegate; }
         @Override public int read(ByteBuffer target) throws IOException {
             if (fail) throw new IOException("failure");
             return delegate.read(target);
         }
-        @Override public int write(ByteBuffer source) throws IOException { return delegate.write(source); }
+        @Override public int write(ByteBuffer source) throws IOException {
+            writeCalls++;
+            largestWrite = Math.max(largestWrite, source.remaining());
+            return delegate.write(source);
+        }
         @Override public long position() throws IOException { return delegate.position(); }
         @Override public SeekableByteChannel position(long value) throws IOException {
             delegate.position(value);

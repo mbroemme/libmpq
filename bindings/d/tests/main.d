@@ -1618,8 +1618,40 @@ private void testCreateSink() {
     assert(failed);
 }
 
+private void testCreateMpqeSink() {
+    const code = cast(const(ubyte)[]) "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+    const ubyte[] payload = [3, 8, 4, 7];
+    ubyte[] output;
+    uint writes;
+    uint flushes;
+    auto writer = Archive.createMpqeSink((off_t offset, scope const(ubyte)[] bytes) {
+        assert(offset == output.length);
+        output ~= bytes;
+        ++writes;
+    }, code, ArchiveCreateOptions(ARCHIVE_VERSION_FOUR), () { ++flushes; });
+    writer.add("output", payload);
+    assert(writes == 0 && flushes == 0);
+    writer.close();
+    assert(writes > 0 && flushes == 1);
+    const count = writes;
+    writer.close();
+    assert(writes == count && flushes == 1);
+    auto reader = Archive.openMpqeSource(new MemorySource(output), code);
+    assert(reader.file("output").read() == payload);
+    reader.close();
+
+    writer = Archive.createMpqeSink((off_t offset, scope const(ubyte)[] bytes) {
+        throw new Exception("controlled transport failure");
+    }, code);
+    bool failed;
+    try { writer.close(); } catch (MPQException error) { failed = error.code == ERROR_WRITE; }
+    assert(failed);
+    writer.close();
+}
+
 void main() {
     testCreateSink();
+    testCreateMpqeSink();
     testOversizedSingleWriter();
     {
         auto root = environment.get("LIBMPQ_SOURCE_DIR", ".");

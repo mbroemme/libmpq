@@ -609,3 +609,16 @@ archive close and afterward. Use try-with-resources for checked archive
 finalization. The caller may flush, publish or close the channel separately.
 Failed output may contain partial bytes. Oversized SINGLE still buffers
 the complete input unit.
+
+### Writing MPQE to a channel
+
+```java
+try (Archive writer = Archive.createMpqeSink(channel, authCode, options)) {
+    writer.add("payload.bin", payload, FileOptions.raw());
+}
+```
+
+Supply an empty caller-owned channel. Write access is sufficient for every
+archive generation. Close emits the final MPQE transport and leaves the channel
+open. The caller controls persistence and publication. MPQE encoding does not
+independently authenticate the archive.
