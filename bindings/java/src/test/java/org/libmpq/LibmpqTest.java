@@ -646,6 +646,90 @@ class LibmpqTest {
     }
 
     @Test
+    void selectedPatchStreamsDetachFromCallbackSources(@TempDir Path directory) throws Exception {
+        Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
+        Path middle = directory.resolve("middle.mpq");
+        Path lastPath = directory.resolve("last.mpq");
+        String name = "folder/sector.txt";
+        byte[] intermediate = new byte[8192];
+        for (int i = 0; i < intermediate.length; i++) {
+            intermediate[i] = (byte) (65 + i % 23);
+        }
+        intermediate[17] ^= 0x5a;
+        try (Archive writer = Archive.create(middle,
+                new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_TWO, 8, 4096, Mpq.ARCHIVE_CREATE_LISTFILE))) {
+            writer.add(name, intermediate, null);
+            writer.add("empty", new byte[0], null);
+            writer.add("voice", new byte[] {1}, new FileOptions(0, 0, 0, 1033, 2));
+            writer.add("voice", new byte[] {2}, null);
+        }
+        byte[] expected = "done".getBytes(StandardCharsets.US_ASCII);
+        try (MpqPatch patch = MpqPatch.begin(middle, lastPath)) {
+            patch.replaceData(name, expected);
+            patch.finish();
+        }
+        try (Archive archive = Archive.open(middle);
+             MpqStream empty = archive.openPatchStream("empty", List.of(), null);
+             MpqStream localized = archive.openPatchStream("voice", 1033, 2, List.of(), null);
+             MpqStream neutral = archive.openPatchStream("voice", 0, 0, List.of(), null)) {
+            byte[] one = new byte[1];
+            assertEquals(0, empty.size());
+            assertEquals(-1, empty.read(one));
+            assertEquals(1, localized.read(one));
+            assertEquals(1, one[0]);
+            assertEquals(1, neutral.read(one));
+            assertEquals(2, one[0]);
+        }
+        try (SeekableByteChannel baseSource = Files.newByteChannel(root.resolve("mpq-v4-features.mpq"));
+             SeekableByteChannel firstSource = Files.newByteChannel(root.resolve("mpq-v4-features-patch.mpq"));
+             SeekableByteChannel lastSource = Files.newByteChannel(lastPath);
+             Archive base = Archive.openSource(baseSource, "base");
+             Archive first = Archive.openSource(firstSource, "first");
+             Archive last = Archive.openSource(lastSource, "last")) {
+            List<Archive> layers = List.of(first, last);
+            assertEquals("BSD0", new String(first.readPatchPayload(first.fileNumber(name), name),
+                64, 4, StandardCharsets.US_ASCII));
+            assertEquals("COPY", new String(last.readPatchPayload(last.fileNumber(name), name),
+                64, 4, StandardCharsets.US_ASCII));
+            assertThrows(IllegalArgumentException.class, () -> base.openPatchStream(name, layers, List.of("")));
+            assertThrows(IllegalArgumentException.class, () -> base.openPatchStream(name, layers, List.of("bad\0prefix", "")));
+            assertThrows(IllegalArgumentException.class, () -> base.openPatchStream(name, 65536, 0, layers, null));
+            assertThrows(LibmpqException.class, () -> base.openPatchStream("remove.txt", layers, null));
+            assertThrows(LibmpqException.class, () -> base.openPatchStream("missing", layers, null));
+            MpqStream interrupted = base.openPatchStream(name, layers, null);
+            assertThrows(IllegalStateException.class, () -> {
+                try (interrupted) {
+                    throw new IllegalStateException("consumer failed");
+                }
+            });
+            assertThrows(IllegalStateException.class, () -> interrupted.read(new byte[1]));
+            try (MpqStream regular = base.openPatchStream(name, layers, Arrays.asList(null, ""));
+                 MpqStream exact = base.openPatchStream(name, 0, 0, layers, null)) {
+                base.close();
+                first.close();
+                last.close();
+                assertTrue(baseSource.isOpen() && firstSource.isOpen() && lastSource.isOpen());
+                baseSource.close();
+                firstSource.close();
+                lastSource.close();
+                assertThrows(LibmpqException.class, () -> base.openPatchStream(name, layers, null));
+                byte[] output = new byte[4];
+                assertEquals(4, exact.size());
+                assertEquals(2, regular.read(output, 0, 2));
+                assertEquals(0, exact.position());
+                exact.seek(-2, Mpq.SEEK_END);
+                assertEquals(2, exact.read(output, 2, 2));
+                assertArrayEquals(expected, output);
+                assertEquals(-1, exact.read(output));
+                exact.seek(0, Mpq.SEEK_SET);
+                assertEquals(4, exact.read(output));
+                assertArrayEquals(expected, output);
+                assertEquals(2, regular.position());
+            }
+        }
+    }
+
+    @Test
     void patchPrefixNamespaces(@TempDir Path directory) throws Exception {
         Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
         Path path = directory.resolve("namespaced.mpq");

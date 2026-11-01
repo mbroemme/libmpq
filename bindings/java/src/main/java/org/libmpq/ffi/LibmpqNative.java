@@ -149,6 +149,8 @@ public final class LibmpqNative {
     private static final MethodHandle STREAM_OPEN;
     private static final MethodHandle STREAM_OPEN_NAME;
     private static final MethodHandle STREAM_OPEN_NAME_IDENTITY;
+    private static final MethodHandle STREAM_OPEN_PATCH;
+    private static final MethodHandle STREAM_OPEN_PATCH_IDENTITY;
     private static final MethodHandle STREAM_READ;
     private static final MethodHandle STREAM_SEEK;
     private static final MethodHandle STREAM_TELL;
@@ -392,6 +394,13 @@ public final class LibmpqNative {
                                                           ValueLayout.ADDRESS));
         STREAM_OPEN_NAME_IDENTITY = function(linker, lookup, "libmpq__stream_open_name_identity",
             FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, C_SHORT, C_SHORT, ValueLayout.ADDRESS));
+        STREAM_OPEN_PATCH = function(linker, lookup, "libmpq__stream_open_patch",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                ValueLayout.ADDRESS, C_SIZE_T, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+        STREAM_OPEN_PATCH_IDENTITY = function(linker, lookup, "libmpq__stream_open_patch_identity",
+            FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                ValueLayout.ADDRESS, C_SIZE_T, ValueLayout.ADDRESS, C_SHORT, C_SHORT,
+                ValueLayout.ADDRESS));
         STREAM_READ = function(linker, lookup, "libmpq__stream_read",
                                FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS,
                                                      ValueLayout.ADDRESS, C_LONG,
@@ -912,6 +921,19 @@ public final class LibmpqNative {
     public static int streamOpenNameIdentity(MemorySegment archive, MemorySegment name, short locale,
                                              short platform, MemorySegment output) {
         return callInt(STREAM_OPEN_NAME_IDENTITY, archive, name, locale, platform, output);
+    }
+    public static int streamOpenPatch(MemorySegment base, MemorySegment patches,
+                                      MemorySegment prefixes, long count, MemorySegment filename,
+                                      MemorySegment output) {
+        return callInt(STREAM_OPEN_PATCH, base, patches, prefixes, nativeSizeT(count), filename,
+                       output);
+    }
+    public static int streamOpenPatchIdentity(MemorySegment base, MemorySegment patches,
+                                              MemorySegment prefixes, long count,
+                                              MemorySegment filename, short locale, short platform,
+                                              MemorySegment output) {
+        return callInt(STREAM_OPEN_PATCH_IDENTITY, base, patches, prefixes, nativeSizeT(count),
+                       filename, locale, platform, output);
     }
     public static int streamRead(MemorySegment stream, MemorySegment output, long size,
                                  MemorySegment transferred) {

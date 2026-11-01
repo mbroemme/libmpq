@@ -407,16 +407,43 @@ public final class Archive implements AutoCloseable {
     public static Archive openPatch(Archive base, List<Archive> patches, List<String> prefixes)
             throws LibmpqException {
         Objects.requireNonNull(base, "base");
+        PatchInputs inputs = base.patchInputs(patches, prefixes);
+        try (Arena arena = Arena.ofConfined()) {
+            PatchPointers pointers = inputs.marshal(arena);
+            MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
+            Support.check(LibmpqNative.archiveOpenPatch(output, base.handle, pointers.handles(),
+                                                       pointers.prefixes(), inputs.layers().length));
+            MemorySegment result = LibmpqNative.getAddress(output);
+            try {
+                return new Archive(result);
+            } catch (RuntimeException | Error failure) {
+                LibmpqNative.archiveClose(result);
+                throw failure;
+            }
+        } finally {
+            Reference.reachabilityFence(base);
+            Reference.reachabilityFence(inputs);
+        }
+    }
+
+    private PatchInputs patchInputs(List<Archive> patches, List<String> prefixes)
+            throws LibmpqException {
         Archive[] layers = Objects.requireNonNull(patches, "patches").toArray(Archive[]::new);
         String[] names = prefixes == null ? null : prefixes.toArray(String[]::new);
         if (names != null && names.length != layers.length) {
             throw new IllegalArgumentException("prefix count must match patch count");
         }
-        base.checkOpen();
+        checkOpen();
         for (Archive layer : layers) {
             Objects.requireNonNull(layer, "patch layer").checkOpen();
         }
-        try (Arena arena = Arena.ofConfined()) {
+        return new PatchInputs(layers, names);
+    }
+
+    private record PatchPointers(MemorySegment handles, MemorySegment prefixes) {}
+
+    private record PatchInputs(Archive[] layers, String[] names) {
+        PatchPointers marshal(Arena arena) {
             MemorySegment handles = layers.length == 0 ? MemorySegment.NULL
                 : arena.allocate(ValueLayout.ADDRESS, layers.length);
             MemorySegment nativeNames = names == null || names.length == 0 ? MemorySegment.NULL
@@ -431,19 +458,52 @@ public final class Archive implements AutoCloseable {
                         names[i] == null ? MemorySegment.NULL : Support.text(arena, names[i]));
                 }
             }
-            MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
-            Support.check(LibmpqNative.archiveOpenPatch(output, base.handle, handles,
-                                                       nativeNames, layers.length));
-            MemorySegment result = LibmpqNative.getAddress(output);
+            return new PatchPointers(handles, nativeNames);
+        }
+    }
+
+    /** Open a verified, detached stream using the final patched view's ordinary lookup. */
+    public MpqStream openPatchStream(String filename, List<Archive> patches, List<String> prefixes)
+            throws LibmpqException {
+        return openPatchStream(filename, patches, prefixes, false, (short) 0, (short) 0);
+    }
+
+    /** Open the exact patched filename, locale and platform without fallback. */
+    public MpqStream openPatchStream(String filename, int locale, int platform,
+                                     List<Archive> patches, List<String> prefixes)
+            throws LibmpqException {
+        return openPatchStream(filename, patches, prefixes, true, identitySelector(locale),
+                               identitySelector(platform));
+    }
+
+    private MpqStream openPatchStream(String filename, List<Archive> patches, List<String> prefixes,
+                                      boolean exact, short locale, short platform)
+            throws LibmpqException {
+        Objects.requireNonNull(filename, "filename");
+        if (filename.isEmpty() || filename.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException("filename must be nonempty and must not contain NUL");
+        }
+        PatchInputs inputs = patchInputs(patches, prefixes);
+        try (Arena arena = Arena.ofConfined()) {
+            PatchPointers pointers = inputs.marshal(arena);
+            MemorySegment out = arena.allocate(ValueLayout.ADDRESS);
+            MemorySegment name = Support.text(arena, filename);
+            long count = inputs.layers().length;
+            Support.check(exact
+                ? LibmpqNative.streamOpenPatchIdentity(handle, pointers.handles(), pointers.prefixes(),
+                                                      count, name, locale, platform, out)
+                : LibmpqNative.streamOpenPatch(handle, pointers.handles(), pointers.prefixes(),
+                                              count, name, out));
+            MemorySegment stream = LibmpqNative.getAddress(out);
             try {
-                return new Archive(result);
+                return new MpqStream(stream);
             } catch (RuntimeException | Error failure) {
-                LibmpqNative.archiveClose(result);
+                LibmpqNative.streamClose(stream);
                 throw failure;
             }
         } finally {
-            Reference.reachabilityFence(base);
-            Reference.reachabilityFence(layers);
+            Reference.reachabilityFence(this);
+            Reference.reachabilityFence(inputs);
         }
     }
 

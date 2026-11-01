@@ -353,6 +353,27 @@ on input archives separately; they do not confer trust on logical output.
 Temporary storage is released after the final dependent closes, with
 best-effort cleanup on persistent I/O failure.
 
+### Read one patched member
+
+```java
+try (Archive base = Archive.open(basePath); Archive layer = Archive.open(patchPath);
+     MpqStream stream = base.openPatchStream("member.bin", List.of(layer), null)) {
+    stream.read(new byte[4096]);
+}
+```
+
+The overload `openPatchStream(filename, locale, platform, patches, prefixes)`
+selects an exact tuple, including `(0, 0)`.
+
+Layers apply in order. A null prefix collection or entry requests
+inference; an empty string selects root. Open performs the selected
+transform and validation synchronously, and the returned stream remains
+usable after all input archives and their callback resources close.
+Missing or deleted names use the existing missing-member error.
+Unrelated payloads may be unread and the operation does not authenticate
+the whole archive. Temporary disk use depends on the selected results
+and BSD0 transform. SINGLE members can also require whole-unit memory.
+
 ### V4 raw-chunk policy
 
 ```java

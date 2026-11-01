@@ -387,6 +387,27 @@ physical signatures and raw checksums on the original input archives; these
 checks do not establish trust in reconstructed content. Temporary storage is
 cleaned up after the final dependent closes, with best-effort I/O cleanup.
 
+### Read one patched member
+
+```python
+with Archive("base.mpq") as base, Archive("layer.mpq") as layer:
+    stream = base.open_patch_stream("member.bin", [layer], prefixes=[None])
+with stream:
+    data = stream.read(4096)
+```
+
+Supply both `locale=` and `platform=` for exact selection, including the
+neutral tuple `(0, 0)`.
+
+Layers apply in order. A null prefix collection or entry requests
+inference; an empty string selects root. Open performs the selected
+transform and validation synchronously, and the returned stream remains
+usable after all input archives and their callback resources close.
+Missing or deleted names use the existing missing-member error.
+Unrelated payloads may be unread and the operation does not authenticate
+the whole archive. Temporary disk use depends on the selected results
+and BSD0 transform. SINGLE members can also require whole-unit memory.
+
 ### V4 raw-chunk policy
 
 ```python

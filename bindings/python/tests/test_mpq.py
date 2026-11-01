@@ -1208,6 +1208,79 @@ def test_open_patch_owned(tmp_path, source_kind, prefixes):
     stream.close()
 
 
+def test_open_patch_stream_detached(tmp_path):
+    name = "folder/sector.txt"
+    first_path = FIXTURES / "mpq-v4-features-patch.mpq"
+    middle_path = tmp_path / "middle.mpq"
+    last_path = tmp_path / "last.mpq"
+    middle = bytearray(65 + i % 23 for i in range(8192))
+    middle[17] ^= 0x5a
+    with mpq.Writer(middle_path, version=mpq.ARCHIVE_VERSION_TWO,
+                    flags=mpq.ARCHIVE_CREATE_LISTFILE) as writer:
+        writer.add(name, middle)
+        writer.add("empty", b"")
+        writer.add("voice", b"localized", mpq.FileCreateOptions(locale=1033, platform=2))
+        writer.add("voice", b"neutral")
+    with mpq.Patch.begin(middle_path, last_path) as patch:
+        patch.replace_data(name, b"done")
+        patch.finish()
+    with mpq.Archive(middle_path) as archive:
+        with archive.open_patch_stream("empty", []) as empty:
+            assert empty.size == 0
+            assert empty.read() == b""
+        with archive.open_patch_stream("voice", [], locale=1033, platform=2) as localized:
+            assert localized.read() == b"localized"
+        with archive.open_patch_stream("voice", [], locale=0, platform=0) as neutral:
+            assert neutral.read() == b"neutral"
+
+    paths = [FIXTURES / "mpq-v4-features.mpq", first_path, last_path]
+    sources = [io.BytesIO(path.read_bytes()) for path in paths]
+    references = [weakref.ref(source) for source in sources]
+    archives = [mpq.Archive.open_io(source, len(source.getvalue())) for source in sources]
+    base, first, last = archives
+    with base, first, last:
+        assert first[name].read_patch_payload()[64:68] == b"BSD0"
+        assert last[name].read_patch_payload()[64:68] == b"COPY"
+        with pytest.raises(ValueError):
+            base.open_patch_stream(name, [first], [])
+        with pytest.raises(ValueError):
+            base.open_patch_stream(name, [first], ["bad\0prefix"])
+        with pytest.raises(ValueError):
+            base.open_patch_stream(name, [], locale=65536)
+        for absent in ("remove.txt", "missing"):
+            with pytest.raises(mpq.LibmpqError):
+                base.open_patch_stream(absent, [first, last])
+        with pytest.raises(RuntimeError, match="consumer failed"):
+            with base.open_patch_stream(name, [first, last]) as interrupted:
+                raise RuntimeError("consumer failed")
+        with pytest.raises(mpq.LibmpqStateError):
+            interrupted.read()
+        regular = base.open_patch_stream(name, [first, last], [None, ""])
+        with regular:
+            exact = base.open_patch_stream(name, [first, last], locale=0, platform=0)
+            with exact:
+                for archive in archives:
+                    archive.close()
+                for source in sources:
+                    source.close()
+                del source, sources
+                gc.collect()
+                assert all(reference() is None for reference in references)
+                assert exact.size == 4
+                assert regular.read(2) == b"do"
+                assert exact.tell() == 0
+                assert exact.seek(-2, os.SEEK_END) == 2
+                assert exact.read() == b"ne"
+                assert exact.read() == b""
+                assert exact.seek(0) == 0
+                assert exact.read() == b"done"
+                assert regular.read() == b"ne"
+    with pytest.raises(mpq.LibmpqStateError):
+        base.open_patch_stream(name, [])
+    with pytest.raises(mpq.LibmpqStateError):
+        exact.read()
+
+
 def test_open_patch_arguments():
     with mpq.Archive(FIXTURES / "mpq-v4-features.mpq") as base:
         with pytest.raises(ValueError):

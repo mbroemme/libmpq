@@ -1065,6 +1065,117 @@ private void testOpenPatch() {
     }
 }
 
+private void testSelectedPatchStreams() {
+    import core.memory : GC;
+
+    auto root = buildPath(environment.get("LIBMPQ_SOURCE_DIR", "."), "tests", "fixtures");
+    auto middle = temporaryArchive("selected-middle");
+    auto lastPath = temporaryArchive("selected-last");
+    scope(exit) {
+        remove(middle);
+        if (exists(lastPath)) remove(lastPath);
+    }
+    enum name = "folder/sector.txt";
+    auto options = ArchiveCreateOptions.v1();
+    options.version_ = ARCHIVE_VERSION_TWO;
+    options.flags = ARCHIVE_CREATE_LISTFILE;
+    auto writer = Archive.create(middle, options);
+    ubyte[8192] intermediate;
+    foreach (i, ref value; intermediate) value = cast(ubyte)(65 + i % 23);
+    intermediate[17] ^= 0x5a;
+    writer.add(name, intermediate[]);
+    writer.add("empty", []);
+    auto localizedOptions = FileOptions.raw();
+    localizedOptions.locale = 1033;
+    localizedOptions.platform = 2;
+    writer.add("voice", [cast(ubyte)1], localizedOptions);
+    writer.add("voice", [cast(ubyte)2]);
+    writer.close();
+
+    auto patch = Patch.begin(middle, lastPath);
+    patch.replaceData(name, cast(const(ubyte)[]) "done");
+    patch.finish();
+    auto archive = Archive.open(middle);
+    auto empty = archive.openPatchStream("empty", []);
+    auto localized = archive.openPatchStream("voice", 1033, 2, []);
+    auto neutral = archive.openPatchStream("voice", 0, 0, []);
+    scope(exit) {
+        empty.close();
+        localized.close();
+        neutral.close();
+    }
+    archive.close();
+    ubyte[1] one;
+    assert(empty.size() == 0 && empty.read(one[]) == 0);
+    assert(localized.read(one[]) == 1 && one[0] == 1);
+    assert(neutral.read(one[]) == 1 && one[0] == 2);
+
+    auto baseSource = new MemorySource(cast(ubyte[]) read(buildPath(root, "mpq-v4-features.mpq")), false, true);
+    auto firstSource = new MemorySource(cast(ubyte[]) read(buildPath(root, "mpq-v4-features-patch.mpq")), false, true);
+    auto lastSource = new MemorySource(cast(ubyte[]) read(lastPath), false, true);
+    auto base = Archive.openSource(baseSource, "base");
+    auto first = Archive.openSource(firstSource, "first");
+    auto last = Archive.openSource(lastSource, "last");
+    auto layers = [first, last];
+    scope(exit) {
+        base.close();
+        first.close();
+        last.close();
+    }
+    assert(first.file(name).readPatchPayload()[64 .. 68] == cast(const(ubyte)[]) "BSD0");
+    assert(last.file(name).readPatchPayload()[64 .. 68] == cast(const(ubyte)[]) "COPY");
+    bool failed;
+    try { base.openPatchStream(name, layers, [""]); }
+    catch (MPQException) { failed = true; }
+    assert(failed);
+    failed = false;
+    try { base.openPatchStream(name, layers, ["bad\0prefix", null]); }
+    catch (MPQException) { failed = true; }
+    assert(failed);
+    foreach (absent; ["remove.txt", "missing"]) {
+        failed = false;
+        try { base.openPatchStream(absent, layers); }
+        catch (MPQException error) { failed = error.code == ERROR_EXIST; }
+        assert(failed);
+    }
+
+    auto interrupted = base.openPatchStream(name, layers);
+    failed = false;
+    try {
+        scope(exit) interrupted.close();
+        throw new Exception("consumer failed");
+    } catch (Exception error) {
+        failed = error.msg == "consumer failed";
+    }
+    assert(failed);
+    failed = false;
+    try { interrupted.read(one[]); }
+    catch (MPQException error) { failed = error.code == ERROR_NOT_INITIALIZED; }
+    assert(failed);
+
+    string rootPrefix = cast(string)(new char[1])[0 .. 0];
+    auto regular = base.openPatchStream(name, layers, [cast(string) null, rootPrefix]);
+    scope(exit) regular.close();
+    auto exact = base.openPatchStream(name, 0, 0, layers);
+    scope(exit) exact.close();
+    base.close();
+    first.close();
+    last.close();
+    baseSource = firstSource = lastSource = null;
+    GC.collect();
+    ubyte[4] output;
+    assert(exact.size() == 4);
+    assert(regular.read(output[0 .. 2]) == 2);
+    assert(exact.tell() == 0);
+    exact.seek(-2, SeekOrigin.end);
+    assert(exact.read(output[2 .. 4]) == 2);
+    assert(output[] == cast(const(ubyte)[]) "done");
+    assert(exact.read(output[]) == 0);
+    exact.seek(0);
+    assert(exact.read(output[]) == 4 && output[] == cast(const(ubyte)[]) "done");
+    assert(regular.tell() == 2);
+}
+
 private void testOpenPatchNamespaces() {
     auto root = buildPath(environment.get("LIBMPQ_SOURCE_DIR", "."), "tests", "fixtures");
     auto path = temporaryArchive("patch-namespace");
@@ -1689,6 +1800,7 @@ void main() {
     testPatchAdditions();
     testOpenPatch();
     testOpenPatchNamespaces();
+    testSelectedPatchStreams();
     testV4FeatureFixtures();
     testPatchPayloadFixtures();
     testVersionAndErrors();

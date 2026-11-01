@@ -343,19 +343,31 @@ class Archive {
      */
     static Archive openPatch(Archive base, Archive[] patches, const(string)[] prefixes = null) {
         if (base is null) throw new MPQException("null base", ERROR_EXIST);
-        if (prefixes.ptr !is null && prefixes.length != patches.length)
-            throw new MPQException("prefix count must match patch count", ERROR_SIZE);
-
-        // Root fresh call storage so callback-triggered GC cannot release inputs.
-        struct Inputs {
-            Archive base;
-            Archive[] layers;
-            mpq_archive_s*[] handles;
-            const(char)*[] names;
-        }
-        auto inputs = new Inputs;
+        auto inputs = preparePatchInputs(base, patches, prefixes);
         GC.addRoot(cast(void*) inputs);
         scope(exit) GC.removeRoot(cast(void*) inputs);
+        mpq_archive_s* result;
+        checkStatus(libmpq__archive_open_patch(&result, base.nativeHandle(),
+                    inputs.handles.ptr, inputs.names.ptr, patches.length),
+                    "libmpq__archive_open_patch");
+        scope(failure) libmpq__archive_close(result);
+        return new Archive(result);
+    }
+
+    private static struct PatchInputs {
+        Archive base;
+        Archive[] layers;
+        mpq_archive_s*[] handles;
+        const(char)*[] names;
+        const(char)* filename;
+    }
+
+    private static PatchInputs* preparePatchInputs(
+        Archive base, Archive[] patches, const(string)[] prefixes
+    ) {
+        if (prefixes.ptr !is null && prefixes.length != patches.length)
+            throw new MPQException("prefix count must match patch count", ERROR_SIZE);
+        auto inputs = new PatchInputs;
         inputs.base = base;
         inputs.layers = patches.dup;
         inputs.handles.length = patches.length;
@@ -369,12 +381,40 @@ class Archive {
                 inputs.names[i] = toStringz(prefixes[i]);
             }
         }
-        mpq_archive_s* result;
-        checkStatus(libmpq__archive_open_patch(&result, base.nativeHandle(),
-                    inputs.handles.ptr, inputs.names.ptr, patches.length),
-                    "libmpq__archive_open_patch");
-        scope(failure) libmpq__archive_close(result);
-        return new Archive(result);
+        return inputs;
+    }
+
+    /** Open a detached stream using ordinary lookup in the final patched view. */
+    MpqStream openPatchStream(string name, Archive[] patches, const(string)[] prefixes = null) {
+        return openPatchStreamImpl(name, patches, prefixes, false, 0, 0);
+    }
+
+    /** Open the exact patched filename, locale and platform without fallback. */
+    MpqStream openPatchStream(string name, ushort locale, ushort platform, Archive[] patches,
+                              const(string)[] prefixes = null) {
+        return openPatchStreamImpl(name, patches, prefixes, true, locale, platform);
+    }
+
+    private MpqStream openPatchStreamImpl(string name, Archive[] patches, const(string)[] prefixes,
+                                          bool exact, ushort locale, ushort platform) {
+        if (name.length == 0) throw new MPQException("empty filename", ERROR_EXIST);
+        foreach (character; name)
+            if (character == 0) throw new MPQException("NUL filename", ERROR_FORMAT);
+        auto inputs = preparePatchInputs(this, patches, prefixes);
+        GC.addRoot(cast(void*) inputs);
+        scope(exit) GC.removeRoot(cast(void*) inputs);
+        inputs.filename = toStringz(name);
+        mpq_stream_s* stream;
+        if (exact)
+            checkStatus(libmpq__stream_open_patch_identity(nativeHandle(), inputs.handles.ptr,
+                        inputs.names.ptr, patches.length, inputs.filename, locale, platform, &stream),
+                        "libmpq__stream_open_patch_identity");
+        else
+            checkStatus(libmpq__stream_open_patch(nativeHandle(), inputs.handles.ptr,
+                        inputs.names.ptr, patches.length, inputs.filename, &stream),
+                        "libmpq__stream_open_patch");
+        scope(failure) libmpq__stream_close(stream);
+        return new MpqStream(stream);
     }
 
     /** Configure v4 raw MD5 before member begin, signing or finalization. */

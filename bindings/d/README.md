@@ -464,6 +464,28 @@ signatures and raw checksums on input archives, separately from reconstructed
 logical content. Temporary storage survives until the last dependent closes;
 cleanup is best effort on persistent I/O failure.
 
+### Read one patched member
+
+```d
+auto stream = base.openPatchStream("member.bin", [patch]);
+scope(exit) stream.close();
+ubyte[4096] buffer;
+auto count = stream.read(buffer[]);
+```
+
+The overload `openPatchStream(name, locale, platform, patches, prefixes)`
+selects an exact tuple, including `(0, 0)`. A null D string infers a
+prefix. Use an allocated empty slice for explicit root.
+
+Layers apply in order. A null prefix collection or entry requests
+inference; an empty string selects root. Open performs the selected
+transform and validation synchronously, and the returned stream remains
+usable after all input archives and their callback resources close.
+Missing or deleted names use the existing missing-member error.
+Unrelated payloads may be unread and the operation does not authenticate
+the whole archive. Temporary disk use depends on the selected results
+and BSD0 transform. SINGLE members can also require whole-unit memory.
+
 ### V4 raw-chunk policy
 
 ```d

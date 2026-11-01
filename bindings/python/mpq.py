@@ -365,6 +365,11 @@ _configure("libmpq__stream_open", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, ct
 _configure("libmpq__stream_open_name", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.POINTER(_VOID_PTR))
 _configure("libmpq__stream_open_name_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
            ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(_VOID_PTR))
+_configure("libmpq__stream_open_patch", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(_VOID_PTR),
+           ctypes.POINTER(ctypes.c_char_p), ctypes.c_size_t, ctypes.c_char_p, ctypes.POINTER(_VOID_PTR))
+_configure("libmpq__stream_open_patch_identity", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(_VOID_PTR),
+           ctypes.POINTER(ctypes.c_char_p), ctypes.c_size_t, ctypes.c_char_p,
+           ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(_VOID_PTR))
 _configure("libmpq__stream_read", ctypes.c_int32, _VOID_PTR, _BYTE_PTR, _OFF_T, ctypes.POINTER(_OFF_T))
 _configure("libmpq__stream_seek", ctypes.c_int32, _VOID_PTR, _OFF_T, ctypes.c_int32)
 _configure("libmpq__stream_tell", ctypes.c_int32, _VOID_PTR, ctypes.POINTER(_OFF_T))
@@ -1312,7 +1317,7 @@ class _SourceState:
 
 
 class MpqStream:
-    """Closeable incremental decoded stream backed by a private native clone."""
+    """Closeable, seekable stream over a decoded MPQ member."""
 
     def __init__(self, native, source_state=None):
         self._stream = native
@@ -1724,22 +1729,7 @@ class Archive:
         """
         if not isinstance(base, Archive):
             raise TypeError("base must be an Archive")
-        layers = tuple(patches)
-        base._ensure_open()
-        for layer in layers:
-            if not isinstance(layer, Archive):
-                raise TypeError("patches must contain Archive objects")
-            layer._ensure_open()
-        encoded = None
-        if prefixes is not None:
-            values = tuple(prefixes)
-            if len(values) != len(layers):
-                raise ValueError("prefix count must match patch count")
-            encoded = tuple(None if value is None else _as_bytes(value) for value in values)
-            if any(value is not None and b"\0" in value for value in encoded):
-                raise ValueError("prefixes must not contain NUL")
-        handles = (_VOID_PTR * len(layers))(*(layer._mpq for layer in layers))
-        names = None if encoded is None else (ctypes.c_char_p * len(layers))(*encoded)
+        layers, handles, names = base._patch_inputs(patches, prefixes)
         result = object.__new__(cls)
         result._source = result.filename = "<patch composition>"
         result._mpq, result._source_state, result._opened = _VOID_PTR(), None, False
@@ -1755,6 +1745,52 @@ class Archive:
                 pass
             raise
         return result
+
+    def _patch_inputs(self, patches, prefixes):
+        """Marshal borrowed inputs and keep the archive objects alive."""
+        layers = tuple(patches)
+        self._ensure_open()
+        for layer in layers:
+            if not isinstance(layer, Archive):
+                raise TypeError("patches must contain Archive objects")
+            layer._ensure_open()
+        encoded = None
+        if prefixes is not None:
+            values = tuple(prefixes)
+            if len(values) != len(layers):
+                raise ValueError("prefix count must match patch count")
+            encoded = tuple(None if value is None else _as_bytes(value) for value in values)
+            if any(value is not None and b"\0" in value for value in encoded):
+                raise ValueError("prefixes must not contain NUL")
+        handles = (_VOID_PTR * len(layers))(*(layer._mpq for layer in layers))
+        names = None if encoded is None else (ctypes.c_char_p * len(layers))(*encoded)
+        return layers, handles, names
+
+    def open_patch_stream(self, filename, patches, prefixes=None, *, locale=None, platform=None):
+        """Open a verified seekable member stream detached from all input archives.
+
+        Layers apply in order. None prefixes infer the namespace; "" selects
+        root. Supply locale and platform together for exact selection.
+        """
+        selected = _identity_selection(locale, platform)
+        name = _as_bytes(filename)
+        if not name or b"\0" in name:
+            raise ValueError("filename must be nonempty and must not contain NUL")
+        layers, handles, names = self._patch_inputs(patches, prefixes)
+        native = _VOID_PTR()
+        arguments = (self._mpq, handles, names, len(layers), name)
+        if selected is None:
+            libmpq.libmpq__stream_open_patch(*arguments, ctypes.byref(native))
+        else:
+            libmpq.libmpq__stream_open_patch_identity(*arguments, *selected, ctypes.byref(native))
+        try:
+            return MpqStream(native)
+        except BaseException:
+            try:
+                libmpq.libmpq__stream_close(native)
+            except LibmpqError:
+                pass
+            raise
 
     def clone(self):
         """Return an independently closable native handle for this archive."""

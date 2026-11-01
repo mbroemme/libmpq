@@ -499,6 +499,13 @@ extern(C) {
     int libmpq__stream_open_name(mpq_archive_s* archive, const(char)* filename,
                                  mpq_stream_s** stream);
     int libmpq__stream_open_name_identity(mpq_archive_s* archive, const(char)* name, ushort locale, ushort platform, mpq_stream_s** stream);
+    int libmpq__stream_open_patch(mpq_archive_s* base, mpq_archive_s** patches,
+                                 const(char)** prefixes, size_t count, const(char)* name,
+                                 mpq_stream_s** stream);
+    int libmpq__stream_open_patch_identity(mpq_archive_s* base, mpq_archive_s** patches,
+                                          const(char)** prefixes, size_t count,
+                                          const(char)* name, ushort locale, ushort platform,
+                                          mpq_stream_s** stream);
     int libmpq__stream_read(mpq_stream_s* stream, ubyte* buffer, off_t size,
                             off_t* transferred);
     int libmpq__stream_seek(mpq_stream_s* stream, off_t offset, int origin);
