@@ -77,6 +77,20 @@ int32_t libmpq__reader_block_read_acquired(
     uint32_t *mismatches, int *lossy
 );
 
+/* Private packed-sector operations on a member with acquired offsets. */
+int32_t libmpq__reader_block_stored_acquired(
+    mpq_archive_s *archive, uint32_t number, uint32_t block, uint8_t *buffer, uint32_t capacity,
+    uint32_t *size
+);
+void libmpq__reader_packed_block_check(
+    uint32_t flags, const uint8_t *packed, uint32_t size, uint32_t plain_size,
+    const uint32_t *checksum, uint32_t *mismatches, int *lossy
+);
+int32_t libmpq__reader_packed_block_decode(
+    uint32_t flags, uint32_t version, uint8_t *packed, uint32_t size, uint8_t *out,
+    uint32_t plain_size
+);
+
 /*
  * Load optional checksums with an internally scoped sector-offset reference.
  * A successful NULL result means this file has no checksum table.

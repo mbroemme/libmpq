@@ -228,14 +228,47 @@ writer_output_prepare_read(mpq_archive_s *archive)
 }
 
 /* KEY uses the basename key and the already-final archive-relative payload position. */
-static uint32_t
-writer_file_key(const mpq_writer_s *writer)
+uint32_t
+libmpq__writer_file_key(const mpq_writer_s *writer)
 {
     uint32_t key = libmpq__crypto_file_key(writer->name);
     if ((writer->options.flags & LIBMPQ_FILE_FLAG_KEY) != 0)
         key = (key + (uint32_t)(writer->payload_offset - writer->prefix_size)) ^
               (writer->patch_file ? writer->patch_result_size : (uint32_t)writer->expected);
     return key;
+}
+
+/* Place a prepared sector and record its geometry and packed-plaintext checksum. */
+static int32_t
+stream_store_sector(mpq_writer_s *writer, uint8_t *packed, size_t size, const uint8_t *ciphertext)
+{
+    mpq_archive_s *archive = writer->archive;
+    int32_t result;
+    if (size > UINT32_MAX || size > UINT64_MAX - writer->packed_total)
+        return LIBMPQ_ERROR_SIZE;
+    if (writer->checksums != NULL)
+        writer->checksums[writer->sector_index] = (uint32_t)adler32(0, packed, (uInt)size);
+    if (ciphertext == NULL) {
+        if (writer->options.flags & LIBMPQ_FILE_FLAG_ENCRYPTED)
+            libmpq__crypto_encrypt_block(
+                packed, (uint32_t)size, libmpq__writer_file_key(writer) + writer->sector_index
+            );
+        ciphertext = packed;
+    }
+    if (writer->offsets != NULL) {
+        libmpq__off_t position = writer_output_tell(archive);
+        if (position < 0)
+            return LIBMPQ_ERROR_SEEK;
+        if ((uint64_t)position < writer->payload_offset ||
+            (uint64_t)position - writer->payload_offset > UINT32_MAX)
+            return LIBMPQ_ERROR_SIZE;
+        writer->offsets[writer->sector_index] =
+            (uint32_t)((uint64_t)position - writer->payload_offset);
+    }
+    result = writer_output_write(archive, ciphertext, size);
+    if (result == 0)
+        writer->packed_total += size;
+    return result;
 }
 
 /*
@@ -287,36 +320,11 @@ stream_flush_sector(mpq_writer_s *writer)
         return result;
     }
 
-    if (packed_size > UINT32_MAX || packed_size > UINT64_MAX - writer->packed_total) {
-        free(packed);
-        return LIBMPQ_ERROR_SIZE;
-    }
-
-    /* Sector checksums cover packed bytes before payload encryption. */
-    if (writer->checksums != NULL)
-        writer->checksums[writer->sector_index] = (uint32_t)adler32(0, packed, (uInt)packed_size);
-
-    /* Payload encryption uses the file seed advanced by the sector number. */
-    if (writer->options.flags & LIBMPQ_FILE_FLAG_ENCRYPTED)
-        libmpq__crypto_encrypt_block(
-            packed, (uint32_t)packed_size, writer_file_key(writer) + writer->sector_index
-        );
-    if (writer->offsets) {
-        libmpq__off_t position = writer_output_tell(archive);
-
-        if (position < 0) {
-            free(packed);
-            return LIBMPQ_ERROR_SEEK;
-        }
-        writer->offsets[writer->sector_index] =
-            (uint32_t)((uint64_t)position - writer->payload_offset);
-    }
-    result = writer_output_write(archive, packed, packed_size);
+    result = stream_store_sector(writer, packed, packed_size, NULL);
     if (result != 0) {
         free(packed);
         return result;
     }
-    writer->packed_total += packed_size;
     if (writer->sector_index == 0 &&
         (writer->options.compression_next &
          (LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO))) {
@@ -422,7 +430,9 @@ stream_finish(mpq_writer_s *writer)
         for (i = 0; i < entries; i++)
             libmpq__store_le32(table + i * 4, writer->offsets[i]);
         if (writer->options.flags & LIBMPQ_FILE_FLAG_ENCRYPTED)
-            libmpq__crypto_encrypt_block(table, (uint32_t)table_size, writer_file_key(writer) - 1);
+            libmpq__crypto_encrypt_block(
+                table, (uint32_t)table_size, libmpq__writer_file_key(writer) - 1
+            );
         result = libmpq__writer_output_write_at(archive, writer->payload_offset, table, table_size);
         free(table);
         if (result < 0)
@@ -2469,6 +2479,52 @@ libmpq__writer_file_begin(
     return writer_file_begin(archive, name, size, options, NULL, 0, 0, out);
 }
 
+/* Share logical-attribute accumulation for decoded and reused sectors. */
+static void
+stream_hash_plaintext(mpq_writer_s *writer, const uint8_t *data, uint32_t size)
+{
+    if (writer->attributes.flags & LIBMPQ_ATTRIBUTE_CRC32)
+        writer->attributes.crc32 = (uint32_t)crc32(writer->attributes.crc32, data, size);
+    if (writer->attributes.flags & LIBMPQ_ATTRIBUTE_MD5)
+        libmpq__md5_update(&writer->md5, data, size);
+}
+
+/* Accept one validated packed sector at its original logical ordinal. */
+int32_t
+libmpq__writer_file_packed_sector(
+    mpq_writer_s *writer, uint32_t ordinal, uint8_t *packed, uint32_t packed_size,
+    const uint8_t *stored, uint32_t source_key, const uint8_t *plain, uint32_t plain_size
+)
+{
+    int32_t result;
+    if (writer->archive->write_error != 0)
+        return writer->archive->write_error;
+    if (writer->archive->write_current != writer || writer->data_size != 0 ||
+        writer->sector_index != ordinal || ordinal >= writer->block_count || writer->patch_file ||
+        (writer->options.flags & LIBMPQ_FILE_FLAG_SINGLE) != 0)
+        return LIBMPQ_ERROR_FORMAT;
+    libmpq__off_t remaining = writer->expected - writer->written;
+    if (plain_size != (remaining < writer->data_capacity ? remaining : writer->data_capacity) ||
+        packed_size == 0 || packed_size > plain_size ||
+        (packed_size != plain_size && writer->offsets == NULL))
+        return LIBMPQ_ERROR_SIZE;
+    if ((writer->attributes.flags & (LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5)) != 0) {
+        if (plain == NULL)
+            return LIBMPQ_ERROR_EXIST;
+        stream_hash_plaintext(writer, plain, plain_size);
+    }
+    if (stored != NULL && source_key != libmpq__writer_file_key(writer) + ordinal)
+        stored = NULL;
+    result = stream_store_sector(writer, packed, packed_size, stored);
+    if (result == 0) {
+        writer->written += plain_size;
+        writer->sector_index++;
+    } else if (writer->archive->write_io != NULL ||
+               writer->archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+        writer->archive->write_error = result;
+    return result;
+}
+
 /*
  * Append caller-provided bytes and flush complete sectors immediately.
  * Sectorized input retains its sector buffer. An oversized SINGLE accumulates
@@ -2486,10 +2542,7 @@ libmpq__writer_file_write(mpq_writer_s *w, const uint8_t *buffer, libmpq__off_t 
     while (size != 0) {
         uint32_t room = w->data_capacity - w->data_size;
         uint32_t take = (uint32_t)((size < room) ? size : room);
-        if (w->attributes.flags & LIBMPQ_ATTRIBUTE_CRC32)
-            w->attributes.crc32 = (uint32_t)crc32(w->attributes.crc32, buffer, take);
-        if (w->attributes.flags & LIBMPQ_ATTRIBUTE_MD5)
-            libmpq__md5_update(&w->md5, buffer, take);
+        stream_hash_plaintext(w, buffer, take);
         memcpy(w->data + w->data_size, buffer, take);
         w->data_size += take;
         w->written += take;

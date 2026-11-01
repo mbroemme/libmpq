@@ -165,6 +165,15 @@ int32_t libmpq__writer_file_begin(
 /* Append bytes to the current file, buffering and flushing complete sectors. */
 int32_t libmpq__writer_file_write(mpq_writer_s *writer, const uint8_t *buffer, libmpq__off_t size);
 
+/* Derive the effective base seed from the writer name and placement. */
+uint32_t libmpq__writer_file_key(const mpq_writer_s *writer);
+
+/* Consume a checked sector. Encryption may mutate packed when stored cannot be reused. */
+int32_t libmpq__writer_file_packed_sector(
+    mpq_writer_s *writer, uint32_t ordinal, uint8_t *packed, uint32_t packed_size,
+    const uint8_t *stored, uint32_t source_key, const uint8_t *plain, uint32_t plain_size
+);
+
 /* Finish the current file, write its sector offsets, and publish its block entry. */
 int32_t libmpq__writer_file_finish(mpq_writer_s *writer);
 

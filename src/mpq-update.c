@@ -1869,6 +1869,19 @@ typedef struct
     mpq_file_options_s options;
 } mpq_update_ranges_s;
 
+/* Verification uses packed plaintext for retained sectors and logical bytes for edits. */
+typedef struct
+{
+    uint8_t digest[16];
+    uint32_t sector_size;
+    uint32_t storage;
+    bool source_decoded;
+} mpq_update_range_check_s;
+
+#define LIBMPQ_RANGE_STORAGE                                                          \
+    (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE | LIBMPQ_FILE_FLAG_SINGLE | \
+     LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)
+
 typedef struct
 {
     uint64_t offset;
@@ -2011,14 +2024,110 @@ update_overlay_ranges(
     }
 }
 
+/* Some legacy geometries decode as raw but cannot be emitted as packed sectors. */
+static bool
+update_range_can_reuse(
+    mpq_archive_s *archive, uint32_t number, const mpq_writer_s *writer, uint32_t blocks,
+    uint64_t size
+)
+{
+    const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+    const mpq_file_s *file = archive->mpq_file[number];
+
+    if (archive->block_size != writer->data_capacity || blocks != writer->block_count ||
+        (entry->flags & LIBMPQ_FILE_FLAG_SINGLE) != 0 ||
+        (entry->flags & LIBMPQ_RANGE_STORAGE) != (writer->options.flags & LIBMPQ_RANGE_STORAGE))
+        return false;
+    for (uint32_t block = 0; block < blocks; ++block) {
+        uint64_t remaining = size - (uint64_t)block * archive->block_size;
+        uint32_t logical =
+            remaining < archive->block_size ? (uint32_t)remaining : archive->block_size;
+        if (file->packed_offset[block + 1] - file->packed_offset[block] > logical)
+            return false;
+    }
+    return true;
+}
+
+/* Frame each retained sector so the digest also binds the packed geometry. */
+static void
+update_range_hash_packed(mpq_md5_s *digest, const uint8_t *packed, uint32_t size)
+{
+    uint8_t length[4];
+    libmpq__store_le32(length, size);
+    libmpq__md5_update(digest, length, sizeof(length));
+    libmpq__md5_update(digest, packed, size);
+}
+
+/* Check one untouched sector and optionally send its existing representation to the writer. */
+static int32_t
+update_range_retain(
+    mpq_archive_s *archive, uint32_t number, uint32_t block, uint32_t logical,
+    const uint32_t *checksum, const mpq_update_range_check_s *check, mpq_writer_s *writer,
+    uint8_t *stored, uint8_t *packed, uint8_t *plain, mpq_md5_s *digest
+)
+{
+    uint32_t size;
+    uint32_t seed = 0;
+    uint32_t mismatches = 0;
+    int lossy = 0;
+    int32_t result =
+        libmpq__reader_block_stored_acquired(archive, number, block, stored, logical, &size);
+    if (result != 0)
+        return result;
+    if (size == 0 || (size < logical && (check->storage & (LIBMPQ_FILE_FLAG_COMPRESS |
+                                                           LIBMPQ_FILE_FLAG_IMPLODE)) == 0))
+        return LIBMPQ_ERROR_UNPACK;
+    if ((check->storage & LIBMPQ_FILE_FLAG_ENCRYPTED) != 0 && size >= sizeof(uint32_t)) {
+        result = libmpq__reader_get_block_seed(archive, number, block, &seed);
+        if (result != 0)
+            return result;
+        if (packed != stored)
+            memcpy(packed, stored, size);
+        if (libmpq__crypto_decrypt_block(packed, size, seed) != 0)
+            return LIBMPQ_ERROR_DECRYPT;
+    } else {
+        packed = stored;
+    }
+
+    libmpq__reader_packed_block_check(
+        check->storage, packed, size, logical, checksum, &mismatches, &lossy
+    );
+    if (lossy || mismatches != 0)
+        return lossy ? LIBMPQ_ERROR_FORMAT : LIBMPQ_ERROR_READ;
+    update_range_hash_packed(digest, packed, size);
+
+    /*
+     * Decode exactly once. Attribute generation needs plaintext during emission.
+     * Otherwise, decode the reopened candidate before any adoption is possible.
+     */
+    if (size == logical)
+        plain = packed;
+    else if (check->source_decoded == (writer != NULL)) {
+        result = libmpq__reader_packed_block_decode(
+            check->storage, archive->mpq_header.version, packed, size, plain, logical
+        );
+        if (result < 0)
+            return result;
+        if ((uint32_t)result != logical)
+            return LIBMPQ_ERROR_READ;
+    }
+    if (writer == NULL)
+        return 0;
+    return libmpq__writer_file_packed_sector(
+        writer, block, packed, size, packed != stored ? stored : NULL, seed, plain, logical
+    );
+}
+
 /* Feed the existing encoder or digest a reopened candidate with the same bounded reader. */
 static int32_t
 update_range_transfer(
     mpq_archive_s *archive, uint32_t number, const char *name, mpq_writer_s *writer,
-    const mpq_update_ranges_s *plan, uint8_t digest[16]
+    const mpq_update_ranges_s *plan, mpq_update_range_check_s *check, uint8_t digest[16]
 )
 {
     uint8_t *buffer = NULL;
+    uint8_t *stored = NULL;
+    uint8_t *clear = NULL;
     size_t capacity = 0;
     size_t span = 0;
     uint64_t position = 0;
@@ -2035,6 +2144,21 @@ update_range_transfer(
     if (result != 0)
         return result;
     result = libmpq__reader_sector_checksums(archive, number, &checksums);
+    if (result == 0 && writer != NULL &&
+        update_range_can_reuse(archive, number, writer, blocks, (uint64_t)size)) {
+        check->sector_size = archive->block_size;
+        check->storage = writer->options.flags & LIBMPQ_RANGE_STORAGE;
+        check->source_decoded =
+            (writer->attributes.flags & (LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5)) != 0;
+    }
+    if (result == 0 && check->sector_size != 0 &&
+        (check->sector_size != archive->block_size ||
+         check->storage != (archive->mpq_entry[archive->mpq_map[number].entry_index].flags &
+                            LIBMPQ_RANGE_STORAGE)))
+        result = LIBMPQ_ERROR_FORMAT;
+    bool same_key = result == 0 && check->sector_size != 0 && writer != NULL &&
+                    (check->storage & LIBMPQ_FILE_FLAG_ENCRYPTED) != 0 &&
+                    archive->mpq_file[number]->seed == libmpq__writer_file_key(writer);
     libmpq__md5_init(&md5);
     for (uint32_t block = 0; result == 0 && block < blocks && position < (uint64_t)size; block++) {
         libmpq__off_t length;
@@ -2058,9 +2182,28 @@ update_range_transfer(
             buffer = grown;
             capacity = (size_t)length;
         }
+        uint64_t end = position + (uint64_t)length;
+        const uint32_t *checksum = checksums != NULL ? &checksums[block] : NULL;
+        bool touched = plan != NULL && span < plan->count && plan->spans[span].start < end;
+        if (check->sector_size != 0 && !touched) {
+            if (stored == NULL) {
+                stored = malloc(check->sector_size);
+                if (same_key)
+                    clear = malloc(check->sector_size);
+                if (stored == NULL || (same_key && clear == NULL)) {
+                    result = LIBMPQ_ERROR_MALLOC;
+                    break;
+                }
+            }
+            result = update_range_retain(
+                archive, number, block, (uint32_t)length, checksum, check, writer, stored,
+                clear != NULL ? clear : stored, buffer, &md5
+            );
+            position = end;
+            continue;
+        }
         result = libmpq__reader_block_read_acquired(
-            archive, number, block, buffer, length, &read,
-            checksums != NULL ? &checksums[block] : NULL, &mismatches, &lossy
+            archive, number, block, buffer, length, &read, checksum, &mismatches, &lossy
         );
         if (result != 0)
             break;
@@ -2068,17 +2211,22 @@ update_range_transfer(
             result = lossy ? LIBMPQ_ERROR_FORMAT : LIBMPQ_ERROR_READ;
             break;
         }
-        if (plan != NULL)
-            update_overlay_ranges(plan, &span, buffer, position, position + (uint64_t)length);
+        if (writer != NULL)
+            update_overlay_ranges(plan, &span, buffer, position, end);
+        else if (plan != NULL)
+            while (span < plan->count && plan->spans[span].end <= end)
+                span++;
         libmpq__md5_update(&md5, buffer, (size_t)length);
         if (writer != NULL)
             result = libmpq__writer_file_write(writer, buffer, length);
-        position += (uint64_t)length;
+        position = end;
     }
     if (result == 0 && (position != (uint64_t)size || (plan != NULL && span != plan->count)))
         result = LIBMPQ_ERROR_READ;
     if (result == 0)
         libmpq__md5_final(&md5, digest);
+    free(clear);
+    free(stored);
     free(buffer);
     free(checksums);
     update_result(&result, libmpq__reader_offsets_release(archive, number));
@@ -2090,7 +2238,7 @@ static int32_t
 update_range_emit(
     mpq_archive_s *writer, mpq_archive_s *archive, uint32_t number, const char *old_name,
     const char *new_name, const mpq_file_options_s *options, const mpq_update_ranges_s *plan,
-    uint8_t digest[16], uint64_t *expected_size
+    mpq_update_range_check_s *check, uint64_t *expected_size
 )
 {
     mpq_writer_s *member;
@@ -2107,7 +2255,8 @@ update_range_emit(
             result = libmpq__writer_file_timestamp(member, attributes.filetime);
     }
     if (result == 0)
-        result = update_range_transfer(archive, number, old_name, member, plan, digest);
+        result =
+            update_range_transfer(archive, number, old_name, member, plan, check, check->digest);
     if (result == 0)
         result = libmpq__writer_file_finish(member);
     if (result == 0)
@@ -2119,7 +2268,7 @@ update_range_emit(
 static int32_t
 update_range_validate(
     mpq_archive_s *archive, const char *name, const mpq_update_identity_s *exact, uint64_t size,
-    const uint8_t expected[16]
+    const mpq_update_ranges_s *plan, mpq_update_range_check_s *check
 )
 {
     uint32_t number;
@@ -2134,8 +2283,8 @@ update_range_validate(
     if (result == 0 && (uint64_t)actual != size)
         result = LIBMPQ_ERROR_READ;
     if (result == 0)
-        result = update_range_transfer(archive, number, name, NULL, NULL, digest);
-    if (result == 0 && memcmp(digest, expected, sizeof(digest)) != 0)
+        result = update_range_transfer(archive, number, name, NULL, plan, check, digest);
+    if (result == 0 && memcmp(digest, check->digest, sizeof(digest)) != 0)
         result = LIBMPQ_ERROR_READ;
     return result;
 }
@@ -2168,6 +2317,7 @@ update_rebuild_named(
     static const char *special_names[] = { LIBMPQ_LISTFILE_NAME, LIBMPQ_ATTRIBUTES_NAME,
                                            LIBMPQ_SIGNATURE_NAME };
     uint8_t expected_digest[16] = { 0 };
+    mpq_update_range_check_s range_check = { 0 };
     uint64_t expected_size = 0;
     uint8_t *list_data = NULL;
     size_t list_size = 0;
@@ -2564,7 +2714,7 @@ update_rebuild_named(
             options.platform = exact->platform;
             result = plan != NULL ? update_range_emit(
                                         writer, archive, target, old_name, old_name, &options, plan,
-                                        expected_digest, &expected_size
+                                        &range_check, &expected_size
                                     )
                      : source_path != NULL
                          ? libmpq__archive_add_path(writer, old_name, source_path, &options)
@@ -2619,7 +2769,7 @@ update_rebuild_named(
         }
         result = plan != NULL ? update_range_emit(
                                     writer, archive, target, old_name, member_name, &options, plan,
-                                    expected_digest, &expected_size
+                                    &range_check, &expected_size
                                 )
                  : source_path != NULL
                      ? libmpq__archive_add_path(writer, member_name, source_path, &options)
@@ -2714,7 +2864,8 @@ update_rebuild_named(
                                                       : result;
             }
         } else if (plan != NULL) {
-            result = update_range_validate(check, old_name, exact, expected_size, expected_digest);
+            result =
+                update_range_validate(check, old_name, exact, expected_size, plan, &range_check);
         } else if (action != LIBMPQ_UPDATE_REMOVE) {
             result = update_exact_digest(
                 check, action == LIBMPQ_UPDATE_RENAME ? new_name : old_name, exact, digest, &length
@@ -2742,7 +2893,7 @@ update_rebuild_named(
         uint32_t checked;
         uint32_t unavailable;
         uint32_t mismatches;
-        result = update_range_validate(check, old_name, NULL, expected_size, expected_digest);
+        result = update_range_validate(check, old_name, NULL, expected_size, plan, &range_check);
         if (result == 0)
             result = libmpq__file_number(check, old_name, &unused);
         if (result == 0)

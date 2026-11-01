@@ -51,9 +51,11 @@ Lossless tagged compression can use a different method. File integrity
 metadata is regenerated under the archive's current policy. Existing
 signatures are invalidated under the ordinary update rules.
 .PP
-Sectorized data is read and re-encoded in bounded payload buffers, with
-separate sector metadata and range-plan allocations. SINGLE uses full-unit
-buffers. Existing candidate reconstruction can copy unrelated packed members.
+Eligible unchanged sectors can retain their packed representation. If the
+destination encryption key differs, retained sectors are re-encrypted.
+Touched sectors and layouts that require reconstruction use the normal encoder.
+Payload buffers are sector-bounded for sectorized members, with separate
+sector metadata and range-plan allocations. SINGLE uses full-unit buffers.
 .PP
 Lossy ADPCM sectors, physical patch and delete members, managed internal
 members, and ambiguous or unsupported layouts are rejected. Embedded and MPQE

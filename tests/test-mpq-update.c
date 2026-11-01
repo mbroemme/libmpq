@@ -9341,9 +9341,178 @@ test_ranges_signed(void)
     return 0;
 }
 
+/* Capture serialized bytes, then independently decrypt the sector using its ordinal. */
+static int
+range_sector_image(
+    mpq_archive_s *archive, const char *name, uint32_t block, uint8_t *stored, uint8_t *packed,
+    uint32_t *size, uint32_t *seed, uint64_t *position
+)
+{
+    uint32_t number;
+    TEST_CHECK(libmpq__file_number(archive, name, &number) == 0);
+    TEST_CHECK(libmpq__reader_offsets_acquire(archive, number, name) == 0);
+    const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+    uint32_t start = archive->mpq_file[number]->packed_offset[block];
+    uint32_t end = archive->mpq_file[number]->packed_offset[block + 1];
+    TEST_CHECK(end > start && end - start <= 4096);
+    *size = end - start;
+    *position = (uint64_t)archive->archive_offset + entry->offset + start;
+    TEST_CHECK(libmpq__source_read_at(archive->source, *position, stored, *size) == 0);
+    memcpy(packed, stored, *size);
+    *seed = libmpq__crypto_file_key(name);
+    if ((entry->flags & LIBMPQ_FILE_FLAG_KEY) != 0)
+        *seed = (*seed + (uint32_t)entry->offset) ^ (uint32_t)entry->unpacked_size;
+    *seed += block;
+    if ((entry->flags & LIBMPQ_FILE_FLAG_ENCRYPTED) != 0)
+        TEST_CHECK(libmpq__crypto_decrypt_block(packed, *size, *seed) == 0);
+    TEST_CHECK(libmpq__reader_offsets_release(archive, number) == 0);
+    return 0;
+}
+
+/* Retained sectors preserve framing and have ciphertext for the destination key. */
+static int
+test_range_packed_sectors(uint32_t version, uint32_t flags, int attributes, int damaged)
+{
+    const mpq_archive_create_options_s create = {
+        version, 8, 4096, LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED,
+        attributes ? (LIBMPQ_ATTRIBUTE_MD5 | LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_FILETIME) : 0
+    };
+    const uint32_t codec = (flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0 ? LIBMPQ_COMPRESSION_BZIP2 : 0;
+    const mpq_file_options_s options = { flags, codec, codec, 0, 0 };
+    const char *name = "voice";
+    char path[512];
+    uint8_t bytes[8197];
+    uint8_t edit[537];
+    uint8_t old_stored[4096];
+    uint8_t old_packed[4096];
+    uint8_t new_stored[4096];
+    uint8_t new_packed[4096];
+    uint32_t old_size;
+    uint32_t new_size;
+    uint32_t old_seed;
+    uint32_t new_seed;
+    uint64_t position;
+    uint64_t unused;
+    uint32_t number;
+    uint32_t checked;
+    uint32_t unavailable;
+    uint32_t mismatches;
+    mpq_archive_s *archive = NULL;
+    mpq_archive_s *candidate = NULL;
+    mpq_update_s *update = NULL;
+    const mpq_update_replace_range_s range = { 203, edit, sizeof(edit) };
+    memset(bytes, 0x37, sizeof(bytes));
+    for (size_t i = 0; i < sizeof(edit); ++i)
+        edit[i] = (uint8_t)(i ^ (i >> 3));
+    TEST_CHECK(test_temp_path(path, sizeof(path), "range-packed") == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    TEST_CHECK(libmpq__writer_output_seek(archive, 8192, SEEK_SET) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, name, bytes, sizeof(bytes), &options) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    if (damaged) {
+
+        /* With no advertised checksum or RAW digest, the candidate decoder must reject this. */
+        TEST_CHECK(
+            range_sector_image(
+                archive, name, 1, old_stored, old_packed, &old_size, &old_seed, &position
+            ) == 0
+        );
+        TEST_CHECK(old_packed[0] == LIBMPQ_COMPRESSION_BZIP2);
+        TEST_CHECK(libmpq__archive_close(archive) == 0);
+        FILE *file = libmpq__file_open(path, "r+b");
+        TEST_CHECK(file != NULL && libmpq__file_seek(file, (libmpq__off_t)position, SEEK_SET) == 0);
+        TEST_CHECK(fputc(0x04, file) == 0x04 && fclose(file) == 0);
+    }
+    TEST_CHECK(libmpq__update_begin(&update, path) == 0);
+    int32_t result = libmpq__update_replace_ranges_identity(update, name, 0, 0, &range, 1);
+    if (damaged) {
+        TEST_CHECK(result == LIBMPQ_ERROR_UNPACK);
+        TEST_CHECK(same_file(path, libmpq__update_path(update)));
+        TEST_CHECK(libmpq__update_abort(update) == 0 && remove(path) == 0);
+        return 0;
+    }
+    TEST_CHECK(result == 0);
+    TEST_CHECK(libmpq__archive_open(&candidate, libmpq__update_path(update), 0) == 0);
+    for (uint32_t block = 0; block < 3; ++block) {
+        TEST_CHECK(
+            range_sector_image(
+                archive, name, block, old_stored, old_packed, &old_size, &old_seed, &position
+            ) == 0
+        );
+        TEST_CHECK(
+            range_sector_image(
+                candidate, name, block, new_stored, new_packed, &new_size, &new_seed, &unused
+            ) == 0
+        );
+        if (block == 0) {
+            if (codec != 0)
+                TEST_CHECK(old_size != new_size);
+            continue;
+        }
+        TEST_CHECK(old_size == new_size && memcmp(old_packed, new_packed, old_size) == 0);
+        if (codec != 0 && block == 1)
+            TEST_CHECK(new_packed[0] == LIBMPQ_COMPRESSION_BZIP2);
+        if ((flags & LIBMPQ_FILE_FLAG_KEY) != 0) {
+            TEST_CHECK(old_seed != new_seed);
+            TEST_CHECK(memcmp(old_stored, new_stored, old_size & ~3u) != 0);
+        } else {
+            TEST_CHECK(memcmp(old_stored, new_stored, old_size) == 0);
+        }
+        TEST_CHECK(
+            memcmp(old_stored + (old_size & ~3u), new_stored + (old_size & ~3u), old_size & 3u) == 0
+        );
+    }
+    memcpy(bytes + range.offset, edit, sizeof(edit));
+    TEST_CHECK(check_named(candidate, name, bytes, sizeof(bytes)) == 0);
+    TEST_CHECK(libmpq__file_number(candidate, name, &number) == 0);
+    TEST_CHECK(
+        libmpq__file_verify_ex(
+            candidate, number, name, LIBMPQ_VERIFY_ALL, &checked, &unavailable, &mismatches
+        ) == 0
+    );
+    TEST_CHECK(mismatches == 0);
+    if (attributes)
+        TEST_CHECK(
+            (checked & (LIBMPQ_VERIFY_FILE_MD5 | LIBMPQ_VERIFY_FILE_CRC32)) ==
+            (LIBMPQ_VERIFY_FILE_MD5 | LIBMPQ_VERIFY_FILE_CRC32)
+        );
+    if ((flags & LIBMPQ_FILE_FLAG_SECTOR_CRC) != 0)
+        TEST_CHECK((checked & LIBMPQ_VERIFY_SECTOR_CRC) != 0);
+    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+        TEST_CHECK((checked & LIBMPQ_VERIFY_RAW_MD5) != 0);
+    TEST_CHECK(libmpq__archive_close(candidate) == 0 && libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__update_commit(update) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(check_named(archive, name, bytes, sizeof(bytes)) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0 && remove(path) == 0);
+    return 0;
+}
+
 int
 main(void)
 {
+    TEST_CHECK(
+        test_range_packed_sectors(
+            LIBMPQ_ARCHIVE_VERSION_TWO, LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED, 0, 0
+        ) == 0
+    );
+    TEST_CHECK(
+        test_range_packed_sectors(
+            LIBMPQ_ARCHIVE_VERSION_FOUR,
+            LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_SECTOR_CRC | LIBMPQ_FILE_FLAG_ENCRYPTED |
+                LIBMPQ_FILE_FLAG_KEY,
+            1, 0
+        ) == 0
+    );
+    TEST_CHECK(
+        test_range_packed_sectors(
+            LIBMPQ_ARCHIVE_VERSION_TWO, LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0
+        ) == 0
+    );
+    TEST_CHECK(
+        test_range_packed_sectors(LIBMPQ_ARCHIVE_VERSION_TWO, LIBMPQ_FILE_FLAG_COMPRESS, 0, 1) == 0
+    );
     TEST_CHECK(test_ranges_bad_checksum(0) == 0);
     TEST_CHECK(test_ranges_bad_checksum(1) == 0);
     TEST_CHECK(test_ranges_signed() == 0);

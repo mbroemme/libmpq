@@ -1051,6 +1051,83 @@ libmpq__reader_block_size_packed(
     return 0;
 }
 
+/* Locate a sector using an acquired table and check its physical bounds. */
+static int32_t
+reader_block_span(
+    mpq_archive_s *archive, uint32_t number, uint32_t block, uint64_t *offset, uint32_t *size
+)
+{
+    uint32_t index;
+    const mpq_file_s *file;
+    if (libmpq__reader_validate_file_number(archive, number) < 0 ||
+        libmpq__reader_validate_block_number(archive, number, block) < 0)
+        return LIBMPQ_ERROR_EXIST;
+    file = archive->mpq_file[number];
+    if (file == NULL || file->packed_offset == NULL)
+        return LIBMPQ_ERROR_OPEN;
+    if (file->packed_offset_count <= block + 1)
+        return LIBMPQ_ERROR_EXIST;
+    index = archive->mpq_map[number].entry_index;
+    uint32_t start = file->packed_offset[block];
+    uint32_t end = file->packed_offset[block + 1];
+    if (end < start || end > archive->mpq_entry[index].packed_size)
+        return LIBMPQ_ERROR_FORMAT;
+    *size = end - start;
+    if (libmpq__reader_validate_payload_range(archive, index, start, *size) < 0)
+        return LIBMPQ_ERROR_READ;
+    *offset = (uint64_t)archive->archive_offset + archive->mpq_entry[index].offset + start;
+    return 0;
+}
+
+/* Read one complete stored sector into a reusable caller buffer. */
+int32_t
+libmpq__reader_block_stored_acquired(
+    mpq_archive_s *archive, uint32_t number, uint32_t block, uint8_t *buffer, uint32_t capacity,
+    uint32_t *size
+)
+{
+    uint64_t offset;
+    int32_t result = reader_block_span(archive, number, block, &offset, size);
+    if (result != 0)
+        return result;
+    if (*size > capacity)
+        return LIBMPQ_ERROR_SIZE;
+    return libmpq__source_read_at(archive->source, offset, buffer, *size);
+}
+
+/* Inspect the decrypted representation without running the sector codec. */
+void
+libmpq__reader_packed_block_check(
+    uint32_t flags, const uint8_t *packed, uint32_t size, uint32_t plain_size,
+    const uint32_t *checksum, uint32_t *mismatches, int *lossy
+)
+{
+    if (lossy != NULL && (flags & LIBMPQ_FILE_FLAG_COMPRESS) != 0 && size < plain_size &&
+        size != 0 && (packed[0] & (LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO)))
+        *lossy = 1;
+
+    /* Zero and all-ones entries are unavailable legacy checksums. */
+    if (checksum != NULL && *checksum != 0 && *checksum != UINT32_MAX &&
+        (uint32_t)adler32(0, packed, (uInt)size) != *checksum)
+        *mismatches |= LIBMPQ_VERIFY_SECTOR_CRC;
+}
+
+/* Invoke the same codec selection for normal reads and retained sectors. */
+int32_t
+libmpq__reader_packed_block_decode(
+    uint32_t flags, uint32_t version, uint8_t *packed, uint32_t size, uint8_t *out,
+    uint32_t plain_size
+)
+{
+    uint32_t method = flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE);
+    if (method == (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE))
+        return LIBMPQ_ERROR_UNPACK;
+    int32_t result = libmpq__compression_decompress_block(
+        packed, size, out, plain_size, method != 0 ? method : LIBMPQ_FLAG_COMPRESS_NONE, version
+    );
+    return result < 0 ? LIBMPQ_ERROR_UNPACK : result;
+}
+
 /*
  * Read all or a prefix of an already bounded packed sector. Encryption uses
  * complete words; a short final word remains literal as in the full reader.
@@ -1246,161 +1323,47 @@ libmpq__reader_block_read_acquired(
 )
 {
 
-    /* Packed input buffer, size bookkeeping and block decryption state. */
+    uint64_t offset;
+    uint32_t in_size;
+    libmpq__off_t unpacked_size;
     uint8_t *in_buf;
-    uint32_t flags = 0;
-    uint32_t encrypted = 0;
-    uint32_t compressed = 0;
-    uint32_t imploded = 0;
-    int32_t tb = 0;
-    uint8_t use_out_buf = 0;
-    libmpq__off_t in_size = 0;
-    libmpq__off_t unpacked_size = 0;
+    int32_t result = reader_block_span(mpq_archive, file_number, block_number, &offset, &in_size);
 
-    if (libmpq__reader_validate_file_number(mpq_archive, file_number) < 0) {
-        return LIBMPQ_ERROR_EXIST;
-    }
-
-    if (libmpq__reader_validate_block_number(mpq_archive, file_number, block_number) < 0) {
-        return LIBMPQ_ERROR_EXIST;
-    }
-
-    if (mpq_archive->mpq_file[file_number] == NULL ||
-        mpq_archive->mpq_file[file_number]->packed_offset == NULL) {
-        return LIBMPQ_ERROR_OPEN;
-    }
-
-    if (mpq_archive->mpq_file[file_number]->packed_offset_count <= block_number + 1) {
-        return LIBMPQ_ERROR_EXIST;
-    }
-
-    libmpq__block_size_unpacked(mpq_archive, file_number, block_number, &unpacked_size);
-
-    if (unpacked_size > out_size) {
+    if (result != 0)
+        return result;
+    result = libmpq__block_size_unpacked(mpq_archive, file_number, block_number, &unpacked_size);
+    if (result != 0)
+        return result;
+    if (unpacked_size > out_size)
         return LIBMPQ_ERROR_SIZE;
-    }
+    uint32_t flags = mpq_archive->mpq_entry[mpq_archive->mpq_map[file_number].entry_index].flags;
 
-    /*
-     * Compute the absolute payload position from archive, file, and block offsets.
-     * The stored block offset is relative to the file payload start, not the
-     * beginning of the archive file.
-     */
-    if (mpq_archive->mpq_file[file_number]->packed_offset[block_number + 1] <
-            mpq_archive->mpq_file[file_number]->packed_offset[block_number] ||
-        mpq_archive->mpq_file[file_number]->packed_offset[block_number + 1] >
-            mpq_archive->mpq_entry[mpq_archive->mpq_map[file_number].entry_index].packed_size) {
-        return LIBMPQ_ERROR_FORMAT;
-    }
-    in_size = mpq_archive->mpq_file[file_number]->packed_offset[block_number + 1] -
-              mpq_archive->mpq_file[file_number]->packed_offset[block_number];
-    if (libmpq__reader_validate_payload_range(
-            mpq_archive, mpq_archive->mpq_map[file_number].entry_index,
-            mpq_archive->mpq_file[file_number]->packed_offset[block_number], (uint64_t)in_size
-        ) < 0) {
-        return LIBMPQ_ERROR_READ;
-    }
-
-    libmpq__file_flags(mpq_archive, file_number, &flags);
-    encrypted = flags & LIBMPQ_FILE_FLAG_ENCRYPTED;
-    compressed = flags & LIBMPQ_FILE_FLAG_COMPRESS;
-    imploded = flags & LIBMPQ_FILE_FLAG_IMPLODE;
-
-    /* Raw unencrypted blocks can be read directly into the caller's buffer. */
-    use_out_buf = !encrypted && !compressed && !imploded && in_size <= out_size;
-
-    if (use_out_buf) {
-
-        /* Raw data can bypass a temporary allocation when no transform is needed. */
+    /* Raw unencrypted blocks can fill the caller's buffer directly. */
+    if ((flags & (LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_COMPRESS |
+                  LIBMPQ_FILE_FLAG_IMPLODE)) == 0 &&
+        in_size <= out_size)
         in_buf = out_buf;
-    } else {
-        if ((in_buf = calloc(1, in_size)) == NULL) {
+    else {
+        in_buf = calloc(1, in_size);
+        if (in_buf == NULL)
             return LIBMPQ_ERROR_MALLOC;
-        }
     }
-
-    if ((tb = read_packed(mpq_archive, file_number, block_number, in_buf, (size_t)in_size)) < 0) {
-        if (!use_out_buf) {
-            free(in_buf);
-        }
-        return tb;
+    result = read_packed(mpq_archive, file_number, block_number, in_buf, in_size);
+    if (result == 0) {
+        libmpq__reader_packed_block_check(
+            flags, in_buf, in_size, (uint32_t)unpacked_size, checksum, mismatches, lossy
+        );
+        result = libmpq__reader_packed_block_decode(
+            flags, mpq_archive->mpq_header.version, in_buf, in_size, out_buf,
+            (uint32_t)unpacked_size
+        );
     }
-
-    /*
-     * A multi-compression sector only carries a codec mask when it was
-     * actually compressed. MPQ WAVE ADPCM is lossy, so its decoded PCM cannot
-     * be compared with source-byte (attributes) CRC32/MD5 metadata.
-     */
-    if (lossy != NULL && compressed && in_size < unpacked_size && in_size != 0 &&
-        (in_buf[0] & (LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO)) != 0)
-        *lossy = 1;
-
-    /*
-     * MPQ sector CRCs are Adler-32 over decrypted packed bytes, not CRC32.
-     * Zero and all-ones entries are unavailable legacy checksum values.
-     */
-    if (checksum != NULL && *checksum != 0 && *checksum != UINT32_MAX &&
-        (uint32_t)adler32(0, in_buf, (uInt)in_size) != *checksum)
-        *mismatches |= LIBMPQ_VERIFY_SECTOR_CRC;
-
-    /* Blizzard multi-compression blocks declare their exact backend chain in the payload. */
-    if (compressed) {
-
-        /* The payload's leading mask selects and orders its decompression stages. */
-        if ((tb = libmpq__compression_decompress_block(
-                 in_buf, in_size, out_buf, unpacked_size, LIBMPQ_FLAG_COMPRESS_MULTI,
-                 mpq_archive->mpq_header.version
-             )) < 0) {
-            if (!use_out_buf) {
-                free(in_buf);
-            }
-            return LIBMPQ_ERROR_UNPACK;
-        }
-    }
-
-    /* PKWARE-imploded blocks use the legacy explode decoder. */
-    if (imploded) {
-
-        /* Standalone PKWARE payloads use the legacy decoder without a mask byte. */
-        if ((tb = libmpq__compression_decompress_block(
-                 in_buf, in_size, out_buf, unpacked_size, LIBMPQ_FLAG_COMPRESS_PKZIP,
-                 mpq_archive->mpq_header.version
-             )) < 0) {
-            if (!use_out_buf) {
-                free(in_buf);
-            }
-            return LIBMPQ_ERROR_UNPACK;
-        }
-    }
-
-    if (compressed && imploded) {
-        if (!use_out_buf) {
-            free(in_buf);
-        }
-        return LIBMPQ_ERROR_UNPACK;
-    }
-
-    if (!compressed && !imploded) {
-
-        /* A raw block is copied only after encrypted and compressed paths are excluded. */
-        if ((tb = libmpq__compression_decompress_block(
-                 in_buf, in_size, out_buf, unpacked_size, LIBMPQ_FLAG_COMPRESS_NONE,
-                 mpq_archive->mpq_header.version
-             )) < 0) {
-            if (!use_out_buf) {
-                free(in_buf);
-            }
-            return LIBMPQ_ERROR_UNPACK;
-        }
-    }
-
-    if (!use_out_buf) {
+    if (in_buf != out_buf)
         free(in_buf);
-    }
-
-    if (transferred != NULL) {
-        *transferred = tb;
-    }
-
+    if (result < 0)
+        return result;
+    if (transferred != NULL)
+        *transferred = result;
     return 0;
 }
 
