@@ -821,6 +821,18 @@ output; finish and abort retain their consuming semantics.
 
 ### Patch composition
 
+Use `libmpq__stream_open_patch()` to reconstruct one member using ordinary
+final-view lookup, or `libmpq__stream_open_patch_identity()` for an exact
+filename/locale/platform tuple. The wrappers use the shared selection
+plan and executor, and borrow the ordered archives, callback contexts,
+and prefix strings during open. NULL prefixes request inference and
+empty strings select root. Open reports selected transform and integrity
+errors before returning a verified seekable spool-backed result.
+The spool owns its storage independently of all inputs. Unrelated payloads
+may be unread. Scratch use depends on the selected results and BSD0
+transform, and SINGLE decoding can require whole-unit memory. Close
+consumes the stream and reports backing cleanup errors.
+
 `libmpq__archive_open_patch()` composes already-open ordinary MPQ and
 MPQE-wrapped archives, including custom read-at sources, as the base
 and ordered patch layers. Open each MPQE input with its own explicit

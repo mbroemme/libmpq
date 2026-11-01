@@ -1265,6 +1265,52 @@ libmpq__stream_open_name_identity(
     return libmpq__reader_stream_open_name(archive, filename, stream, 1, locale, platform);
 }
 
+/* Resolve once and execute synchronously while the source handles are borrowed. */
+static int32_t
+stream_open_patch(
+    mpq_archive_s *base, mpq_archive_s *const *patches, const char *const *prefixes, size_t count,
+    const char *filename, uint8_t exact, uint16_t locale, uint16_t platform, mpq_stream_s **stream
+)
+{
+    if (stream == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *stream = NULL;
+    mpq_patch_selection_s selection;
+    int32_t status = libmpq__patch_select(
+        &selection, base, patches, prefixes, count, filename, exact, locale, platform
+    );
+    if (status == 0) {
+        status = libmpq__patch_execute(&selection, base, patches, count, stream);
+        libmpq__patch_selection_free(&selection);
+    }
+    return status;
+}
+
+/* Use ordinary lookup in the final patched view. */
+int32_t
+libmpq__stream_open_patch(
+    mpq_archive_s *base, mpq_archive_s *const *patch_archives, const char *const *patch_prefixes,
+    size_t patch_count, const char *filename, mpq_stream_s **stream
+)
+{
+    return stream_open_patch(
+        base, patch_archives, patch_prefixes, patch_count, filename, 0, 0, 0, stream
+    );
+}
+
+/* Resolve one exact tuple through the same selection and execution path. */
+int32_t
+libmpq__stream_open_patch_identity(
+    mpq_archive_s *base, mpq_archive_s *const *patch_archives, const char *const *patch_prefixes,
+    size_t patch_count, const char *filename, uint16_t locale, uint16_t platform,
+    mpq_stream_s **stream
+)
+{
+    return stream_open_patch(
+        base, patch_archives, patch_prefixes, patch_count, filename, 1, locale, platform, stream
+    );
+}
+
 int32_t
 libmpq__stream_read(
     mpq_stream_s *stream, uint8_t *buffer, libmpq__off_t size, libmpq__off_t *transferred

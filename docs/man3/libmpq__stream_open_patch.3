@@ -1,0 +1,84 @@
+.\" Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This manual is free documentation; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public License as
+.\" published by the Free Software Foundation; either version 2.1 of
+.\" the License, or (at your option) any later version.
+.\"
+.\" This manual is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this file; if not, see <https://www.gnu.org/licenses/>.
+.TH LIBMPQ__STREAM_OPEN_PATCH 3 2026-11-19 "The MoPaQ archive library"
+.SH NAME
+libmpq__stream_open_patch \- open a selected patched member stream
+.SH SYNOPSIS
+.nf
+#include <libmpq/mpq.h>
+
+int32_t libmpq__stream_open_patch(
+        mpq_archive_s *base, mpq_archive_s *const *patch_archives,
+        const char *const *patch_prefixes, size_t patch_count,
+        const char *filename,
+        mpq_stream_s **stream);
+.fi
+.SH DESCRIPTION
+Open one logical member from a read-only base archive and ordered read-only
+patch archives.
+Apply ordinary filename lookup to the final logical patched view.
+Selection follows classic probe order or extended identity provenance where
+the final lookup can be established. No locale preference is imposed.
+.PP
+Layers apply in array order. A NULL prefix vector or element requests
+namespace inference. An empty prefix selects the root explicitly. A
+nonempty prefix selects that namespace. At zero layers both vectors may be NULL.
+.PP
+The selected member and applicable COPY or BSD0 operations are reconstructed
+and verified synchronously. Required structural and namespace metadata may
+be read. Duplicate matching identities and unresolved provenance are
+rejected. Absent and finally deleted members return LIBMPQ_ERROR_EXIST.
+A zero-length ordinary member produces a valid stream at EOF.
+.PP
+The independently owned stream is seekable from offset zero through its
+logical size. Archives, caller-owned callback contexts, filenames and prefixes
+need remain live only until this call returns. Synchronize input use and
+closure during the call. Use the existing stream functions to read, seek and
+close the result.
+.PP
+A private temporary spool requires writable scratch storage. Peak scratch
+space depends on the current lower result, next result, and expanded BSD0
+transform when needed. A SINGLE member can still require whole-unit decode
+memory. Close consumes the stream and can report a cleanup failure. Success
+verifies applicable selected payloads within the supported integrity rules.
+Unrelated patched payloads may be unread. Use separate checks for broader
+integrity and signature verification.
+.SH RETURN VALUE
+Return zero on success or a negative libmpq error. Failure clears a valid
+output slot and never publishes a partial stream.
+.SH ERRORS
+LIBMPQ_ERROR_EXIST indicates missing arguments, an unusable input handle
+or a missing selected member. LIBMPQ_ERROR_SIZE indicates an unrepresentable
+count, length or offset. LIBMPQ_ERROR_FORMAT indicates ambiguous identities,
+invalid namespace or patch data, or a digest mismatch. Missing required key
+evidence can return LIBMPQ_ERROR_DECRYPT. Source, decoding, allocation and
+temporary storage errors propagate at open. Subsequent stream operations
+may report backing storage or seek errors.
+.SH SEE ALSO
+.BR libmpq__stream_open_patch_identity (3),
+.BR libmpq__archive_open_patch (3),
+.BR libmpq__stream_read (3),
+.BR libmpq__stream_seek (3),
+.BR libmpq__stream_close (3)
+.SH AUTHOR
+The libmpq project is maintained by
+.B Maik Broemme <mbroemme@libmpq.org>.
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/libmpq/issues>
+.SH COPYRIGHT
+Copyright 2003-2026 Maik Broemme <mbroemme@libmpq.org>.
+.PP
+libmpq is free software, licensed under the GNU Lesser General Public
+License, version 2.1 or later. See COPYING.LESSER for the full license.

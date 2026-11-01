@@ -176,6 +176,17 @@ int32_t libmpq__stream_open_name_identity(
         mpq_archive_s *archive, const char *filename,
         uint16_t locale, uint16_t platform, mpq_stream_s **stream);
 .sp
+int32_t libmpq__stream_open_patch(
+        mpq_archive_s *base, mpq_archive_s *const *patch_archives,
+        const char *const *patch_prefixes, size_t patch_count,
+        const char *filename, mpq_stream_s **stream);
+.sp
+int32_t libmpq__stream_open_patch_identity(
+        mpq_archive_s *base, mpq_archive_s *const *patch_archives,
+        const char *const *patch_prefixes, size_t patch_count,
+        const char *filename, uint16_t locale, uint16_t platform,
+        mpq_stream_s **stream);
+.sp
 .BI "int32_t libmpq__stream_read("
 .BI "        mpq_stream_s *" "stream,"
 .BI "        uint8_t *" "buffer,"
@@ -737,6 +748,8 @@ symbol or function signature.
 .BR libmpq__stream_open (3),
 .BR libmpq__stream_open_name (3),
 .BR libmpq__stream_open_name_identity (3),
+.BR libmpq__stream_open_patch (3),
+.BR libmpq__stream_open_patch_identity (3),
 .BR libmpq__stream_read (3),
 .BR libmpq__stream_seek (3),
 .BR libmpq__stream_size (3),

@@ -67,6 +67,8 @@ man_MANS = \
 	libmpq__stream_open.3 \
 	libmpq__stream_open_name.3 \
 	libmpq__stream_open_name_identity.3 \
+	libmpq__stream_open_patch.3 \
+	libmpq__stream_open_patch_identity.3 \
 	libmpq__stream_read.3 \
 	libmpq__stream_seek.3 \
 	libmpq__stream_size.3 \

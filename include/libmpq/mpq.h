@@ -893,6 +893,30 @@ extern LIBMPQ_API int32_t libmpq__stream_open_name_identity(
 );
 
 /*
+ * Resolve one member in the final logical view of ordered patch archives.
+ * A NULL prefix vector or element requests inference; an empty prefix selects
+ * the root. A zero count allows NULL vectors. The input handles, strings and
+ * callback contexts are borrowed only for this synchronous call.
+ * Only selected payloads are reconstructed and verified, without a claim of
+ * whole-archive authenticity. Duplicate matching identities are rejected;
+ * missing or deleted members return EXIST. Failure clears a valid *stream.
+ * The stream owns private seekable temporary storage until consuming close.
+ * Scratch space depends on selected results and transforms; SINGLE can still
+ * require a whole-unit allocation.
+ */
+extern LIBMPQ_API int32_t libmpq__stream_open_patch(
+    mpq_archive_s *base, mpq_archive_s *const *patch_archives, const char *const *patch_prefixes,
+    size_t patch_count, const char *filename, mpq_stream_s **stream
+);
+
+/* Select the exact filename/locale/platform tuple, including (0, 0), with no fallback. */
+extern LIBMPQ_API int32_t libmpq__stream_open_patch_identity(
+    mpq_archive_s *base, mpq_archive_s *const *patch_archives, const char *const *patch_prefixes,
+    size_t patch_count, const char *filename, uint16_t locale, uint16_t platform,
+    mpq_stream_s **stream
+);
+
+/*
  * Read up to size logical bytes and advance the stream position. Reads at EOF
  * succeed with zero transferred bytes. Available sector Adler-32 values are
  * checked as sectors load; file-level CRC32/MD5 attributes are not implicit.
