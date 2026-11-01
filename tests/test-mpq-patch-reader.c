@@ -83,22 +83,17 @@ expect_bad_patch(const uint8_t *base, size_t base_size, const uint8_t *patch, si
     return 0;
 }
 
-/* Execute the same private plan that the future public stream will consume. */
+/* Exercise both public entry points against the same synthetic chains. */
 static int32_t
 test_execute_selected(
     mpq_archive_s *base, mpq_archive_s *const *layers, const char *const *prefixes, size_t count,
     const char *name, uint8_t exact, uint16_t locale, uint16_t platform, mpq_stream_s **stream
 )
 {
-    mpq_patch_selection_s plan;
-    *stream = NULL;
-    int32_t status =
-        libmpq__patch_select(&plan, base, layers, prefixes, count, name, exact, locale, platform);
-    if (status == 0) {
-        status = libmpq__patch_execute(&plan, base, layers, count, stream);
-        libmpq__patch_selection_free(&plan);
-    }
-    return status;
+    return exact ? libmpq__stream_open_patch_identity(
+                       base, layers, prefixes, count, name, locale, platform, stream
+                   )
+                 : libmpq__stream_open_patch(base, layers, prefixes, count, name, stream);
 }
 
 /* Serialize a minimal valid COPY patch with its MPQ patch-info prefix. */
@@ -4368,6 +4363,17 @@ test_opened_prefixes(void)
             libmpq__patch_selection_free(&selected);
         }
 
+        int32_t stream_status = libmpq__stream_open_patch_identity(
+            base, &patch, &prefixes[i], 1, "opened.txt", 0, 0, &stream
+        );
+        if (i == 2) {
+            TEST_CHECK(stream_status == LIBMPQ_ERROR_FORMAT && stream == NULL);
+        } else {
+            TEST_CHECK(stream_status == 0);
+            TEST_CHECK(owned_stream_read(stream, new_text, sizeof(new_text) - 1) == 0);
+            TEST_CHECK(libmpq__stream_close(stream) == 0);
+        }
+
         if (i == 2) {
             TEST_CHECK(status == LIBMPQ_ERROR_FORMAT && result == NULL);
         } else {
@@ -4784,6 +4790,16 @@ test_selected_classic(uint32_t version)
     );
     TEST_CHECK(owned_stream_read(stream, (const uint8_t *)"r", 1) == 0);
     TEST_CHECK(libmpq__stream_close(stream) == 0);
+    TEST_CHECK(libmpq__stream_open_patch(inputs[0], inputs + 1, NULL, 2, "voice", &stream) == 0);
+    TEST_CHECK(owned_stream_read(stream, (const uint8_t *)"l", 1) == 0);
+    TEST_CHECK(libmpq__stream_close(stream) == 0);
+    TEST_CHECK(
+        libmpq__stream_open_patch_identity(
+            inputs[0], inputs + 1, NULL, 2, "voice", 0, 0, &stream
+        ) == 0
+    );
+    TEST_CHECK(owned_stream_read(stream, (const uint8_t *)"q", 1) == 0);
+    TEST_CHECK(libmpq__stream_close(stream) == 0);
     for (size_t i = 0; i < 4; ++i) {
         TEST_CHECK(libmpq__archive_close(inputs[i]) == 0);
         TEST_CHECK(remove(paths[i]) == 0);
@@ -4839,7 +4855,9 @@ test_selected_aliases(void)
             TEST_CHECK(plan.count == 1 && plan.operations[0].number == number);
             TEST_CHECK(plan.operations[0].needs_key_evidence);
             mpq_stream_s *stream = NULL;
-            int32_t status = libmpq__patch_execute(&plan, base, NULL, 0, &stream);
+            int32_t status = libmpq__stream_open_patch_identity(
+                base, NULL, NULL, 0, plan.operations[0].physical_name, 0, 0, &stream
+            );
             if (mode == 0) {
                 TEST_CHECK(status == LIBMPQ_ERROR_DECRYPT && stream == NULL);
             } else {
@@ -5283,7 +5301,10 @@ test_selected_spool_failures(void)
     );
     TEST_CHECK(libmpq__patch_select(&plan, base, NULL, NULL, 0, "large.bin", 1, 0, 0) == 0);
     TEST_CHECK(
-        libmpq__patch_execute(&plan, base, NULL, 0, &stream) == LIBMPQ_ERROR_OPEN && stream == NULL
+        libmpq__stream_open_patch_identity(
+            base, NULL, NULL, 0, plan.operations[0].physical_name, 0, 0, &stream
+        ) == LIBMPQ_ERROR_OPEN &&
+        stream == NULL
     );
 
     TEST_CHECK(mkdir(absolute, 0700) == 0);
@@ -5291,7 +5312,9 @@ test_selected_spool_failures(void)
     for (int fault = 0; fault < 2; ++fault) {
         input.failure = fault == 0 ? LIBMPQ_ERROR_READ : 1;
         TEST_CHECK(
-            libmpq__patch_execute(&plan, base, NULL, 0, &stream) == LIBMPQ_ERROR_READ &&
+            libmpq__stream_open_patch_identity(
+                base, NULL, NULL, 0, plan.operations[0].physical_name, 0, 0, &stream
+            ) == LIBMPQ_ERROR_READ &&
             stream == NULL
         );
     }
@@ -5303,11 +5326,17 @@ test_selected_spool_failures(void)
     restricted.rlim_cur = 32;
     void (*handler)(int) = signal(SIGXFSZ, SIG_IGN);
     TEST_CHECK(handler != SIG_ERR && setrlimit(RLIMIT_FSIZE, &restricted) == 0);
-    int32_t status = libmpq__patch_execute(&plan, base, NULL, 0, &stream);
+    int32_t status = libmpq__stream_open_patch_identity(
+        base, NULL, NULL, 0, plan.operations[0].physical_name, 0, 0, &stream
+    );
     TEST_CHECK(setrlimit(RLIMIT_FSIZE, &limit) == 0 && signal(SIGXFSZ, handler) != SIG_ERR);
     TEST_CHECK(status == LIBMPQ_ERROR_WRITE && stream == NULL);
 
-    TEST_CHECK(libmpq__patch_execute(&plan, base, NULL, 0, &stream) == 0);
+    TEST_CHECK(
+        libmpq__stream_open_patch_identity(
+            base, NULL, NULL, 0, plan.operations[0].physical_name, 0, 0, &stream
+        ) == 0
+    );
     DIR *entries = opendir(absolute);
     TEST_CHECK(entries != NULL);
     unsigned files = 0;
@@ -5346,6 +5375,84 @@ test_selected_spool_failures(void)
 }
 #endif
 
+/* Invalid public arguments must fail before array access or transform. */
+static int
+test_selected_arguments(void)
+{
+    mpq_archive_s *base = NULL;
+    TEST_CHECK(libmpq__archive_open(&base, FIXTURE_DIR "/mpq-v4-features.mpq", 0) == 0);
+    mpq_archive_s *layers[] = { NULL };
+    const char *prefixes[] = { "" };
+    mpq_stream_s *sentinel = (mpq_stream_s *)(void *)base;
+    mpq_stream_s *stream = sentinel;
+    TEST_CHECK(
+        libmpq__stream_open_patch(base, NULL, NULL, 0, "overview.txt", NULL) == LIBMPQ_ERROR_EXIST
+    );
+    TEST_CHECK(
+        libmpq__stream_open_patch(NULL, NULL, NULL, 0, "overview.txt", &stream) ==
+            LIBMPQ_ERROR_EXIST &&
+        stream == NULL
+    );
+    stream = sentinel;
+    TEST_CHECK(
+        libmpq__stream_open_patch(base, NULL, NULL, 0, "", &stream) == LIBMPQ_ERROR_EXIST &&
+        stream == NULL
+    );
+    stream = sentinel;
+    TEST_CHECK(
+        libmpq__stream_open_patch(base, NULL, NULL, 1, "overview.txt", &stream) ==
+            LIBMPQ_ERROR_EXIST &&
+        stream == NULL
+    );
+    stream = sentinel;
+    TEST_CHECK(
+        libmpq__stream_open_patch_identity(
+            base, layers, prefixes, 1, "overview.txt", 0, 0, &stream
+        ) == LIBMPQ_ERROR_EXIST &&
+        stream == NULL
+    );
+    stream = sentinel;
+    TEST_CHECK(
+        libmpq__stream_open_patch(base, layers, prefixes, SIZE_MAX, "overview.txt", &stream) ==
+            LIBMPQ_ERROR_SIZE &&
+        stream == NULL
+    );
+    stream = sentinel;
+    TEST_CHECK(
+        libmpq__stream_open_patch_identity(
+            base, NULL, NULL, 0, "overview.txt", UINT16_MAX, UINT16_MAX, &stream
+        ) == LIBMPQ_ERROR_EXIST &&
+        stream == NULL
+    );
+    stream = sentinel;
+    TEST_CHECK(
+        libmpq__stream_open_patch_identity(base, NULL, NULL, 0, NULL, 0, 0, &stream) ==
+            LIBMPQ_ERROR_EXIST &&
+        stream == NULL
+    );
+    char path[1024];
+    const mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_TWO, 8, 4096, 0, 0 };
+    TEST_CHECK(test_temp_path(path, sizeof(path), "selected-writer-mode") == 0);
+    TEST_CHECK(libmpq__archive_create(&layers[0], path, &options) == 0);
+    stream = sentinel;
+    TEST_CHECK(
+        libmpq__stream_open_patch(layers[0], NULL, NULL, 0, "overview.txt", &stream) ==
+            LIBMPQ_ERROR_EXIST &&
+        stream == NULL
+    );
+    stream = sentinel;
+    TEST_CHECK(
+        libmpq__stream_open_patch_identity(
+            base, layers, prefixes, 1, "overview.txt", 0, 0, &stream
+        ) == LIBMPQ_ERROR_EXIST &&
+        stream == NULL
+    );
+    TEST_CHECK(libmpq__archive_close(layers[0]) == 0);
+    TEST_CHECK(remove(path) == 0);
+    TEST_CHECK(libmpq__archive_close(base) == 0);
+    return 0;
+}
+
 /* Keep fixture refresh opt-in so normal test runs never rewrite sources. */
 int
 main(int argc, char **argv)
@@ -5361,6 +5468,7 @@ main(int argc, char **argv)
     TEST_CHECK(test_selected_classic(LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
     TEST_CHECK(test_selected_aliases() == 0);
     TEST_CHECK(test_selected_isolation() == 0);
+    TEST_CHECK(test_selected_arguments() == 0);
     TEST_CHECK(test_selected_transforms() == 0);
 #ifndef _WIN32
     TEST_CHECK(test_selected_spool_failures() == 0);
