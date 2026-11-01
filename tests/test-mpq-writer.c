@@ -1275,7 +1275,10 @@ test_v2_writer_high_offsets(void)
     mpq_archive_s *archive = NULL;
     mpq_writer_s *writer = NULL;
     char path[512];
-    uint8_t header[44], blocks[8 * 16], highs[8 * 2], actual[sizeof(payload)];
+    uint8_t header[44];
+    uint8_t blocks[8 * 16];
+    uint8_t highs[8 * 2];
+    uint8_t actual[sizeof(payload)];
     uint32_t files;
 
     TEST_CHECK(test_temp_path(path, sizeof(path), "v2-boundary") == 0);
@@ -1347,7 +1350,8 @@ test_v2_writer_invalid_extent(void)
     mpq_archive_s *archive = NULL;
     mpq_writer_s *writer = NULL;
     char path[512];
-    uint32_t files, number;
+    uint32_t files;
+    uint32_t number;
     libmpq__off_t offset;
 
     TEST_CHECK(test_temp_path(path, sizeof(path), "v2-invalid-extent") == 0);
@@ -3414,7 +3418,8 @@ test_writer_flag_admission(uint32_t version)
     );
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
-    uint32_t number, flags;
+    uint32_t number;
+    uint32_t flags;
     TEST_CHECK(libmpq__file_number(archive, "member", &number) == 0);
     TEST_CHECK(libmpq__file_flags(archive, number, &flags) == 0);
     TEST_CHECK(flags == (LIBMPQ_FLAG_EXISTS | LIBMPQ_FILE_FLAG_KEY | LIBMPQ_FILE_FLAG_SINGLE));
