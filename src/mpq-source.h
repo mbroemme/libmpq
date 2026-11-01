@@ -85,6 +85,16 @@ int32_t libmpq__source_adopt_temporary(
     mpq_source_s *source, mpq_directory_s *directory, const char *name, const char *path
 );
 
+/* Take the already-open FILE, directory, and allocated filename on success. */
+int32_t libmpq__source_adopt_spool(
+    mpq_source_s **source, FILE *file, uint64_t size, mpq_directory_s *directory, char *name
+);
+
+/* Read only from a source returned by libmpq__source_adopt_spool(). */
+int32_t libmpq__source_read_spool(
+    mpq_source_s *source, uint64_t offset, uint8_t *data, size_t size, size_t *transferred
+);
+
 /* Borrow the actual temporary backing path until the source closes, or NULL. */
 const char *libmpq__source_temporary_path(const mpq_source_s *source);
 

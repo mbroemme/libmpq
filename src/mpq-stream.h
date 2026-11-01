@@ -20,6 +20,7 @@
 #ifndef LIBMPQ_STREAM_H
 #define LIBMPQ_STREAM_H
 
+#include "mpq-source.h"
 #include <libmpq/mpq.h>
 
 int32_t
@@ -28,6 +29,8 @@ int32_t libmpq__reader_stream_open_name(
     mpq_archive_s *archive, const char *filename, mpq_stream_s **stream, uint8_t exact,
     uint16_t locale, uint16_t platform
 );
+
+int32_t libmpq__reader_stream_adopt_source(mpq_stream_s **stream, mpq_source_s *source);
 
 int32_t libmpq__reader_stream_read(
     mpq_stream_s *stream, uint8_t *buffer, libmpq__off_t size, libmpq__off_t *transferred

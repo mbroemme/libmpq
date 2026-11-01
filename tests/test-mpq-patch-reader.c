@@ -40,6 +40,7 @@
 #include <string.h>
 #include <zlib.h>
 #ifndef _WIN32
+#include <dirent.h>
 #include <signal.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
@@ -80,6 +81,24 @@ expect_bad_patch(const uint8_t *base, size_t base_size, const uint8_t *patch, si
     TEST_CHECK(status != 0);
     TEST_CHECK(output == NULL && output_size == 0);
     return 0;
+}
+
+/* Execute the same private plan that the future public stream will consume. */
+static int32_t
+test_execute_selected(
+    mpq_archive_s *base, mpq_archive_s *const *layers, const char *const *prefixes, size_t count,
+    const char *name, uint8_t exact, uint16_t locale, uint16_t platform, mpq_stream_s **stream
+)
+{
+    mpq_patch_selection_s plan;
+    *stream = NULL;
+    int32_t status =
+        libmpq__patch_select(&plan, base, layers, prefixes, count, name, exact, locale, platform);
+    if (status == 0) {
+        status = libmpq__patch_execute(&plan, base, layers, count, stream);
+        libmpq__patch_selection_free(&plan);
+    }
+    return status;
 }
 
 /* Serialize a minimal valid COPY patch with its MPQ patch-info prefix. */
@@ -3516,6 +3535,20 @@ test_v4_views(uint32_t base_version, uint32_t layer_version, int bet_only, int w
                 LIBMPQ_ERROR_EXIST &&
             selected.operations == NULL
         );
+        mpq_stream_s *stream = NULL;
+        TEST_CHECK(
+            test_execute_selected(opened_base, &archive, NULL, 1, name, 1, 0, 0, &stream) ==
+            (corrupt == 1 ? LIBMPQ_ERROR_FORMAT : 0)
+        );
+        if (corrupt == 1) {
+            TEST_CHECK(stream == NULL);
+        } else {
+            TEST_CHECK(
+                libmpq__stream_read(stream, decoded, sizeof(decoded), &transferred) == 0 &&
+                transferred == sizeof(after) && memcmp(decoded, after, sizeof(after)) == 0
+            );
+            TEST_CHECK(libmpq__stream_close(stream) == 0);
+        }
         TEST_CHECK(libmpq__archive_close(opened_base) == 0);
     }
     TEST_CHECK(libmpq__file_number(archive, name, &number) == 0);
@@ -4077,6 +4110,13 @@ test_opened_owned_inputs(int mode)
         TEST_CHECK(selected.operations[1].kind == LIBMPQ_PATCH_SELECT_DELTA);
         libmpq__patch_selection_free(&selected);
     }
+    mpq_stream_s *selected[2] = { 0 };
+    for (uint8_t exact = 0; exact < 2; ++exact)
+        TEST_CHECK(
+            test_execute_selected(
+                inputs[0], inputs + 1, NULL, 2, "folder/sector.txt", exact, 0, 0, &selected[exact]
+            ) == 0
+        );
     memset(auth, 0, sizeof(auth));
     TEST_CHECK(libmpq__file_number(inputs[0], "large.bin", &number) == 0);
     TEST_CHECK(libmpq__file_verify(inputs[0], number, LIBMPQ_VERIFY_RAW_MD5, &mismatches) == 0);
@@ -4119,6 +4159,19 @@ test_opened_owned_inputs(int mode)
     for (size_t i = 0; i < sizeof(sector); i++)
         sector[i] = (uint8_t)(65 + i % 23);
     sector[17] ^= 0x5a;
+    for (size_t i = 0; i < 2; ++i) {
+        libmpq__off_t size;
+        uint8_t tail;
+        TEST_CHECK(libmpq__stream_size(selected[i], &size) == 0 && size == sizeof(sector));
+        TEST_CHECK(libmpq__stream_tell(selected[i], &size) == 0 && size == 0);
+        TEST_CHECK(libmpq__stream_seek(selected[i], -1, LIBMPQ_SEEK_END) == 0);
+        TEST_CHECK(
+            libmpq__stream_read(selected[i], &tail, 1, &size) == 0 && size == 1 &&
+            tail == sector[sizeof(sector) - 1]
+        );
+        TEST_CHECK(owned_stream_read(selected[i], sector, sizeof(sector)) == 0);
+        TEST_CHECK(libmpq__stream_close(selected[i]) == 0);
+    }
     TEST_CHECK(owned_stream_read(streams[2], added, sizeof(added) - 1) == 0);
     TEST_CHECK(libmpq__stream_close(streams[2]) == 0);
     TEST_CHECK(owned_stream_read(streams[1], sector, sizeof(sector)) == 0);
@@ -4258,6 +4311,14 @@ test_opened_invalid_identity_digest(void)
         free(stored);
         TEST_CHECK(libmpq__archive_close(writer) == 0);
         TEST_CHECK(libmpq__archive_open(&patch, patch_path, 0) == 0);
+        if (mode >= 2) {
+            mpq_stream_s *selected = NULL;
+            TEST_CHECK(
+                test_execute_selected(base, &patch, NULL, 1, "overview.txt", 1, 0, 0, &selected) ==
+                    LIBMPQ_ERROR_FORMAT &&
+                selected == NULL
+            );
+        }
         result = base;
         TEST_CHECK(
             libmpq__archive_open_patch(&result, base, &patch, NULL, 1) == LIBMPQ_ERROR_FORMAT &&
@@ -4709,6 +4770,20 @@ test_selected_classic(uint32_t version)
     TEST_CHECK(libmpq__stream_open_name(view, "voice", &stream) == 0);
     TEST_CHECK(libmpq__stream_read(stream, &actual, 1, &got) == 0 && got == 1 && actual == 'l');
     TEST_CHECK(libmpq__stream_close(stream) == 0 && libmpq__archive_close(view) == 0);
+    TEST_CHECK(test_execute_selected(inputs[0], NULL, NULL, 0, "empty", 0, 0, 0, &stream) == 0);
+    TEST_CHECK(libmpq__stream_size(stream, &got) == 0 && got == 0);
+    TEST_CHECK(libmpq__stream_read(stream, &actual, 1, &got) == 0 && got == 0);
+    TEST_CHECK(libmpq__stream_close(stream) == 0);
+    TEST_CHECK(
+        test_execute_selected(inputs[0], inputs + 1, NULL, 1, "voice", 1, 1031, 1, &stream) ==
+            LIBMPQ_ERROR_EXIST &&
+        stream == NULL
+    );
+    TEST_CHECK(
+        test_execute_selected(inputs[0], inputs + 1, NULL, 3, "voice", 0, 0, 0, &stream) == 0
+    );
+    TEST_CHECK(owned_stream_read(stream, (const uint8_t *)"r", 1) == 0);
+    TEST_CHECK(libmpq__stream_close(stream) == 0);
     for (size_t i = 0; i < 4; ++i) {
         TEST_CHECK(libmpq__archive_close(inputs[i]) == 0);
         TEST_CHECK(remove(paths[i]) == 0);
@@ -4726,20 +4801,23 @@ test_selected_aliases(void)
     };
     const char *path = "select-aliases.mpq";
     const uint8_t payload[] = "selected bytes";
-    for (unsigned mode = 0; mode < 3; ++mode) {
+    for (unsigned mode = 0; mode < 4; ++mode) {
         mpq_archive_s *writer = NULL;
         mpq_archive_s *base = NULL;
         mpq_archive_s *view = NULL;
         mpq_patch_selection_s plan;
         uint32_t number;
 
-        TEST_CHECK(libmpq__archive_create(&writer, path, &options) == 0);
+        mpq_archive_create_options_s create = options;
+        if (mode == 3)
+            create.attributes = LIBMPQ_ATTRIBUTE_MD5;
+        TEST_CHECK(libmpq__archive_create(&writer, path, &create) == 0);
         TEST_CHECK(
             libmpq__archive_add_data(writer, "selected", payload, sizeof(payload), &crypt) == 0
         );
         uint32_t slots = writer->mpq_header.hash_table_count;
         uint32_t home = libmpq__crypto_hash_string("selected", 0) % slots;
-        if (mode == 0) {
+        if (mode == 0 || mode == 3) {
             uint32_t alias = libmpq__crypto_hash_string("different-key", 0) % slots;
             TEST_CHECK(
                 libmpq__archive_add_data(writer, "different-key", payload, sizeof(payload), NULL) ==
@@ -4756,10 +4834,18 @@ test_selected_aliases(void)
         TEST_CHECK(libmpq__archive_close(writer) == 0);
         TEST_CHECK(libmpq__archive_open(&base, path, 0) == 0);
         TEST_CHECK(libmpq__file_number(base, "selected", &number) == 0);
-        if (mode == 0) {
+        if (mode == 0 || mode == 3) {
             TEST_CHECK(libmpq__patch_select(&plan, base, NULL, NULL, 0, "selected", 1, 0, 0) == 0);
             TEST_CHECK(plan.count == 1 && plan.operations[0].number == number);
             TEST_CHECK(plan.operations[0].needs_key_evidence);
+            mpq_stream_s *stream = NULL;
+            int32_t status = libmpq__patch_execute(&plan, base, NULL, 0, &stream);
+            if (mode == 0) {
+                TEST_CHECK(status == LIBMPQ_ERROR_DECRYPT && stream == NULL);
+            } else {
+                TEST_CHECK(status == 0 && owned_stream_read(stream, payload, sizeof(payload)) == 0);
+                TEST_CHECK(libmpq__stream_close(stream) == 0);
+            }
             libmpq__patch_selection_free(&plan);
         } else {
             TEST_CHECK(
@@ -4783,28 +4869,40 @@ test_selected_aliases(void)
 
 typedef struct
 {
-    owned_input_s image;
     uint64_t start;
     uint64_t length;
     uint64_t overlap;
+} selected_counted_range_s;
+
+typedef struct
+{
+    owned_input_s image;
+    selected_counted_range_s target;
+    selected_counted_range_s unrelated;
     uint64_t total;
 } selected_counted_source_s;
 
-/* Count every byte requested inside the independently located stored range. */
+/* Count the intersection with an independently located stored range. */
+static void
+test_selected_overlap(selected_counted_range_s *range, uint64_t start, uint64_t end)
+{
+    uint64_t range_end = range->start + range->length;
+    uint64_t lo = start > range->start ? start : range->start;
+    uint64_t hi = end < range_end ? end : range_end;
+    if (hi > lo)
+        range->overlap += hi - lo;
+}
+
+/* Count selected and unrelated physical bytes separately. */
 static int32_t
 test_selected_read_at(void *context, libmpq__off_t offset, uint8_t *buffer, size_t size)
 {
     selected_counted_source_s *source = context;
     int32_t result = owned_input_read(&source->image, offset, buffer, size);
     if (result == 0) {
-        uint64_t start = (uint64_t)offset;
-        uint64_t end = start + size;
-        uint64_t other_end = source->start + source->length;
-        uint64_t lo = start > source->start ? start : source->start;
-        uint64_t hi = end < other_end ? end : other_end;
         source->total += size;
-        if (hi > lo)
-            source->overlap += hi - lo;
+        test_selected_overlap(&source->target, (uint64_t)offset, (uint64_t)offset + size);
+        test_selected_overlap(&source->unrelated, (uint64_t)offset, (uint64_t)offset + size);
     }
     return result;
 }
@@ -4816,19 +4914,23 @@ test_selected_isolation(void)
     const mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_TWO, 8, 4096, 0, 0 };
     const char *base_path = "select-large.mpq";
     const char *patch_path = "select-prefix.mpq";
+    const char *next_path = "select-next.mpq";
     const char *embedded = "select-embedded.w3x";
     const char *explicit[] = { "locale\\\\" };
     const char *wrong[] = { "" };
     mpq_archive_s *base = NULL;
     mpq_archive_s *patch = NULL;
+    mpq_archive_s *next = NULL;
     mpq_archive_s *writer = NULL;
     mpq_writer_s *member = NULL;
     mpq_archive_s *view = NULL;
     selected_counted_source_s counted = { 0 };
     selected_counted_source_s patch_counted = { 0 };
+    selected_counted_source_s next_counted = { 0 };
     mpq_patch_selection_s plan;
     const uint8_t before[] = "a";
     const uint8_t after[] = "xyz";
+    const uint8_t final[] = "last";
     uint8_t zeros[4096] = { 0 };
     uint32_t number;
     libmpq__off_t position;
@@ -4845,8 +4947,8 @@ test_selected_isolation(void)
     TEST_CHECK(libmpq__file_number(base, "unrelated", &number) == 0);
     TEST_CHECK(libmpq__file_offset(base, number, &position) == 0);
     TEST_CHECK(libmpq__file_size_packed(base, number, &length) == 0);
-    counted.start = (uint64_t)base->archive_offset + (uint64_t)position;
-    counted.length = (uint64_t)length;
+    counted.unrelated.start = (uint64_t)base->archive_offset + (uint64_t)position;
+    counted.unrelated.length = (uint64_t)length;
     TEST_CHECK(libmpq__archive_close(base) == 0);
     TEST_CHECK(test_read_path(embedded, &counted.image.data, &counted.image.size) == 0);
     TEST_CHECK(
@@ -4855,7 +4957,7 @@ test_selected_isolation(void)
         ) == 0
     );
     counted.total = 0;
-    counted.overlap = 0;
+    counted.unrelated.overlap = 0;
     TEST_CHECK(libmpq__archive_create(&writer, patch_path, &options) == 0);
     writer->write_patch_mode = 1;
     TEST_CHECK(libmpq__archive_add_data(writer, "locale\\(patch_metadata)", before, 1, NULL) == 0);
@@ -4885,18 +4987,23 @@ test_selected_isolation(void)
     TEST_CHECK(libmpq__archive_open(&patch, patch_path, 0) == 0);
     TEST_CHECK(libmpq__file_number(patch, "locale\\unrelated", &number) == 0);
     TEST_CHECK(libmpq__file_offset(patch, number, &position) == 0);
+    TEST_CHECK(libmpq__file_size_packed(patch, number, &length) == 0);
+    patch_counted.unrelated.start = (uint64_t)position;
+    patch_counted.unrelated.length = (uint64_t)length;
     TEST_CHECK(libmpq__archive_close(patch) == 0);
 
-    /* Corrupt the wire prefix after the writer's validation. */
+    /* Damage the unrelated PTCH body while keeping its physical prefix valid. */
     FILE *file = fopen(patch_path, "r+b");
-    TEST_CHECK(file != NULL && libmpq__file_seek(file, position, SEEK_SET) == 0);
-    TEST_CHECK(fputc(1, file) == 1 && fclose(file) == 0);
+    TEST_CHECK(
+        file != NULL && libmpq__file_seek(file, position + LIBMPQ_PATCH_INFO_SIZE, SEEK_SET) == 0
+    );
+    TEST_CHECK(fputc('X', file) == 'X' && fclose(file) == 0);
     TEST_CHECK(libmpq__archive_open(&patch, patch_path, 0) == 0);
     TEST_CHECK(libmpq__file_number(patch, "locale\\target", &number) == 0);
     TEST_CHECK(libmpq__file_offset(patch, number, &position) == 0);
     TEST_CHECK(libmpq__file_size_packed(patch, number, &length) == 0);
-    patch_counted.start = (uint64_t)position + LIBMPQ_PATCH_INFO_SIZE;
-    patch_counted.length = (uint64_t)length - LIBMPQ_PATCH_INFO_SIZE;
+    patch_counted.target.start = (uint64_t)position + LIBMPQ_PATCH_INFO_SIZE;
+    patch_counted.target.length = (uint64_t)length - LIBMPQ_PATCH_INFO_SIZE;
     TEST_CHECK(libmpq__archive_close(patch) == 0);
     TEST_CHECK(
         test_read_path(patch_path, &patch_counted.image.data, &patch_counted.image.size) == 0
@@ -4907,20 +5014,48 @@ test_selected_isolation(void)
             0, NULL
         ) == 0
     );
-    patch_counted.overlap = 0;
+    patch_counted.target.overlap = 0;
     TEST_CHECK(libmpq__patch_select(&plan, base, &patch, explicit, 1, "target", 1, 0, 0) == 0);
     TEST_CHECK(plan.count == 2 && plan.operations[1].kind == LIBMPQ_PATCH_SELECT_DELTA);
     TEST_CHECK(plan.operations[1].patch_info.length == LIBMPQ_PATCH_INFO_SIZE);
     TEST_CHECK(strcmp(plan.operations[1].physical_name, "locale\\target") == 0);
     libmpq__patch_selection_free(&plan);
     TEST_CHECK(libmpq__patch_select(&plan, base, &patch, NULL, 1, "target", 0, 0, 0) == 0);
-    TEST_CHECK(counted.total > 0 && counted.overlap == 0);
-    TEST_CHECK(patch_counted.overlap == 0);
+    TEST_CHECK(counted.total > 0 && counted.unrelated.overlap == 0);
+    TEST_CHECK(patch_counted.target.overlap == 0);
+    payload = fixture_copy_patch(after, sizeof(after), final, sizeof(final), &size);
+    TEST_CHECK(payload != NULL);
+    TEST_CHECK(libmpq__archive_create(&writer, next_path, &options) == 0);
+    writer->write_patch_mode = 1;
+    TEST_CHECK(
+        libmpq__writer_patch_file_add(
+            writer, "target", payload, LIBMPQ_PATCH_INFO_SIZE, payload + LIBMPQ_PATCH_INFO_SIZE,
+            size - LIBMPQ_PATCH_INFO_SIZE, sizeof(final), NULL
+        ) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(writer) == 0);
+    free(payload);
+    TEST_CHECK(test_read_path(next_path, &next_counted.image.data, &next_counted.image.size) == 0);
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &next, &next_counted, test_selected_read_at, (libmpq__off_t)next_counted.image.size, 0,
+            NULL
+        ) == 0
+    );
+    mpq_archive_s *layers[] = { patch, next };
+    mpq_stream_s *stream = NULL;
+    TEST_CHECK(test_execute_selected(base, layers, NULL, 2, "target", 0, 0, 0, &stream) == 0);
+    TEST_CHECK(counted.unrelated.overlap == 0 && patch_counted.target.overlap > 0);
+    TEST_CHECK(patch_counted.unrelated.overlap == 0 && next_counted.total > 0);
+    TEST_CHECK(libmpq__archive_close(next) == 0);
+    free(next_counted.image.data);
     TEST_CHECK(libmpq__archive_open_patch(&view, base, &patch, NULL, 1) == LIBMPQ_ERROR_FORMAT);
     TEST_CHECK(view == NULL);
     TEST_CHECK(libmpq__archive_close(patch) == 0 && libmpq__archive_close(base) == 0);
     free(counted.image.data);
     free(patch_counted.image.data);
+    TEST_CHECK(owned_stream_read(stream, final, sizeof(final)) == 0);
+    TEST_CHECK(libmpq__stream_close(stream) == 0);
     TEST_CHECK(strcmp(plan.operations[1].physical_name, "locale\\target") == 0);
     libmpq__patch_selection_free(&plan);
     TEST_CHECK(libmpq__archive_open(&base, base_path, 0) == 0);
@@ -4931,9 +5066,9 @@ test_selected_isolation(void)
         plan.operations == NULL
     );
     TEST_CHECK(
-        libmpq__patch_select(&plan, base, &patch, NULL, 1, "unrelated", 1, 0, 0) ==
+        test_execute_selected(base, &patch, NULL, 1, "unrelated", 1, 0, 0, &stream) ==
             LIBMPQ_ERROR_FORMAT &&
-        plan.operations == NULL
+        stream == NULL
     );
     TEST_CHECK(
         libmpq__patch_select(&plan, patch, &patch, NULL, 1, "target", 1, 0, 0) ==
@@ -4942,8 +5077,274 @@ test_selected_isolation(void)
     );
     TEST_CHECK(libmpq__archive_close(patch) == 0 && libmpq__archive_close(base) == 0);
     TEST_CHECK(remove(base_path) == 0 && remove(patch_path) == 0 && remove(embedded) == 0);
+    TEST_CHECK(remove(next_path) == 0);
     return 0;
 }
+
+/* Construct a BSD0 body whose second diff span seeks back to the first byte. */
+static uint8_t *
+fixture_backward_bsd0(const uint8_t *before, size_t length, const uint8_t after[2], size_t *size)
+{
+    static const uint8_t method[] = { 'B', 'S', 'D', '0' };
+    static const uint8_t signature[] = { 'B', 'S', 'D', 'I', 'F', 'F', '4', '0' };
+    uint8_t *stored = fixture_copy_patch(before, length, after, 2, size);
+    if (stored == NULL)
+        return NULL;
+    const size_t body_size = 68 + 32 + 24 + 2;
+    uint8_t *grown = realloc(stored, 28 + body_size);
+    if (grown == NULL) {
+        free(stored);
+        return NULL;
+    }
+    stored = grown;
+    memset(stored + 28 + 68, 0, body_size - 68);
+    uint8_t *body = stored + 28;
+    libmpq__store_le32(stored + 8, (uint32_t)body_size);
+    libmpq__store_le32(body + 4, (uint32_t)body_size);
+    libmpq__store_le32(body + 60, (uint32_t)body_size - 56);
+    memcpy(body + 64, method, sizeof(method));
+    memcpy(body + 68, signature, sizeof(signature));
+    libmpq__store_le64(body + 76, 24);
+    libmpq__store_le64(body + 84, 2);
+    libmpq__store_le64(body + 92, 2);
+    libmpq__store_le32(body + 100, 1);
+    libmpq__store_le32(body + 108, 0x80000001u);
+    libmpq__store_le32(body + 112, 1);
+    body[124] = (uint8_t)(after[0] - before[0]);
+    body[125] = (uint8_t)(after[1] - before[0]);
+    fixture_md5(body, body_size, stored + 12);
+    *size = 28 + body_size;
+    return stored;
+}
+
+/* Run multiple transformations and reject bad intermediates even before a reset. */
+static int
+test_selected_transforms(void)
+{
+    const mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_TWO, 8, 4096,
+                                                   LIBMPQ_ARCHIVE_CREATE_LISTFILE, 0 };
+    const mpq_file_options_s storage = {
+        LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0, 0, 0
+    };
+    static const uint8_t before[] = "abc";
+    static const uint8_t middle[] = "ba";
+    static const uint8_t after[] = "ab";
+    const char *base_path = "select-transform-base.mpq";
+    const char *const paths[] = { "select-transform-first.mpq", "select-transform-next.mpq",
+                                  "select-transform-reset.mpq" };
+    mpq_archive_s *base = NULL;
+    mpq_archive_s *writer = NULL;
+    mpq_archive_s *layers[3] = { 0 };
+    mpq_stream_s *stream = NULL;
+    TEST_CHECK(libmpq__archive_create(&writer, base_path, &options) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(writer, "target", before, sizeof(before) - 1, &storage) == 0
+    );
+    TEST_CHECK(libmpq__archive_add_data(writer, "empty", NULL, 0, &storage) == 0);
+    const mpq_file_options_s compressed = { LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_COMPRESS,
+                                            LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0,
+                                            0 };
+    uint8_t zero[8192] = { 0 };
+    TEST_CHECK(libmpq__archive_add_data(writer, "invalid", zero, sizeof(zero), &compressed) == 0);
+    TEST_CHECK(libmpq__archive_close(writer) == 0);
+    TEST_CHECK(libmpq__archive_open(&base, base_path, 0) == 0);
+    uint32_t number;
+    libmpq__off_t position;
+    libmpq__off_t packed;
+    TEST_CHECK(libmpq__file_number(base, "invalid", &number) == 0);
+    TEST_CHECK(libmpq__file_offset(base, number, &position) == 0);
+    TEST_CHECK(
+        libmpq__file_size_packed(base, number, &packed) == 0 && packed > 0 &&
+        packed < (libmpq__off_t)sizeof(zero)
+    );
+    TEST_CHECK(libmpq__archive_close(base) == 0);
+    FILE *file = fopen(base_path, "r+b");
+    TEST_CHECK(file != NULL && libmpq__file_seek(file, position, SEEK_SET) == 0);
+    TEST_CHECK(fputc(0xff, file) == 0xff && fclose(file) == 0);
+    TEST_CHECK(libmpq__archive_open(&base, base_path, 0) == 0);
+    TEST_CHECK(
+        test_execute_selected(base, NULL, NULL, 0, "invalid", 0, 0, 0, &stream) ==
+            LIBMPQ_ERROR_UNPACK &&
+        stream == NULL
+    );
+    TEST_CHECK(test_execute_selected(base, NULL, NULL, 0, "empty", 0, 0, 0, &stream) == 0);
+    TEST_CHECK(owned_stream_read(stream, before, 0) == 0);
+    TEST_CHECK(libmpq__stream_close(stream) == 0);
+
+    for (unsigned mode = 0; mode < 10; ++mode) {
+        for (size_t i = 0; i < 2; ++i) {
+            const uint8_t *old = i == 0 ? before : middle;
+            const uint8_t *new_data = i == 0 ? middle : after;
+            size_t old_size = i == 0 ? sizeof(before) - 1 : sizeof(middle) - 1;
+            size_t size;
+            uint8_t *stored = mode == 1 || mode == 3
+                                  ? fixture_copy_patch(old, old_size, new_data, 2, &size)
+                                  : fixture_backward_bsd0(old, old_size, new_data, &size);
+            TEST_CHECK(stored != NULL);
+            uint8_t *body = stored + 28;
+            if (i == 0) {
+                if (mode == 2)
+                    body[0] = 'X';
+                if (mode == 3)
+                    libmpq__store_le32(body + 4, 69);
+                if (mode == 4)
+                    body[68] = 'X';
+                if (mode == 5)
+                    libmpq__store_le32(body + 108, 0x80000002u);
+                if (mode == 6)
+                    libmpq__store_le32(body + 4, UINT32_MAX);
+                if (mode == 7)
+                    body[24] ^= 1;
+                if (mode != 8)
+                    fixture_md5(body, size - 28, stored + 12);
+                else
+                    stored[12] ^= 1;
+            }
+            TEST_CHECK(libmpq__archive_create(&writer, paths[i], &options) == 0);
+            writer->write_patch_mode = 1;
+            TEST_CHECK(
+                libmpq__writer_patch_file_add(
+                    writer, "target", stored, 28, body, (libmpq__off_t)(size - 28), 2, &storage
+                ) == 0
+            );
+            TEST_CHECK(libmpq__archive_close(writer) == 0);
+            TEST_CHECK(libmpq__archive_open(&layers[i], paths[i], 0) == 0);
+            if (mode == 9 && i == 0) {
+                TEST_CHECK(libmpq__file_number(layers[i], "target", &number) == 0);
+                TEST_CHECK(libmpq__file_offset(layers[i], number, &position) == 0);
+                TEST_CHECK(libmpq__archive_close(layers[i]) == 0);
+                uint8_t oversized[4];
+                libmpq__store_le32(oversized, UINT32_MAX);
+                file = fopen(paths[i], "r+b");
+                TEST_CHECK(file != NULL && libmpq__file_seek(file, position + 8, SEEK_SET) == 0);
+                TEST_CHECK(
+                    fwrite(oversized, 1, sizeof(oversized), file) == sizeof(oversized) &&
+                    fclose(file) == 0
+                );
+                TEST_CHECK(libmpq__archive_open(&layers[i], paths[i], 0) == 0);
+            }
+            free(stored);
+        }
+        if (mode < 2) {
+            mpq_archive_s *view = NULL;
+            TEST_CHECK(
+                test_execute_selected(base, layers, NULL, 2, "target", 0, 0, 0, &stream) == 0
+            );
+            TEST_CHECK(owned_stream_read(stream, after, 2) == 0);
+            TEST_CHECK(libmpq__stream_close(stream) == 0);
+            TEST_CHECK(libmpq__archive_open_patch(&view, base, layers, NULL, 2) == 0);
+            TEST_CHECK(libmpq__stream_open_name(view, "target", &stream) == 0);
+            TEST_CHECK(owned_stream_read(stream, after, 2) == 0);
+            TEST_CHECK(libmpq__stream_close(stream) == 0 && libmpq__archive_close(view) == 0);
+        } else {
+            TEST_CHECK(libmpq__archive_create(&writer, paths[2], &options) == 0);
+            TEST_CHECK(libmpq__archive_add_data(writer, "target", after, 2, NULL) == 0);
+            TEST_CHECK(libmpq__archive_close(writer) == 0);
+            TEST_CHECK(libmpq__archive_open(&layers[2], paths[2], 0) == 0);
+            TEST_CHECK(
+                test_execute_selected(base, layers, NULL, 3, "target", 1, 0, 0, &stream) ==
+                    (mode == 9 ? LIBMPQ_ERROR_SIZE : LIBMPQ_ERROR_FORMAT) &&
+                stream == NULL
+            );
+            TEST_CHECK(libmpq__archive_close(layers[2]) == 0 && remove(paths[2]) == 0);
+        }
+        for (size_t i = 0; i < 2; ++i)
+            TEST_CHECK(libmpq__archive_close(layers[i]) == 0 && remove(paths[i]) == 0);
+    }
+    TEST_CHECK(libmpq__archive_close(base) == 0 && remove(base_path) == 0);
+    return 0;
+}
+
+#ifndef _WIN32
+
+/* Exercise real backend failures and consuming cleanup against private storage. */
+static int
+test_selected_spool_failures(void)
+{
+    static const char prefix[] = ".libmpq-selected-patch-";
+    mpq_archive_s *base = NULL;
+    mpq_stream_s *stream = NULL;
+    mpq_patch_selection_s plan;
+    owned_input_s input = { 0 };
+    char directory[1024];
+    char path[2048];
+    char moved[2048];
+    const char *previous = getenv("TMPDIR");
+    char *saved = previous == NULL ? NULL : libmpq__string_duplicate(previous);
+    TEST_CHECK(previous == NULL || saved != NULL);
+    TEST_CHECK(test_temp_path(directory, sizeof(directory), "selected-spool-faults") == 0);
+    char *absolute = libmpq__file_absolute_path(directory);
+    TEST_CHECK(absolute != NULL && setenv("TMPDIR", absolute, 1) == 0);
+    TEST_CHECK(test_read_path(FIXTURE_DIR "/mpq-v4-features.mpq", &input.data, &input.size) == 0);
+    TEST_CHECK(
+        libmpq__archive_open_io(
+            &base, &input, owned_input_read, (libmpq__off_t)input.size, 0, NULL
+        ) == 0
+    );
+    TEST_CHECK(libmpq__patch_select(&plan, base, NULL, NULL, 0, "large.bin", 1, 0, 0) == 0);
+    TEST_CHECK(
+        libmpq__patch_execute(&plan, base, NULL, 0, &stream) == LIBMPQ_ERROR_OPEN && stream == NULL
+    );
+
+    TEST_CHECK(mkdir(absolute, 0700) == 0);
+    input.fail_at = plan.operations[0].offset;
+    for (int fault = 0; fault < 2; ++fault) {
+        input.failure = fault == 0 ? LIBMPQ_ERROR_READ : 1;
+        TEST_CHECK(
+            libmpq__patch_execute(&plan, base, NULL, 0, &stream) == LIBMPQ_ERROR_READ &&
+            stream == NULL
+        );
+    }
+    input.failure = 0;
+
+    struct rlimit limit;
+    TEST_CHECK(getrlimit(RLIMIT_FSIZE, &limit) == 0);
+    struct rlimit restricted = limit;
+    restricted.rlim_cur = 32;
+    void (*handler)(int) = signal(SIGXFSZ, SIG_IGN);
+    TEST_CHECK(handler != SIG_ERR && setrlimit(RLIMIT_FSIZE, &restricted) == 0);
+    int32_t status = libmpq__patch_execute(&plan, base, NULL, 0, &stream);
+    TEST_CHECK(setrlimit(RLIMIT_FSIZE, &limit) == 0 && signal(SIGXFSZ, handler) != SIG_ERR);
+    TEST_CHECK(status == LIBMPQ_ERROR_WRITE && stream == NULL);
+
+    TEST_CHECK(libmpq__patch_execute(&plan, base, NULL, 0, &stream) == 0);
+    DIR *entries = opendir(absolute);
+    TEST_CHECK(entries != NULL);
+    unsigned files = 0;
+    for (struct dirent *entry = readdir(entries); entry != NULL; entry = readdir(entries)) {
+        if (strncmp(entry->d_name, prefix, sizeof(prefix) - 1) != 0)
+            continue;
+        int length = snprintf(path, sizeof(path), "%s/%s", absolute, entry->d_name);
+        TEST_CHECK(length > 0 && (size_t)length < sizeof(path));
+        ++files;
+    }
+    TEST_CHECK(closedir(entries) == 0 && files == 1);
+    struct stat details;
+    TEST_CHECK(stat(path, &details) == 0 && (details.st_mode & 077) == 0);
+    TEST_CHECK(truncate(path, 3) == 0);
+    uint8_t data[8];
+    libmpq__off_t transferred;
+    TEST_CHECK(
+        libmpq__stream_read(stream, data, sizeof(data), &transferred) == LIBMPQ_ERROR_READ &&
+        transferred == 3
+    );
+    TEST_CHECK(libmpq__stream_tell(stream, &transferred) == 0 && transferred == 3);
+    int length = snprintf(moved, sizeof(moved), "%s.moved", path);
+    TEST_CHECK(length > 0 && (size_t)length < sizeof(moved) && rename(path, moved) == 0);
+    TEST_CHECK(libmpq__stream_close(stream) == LIBMPQ_ERROR_CLOSE);
+    TEST_CHECK(remove(moved) == 0 && rmdir(absolute) == 0);
+    if (saved != NULL)
+        TEST_CHECK(setenv("TMPDIR", saved, 1) == 0);
+    else
+        TEST_CHECK(unsetenv("TMPDIR") == 0);
+    TEST_CHECK(libmpq__archive_close(base) == 0);
+    libmpq__patch_selection_free(&plan);
+    free(input.data);
+    free(saved);
+    free(absolute);
+    return 0;
+}
+#endif
 
 /* Keep fixture refresh opt-in so normal test runs never rewrite sources. */
 int
@@ -4960,6 +5361,10 @@ main(int argc, char **argv)
     TEST_CHECK(test_selected_classic(LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
     TEST_CHECK(test_selected_aliases() == 0);
     TEST_CHECK(test_selected_isolation() == 0);
+    TEST_CHECK(test_selected_transforms() == 0);
+#ifndef _WIN32
+    TEST_CHECK(test_selected_spool_failures() == 0);
+#endif
     TEST_CHECK(test_opened_result_contract() == 0);
     TEST_CHECK(test_view_owned_clone() == 0);
     for (int mode = 0; mode < 4; mode++)

@@ -370,6 +370,54 @@ libmpq__source_open_common(mpq_source_s **source, const char *path)
     return result;
 }
 
+/* Adopt the open file and its directory entry together, without reopening it. */
+int32_t
+libmpq__source_adopt_spool(
+    mpq_source_s **source, FILE *file, uint64_t size, mpq_directory_s *directory, char *name
+)
+{
+    *source = NULL;
+    mpq_source_s *result = calloc(1, sizeof(*result));
+    mpq_temporary_owner_s *owner = calloc(1, sizeof(*owner));
+    if (result == NULL || owner == NULL) {
+        free(result);
+        free(owner);
+        return LIBMPQ_ERROR_MALLOC;
+    }
+    int32_t status = source_set_file_backend(result, file, size, 1);
+    if (status != 0) {
+        free(result);
+        free(owner);
+        return status;
+    }
+    mpq_file_backend_s *backend = result->backend.context;
+    owner->directory = directory;
+    owner->name = name;
+    owner->references = 1;
+    backend->temporary = owner;
+    result->allocated = 1;
+    *source = result;
+    return 0;
+}
+
+/* Report the actual prefix transferred from a detached logical spool. */
+int32_t
+libmpq__source_read_spool(
+    mpq_source_s *source, uint64_t offset, uint8_t *data, size_t size, size_t *transferred
+)
+{
+    mpq_file_backend_s *backend = source->backend.context;
+    *transferred = 0;
+    if (offset > source->size || size > source->size - offset)
+        return LIBMPQ_ERROR_READ;
+    if (size == 0)
+        return 0;
+    if (file_backend_seek(backend, offset) != 0)
+        return LIBMPQ_ERROR_SEEK;
+    *transferred = fread(data, 1, size, backend->file);
+    return *transferred == size ? 0 : LIBMPQ_ERROR_READ;
+}
+
 /* Adapt a writer's flushed FILE without taking ownership or reopening its path. */
 int32_t
 libmpq__source_borrow_file(mpq_source_s *source, FILE *file, uint64_t size)

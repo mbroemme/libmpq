@@ -37,6 +37,8 @@
 #include "mpq-reader.h"
 #include "mpq-signature.h"
 #include "mpq-source.h"
+#include "mpq-stream.h"
+#include "mpq-verify.h"
 #include "mpq-writer.h"
 
 #include <ctype.h>
@@ -95,7 +97,7 @@ patch_check_md5(const uint8_t *data, size_t size, const uint8_t expected[16])
 /* Only the fixed header has fields; extension bytes need not be allocated. */
 static int32_t
 patch_info_parse_header(
-    const uint8_t *data, size_t header_size, size_t available_size, mpq_patch_info_s *info
+    const uint8_t *data, size_t header_size, uint64_t available_size, mpq_patch_info_s *info
 )
 {
     if (info == NULL)
@@ -146,68 +148,68 @@ patch_expand_rle(const uint8_t *encoded, size_t encoded_size, uint8_t *decoded, 
     return input == encoded_size && output == decoded_size ? 0 : LIBMPQ_ERROR_FORMAT;
 }
 
-/* Apply the BSD0 control, delta, and extra blocks using bounded offsets. */
+typedef int32_t (*patch_read_at_fn)(void *context, uint64_t offset, uint8_t *data, size_t size);
+typedef int32_t (*patch_bsd_span_fn)(
+    void *context, uint64_t offset, uint64_t source, uint64_t target, uint32_t size, uint8_t add
+);
+
+/* Walk the same bounded BSD0 regions for memory and file-backed transforms. */
 static int32_t
-patch_apply_bsd0(
-    const uint8_t *base, size_t base_size, const uint8_t *data, size_t data_size, uint8_t *output,
-    size_t output_size
+patch_walk_bsd0(
+    void *context, patch_read_at_fn read_at, patch_bsd_span_fn span, uint64_t data_size,
+    uint64_t output_size
 )
 {
-    size_t control_size;
-    size_t delta_size;
-    size_t extra_size;
-    size_t control = 0;
-    size_t delta = 0;
-    size_t extra = 0;
-    size_t target = 0;
+    uint8_t header[LIBMPQ_PATCH_BSDIFF_HEADER_SIZE];
+    if (data_size < sizeof(header))
+        return LIBMPQ_ERROR_FORMAT;
+    int32_t status = read_at(context, 0, header, sizeof(header));
+    if (status != 0)
+        return status;
+    uint64_t control_end = libmpq__load_le64(header + 8);
+    uint64_t delta_end = libmpq__load_le64(header + 16);
+    if (memcmp(header, "BSDIFF40", 8) != 0 || libmpq__load_le64(header + 24) != output_size ||
+        control_end > data_size - sizeof(header) ||
+        delta_end > data_size - sizeof(header) - control_end)
+        return LIBMPQ_ERROR_FORMAT;
+    uint64_t control = sizeof(header);
+    control_end += control;
+    uint64_t delta = control_end;
+    delta_end += delta;
+    uint64_t extra = delta_end;
+    uint64_t target = 0;
     int64_t source = 0;
-    const uint8_t *controls;
-    const uint8_t *deltas;
-    const uint8_t *extras;
-
-    if (data_size < LIBMPQ_PATCH_BSDIFF_HEADER_SIZE || memcmp(data, "BSDIFF40", 8) != 0 ||
-        libmpq__load_le64(data + 24) != output_size || libmpq__load_le64(data + 8) > SIZE_MAX ||
-        libmpq__load_le64(data + 16) > SIZE_MAX)
-        return LIBMPQ_ERROR_FORMAT;
-    control_size = (size_t)libmpq__load_le64(data + 8);
-    delta_size = (size_t)libmpq__load_le64(data + 16);
-    if (control_size > data_size - LIBMPQ_PATCH_BSDIFF_HEADER_SIZE ||
-        delta_size > data_size - LIBMPQ_PATCH_BSDIFF_HEADER_SIZE - control_size)
-        return LIBMPQ_ERROR_FORMAT;
-    controls = data + LIBMPQ_PATCH_BSDIFF_HEADER_SIZE;
-    deltas = controls + control_size;
-    extras = deltas + delta_size;
-    extra_size = data_size - LIBMPQ_PATCH_BSDIFF_HEADER_SIZE - control_size - delta_size;
     while (target < output_size) {
-        size_t add;
-        size_t copy;
-        uint32_t raw_move;
-        int64_t move;
-        size_t i;
-
-        if (control_size - control < 12)
+        uint8_t triple[12];
+        if (control_end - control < sizeof(triple))
             return LIBMPQ_ERROR_FORMAT;
-        add = libmpq__load_le32(controls + control);
-        copy = libmpq__load_le32(controls + control + 4);
-        raw_move = libmpq__load_le32(controls + control + 8);
-        move =
+        status = read_at(context, control, triple, sizeof(triple));
+        if (status != 0)
+            return status;
+        uint32_t add = libmpq__load_le32(triple);
+        uint32_t copy = libmpq__load_le32(triple + 4);
+        uint32_t raw_move = libmpq__load_le32(triple + 8);
+        int64_t move =
             (raw_move & 0x80000000u) != 0 ? -(int64_t)(raw_move & 0x7fffffffu) : (int64_t)raw_move;
-        control += 12;
-        if (add > output_size - target || add > delta_size - delta || source < 0 ||
+        control += sizeof(triple);
+        if (add > output_size - target || add > delta_end - delta || source < 0 ||
             source > INT64_MAX - (int64_t)add)
             return LIBMPQ_ERROR_FORMAT;
-        for (i = 0; i < add; i++) {
-            uint64_t old_offset = (uint64_t)source + i;
-            uint8_t old_byte = old_offset < base_size ? base[old_offset] : 0;
-
-            output[target + i] = (uint8_t)(deltas[delta + i] + old_byte);
+        if (add != 0) {
+            status = span(context, delta, (uint64_t)source, target, add, 1);
+            if (status != 0)
+                return status;
         }
         target += add;
         delta += add;
         source += (int64_t)add;
-        if (copy > output_size - target || copy > extra_size - extra)
+        if (copy > output_size - target || copy > data_size - extra)
             return LIBMPQ_ERROR_FORMAT;
-        memcpy(output + target, extras + extra, copy);
+        if (copy != 0) {
+            status = span(context, extra, 0, target, copy, 0);
+            if (status != 0)
+                return status;
+        }
         target += copy;
         extra += copy;
         if ((move > 0 && source > INT64_MAX - move) || (move < 0 && source < INT64_MIN - move))
@@ -216,10 +218,75 @@ patch_apply_bsd0(
         if (add == 0 && copy == 0)
             return LIBMPQ_ERROR_FORMAT;
     }
-    return target == output_size && control == control_size && delta == delta_size &&
-                   extra == extra_size
+    return target == output_size && control == control_end && delta == delta_end &&
+                   extra == data_size
                ? 0
                : LIBMPQ_ERROR_FORMAT;
+}
+
+typedef struct
+{
+    const uint8_t *base;
+    size_t base_size;
+    const uint8_t *data;
+    uint8_t *output;
+} patch_bsd_memory_s;
+
+/* The walker has already bounded reads within the transform. */
+static int32_t
+patch_bsd_memory_read(void *context, uint64_t offset, uint8_t *data, size_t size)
+{
+    const patch_bsd_memory_s *memory = context;
+    memcpy(data, memory->data + (size_t)offset, size);
+    return 0;
+}
+
+/* Apply one validated span into the materializer's existing memory result. */
+static int32_t
+patch_bsd_memory_span(
+    void *context, uint64_t offset, uint64_t source, uint64_t target, uint32_t size, uint8_t add
+)
+{
+    const patch_bsd_memory_s *memory = context;
+    const uint8_t *input = memory->data + (size_t)offset;
+    uint8_t *output = memory->output + (size_t)target;
+    if (!add)
+        memcpy(output, input, size);
+    else
+        for (uint32_t i = 0; i < size; ++i) {
+            uint64_t old_offset = source + i;
+            uint8_t old_byte = old_offset < memory->base_size ? memory->base[old_offset] : 0;
+            output[i] = (uint8_t)(input[i] + old_byte);
+        }
+    return 0;
+}
+
+typedef struct
+{
+    uint32_t after;
+    size_t encoded;
+    size_t decoded;
+} patch_transform_s;
+
+/* Parse the common PTCH envelope before either backend trusts transform sizes. */
+static int32_t
+patch_transform_parse(
+    const uint8_t *header, size_t patch_size, uint64_t base_size, patch_transform_s *transform
+)
+{
+    if (patch_size < LIBMPQ_PATCH_HEADER_SIZE || memcmp(header, "PTCH", 4) != 0 ||
+        memcmp(header + 16, "MD5_", 4) != 0 || memcmp(header + 56, "XFRM", 4) != 0)
+        return LIBMPQ_ERROR_FORMAT;
+    uint32_t complete = libmpq__load_le32(header + 4);
+    uint32_t length = libmpq__load_le32(header + 60);
+    if (libmpq__load_le32(header + 8) != base_size || libmpq__load_le32(header + 20) != 40 ||
+        complete < LIBMPQ_PATCH_HEADER_SIZE || length < 12 ||
+        length - 12 != patch_size - LIBMPQ_PATCH_HEADER_SIZE)
+        return LIBMPQ_ERROR_FORMAT;
+    transform->after = libmpq__load_le32(header + 12);
+    transform->encoded = patch_size - LIBMPQ_PATCH_HEADER_SIZE;
+    transform->decoded = complete - LIBMPQ_PATCH_HEADER_SIZE;
+    return 0;
 }
 
 /* Apply and verify a PTCH payload, optionally borrowing COPY output. */
@@ -229,11 +296,8 @@ patch_apply_internal(
     uint8_t **output, size_t *output_size, uint8_t borrow_copy
 )
 {
-    uint32_t complete_size;
-    uint32_t before_size;
+    patch_transform_s transform;
     uint32_t after_size;
-    uint32_t md5_block_size;
-    uint32_t transform_size;
     const uint8_t *encoded;
     size_t encoded_size;
     size_t decoded_size;
@@ -245,25 +309,18 @@ patch_apply_internal(
         return LIBMPQ_ERROR_EXIST;
     *output = NULL;
     *output_size = 0;
-    if ((base == NULL && base_size != 0) || patch == NULL ||
-        patch_size < LIBMPQ_PATCH_HEADER_SIZE || memcmp(patch, "PTCH", 4) != 0 ||
-        memcmp(patch + 16, "MD5_", 4) != 0 || memcmp(patch + 56, "XFRM", 4) != 0)
+    if ((base == NULL && base_size != 0) || patch == NULL)
         return LIBMPQ_ERROR_FORMAT;
-    complete_size = libmpq__load_le32(patch + 4);
-    before_size = libmpq__load_le32(patch + 8);
-    after_size = libmpq__load_le32(patch + 12);
-    md5_block_size = libmpq__load_le32(patch + 20);
-    transform_size = libmpq__load_le32(patch + 60);
-    if (before_size != base_size || md5_block_size != 40 ||
-        complete_size < LIBMPQ_PATCH_HEADER_SIZE || transform_size < 12 ||
-        transform_size - 12 != patch_size - LIBMPQ_PATCH_HEADER_SIZE)
-        return LIBMPQ_ERROR_FORMAT;
+    status = patch_transform_parse(patch, patch_size, base_size, &transform);
+    if (status != 0)
+        return status;
+    after_size = transform.after;
     status = patch_check_md5(base, base_size, patch + 24);
     if (status != 0)
         return status;
     encoded = patch + LIBMPQ_PATCH_HEADER_SIZE;
-    encoded_size = patch_size - LIBMPQ_PATCH_HEADER_SIZE;
-    decoded_size = complete_size - LIBMPQ_PATCH_HEADER_SIZE;
+    encoded_size = transform.encoded;
+    decoded_size = transform.decoded;
     if (memcmp(patch + 64, "COPY", 4) == 0) {
         if (decoded_size != encoded_size || decoded_size != after_size)
             return LIBMPQ_ERROR_FORMAT;
@@ -302,7 +359,10 @@ patch_apply_internal(
             status = LIBMPQ_ERROR_MALLOC;
             goto done;
         }
-        status = patch_apply_bsd0(base, base_size, decoded, decoded_size, result, after_size);
+        patch_bsd_memory_s memory = { base, base_size, decoded, result };
+        status = patch_walk_bsd0(
+            &memory, patch_bsd_memory_read, patch_bsd_memory_span, decoded_size, after_size
+        );
     }
     if (status == 0)
         status = patch_check_md5(result, after_size, patch + 40);
@@ -484,6 +544,37 @@ libmpq__patch_reader_payload_size(mpq_archive_s *archive, uint32_t number, libmp
     return status;
 }
 
+/* Adjust the private reader to the body while retaining the original KEY seed. */
+static int32_t
+patch_body_view(
+    mpq_archive_s *archive, uint32_t number, const char *name, const mpq_patch_info_s *info,
+    uint32_t *key, const uint32_t **seed
+)
+{
+    uint32_t index = archive->mpq_map[number].entry_index;
+    mpq_entry_s *block = &archive->mpq_entry[index];
+    if (info->length > block->packed_size || info->length > UINT64_MAX - block->offset)
+        return LIBMPQ_ERROR_FORMAT;
+    uint64_t shifted = block->offset + info->length;
+    if (shifted > UINT32_MAX && archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE)
+        return LIBMPQ_ERROR_FORMAT;
+    *seed = NULL;
+    if (name != NULL && (block->flags & (LIBMPQ_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)) ==
+                            (LIBMPQ_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)) {
+
+        /* KEY still describes the original member, including its result size. */
+        *key = (libmpq__crypto_file_key(name) + (uint32_t)block->offset) ^
+               (uint32_t)block->unpacked_size;
+        *seed = key;
+    }
+    block->offset = shifted;
+    block->packed_size -= info->length;
+    block->unpacked_size = info->data_size;
+    block->flags &= ~LIBMPQ_FILE_FLAG_PATCH_FILE;
+    archive->attributes_error = LIBMPQ_ERROR_EXIST;
+    return 0;
+}
+
 /*
  * Parse the plaintext patch prefix before using its body size, then
  * decode the stored body through normal MPQ reader semantics. Patch-file
@@ -495,12 +586,8 @@ patch_read_incremental(
 )
 {
     mpq_archive_s *clone = NULL;
-    mpq_entry_s *block;
     uint8_t *body = NULL;
     mpq_patch_info_s info;
-    uint64_t shifted;
-    uint32_t prefix_size;
-    uint32_t physical;
     size_t body_size = 0;
     uint32_t key = 0;
     const uint32_t *seed = NULL;
@@ -511,7 +598,6 @@ patch_read_incremental(
     status = patch_member_info(archive, number, &info);
     if (status != 0)
         return status;
-    prefix_size = info.length;
 
     /* Reopen from wire metadata with empty member caches, even if the caller has live reads. */
     status = libmpq__archive_clone(&clone, archive);
@@ -520,26 +606,9 @@ patch_read_incremental(
     status = libmpq__reader_validate_file_number(clone, number);
     if (status != 0)
         goto done;
-    physical = clone->mpq_map[number].entry_index;
-    block = &clone->mpq_entry[physical];
-    if (name != NULL && (block->flags & (LIBMPQ_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)) ==
-                            (LIBMPQ_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)) {
-
-        /* The body view moves past the prefix; KEY still describes the original member. */
-        key = (libmpq__crypto_file_key(name) + (uint32_t)block->offset) ^
-              (uint32_t)block->unpacked_size;
-        seed = &key;
-    }
-    shifted = block->offset + prefix_size;
-    if (shifted > UINT32_MAX && clone->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE) {
-        status = LIBMPQ_ERROR_FORMAT;
+    status = patch_body_view(clone, number, name, &info, &key, &seed);
+    if (status != 0)
         goto done;
-    }
-    block->offset = shifted;
-    block->packed_size -= prefix_size;
-    block->unpacked_size = info.data_size;
-    block->flags &= ~LIBMPQ_FILE_FLAG_PATCH_FILE;
-    clone->attributes_error = LIBMPQ_ERROR_EXIST;
     status = patch_read_adjusted(clone, name, number, seed, &body, &body_size);
     if (status != 0)
         goto done;
@@ -3483,5 +3552,532 @@ libmpq__patch_select(
         *selection = plan;
     else
         libmpq__patch_selection_free(&plan);
+    return status;
+}
+
+#define LIBMPQ_PATCH_TRANSFER_SIZE 16384u
+
+typedef struct
+{
+    FILE *file;
+    char *name;
+    uint64_t size;
+    mpq_md5_s md5;
+    uint8_t digest[16];
+    uint8_t needs_key_evidence;
+} patch_spool_s;
+
+/* Only private spools are closed and removed here. Keep the first failure. */
+static int32_t
+patch_spool_close(mpq_directory_s *directory, patch_spool_s *spool, int32_t status)
+{
+    if (spool->file != NULL && fclose(spool->file) != 0 && status == 0)
+        status = LIBMPQ_ERROR_CLOSE;
+    if (spool->name != NULL && libmpq__directory_remove(directory, spool->name) != 0 && status == 0)
+        status = LIBMPQ_ERROR_CLOSE;
+    free(spool->name);
+    memset(spool, 0, sizeof(*spool));
+    return status;
+}
+
+/* Allocate storage lazily as bytes are written. */
+static int32_t
+patch_spool_open(mpq_directory_s *directory, patch_spool_s *spool)
+{
+    libmpq__md5_init(&spool->md5);
+    return libmpq__directory_temporary(
+        directory, ".libmpq-selected-patch-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", 1, &spool->name,
+        &spool->file
+    );
+}
+
+/* Report short writes and keep an exact logical extent. */
+static int32_t
+patch_spool_write(patch_spool_s *spool, const uint8_t *data, size_t size)
+{
+    if (size > (uint64_t)INT64_MAX - spool->size)
+        return LIBMPQ_ERROR_SIZE;
+    if (fwrite(data, 1, size, spool->file) != size)
+        return LIBMPQ_ERROR_WRITE;
+    spool->size += size;
+    return 0;
+}
+
+/* Hash logical result bytes in the order written. */
+static int32_t
+patch_result_write(patch_spool_s *spool, const uint8_t *data, size_t size)
+{
+    int32_t status = patch_spool_write(spool, data, size);
+    if (status == 0)
+        libmpq__md5_update(&spool->md5, data, size);
+    return status;
+}
+
+/* Read only a finalized range, with explicit errors for seek and short input. */
+static int32_t
+patch_spool_read(patch_spool_s *spool, uint64_t offset, uint8_t *data, size_t size)
+{
+    if (offset > spool->size || size > spool->size - offset)
+        return LIBMPQ_ERROR_READ;
+    if (libmpq__file_seek(spool->file, offset, SEEK_SET) != 0)
+        return LIBMPQ_ERROR_SEEK;
+    return fread(data, 1, size, spool->file) == size ? 0 : LIBMPQ_ERROR_READ;
+}
+
+typedef struct
+{
+    mpq_archive_s *archive;
+    uint32_t number;
+    uint32_t blocks;
+    uint32_t next;
+    uint32_t *checksums;
+    uint8_t *data;
+    size_t capacity;
+    size_t size;
+    size_t position;
+    uint64_t remaining;
+    mpq_md5_s body_md5;
+    uint8_t hash_body;
+    uint8_t single;
+    uint8_t lossy;
+    uint8_t covered;
+} patch_payload_s;
+
+/* Decode one whole MPQ sector, or one SINGLE unit, using the archive reader. */
+static int32_t
+patch_payload_fill(patch_payload_s *payload)
+{
+    libmpq__off_t size;
+    libmpq__off_t transferred;
+    uint32_t mismatches = 0;
+    int lossy = 0;
+    uint32_t block = payload->next;
+    if (block >= payload->blocks)
+        return LIBMPQ_ERROR_READ;
+    int32_t status = libmpq__block_size_unpacked(payload->archive, payload->number, block, &size);
+    if (status != 0)
+        return status;
+    if (size < 0 || size > INT32_MAX || (uint64_t)size > SIZE_MAX ||
+        (uint64_t)size > payload->remaining)
+        return LIBMPQ_ERROR_SIZE;
+    libmpq__off_t packed;
+    status = libmpq__reader_block_size_packed(payload->archive, payload->number, block, &packed);
+    if (status != 0)
+        return status;
+    if (packed < 0 || (uint64_t)packed > SIZE_MAX)
+        return LIBMPQ_ERROR_SIZE;
+    if (!payload->single && (uint64_t)packed > payload->archive->block_size)
+        return LIBMPQ_ERROR_FORMAT;
+    if (payload->data == NULL || (size_t)size > payload->capacity) {
+        uint8_t *data = realloc(payload->data, size == 0 ? 1 : (size_t)size);
+        if (data == NULL)
+            return LIBMPQ_ERROR_MALLOC;
+        payload->data = data;
+        payload->capacity = (size_t)size;
+    }
+    const uint32_t *checksum = payload->checksums == NULL ? NULL : payload->checksums + block;
+    status = libmpq__reader_block_read_acquired(
+        payload->archive, payload->number, block, payload->data, size, &transferred, checksum,
+        &mismatches, &lossy
+    );
+    if (status != 0)
+        return status;
+    if (mismatches != 0 || transferred != size)
+        return LIBMPQ_ERROR_READ;
+    payload->covered &= checksum != NULL && *checksum != 0 && *checksum != UINT32_MAX;
+    payload->lossy |= lossy != 0;
+    payload->position = 0;
+    payload->size = (size_t)size;
+    payload->next++;
+    return 0;
+}
+
+/* Pull exact decoded bytes while tracking the physical PTCH body digest. */
+static int32_t
+patch_payload_read(patch_payload_s *payload, uint8_t *data, size_t size)
+{
+    if (size > payload->remaining)
+        return LIBMPQ_ERROR_FORMAT;
+    while (size != 0) {
+        if (payload->position == payload->size) {
+            int32_t status = patch_payload_fill(payload);
+            if (status != 0)
+                return status;
+        }
+        size_t take = payload->size - payload->position;
+        if (take == 0)
+            return LIBMPQ_ERROR_READ;
+        if (take > size)
+            take = size;
+        memcpy(data, payload->data + payload->position, take);
+        if (payload->hash_body)
+            libmpq__md5_update(&payload->body_md5, data, take);
+        data += take;
+        size -= take;
+        payload->position += take;
+        payload->remaining -= take;
+    }
+    return 0;
+}
+
+/* Reuse the reader's CRC/MD5 availability rules for ordinary source members. */
+static int32_t
+patch_spool_member(
+    patch_payload_s *payload, const mpq_file_attributes_s *attributes, patch_spool_s *next
+)
+{
+    uint8_t buffer[LIBMPQ_PATCH_TRANSFER_SIZE];
+    uint32_t crc = 0;
+    if (payload->remaining == 0 && payload->blocks != 0) {
+        int32_t status = patch_payload_fill(payload);
+        if (status != 0)
+            return status;
+    }
+    while (payload->remaining != 0) {
+        size_t take =
+            payload->remaining < sizeof(buffer) ? (size_t)payload->remaining : sizeof(buffer);
+        int32_t status = patch_payload_read(payload, buffer, take);
+        if (status == 0)
+            status = patch_result_write(next, buffer, take);
+        if (status != 0)
+            return status;
+        if ((attributes->flags & LIBMPQ_ATTRIBUTE_CRC32) != 0)
+            crc = (uint32_t)crc32(crc, buffer, (uInt)take);
+    }
+    libmpq__md5_final(&next->md5, next->digest);
+    uint32_t mismatches = 0;
+    if (!payload->lossy)
+        libmpq__attributes_compare_file(
+            attributes, LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5, crc, next->digest,
+            &mismatches
+        );
+    if (mismatches != 0)
+        return LIBMPQ_ERROR_FORMAT;
+    if ((!payload->lossy && (attributes->flags & LIBMPQ_ATTRIBUTE_MD5) != 0) ||
+        (payload->covered && payload->blocks != 0))
+        next->needs_key_evidence = 0;
+    return 0;
+}
+
+/* Stream COPY output, or stage an unwrapped BSD0 transform. */
+static int32_t
+patch_transfer(patch_payload_s *payload, patch_spool_s *spool, size_t remaining, uint8_t logical)
+{
+    uint8_t buffer[LIBMPQ_PATCH_TRANSFER_SIZE];
+    while (remaining != 0) {
+        size_t take = remaining < sizeof(buffer) ? remaining : sizeof(buffer);
+        int32_t status = patch_payload_read(payload, buffer, take);
+        if (status == 0)
+            status = logical ? patch_result_write(spool, buffer, take)
+                             : patch_spool_write(spool, buffer, take);
+        if (status != 0)
+            return status;
+        remaining -= take;
+    }
+    return 0;
+}
+
+/* Expand the same zero/literal runs incrementally, with no size-based preallocation. */
+static int32_t
+patch_spool_rle(patch_payload_s *payload, patch_spool_s *transform, size_t remaining)
+{
+    uint8_t bytes[128];
+    int32_t status = patch_payload_read(payload, bytes, 4);
+    if (status != 0)
+        return status;
+    while (payload->remaining != 0 && remaining != 0) {
+        uint8_t command;
+        status = patch_payload_read(payload, &command, 1);
+        if (status != 0)
+            return status;
+        size_t count = (size_t)(command & 0x7fu) + 1;
+        if (count > remaining)
+            return LIBMPQ_ERROR_FORMAT;
+        if ((command & 0x80u) != 0)
+            status = patch_payload_read(payload, bytes, count);
+        else
+            memset(bytes, 0, count);
+        if (status == 0)
+            status = patch_spool_write(transform, bytes, count);
+        if (status != 0)
+            return status;
+        remaining -= count;
+    }
+    return payload->remaining == 0 && remaining == 0 ? 0 : LIBMPQ_ERROR_FORMAT;
+}
+
+typedef struct
+{
+    patch_spool_s *transform;
+    patch_spool_s *lower;
+    patch_spool_s *next;
+} patch_bsd_files_s;
+
+/* Read a fixed BSD0 header or control triple from the transform spool. */
+static int32_t
+patch_bsd_file_read(void *context, uint64_t offset, uint8_t *data, size_t size)
+{
+    const patch_bsd_files_s *files = context;
+    return patch_spool_read(files->transform, offset, data, size);
+}
+
+/* Stream one validated delta or extra range into the new logical result. */
+static int32_t
+patch_bsd_file_span(
+    void *context, uint64_t offset, uint64_t source, uint64_t target, uint32_t size, uint8_t add
+)
+{
+    const patch_bsd_files_s *files = context;
+    uint8_t data[LIBMPQ_PATCH_TRANSFER_SIZE];
+    uint8_t old[LIBMPQ_PATCH_TRANSFER_SIZE];
+    if (files->next->size != target)
+        return LIBMPQ_ERROR_FORMAT;
+    while (size != 0) {
+        size_t take = size < sizeof(data) ? (size_t)size : sizeof(data);
+        int32_t status = patch_spool_read(files->transform, offset, data, take);
+        if (status != 0)
+            return status;
+        if (add && source < files->lower->size) {
+            uint64_t available = files->lower->size - source;
+            size_t covered = available < take ? (size_t)available : take;
+            status = patch_spool_read(files->lower, source, old, covered);
+            if (status != 0)
+                return status;
+            for (size_t i = 0; i < covered; ++i)
+                data[i] = (uint8_t)(data[i] + old[i]);
+        }
+        status = patch_result_write(files->next, data, take);
+        if (status != 0)
+            return status;
+        offset += take;
+        source += take;
+        size -= (uint32_t)take;
+    }
+    return 0;
+}
+
+/* Verify and apply one physical patch before allowing the caller to adopt it. */
+static int32_t
+patch_spool_delta(
+    patch_payload_s *payload, const mpq_patch_selection_operation_s *op, mpq_directory_s *directory,
+    patch_spool_s *lower, patch_spool_s *next
+)
+{
+    patch_spool_s decoded = { 0 };
+    patch_transform_s transform;
+    uint8_t header[LIBMPQ_PATCH_HEADER_SIZE];
+    uint8_t digest[16];
+    if (lower->file == NULL)
+        return LIBMPQ_ERROR_FORMAT;
+    libmpq__md5_init(&payload->body_md5);
+    payload->hash_body = 1;
+    int32_t status = patch_payload_read(payload, header, sizeof(header));
+    if (status != 0)
+        return status;
+    status = patch_transform_parse(header, op->patch_info.data_size, lower->size, &transform);
+    if (status != 0)
+        return status;
+    if (transform.after != op->unpacked_size || memcmp(lower->digest, header + 24, 16) != 0)
+        return LIBMPQ_ERROR_FORMAT;
+
+    uint8_t copy = memcmp(header + 64, "COPY", 4) == 0;
+    if (copy) {
+        if (transform.encoded != transform.decoded || transform.decoded != transform.after)
+            return LIBMPQ_ERROR_FORMAT;
+        status = patch_transfer(payload, next, transform.encoded, 1);
+    } else {
+        if (memcmp(header + 64, "BSD0", 4) != 0 ||
+            transform.decoded < LIBMPQ_PATCH_BSDIFF_HEADER_SIZE ||
+            transform.decoded > LIBMPQ_PATCH_BSDIFF_HEADER_SIZE + UINT64_C(13) * transform.after)
+            return LIBMPQ_ERROR_FORMAT;
+        if (transform.decoded != transform.encoded &&
+            (transform.encoded < 4 || transform.decoded > UINT64_C(128) * (transform.encoded - 4)))
+            return LIBMPQ_ERROR_FORMAT;
+        status = patch_spool_open(directory, &decoded);
+        if (status == 0)
+            status = transform.decoded == transform.encoded
+                         ? patch_transfer(payload, &decoded, transform.encoded, 0)
+                         : patch_spool_rle(payload, &decoded, transform.decoded);
+    }
+    libmpq__md5_final(&payload->body_md5, digest);
+    if (status == 0 &&
+        (payload->remaining != 0 || memcmp(digest, op->patch_info.md5, sizeof(digest)) != 0))
+        status = LIBMPQ_ERROR_FORMAT;
+    if (status == 0 && !copy) {
+        if (fflush(decoded.file) != 0)
+            status = LIBMPQ_ERROR_WRITE;
+        else {
+            patch_bsd_files_s files = { &decoded, lower, next };
+            status = patch_walk_bsd0(
+                &files, patch_bsd_file_read, patch_bsd_file_span, decoded.size, transform.after
+            );
+        }
+    }
+    if (status == 0) {
+        libmpq__md5_final(&next->md5, next->digest);
+        if (next->size != transform.after || memcmp(next->digest, header + 40, 16) != 0)
+            status = LIBMPQ_ERROR_FORMAT;
+    }
+    return patch_spool_close(directory, &decoded, status);
+}
+
+/* Read the selected canonical member with the plan's exact spelling and geometry. */
+static int32_t
+patch_spool_operation(
+    mpq_archive_s *input, const mpq_patch_selection_operation_s *op, mpq_directory_s *directory,
+    patch_spool_s *lower, patch_spool_s *next
+)
+{
+    patch_payload_s payload = { .number = op->number, .covered = 1 };
+    mpq_file_attributes_s attributes;
+    int32_t status = libmpq__archive_clone(&payload.archive, input);
+    if (status != 0)
+        return status;
+    status = libmpq__reader_validate_file_number(payload.archive, op->number);
+    if (status != 0)
+        goto done;
+    mpq_archive_s *archive = payload.archive;
+    uint32_t index = archive->mpq_map[op->number].entry_index;
+    const mpq_entry_s *entry = &archive->mpq_entry[index];
+    if (entry->offset != op->offset || entry->packed_size != op->packed_size ||
+        entry->unpacked_size != op->unpacked_size || entry->flags != op->flags) {
+        status = LIBMPQ_ERROR_FORMAT;
+        goto done;
+    }
+    uint8_t delta = op->kind == LIBMPQ_PATCH_SELECT_DELTA;
+    uint64_t prefix = delta ? op->patch_info.length : 0;
+    payload.single = (op->flags & LIBMPQ_FILE_FLAG_SINGLE) != 0;
+    payload.remaining = delta ? op->patch_info.data_size : op->unpacked_size;
+    if (prefix > op->packed_size) {
+        status = LIBMPQ_ERROR_FORMAT;
+        goto done;
+    }
+    if (op->packed_size - prefix > UINT32_MAX || payload.remaining > UINT32_MAX ||
+        (payload.single &&
+         (payload.remaining > INT32_MAX || op->packed_size - prefix > INT32_MAX)) ||
+        (delta && op->unpacked_size > UINT32_MAX)) {
+        status = LIBMPQ_ERROR_SIZE;
+        goto done;
+    }
+    status = libmpq__reader_validate_payload_range(archive, index, 0, entry->packed_size);
+    if (status != 0)
+        goto done;
+    uint32_t checked;
+    uint32_t unavailable;
+    uint32_t mismatches;
+    status = libmpq__verify_file_ex(
+        archive, op->number, NULL, LIBMPQ_VERIFY_RAW_MD5, &checked, &unavailable, &mismatches,
+        malloc
+    );
+    if (status != 0 || mismatches != 0) {
+        if (status == 0)
+            status = LIBMPQ_ERROR_FORMAT;
+        goto done;
+    }
+
+    uint32_t key;
+    const uint32_t *seed = NULL;
+    if (delta) {
+        status =
+            patch_body_view(archive, op->number, op->physical_name, &op->patch_info, &key, &seed);
+    } else {
+        status = libmpq__verify_attributes(archive, op->number, &attributes);
+        next->needs_key_evidence = op->needs_key_evidence;
+    }
+    if (status != 0)
+        goto done;
+    status = libmpq__reader_offsets_acquire_key(archive, op->number, op->physical_name, seed);
+    if (status != 0)
+        goto done;
+    status = libmpq__file_blocks(archive, op->number, &payload.blocks);
+    if (status == 0)
+        status = libmpq__reader_sector_checksums(archive, op->number, &payload.checksums);
+    if (status == 0)
+        status = patch_spool_open(directory, next);
+    if (status == 0)
+        status = delta ? patch_spool_delta(&payload, op, directory, lower, next)
+                       : patch_spool_member(&payload, &attributes, next);
+    if (status == 0 && (next->size != op->unpacked_size || payload.next != payload.blocks))
+        status = LIBMPQ_ERROR_FORMAT;
+    if (status == 0 && fflush(next->file) != 0)
+        status = LIBMPQ_ERROR_WRITE;
+
+done:
+    free(payload.data);
+    free(payload.checksums);
+    {
+        int32_t cleanup = libmpq__archive_close(payload.archive);
+        return status != 0 ? status : cleanup;
+    }
+}
+
+/* Execute synchronously, then transfer only the final logical spool to the stream. */
+int32_t
+libmpq__patch_execute(
+    const mpq_patch_selection_s *selection, mpq_archive_s *base, mpq_archive_s *const *patches,
+    size_t count, mpq_stream_s **stream
+)
+{
+    if (stream == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    *stream = NULL;
+    if (selection == NULL || selection->operations == NULL || selection->count == 0 ||
+        base == NULL || (count != 0 && patches == NULL))
+        return LIBMPQ_ERROR_EXIST;
+
+    patch_spool_s lower = { 0 };
+    patch_spool_s next = { 0 };
+    mpq_directory_s *directory = NULL;
+    char *name = NULL;
+    char *anchor = libmpq__file_temporary_anchor();
+    if (anchor == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    int32_t status = libmpq__directory_open(anchor, &directory, &name);
+    free(anchor);
+    free(name);
+    if (status != 0)
+        return status;
+
+    for (size_t i = 0; status == 0 && i < selection->count; ++i) {
+        const mpq_patch_selection_operation_s *op = &selection->operations[i];
+        if (op->source > count) {
+            status = LIBMPQ_ERROR_EXIST;
+            break;
+        }
+        mpq_archive_s *input = op->source == 0 ? base : patches[op->source - 1];
+        if (input == NULL) {
+            status = LIBMPQ_ERROR_EXIST;
+            break;
+        }
+        if (lower.needs_key_evidence && op->kind != LIBMPQ_PATCH_SELECT_DELTA) {
+            status = LIBMPQ_ERROR_DECRYPT;
+            break;
+        }
+        if (op->kind != LIBMPQ_PATCH_SELECT_DELETE)
+            status = patch_spool_operation(input, op, directory, &lower, &next);
+        if (status == 0) {
+            status = patch_spool_close(directory, &lower, 0);
+            lower = next;
+            memset(&next, 0, sizeof(next));
+        }
+    }
+    if (status == 0 && lower.file == NULL)
+        status = LIBMPQ_ERROR_EXIST;
+    if (status == 0 && lower.needs_key_evidence)
+        status = LIBMPQ_ERROR_DECRYPT;
+    if (status == 0) {
+        mpq_source_s *source;
+        status = libmpq__source_adopt_spool(&source, lower.file, lower.size, directory, lower.name);
+        if (status == 0) {
+            directory = NULL;
+            memset(&lower, 0, sizeof(lower));
+            status = libmpq__reader_stream_adopt_source(stream, source);
+            if (status != 0)
+                libmpq__source_discard(source);
+        }
+    }
+    status = patch_spool_close(directory, &next, status);
+    status = patch_spool_close(directory, &lower, status);
+    libmpq__directory_close(directory);
     return status;
 }

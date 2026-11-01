@@ -20,6 +20,7 @@
 #include "mpq-stream.h"
 #include "mpq-archive.h"
 #include "mpq-reader.h"
+#include "mpq-source.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -29,6 +30,7 @@
 struct mpq_stream
 {
     mpq_archive_s *archive;
+    mpq_source_s *source;
     uint32_t file_number;
     uint32_t blocks;
     uint32_t cached_block;
@@ -208,6 +210,23 @@ libmpq__reader_stream_open_name(
     return stream_adopt(clone, file_number, filename, stream);
 }
 
+/* Transfer a verified logical source on success. */
+int32_t
+libmpq__reader_stream_adopt_source(mpq_stream_s **stream, mpq_source_s *source)
+{
+    *stream = NULL;
+    uint64_t size = libmpq__source_size(source);
+    if (size > INT64_MAX)
+        return LIBMPQ_ERROR_SIZE;
+    mpq_stream_s *result = calloc(1, sizeof(*result));
+    if (result == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    result->source = source;
+    result->size = (libmpq__off_t)size;
+    *stream = result;
+    return 0;
+}
+
 int32_t
 libmpq__reader_stream_read(
     mpq_stream_s *stream, uint8_t *buffer, libmpq__off_t size, libmpq__off_t *transferred
@@ -221,6 +240,19 @@ libmpq__reader_stream_read(
         return LIBMPQ_ERROR_SIZE;
     if (stream == NULL || (buffer == NULL && size != 0))
         return LIBMPQ_ERROR_EXIST;
+    if (stream->source != NULL) {
+        libmpq__off_t count = stream->size - stream->position;
+        if (count > size)
+            count = size;
+        size_t amount;
+        int32_t status = libmpq__source_read_spool(
+            stream->source, (uint64_t)stream->position, buffer, (size_t)count, &amount
+        );
+        stream->position += (libmpq__off_t)amount;
+        if (transferred != NULL)
+            *transferred = (libmpq__off_t)amount;
+        return status;
+    }
     while (total < size && stream->position < stream->size) {
         libmpq__off_t base;
         libmpq__off_t offset;
@@ -318,6 +350,8 @@ libmpq__reader_stream_close(mpq_stream_s *stream)
 
     if (stream == NULL)
         return LIBMPQ_ERROR_EXIST;
+    if (stream->source != NULL && libmpq__source_close(stream->source) != 0)
+        result = LIBMPQ_ERROR_CLOSE;
     free(stream->buffer);
     free(stream->checksums);
     if (stream->offsets_acquired) {

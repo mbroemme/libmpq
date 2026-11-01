@@ -599,6 +599,38 @@ verify_raw_md5(
     return 0;
 }
 
+/* Retrieve usable logical attributes for extended verification. */
+int32_t
+libmpq__verify_attributes(
+    mpq_archive_s *archive, uint32_t file_number, mpq_file_attributes_s *attributes
+)
+{
+    memset(attributes, 0, sizeof(*attributes));
+    const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[file_number].entry_index];
+
+    int32_t status = libmpq__attributes_load(archive);
+    if (status != 0 && status != LIBMPQ_ERROR_EXIST)
+        return status;
+    if (status == 0 && (entry->source_mask & LIBMPQ_ENTRY_SOURCE_CLASSIC) != 0) {
+        uint32_t signature_number;
+        uint32_t signatures;
+
+        status = libmpq__file_attributes(archive, file_number, attributes);
+        if (status != 0)
+            return status;
+
+        /* Only recognized circular zero placeholders, never arbitrary CRC zero. */
+        if (attributes->crc32 == 0 &&
+            (entry->classic_source_index == archive->attributes->self ||
+             (libmpq__file_number(archive, LIBMPQ_SIGNATURE_NAME, &signature_number) == 0 &&
+              signature_number == file_number &&
+              libmpq__signature_detect(archive, &signatures) == 0 &&
+              (signatures & LIBMPQ_SIGNATURE_WEAK) != 0)))
+            attributes->flags &= ~LIBMPQ_ATTRIBUTE_CRC32;
+    }
+    return 0;
+}
+
 /*
  * Hash requested physical chunks and logical blocks without changing extraction.
  * Publish mismatch bits only after the entire verification operation succeeds.
@@ -656,29 +688,9 @@ verify_file(
     memset(&attributes, 0, sizeof(attributes));
     if ((verify_flags & (LIBMPQ_VERIFY_FILE_CRC32 | LIBMPQ_VERIFY_FILE_MD5)) != 0) {
         if (extended) {
-            const mpq_entry_s *entry =
-                &archive->mpq_entry[archive->mpq_map[file_number].entry_index];
-
-            status = libmpq__attributes_load(archive);
-            if (status != 0 && status != LIBMPQ_ERROR_EXIST)
+            status = libmpq__verify_attributes(archive, file_number, &attributes);
+            if (status != 0)
                 return status;
-            if (status == 0 && (entry->source_mask & LIBMPQ_ENTRY_SOURCE_CLASSIC) != 0) {
-                uint32_t signature_number;
-                uint32_t signatures;
-
-                status = libmpq__file_attributes(archive, file_number, &attributes);
-                if (status != 0)
-                    return status;
-
-                /* Only recognized circular zero placeholders, never arbitrary CRC zero. */
-                if (attributes.crc32 == 0 &&
-                    (entry->classic_source_index == archive->attributes->self ||
-                     (libmpq__file_number(archive, LIBMPQ_SIGNATURE_NAME, &signature_number) == 0 &&
-                      signature_number == file_number &&
-                      libmpq__signature_detect(archive, &signatures) == 0 &&
-                      (signatures & LIBMPQ_SIGNATURE_WEAK) != 0)))
-                    attributes.flags &= ~LIBMPQ_ATTRIBUTE_CRC32;
-            }
         } else {
             status = libmpq__file_attributes(archive, file_number, &attributes);
             if (status < 0)

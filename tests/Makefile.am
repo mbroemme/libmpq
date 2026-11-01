@@ -222,7 +222,7 @@ test_reader_SOURCES = test-mpq-reader.c $(COMMON_SOURCES)
 test_reader_LDADD = $(test_attributes_LDADD)
 test_stream_SOURCES = test-mpq-stream.c $(COMMON_SOURCES)
 test_patch_reader_SOURCES = test-mpq-patch-reader.c $(COMMON_SOURCES)
-test_patch_reader_LDADD = $(top_builddir)/src/mpq-patch-reader.lo $(top_builddir)/src/mpq-patch-writer.lo $(test_writer_LDADD)
+test_patch_reader_LDADD = $(test_patch_writer_LDADD)
 test_patch_writer_SOURCES = test-mpq-patch-writer.c $(COMMON_SOURCES)
 test_patch_writer_LDADD = \
 	$(top_builddir)/src/mpq-patch-writer.lo \

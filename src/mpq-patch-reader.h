@@ -127,6 +127,12 @@ int32_t libmpq__patch_select(
 );
 void libmpq__patch_selection_free(mpq_patch_selection_s *selection);
 
+/* Execute a resolved plan synchronously and detach the verified result. */
+int32_t libmpq__patch_execute(
+    const mpq_patch_selection_s *selection, mpq_archive_s *base, mpq_archive_s *const *patches,
+    size_t count, mpq_stream_s **stream
+);
+
 /* Decode the prefix preceding a stored MPQ patch member. */
 int32_t libmpq__patch_info_parse(const uint8_t *data, size_t size, mpq_patch_info_s *info);
 
