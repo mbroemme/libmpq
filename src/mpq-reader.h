@@ -77,6 +77,18 @@ int32_t libmpq__reader_block_read_acquired(
     uint32_t *mismatches, int *lossy
 );
 
+/* Strict name provenance, with classic enumeration in original slot order. */
+typedef struct
+{
+    mpq_file_identity_s identity;
+    uint32_t slot; /* UINT32_MAX for a name represented only by BET. */
+} mpq_named_identity_s;
+
+int32_t libmpq__reader_name_identities(
+    mpq_archive_s *archive, const char *name, mpq_named_identity_s **identities, uint32_t *count
+);
+int32_t libmpq__reader_bet_match(void *context, uint64_t index, uint64_t hash, int *matches);
+
 /* Private packed-sector operations on a member with acquired offsets. */
 int32_t libmpq__reader_block_stored_acquired(
     mpq_archive_s *archive, uint32_t number, uint32_t block, uint8_t *buffer, uint32_t capacity,

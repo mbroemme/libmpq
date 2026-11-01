@@ -1138,230 +1138,27 @@ libmpq__file_number_from_hash(
     return LIBMPQ_ERROR_EXIST;
 }
 
-/* Confirm the hash and skip non-live BET rows without masking malformed mappings. */
-static int32_t
-api_bet_match(void *context, uint64_t bet_index, uint64_t hash, int *matches)
-{
-    mpq_archive_s *archive = context;
-    uint32_t index;
-    int32_t result = libmpq__bet_match(&archive->mpq_bet, bet_index, hash, matches);
-    if (result != 0 || !*matches)
-        return result;
-    result = libmpq__entry_index_from_bet(archive, bet_index, &index);
-    if (result != 0)
-        return result;
-    *matches = (archive->mpq_entry[index].flags & LIBMPQ_FLAG_EXISTS) != 0;
-    return 0;
-}
-
-/* Validate canonical mappings without inferring filename-specific provenance. */
-static int32_t
-api_identity_entry(mpq_archive_s *a, uint32_t index, mpq_file_identity_s *out)
-{
-    const mpq_entry_s *entry;
-    uint32_t mapped;
-
-    if (a->mpq_entry == NULL || index >= a->entry_count)
-        return LIBMPQ_ERROR_FORMAT;
-    entry = &a->mpq_entry[index];
-    if (!(entry->flags & LIBMPQ_FLAG_EXISTS))
-        return LIBMPQ_ERROR_EXIST;
-    if (!entry->source_mask || (entry->source_mask & ~3u) || entry->file_number >= a->files ||
-        entry->file_number >= a->entry_count || a->mpq_map == NULL ||
-        a->mpq_map[entry->file_number].entry_index != index)
-        return LIBMPQ_ERROR_FORMAT;
-    if ((entry->source_mask & LIBMPQ_ENTRY_SOURCE_CLASSIC) &&
-        (libmpq__entry_index_from_classic(a, entry->classic_source_index, &mapped) != 0 ||
-         mapped != index))
-        return LIBMPQ_ERROR_FORMAT;
-    if ((entry->source_mask & LIBMPQ_ENTRY_SOURCE_BET) &&
-        (libmpq__entry_index_from_bet(a, entry->bet_source_index, &mapped) != 0 || mapped != index))
-        return LIBMPQ_ERROR_FORMAT;
-    out->file_number = entry->file_number;
-    return 0;
-}
-
-typedef struct
-{
-    mpq_archive_s *archive;
-    uint32_t index;
-    uint8_t found;
-} api_identity_bet_s;
-
-/* Inspect all reachable candidates using the existing validated HET probe loop. */
-static int32_t
-api_identity_bet_match(void *context, uint64_t row, uint64_t hash, int *matches)
-{
-    api_identity_bet_s *state = context;
-    int32_t result = api_bet_match(state->archive, row, hash, matches);
-
-    if (result != 0 || !*matches)
-        return result;
-    if (state->found)
-        return LIBMPQ_ERROR_FORMAT;
-    result = libmpq__entry_index_from_bet(state->archive, row, &state->index);
-    if (result != 0)
-        return result;
-    state->found = 1;
-    *matches = 0;
-    return 0;
-}
-
-/* Sort a temporary list only to detect duplicate locale/platform identities. */
-static int
-api_identity_compare(const void *left, const void *right)
-{
-    const mpq_file_identity_s *a = left;
-    const mpq_file_identity_s *b = right;
-
-    if (a->locale != b->locale)
-        return a->locale < b->locale ? -1 : 1;
-    return a->platform < b->platform ? -1 : a->platform != b->platform;
-}
-
-/* Share strict resolution without altering the existing first-hit lookup. */
+/* Select one row from the shared strict name qualifier. */
 static int32_t
 api_identity_lookup(
-    mpq_archive_s *a, const char *name, uint32_t ordinal, uint16_t locale, uint16_t platform,
+    mpq_archive_s *archive, const char *name, uint32_t ordinal, uint16_t locale, uint16_t platform,
     uint8_t exact, mpq_file_identity_s *out
 )
 {
-    api_identity_bet_s bet = { a, 0, 0 };
-    mpq_file_identity_s *rows = NULL;
-    mpq_file_identity_s selected = { 0 };
-    uint32_t hash1;
-    uint32_t hash2;
-    uint32_t hash3;
+    mpq_named_identity_s *rows;
     uint32_t count;
-    uint32_t start = 0;
-    uint32_t probes = 0;
-    uint32_t capacity = 0;
-    uint32_t used = 0;
-    uint8_t found = 0;
-    int32_t result = LIBMPQ_ERROR_EXIST;
-
-    if (a == NULL || name == NULL || *name == '\0')
-        return LIBMPQ_ERROR_EXIST;
-    if (a->write_mode)
-        return LIBMPQ_ERROR_NOT_INITIALIZED;
-    count = a->mpq_header.hash_table_count;
-    if ((a->het_data == NULL) != (a->bet_data == NULL))
-        return LIBMPQ_ERROR_FORMAT;
-    if (count && a->mpq_hash == NULL)
-        return LIBMPQ_ERROR_FORMAT;
-    libmpq__file_hash(name, &hash1, &hash2, &hash3);
-    if (count) {
-        uint32_t slot = start = hash1 % count;
-
-        while (probes < count) {
-            const mpq_hash_s *row = &a->mpq_hash[slot];
-
-            if (row->block_table_index == LIBMPQ_HASH_FREE)
-                break;
-            if (row->block_table_index != LIBMPQ_HASH_DELETED && row->hash_a == hash2 &&
-                row->hash_b == hash3)
-                capacity++;
-            probes++;
-            slot = slot == count - 1 ? 0 : slot + 1;
+    int32_t result = libmpq__reader_name_identities(archive, name, &rows, &count);
+    if (result != 0)
+        return result;
+    result = LIBMPQ_ERROR_EXIST;
+    for (uint32_t i = 0; i < count; ++i) {
+        const mpq_file_identity_s *id = &rows[i].identity;
+        if (exact ? id->locale == locale && id->platform == platform : i == ordinal) {
+            *out = *id;
+            result = 0;
+            break;
         }
     }
-    if (capacity) {
-        if ((uint64_t)capacity * sizeof(*rows) > SIZE_MAX)
-            return LIBMPQ_ERROR_SIZE;
-        rows = calloc(capacity, sizeof(*rows));
-        if (rows == NULL)
-            return LIBMPQ_ERROR_MALLOC;
-    }
-
-    /* Reachability follows the probe chain, but enumeration uses original slot order. */
-    for (uint32_t slot = 0; slot < count; slot++) {
-        const mpq_hash_s *row = &a->mpq_hash[slot];
-        uint32_t distance = slot >= start ? slot - start : count - start + slot;
-        uint32_t index;
-
-        if (distance >= probes || row->block_table_index == LIBMPQ_HASH_DELETED ||
-            row->hash_a != hash2 || row->hash_b != hash3)
-            continue;
-        if (rows == NULL || used >= capacity) {
-            result = LIBMPQ_ERROR_FORMAT;
-            goto done;
-        }
-        if (libmpq__entry_index_from_classic(a, row->block_table_index, &index) != 0) {
-            result = LIBMPQ_ERROR_FORMAT;
-            goto done;
-        }
-        result = api_identity_entry(a, index, &rows[used]);
-        if (result == LIBMPQ_ERROR_EXIST)
-            continue;
-        if (result != 0)
-            goto done;
-        rows[used].flags = LIBMPQ_IDENTITY_CLASSIC;
-        rows[used].locale = row->locale;
-        rows[used].platform = row->platform;
-        used++;
-    }
-    if (a->het_data != NULL) {
-        uint64_t ignored;
-
-        if (a->bet_data == NULL || a->mpq_het.header.name_hash_bit_size != 64 ||
-            a->mpq_bet.header.name_hash2_size != 56 || strlen(name) > LIBMPQ_HET_FILENAME_LIMIT) {
-            result = LIBMPQ_ERROR_FORMAT;
-            goto done;
-        }
-        result = libmpq__het_lookup(
-            &a->mpq_het, name, a->mpq_bet.header.entry_count, api_identity_bet_match, &bet, &ignored
-        );
-        if (result != LIBMPQ_ERROR_EXIST) {
-            if (result == 0)
-                result = LIBMPQ_ERROR_FORMAT;
-            goto done;
-        }
-        if (bet.found) {
-            mpq_file_identity_s checked = { 0 };
-
-            result = api_identity_entry(a, bet.index, &checked);
-            if (result != 0)
-                goto done;
-        }
-    }
-    if (used) {
-        uint8_t reconciled = !bet.found;
-
-        for (uint32_t i = 0; i < used; i++) {
-            if (bet.found && a->mpq_map[rows[i].file_number].entry_index == bet.index) {
-                rows[i].flags |= LIBMPQ_IDENTITY_BET;
-                reconciled = 1;
-            }
-            if ((!exact && i == ordinal) ||
-                (exact && rows[i].locale == locale && rows[i].platform == platform)) {
-                selected = rows[i];
-                found = 1;
-            }
-        }
-        if (!reconciled) {
-            result = LIBMPQ_ERROR_FORMAT;
-            goto done;
-        }
-        qsort(rows, used, sizeof(*rows), api_identity_compare);
-        for (uint32_t i = 1; i < used; i++) {
-            if (api_identity_compare(&rows[i - 1], &rows[i]) == 0) {
-                result = LIBMPQ_ERROR_FORMAT;
-                goto done;
-            }
-        }
-    } else if (bet.found) {
-        result = api_identity_entry(a, bet.index, &selected);
-        if (result != 0)
-            goto done;
-
-        /* This name has only a BET identity, even if its payload has classic aliases. */
-        selected.flags = LIBMPQ_IDENTITY_BET;
-        found = exact ? locale == 0 && platform == 0 : ordinal == 0;
-    }
-    result = found ? 0 : LIBMPQ_ERROR_EXIST;
-    if (result == 0)
-        *out = selected;
-done:
     free(rows);
     return result;
 }
@@ -1397,8 +1194,8 @@ libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *
         uint64_t bet_index;
         uint32_t index;
         result = libmpq__het_lookup(
-            &mpq_archive->mpq_het, filename, mpq_archive->mpq_bet.header.entry_count, api_bet_match,
-            mpq_archive, &bet_index
+            &mpq_archive->mpq_het, filename, mpq_archive->mpq_bet.header.entry_count,
+            libmpq__reader_bet_match, mpq_archive, &bet_index
         );
         if (result == 0) {
             result = libmpq__entry_index_from_bet(mpq_archive, bet_index, &index);

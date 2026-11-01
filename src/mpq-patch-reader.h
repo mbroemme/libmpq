@@ -82,6 +82,51 @@ int32_t libmpq__patch_view_open_mpqe_base(
 mpq_archive_s *libmpq__patch_view_archive(mpq_patch_view_s *view);
 int32_t libmpq__patch_view_close(mpq_patch_view_s *view);
 
+typedef enum
+{
+    LIBMPQ_PATCH_SELECT_ORDINARY,
+    LIBMPQ_PATCH_SELECT_DELTA,
+    LIBMPQ_PATCH_SELECT_DELETE
+} mpq_patch_selection_kind_e;
+
+typedef struct
+{
+    size_t source;   /* 0 for base, one-based patch index otherwise. */
+    uint32_t number; /* Canonical member in that input, never a hash slot. */
+    uint32_t flags;
+    uint32_t provenance;
+    uint32_t classic_slot;
+    uint16_t locale;
+    uint16_t platform;
+    uint64_t offset; /* Original MPQ-relative position for KEY. */
+    uint64_t packed_size;
+    uint64_t unpacked_size; /* For PTCH this is the logical result size. */
+    char *physical_name;
+    mpq_patch_info_s patch_info;
+    mpq_patch_selection_kind_e kind;
+    uint8_t needs_key_evidence;
+} mpq_patch_selection_operation_s;
+
+typedef struct
+{
+    mpq_patch_selection_operation_s *operations;
+    size_t count;
+    uint16_t locale;
+    uint16_t platform;
+} mpq_patch_selection_s;
+
+/*
+ * Resolve one filename in a stable set of opened readers. The plan retains
+ * copied data only. Execution must use the same unmodified input handles.
+ * A delta is classified by its physical flags and prefix, pending body checks.
+ */
+int32_t libmpq__patch_select(
+    mpq_patch_selection_s *selection, mpq_archive_s *base, mpq_archive_s *const *patches,
+    const char *const *prefixes, size_t count, const char *filename, uint8_t exact, uint16_t locale,
+    uint16_t platform
+);
+void libmpq__patch_selection_free(mpq_patch_selection_s *selection);
+
 /* Decode the prefix preceding a stored MPQ patch member. */
 int32_t libmpq__patch_info_parse(const uint8_t *data, size_t size, mpq_patch_info_s *info);
 

@@ -852,6 +852,38 @@ patch_normalize_prefix(const char *input, char **result)
     return 0;
 }
 
+/* Accept one live namespace marker using the materializer's metadata rules. */
+static int32_t
+patch_discover_marker(
+    mpq_archive_s *archive, const char *name, size_t length, uint32_t number, char **discovered
+)
+{
+    libmpq__off_t size;
+    if (length == SIZE_MAX)
+        return LIBMPQ_ERROR_SIZE;
+    if (*discovered == NULL) {
+        *discovered = malloc(length + 1);
+        if (*discovered == NULL)
+            return LIBMPQ_ERROR_MALLOC;
+        memcpy(*discovered, name, length);
+        (*discovered)[length] = '\0';
+    } else if (strlen(*discovered) != length || !patch_name_equal(*discovered, name, length))
+        return LIBMPQ_ERROR_FORMAT;
+    if (number == UINT32_MAX || libmpq__file_size_unpacked(archive, number, &size) != 0 ||
+        size <= 0 || size >= 64)
+        return LIBMPQ_ERROR_FORMAT;
+    return 0;
+}
+
+/* A caller prefix and a discovered marker must name the same namespace. */
+static int
+patch_prefix_conflicts(const char *explicit_prefix, const char *discovered)
+{
+    return explicit_prefix != NULL && discovered != NULL &&
+           (strlen(explicit_prefix) != strlen(discovered) ||
+            !patch_name_equal(explicit_prefix, discovered, strlen(discovered)));
+}
+
 /* Keep physical member lookup separate from logical lower-layer identity. */
 static int32_t
 patch_prepare_entries(
@@ -878,37 +910,11 @@ patch_prepare_entries(
         if (!entry->live || entry->name == NULL || !patch_metadata_path(entry->name, &length))
             continue;
         *detected = 1;
-        if (length > SIZE_MAX - 1) {
-            status = LIBMPQ_ERROR_SIZE;
+        status = patch_discover_marker(patch, entry->name, length, entry->number, &discovered);
+        if (status != 0)
             goto done;
-        }
-        if (discovered == NULL) {
-            discovered = malloc(length + 1);
-            if (discovered == NULL) {
-                status = LIBMPQ_ERROR_MALLOC;
-                goto done;
-            }
-            memcpy(discovered, entry->name, length);
-            discovered[length] = '\0';
-        } else if (strlen(discovered) != length ||
-                   !patch_name_equal(discovered, entry->name, length)) {
-            status = LIBMPQ_ERROR_FORMAT;
-            goto done;
-        }
-        {
-            uint32_t number = entry->number;
-            libmpq__off_t size;
-
-            if (number == UINT32_MAX || libmpq__file_size_unpacked(patch, number, &size) != 0 ||
-                size <= 0 || size >= 64) {
-                status = LIBMPQ_ERROR_FORMAT;
-                goto done;
-            }
-        }
     }
-    if (explicit_prefix != NULL && discovered != NULL &&
-        (strlen(explicit_prefix) != strlen(discovered) ||
-         !patch_name_equal(explicit_prefix, discovered, strlen(discovered)))) {
+    if (patch_prefix_conflicts(explicit_prefix, discovered)) {
         status = LIBMPQ_ERROR_FORMAT;
         goto done;
     }
@@ -2801,4 +2807,681 @@ libmpq__patch_view_open_mpqe_base(
         return view == NULL ? LIBMPQ_ERROR_EXIST : LIBMPQ_ERROR_DECRYPT;
     }
     return patch_view_open_paths(view, &base_source, patch_paths, patch_count);
+}
+
+/* Release the plan without touching any of its original archive handles. */
+void
+libmpq__patch_selection_free(mpq_patch_selection_s *selection)
+{
+    if (selection != NULL) {
+        for (size_t i = 0; i < selection->count; ++i)
+            free(selection->operations[i].physical_name);
+        free(selection->operations);
+        memset(selection, 0, sizeof(*selection));
+    }
+}
+
+/* Join a normalized prefix and a logical member name. */
+static int32_t
+patch_join_name(const char *prefix, const char *name, char **physical)
+{
+    size_t head = strlen(prefix);
+    size_t tail = strlen(name);
+    if (tail == SIZE_MAX || head > SIZE_MAX - tail - 1)
+        return LIBMPQ_ERROR_SIZE;
+    *physical = malloc(head + tail + 1);
+    if (*physical == NULL)
+        return LIBMPQ_ERROR_MALLOC;
+    memcpy(*physical, prefix, head);
+    memcpy(*physical + head, name, tail + 1);
+    return 0;
+}
+
+/* Ignore stale marker spellings. Live candidates must qualify as real members. */
+static int32_t
+patch_selected_marker(mpq_archive_s *archive, const char *name, char **discovered)
+{
+    mpq_named_identity_s *rows;
+    uint32_t count;
+    size_t prefix;
+    if (!patch_metadata_path(name, &prefix))
+        return 0;
+    int32_t status = libmpq__reader_name_identities(archive, name, &rows, &count);
+    if (status == LIBMPQ_ERROR_EXIST)
+        return 0;
+    if (status != 0)
+        return status;
+    for (uint32_t i = 0; status == 0 && i < count; ++i) {
+        const uint32_t number = rows[i].identity.file_number;
+        const mpq_entry_s *entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
+        if ((entry->flags & (LIBMPQ_FILE_FLAG_PATCH_FILE | LIBMPQ_FILE_FLAG_DELETE_MARKER)) != 0)
+            status = LIBMPQ_ERROR_FORMAT;
+        else
+            status = patch_discover_marker(archive, name, prefix, number, discovered);
+    }
+    free(rows);
+    return status;
+}
+
+/* Only namespace markers need spellings from the patch listfile. */
+static int32_t
+patch_selected_prefix(mpq_archive_s *archive, const char *supplied, char **prefix)
+{
+    static const char marker[] = "(patch_metadata)";
+    uint8_t *list = NULL;
+    char *explicit_prefix = NULL;
+    char *discovered = NULL;
+    char *qualified = NULL;
+    size_t size = 0;
+    int32_t status = supplied == NULL ? 0 : patch_normalize_prefix(supplied, &explicit_prefix);
+    *prefix = NULL;
+    if (status == 0)
+        status = patch_selected_marker(archive, marker, &discovered);
+    if (status == 0 && explicit_prefix != NULL && *explicit_prefix != '\0') {
+        status = patch_join_name(explicit_prefix, marker, &qualified);
+        if (status == 0)
+            status = patch_selected_marker(archive, qualified, &discovered);
+    }
+    if (status == 0) {
+        status = patch_read_named(archive, LIBMPQ_LISTFILE_NAME, &list, &size);
+        if (status == LIBMPQ_ERROR_EXIST)
+            status = 0;
+    }
+    for (size_t i = 0; status == 0 && i < size;) {
+        size_t start = i;
+        while (i < size && list[i] != '\r' && list[i] != '\n')
+            i++;
+        size_t length = i - start;
+        if (i < size)
+            i++;
+        if (length < sizeof(marker) - 1)
+            continue;
+        const char *end = (const char *)list + start + length - (sizeof(marker) - 1);
+        if (!patch_name_equal(end, marker, sizeof(marker) - 1) ||
+            (length != sizeof(marker) - 1 && end[-1] != '\\'))
+            continue;
+        if ((memchr)(list + start, 0, length) != NULL || length == SIZE_MAX) {
+            status = LIBMPQ_ERROR_FORMAT;
+            break;
+        }
+        char *name = malloc(length + 1);
+        if (name == NULL) {
+            status = LIBMPQ_ERROR_MALLOC;
+            break;
+        }
+        memcpy(name, list + start, length);
+        name[length] = '\0';
+        status = patch_selected_marker(archive, name, &discovered);
+        free(name);
+    }
+    if (status == 0 && patch_prefix_conflicts(explicit_prefix, discovered))
+        status = LIBMPQ_ERROR_FORMAT;
+    if (status == 0) {
+        const char *value = explicit_prefix != NULL ? explicit_prefix : discovered;
+        *prefix = libmpq__string_duplicate(value != NULL ? value : "");
+        if (*prefix == NULL)
+            status = LIBMPQ_ERROR_MALLOC;
+    }
+    free(qualified);
+    free(discovered);
+    free(explicit_prefix);
+    free(list);
+    return status;
+}
+
+/* Flag extra names sharing encrypted storage without assuming they have this key. */
+static uint8_t
+patch_alias_key_evidence(
+    const mpq_archive_s *archive, const mpq_entry_s *entry, const mpq_named_identity_s *id,
+    uint32_t a, uint32_t b
+)
+{
+    if ((entry->flags & LIBMPQ_FILE_FLAG_ENCRYPTED) == 0 ||
+        (entry->source_mask & LIBMPQ_ENTRY_SOURCE_CLASSIC) == 0)
+        return 0;
+    for (uint32_t i = 0; i < archive->mpq_header.hash_table_count; ++i) {
+        const mpq_hash_s *slot = &archive->mpq_hash[i];
+        if (slot->block_table_index == entry->classic_source_index &&
+            (slot->hash_a != a || slot->hash_b != b || id->slot == UINT32_MAX))
+            return 1;
+    }
+    return 0;
+}
+
+/* Scan the matching classic hash family for hidden rows past a free slot. */
+static int32_t
+patch_selected_reachability(
+    mpq_archive_s *archive, uint32_t hash, uint32_t a, uint32_t b, uint8_t exact, uint16_t locale,
+    uint16_t platform
+)
+{
+    uint32_t count = archive->mpq_header.hash_table_count;
+    uint32_t limit = 0;
+    if (count == 0)
+        return 0;
+    uint32_t start = hash % count;
+    for (uint32_t slot = start; limit < count; slot = slot == count - 1 ? 0 : slot + 1) {
+        if (archive->mpq_hash[slot].block_table_index == LIBMPQ_HASH_FREE)
+            break;
+        limit++;
+    }
+    for (uint32_t slot = 0; slot < count; ++slot) {
+        const mpq_hash_s *row = &archive->mpq_hash[slot];
+        uint32_t distance = slot >= start ? slot - start : count - start + slot;
+        if (distance >= limit && row->block_table_index < LIBMPQ_HASH_DELETED && row->hash_a == a &&
+            row->hash_b == b && (!exact || (row->locale == locale && row->platform == platform)))
+            return LIBMPQ_ERROR_FORMAT;
+    }
+    return 0;
+}
+
+/* Record only rows of the requested physical spelling. */
+static int32_t
+patch_select_collect(
+    mpq_patch_selection_s *plan, size_t *capacity, mpq_archive_s *archive, size_t source,
+    const char *physical, uint8_t exact, uint16_t locale, uint16_t platform
+)
+{
+    mpq_named_identity_s *rows;
+    uint32_t count;
+    uint32_t hash;
+    uint32_t a;
+    uint32_t b;
+    libmpq__file_hash(physical, &hash, &a, &b);
+    int32_t status = patch_selected_reachability(archive, hash, a, b, exact, locale, platform);
+    if (status != 0)
+        return status;
+    status = libmpq__reader_name_identities(archive, physical, &rows, &count);
+    if (status != 0)
+        return status == LIBMPQ_ERROR_EXIST ? 0 : status;
+    for (uint32_t i = 0; status == 0 && i < count; ++i) {
+        const mpq_file_identity_s *id = &rows[i].identity;
+        if (exact && (id->locale != locale || id->platform != platform))
+            continue;
+        const mpq_entry_s *entry =
+            &archive->mpq_entry[archive->mpq_map[id->file_number].entry_index];
+        if ((id->flags & LIBMPQ_IDENTITY_BET) != 0) {
+            mpq_bet_entry_s record;
+            status = libmpq__bet_record_decode(&archive->mpq_bet, entry->bet_source_index, &record);
+            if (status != 0)
+                break;
+            if (record.unknown != 0) {
+                status = LIBMPQ_ERROR_FORMAT;
+                break;
+            }
+        }
+        if (plan->count == *capacity) {
+            size_t limit = SIZE_MAX / sizeof(*plan->operations);
+            size_t next = *capacity == 0 ? 8 : (*capacity <= limit / 2 ? *capacity * 2 : limit);
+            if (next <= *capacity || next > limit) {
+                status = LIBMPQ_ERROR_SIZE;
+                break;
+            }
+            mpq_patch_selection_operation_s *grown =
+                realloc(plan->operations, next * sizeof(*grown));
+            if (grown == NULL) {
+                status = LIBMPQ_ERROR_MALLOC;
+                break;
+            }
+            plan->operations = grown;
+            *capacity = next;
+        }
+        char *name = libmpq__string_duplicate(physical);
+        if (name == NULL) {
+            status = LIBMPQ_ERROR_MALLOC;
+            break;
+        }
+        mpq_patch_selection_operation_s *op = &plan->operations[plan->count++];
+        *op = (mpq_patch_selection_operation_s){
+            .source = source,
+            .number = id->file_number,
+            .flags = entry->flags,
+            .provenance = id->flags,
+            .classic_slot = rows[i].slot,
+            .locale = id->locale,
+            .platform = id->platform,
+            .offset = entry->offset,
+            .packed_size = entry->packed_size,
+            .unpacked_size = entry->unpacked_size,
+            .physical_name = name,
+            .needs_key_evidence = patch_alias_key_evidence(archive, entry, &rows[i], a, b),
+            .kind =
+                (entry->flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) != 0 ? LIBMPQ_PATCH_SELECT_DELETE
+                : (entry->flags & LIBMPQ_FILE_FLAG_PATCH_FILE) != 0  ? LIBMPQ_PATCH_SELECT_DELTA
+                                                                     : LIBMPQ_PATCH_SELECT_ORDINARY
+        };
+    }
+    free(rows);
+    return status;
+}
+
+/* Match the legacy linear-table mutation without keeping physical block rows. */
+static uint32_t
+patch_shadow_slot(
+    const mpq_hash_s *hashes, uint32_t count, uint32_t a, uint32_t b, uint16_t locale,
+    uint16_t platform, uint8_t exact
+)
+{
+    for (uint32_t i = 0; i < count; ++i) {
+        const mpq_hash_s *row = &hashes[i];
+        if (row->block_table_index == 0 && row->hash_a == a && row->hash_b == b &&
+            (!exact || (row->locale == locale && row->platform == platform)))
+            return i;
+    }
+    return UINT32_MAX;
+}
+
+/* Reproduce only slot occupancy, layer order and generated-attribute placement. */
+static int32_t
+patch_shadow_layer(
+    mpq_archive_s *table, const mpq_hash_s *lower, mpq_archive_s *layer, const char *prefix,
+    const char *name, uint8_t *attributes
+)
+{
+    const uint32_t attr_a = libmpq__crypto_hash_string(LIBMPQ_ATTRIBUTES_NAME, 0x100);
+    const uint32_t attr_b = libmpq__crypto_hash_string(LIBMPQ_ATTRIBUTES_NAME, 0x200);
+    mpq_patch_entry_s *entries = NULL;
+    char *normalized = NULL;
+    char *physical = NULL;
+    uint32_t slots = table->mpq_header.hash_table_count;
+    uint32_t count = 0;
+    uint8_t detected = 1;
+    uint8_t mutated = 0;
+    int32_t status = patch_selected_prefix(layer, prefix, &normalized);
+    if (status == 0)
+        status = patch_join_name(normalized, name, &physical);
+    if (status == 0)
+        status = patch_entries(layer, &entries, &count);
+    if (status == 0) {
+        const uint32_t a = libmpq__crypto_hash_string(physical, 0x100);
+        const uint32_t b = libmpq__crypto_hash_string(physical, 0x200);
+        for (uint32_t i = 0; status == 0 && i < count; ++i) {
+            if (entries[i].live && entries[i].name == NULL && entries[i].hash_a == a &&
+                entries[i].hash_b == b) {
+                entries[i].name = libmpq__string_duplicate(physical);
+                if (entries[i].name == NULL)
+                    status = LIBMPQ_ERROR_MALLOC;
+            }
+        }
+    }
+    if (status == 0) {
+        mpq_patch_source_s source = { .prefix = normalized };
+        status = patch_prepare_entries(layer, entries, count, &source, &detected);
+    }
+    for (uint32_t i = 0; status == 0 && i < count; ++i) {
+        const mpq_patch_entry_s *entry = &entries[i];
+        if (!entry->live || entry->internal)
+            continue;
+        if (entry->number >= layer->files) {
+            status = LIBMPQ_ERROR_FORMAT;
+            break;
+        }
+        uint32_t slot = patch_shadow_slot(
+            lower, slots, entry->hash_a, entry->hash_b, entry->locale, entry->platform, 1
+        );
+        uint32_t flags = layer->mpq_entry[layer->mpq_map[entry->number].entry_index].flags;
+        if ((flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) != 0) {
+            if (patch_shadow_slot(
+                    table->mpq_hash, slots, entry->hash_a, entry->hash_b, entry->locale,
+                    entry->platform, 1
+                ) != UINT32_MAX &&
+                slot != UINT32_MAX) {
+                patch_delete_hash(&table->mpq_hash[slot]);
+                mutated = 1;
+            }
+        } else if (slot != UINT32_MAX) {
+            mutated = 1;
+        } else if ((flags & LIBMPQ_FILE_FLAG_PATCH_FILE) == 0) {
+            if (entry->name == NULL) {
+                status = LIBMPQ_ERROR_FORMAT;
+                break;
+            }
+            mpq_hash_s inserted = { entry->hash_a, entry->hash_b, entry->locale, entry->platform,
+                                    0 };
+            status = patch_insert_hash(table, entry->name, &inserted);
+            mutated = 1;
+        }
+    }
+    if (status == 0 && mutated) {
+        status = libmpq__attributes_load(layer);
+        if (status == 0) {
+            *attributes |= (layer->attributes->flags & LIBMPQ_ATTRIBUTE_PATCH_BIT) != 0;
+        } else if (status == LIBMPQ_ERROR_EXIST)
+            status = 0;
+        for (uint32_t i = 0; i < table->mpq_header.hash_table_count; ++i) {
+            mpq_hash_s *row = &table->mpq_hash[i];
+            if (row->block_table_index == 0 &&
+                ((row->hash_a == libmpq__crypto_hash_string(LIBMPQ_SIGNATURE_NAME, 0x100) &&
+                  row->hash_b == libmpq__crypto_hash_string(LIBMPQ_SIGNATURE_NAME, 0x200)) ||
+                 (row->hash_a == libmpq__crypto_hash_string("(patch_metadata)", 0x100) &&
+                  row->hash_b == libmpq__crypto_hash_string("(patch_metadata)", 0x200))))
+                patch_delete_hash(row);
+        }
+        if (status == 0 && *attributes &&
+            patch_shadow_slot(table->mpq_hash, slots, attr_a, attr_b, 0, 0, 0) == UINT32_MAX) {
+            mpq_hash_s inserted = { attr_a, attr_b, 0, 0, 0 };
+            status = patch_insert_hash(table, LIBMPQ_ATTRIBUTES_NAME, &inserted);
+        }
+    }
+    patch_free_entries(entries, count);
+    free(physical);
+    free(normalized);
+    return status;
+}
+
+/* Resolve the ordinary winner after replaying only classic metadata. */
+static int32_t
+patch_shadow_winner(
+    mpq_archive_s *base, mpq_archive_s *const *patches, const char *const *prefixes, size_t count,
+    const char *filename, uint16_t *locale, uint16_t *platform
+)
+{
+    mpq_archive_s table = { 0 };
+    uint32_t slots = base->mpq_header.hash_table_count;
+    mpq_hash_s *lower;
+    size_t bytes;
+    uint8_t attributes = 0;
+    int32_t status;
+    if (slots == 0)
+        return LIBMPQ_ERROR_FORMAT;
+    if ((uint64_t)slots * sizeof(*table.mpq_hash) > SIZE_MAX)
+        return LIBMPQ_ERROR_SIZE;
+    bytes = (size_t)slots * sizeof(*table.mpq_hash);
+    table.mpq_hash = malloc(bytes);
+    lower = malloc(bytes);
+    if (table.mpq_hash == NULL || lower == NULL) {
+        free(lower);
+        free(table.mpq_hash);
+        return LIBMPQ_ERROR_MALLOC;
+    }
+    table.mpq_header.hash_table_count = slots;
+    memcpy(table.mpq_hash, base->mpq_hash, bytes);
+    for (uint32_t i = 0; i < slots; ++i) {
+        if (table.mpq_hash[i].block_table_index < LIBMPQ_HASH_DELETED)
+            table.mpq_hash[i].block_table_index = patch_live_hash(base, &base->mpq_hash[i]) ? 0 : 1;
+    }
+    status = libmpq__attributes_load(base);
+    if (status == 0)
+        attributes = 1;
+    else if (status == LIBMPQ_ERROR_EXIST)
+        status = 0;
+    for (size_t i = 0; status == 0 && i < count; ++i) {
+        mpq_archive_s *layer = NULL;
+        status = libmpq__archive_clone(&layer, patches[i]);
+        if (status == 0) {
+
+            /* Every entry in a layer targets the same pre-layer table. */
+            memcpy(lower, table.mpq_hash, bytes);
+            status = patch_shadow_layer(
+                &table, lower, layer, prefixes != NULL ? prefixes[i] : NULL, filename, &attributes
+            );
+            int32_t close_status = libmpq__archive_close(layer);
+            if (status == 0)
+                status = close_status;
+        }
+    }
+    if (status == 0) {
+        uint32_t hash;
+        uint32_t a;
+        uint32_t b;
+        libmpq__file_hash(filename, &hash, &a, &b);
+        uint32_t slot = hash % slots;
+        status = LIBMPQ_ERROR_FORMAT;
+        for (uint32_t i = 0; i < slots; ++i, slot = slot == slots - 1 ? 0 : slot + 1) {
+            const mpq_hash_s *row = &table.mpq_hash[slot];
+            if (row->block_table_index == LIBMPQ_HASH_FREE)
+                break;
+            if (row->block_table_index < LIBMPQ_HASH_DELETED && row->hash_a == a &&
+                row->hash_b == b) {
+                if (row->block_table_index == 0) {
+                    *locale = row->locale;
+                    *platform = row->platform;
+                    status = 0;
+                }
+                break;
+            }
+        }
+    }
+    free(lower);
+    free(table.mpq_hash);
+    return status;
+}
+
+/* Group operations by tuple while maintaining layer order within each group. */
+static int
+patch_select_compare(const void *first, const void *second)
+{
+    const mpq_patch_selection_operation_s *a = first;
+    const mpq_patch_selection_operation_s *b = second;
+    if (a->locale != b->locale)
+        return a->locale < b->locale ? -1 : 1;
+    if (a->platform != b->platform)
+        return a->platform < b->platform ? -1 : 1;
+    return a->source < b->source ? -1 : a->source != b->source;
+}
+
+/* Rank retained base tuples by HET precedence and then classic probe distance. */
+static int32_t
+patch_select_regular(
+    const mpq_patch_selection_s *plan, mpq_archive_s *base, mpq_archive_s *const *patches,
+    const char *const *prefixes, size_t count, const char *filename, uint16_t *locale,
+    uint16_t *platform
+)
+{
+    size_t best = SIZE_MAX;
+    size_t live = 0;
+    uint32_t bet = 0;
+    uint32_t distance = UINT32_MAX;
+    uint32_t slots = base->mpq_header.hash_table_count;
+    uint32_t start = slots == 0 ? 0 : libmpq__crypto_hash_string(filename, 0) % slots;
+    uint8_t named =
+        base->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_THREE || base->het_data != NULL;
+    uint8_t inserted = 0;
+    uint8_t changed = 0;
+    uint8_t orphan = 0;
+
+    /*
+     * Match patch_apply_layer(): a v3 layer with only classic tables can
+     * apply to a v1/v2 lower archive without rebuilding it as a named view.
+     */
+    for (size_t i = 0; i < count; ++i)
+        named |= patches[i]->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR ||
+                 patches[i]->het_data != NULL;
+
+    for (size_t i = 0; i < plan->count;) {
+        const mpq_patch_selection_operation_s *first = &plan->operations[i];
+        uint8_t present = 0;
+        uint8_t new_slot = 0;
+        do {
+            const mpq_patch_selection_operation_s *op = &plan->operations[i++];
+            if (op->kind == LIBMPQ_PATCH_SELECT_DELETE) {
+                changed |= present;
+                present = 0;
+            } else if (op->kind == LIBMPQ_PATCH_SELECT_ORDINARY) {
+                changed |= op->source != 0;
+                if (!present)
+                    new_slot = op->source != 0;
+                present = 1;
+            } else if (!present) {
+                orphan = 1;
+            } else {
+                changed = 1;
+            }
+        } while (i < plan->count && plan->operations[i].locale == first->locale &&
+                 plan->operations[i].platform == first->platform);
+        if (!present)
+            continue;
+        live++;
+        inserted |= new_slot;
+        uint32_t slot = first->classic_slot;
+        uint32_t rank = first->source != 0 || slot >= slots
+                            ? UINT32_MAX
+                            : (slot >= start ? slot - start : slots - start + slot);
+        uint8_t has_bet = first->source == 0 && (first->provenance & LIBMPQ_IDENTITY_BET) != 0;
+        if (has_bet)
+            bet++;
+        if (best == SIZE_MAX || has_bet || (bet == 0 && rank < distance)) {
+            best = (size_t)(first - plan->operations);
+            distance = rank;
+        }
+    }
+    if (live == 0)
+        return orphan ? LIBMPQ_ERROR_FORMAT : LIBMPQ_ERROR_EXIST;
+    if (live > 1) {
+        if (named && changed)
+            return LIBMPQ_ERROR_FORMAT;
+        if (inserted)
+            return patch_shadow_winner(base, patches, prefixes, count, filename, locale, platform);
+        if (bet > 1)
+            return LIBMPQ_ERROR_FORMAT;
+    }
+    *locale = plan->operations[best].locale;
+    *platform = plan->operations[best].platform;
+    return 0;
+}
+
+/* Check all applicable physical geometry, including operations before a reset. */
+static int32_t
+patch_select_validate(
+    mpq_patch_selection_s *plan, mpq_archive_s *base, mpq_archive_s *const *patches,
+    uint16_t locale, uint16_t platform
+)
+{
+    const uint32_t storage = LIBMPQ_FLAG_EXISTS | LIBMPQ_FILE_FLAG_COMPRESS |
+                             LIBMPQ_FILE_FLAG_IMPLODE | LIBMPQ_FILE_FLAG_ENCRYPTED |
+                             LIBMPQ_FILE_FLAG_KEY | LIBMPQ_FILE_FLAG_SINGLE |
+                             LIBMPQ_FILE_FLAG_SECTOR_CRC;
+    uint8_t present = 0;
+    size_t kept = 0;
+    for (size_t i = 0; i < plan->count; ++i) {
+        mpq_patch_selection_operation_s *op = &plan->operations[i];
+        if (op->locale != locale || op->platform != platform)
+            continue;
+        if (op->source == 0 && op->kind != LIBMPQ_PATCH_SELECT_ORDINARY)
+            return LIBMPQ_ERROR_FORMAT;
+        mpq_archive_s *archive = op->source == 0 ? base : patches[op->source - 1];
+        uint32_t index = archive->mpq_map[op->number].entry_index;
+        int32_t status = libmpq__reader_validate_payload_range(archive, index, 0, op->packed_size);
+        if (status != 0)
+            return status;
+        if (op->kind == LIBMPQ_PATCH_SELECT_DELETE) {
+            if (op->flags != (LIBMPQ_FLAG_EXISTS | LIBMPQ_FILE_FLAG_DELETE_MARKER) ||
+                op->packed_size != 0 || op->unpacked_size != 0)
+                return LIBMPQ_ERROR_FORMAT;
+            present = 0;
+        } else {
+            if ((op->flags & ~(storage | LIBMPQ_FILE_FLAG_PATCH_FILE)) != 0 ||
+                (op->flags & (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE)) ==
+                    (LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_IMPLODE) ||
+                (op->packed_size == 0 && op->unpacked_size != 0))
+                return LIBMPQ_ERROR_FORMAT;
+            if (op->kind == LIBMPQ_PATCH_SELECT_DELTA) {
+                if (!present)
+                    return LIBMPQ_ERROR_FORMAT;
+                status = patch_member_info(archive, op->number, &op->patch_info);
+                if (status != 0)
+                    return status;
+                if (op->patch_info.data_size < LIBMPQ_PATCH_HEADER_SIZE ||
+                    op->patch_info.length == op->packed_size)
+                    return LIBMPQ_ERROR_FORMAT;
+            }
+            present = 1;
+        }
+        kept++;
+    }
+    if (!present)
+        return LIBMPQ_ERROR_EXIST;
+    if (kept == 0)
+        return LIBMPQ_ERROR_FORMAT;
+
+    /* Compact in place only after the full applicable chain passes. */
+    size_t next = 0;
+    for (size_t i = 0; i < plan->count; ++i) {
+        mpq_patch_selection_operation_s *op = &plan->operations[i];
+        if (op->locale == locale && op->platform == platform)
+            plan->operations[next++] = *op;
+        else
+            free(op->physical_name);
+    }
+    plan->count = kept;
+    plan->locale = locale;
+    plan->platform = platform;
+    return 0;
+}
+
+/* Plan an exact or ordinary selected chain without opening any payload decoder. */
+int32_t
+libmpq__patch_select(
+    mpq_patch_selection_s *selection, mpq_archive_s *base, mpq_archive_s *const *patches,
+    const char *const *prefixes, size_t count, const char *filename, uint8_t exact, uint16_t locale,
+    uint16_t platform
+)
+{
+    mpq_archive_s *lower = NULL;
+    mpq_patch_selection_s plan = { 0 };
+    size_t capacity = 0;
+    size_t prefix_len;
+    uint32_t hash;
+    uint32_t a;
+    uint32_t b;
+    int32_t status;
+    if (selection == NULL)
+        return LIBMPQ_ERROR_EXIST;
+    memset(selection, 0, sizeof(*selection));
+    if (base == NULL || base->write_mode || filename == NULL || *filename == '\0' ||
+        (count != 0 && patches == NULL))
+        return LIBMPQ_ERROR_EXIST;
+    if (count > SIZE_MAX / sizeof(*patches) || count > SIZE_MAX / sizeof(*prefixes))
+        return LIBMPQ_ERROR_SIZE;
+    for (size_t i = 0; i < count; ++i)
+        if (patches[i] == NULL || patches[i]->write_mode)
+            return LIBMPQ_ERROR_EXIST;
+    libmpq__file_hash(filename, &hash, &a, &b);
+    if (patch_known_internal(a, b) || patch_metadata_path(filename, &prefix_len))
+        return LIBMPQ_ERROR_FORMAT;
+
+    status = libmpq__archive_clone(&lower, base);
+    if (status == 0)
+        status =
+            patch_select_collect(&plan, &capacity, lower, 0, filename, exact, locale, platform);
+    for (size_t i = 0; status == 0 && i < count; ++i) {
+        mpq_archive_s *layer = NULL;
+        char *prefix = NULL;
+        char *physical = NULL;
+        status = libmpq__archive_clone(&layer, patches[i]);
+        if (status == 0)
+            status = patch_selected_prefix(layer, prefixes != NULL ? prefixes[i] : NULL, &prefix);
+        if (status == 0)
+            status = patch_join_name(prefix, filename, &physical);
+        if (status == 0)
+            status = patch_select_collect(
+                &plan, &capacity, layer, i + 1, physical, exact, locale, platform
+            );
+        free(physical);
+        free(prefix);
+        if (layer != NULL) {
+            int32_t close_status = libmpq__archive_close(layer);
+            if (status == 0)
+                status = close_status;
+        }
+    }
+    if (status == 0 && !exact) {
+        if (plan.count > 1)
+            qsort(plan.operations, plan.count, sizeof(*plan.operations), patch_select_compare);
+        status = patch_select_regular(
+            &plan, lower, patches, prefixes, count, filename, &locale, &platform
+        );
+    }
+    if (status == 0)
+        status = patch_select_validate(&plan, lower, patches, locale, platform);
+    if (lower != NULL) {
+        int32_t close_status = libmpq__archive_close(lower);
+        if (status == 0)
+            status = close_status;
+    }
+    if (status == 0)
+        *selection = plan;
+    else
+        libmpq__patch_selection_free(&plan);
+    return status;
 }
