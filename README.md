@@ -50,6 +50,8 @@ API.
   patch views.
 * Read and create MPQE-wrapped MPQ archives using a caller-supplied
   authentication code.
+* Replace arbitrary fixed-size ranges within existing archive members,
+  including encrypted and compressed files, through transactional updates.
 * Read and write PKWARE implode, Huffman, zlib, bzip2, SPARSE, and mono or
   stereo WAVE ADPCM compression, plus LZMA and multi-compression payloads.
 * Inspect archive, file, and block metadata, including names, sizes, flags,
@@ -342,13 +344,6 @@ See the [developer guide](DEVELOPER.md) for API integration and the
 [release guide](RELEASING.md) for release workflows. For an
 implementation-oriented overview of MPQ v1 through v4 headers, tables,
 encryption, sectors, and compression, see the [MPQ format guide](MPQ.md).
-
-## Limitations
-
-* Encrypted random-access writing is not supported.
-
-See [MPQ.md](MPQ.md) for MPQE signatures and patch namespace format behavior,
-and [DEVELOPER.md](DEVELOPER.md) for MPQE transport and prefix-discovery policy.
 
 ## Contributing
 
