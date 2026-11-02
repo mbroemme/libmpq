@@ -337,6 +337,38 @@ test_writer_errors(mpq_archive_s *archive)
     return 0;
 }
 
+/* Missing pointers leave caller outputs untouched in either archive mode. */
+static int
+test_metadata_nulls(mpq_archive_s *archive)
+{
+    libmpq__off_t offset = -1;
+    uint32_t value = UINT32_MAX;
+    uint32_t hashes[3];
+
+    TEST_CHECK(libmpq__archive_offset(NULL, &offset) == LIBMPQ_ERROR_EXIST && offset == -1);
+    TEST_CHECK(libmpq__archive_offset(archive, NULL) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__archive_offset(NULL, NULL) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__archive_version(NULL, &value) == LIBMPQ_ERROR_EXIST && value == UINT32_MAX);
+    TEST_CHECK(libmpq__archive_version(archive, NULL) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__archive_version(NULL, NULL) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__archive_files(NULL, &value) == LIBMPQ_ERROR_EXIST && value == UINT32_MAX);
+    TEST_CHECK(libmpq__archive_files(archive, NULL) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__archive_files(NULL, NULL) == LIBMPQ_ERROR_EXIST);
+
+    libmpq__file_hash("payload", &hashes[0], &hashes[1], &hashes[2]);
+    TEST_CHECK(
+        libmpq__file_number_from_hash(NULL, hashes[0], hashes[1], hashes[2], &value) ==
+            LIBMPQ_ERROR_EXIST &&
+        value == UINT32_MAX
+    );
+    TEST_CHECK(
+        libmpq__file_number_from_hash(archive, hashes[0], hashes[1], hashes[2], NULL) ==
+        LIBMPQ_ERROR_EXIST
+    );
+    TEST_CHECK(libmpq__file_number_from_hash(NULL, 0, 0, 0, NULL) == LIBMPQ_ERROR_EXIST);
+    return 0;
+}
+
 /* Exercise the owned result using only installed public declarations. */
 static int
 test_public_patch(void)
@@ -530,6 +562,17 @@ main(void)
     TEST_CHECK(
         libmpq__archive_add_data(archive, "negative", NULL, -1, NULL) == LIBMPQ_ERROR_FORMAT
     );
+    TEST_CHECK(test_metadata_nulls(archive) == 0);
+    TEST_CHECK(libmpq__archive_offset(archive, &offset) == 0 && offset == 0);
+    TEST_CHECK(libmpq__archive_version(archive, &flag) == 0 && flag == 1);
+    TEST_CHECK(libmpq__archive_files(archive, &files) == 0 && files == 6);
+    libmpq__file_hash("payload", &hash1, &hash2, &hash3);
+    number = UINT32_MAX;
+    TEST_CHECK(
+        libmpq__file_number_from_hash(archive, hash1, hash2, hash3, &number) ==
+            LIBMPQ_ERROR_FORMAT &&
+        number == UINT32_MAX
+    );
     TEST_CHECK(libmpq__archive_clone(&clone, archive) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     archive = NULL;
@@ -538,6 +581,7 @@ main(void)
 
     TEST_CHECK(libmpq__archive_open(&archive, archive_path, -2) == LIBMPQ_ERROR_SEEK);
     TEST_CHECK(libmpq__archive_open(&archive, archive_path, 0) == 0);
+    TEST_CHECK(test_metadata_nulls(archive) == 0);
     TEST_CHECK(libmpq__archive_version(archive, &flag) == 0 && flag == 1);
     TEST_CHECK(libmpq__archive_offset(archive, &offset) == 0 && offset == 0);
     TEST_CHECK(libmpq__archive_files(archive, &files) == 0 && files == 6);
@@ -546,6 +590,16 @@ main(void)
     packed = 0;
     TEST_CHECK(libmpq__archive_size_packed(archive, &packed) == 0 && packed > 0);
     TEST_CHECK(libmpq__file_number(archive, "payload", &number) == 0);
+    libmpq__file_hash("payload", &hash1, &hash2, &hash3);
+    flag = UINT32_MAX;
+    TEST_CHECK(
+        libmpq__file_number_from_hash(archive, hash1, hash2, hash3, &flag) == 0 && flag == number
+    );
+    flag = UINT32_MAX;
+    TEST_CHECK(
+        libmpq__file_number_from_hash(archive, 0, 0, 0, &flag) == LIBMPQ_ERROR_EXIST &&
+        flag == UINT32_MAX
+    );
     TEST_CHECK(libmpq__file_size_unpacked(archive, number, &unpacked) == 0 && unpacked == 10);
     TEST_CHECK(libmpq__file_size_packed(archive, number, &packed) == 0 && packed == unpacked);
     TEST_CHECK(libmpq__file_blocks(archive, number, &blocks) == 0 && blocks == 1);

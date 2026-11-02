@@ -34,7 +34,8 @@ used by the MPQ hash table. The values can be reused with
 multiple archives.
 .LP
 The function stores the three hash values in \fIhash1\fP, \fIhash2\fP,
-and \fIhash3\fP.
+and \fIhash3\fP. All four pointers must be non-NULL. The filename must be a
+valid NUL-terminated string, and each output must point to writable storage.
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__file_number (3),

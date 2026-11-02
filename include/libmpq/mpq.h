@@ -641,15 +641,16 @@ libmpq__archive_size_unpacked(mpq_archive_s *mpq_archive, libmpq__off_t *unpacke
 /*
  * Return the archive's absolute start offset in its backing file.
  * Normal standalone archives return zero, while an archive embedded in another
- * file reports the discovered or requested location. The output is written
- * to offset and the handle remains unchanged.
+ * file reports the discovered or requested location. Return LIBMPQ_ERROR_EXIST
+ * if either pointer is NULL, leaving the output untouched.
  */
 extern LIBMPQ_API int32_t libmpq__archive_offset(mpq_archive_s *mpq_archive, libmpq__off_t *offset);
 
 /*
  * Return the public MPQ format version of an opened archive.
  * The result identifies the supported v1, v2, v3 or v4 layout rather than the raw
- * on-disk version field. Pass a valid opened archive and output pointer.
+ * on-disk version field. Return LIBMPQ_ERROR_EXIST if either pointer is NULL,
+ * leaving the output untouched.
  */
 extern LIBMPQ_API int32_t libmpq__archive_version(mpq_archive_s *mpq_archive, uint32_t *version);
 
@@ -657,6 +658,8 @@ extern LIBMPQ_API int32_t libmpq__archive_version(mpq_archive_s *mpq_archive, ui
  * Return the number of valid extractable file entries in an archive.
  * The value is the public file-number range used by the file query and read
  * functions, not the reserved block-table capacity or raw hash-table count.
+ * Return LIBMPQ_ERROR_EXIST if either pointer is NULL, leaving the output
+ * untouched.
  */
 extern LIBMPQ_API int32_t libmpq__archive_files(mpq_archive_s *mpq_archive, uint32_t *files);
 
@@ -749,8 +752,8 @@ extern LIBMPQ_API int32_t libmpq__file_identity(
 /*
  * Calculate the three Storm-compatible hashes used to identify an MPQ name.
  * The outputs are deterministic for a given byte string and are written to
- * hash1, hash2, and hash3; this helper performs no archive lookup and cannot
- * report an allocation or I/O error.
+ * hash1, hash2, and hash3. Pass a valid NUL-terminated filename and three
+ * writable output pointers. All four pointers must be non-NULL.
  */
 extern LIBMPQ_API void
 libmpq__file_hash(const char *filename, uint32_t *hash1, uint32_t *hash2, uint32_t *hash3);
@@ -760,6 +763,8 @@ libmpq__file_hash(const char *filename, uint32_t *hash1, uint32_t *hash2, uint32
  * This avoids recalculating the hashes when a caller already has them, but it
  * otherwise follows the same collision probing and table validation as name
  * lookup. The caller must supply all three hashes from the same filename.
+ * Return LIBMPQ_ERROR_EXIST if the archive or number pointer is NULL,
+ * leaving the output untouched.
  */
 extern LIBMPQ_API int32_t libmpq__file_number_from_hash(
     mpq_archive_s *mpq_archive, uint32_t hash1, uint32_t hash2, uint32_t hash3, uint32_t *number

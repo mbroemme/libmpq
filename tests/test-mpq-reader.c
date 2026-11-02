@@ -3223,6 +3223,7 @@ test_v4_read(
             base == 512 ? -1 : (libmpq__off_t)base, NULL
         ) == 0
     );
+    TEST_CHECK(libmpq__archive_offset(archive, &offset) == 0 && offset == (libmpq__off_t)base);
     TEST_CHECK(libmpq__archive_version(archive, &version) == 0 && version == 4);
     TEST_CHECK(
         archive->mpq_header.header_size == 208 && archive->mpq_header_v3.archive_size == source.size
@@ -3266,11 +3267,19 @@ test_v4_read(
         for (size_t i = 0; i < length; ++i)
             TEST_CHECK(actual[i] == reader_v4_payload_byte(i, method));
     }
-    if (representation == 2) {
-        libmpq__file_hash("folder/payload.bin", &h1, &h2, &h3);
+    libmpq__file_hash("folder/payload.bin", &h1, &h2, &h3);
+    if (representation != 0) {
         TEST_CHECK(
             libmpq__file_number_from_hash(archive, h1, h2, h3, &classic) == 0 && classic == number
         );
+    } else {
+        classic = UINT32_MAX;
+        TEST_CHECK(
+            libmpq__file_number_from_hash(archive, h1, h2, h3, &classic) == LIBMPQ_ERROR_EXIST &&
+            classic == UINT32_MAX
+        );
+    }
+    if (representation == 2) {
         TEST_CHECK(
             archive->mpq_entry[archive->mpq_map[number].entry_index].source_mask ==
             (LIBMPQ_ENTRY_SOURCE_CLASSIC | LIBMPQ_ENTRY_SOURCE_BET)

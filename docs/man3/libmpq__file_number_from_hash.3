@@ -42,7 +42,8 @@ On error, one of the following constants is returned.
 .SH ERRORS
 .TP
 .B LIBMPQ_ERROR_EXIST
-No file in the archive matches the supplied hashes.
+A required archive or output pointer is NULL, or no file matches the
+supplied hashes. A NULL argument leaves any supplied output untouched.
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__file_hash (3),

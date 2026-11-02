@@ -946,6 +946,8 @@ libmpq__archive_size_unpacked(mpq_archive_s *mpq_archive, libmpq__off_t *unpacke
 int32_t
 libmpq__archive_offset(mpq_archive_s *mpq_archive, libmpq__off_t *offset)
 {
+    if (mpq_archive == NULL || offset == NULL)
+        return LIBMPQ_ERROR_EXIST;
     *offset = mpq_archive->archive_offset;
 
     return 0;
@@ -959,6 +961,8 @@ libmpq__archive_offset(mpq_archive_s *mpq_archive, libmpq__off_t *offset)
 int32_t
 libmpq__archive_version(mpq_archive_s *mpq_archive, uint32_t *version)
 {
+    if (mpq_archive == NULL || version == NULL)
+        return LIBMPQ_ERROR_EXIST;
     *version = mpq_archive->mpq_header.version + 1;
 
     return 0;
@@ -971,6 +975,8 @@ libmpq__archive_version(mpq_archive_s *mpq_archive, uint32_t *version)
 int32_t
 libmpq__archive_files(mpq_archive_s *mpq_archive, uint32_t *files)
 {
+    if (mpq_archive == NULL || files == NULL)
+        return LIBMPQ_ERROR_EXIST;
     *files = mpq_archive->files;
 
     return 0;
@@ -1103,6 +1109,8 @@ libmpq__file_number_from_hash(
     uint32_t block_table_index;
     uint32_t entry_index;
 
+    if (mpq_archive == NULL || number == NULL)
+        return LIBMPQ_ERROR_EXIST;
     ht_count = mpq_archive->mpq_header.hash_table_count;
     if (ht_count == 0) {
         return LIBMPQ_ERROR_EXIST;

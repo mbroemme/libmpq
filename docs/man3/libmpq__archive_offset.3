@@ -32,7 +32,8 @@ in the backing file.
 The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The function stores the offset in \fIoffset\fP.
 .SH RETURN VALUE
-On success, a zero is returned.
+Returns zero on success. A NULL archive or output pointer returns
+\fBLIBMPQ_ERROR_EXIST\fP and leaves any supplied output untouched.
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__file_offset (3)
