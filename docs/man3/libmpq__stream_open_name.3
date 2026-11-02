@@ -29,8 +29,9 @@ libmpq__stream_open_name \- open a logical MPQ member stream by name.
 Resolve \fIfilename\fP and open its decoded logical member stream. The plaintext
 filename is supplied during stream initialization when encrypted-member key
 derivation requires it. The stream owns a private archive clone, starts at
-zero, and outlives its source archive;
-custom-I/O callback context remains caller-owned until close.
+zero, and can outlive the source archive. For caller-owned I/O, keep the
+callback, context and backing storage valid through stream close as
+described in \fBlibmpq__stream_open\fP(3).
 .SH RETURN VALUE
 Returns \fB0\fP and a stream, or an existing lookup, clone, or
 allocation error with \fI*stream\fP NULL.

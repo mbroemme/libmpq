@@ -37,9 +37,12 @@ offsets in arbitrary order, performs each range check against
 \fBLIBMPQ_ERROR_READ\fP. The callback runs synchronously and must not retain
 the buffer.
 .PP
-The context and callback are borrowed. They must remain valid until this
-archive and every clone are closed. libmpq never frees context or closes a
-caller-owned resource; callers provide synchronization for shared contexts.
+libmpq borrows the callback and context. The caller owns the context and
+backing storage and is responsible for closing or freeing them. Keep the
+callback, context and storage valid until every dependent archive, clone
+and ordinary member stream has closed. An ordinary stream can still use
+the callback after the original archive closes. Keep the source bytes
+stable and synchronize concurrent use of a shared callback context.
 Set \fIarchive_offset\fP to -1 to scan for an embedded header.
 .PP
 \fIsource_name\fP is optional and copied by libmpq as the logical archive
@@ -61,6 +64,8 @@ callback, allocation, and parser errors may also propagate.
 .BR libmpq__archive_open_mpqe (3),
 .BR libmpq__archive_open_mpqe_io (3),
 .BR libmpq__archive_clone (3),
+.BR libmpq__stream_open (3),
+.BR libmpq__stream_open_patch (3),
 .BR libmpq__archive_close (3)
 .SH AUTHOR
 The libmpq project is maintained by

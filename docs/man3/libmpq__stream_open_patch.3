@@ -42,11 +42,12 @@ be read. Duplicate matching identities and unresolved provenance are
 rejected. Absent and finally deleted members return LIBMPQ_ERROR_EXIST.
 A zero-length ordinary member produces a valid stream at EOF.
 .PP
-The independently owned stream is seekable from offset zero through its
-logical size. Archives, caller-owned callback contexts, filenames and prefixes
-need remain live only until this call returns. Synchronize input use and
-closure during the call. Use the existing stream functions to read, seek and
-close the result.
+The result owns a private spool, seekable from offset zero through its
+logical size, and retains no input handles or callback resources. Keep the
+inputs valid and synchronize their use during the call. After success,
+the caller may close the input archives. Release a caller-owned callback,
+context and backing storage only after every dependent archive, clone and
+ordinary stream has closed. See \fBlibmpq__archive_open_io\fP(3).
 .PP
 A private temporary spool requires writable scratch storage. Peak scratch
 space depends on the current lower result, next result, and expanded BSD0
@@ -69,6 +70,7 @@ may report backing storage or seek errors.
 .SH SEE ALSO
 .BR libmpq__stream_open_patch_identity (3),
 .BR libmpq__archive_open_patch (3),
+.BR libmpq__archive_open_io (3),
 .BR libmpq__stream_read (3),
 .BR libmpq__stream_seek (3),
 .BR libmpq__stream_close (3)

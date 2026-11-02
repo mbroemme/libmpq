@@ -436,9 +436,12 @@ extern LIBMPQ_API int32_t libmpq__archive_open(
 );
 
 /*
- * Open an MPQ from a caller-owned exact random-access byte source. The source
- * is borrowed: context, including NULL for stateless callbacks, and callback
- * state must remain valid through archive close and any derived clones.
+ * Open an MPQ from a caller-owned exact random-access byte source. libmpq
+ * borrows read_at and context, which may be NULL for a stateless callback.
+ * Keep the callback, context and caller-owned backing storage valid until
+ * every dependent archive, clone and ordinary member stream has closed.
+ * Keep the source bytes stable and synchronize concurrent use of shared
+ * callback contexts. The caller manages cleanup of its context and storage.
  * Only archive_offset -1 enables header scanning. source_name is optional and is
  * copied into archive-owned storage as the logical archive name. Its basename
  * is used for legacy strong-signature verification; omit it when unavailable.
@@ -470,8 +473,9 @@ extern LIBMPQ_API int32_t libmpq__archive_open_mpqe(
 
 /*
  * Open an MPQE-wrapped MPQ through a caller-owned exact random-access source.
- * The source ownership and lifetime rules, including optional copied source_name,
- * match libmpq__archive_open_io(), including the -1 scan sentinel.
+ * Borrow read_at and context under the same lifetime and synchronization
+ * rules as libmpq__archive_open_io(), including for dependent ordinary streams.
+ * As with that function, source_name is optional and copied, and -1 scans.
  */
 extern LIBMPQ_API int32_t libmpq__archive_open_mpqe_io(
     mpq_archive_s **mpq_archive, void *context, libmpq_read_at_fn read_at,
@@ -484,9 +488,10 @@ extern LIBMPQ_API int32_t libmpq__archive_open_mpqe_io(
  * result. patch_archives contains patch_count layers in application order;
  * zero layers makes a byte-preserving base snapshot. NULL patch_prefixes or
  * a NULL entry requests inference; an empty prefix selects the root namespace.
- * Inputs remain unchanged and are not consumed. Their callback contexts must
- * remain valid during this synchronous call and their normal input lifetimes;
- * the result retains neither those contexts nor MPQE credentials.
+ * This synchronous call borrows its inputs. The independently owned result
+ * retains no input handles, callback resources or MPQE credentials. After
+ * success, callers may close the inputs. Release their callback resources
+ * only after all dependent archives, clones and ordinary streams have closed.
  *
  * Close the result with archive_close(); its clones and streams independently
  * retain its private temporary storage. Cleanup is best effort on persistent
@@ -592,9 +597,9 @@ libmpq__archive_raw_chunk_size_get(mpq_archive_s *archive, uint32_t *raw_chunk_s
  * Clone an opened archive into an independent read handle.
  * The clone reopens a filesystem source or clones the custom source backend
  * and reparses its tables, so decoded metadata and caches are independent.
- * Custom-I/O callback context remains caller-owned and must outlive all
- * derived clones and streams. Both handles are independently closable;
- * the backing source must remain readable and unchanged.
+ * Both handles are independently closable. Custom-I/O clones share the
+ * borrowed callback, context and backing storage under the lifetime rules of
+ * libmpq__archive_open_io(). The backing source must stay readable and stable.
  * Serialize calls on each handle. Externally serialize operations on related
  * clones and streams that can acquire or release shared state, including
  * lazy verification, cloning and closing. Shared references are non-atomic.
@@ -871,7 +876,9 @@ extern LIBMPQ_API int32_t libmpq__file_read(
 
 /*
  * Open an independent stream for a logical archive member. The stream owns a
- * private archive clone and remains usable after archive closes.
+ * private archive clone and can outlive the source archive. With caller-owned
+ * I/O, the clone still uses the borrowed callback, context and backing storage.
+ * Keep them valid through stream close as described by libmpq__archive_open_io().
  * Open by name when the plaintext filename is needed for encrypted members.
  */
 extern LIBMPQ_API int32_t
@@ -879,14 +886,17 @@ libmpq__stream_open(mpq_archive_s *archive, uint32_t file_number, mpq_stream_s *
 
 /*
  * Resolve on an owned clone, retaining the name for encryption.
- * Ordinary name lookup is used. The stream survives
- * parent close; custom callback context must outlive derived streams, as with other streams.
+ * Ordinary name lookup and the source lifetime rules of libmpq__stream_open()
+ * apply.
  * Failure clears *stream. Close consumes the returned stream.
  */
 extern LIBMPQ_API int32_t
 libmpq__stream_open_name(mpq_archive_s *archive, const char *filename, mpq_stream_s **stream);
 
-/* Exact locale/platform selection, with no fallback. */
+/*
+ * Exact locale/platform selection, with no fallback. The source lifetime
+ * rules of libmpq__stream_open() apply.
+ */
 extern LIBMPQ_API int32_t libmpq__stream_open_name_identity(
     mpq_archive_s *archive, const char *filename, uint16_t locale, uint16_t platform,
     mpq_stream_s **stream
@@ -896,7 +906,10 @@ extern LIBMPQ_API int32_t libmpq__stream_open_name_identity(
  * Resolve one member in the final logical view of ordered patch archives.
  * A NULL prefix vector or element requests inference; an empty prefix selects
  * the root. A zero count allows NULL vectors. The input handles, strings and
- * callback contexts are borrowed only for this synchronous call.
+ * callback resources are borrowed for synchronous reconstruction and verification.
+ * The result retains no input handles or callback resources. After success,
+ * callers may close the inputs. Release their callback resources only after
+ * all dependent archives, clones and ordinary streams have closed.
  * Only selected payloads are reconstructed and verified, without a claim of
  * whole-archive authenticity. Duplicate matching identities are rejected;
  * missing or deleted members return EXIST. Failure clears a valid *stream.
@@ -909,7 +922,10 @@ extern LIBMPQ_API int32_t libmpq__stream_open_patch(
     size_t patch_count, const char *filename, mpq_stream_s **stream
 );
 
-/* Select the exact filename/locale/platform tuple, including (0, 0), with no fallback. */
+/*
+ * Select the exact filename/locale/platform tuple, including (0, 0), with no
+ * fallback. Input and result lifetimes match libmpq__stream_open_patch().
+ */
 extern LIBMPQ_API int32_t libmpq__stream_open_patch_identity(
     mpq_archive_s *base, mpq_archive_s *const *patch_archives, const char *const *patch_prefixes,
     size_t patch_count, const char *filename, uint16_t locale, uint16_t platform,

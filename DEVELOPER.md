@@ -107,11 +107,14 @@ of a path. The callback receives absolute source offsets and must synchronously
 fill the complete requested buffer before returning zero. libmpq range-checks
 every request and normalizes positive callback results to `LIBMPQ_ERROR_READ`.
 
-The callback context is borrowed and may be NULL for a stateless callback.
-Keep a non-NULL context, its storage, and the callback valid until the opened
-archive and every clone are closed. libmpq never frees or closes caller-owned
-context. Clones allocate independent parser state and adapter wrappers but
-share the borrowed context, so callers provide any needed synchronization.
+libmpq borrows the callback and context, which may be NULL for a stateless
+callback. The caller owns the context and backing storage and is responsible
+for closing or freeing them. Keep the callback, context and storage valid
+until every dependent archive, clone and ordinary member stream has closed.
+Independently owned clones and ordinary streams can still use the callback
+after the original archive closes. Keep the underlying source bytes stable
+and synchronize concurrent use of shared callback contexts.
+
 `source_name` is optional. When supplied, libmpq copies it as the logical
 archive name and uses its basename for legacy strong-signature verification.
 Without a source name, basename-dependent strong signatures are skipped while
@@ -174,19 +177,19 @@ classic aliases under other names. Exact lookup outputs are cleared on failure.
 
 Exact named streams resolve on their own archive clone and retain the supplied
 filename for basename-derived encryption and KEY. Indexed metadata access
-alone does not supply an encryption key. Streams survive parent close;
-custom callback contexts must outlive dependent streams, as for other stream
-APIs. These operations are read-only and do not configure global locale state
-or mutate identity locale/platform values.
+alone does not supply an encryption key. Exact named streams follow the
+same source lifetime rules as other ordinary streams. These operations are
+read-only and do not configure global locale state or mutate identity
+locale/platform values.
 
 `libmpq__stream_open()` and `libmpq__stream_open_name()` provide incremental
 logical-member reads and seeks without a complete file buffer. An archive
 source is the backing MPQ or MPQE byte source; a logical member stream is a
 decoded logical archive member. The handle owns a private archive clone, so
-the source archive may close after opening the stream. For custom I/O, the
-caller must retain its callback context until every derived logical member
-stream is closed. Ordinary sectorized members retain one decoded sector; a
-single-unit member can require its complete logical unit.
+the source archive may close after opening the stream. With custom I/O,
+that clone still uses the caller-owned callback, context and backing storage.
+Ordinary sectorized members retain one decoded sector. A single-unit member
+can require its complete logical unit.
 
 ```c
 mpq_stream_s *stream = NULL;
@@ -828,10 +831,12 @@ plan and executor, and borrow the ordered archives, callback contexts,
 and prefix strings during open. NULL prefixes request inference and
 empty strings select root. Open reports selected transform and integrity
 errors before returning a verified seekable spool-backed result.
-The spool owns its storage independently of all inputs. Unrelated payloads
-may be unread. Scratch use depends on the selected results and BSD0
-transform, and SINGLE decoding can require whole-unit memory. Close
-consumes the stream and reports backing cleanup errors.
+The stream owns its spool and retains no input handles or callback resources.
+The caller may close the input archives after success. Release their callback
+resources only after all dependent archives, clones and ordinary streams have
+closed. Unrelated payloads may be unread. Scratch use depends on the selected
+results and BSD0 transform, and SINGLE decoding can require whole-unit memory.
+Close consumes the stream and reports backing cleanup errors.
 
 `libmpq__archive_open_patch()` composes already-open ordinary MPQ and
 MPQE-wrapped archives, including custom read-at sources, as the base
@@ -844,9 +849,10 @@ read APIs operate on the resulting owned archive. Use
 `libmpq__archive_open_patch(&result, base, patches, prefixes, patch_count)`
 with already-open, borrowed inputs in application order. A NULL prefix array
 or entry requests inference; an empty string selects the root namespace.
-Zero layers create an independent byte snapshot. After success, close the
-inputs normally; the read-only result retains no callback contexts or MPQE
-credentials and is closed with `libmpq__archive_close()`. Its clones and
+Zero layers create an independent byte snapshot. The read-only result
+retains no input handles, callback resources or MPQE credentials. Close the
+inputs after success under the same callback lifetime rules as for selected
+patched streams. Close the result with `libmpq__archive_close()`. Its clones and
 streams independently retain temporary storage after parent closure. Verify
 physical signatures and raw checksums on the original inputs, not as trust
 in reconstructed output.

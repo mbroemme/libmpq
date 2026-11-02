@@ -34,7 +34,10 @@ libmpq__archive_open_mpqe_io \- open an MPQE-wrapped MPQ through random-access I
 Open an MPQE transport stream through the same borrowed exact random-access
 callback contract as \fBlibmpq__archive_open_io\fP(). libmpq obtains encrypted
 bytes through the callback, applies its MPQE transform, and parses the result
-as an MPQ. The context remains caller-owned through every related clone.
+as an MPQ. Keep the borrowed callback, its context and the caller-owned
+backing storage valid until every dependent archive, clone and ordinary
+member stream has closed. The source stability and synchronization rules
+of \fBlibmpq__archive_open_io\fP(3) apply.
 .PP
 \fIsource_name\fP follows the same optional copied logical-name rules as
 \fBlibmpq__archive_open_io\fP(), including basename-dependent legacy strong

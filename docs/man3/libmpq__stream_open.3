@@ -29,8 +29,10 @@ libmpq__stream_open \- open a logical MPQ member stream by number.
 Open file number \fIfile_number\fP as a decoded logical member stream. The output
 is set to NULL before later validation. On success, the stream owns a private
 archive clone, begins at logical position zero, and remains usable after the
-source archive closes. For custom-I/O archives, the caller must keep the
-borrowed callback context valid until this derived logical member stream closes.
+source archive closes, provided the backing source remains valid. For
+custom I/O, the stream still uses the borrowed callback, context and
+backing storage after the original archive closes. Keep them valid
+through stream close under the rules of \fBlibmpq__archive_open_io\fP(3).
 .PP
 Open encrypted members whose key cannot be recovered without their plaintext
 filename with \fBlibmpq__stream_open_name\fP().
@@ -50,6 +52,8 @@ number, or writer-mode archive.
 .BR libmpq__stream_close (3),
 .BR libmpq__file_read (3),
 .BR libmpq__file_verify (3),
+.BR libmpq__archive_open_io (3),
+.BR libmpq__stream_open_patch (3),
 .BR libmpq__archive_close (3)
 .SH AUTHOR
 The libmpq project is maintained by Maik Broemme.

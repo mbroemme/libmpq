@@ -27,9 +27,9 @@ libmpq__archive_clone \- clone an MPQ archive for independent reading.
 .SH DESCRIPTION
 Call \fBlibmpq__archive_clone\fP() to create an independently parsed
 reader with separate metadata tables and lazy block caches. A filesystem
-source is reopened; a custom-I/O backend is cloned while its callback
-context remains caller-owned and must outlive all derived clones and streams.
-The original archive handle may be closed
+source is reopened. A custom-I/O clone uses the same borrowed callback,
+context and backing storage, with the lifetime rules of
+\fBlibmpq__archive_open_io\fP(3). The original archive handle may be closed
 after cloning, and each clone must be closed independently with
 \fBlibmpq__archive_close\fP().
 .PP
@@ -37,8 +37,8 @@ The backing source must remain readable and unchanged while clones are
 created or used. Serialize calls on each handle. Related handles can share
 non-atomic references to a temporary source or verification index. Externally
 serialize operations that acquire or release those references, including
-cloning, lazy verification and closing. Synchronize access to shared callback
-contexts and keep them alive until all dependent handles are closed.
+cloning, lazy verification and closing. Synchronize concurrent access to
+shared callback contexts.
 .SH RETURN VALUE
 On success, *\fIclone\fP is set to a new handle and zero is returned. On
 failure, *\fIclone\fP is set to NULL and the open, seek, read, format, or

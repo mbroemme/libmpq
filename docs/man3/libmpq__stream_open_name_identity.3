@@ -31,8 +31,9 @@ fallback occurs. The supplied filename is retained for basename-derived
 MPQ encryption, including KEY; no full-path-key fallback is added.
 .PP
 Compression, single-unit/sector storage, custom read-at sources and MPQE
-use the existing stream path. The result survives parent archive closure.
-Caller-managed custom callback contexts must outlive dependent streams.
+use the existing stream path. The result can outlive the source archive.
+For caller-owned I/O, keep the callback, context and backing storage valid
+through stream close as described in \fBlibmpq__stream_open\fP(3).
 libmpq__stream_close(3) consumes the result. The operation does not close
 or modify input archives. Existing ambiguous/reduced identity restrictions
 apply. Physical archive checksums and signatures do not become a new trust
@@ -53,6 +54,7 @@ are propagated. All source archives remain unchanged.
 .BR libmpq__file_number (3),
 .BR libmpq__file_identity (3),
 .BR libmpq__file_number_from_identity (3),
+.BR libmpq__stream_open (3),
 .BR libmpq__stream_close (3)
 .SH AUTHOR
 The libmpq project is maintained by
