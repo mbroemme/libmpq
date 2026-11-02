@@ -310,7 +310,8 @@ test_writer_errors(mpq_archive_s *archive)
                                    0 };
 
     TEST_CHECK(libmpq__writer_begin(NULL, "null", 0, NULL, &writer) == LIBMPQ_ERROR_FORMAT);
-    TEST_CHECK(libmpq__writer_begin(archive, NULL, 0, NULL, &writer) == LIBMPQ_ERROR_FORMAT);
+    TEST_CHECK(libmpq__writer_begin(archive, NULL, 0, NULL, &writer) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__writer_begin(archive, "", 0, NULL, &writer) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__writer_begin(archive, "negative", -1, NULL, &writer) == LIBMPQ_ERROR_FORMAT);
     TEST_CHECK(
         libmpq__writer_begin(archive, "invalid-flags", 0, &invalid, &writer) == LIBMPQ_ERROR_FORMAT

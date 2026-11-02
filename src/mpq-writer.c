@@ -2225,7 +2225,9 @@ writer_file_begin(
         return a->write_error;
     if (a != NULL && a->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR && a->write_finalized)
         return LIBMPQ_ERROR_NOT_INITIALIZED;
-    if (!a || !a->write_mode || !name || !out || size < 0 || a->write_current ||
+    if (name == NULL || name[0] == '\0')
+        return LIBMPQ_ERROR_EXIST;
+    if (!a || !a->write_mode || !out || size < 0 || a->write_current ||
         (prefix_size != 0 && (!a->write_patch_mode || prefix == NULL || result_size < 0 ||
                               (uint64_t)result_size > UINT32_MAX)))
         return LIBMPQ_ERROR_FORMAT;
@@ -2736,6 +2738,8 @@ libmpq__writer_file_add_path(
     mpq_writer_s *writer;
     if (a != NULL && a->write_io != NULL && a->write_error != 0)
         return a->write_error;
+    if (name == NULL || name[0] == '\0')
+        return LIBMPQ_ERROR_EXIST;
     fp = libmpq__file_open(source, "rb");
     if (!fp)
         return LIBMPQ_ERROR_OPEN;

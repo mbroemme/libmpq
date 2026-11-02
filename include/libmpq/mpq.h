@@ -1004,6 +1004,8 @@ extern LIBMPQ_API int32_t libmpq__block_read(
 
 /*
  * Begin writing a file in a writer archive and reserve its declared size.
+ * The member filename must be nonempty; NULL or empty returns EXIST.
+ * A zero unpacked_size is valid.
  * The returned writer accepts only the number of bytes specified by
  * unpacked_size and applies the copied file options sector by sector.
  * Only one writer may be active per archive; finish it before beginning
@@ -1040,6 +1042,8 @@ extern LIBMPQ_API int32_t libmpq__writer_finish(mpq_writer_s *writer);
 
 /*
  * Add a complete in-memory file to a writer archive.
+ * As with writer_begin(), a NULL or empty member filename returns EXIST.
+ * A zero size is valid.
  * This convenience operation performs begin, write, and finish using the same
  * validation and per-sector pipeline as the streaming API. The input buffer
  * remains owned by the caller and may be released after the call returns.
@@ -1051,6 +1055,8 @@ extern LIBMPQ_API int32_t libmpq__archive_add_data(
 
 /*
  * Add a filesystem file to a writer archive using bounded source reads.
+ * A NULL or empty member filename returns EXIST before opening the source.
+ * An empty source file is valid.
  * Oversized SINGLE writes still buffer the full input, and encoding can
  * require additional full-sized buffers. The source file is read-only.
  */
@@ -1106,8 +1112,10 @@ extern LIBMPQ_API int32_t libmpq__update_begin_mpqe(
 );
 
 /*
- * Stage addition of an absent named member. Data/options are borrowed only
- * during this call; duplicate staged names return LIBMPQ_ERROR_EXIST.
+ * Stage addition of an absent member with a nonempty name, from data or a path.
+ * A NULL or empty filename returns EXIST. Zero-length contents are valid.
+ * Data/options are borrowed only during this call. Duplicate staged names
+ * return LIBMPQ_ERROR_EXIST.
  * Options supply the new member's locale/platform identity and storage.
  * This creates an absent filename; it does not select an existing identity.
  */
@@ -1184,7 +1192,10 @@ extern LIBMPQ_API int32_t libmpq__update_remove_identity(
     mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform
 );
 
-/* Rename using ordinary filename resolution; exact rename retains other aliases. */
+/*
+ * Rename using ordinary filename resolution; exact rename retains other aliases.
+ * Both forms require nonempty old and new filenames.
+ */
 extern LIBMPQ_API int32_t
 libmpq__update_rename(mpq_update_s *update, const char *old_filename, const char *new_filename);
 

@@ -3373,6 +3373,81 @@ test_single_io(unsigned failure)
 }
 #endif
 
+/* Reject missing member names before reserving slots or opening a path source. */
+static int
+test_writer_invalid_names(mpq_archive_s *archive)
+{
+    const char *invalid[] = { NULL, "" };
+    const uint8_t payload = 1;
+    mpq_writer_s *writer = NULL;
+    libmpq__off_t position = archive->fp != NULL ? libmpq__file_tell(archive->fp) : 0;
+
+    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
+        TEST_CHECK(
+            libmpq__writer_begin(archive, invalid[i], 1, NULL, &writer) == LIBMPQ_ERROR_EXIST
+        );
+        TEST_CHECK(
+            libmpq__archive_add_data(archive, invalid[i], &payload, 1, NULL) == LIBMPQ_ERROR_EXIST
+        );
+        TEST_CHECK(libmpq__archive_add_path(archive, invalid[i], NULL, NULL) == LIBMPQ_ERROR_EXIST);
+        TEST_CHECK(writer == NULL && archive->write_current == NULL);
+        TEST_CHECK(archive->write_next_block == 0 && archive->write_error == 0);
+        if (archive->fp != NULL)
+            TEST_CHECK(libmpq__file_tell(archive->fp) == position);
+    }
+    return 0;
+}
+
+/* Serialize a legacy empty-name hash without admitting it through the writer API. */
+static int
+test_read_legacy_empty_name(uint32_t version)
+{
+    const mpq_archive_create_options_s options = { version, 4, 4096, 0, 0 };
+    const uint8_t payload[] = { 23, 42 };
+    uint8_t actual[sizeof(payload)];
+    mpq_archive_s *archive = NULL;
+    mpq_stream_s *stream = NULL;
+    libmpq__off_t amount;
+    uint32_t hash[3];
+    uint32_t count;
+    uint32_t number;
+    char path[512];
+
+    TEST_CHECK(test_temp_path(path, sizeof(path), "legacy-empty-name") == 0);
+    TEST_CHECK(libmpq__archive_create(&archive, path, &options) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, "member", payload, sizeof(payload), NULL) == 0);
+    const uint32_t slots = archive->mpq_header.hash_table_count;
+    TEST_CHECK(slots > 0);
+    libmpq__file_hash("member", &hash[0], &hash[1], &hash[2]);
+    mpq_hash_s *old = &archive->mpq_hash[hash[0] % slots];
+    TEST_CHECK(old->block_table_index == 0);
+    mpq_hash_s row = *old;
+    memset(old, 0xff, sizeof(*old));
+    libmpq__file_hash("", &hash[0], &row.hash_a, &row.hash_b);
+    archive->mpq_hash[hash[0] % slots] = row;
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(libmpq__archive_files(archive, &count) == 0 && count == 1);
+    TEST_CHECK(libmpq__file_size_unpacked(archive, 0, &amount) == 0 && amount == sizeof(payload));
+    TEST_CHECK(libmpq__file_read(archive, 0, actual, sizeof(actual), &amount) == 0);
+    TEST_CHECK(amount == sizeof(actual) && memcmp(actual, payload, sizeof(actual)) == 0);
+    TEST_CHECK(libmpq__stream_open(archive, 0, &stream) == 0);
+    memset(actual, 0, sizeof(actual));
+    TEST_CHECK(libmpq__stream_read(stream, actual, sizeof(actual), &amount) == 0);
+    TEST_CHECK(amount == sizeof(actual) && memcmp(actual, payload, sizeof(actual)) == 0);
+    TEST_CHECK(libmpq__stream_close(stream) == 0);
+
+    TEST_CHECK(libmpq__file_number(archive, "", &number) == 0 && number == 0);
+    TEST_CHECK(libmpq__file_number_from_identity(archive, "", 0, 0, &number) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(
+        libmpq__stream_open_patch(archive, NULL, NULL, 0, "", &stream) == LIBMPQ_ERROR_EXIST &&
+        stream == NULL
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0 && remove(path) == 0);
+    return 0;
+}
+
 /* Reject unsupported public write options before touching output or member state. */
 static int
 test_writer_flag_admission(uint32_t version)
@@ -3400,6 +3475,7 @@ test_writer_flag_admission(uint32_t version)
 
     create.flags = LIBMPQ_ARCHIVE_CREATE_LISTFILE | LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED;
     TEST_CHECK(libmpq__archive_create(&archive, path, &create) == 0);
+    TEST_CHECK(test_writer_invalid_names(archive) == 0);
     for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
         mpq_file_options_s options = { invalid[i], 0, 0, 0, 0 };
         TEST_CHECK(
@@ -3416,6 +3492,7 @@ test_writer_flag_admission(uint32_t version)
     TEST_CHECK(
         libmpq__archive_add_data(archive, "member", payload, sizeof(payload), &options) == 0
     );
+    TEST_CHECK(libmpq__archive_add_data(archive, "empty", NULL, 0, NULL) == 0);
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     TEST_CHECK(libmpq__archive_open(&archive, path, -1) == 0);
     uint32_t number;
@@ -3424,6 +3501,12 @@ test_writer_flag_admission(uint32_t version)
     TEST_CHECK(libmpq__file_flags(archive, number, &flags) == 0);
     TEST_CHECK(flags == (LIBMPQ_FLAG_EXISTS | LIBMPQ_FILE_FLAG_KEY | LIBMPQ_FILE_FLAG_SINGLE));
     TEST_CHECK(test_archive_check_name(archive, "member", payload, sizeof(payload)) == 0);
+    libmpq__off_t length;
+    uint32_t exact;
+    TEST_CHECK(libmpq__file_number_from_identity(archive, "member", 0, 0, &exact) == 0);
+    TEST_CHECK(exact == number);
+    TEST_CHECK(libmpq__file_number(archive, "empty", &number) == 0);
+    TEST_CHECK(libmpq__file_size_unpacked(archive, number, &length) == 0 && length == 0);
     TEST_CHECK(libmpq__archive_close(archive) == 0 && remove(path) == 0);
     return 0;
 }
@@ -3614,6 +3697,9 @@ test_sink_parity(uint32_t version, int empty, int wrapped, int weak)
                     sink_write, mode == 2 ? sink_flush : NULL, &options
                 ) == 0
             );
+        unsigned writes = sink == NULL ? 0 : sink->writes;
+        TEST_CHECK(test_writer_invalid_names(archive) == 0);
+        TEST_CHECK(sink == NULL || sink->writes == writes);
         if (weak) {
             if (version == LIBMPQ_ARCHIVE_VERSION_FOUR)
                 TEST_CHECK(libmpq__archive_raw_chunk_size_set(archive, 0) == 0);
@@ -4261,6 +4347,8 @@ main(void)
     TEST_CHECK(test_v4_writer(512, 0, 0) == 0);
     TEST_CHECK(test_v4_writer(UINT32_MAX, 0, UINT64_C(0x100000000)) == 0);
     TEST_CHECK(test_legacy_writer_capacity(LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
+    TEST_CHECK(test_read_legacy_empty_name(LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
+    TEST_CHECK(test_read_legacy_empty_name(LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
     TEST_CHECK(test_v2_writer_high_offsets() == 0);
     TEST_CHECK(test_v2_writer_invalid_extent() == 0);
     TEST_CHECK(test_legacy_writer_capacity(LIBMPQ_ARCHIVE_VERSION_TWO) == 0);

@@ -1625,6 +1625,24 @@ test_generic_add(uint32_t version, int mpqe, int metadata)
     );
     input = fopen("update-add-input.bin", "wb");
     TEST_CHECK(input != NULL && fwrite("path", 1, 4, input) == 4 && fclose(input) == 0);
+    const char *invalid_names[] = { NULL, "" };
+    for (size_t i = 0; i < sizeof(invalid_names) / sizeof(invalid_names[0]); ++i) {
+        const char *name = invalid_names[i];
+        TEST_CHECK(libmpq__update_add_data(update, name, payload, 1, NULL) == LIBMPQ_ERROR_EXIST);
+        TEST_CHECK(
+            libmpq__update_add_path(update, name, "update-add-input.bin", NULL) ==
+            LIBMPQ_ERROR_EXIST
+        );
+        TEST_CHECK(libmpq__update_rename(update, "folder/secret", name) == LIBMPQ_ERROR_EXIST);
+        TEST_CHECK(
+            libmpq__update_rename_identity(update, "folder/secret", name, 0, 0) ==
+            LIBMPQ_ERROR_EXIST
+        );
+        TEST_CHECK(libmpq__update_change_identity(update, name, 0, 0, 1, 0) == LIBMPQ_ERROR_EXIST);
+        TEST_CHECK(
+            libmpq__update_replace_data(update, name, payload, 1, NULL) == LIBMPQ_ERROR_EXIST
+        );
+    }
     TEST_CHECK(libmpq__update_add_path(update, "from-path", "update-add-input.bin", NULL) == 0);
     TEST_CHECK(libmpq__update_add_data(update, "zero", NULL, 0, NULL) == 0);
     TEST_CHECK(libmpq__update_rename(update, "folder/secret", "folder/renamed-secret") == 0);

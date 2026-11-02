@@ -28,7 +28,8 @@ libmpq__archive_add_data \- add an in-memory file to an MPQ archive
 .BI ");"
 .fi
 .SH DESCRIPTION
-Adds \fIsize\fP bytes from caller-owned \fIbuffer\fP under \fIfilename\fP.
+Adds \fIsize\fP bytes from caller-owned \fIbuffer\fP under a nonempty
+\fIfilename\fP. A size of zero is valid.
 The call begins, writes, and finishes one member using the same file options
 as the streaming writer. NULL \fIoptions\fP selects writer defaults; the
 buffer need only remain valid until this call returns.
@@ -58,9 +59,9 @@ archive, or a negative libmpq error. Archive publication still requires
 \fBlibmpq__archive_close\fP().
 .SH ERRORS
 Invalid writer state or storage options return \fBLIBMPQ_ERROR_FORMAT\fP;
-duplicate names return \fBLIBMPQ_ERROR_EXIST\fP; invalid or excessive
-sizes return \fBLIBMPQ_ERROR_SIZE\fP. Allocation, compression, and I/O
-errors may also propagate.
+NULL, empty or duplicate filenames return \fBLIBMPQ_ERROR_EXIST\fP.
+Invalid or excessive sizes return \fBLIBMPQ_ERROR_SIZE\fP. Allocation,
+compression, and I/O errors may also propagate.
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__archive_create (3),

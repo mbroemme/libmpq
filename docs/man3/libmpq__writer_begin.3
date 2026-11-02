@@ -29,7 +29,8 @@ libmpq__writer_begin \- begin an MPQ streaming file writer
 .fi
 .SH DESCRIPTION
 Begins \fIfilename\fP with declared \fIunpacked_size\fP and returns an
-active, caller-owned \fI*writer\fP. NULL \fIoptions\fP selects writer
+active, caller-owned \fI*writer\fP. The member filename must be nonempty.
+A declared size of zero is valid. NULL \fIoptions\fP selects writer
 defaults. Supply bytes with libmpq__writer_write(3), then call
 libmpq__writer_finish(3). Only one writer may be active per archive. The archive
 must outlive the writer. Closing the archive with an active writer reports an
@@ -66,9 +67,9 @@ Returns \fB0\fP with an active writer on success, or a
 negative libmpq error. No file entry is published before finish succeeds.
 .SH ERRORS
 Invalid writer state or storage options return \fBLIBMPQ_ERROR_FORMAT\fP;
-duplicate names return \fBLIBMPQ_ERROR_EXIST\fP; invalid sizes or exhausted
-capacity return \fBLIBMPQ_ERROR_SIZE\fP. Allocation and I/O errors may
-also propagate.
+NULL, empty or duplicate filenames return \fBLIBMPQ_ERROR_EXIST\fP.
+Invalid sizes or exhausted capacity return \fBLIBMPQ_ERROR_SIZE\fP.
+Allocation and I/O errors may also propagate.
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__archive_create (3),

@@ -28,8 +28,9 @@ libmpq__archive_add_path \- add a filesystem file to an MPQ archive
 .fi
 .SH DESCRIPTION
 Reads caller-owned \fIsource_path\fP in bounded chunks and adds it under
-\fIfilename\fP. The source file is not modified. NULL \fIoptions\fP
-selects writer defaults. Archive publication still requires
+a nonempty \fIfilename\fP. An empty source file is valid. The source file is
+not modified. NULL \fIoptions\fP selects writer defaults. Archive publication
+still requires
 \fBlibmpq__archive_close\fP().
 .PP
 SINGLE storage is independent of the archive sector size. A newly oversized
@@ -48,8 +49,9 @@ KEY adjustments, generated listfile defaults and physical patch defaults remain.
 Returns \fB0\fP after the member is staged in the writer
 archive, or a negative libmpq error.
 .SH ERRORS
-An inaccessible source returns \fBLIBMPQ_ERROR_OPEN\fP; source read or
-seek failures return \fBLIBMPQ_ERROR_READ\fP or
+A NULL or empty member filename returns \fBLIBMPQ_ERROR_EXIST\fP before
+the source is opened. An inaccessible source returns \fBLIBMPQ_ERROR_OPEN\fP.
+Source read or seek failures return \fBLIBMPQ_ERROR_READ\fP or
 \fBLIBMPQ_ERROR_SEEK\fP. Invalid writer state/options, duplicate names,
 size limits, allocation, and output I/O errors may also propagate.
 .SH SEE ALSO

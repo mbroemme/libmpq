@@ -2397,6 +2397,9 @@ test_public_additions(uint32_t version, uint8_t mpqe, uint8_t mixed)
     );
     TEST_CHECK(libmpq__patch_add_data(NULL, "new", data, 1, NULL) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__patch_add_data(patch, "", data, 1, NULL) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__patch_add_data(patch, NULL, data, 1, NULL) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__patch_add_path(patch, "", source_path, NULL) == LIBMPQ_ERROR_EXIST);
+    TEST_CHECK(libmpq__patch_add_path(patch, NULL, source_path, NULL) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__patch_add_data(patch, "bad\nname", data, 1, NULL) == LIBMPQ_ERROR_FORMAT);
     TEST_CHECK(libmpq__patch_add_data(patch, "new", NULL, 1, NULL) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__patch_add_data(patch, "new", data, -1, NULL) == LIBMPQ_ERROR_SIZE);
