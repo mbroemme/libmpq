@@ -1367,7 +1367,15 @@ private void testExactIdentities() {
         assert(number == identities[1].fileNumber || number == identities[0].fileNumber);
         bool failed;
         try { archive.fileNumber("voice", 0x409, 0); }
-        catch (MPQException) { failed = true; }
+        catch (MPQException e) {
+            failed = e.code == ERROR_EXIST && e.functionName == "libmpq__file_number_from_identity";
+        }
+        assert(failed);
+        failed = false;
+        try { archive.openStream("voice", 0x409, 0).close(); }
+        catch (MPQException e) {
+            failed = e.code == ERROR_EXIST && e.functionName == "libmpq__stream_open_name_identity";
+        }
         assert(failed);
         auto stream = archive.openStream("voice", 0x409, 1);
         archive.close();
@@ -1400,15 +1408,32 @@ private void testExactUpdateStages() {
         writer.close();
         auto original = read(path);
         auto update = Update.begin(path);
+        const missingPlatform = cast(ushort)(platform + 1);
         bool renameMissing;
-        try { update.rename("voice", locale, cast(ushort)(platform + 1), "invalid"); }
-        catch (MPQException e) { renameMissing = e.code == ERROR_EXIST; }
+        try { update.rename("voice", locale, missingPlatform, "invalid"); }
+        catch (MPQException e) {
+            renameMissing = e.code == ERROR_EXIST && e.functionName == "libmpq__update_rename_identity";
+        }
         assert(renameMissing);
+        bool failed;
+        try { update.replaceData("voice", locale, missingPlatform, cast(const(ubyte)[])"bytes"); }
+        catch (MPQException e) {
+            failed = e.code == ERROR_EXIST && e.functionName == "libmpq__update_replace_data_identity";
+        }
+        assert(failed);
+        failed = false;
+        try { update.replacePath("voice", locale, missingPlatform, source); }
+        catch (MPQException e) {
+            failed = e.code == ERROR_EXIST && e.functionName == "libmpq__update_replace_path_identity";
+        }
+        assert(failed);
         update.timestamp("voice", locale, platform, 0xfedcba9876543210UL);
         update.replaceData("voice", locale, platform, cast(const(ubyte)[])"bytes");
-        bool failed;
-        try { update.remove("voice", locale, cast(ushort)(platform + 1)); }
-        catch (MPQException e) { failed = e.code == ERROR_EXIST; }
+        failed = false;
+        try { update.remove("voice", locale, missingPlatform); }
+        catch (MPQException e) {
+            failed = e.code == ERROR_EXIST && e.functionName == "libmpq__update_remove_identity";
+        }
         assert(failed);
         update.rename("voice", locale, platform, "renamed");
         failed = false;

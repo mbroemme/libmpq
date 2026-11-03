@@ -221,7 +221,7 @@ final class Update {
         ensureOpen();
         if (data.length > cast(size_t)long.max)
             throw new MPQException("Update.replaceData", ERROR_SIZE);
-        checkStatus(libmpq__update_replace_data_identity(handle, toStringz(name), locale, platform, data.length == 0 ? null : data.ptr, cast(off_t)data.length, options), "libmpq__update_replace_data");
+        checkStatus(libmpq__update_replace_data_identity(handle, toStringz(name), locale, platform, data.length == 0 ? null : data.ptr, cast(off_t)data.length, options), "libmpq__update_replace_data_identity");
     }
 
     /** Replace an exact identity from a caller-owned source path. */
@@ -239,20 +239,20 @@ final class Update {
             string sourcePath, const(mpq_file_options_s)* options) {
         ensureOpen();
         checkStatus(libmpq__update_replace_path_identity(handle, toStringz(name), locale, platform, toStringz(sourcePath), options),
-                    "libmpq__update_replace_path");
+                    "libmpq__update_replace_path_identity");
     }
 
     /** Remove only the selected identity. */
     void remove(string name, ushort locale, ushort platform) {
         ensureOpen();
         checkStatus(libmpq__update_remove_identity(handle, toStringz(name), locale, platform),
-                    "libmpq__update_remove");
+                    "libmpq__update_remove_identity");
     }
 
     /** Rename one exact identity, preserving its selectors. */
     void rename(string oldName, ushort locale, ushort platform, string newName) {
         ensureOpen();
-        checkStatus(libmpq__update_rename_identity(handle, toStringz(oldName), toStringz(newName), locale, platform), "libmpq__update_rename");
+        checkStatus(libmpq__update_rename_identity(handle, toStringz(oldName), toStringz(newName), locale, platform), "libmpq__update_rename_identity");
     }
 
     /** Change an exact locale/platform tuple without relocating its payload. */

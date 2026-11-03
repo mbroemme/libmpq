@@ -522,7 +522,7 @@ class Archive {
         ensureOpen();
         uint result;
         checkStatus(libmpq__file_number_from_identity(handle, toStringz(name), locale, platform, &result),
-                    "libmpq__file_number");
+                    "libmpq__file_number_from_identity");
         return result;
     }
 
@@ -531,7 +531,7 @@ class Archive {
         ensureOpen();
         mpq_stream_s* result;
         checkStatus(libmpq__stream_open_name_identity(handle, toStringz(name), locale, platform, &result),
-                    "libmpq__stream_open_name");
+                    "libmpq__stream_open_name_identity");
         return new MpqStream(result, sourceState);
     }
 
