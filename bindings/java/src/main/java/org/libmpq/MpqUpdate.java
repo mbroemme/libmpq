@@ -180,7 +180,8 @@ public final class MpqUpdate implements AutoCloseable {
         }
     }
 
-    public void timestamp(String name, long filetime, int locale, int platform)
+    /** Set Windows FILETIME on the exact filename, locale and platform. */
+    public void timestamp(String name, int locale, int platform, long filetime)
             throws LibmpqException {
         checkOpen();
         short selectedLocale = selector(locale);
@@ -242,13 +243,13 @@ public final class MpqUpdate implements AutoCloseable {
     }
 
     /** Rename one exact identity without changing its locale/platform. */
-    public void rename(String name, String newName, int locale, int platform)
+    public void rename(String oldName, int locale, int platform, String newName)
             throws LibmpqException {
         checkOpen();
         short selectedLocale = selector(locale);
         short selectedPlatform = selector(platform);
         try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.updateRenameIdentity(handle, Support.text(arena, name), Support.text(arena, newName), selectedLocale, selectedPlatform));
+            Support.check(LibmpqNative.updateRenameIdentity(handle, Support.text(arena, oldName), Support.text(arena, newName), selectedLocale, selectedPlatform));
         }
     }
 

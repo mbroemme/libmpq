@@ -250,7 +250,7 @@ class LibmpqTest {
                     update.replaceData("voice", new byte[] {4, 5, 6}, null);
                     update.rename("voice", "renamed");
                     update.changeIdentity("renamed", 0, 0, 1033, 2);
-                    update.timestamp("renamed", 17, 1033, 2);
+                    update.timestamp("renamed", 1033, 2, 17L);
                     update.compact();
                     assertThrows(LibmpqException.class, () -> update.sign(new byte[127]));
                     update.sign(key);
@@ -294,7 +294,7 @@ class LibmpqTest {
                     update.replaceData("voice", new byte[] {4, 5, 6}, null);
                     update.rename("voice", "renamed");
                     update.changeIdentity("renamed", 0, 0, 1033, 2);
-                    update.timestamp("renamed", 17L, 1033, 2);
+                    update.timestamp("renamed", 1033, 2, 17L);
                     update.compact();
                     update.compact();
                     assertArrayEquals(original, Files.readAllBytes(path));
@@ -324,18 +324,19 @@ class LibmpqTest {
             byte[] original = Files.readAllBytes(path);
             try (MpqUpdate update = MpqUpdate.begin(path)) {
                 update.timestamp("voice", 0L);
-                assertThrows(IllegalArgumentException.class, () -> update.timestamp("voice", 1, -1, 0));
-                assertThrows(IllegalArgumentException.class, () -> update.timestamp("voice", 1, 0, 65536));
-                assertThrows(LibmpqException.class, () -> update.timestamp("voice", 1, 1, 0));
+                assertThrows(IllegalArgumentException.class, () -> update.timestamp("voice", -1, 0, 1L));
+                assertThrows(IllegalArgumentException.class, () -> update.timestamp("voice", 0, 65536, 1L));
+                assertThrows(LibmpqException.class, () -> update.timestamp("voice", 1, 0, 1L));
+                update.timestamp("other", Long.MIN_VALUE);
                 update.timestamp("voice", Long.MIN_VALUE);
-                update.timestamp("voice", -1L, 0, 0);
+                update.timestamp("voice", 0, 0, -1L);
                 update.replaceData("voice", 0, 0, new byte[] {3}, null);
                 assertArrayEquals(original, Files.readAllBytes(path));
                 update.commit();
             }
             try (Archive archive = Archive.open(path)) {
                 assertEquals(-1L, archive.attributes(archive.fileNumber("voice")).filetime());
-                assertEquals(0L, archive.attributes(archive.fileNumber("other")).filetime());
+                assertEquals(Long.MIN_VALUE, archive.attributes(archive.fileNumber("other")).filetime());
             }
             byte[] committed = Files.readAllBytes(path);
             try (MpqUpdate update = MpqUpdate.begin(path)) { update.timestamp("voice", 0); }
@@ -373,7 +374,7 @@ class LibmpqTest {
                 update.changeIdentity("voice", 0, 0, 0x409, 0);
                 assertThrows(LibmpqException.class, () -> update.changeIdentity("voice", 0, 0, 0, 0));
                 update.changeIdentity("voice", 0x409, 0, 0x409, 3);
-                update.rename("voice", "renamed", 0x409, 3);
+                update.rename("voice", 0x409, 3, "renamed");
                 update.changeIdentity("renamed", 0x409, 3, 0, 0);
                 update.replaceData("renamed", 0, 0, "updated".getBytes(StandardCharsets.UTF_8), null);
                 update.remove("other", 0, 0);
@@ -405,17 +406,25 @@ class LibmpqTest {
             boolean classic = version <= Mpq.ARCHIVE_VERSION_TWO;
             int locale = classic ? 0x409 : 0;
             int platform = classic ? 1 : 0;
-            try (Archive writer = Archive.create(path, new ArchiveCreateOptions(version, 8, 4096, 0))) {
+            try (Archive writer = Archive.create(path,
+                    new ArchiveCreateOptions(version, 8, 4096, 0, Mpq.ATTRIBUTE_FILETIME))) {
                 writer.add("voice", "selected".getBytes(StandardCharsets.UTF_8),
                         new FileOptions(0, 0, 0, locale, platform));
                 if (classic) writer.add("voice", "neutral".getBytes(StandardCharsets.UTF_8), null);
             }
             byte[] original = Files.readAllBytes(path);
             try (MpqUpdate update = MpqUpdate.begin(path)) {
+                assertThrows(IllegalArgumentException.class,
+                        () -> update.rename("voice", -1, platform, "invalid"));
+                assertThrows(IllegalArgumentException.class,
+                        () -> update.rename("voice", locale, 65536, "invalid"));
+                assertEquals(Mpq.ERROR_EXIST, assertThrows(LibmpqException.class,
+                        () -> update.rename("voice", locale, platform + 1, "invalid")).code());
+                update.timestamp("voice", locale, platform, 0xfedcba9876543210L);
                 update.replaceData("voice", locale, platform, new byte[0], null);
                 assertThrows(IllegalArgumentException.class, () -> update.remove("voice", -1, 0));
                 assertThrows(LibmpqException.class, () -> update.remove("voice", locale, platform + 1));
-                update.rename("voice", "renamed", locale, platform);
+                update.rename("voice", locale, platform, "renamed");
                 assertThrows(LibmpqException.class, () -> update.remove("voice", locale, platform));
                 update.replacePath("renamed", locale, platform, source, null);
                 update.replaceRanges("renamed", List.of(new MpqUpdate.ReplaceRange(0, new byte[] {'X'})));
@@ -431,7 +440,14 @@ class LibmpqTest {
                 byte[] bytes = new byte[10];
                 assertEquals(10, stream.read(bytes));
                 assertArrayEquals("path bytes".getBytes(StandardCharsets.UTF_8), bytes);
-                if (classic) assertEquals(1, archive.variants("voice").size());
+                assertEquals(0xfedcba9876543210L,
+                        archive.attributes(archive.fileNumber("renamed", locale, platform)).filetime());
+                if (classic) {
+                    assertEquals(1, archive.variants("voice").size());
+                    int neutral = archive.fileNumber("voice", 0, 0);
+                    assertArrayEquals("neutral".getBytes(StandardCharsets.UTF_8), archive.readFile(neutral));
+                    assertEquals(0L, archive.attributes(neutral).filetime());
+                }
             }
             byte[] committed = Files.readAllBytes(path);
             try (MpqUpdate update = MpqUpdate.begin(path)) { update.remove("renamed", locale, platform); }

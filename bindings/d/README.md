@@ -193,10 +193,11 @@ file-level CRC32/MD5 comparison.
 
 `Update.timestamp` sets existing Windows FILETIME metadata, expressed in
 100-nanosecond ticks since 1601-01-01 UTC. Omit locale/platform for ordinary
-lookup or supply both for exact selection without fallback:
+lookup. For exact selection without fallback, place locale and platform
+immediately after the filename.
 
 ```d
-update.timestamp("voice.bin", 132537600000000000UL, 0, 0);
+update.timestamp("voice.bin", 0, 0, 132537600000000000UL);
 ```
 
 Zero is an available timestamp; `ulong` retains all FILETIME bits and
@@ -548,7 +549,7 @@ neutral fallback:
 auto update = Update.begin(path);
 scope(exit) update.close();
 update.replaceData("voice.bin", 0x409, 1, replacement);
-update.rename("voice.bin", "renamed.bin", 0x409, 1);
+update.rename("voice.bin", 0x409, 1, "renamed.bin");
 update.replacePath("renamed.bin", 0x409, 1, sourcePath);
 update.remove("obsolete.bin", 0, 0);
 update.commit();

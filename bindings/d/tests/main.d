@@ -1387,6 +1387,7 @@ private void testExactUpdateStages() {
                        ARCHIVE_VERSION_THREE, ARCHIVE_VERSION_FOUR]) {
         auto create = ArchiveCreateOptions.v1();
         create.version_ = version_;
+        create.attributes = ATTRIBUTE_FILETIME;
         auto writer = Archive.create(path, create);
         bool classic = version_ <= ARCHIVE_VERSION_TWO;
         ushort locale = classic ? 0x409 : 0;
@@ -1399,12 +1400,17 @@ private void testExactUpdateStages() {
         writer.close();
         auto original = read(path);
         auto update = Update.begin(path);
+        bool renameMissing;
+        try { update.rename("voice", locale, cast(ushort)(platform + 1), "invalid"); }
+        catch (MPQException e) { renameMissing = e.code == ERROR_EXIST; }
+        assert(renameMissing);
+        update.timestamp("voice", locale, platform, 0xfedcba9876543210UL);
         update.replaceData("voice", locale, platform, cast(const(ubyte)[])"bytes");
         bool failed;
         try { update.remove("voice", locale, cast(ushort)(platform + 1)); }
         catch (MPQException e) { failed = e.code == ERROR_EXIST; }
         assert(failed);
-        update.rename("voice", "renamed", locale, platform);
+        update.rename("voice", locale, platform, "renamed");
         failed = false;
         try { update.remove("voice", locale, platform); }
         catch (MPQException e) { failed = e.code == ERROR_EXIST; }
@@ -1425,7 +1431,14 @@ private void testExactUpdateStages() {
         assert(stream.read(bytes[]) == 10);
         assert(bytes[] == cast(const(ubyte)[])"path bytes");
         stream.close();
-        if (classic) assert(archive.variants("voice").length == 1);
+        assert(archive.file(archive.fileNumber("renamed", locale, platform)).attributes().filetime ==
+            0xfedcba9876543210UL);
+        if (classic) {
+            assert(archive.variants("voice").length == 1);
+            auto neutral = archive.file(archive.fileNumber("voice", 0, 0));
+            assert(neutral.read() == cast(const(ubyte)[])"neutral");
+            assert(neutral.attributes().filetime == 0);
+        }
         archive.close();
         auto committed = read(path);
         update = Update.begin(path);
@@ -1482,7 +1495,7 @@ private void testChangeIdentity() {
         catch (MPQException e) { failed = e.code == ERROR_EXIST; }
         assert(failed);
         update.changeIdentity("voice", 0x409, 0, 0x409, 3);
-        update.rename("voice", "renamed", 0x409, 3);
+        update.rename("voice", 0x409, 3, "renamed");
         update.changeIdentity("renamed", 0x409, 3, 0, 0);
         update.replaceData("renamed", 0, 0, cast(const(ubyte)[])"updated");
         update.remove("other", 0, 0);
@@ -1519,7 +1532,7 @@ private void testTransactionalSigning() {
         update.replaceData("voice", cast(const(ubyte)[]) "changed");
         update.rename("voice", "renamed");
         update.changeIdentity("renamed", 0, 0, 1033, 2);
-        update.timestamp("renamed", 17, 1033, 2);
+        update.timestamp("renamed", 1033, 2, 17UL);
         update.compact();
         auto key = weakPrivateKey();
         update.sign(key);
@@ -1557,7 +1570,7 @@ private void testTransactionalCompaction() {
             update.replaceData("voice", cast(const(ubyte)[]) "new");
             update.rename("voice", "renamed");
             update.changeIdentity("renamed", 0, 0, 1033, 2);
-            update.timestamp("renamed", 17, 1033, 2);
+            update.timestamp("renamed", 1033, 2, 17UL);
             update.compact();
             update.compact();
             assert(read(path) == before);
@@ -1586,17 +1599,18 @@ private void testTransactionalTimestamps() {
         auto update = Update.begin(path);
         update.timestamp("voice", 0);
         bool failed;
-        try { update.timestamp("voice", 1, 1, 0); }
+        try { update.timestamp("voice", 1, 0, 1UL); }
         catch (MPQException e) { failed = e.code == ERROR_EXIST; }
         assert(failed);
+        update.timestamp("other", 0x8000000000000000UL);
         update.timestamp("voice", 0x8000000000000000UL);
-        update.timestamp("voice", ulong.max, 0, 0);
+        update.timestamp("voice", 0, 0, ulong.max);
         update.replaceData("voice", 0, 0, cast(const(ubyte)[])"new");
         assert(read(path) == original);
         update.commit();
         auto archive = Archive.open(path);
         assert(archive.file("voice").attributes().filetime == ulong.max);
-        assert(archive.file("other").attributes().filetime == 0);
+        assert(archive.file("other").attributes().filetime == 0x8000000000000000UL);
         archive.close();
         auto committed = read(path);
         update = Update.begin(path);

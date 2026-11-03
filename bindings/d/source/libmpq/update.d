@@ -186,7 +186,8 @@ final class Update {
         checkStatus(libmpq__update_timestamp(handle, toStringz(name), filetime), "libmpq__update_timestamp");
     }
 
-    void timestamp(string name, ulong filetime, ushort locale, ushort platform) {
+    /** Set Windows FILETIME on the exact filename, locale and platform. */
+    void timestamp(string name, ushort locale, ushort platform, ulong filetime) {
         ensureOpen();
         checkStatus(libmpq__update_timestamp_identity(handle, toStringz(name), filetime, locale, platform), "libmpq__update_timestamp_identity");
     }
@@ -249,9 +250,9 @@ final class Update {
     }
 
     /** Rename one exact identity, preserving its selectors. */
-    void rename(string name, string newName, ushort locale, ushort platform) {
+    void rename(string oldName, ushort locale, ushort platform, string newName) {
         ensureOpen();
-        checkStatus(libmpq__update_rename_identity(handle, toStringz(name), toStringz(newName), locale, platform), "libmpq__update_rename");
+        checkStatus(libmpq__update_rename_identity(handle, toStringz(oldName), toStringz(newName), locale, platform), "libmpq__update_rename");
     }
 
     /** Change an exact locale/platform tuple without relocating its payload. */

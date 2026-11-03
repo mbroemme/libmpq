@@ -165,10 +165,11 @@ file-level CRC32/MD5 comparison.
 
 `MpqUpdate.timestamp` sets existing Windows FILETIME metadata, expressed in
 100-nanosecond ticks since 1601-01-01 UTC. Omit locale/platform for ordinary
-lookup or supply both for exact selection without fallback:
+lookup. For exact selection without fallback, place locale and platform
+immediately after the filename.
 
 ```java
-update.timestamp("voice.bin", 132537600000000000L, 0, 0);
+update.timestamp("voice.bin", 0, 0, 132537600000000000L);
 ```
 
 Zero is an available timestamp; all Java `long` bit patterns are accepted,
@@ -437,7 +438,7 @@ neutral fallback. Selectors must be in `0..65535`:
 ```java
 try (MpqUpdate update = MpqUpdate.begin(path)) {
     update.replaceData("voice.bin", 0x409, 1, replacement, null);
-    update.rename("voice.bin", "renamed.bin", 0x409, 1);
+    update.rename("voice.bin", 0x409, 1, "renamed.bin");
     update.replacePath("renamed.bin", 0x409, 1, source, null);
     update.remove("obsolete.bin", 0, 0);
     update.commit();
