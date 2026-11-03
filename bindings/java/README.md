@@ -589,10 +589,11 @@ status, checked equal to the request, no unavailable checks and no mismatches.
 ## Archive metadata verification
 
 ```java
-var result = archive.verifyResult(Mpq.VERIFY_METADATA_ALL);
+var result = archive.verifyEx(Mpq.VERIFY_METADATA_ALL);
 ```
 
-Archive metadata verification uses the native `archive_verify_ex()` and the eight
+`Archive.verify()` verifies digital signatures. `Archive.verifyEx()` verifies
+archive structural and RAW metadata. It uses the native `archive_verify_ex()` and the eight
 `LIBMPQ_VERIFY_METADATA_*` bits, combined by `LIBMPQ_VERIFY_METADATA_ALL`.
 It performs fresh bounded reads of stored header/table representations against
 opened descriptors, checking both object digests and stored reference fields.

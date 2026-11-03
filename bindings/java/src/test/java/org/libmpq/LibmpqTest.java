@@ -1390,14 +1390,14 @@ class LibmpqTest {
             Path fixture = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures",
                                    "mpq-v" + version + "-features.mpq");
             try (Archive archive = Archive.open(fixture)) {
-                var result = archive.verifyResult();
+                var result = archive.verifyEx();
                 assertEquals(Mpq.VERIFY_METADATA_ALL, result.checked() | result.unavailable());
                 assertEquals(0, result.checked() & result.unavailable());
                 assertEquals(0, result.mismatches());
                 if (version < 4) assertEquals(0, result.checked());
                 else assertTrue((result.checked() & Mpq.VERIFY_METADATA_HEADER_MD5) != 0);
-                assertEquals(new Archive.VerificationResult(0, 0, 0), archive.verifyResult(0));
-                assertThrows(LibmpqException.class, () -> archive.verifyResult(Mpq.VERIFY_ALL));
+                assertEquals(new Archive.VerificationResult(0, 0, 0), archive.verifyEx(0));
+                assertThrows(LibmpqException.class, () -> archive.verifyEx(Mpq.VERIFY_ALL));
             }
         }
     }
@@ -1418,9 +1418,9 @@ class LibmpqTest {
                 channel.position(192);
                 channel.write(ByteBuffer.wrap(new byte[] { (byte)(original[0] ^ 1) }));
                 assertEquals(new Archive.VerificationResult(0x100, 0, 0x100),
-                             archive.verifyResult(Mpq.VERIFY_METADATA_HEADER_MD5));
+                             archive.verifyEx(Mpq.VERIFY_METADATA_HEADER_MD5));
                 channel.fail = true;
-                assertThrows(LibmpqException.class, () -> archive.verifyResult());
+                assertThrows(LibmpqException.class, () -> archive.verifyEx());
             }
         }
     }

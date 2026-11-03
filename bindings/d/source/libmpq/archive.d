@@ -166,8 +166,8 @@ class Archive {
         return result;
     }
 
-    /** Fresh metadata coverage, distinct from digital signature verification. */
-    VerificationResult verifyResult(uint flags = VERIFY_METADATA_ALL) {
+    /** Verify archive structural and RAW metadata. Use verify() for digital signatures. */
+    VerificationResult verifyEx(uint flags = VERIFY_METADATA_ALL) {
         VerificationResult result;
         checkStatus(libmpq__archive_verify_ex(nativeHandle(), flags,
             &result.checked, &result.unavailable, &result.mismatches), "libmpq__archive_verify_ex");

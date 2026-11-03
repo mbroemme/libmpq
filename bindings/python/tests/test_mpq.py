@@ -1852,7 +1852,7 @@ def test_verification_filename_key_context(tmp_path, version):
 def test_archive_verification_result(version):
     source = io.BytesIO((FIXTURES / f"mpq-v{version}-features.mpq").read_bytes())
     with mpq.Archive.open_io(source, source.getbuffer().nbytes) as archive:
-        result = archive.verify_result()
+        result = archive.verify_ex()
         assert result.checked | result.unavailable == mpq.VERIFY_METADATA_ALL
         assert not result.checked & result.unavailable
         assert result.mismatches == 0
@@ -1861,16 +1861,16 @@ def test_archive_verification_result(version):
         else:
             assert result.checked & mpq.VERIFY_METADATA_HEADER_MD5
             source.getbuffer()[192] ^= 1
-            changed = archive.verify_result(mpq.VERIFY_METADATA_HEADER_MD5)
+            changed = archive.verify_ex(mpq.VERIFY_METADATA_HEADER_MD5)
             assert changed == mpq.VerificationResult(0x100, 0, 0x100)
             source.getbuffer()[192] ^= 1
-        assert archive.verify_result(0) == mpq.VerificationResult(0, 0, 0)
+        assert archive.verify_ex(0) == mpq.VerificationResult(0, 0, 0)
         with pytest.raises(mpq.LibmpqFormatError):
-            archive.verify_result(mpq.VERIFY_ALL)
+            archive.verify_ex(mpq.VERIFY_ALL)
         with pytest.raises(ValueError):
-            archive.verify_result(-1)
+            archive.verify_ex(-1)
     with pytest.raises(mpq.LibmpqError):
-        archive.verify_result()
+        archive.verify_ex()
 
 
 def test_archive_metadata_independent_md5():
@@ -1897,7 +1897,7 @@ def test_archive_metadata_independent_md5():
                 assert actual == wire[reference:reference + 16]
             expected_checked |= 0x4000 << (index - 3)
     with mpq.Archive.open_io(io.BytesIO(wire), len(wire)) as archive:
-        assert archive.verify_result() == mpq.VerificationResult(
+        assert archive.verify_ex() == mpq.VerificationResult(
             expected_checked, mpq.VERIFY_METADATA_ALL & ~expected_checked, 0)
     # Explicit optional hi-block storage yields all eight available checks.
     extended = bytearray(wire)
@@ -1910,7 +1910,7 @@ def test_archive_metadata_independent_md5():
     extended[144:160] = hashlib.md5(high_table).digest()
     extended[192:208] = hashlib.md5(extended[:192]).digest()
     with mpq.Archive.open_io(io.BytesIO(extended), len(extended)) as archive:
-        assert archive.verify_result() == mpq.VerificationResult(mpq.VERIFY_METADATA_ALL, 0, 0)
+        assert archive.verify_ex() == mpq.VerificationResult(mpq.VERIFY_METADATA_ALL, 0, 0)
 
 
 def test_key_flag_constant():

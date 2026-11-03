@@ -312,13 +312,13 @@ private void testFixture() {
         assert(coverage.unavailable == (flags & 9));
         assert(coverage.mismatches == 0);
     }
-    auto metadataCoverage = archive.verifyResult();
+    auto metadataCoverage = archive.verifyEx();
     assert(metadataCoverage.checked == 0);
     assert(metadataCoverage.unavailable == VERIFY_METADATA_ALL);
     assert(metadataCoverage.mismatches == 0);
-    assert(archive.verifyResult(0) == VerificationResult(0, 0, 0));
+    assert(archive.verifyEx(0) == VerificationResult(0, 0, 0));
     bool metadataRejected;
-    try { archive.verifyResult(VERIFY_ALL); }
+    try { archive.verifyEx(VERIFY_ALL); }
     catch (MPQException error) { metadataRejected = true; }
     assert(metadataRejected);
     auto selfCoverage = archive.file("(attributes)").verifyResult(6);
@@ -1775,15 +1775,15 @@ void main() {
         auto root = environment.get("LIBMPQ_SOURCE_DIR", ".");
         auto source = new MemorySource(cast(ubyte[]) read(buildPath(root, "tests", "fixtures", "mpq-v4-features.mpq")));
         auto archive = Archive.openSource(source, "metadata.mpq");
-        auto coverage = archive.verifyResult();
+        auto coverage = archive.verifyEx();
         assert((coverage.checked | coverage.unavailable) == VERIFY_METADATA_ALL);
         assert((coverage.checked & coverage.unavailable) == 0 && coverage.mismatches == 0);
         source.data[192] ^= 1;
-        assert(archive.verifyResult(VERIFY_METADATA_HEADER_MD5) == VerificationResult(0x100, 0, 0x100));
+        assert(archive.verifyEx(VERIFY_METADATA_HEADER_MD5) == VerificationResult(0x100, 0, 0x100));
         source.data[192] ^= 1;
         source.fail = true;
         bool rejected;
-        try { archive.verifyResult(); }
+        try { archive.verifyEx(); }
         catch (MPQException error) { rejected = error.code == ERROR_READ; }
         assert(rejected);
         source.fail = false;

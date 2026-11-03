@@ -617,10 +617,11 @@ status, checked equal to the request, no unavailable checks and no mismatches.
 ## Archive metadata verification
 
 ```python
-result = archive.verify_result(mpq.VERIFY_METADATA_ALL)
+result = archive.verify_ex(mpq.VERIFY_METADATA_ALL)
 ```
 
-Archive metadata verification uses the native `archive_verify_ex()` and the eight
+`Archive.verify()` verifies digital signatures. `Archive.verify_ex()` verifies
+archive structural and RAW metadata. It uses the native `archive_verify_ex()` and the eight
 `LIBMPQ_VERIFY_METADATA_*` bits, combined by `LIBMPQ_VERIFY_METADATA_ALL`.
 It performs fresh bounded reads of stored header/table representations against
 opened descriptors, checking both object digests and stored reference fields.

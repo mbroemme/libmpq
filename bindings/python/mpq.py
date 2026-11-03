@@ -1676,8 +1676,8 @@ class Archive:
             _identity_call("libmpq__stream_open_name", selected, self._mpq, _as_bytes(member), ctypes.byref(stream))
         return MpqStream(stream, self._source_state)
 
-    def verify_result(self, flags=VERIFY_METADATA_ALL):
-        """Compare stored archive metadata against opened references, not signatures."""
+    def verify_ex(self, flags=VERIFY_METADATA_ALL):
+        """Verify archive structural and RAW metadata. Use verify() for digital signatures."""
         self._ensure_open()
         if not isinstance(flags, int) or not 0 <= flags <= 0xffffffff:
             raise ValueError("verify flags must be an unsigned 32-bit integer")

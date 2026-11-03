@@ -28,12 +28,13 @@ public final class Archive implements AutoCloseable {
     /** Checksum coverage; member and archive methods use separate flag domains. */
     public record VerificationResult(int checked, int unavailable, int mismatches) {}
 
-    /** Fresh structural/RAW metadata comparison, separate from signature verification. */
-    public VerificationResult verifyResult() throws LibmpqException {
-        return verifyResult(Mpq.VERIFY_METADATA_ALL);
+    /** Verify all archive structural and RAW metadata checks. Use verify() for digital signatures. */
+    public VerificationResult verifyEx() throws LibmpqException {
+        return verifyEx(Mpq.VERIFY_METADATA_ALL);
     }
 
-    public VerificationResult verifyResult(int flags) throws LibmpqException {
+    /** Verify the requested archive structural and RAW metadata checks. */
+    public VerificationResult verifyEx(int flags) throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment checked = arena.allocate(ValueLayout.JAVA_INT);
