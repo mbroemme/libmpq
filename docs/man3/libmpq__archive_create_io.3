@@ -38,7 +38,7 @@ disabled. Unsigned v1 through v3 may omit it. Signing requires read-at.
 Weak signing remains unavailable for v4 with RAW chunks enabled.
 .PP
 Read and write callbacks receive a borrowed byte buffer, nonnegative signed
-64-bit offset and native Bsize_tP length. Return zero only after transferring
+64-bit offset and native \fIsize_t\fP length. Return zero only after transferring
 the entire range. Complete short transfers in the adapter or return a
 negative libmpq error. Successful writes preserve unrelated bytes and
 extend storage to the maximum written end. Seeking and zero-byte transfers
