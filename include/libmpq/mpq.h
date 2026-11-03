@@ -821,6 +821,8 @@ libmpq__file_flags(mpq_archive_s *archive, uint32_t file_number, uint32_t *flags
 
 /*
  * Return available stored attributes for a public file number on a reader.
+ * The entry needs a valid classic block-table row. A readable BET-only entry
+ * returns FORMAT. With a valid row, an absent attributes file returns EXIST.
  * Legacy missing entries return zero flags, not invented checksum values.
  * PATCH_BIT is metadata only and does not enable patch application.
  */

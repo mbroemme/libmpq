@@ -407,7 +407,8 @@ This is opt-in for sectorized files, including encrypted files. Empty, raw,
 and single-unit files do not generate checksum tables. Tables are stored
 unencrypted and compressed with zlib only when smaller.
 
-File checksum requests without `(attributes)` return `LIBMPQ_ERROR_EXIST`.
+For a member with a valid classic row, file checksum requests through
+`libmpq__file_verify()` return `LIBMPQ_ERROR_EXIST` if `(attributes)` is absent.
 Missing individual CRC32/MD5 values are skipped, so zero mismatch bits do not
 prove that hashes were present. Complete file reads automatically verify usable
 sector Adler-32 values and, for lossless data, available CRC32/MD5 attributes.

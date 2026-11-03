@@ -28,7 +28,10 @@ libmpq__file_attributes \- read stored per-file attributes
 .SH DESCRIPTION
 Return the available stored attributes for the selected public file number.
 The result has flags, crc32, filetime, md5[16], and patch_bit fields.
-The file number is mapped to its physical block-table row.
+The canonical file number must map to a valid classic block-table row.
+A readable BET-only member returns \fBLIBMPQ_ERROR_FORMAT\fP because it
+lacks that mapping. In a mixed classic/HET/BET layout, the query can
+succeed for members with a classic row and usable stored attributes.
 .SS "Availability and Value Interpretation"
 Flags identify available values; unavailable values are zero. Recognized
 legacy layouts can omit rows or patch bits, so per-file availability may
@@ -44,6 +47,16 @@ them. Complete reads automatically compare available CRC32/MD5 values for
 lossless files, but intentionally skip that file-level comparison for lossy
 ADPCM. Use \fBlibmpq__file_verify\fP() to request explicit comparisons, which
 may report mismatches for lossy ADPCM, or to select sector checks.
+.PP
+File CRC32/MD5 requests through
+.BR libmpq__file_verify (3)
+use this attributes query. On success,
+.BR libmpq__file_verify_ex (3)
+reports checked, unavailable and mismatched checks separately. It can report
+logical checksums as unavailable when the attributes file is absent or a
+BET-only member lacks a classic row. Malformed attributes metadata can still
+fail a requested logical check. Sector and v4 RAW MD5 checks have their own
+requirements, independent of this query.
 .SS "Native Result Layout"
 The native ABI is 40 bytes: fields begin at offsets 0, 4, 8, 16, and 32,
 followed by reserved[4] at offset 36. Reserved bytes are returned as zero.
@@ -52,13 +65,18 @@ Natural alignment is retained; this is not the serialized little-endian payload.
 Returns \fB0\fP with stored attributes on success, or a
 negative libmpq error. The output is zeroed on failure.
 .SH ERRORS
-\fBLIBMPQ_ERROR_EXIST\fP means a required argument, file number, or
-attributes file is absent. Malformed attributes return
-\fBLIBMPQ_ERROR_FORMAT\fP; a writer handle returns
-\fBLIBMPQ_ERROR_NOT_INITIALIZED\fP. I/O and allocation errors may propagate.
+\fBLIBMPQ_ERROR_EXIST\fP means a required pointer is NULL, the file number
+is invalid, or a member with a valid classic row has no applicable
+attributes file. A missing or out-of-range classic row for the selected
+member or unusable attributes representation returns
+\fBLIBMPQ_ERROR_FORMAT\fP. The selected member's row is checked before
+loading attributes. A writer handle returns
+\fBLIBMPQ_ERROR_NOT_INITIALIZED\fP. I/O, decoding and allocation errors
+may propagate.
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__file_verify (3),
+.BR libmpq__file_verify_ex (3),
 .BR libmpq__archive_create (3),
 .BR libmpq__archive_create_mpqe (3),
 .BR libmpq__archive_attributes (3),
