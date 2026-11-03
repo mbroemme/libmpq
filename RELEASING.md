@@ -195,7 +195,9 @@ with an external consumer before uploading it.
 ## Release validation
 
 Source packaging uses `make distcheck` followed by `make dist-bzip2` to produce
-gzip and bzip2 archives, and runs CMake/CTest from an extracted source archive.
+gzip and bzip2 archives. It also runs CMake/CTest from an extracted source
+archive as a validation check. Native SDKs follow the
+[platform build policy](README.md#building).
 
 ## Source release publication
 

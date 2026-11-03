@@ -101,6 +101,12 @@ documentation below for build, test, and library-loading instructions.
 
 ## Building
 
+Use Autotools for release builds on Linux (glibc and musl), macOS (x86_64
+and ARM64), and Windows with MinGW-w64. Use CMake for native Windows builds
+with MSVC (x64 and ARM64). CMake builds with other toolchains are for
+development and validation. Linux release shared libraries use Libtool
+versioning and carry the SONAME `libmpq.so.4`.
+
 ### Unix (Autotools)
 
 For build and install use the commands below. If `--prefix=/usr` is used, the

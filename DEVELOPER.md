@@ -12,10 +12,10 @@ lists; exact operations take locale/platform values directly, including
 neutral `(0,0)`, without fallback. Storage options remain independent and
 must match the selected identity on replacement.
 
-Autotools uses compatible libtool `6:0:2` (ELF SONAME 4), retaining the
-published v0.8.1 function ABI and public layouts while adding new interfaces.
-CMake currently leaves VERSION and SOVERSION unset; its shared-library naming
-is separate from the Autotools version-info.
+Autotools uses Libtool `6:0:2` and retains the published v0.8.1 function ABI
+and public layouts. A Linux CMake development build produces an unversioned
+`libmpq.so`. See the [build policy](README.md#building) for the versioned
+Linux release configuration.
 
 ## Getting started
 

@@ -4,7 +4,15 @@
 cmake_minimum_required(VERSION 3.21)
 project(libmpq VERSION 0.9.0 LANGUAGES C)
 
-# Native MSVC frontend; Autotools remains the canonical Unix/cross build.
+# Native Windows/MSVC frontend. Autotools is canonical for Unix and MinGW-w64.
+if(NOT MSVC)
+    message(WARNING
+        "CMake with a non-MSVC toolchain is for development and validation. "
+        "Use Autotools for Linux, macOS, and MinGW-w64 release builds, "
+        "including versioned Linux shared libraries."
+    )
+endif()
+
 option(BUILD_SHARED_LIBS "Build the shared library" ON)
 
 # Reuse GENERAL_SRCS rather than maintaining a second core source list.
