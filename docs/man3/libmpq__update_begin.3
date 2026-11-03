@@ -31,6 +31,27 @@ and strong signatures are removed on modification. On
 failure, \fI*update\fP is NULL. MPQE archives require
 \fBlibmpq__update_begin_mpqe\fP(3). The handle is consumed by commit or abort.
 .SH COMPATIBILITY
+MPQ v2 can store member positions at or beyond 4 GiB relative to the MPQ
+header. The hi-block table supplies 16 high bits in addition to the low
+32 bits in the block table. Reading uses the actual source bounds. Creation
+can produce sparse output where the backing storage supports it, and stores
+the low 32 bits of the archive extent in the legacy size field.
+.PP
+Begin copies the source into a private stage and can expand sparse regions
+on disk. A successful begin leaves mutation and compaction eligibility to
+the individual operation. Ordinary legacy table rewrites
+require the rebuilt MPQ extent, excluding the prefix and suffix, to fit in
+UINT32_MAX bytes and return LIBMPQ_ERROR_SIZE if it does not.
+Named reconstruction, including exact data and path replacement, checks the extent
+declared by the header against the stage size and permits only a recognized
+strong-signature trailer after that extent. An inconsistent extent or
+unsupported trailer can return LIBMPQ_ERROR_FORMAT, including when the v2
+size field wraps. See
+.BR libmpq__update_replace_ranges (3)
+and
+.BR libmpq__update_compact (3)
+for their specific checks.
+.PP
 V3/v4 mutations use available filenames and stored lookup identities.
 Unrelated unnamed entries can be retained with fixed classic probe slots or
 complete normalized 64-bit HET/BET hashes and consistent row provenance.
@@ -69,6 +90,8 @@ returned as negative LIBMPQ_ERROR_* values.
 .BR libmpq__update_begin_mpqe (3),
 .BR libmpq__update_replace_data (3),
 .BR libmpq__update_replace_path (3),
+.BR libmpq__update_replace_ranges (3),
+.BR libmpq__update_compact (3),
 .BR libmpq__update_remove (3),
 .BR libmpq__update_rename (3),
 .BR libmpq__update_commit (3),

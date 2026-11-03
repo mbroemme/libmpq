@@ -52,9 +52,9 @@ shared encrypted payload need sufficient compatible key provenance. Different
 aliases can share one payload when their basename-derived keys agree; no alias
 is discarded, detached or duplicated to make compaction succeed. Valid names
 alone do not guarantee that the layout is reconstructible or the plaintext
-correct. Existing format, metadata, trailer and encrypted-member restrictions
-remain. KEY adjustment uses MPQ-relative member position and uncompressed size,
-excluding any embedded prefix.
+correct. The layout and trailer checks in libmpq__update_compact(3), including
+its v2 declared-extent check, also apply here. KEY adjustment uses MPQ-relative
+member position and uncompressed size, excluding any embedded prefix.
 .PP
 After actual candidate validation, all still-valid supplied spellings are
 revalidated and copied into replacement transaction-owned knowledge before
@@ -93,7 +93,8 @@ LIBMPQ_ERROR_EXIST reports an invalid/abort-only update, a NULL array with
 nonzero count, a NULL/empty entry, or an absent filename. LIBMPQ_ERROR_FORMAT
 reports ambiguous/reduced/contradictory identity provenance, incompatible shared
 keys or unsupported layout/metadata. LIBMPQ_ERROR_DECRYPT reports unavailable
-required key provenance. LIBMPQ_ERROR_SIZE reports unrepresentable capacity;
+required key provenance. LIBMPQ_ERROR_SIZE reports unrepresentable capacity,
+output sizes or positions.
 LIBMPQ_ERROR_MALLOC reports allocation failure. Existing open, read, write,
 seek and close errors propagate. No entry from a failed batch is installed.
 .SH SEE ALSO

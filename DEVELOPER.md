@@ -494,6 +494,29 @@ Only the first 32 authentication bytes needed for the existing MPQE key
 derivation are copied into private state, then cleared on every consuming
 path. A crash may leave owner-only plaintext staging data.
 
+MPQ v2 combines a 32-bit block offset with a 16-bit hi-block word. Member
+positions are relative to the MPQ header, so an embedded prefix can also
+place a low relative offset above 4 GiB in the backing file. The reader
+checks v2 payloads against physical source bounds. Creation supports sparse
+high member placement on suitable storage and writes the low 32 bits of
+the archive extent into the legacy size field. Update begin copies the source
+in bounded buffers and can expand sparse holes. Eligibility is checked by
+each mutation after staging:
+
+- Ordinary legacy table rewrites return SIZE when the candidate MPQ extent,
+  excluding the prefix and suffix, exceeds UINT32_MAX. Named reconstruction
+  checks the declared extent against the stage and rejects inconsistent
+  geometry or unrelated trailers with FORMAT.
+- Both range-replacement functions return SIZE when the required v2 extent
+  of the source or candidate exceeds UINT32_MAX. This extent comes from the
+  header, tables and stored nonempty payloads. A validated empty batch skips
+  candidate reconstruction and its extent checks.
+- Both compaction functions use the declared legacy extent for v2 source
+  layout and trailer validation. Stored ranges outside that extent can
+  return FORMAT even when the reader can access them. Candidate planning
+  and writing have independent size and offset checks. Filename hints in
+  `libmpq__update_compact_ex()` supply key provenance under the same rules.
+
 `libmpq__update_replace_path()` reads replacement data from a filesystem path.
 `libmpq__update_remove()` and `libmpq__update_rename()` affect existing named
 entries only; rename rejects an existing destination name. Replacement accepts

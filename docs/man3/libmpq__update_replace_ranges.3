@@ -59,9 +59,15 @@ sector metadata and range-plan allocations. SINGLE uses full-unit buffers.
 .PP
 Lossy ADPCM sectors, physical patch and delete members, managed internal
 members, and ambiguous or unsupported layouts are rejected. Embedded and MPQE
-updates retain their existing eligibility and publication rules. High-offset
-MPQ v2 extents beyond the transaction implementation's 32-bit limit are
-rejected for nonempty range replacements.
+updates retain their existing eligibility and publication rules. For nonempty
+MPQ v2 edits, the required extent of both the source and candidate must fit
+in UINT32_MAX bytes. This extent covers the header, stored tables and nonempty
+stored payloads relative to the MPQ header, excluding any embedded prefix and
+trailer. An extent above that limit returns LIBMPQ_ERROR_SIZE. A validated
+empty batch skips this extent check and candidate reconstruction. The named
+reconstruction checks in libmpq__update_begin(3) still apply to nonempty edits
+and can reject inconsistent layouts or unsupported trailers with
+LIBMPQ_ERROR_FORMAT.
 .PP
 Commit alone publishes the candidate. A failure before adoption preserves the
 previous stage. Qualifying failures during adoption leave the update
@@ -78,5 +84,6 @@ identity. LIBMPQ_ERROR_READ also covers checksum or validation mismatches.
 Allocation, decryption, codec and I/O errors are reported by the transaction.
 .SH SEE ALSO
 .BR libmpq (3),
+.BR libmpq__update_begin (3),
 .BR libmpq__update_commit (3),
 .BR libmpq__update_replace_ranges_identity (3)

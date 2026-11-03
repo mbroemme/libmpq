@@ -64,6 +64,14 @@ overlapping physical ranges are rejected conservatively. Recognized strong
 signature trailers survive proven no-ops and are removed on reconstruction.
 Authenticated MPQE uses the existing plaintext stage and encrypted publication.
 .PP
+For MPQ v2, the source layout and trailer checks use the extent declared
+by the 32-bit legacy size field. Stored tables and nonempty payloads must
+fit within that MPQ-relative extent. Layouts that fail these checks return
+LIBMPQ_ERROR_FORMAT, including readable sparse archives whose stored ranges
+extend past a wrapped size field. Planned output sizes and positions must
+also fit the destination layout. This is separate from the range-replacement
+extent check in libmpq__update_replace_ranges(3).
+.PP
 Temporary disk space is required for the working stage and a complete candidate,
 in addition to the original archive. Embedded reconstruction also needs a
 completed zero-origin MPQ temporary while assembling the full candidate.
@@ -97,5 +105,6 @@ failures propagate the established corresponding errors.
 .BR libmpq__update_compact_ex (3),
 .BR libmpq__update_begin (3),
 .BR libmpq__update_begin_mpqe (3),
+.BR libmpq__update_replace_ranges (3),
 .BR libmpq__update_commit (3),
 .BR libmpq__update_abort (3)

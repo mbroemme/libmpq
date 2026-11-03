@@ -36,6 +36,8 @@ extended identity provenance returns LIBMPQ_ERROR_FORMAT.
 .PP
 Range validation, lossless storage, ownership, resource use and transaction
 rules are the same as for libmpq__update_replace_ranges(3).
+This includes the v2 extent check for nonempty edits and the no-op behavior
+for a validated empty batch.
 .SH RETURN VALUE
 Returns \fB0\fP on success or a negative libmpq error.
 .SH ERRORS

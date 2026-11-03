@@ -1120,7 +1120,9 @@ extern LIBMPQ_API int32_t libmpq__update_change_identity(
  * Changes reach the original only when commit atomically publishes that copy.
  * Supported embedded updates retain their prefix and original MPQ origin.
  * Legacy ordinary v1/v2 updates preserve supported unrelated trailing bytes;
- * named reconstruction rejects unrelated trailers. Format restrictions remain.
+ * named reconstruction rejects unrelated trailers. V2 high-block offsets
+ * support member access beyond 4 GiB. A successful begin still leaves each
+ * mutation subject to its own extent and layout checks.
  * Stale weak and strong signatures are removed on modification. MPQE archives
  * require the explicit transport-decoding update_begin_mpqe() entry point.
  * Known-target v3/v4 modifications can preserve supported unrelated unnamed
@@ -1204,6 +1206,8 @@ extern LIBMPQ_API int32_t libmpq__update_replace_path_identity(
  * win on overlap. Empty operations validate selection and bounds, then leave
  * the stage untouched. Only commit publishes changes. SINGLE may require
  * a full logical unit in memory. Unsupported and lossy storage is rejected.
+ * Nonempty v2 edits require the source and candidate archive extents derived
+ * from stored tables and payloads to fit in UINT32_MAX bytes.
  */
 extern LIBMPQ_API int32_t libmpq__update_replace_ranges(
     mpq_update_s *update, const char *filename, const mpq_update_replace_range_s *ranges,
