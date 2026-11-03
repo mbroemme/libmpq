@@ -24,11 +24,11 @@ int32_t libmpq__file_number_from_identity(
         uint16_t locale, uint16_t platform, uint32_t *file_number);
 .fi
 .SH DESCRIPTION
-Select the exact stored classic locale/platform identity for filename.
+Select the exact locale/platform identity for the supplied filename.
 The tuple (0,0) is exact neutral selection, never ordinary/default lookup.
-There is no neutral fallback or global locale state. The existing ordinary
-libmpq__file_number(3) behavior is unchanged. Conflicting or duplicate
-identities return FORMAT rather than choosing the first hit.
+There is no neutral fallback or global locale state. For ordinary filename
+lookup, see libmpq__file_number(3). Conflicting or duplicate identities
+return FORMAT rather than choosing the first hit.
 .PP
 HET/BET-only identities accept only (0, 0). A missing classic selector is
 not satisfied by a name-only BET row when other classic variants exist.

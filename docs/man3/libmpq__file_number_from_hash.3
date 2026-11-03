@@ -29,9 +29,21 @@ libmpq__file_number_from_hash \- resolve an MPQ filename hash to its file number
 .fi
 .SH DESCRIPTION
 .PP
-Call \fBlibmpq__file_number_from_hash\fP() to resolve precomputed Storm
-filename hashes using an archive's hash table. Use \fBlibmpq__file_hash\fP()
-to calculate the hashes from a filename.
+Resolve precomputed Storm filename hashes using only the classic MPQ hash
+table. Supply all three values from
+.BR libmpq__file_hash (3)
+for the same filename. \fIhash1\fP selects the initial probe slot,
+and \fIhash2\fP and \fIhash3\fP match the stored hash pair.
+.PP
+HET/BET lookup requires the filename to compute a separate hash. Members
+reachable only through HET/BET are unavailable through this function,
+including in mixed archives. In a mixed archive a classic hit can resolve
+to the same canonical file number as an HET/BET hit, or select a different
+member under classic first-hit rules. When the filename is available, use
+.BR libmpq__file_number (3)
+for ordinary lookup or
+.BR libmpq__file_number_from_identity (3)
+for an exact locale/platform tuple.
 .LP
 The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The function stores the matching file number
@@ -42,12 +54,17 @@ On error, one of the following constants is returned.
 .SH ERRORS
 .TP
 .B LIBMPQ_ERROR_EXIST
-A required archive or output pointer is NULL, or no file matches the
-supplied hashes. A NULL argument leaves any supplied output untouched.
+A required archive or output pointer is NULL, the archive has no classic
+hash table, or no live classic slot matches the supplied hashes. These
+cases leave any supplied output untouched.
+.TP
+.B LIBMPQ_ERROR_FORMAT
+A matching classic slot does not resolve to a valid canonical file entry.
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__file_hash (3),
-.BR libmpq__file_number (3)
+.BR libmpq__file_number (3),
+.BR libmpq__file_number_from_identity (3)
 .SH AUTHOR
 The libmpq project is maintained by
 .B Maik Broemme <mbroemme@libmpq.org>.

@@ -28,8 +28,10 @@ libmpq__file_number \- resolve an MPQ filename to its file number.
 .SH DESCRIPTION
 .PP
 Call \fBlibmpq__file_number\fP() to resolve a filename using the archive
-hash tables. HET/BET lookup takes precedence, with classic first-hit lookup
-on a miss. The lookup does not require a listfile. Use
+hash tables. HET/BET lookup takes precedence when present. Classic first-hit
+lookup is used if HET/BET is absent or reports no match. Extended lookup
+errors are returned to the caller. For lookup limited to the classic table,
+see libmpq__file_number_from_hash(3). The lookup does not require a listfile. Use
 libmpq__file_number_from_identity(3) for an exact locale/platform tuple.
 .LP
 The first argument is an archive handle opened by

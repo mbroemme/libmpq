@@ -723,13 +723,13 @@ extern LIBMPQ_API int32_t libmpq__archive_sign(
 
 /*
  * Resolve a plaintext MPQ filename to its public file number.
- * The name is hashed using the library's Storm-compatible rules and matched
- * against locale and platform variants in the archive. The returned number
- * is suitable for the size, property, block, and read APIs. This preserves
- * HET-first/classic first-hit lookup. Use libmpq__file_number_from_identity for exact
- * locale/platform selection with a cleared output on failure. File numbers
- * belong to the opened archive representation. Resolve names or identities
- * again after reopening an archive rebuilt by an update.
+ * Uses filename-aware HET/BET lookup when present, with classic first-hit
+ * lookup on a HET/BET miss or when extended tables are absent. The returned
+ * number is suitable for the size, property, block, and read APIs.
+ * Use libmpq__file_number_from_identity for exact locale/platform selection
+ * with a cleared output on failure. File numbers belong to the opened archive
+ * representation. Resolve names or identities again after reopening an archive
+ * rebuilt by an update.
  */
 extern LIBMPQ_API int32_t
 libmpq__file_number(mpq_archive_s *mpq_archive, const char *filename, uint32_t *number);
@@ -754,7 +754,7 @@ extern LIBMPQ_API int32_t libmpq__file_identity(
 );
 
 /*
- * Calculate the three Storm-compatible hashes used to identify an MPQ name.
+ * Calculate the three Storm-compatible hashes for the classic MPQ hash table.
  * The outputs are deterministic for a given byte string and are written to
  * hash1, hash2, and hash3. Pass a valid NUL-terminated filename and three
  * writable output pointers. All four pointers must be non-NULL.
@@ -763,12 +763,14 @@ extern LIBMPQ_API void
 libmpq__file_hash(const char *filename, uint32_t *hash1, uint32_t *hash2, uint32_t *hash3);
 
 /*
- * Resolve precomputed Storm filename hashes to a public file number.
- * This avoids recalculating the hashes when a caller already has them, but it
- * otherwise follows the same collision probing and table validation as name
- * lookup. The caller must supply all three hashes from the same filename.
- * Return LIBMPQ_ERROR_EXIST if the archive or number pointer is NULL,
- * leaving the output untouched.
+ * Resolve precomputed Storm filename hashes through the classic hash table.
+ * Supply all three hashes from libmpq__file_hash() for the same filename.
+ * HET/BET lookup requires the filename to compute a separate hash. Members
+ * reachable only through HET/BET are unavailable through this function.
+ * Use libmpq__file_number() when the filename is available, or
+ * libmpq__file_number_from_identity() for an exact locale/platform tuple.
+ * Return LIBMPQ_ERROR_EXIST for a NULL archive or number pointer, a missing
+ * classic table, or no classic match. These cases leave the output untouched.
  */
 extern LIBMPQ_API int32_t libmpq__file_number_from_hash(
     mpq_archive_s *mpq_archive, uint32_t hash1, uint32_t hash2, uint32_t hash3, uint32_t *number
