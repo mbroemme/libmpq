@@ -31,13 +31,18 @@ negative libmpq error. Archive finalization still requires
 \fBlibmpq__archive_close\fP(). Plain creation writes directly to its destination
 and does not provide transactional rollback.
 .SH ERRORS
-NULL writers return \fBLIBMPQ_ERROR_EXIST\fP; an incomplete stream returns
-\fBLIBMPQ_ERROR_SIZE\fP. Compression, allocation, and I/O errors may also
-propagate.
+A NULL writer returns \fBLIBMPQ_ERROR_EXIST\fP. A latched archive error
+takes precedence. Otherwise an incomplete member is rejected, typically
+with \fBLIBMPQ_ERROR_SIZE\fP. Callback-backed writers report and latch SIZE
+for an incomplete member before flushing it. Path-backed writers can
+encounter encoding or I/O errors during the final sector flush.
+Finish failures latch for callback-backed writers and v4 path-backed
+writers.
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__archive_create (3),
 .BR libmpq__archive_create_mpqe (3),
+.BR libmpq__archive_close (3),
 .BR libmpq__archive_add_data (3),
 .BR libmpq__archive_add_path (3),
 .BR libmpq__writer_begin (3),

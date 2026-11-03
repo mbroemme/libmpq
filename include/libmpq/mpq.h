@@ -91,10 +91,9 @@ typedef struct mpq_stream mpq_stream_s;
 
 /*
  * Opaque state for one file currently being written to an archive. A writer
- * is created by libmpq__writer_begin and owns the streaming state until finish
- * or failure. Applications operate on this handle through libmpq__writer_*
- * instead of accessing its private allocation directly. The handle is consumed
- * by libmpq__writer_finish(), regardless of its result.
+ * becomes active on successful libmpq__writer_begin(). A write failure leaves
+ * the handle active. libmpq__writer_finish() consumes it on success or failure,
+ * and libmpq__archive_close() consumes any writer still active on that archive.
  */
 typedef struct mpq_writer mpq_writer_s;
 
@@ -531,7 +530,9 @@ extern LIBMPQ_API int32_t libmpq__archive_create(
  * The caller retains storage and context through consuming archive_close(),
  * including on failure. The library never closes or publishes the sink.
  * Callbacks run synchronously and must not re-enter this writer. Serialize
- * shared I/O externally. Callback and admitted-member failures are terminal.
+ * shared I/O externally. Callback, sector encoding/output and member finish
+ * failures are terminal for a valid writer. Write admission errors are
+ * recoverable when no terminal error is latched.
  * Failed output may remain partial. Success does not guarantee durability.
  * Failure clears *archive when the pointer is provided.
  */
@@ -611,9 +612,12 @@ extern LIBMPQ_API int32_t libmpq__archive_clone(mpq_archive_s **clone, mpq_archi
 /*
  * Close and consume an archive, releasing its tables and caches. Independently
  * owned clones and logical streams remain usable with a valid backing source.
- * For writers this attempts header/table finalization, then discards any
- * active file writer, invalidating that writer handle. Do not reuse or
- * close the archive again, even if this call reports an error.
+ * For writable archives, a latched error takes precedence over an unfinished
+ * member (SIZE). Otherwise close finalizes headers, tables and any signatures.
+ * Finalization, output, callback flush, filesystem close or temporary-source
+ * cleanup can report errors. Close also consumes any active member writer.
+ * Caller-owned output storage and callback context remain the caller's
+ * responsibility, including persistence and publication.
  */
 extern LIBMPQ_API int32_t libmpq__archive_close(mpq_archive_s *mpq_archive);
 
@@ -1030,8 +1034,9 @@ extern LIBMPQ_API int32_t libmpq__block_read(
  * The returned writer accepts only the number of bytes specified by
  * unpacked_size and applies the copied file options sector by sector.
  * Only one writer may be active per archive; finish it before beginning
- * another file. The archive must outlive the writer. Closing the archive
- * with an active writer reports an error and consumes both handles.
+ * another file. A failed begin creates no new writer. The archive must
+ * outlive the writer. Closing the archive with an active writer reports an
+ * error and consumes both handles.
  */
 extern LIBMPQ_API int32_t libmpq__writer_begin(
     mpq_archive_s *mpq_archive, const char *filename, libmpq__off_t unpacked_size,
@@ -1048,8 +1053,11 @@ extern LIBMPQ_API int32_t libmpq__writer_timestamp(mpq_writer_s *writer, uint64_
 /*
  * Append source bytes to an active file writer.
  * Sectorized writes buffer at most one input sector. Oversized SINGLE writes
- * buffer the entire declared unit and encode it once. The call fails if the
- * input would exceed the size declared by libmpq__writer_begin.
+ * buffer the entire declared unit and encode it once. Rejected input, such
+ * as a write exceeding the declared size, can be corrected if no terminal
+ * error is latched. The handle remains active even on failure. Sector
+ * encoding or output errors latch for callback-backed writers (including
+ * staged MPQE) and for v4 path-backed writers.
  */
 extern LIBMPQ_API int32_t
 libmpq__writer_write(mpq_writer_s *writer, const uint8_t *buffer, libmpq__off_t size);
@@ -1058,6 +1066,7 @@ libmpq__writer_write(mpq_writer_s *writer, const uint8_t *buffer, libmpq__off_t 
  * Finish an active file writer and publish its block and hash-table entries.
  * Any final partial sector is flushed before metadata is committed, and the
  * writer handle becomes invalid after this call regardless of its result.
+ * A previously latched error takes precedence over an incomplete member.
  */
 extern LIBMPQ_API int32_t libmpq__writer_finish(mpq_writer_s *writer);
 

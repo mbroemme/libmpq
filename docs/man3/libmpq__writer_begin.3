@@ -64,7 +64,8 @@ termination. Existing codec/version restrictions and ADPCM SINGLE rejection,
 KEY adjustments, generated listfile defaults and physical patch defaults remain.
 .SH RETURN VALUE
 Returns \fB0\fP with an active writer on success, or a
-negative libmpq error. No file entry is published before finish succeeds.
+negative libmpq error. Failure creates no new writer. The file entry is
+published only after a successful finish.
 .SH ERRORS
 Invalid writer state or storage options return \fBLIBMPQ_ERROR_FORMAT\fP;
 NULL, empty or duplicate filenames return \fBLIBMPQ_ERROR_EXIST\fP.

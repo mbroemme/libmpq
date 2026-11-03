@@ -251,7 +251,13 @@ patch query clears the output and preserves any terminal writer error.
 
 `libmpq__writer_begin()` starts an archive member and returns `mpq_writer_s`.
 Use `libmpq__writer_write()`, `libmpq__writer_timestamp()`, and
-`libmpq__writer_finish()` on that handle. Finishing consumes it, even on error.
+`libmpq__writer_finish()` on that handle. A failed write leaves the writer
+active. Input rejected before encoding can be corrected if the archive has
+no latched error. Sector encoding and output failures latch for callback-backed
+writers and v4 path-backed writers. Finish consumes the writer even on error.
+Archive close consumes both the archive and any remaining writer, returning
+the latched error first or SIZE for an unfinished member. Otherwise it
+finalizes the archive and can report serialization, output or cleanup errors.
 Use `libmpq__archive_add_data()` to add an in-memory source in one call, or
 `libmpq__archive_add_path()` to add a filesystem-path source.
 

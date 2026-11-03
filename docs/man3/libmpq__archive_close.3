@@ -31,14 +31,55 @@ when finalization or output close reports an error. Independently owned clones
 and logical member streams remain usable with a valid backing source; custom
 callback contexts must remain valid through their last derived handle.
 .PP
-Closing a writable archive with an active file writer reports an error and
-also discards that writer; neither handle may be reused.
+For a writable archive, close returns any previously latched writer error.
+Otherwise an active member writer causes
+.B LIBMPQ_ERROR_SIZE
+and is discarded without finishing it. With no active writer or latched
+error, close finalizes the archive, including writing headers, tables and
+any configured signatures. MPQE output also requires transport finalization.
+.PP
+For caller-owned output, an optional flush runs only after successful
+finalization. The caller retains ownership of the callback context and
+backing storage through close, including on failure. Persistence and
+publication of the sink remain the caller's responsibility. The library
+never closes or frees those resources or guarantees durability or atomic
+publication. A failure can leave partial output.
 .SH RETURN VALUE
-On success, a zero is returned and on error one of the following constants.
+Returns zero on success or a negative libmpq error.
+An earlier writer or finalization error takes precedence over a later
+filesystem close failure.
 .SH ERRORS
 .TP
+.B LIBMPQ_ERROR_EXIST
+The archive pointer is NULL.
+.TP
+.B LIBMPQ_ERROR_SIZE
+An unfinished member remains active, or the output exceeds a format or
+extent limit.
+.TP
+.B LIBMPQ_ERROR_READ
+Read-back or a private MPQE staging read failed.
+.TP
+.B LIBMPQ_ERROR_WRITE
+Writing output failed, or removing private temporary storage failed during
+MPQE finalization or on the reader's last close. This also covers failure
+to publish path-based MPQE output.
+.TP
 .B LIBMPQ_ERROR_CLOSE
-The given file could not be closed.
+Closing a library-owned file failed, or the sink's flush callback returned
+a positive status.
+.PP
+Other finalization errors can propagate, including
+.B LIBMPQ_ERROR_SEEK
+when positioning output fails and
+.B LIBMPQ_ERROR_MALLOC
+when allocating finalization metadata fails. Negative sink callback
+statuses propagate unchanged. Positive read and write
+statuses map to
+.B LIBMPQ_ERROR_READ
+and
+.BR LIBMPQ_ERROR_WRITE ,
+respectively.
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__archive_open (3),
@@ -46,6 +87,9 @@ The given file could not be closed.
 .BR libmpq__archive_open_mpqe (3),
 .BR libmpq__archive_open_mpqe_io (3),
 .BR libmpq__archive_clone (3),
+.BR libmpq__archive_create_io (3),
+.BR libmpq__archive_create_mpqe_io (3),
+.BR libmpq__writer_finish (3),
 .BR libmpq__archive_size_packed (3),
 .BR libmpq__archive_size_unpacked (3),
 .BR libmpq__archive_offset (3),

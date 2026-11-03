@@ -27,7 +27,7 @@ libmpq__writer_write \- write bytes through an MPQ file writer
 .fi
 .SH DESCRIPTION
 Appends \fIsize\fP bytes from caller-owned \fIbuffer\fP to the active
-\fIwriter\fP. The writer remains active on success. Bytes may be buffered
+\fIwriter\fP. The writer remains active even on failure. Bytes may be buffered
 or written as complete sectors; call libmpq__writer_finish(3) to publish
 the member entry.
 .PP
@@ -45,11 +45,19 @@ termination. Existing codec/version restrictions and ADPCM SINGLE rejection,
 KEY adjustments, generated listfile defaults and physical patch defaults remain.
 .SH RETURN VALUE
 Returns \fB0\fP when the bytes are accepted, or a negative
-libmpq error. This call does not consume the writer.
+libmpq error.
 .SH ERRORS
 A NULL writer, NULL data with nonzero size, negative size, or data beyond
 the declared unpacked size returns \fBLIBMPQ_ERROR_SIZE\fP. Compression
-and I/O errors may also propagate.
+and I/O errors may also propagate. If no terminal error is latched, an
+argument or size rejection leaves progress unchanged. Supply valid input
+or finish if all declared bytes have already been accepted.
+.PP
+Sector encoding or output failures latch the first terminal error for
+callback-backed writers (including staged MPQE) and v4 path-backed writers.
+Later writes, finish and archive close return the latched error.
+Path-backed v1 through v3 do not latch these failures in this call; a
+failed sector write may already have accepted some input.
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__archive_create (3),
