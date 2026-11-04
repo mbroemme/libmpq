@@ -54,6 +54,14 @@ origin in the backing source and can be nonzero for embedded archives.
 `file.offset` is the stored member position relative to the start of the MPQ.
 The corresponding `metadata()` snapshots use the same units and coordinates.
 
+`Archive.file_number(name)` tries HET/BET when present and falls back to
+classic lookup on a miss. Supplying `locale` and `platform` selects an exact
+identity through classic or supported HET/BET metadata. HET/BET-only
+identities accept only `(0, 0)`. `mpq.file_hash(name)` computes the three
+classic Storm hashes. Lookup by those hashes is available only through the
+low-level ctypes registration of `libmpq__file_number_from_hash()`. HET/BET
+lookup requires the filename to compute a separate hash.
+
 ### Logical member streams
 
 Use archive.open_stream(name) for incremental seekable member access. Streams
@@ -173,9 +181,13 @@ raw storage/fallback, without decoding. LZMA is `0x12`, not the writer selector.
 `file.block_size_packed(block)` returns stored data bytes, excluding offset
 and checksum tables. Use `file.block_size(block)` for the decoded size.
 
-`Archive.attributes()` returns `None` when absent. `File.attributes()`
-returns an owned `FileAttributes` result. Use `WriterFile.timestamp(filetime)`
-before finishing a streaming file. Supply Windows FILETIME, not Unix time.
+`Archive.attributes()` returns archive-wide flags or `None` if absent.
+`File.attributes()` returns a `FileAttributes` result and requires the
+member to have a valid classic block-table row. A readable BET-only member
+can raise `LibmpqFormatError` with `ERROR_FORMAT` from this query.
+
+Use `WriterFile.timestamp(filetime)` before finishing a streaming file.
+Supply Windows FILETIME, not Unix time.
 
 Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
 `ATTRIBUTE_MD5`, and `ATTRIBUTE_PATCH_BIT` in the `attributes=` argument of

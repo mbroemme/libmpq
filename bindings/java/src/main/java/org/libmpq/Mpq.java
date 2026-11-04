@@ -161,12 +161,12 @@ public final class Mpq {
     }
 
     /**
-     * Calculates the three Storm hash values used to locate a UTF-8 MPQ
-     * filename.  The returned values are stored in Java {@code int}s but must
+     * Calculates the three classic Storm hash values for a UTF-8 MPQ
+     * filename. The returned values are stored in Java {@code int}s but must
      * be treated as unsigned 32-bit values when serialized or compared.
      *
      * @param filename MPQ filename using the archive's Storm hashing rules
-     * @return the hash-name, hash-extension, and hash-table values
+     * @return the initial-slot hash and the two stored comparison hashes, in that order
      */
     public static StormHash fileHash(String filename) {
         try (Arena arena = Arena.ofConfined()) {
@@ -180,6 +180,6 @@ public final class Mpq {
         }
     }
 
-    /** Three unsigned 32-bit Storm hashes for one MPQ filename. */
+    /** Three unsigned 32-bit Storm hashes for classic lookup of one MPQ filename. */
     public record StormHash(int hash1, int hash2, int hash3) { }
 }

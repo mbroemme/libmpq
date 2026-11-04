@@ -405,7 +405,7 @@ __version__ = version()
 
 
 def file_hash(filename):
-    """Return the three unsigned Storm hashes for an MPQ filename."""
+    """Return the three unsigned Storm hashes used for classic MPQ lookup."""
     hash1, hash2, hash3 = ctypes.c_uint32(), ctypes.c_uint32(), ctypes.c_uint32()
     libmpq.libmpq__file_hash(_as_bytes(filename), ctypes.byref(hash1), ctypes.byref(hash2), ctypes.byref(hash3))
     return hash1.value, hash2.value, hash3.value
@@ -1452,7 +1452,12 @@ class File:
         return VerificationResult(checked.value, unavailable.value, mismatches.value)
 
     def attributes(self):
-        """Return stored attributes, raising if absent or malformed, without verification."""
+        """Return stored member attributes without performing verification.
+
+        A valid classic block-table row is required. A readable BET-only
+        member can raise LibmpqFormatError (ERROR_FORMAT) here. With a
+        valid classic row, an absent attributes file raises LibmpqNotFoundError.
+        """
         self._archive._ensure_open()
         value = _FileAttributes()
         libmpq.libmpq__file_attributes(self._archive._mpq, self.number, ctypes.byref(value))
@@ -1651,7 +1656,7 @@ class Archive:
             raise
 
     def attributes(self):
-        """Return stored flags, or None if absent; malformed metadata raises."""
+        """Return archive-wide flags or None if absent. Malformed metadata raises."""
         self._ensure_open()
         try:
             return _read_value(libmpq.libmpq__archive_attributes, ctypes.c_uint32, self._mpq)
@@ -1664,7 +1669,12 @@ class Archive:
         return _read_value(libmpq.libmpq__archive_signatures, ctypes.c_uint32, self._mpq)
 
     def file_number(self, name, *, locale=None, platform=None):
-        """Resolve by default policy, or select an exact locale/platform tuple."""
+        """Resolve a filename, optionally selecting an exact locale/platform tuple.
+
+        Ordinary lookup tries HET/BET when present and falls back to classic
+        lookup on a miss. Exact lookup can use supported HET/BET identities.
+        A HET/BET-only identity accepts only (0, 0), with no selector fallback.
+        """
         self._ensure_open()
         number = ctypes.c_uint32()
         _identity_call("libmpq__file_number", _identity_selection(locale, platform), self._mpq, _as_bytes(name), ctypes.byref(number))

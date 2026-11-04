@@ -40,7 +40,7 @@ struct BlockVerification { uint checksum; uint mismatches; }
 /** Member coverage masks, independent of signature trust or whole-archive integrity. */
 struct VerificationResult { uint checked; uint unavailable; uint mismatches; }
 
-/** The three Storm hash values used by MPQ name lookup. */
+/** The three Storm hash values used by classic MPQ name lookup. */
 struct StormHash { uint hash1; uint hash2; uint hash3; }
 
 /** Aggregate metadata describing an opened archive. */
@@ -197,7 +197,7 @@ class Archive {
         checkStatus(libmpq__archive_sign(nativeHandle(), signatureType,
                     privateKey.ptr, privateKey.length), "libmpq__archive_sign");
     }
-    /** Return flags, or a null value when absent; malformed metadata still throws. */
+    /** Return archive-wide stored attribute flags, or null if absent. Malformed metadata still throws. */
     Nullable!uint attributes() {
         uint flags;
         auto status = libmpq__archive_attributes(nativeHandle(), &flags);
@@ -517,7 +517,11 @@ class Archive {
         throw new MPQException("Archive.variants", ERROR_SIZE);
     }
 
-    /** Select exactly the requested stored locale/platform with no fallback. */
+    /**
+     * Select the exact locale/platform tuple using classic and supported
+     * HET/BET identities. A HET/BET-only identity accepts only (0, 0).
+     * No selector fallback is applied.
+     */
     uint fileNumber(string name, ushort locale, ushort platform) {
         ensureOpen();
         uint result;
@@ -535,7 +539,7 @@ class Archive {
         return new MpqStream(result, sourceState);
     }
 
-    /** Resolve a file name through the Storm hash tables. */
+    /** Resolve a filename through HET/BET when present, falling back to classic lookup on a miss. */
     uint fileNumber(string name) {
         ensureOpen(); uint result;
         checkStatus(libmpq__file_number(handle, toStringz(name), &result),
@@ -543,7 +547,11 @@ class Archive {
         return result;
     }
 
-    /** Resolve a precomputed Storm hash through the archive tables. */
+    /**
+     * Resolve precomputed Storm hashes using only the classic hash table.
+     * HET/BET needs the filename to compute a separate hash. Use the
+     * filename overload for filename-aware lookup.
+     */
     uint fileNumber(StormHash hash) {
         ensureOpen(); uint result;
         checkStatus(libmpq__file_number_from_hash(handle, hash.hash1, hash.hash2,
@@ -762,7 +770,12 @@ class File {
         return value;
     }
 
-    /** Return stored attributes for this entry; missing/invalid metadata throws. */
+    /**
+     * Return stored member attributes without verifying them.
+     * MPQException carries ERROR_FORMAT when a valid classic block-table row
+     * is missing, even if a BET-only member is readable. A valid classic row
+     * without an applicable attributes file yields ERROR_EXIST.
+     */
     FileAttributes attributes() {
         mpq_file_attributes_s value;
         checkStatus(libmpq__file_attributes(archiveRef.nativeHandle(), number, &value),

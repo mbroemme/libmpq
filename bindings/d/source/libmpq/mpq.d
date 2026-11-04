@@ -41,7 +41,7 @@ final class Mpq {
         return message is null ? "unknown error" : message[0 .. strlen(message)].idup;
     }
 
-    /** Calculate the three Storm hashes for an archive entry name. */
+    /** Calculate the three classic Storm hashes for an archive entry name. */
     static StormHash fileHash(string name) {
         StormHash result;
         libmpq__file_hash(toStringz(name), &result.hash1, &result.hash2, &result.hash3);

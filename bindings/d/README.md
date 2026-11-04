@@ -58,6 +58,12 @@ sum stored and logical entry sizes, respectively. The archive's physical
 extent also accounts for layout and tables. The `metadata()` snapshots use the
 same units and coordinates. File wrappers also expose `blockCount()` and `no()`.
 
+`Archive.fileNumber(name)` tries HET/BET when present and falls back to
+classic lookup on a miss. The locale/platform overload uses classic or
+supported HET/BET identities and selects the exact tuple. HET/BET-only
+identities accept only `(0, 0)`. The `StormHash` overload probes only the
+classic table. HET/BET lookup requires the filename to compute a separate hash.
+
 ### Logical member streams
 
 Archive.openStream(name) returns an incremental seekable MpqStream. It owns an
@@ -175,9 +181,12 @@ raw storage/fallback, without decoding. LZMA is `0x12`, not the writer selector.
 `file.blockSizePacked(blockNumber)` returns stored data bytes, excluding
 offset and checksum tables, without decoding the sector.
 
-`Archive.attributes()` returns `Nullable!uint`; absence is null.
-`MpqFile.attributes()` returns an owned `FileAttributes` value. Call
-`MpqFileWriter.timestamp(filetime)` before finishing a streaming file.
+`Archive.attributes()` returns archive-wide flags in a `Nullable!uint`, null
+if absent. `File.attributes()` returns a `FileAttributes` value and requires
+the member to have a valid classic block-table row. A readable BET-only
+member can throw `MPQException` with `ERROR_FORMAT` from this query.
+
+Call `MpqFileWriter.timestamp(filetime)` before finishing a streaming file.
 Supply Windows FILETIME, not Unix time.
 
 Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,

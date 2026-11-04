@@ -51,6 +51,13 @@ unpacked sizes sum stored and logical entry sizes, respectively. The archive's
 physical extent also accounts for layout and tables. The metadata snapshots
 use the same units and coordinates.
 
+`Archive.fileNumber(name)` tries HET/BET when present and falls back to
+classic lookup on a miss. The locale/platform overload uses classic or
+supported HET/BET identities and selects the exact tuple. HET/BET-only
+identities accept only `(0, 0)`. The `Mpq.StormHash` overload probes only
+the classic table. HET/BET lookup requires the filename to compute a separate
+hash.
+
 ### Logical member streams
 
 Use Archive.openStream(name) for incremental seekable member access. The stream
@@ -147,8 +154,12 @@ the writer selector.
 excluding offset and checksum tables. `archive.blockSize(...)` remains the
 decoded size used for read buffers.
 
-`Archive.attributes()` returns `OptionalInt`; absence is empty.
-`Archive.attributes(fileNumber)` returns an owned `FileAttributes` record.
+`Archive.attributes()` returns archive-wide flags in an `OptionalInt`, empty
+if absent. `Archive.attributes(fileNumber)` returns a `FileAttributes` record
+and requires the member to have a valid classic block-table row. A readable
+BET-only member can throw `LibmpqException` with `Mpq.ERROR_FORMAT` from this
+query.
+
 Call `MpqFileWriter.timestamp(filetime)` before finishing a streaming file.
 Supply Windows FILETIME, not Unix time. Java retains its unsigned native
 bits in a `long`.

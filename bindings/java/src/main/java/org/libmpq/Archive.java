@@ -145,7 +145,7 @@ public final class Archive implements AutoCloseable {
         }
     }
 
-    /** Return flags, or empty when absent; malformed attributes are still errors. */
+    /** Return archive-wide stored attribute flags, or empty if absent. Malformed metadata still throws. */
     public java.util.OptionalInt attributes() throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
@@ -157,7 +157,14 @@ public final class Archive implements AutoCloseable {
         }
     }
 
-    /** Return owned stored attributes; availability is represented by result flags. */
+    /**
+     * Return owned stored member attributes without verifying them. Result
+     * flags identify the available fields.
+     * @throws LibmpqException if the query fails, including
+     * {@link Mpq#ERROR_FORMAT} when the member lacks a valid classic block-table
+     * row, even if a BET-only member is readable. A valid classic row without
+     * an applicable attributes file yields {@link Mpq#ERROR_EXIST}.
+     */
     public FileAttributes attributes(int number) throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
@@ -607,7 +614,11 @@ public final class Archive implements AutoCloseable {
         throw new IllegalStateException("too many identities");
     }
 
-    /** Select precisely the stored locale/platform; no fallback is applied. */
+    /**
+     * Select the exact locale/platform tuple using classic and supported
+     * HET/BET identities. A HET/BET-only identity accepts only {@code (0, 0)}.
+     * No selector fallback is applied.
+     */
     public int fileNumber(String name, int locale, int platform) throws LibmpqException {
         checkOpen();
         short l = identitySelector(locale), p = identitySelector(platform);
@@ -635,11 +646,13 @@ public final class Archive implements AutoCloseable {
     }
 
     /**
-     * Resolves an MPQ filename through the native hash tables.
+     * Resolves an MPQ filename through HET/BET when present, falling back to
+     * classic lookup on a miss.
      *
-     * @param filename exact archive filename, including any path components
+     * @param filename archive filename, including any path components
      * @return zero-based public file number
-     * @throws LibmpqException if the name is absent or the archive is closed
+     * @throws LibmpqException if lookup fails, including an absent name,
+     * malformed metadata, or a closed archive
      */
     public int fileNumber(String filename) throws LibmpqException {
         checkOpen();
@@ -651,11 +664,14 @@ public final class Archive implements AutoCloseable {
     }
 
     /**
-     * Resolves precomputed Storm hashes without hashing the filename again.
+     * Resolves precomputed Storm hashes using only the classic hash table.
+     * HET/BET requires the filename to compute a separate hash. Use
+     * {@link #fileNumber(String)} for filename-aware lookup.
      *
      * @param hash three values previously returned by {@link Mpq#fileHash}
      * @return zero-based public file number
-     * @throws LibmpqException if the hash is absent or the archive is closed
+     * @throws LibmpqException if lookup fails, including a missing classic
+     * table, an unmatched hash, or a closed archive
      */
     public int fileNumber(Mpq.StormHash hash) throws LibmpqException {
         checkOpen();
