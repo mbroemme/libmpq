@@ -60,10 +60,16 @@ hash.
 
 ### Logical member streams
 
-Use Archive.openStream(name) for incremental seekable member access. The stream
-owns an independent native archive clone and remains usable after the
-originating archive closes. Stream reads validate available sector Adler-32
-checksums but do not implicitly verify whole-file CRC32/MD5 values.
+Open an ordinary stream by file number with `openStream(number)`, by
+filename with `openStream(name)`, or by exact identity with
+`openStream(name, locale, platform)`. Named streams provide the
+filename for decryption when the key requires it. These streams own a
+native archive clone and can outlive the original archive. Callback-backed
+clones and ordinary streams still use the caller's source. Keep the callback,
+its context and stable backing storage valid until all dependent handles
+close. Stream reads check usable sector Adler-32 values. Whole-member
+CRC32/MD5 verification is separate. See [Read one patched member](#read-one-patched-member)
+for `openPatchStream()`.
 
     try (MpqStream stream = archive.openStream("data/file.bin")) {
         byte[] buffer = new byte[4096];
@@ -373,12 +379,15 @@ try (result; MpqStream stream = result.openStream("document.txt")) {
 }
 ```
 
-Import `java.util.List` for the ordered layer list. The optional third
-argument is a prefix list: a null list or entry requests inference, while
-`""` selects the root namespace. An empty patch list creates an independent
-snapshot. Explicit addition-only layers need no metadata marker. The normal
-owned Archive result retains neither inputs nor callback channels. Its clones
-and streams survive parent closure. Named modern materialization requires
+Import `java.util.List` for the layers in application order. The optional
+third argument supplies one prefix per layer. A null list or entry requests
+inference, `""` selects root, and a nonempty string selects that namespace.
+To supply a null entry in Java, use a list implementation that permits nulls.
+An empty patch list creates an independent snapshot. Explicit addition-only
+layers need no metadata marker. The read-only result is independent of its
+inputs after successful open. Keep input callback resources alive for any
+other dependent handles. Result clones and streams retain the result's own
+storage after parent closure. Named modern materialization requires
 unambiguous names and metadata. Verify physical signatures and raw checksums
 on input archives separately; they do not confer trust on logical output.
 Temporary storage is released after the final dependent closes, with
@@ -387,23 +396,30 @@ best-effort cleanup on persistent I/O failure.
 ### Read one patched member
 
 ```java
-try (Archive base = Archive.open(basePath); Archive layer = Archive.open(patchPath);
-     MpqStream stream = base.openPatchStream("member.bin", List.of(layer), null)) {
+MpqStream stream;
+try (Archive base = Archive.open(basePath); Archive layer = Archive.open(patchPath)) {
+    stream = base.openPatchStream("member.bin", 0, 0, List.of(layer), null);
+}
+try (stream) {
     stream.read(new byte[4096]);
 }
 ```
 
-The overload `openPatchStream(filename, locale, platform, patches, prefixes)`
-selects an exact tuple, including `(0, 0)`.
+Use `openPatchStream(filename, patches, prefixes)` for ordinary lookup in the
+final patched view. The overload with locale and platform immediately after
+the filename selects that exact tuple, as in the neutral example above.
 
-Layers apply in order. A null prefix collection or entry requests
-inference; an empty string selects root. Open performs the selected
-transform and validation synchronously, and the returned stream remains
-usable after all input archives and their callback resources close.
-Missing or deleted names use the existing missing-member error.
-Unrelated payloads may be unread and the operation does not authenticate
-the whole archive. Temporary disk use depends on the selected results
-and BSD0 transform. SINGLE members can also require whole-unit memory.
+Use the same layer order and prefix rules as for a full patched archive.
+Opening reconstructs and verifies the selected result synchronously in
+private seekable scratch storage. A missing or finally deleted identity
+returns the existing missing-member error. Patch or scratch-storage failures
+can prevent the stream from opening. After success the inputs can close, as
+shown above. Keep their callback resources valid for any other dependent
+handles. Closing the returned stream releases its scratch resources.
+
+Verification covers the selected payloads. Unrelated payloads may remain
+unread. Temporary disk use depends on the selected results and BSD0
+transform. SINGLE members can also require whole-unit memory.
 
 ### V4 raw-chunk policy
 
@@ -489,11 +505,14 @@ v1/v2 updates retain their existing unrelated-suffix preservation.
 `MpqUpdate.changeIdentity(name, locale, platform, newLocale, newPlatform)` changes
 only the selected tuple. `locale` and `platform` select the old identity;
 `newLocale` and `newPlatform` specify its destination tuple. The filename and
-payload stay unchanged. All four values must be in `0..65535`:
+payload stay unchanged. `rename()` changes the filename and keeps the
+selected tuple. All four selector values must be in `0..65535`:
 
 ```java
 try (MpqUpdate update = MpqUpdate.begin(path)) {
-    update.changeIdentity("voice.bin", 0, 0, 0x409, 1);
+    int oldLocale = 0, oldPlatform = 0;
+    int newLocale = 0x409, newPlatform = 1;
+    update.changeIdentity("voice.bin", oldLocale, oldPlatform, newLocale, newPlatform);
     update.commit();
 }
 ```
@@ -507,12 +526,12 @@ special-member mutations and reconstruction layouts are rejected. Attributes,
 timestamps, raw policy and transaction ownership are unchanged, and rejected
 calls preserve the previous valid stage.
 
-Filename operations retain their default and locale/platform overloads. The
-default overload calls the ordinary C operation; the qualified overload calls
-the explicit identity operation with scalar locale/platform values, including
-`(0,0)`, without fallback. Replacement options remain independent and must
-match the selected tuple. Use the v0.9.0 native
-library with these bindings to provide the explicit identity functions.
+A filename can have multiple identities. Ordinary overloads use the native
+filename selection rules. Exact overloads require the requested tuple, and
+`(0, 0)` selects the neutral identity. Exact update selectors follow the
+filename, as in `rename(oldName, locale, platform, newName)` and
+`timestamp(name, locale, platform, filetime)`. Replacement options must
+match the selected tuple.
 
 Add operations create an absent filename using the locale/platform in
 `FileOptions`, without a selector. Replacement

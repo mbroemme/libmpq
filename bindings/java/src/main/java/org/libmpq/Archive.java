@@ -409,8 +409,9 @@ public final class Archive implements AutoCloseable {
 
     /**
      * Materialize borrowed ordered layers as an independently owned read-only archive.
-     * Null prefixes request inference; empty strings select the root namespace.
-     * The result retains neither input archives nor their callback source states.
+     * Pass one prefix per layer when supplying prefixes. A null list or entry
+     * requests inference and an empty string selects root. Keep the inputs alive
+     * during the call. The returned archive retains none of their source state.
      */
     public static Archive openPatch(Archive base, List<Archive> patches, List<String> prefixes)
             throws LibmpqException {
@@ -470,13 +471,23 @@ public final class Archive implements AutoCloseable {
         }
     }
 
-    /** Open a verified, detached stream using the final patched view's ordinary lookup. */
+    /**
+     * Open a stream using ordinary lookup in the final patched view.
+     * Prefixes follow {@link #openPatch(Archive, List, List)}. Opening
+     * synchronously reconstructs and verifies the member in private scratch
+     * storage. After success the inputs can close. Stream close releases
+     * the private storage.
+     */
     public MpqStream openPatchStream(String filename, List<Archive> patches, List<String> prefixes)
             throws LibmpqException {
         return openPatchStream(filename, patches, prefixes, false, (short) 0, (short) 0);
     }
 
-    /** Open the exact patched filename, locale and platform without fallback. */
+    /**
+     * Open the exact patched filename and tuple, including neutral (0, 0).
+     * No fallback is applied. The detached stream owns its scratch storage.
+     * Prefixes follow {@link #openPatch(Archive, List, List)}.
+     */
     public MpqStream openPatchStream(String filename, int locale, int platform,
                                      List<Archive> patches, List<String> prefixes)
             throws LibmpqException {
@@ -629,7 +640,7 @@ public final class Archive implements AutoCloseable {
         }
     }
 
-    /** Open the exact named identity on the stream's owned clone. */
+    /** Open the exact tuple on an owned clone sharing any caller-owned source. */
     public MpqStream openStream(String name, int locale, int platform) throws LibmpqException {
         checkOpen();
         short l = identitySelector(locale), p = identitySelector(platform);
@@ -795,7 +806,7 @@ public final class Archive implements AutoCloseable {
         return readPatchPayload(number, null);
     }
 
-    /** Open an independent incremental logical-member stream by file number. */
+    /** Open by file number on an owned clone sharing any caller-owned source. */
     public MpqStream openStream(int number) throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
@@ -805,7 +816,7 @@ public final class Archive implements AutoCloseable {
         }
     }
 
-    /** Open an independent incremental logical-member stream by plaintext filename. */
+    /** Open by ordinary filename lookup with the source lifetime of {@link #openStream(int)}. */
     public MpqStream openStream(String name) throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {

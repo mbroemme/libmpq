@@ -659,12 +659,17 @@ class Update:
         _identity_call("libmpq__update_remove", _identity_selection(locale, platform), self._update, _as_bytes(name))
 
     def rename(self, old_name, new_name, *, locale=None, platform=None):
-        """Stage a member rename."""
+        """Stage a filename change that preserves the selected locale/platform tuple."""
         self._ensure_open()
         _identity_call("libmpq__update_rename", _identity_selection(locale, platform), self._update, _as_bytes(old_name), _as_bytes(new_name))
 
     def change_identity(self, name, locale, platform, new_locale, new_platform):
-        """Change one exact staged locale/platform tuple without moving its payload."""
+        """Change the staged identity from (locale, platform) to the new tuple.
+
+        The exact selector can be (0, 0). The filename and payload stay
+        unchanged. An occupied destination raises LibmpqNotFoundError
+        (ERROR_EXIST), leaving the prior valid stage intact.
+        """
         self._ensure_open()
         libmpq.libmpq__update_change_identity(
             self._update, _as_bytes(name), _identity_selector(locale),
@@ -1699,7 +1704,12 @@ class Archive:
         raise OverflowError("too many identities")
 
     def open_stream(self, member, *, locale=None, platform=None):
-        """Open an independent incremental member stream by name or number."""
+        """Open an ordinary incremental member stream by filename or number.
+
+        Supply both selectors for an exact filename identity, including
+        (0, 0). The stream owns a clone that can outlive this archive but
+        still depends on any caller-owned callback source.
+        """
         self._ensure_open()
         selected = _identity_selection(locale, platform)
         stream = _VOID_PTR()
@@ -1760,9 +1770,10 @@ class Archive:
     def open_patch(cls, base, patches, prefixes=None):
         """Materialize ordered borrowed inputs as an independent read-only archive.
 
-        None prefixes request inference; an empty string selects the root.
-        Inputs and callback sources need remain alive only for this call and
-        their own normal lifetimes, not for the returned archive's lifetime.
+        Pass one prefix per layer when supplying prefixes. None or a None
+        entry requests inference; "" selects root. After success the result
+        retains no inputs. Keep callback resources alive for any other
+        archives, clones or ordinary streams still using them.
         """
         if not isinstance(base, Archive):
             raise TypeError("base must be an Archive")
@@ -1806,8 +1817,12 @@ class Archive:
     def open_patch_stream(self, filename, patches, prefixes=None, *, locale=None, platform=None):
         """Open a verified seekable member stream detached from all input archives.
 
-        Layers apply in order. None prefixes infer the namespace; "" selects
-        root. Supply locale and platform together for exact selection.
+        Layers apply in order with the same prefixes as open_patch().
+        Omit both selectors for ordinary lookup in the final view, or pass
+        both for an exact tuple, including (0, 0). Opening reconstructs and
+        verifies the selected payload in private scratch storage. The caller
+        may close the inputs after success. Closing the stream releases its
+        scratch resources.
         """
         selected = _identity_selection(locale, platform)
         name = _as_bytes(filename)
@@ -1830,7 +1845,7 @@ class Archive:
             raise
 
     def clone(self):
-        """Return an independently closable native handle for this archive."""
+        """Return an independently closable native handle sharing any callback source."""
         self._ensure_open()
         clone = object.__new__(type(self))
         clone._source, clone.filename, clone._mpq = self._source, self.filename, _VOID_PTR()

@@ -255,7 +255,11 @@ final class Update {
         checkStatus(libmpq__update_rename_identity(handle, toStringz(oldName), toStringz(newName), locale, platform), "libmpq__update_rename_identity");
     }
 
-    /** Change an exact locale/platform tuple without relocating its payload. */
+    /**
+     * Change the exact tuple (locale, platform) to (newLocale, newPlatform).
+     * The filename and payload stay unchanged. An occupied destination tuple
+     * throws MPQException with ERROR_EXIST.
+     */
     void changeIdentity(string name, ushort locale, ushort platform,
                      ushort newLocale, ushort newPlatform) {
         ensureOpen();

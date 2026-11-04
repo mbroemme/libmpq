@@ -66,10 +66,16 @@ classic table. HET/BET lookup requires the filename to compute a separate hash.
 
 ### Logical member streams
 
-Archive.openStream(name) returns an incremental seekable MpqStream. It owns an
-independent native archive clone, so it remains usable after the originating
-archive closes. Its reads validate available sector Adler-32 checksums; use
-File.verify() when whole-file CRC32/MD5 verification is required.
+Open an ordinary stream by file number with `openStream(number)`, by
+filename with `openStream(name)`, or by exact identity with
+`openStream(name, locale, platform)`. Named streams provide the
+filename for decryption when the key requires it. These streams own a
+native archive clone and can outlive the original archive. Callback-backed
+clones and ordinary streams still use the caller's source. Keep the callback,
+its context and stable backing storage valid until all dependent handles
+close. Stream reads check usable sector Adler-32 values. Whole-member
+CRC32/MD5 verification is separate. See [Read one patched member](#read-one-patched-member)
+for `openPatchStream()`.
 
     auto stream = archive.openStream("data/file.bin");
     ubyte[] buffer = new ubyte[4096];
@@ -468,23 +474,28 @@ See [RELEASING.md](../../RELEASING.md) for maintainer release procedures.
 ### Composing opened archives
 
 ```d
-auto base = Archive.open("base.mpq");
-auto patch = Archive.open("patch.mpq");
-auto result = Archive.openPatch(base, [patch]);
-base.close();
-patch.close();
+Archive result;
+{
+    auto base = Archive.open("base.mpq");
+    scope(exit) base.close();
+    auto patch = Archive.open("patch.mpq");
+    scope(exit) patch.close();
+    result = Archive.openPatch(base, [patch]);
+}
 scope(exit) result.close();
 auto contents = result.file("document.txt").read();
 ```
 
-Layers are applied in order. An empty patch array creates an independent
-snapshot. A null prefix array or string requests inference; use an allocated
-empty string, such as `cast(string)(new char[1])[0 .. 0]`, to select the
-root namespace explicitly. An empty `.idup` may have a null pointer and
-therefore request inference.
-Explicit addition-only layers need no metadata marker. The result is a normal
-owned read-only Archive, retaining no input wrappers or callback sources.
-Clones and streams remain usable after parent closure. Named modern
+Pass opened patch archives in application order. An empty patch array
+creates an independent snapshot. If supplied, the prefix array has one entry
+per layer. A null array or string requests inference. A nonempty string
+selects that namespace. To select root, use an empty slice with a nonnull
+pointer, such as `cast(string)(new char[1])[0 .. 0]`. An empty `.idup` may
+have a null pointer and request inference.
+Explicit addition-only layers need no metadata marker. The read-only result
+is independent of its inputs after successful open. Keep input callback
+resources alive for any other dependent handles. Result clones and streams
+retain the result's own storage after parent closure. Named modern
 materialization requires unambiguous names and metadata. Verify physical
 signatures and raw checksums on input archives, separately from reconstructed
 logical content. Temporary storage survives until the last dependent closes;
@@ -493,24 +504,34 @@ cleanup is best effort on persistent I/O failure.
 ### Read one patched member
 
 ```d
-auto stream = base.openPatchStream("member.bin", [patch]);
+MpqStream stream;
+{
+    auto base = Archive.open("base.mpq");
+    scope(exit) base.close();
+    auto patch = Archive.open("layer.mpq");
+    scope(exit) patch.close();
+    stream = base.openPatchStream("member.bin", 0, 0, [patch]);
+}
 scope(exit) stream.close();
 ubyte[4096] buffer;
 auto count = stream.read(buffer[]);
 ```
 
-The overload `openPatchStream(name, locale, platform, patches, prefixes)`
-selects an exact tuple, including `(0, 0)`. A null D string infers a
-prefix. Use an allocated empty slice for explicit root.
+Use `openPatchStream(name, patches, prefixes)` for ordinary lookup in the
+final patched view. The overload with locale and platform immediately after
+the name selects that exact tuple, as in the neutral example above.
 
-Layers apply in order. A null prefix collection or entry requests
-inference; an empty string selects root. Open performs the selected
-transform and validation synchronously, and the returned stream remains
-usable after all input archives and their callback resources close.
-Missing or deleted names use the existing missing-member error.
-Unrelated payloads may be unread and the operation does not authenticate
-the whole archive. Temporary disk use depends on the selected results
-and BSD0 transform. SINGLE members can also require whole-unit memory.
+Use the same layer order and prefix rules as for a full patched archive.
+Opening reconstructs and verifies the selected result synchronously in
+private seekable scratch storage. A missing or finally deleted identity
+returns the existing missing-member error. Patch or scratch-storage failures
+can prevent the stream from opening. After success the inputs can close, as
+shown above. Keep their callback resources valid for any other dependent
+handles. Closing the returned stream releases its scratch resources.
+
+Verification covers the selected payloads. Unrelated payloads may remain
+unread. Temporary disk use depends on the selected results and BSD0
+transform. SINGLE members can also require whole-unit memory.
 
 ### V4 raw-chunk policy
 
@@ -594,12 +615,15 @@ v1/v2 updates retain their existing unrelated-suffix preservation.
 `Update.changeIdentity(name, locale, platform, newLocale, newPlatform)` uses
 `ushort` values: `locale` and `platform` select the old identity, while
 `newLocale` and `newPlatform` specify its destination tuple. Only that tuple
-changes; the filename and payload stay unchanged:
+changes; the filename and payload stay unchanged. `rename()` changes
+the filename and keeps the selected tuple:
 
 ```d
 auto update = Update.begin(path);
 scope(exit) update.close();
-update.changeIdentity("voice.bin", 0, 0, 0x409, 1);
+ushort oldLocale = 0, oldPlatform = 0;
+ushort newLocale = 0x409, newPlatform = 1;
+update.changeIdentity("voice.bin", oldLocale, oldPlatform, newLocale, newPlatform);
 update.commit();
 ```
 
@@ -612,12 +636,12 @@ special-member mutations and reconstruction layouts are rejected. Attributes,
 timestamps, raw policy and transaction ownership are unchanged, and rejected
 calls preserve the previous valid stage.
 
-Filename operations retain their default and locale/platform overloads. The
-default overload calls the ordinary C operation; the qualified overload calls
-the explicit identity operation with scalar locale/platform values, including
-`(0,0)`, without fallback. Replacement options remain independent and must
-match the selected tuple. Use the v0.9.0 native
-library with these bindings to provide the explicit identity functions.
+A filename can have multiple identities. Ordinary overloads use the native
+filename selection rules. Exact overloads require the requested tuple, and
+`(0, 0)` selects the neutral identity. Exact update selectors follow the
+filename, as in `rename(oldName, locale, platform, newName)` and
+`timestamp(name, locale, platform, filetime)`. Replacement options must
+match the selected tuple.
 
 Add operations create an absent filename using the locale/platform in
 `FileOptions`, without a selector. Replacement

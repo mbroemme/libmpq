@@ -200,7 +200,7 @@ public final class MpqUpdate implements AutoCloseable {
         }
     }
 
-    /** Stage a member rename. */
+    /** Stage a filename change for the ordinarily selected member, keeping its tuple. */
     public void rename(String oldName, String newName) throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
@@ -253,7 +253,12 @@ public final class MpqUpdate implements AutoCloseable {
         }
     }
 
-    /** Change an exact stored tuple while preserving the payload and unrelated aliases. */
+    /**
+     * Change the exact tuple (locale, platform) to (newLocale, newPlatform).
+     * The filename, payload and unrelated aliases are preserved.
+     * @throws LibmpqException if staging fails, including
+     * {@link Mpq#ERROR_EXIST} for an occupied destination tuple
+     */
     public void changeIdentity(String name, int locale, int platform, int newLocale, int newPlatform)
             throws LibmpqException {
         checkOpen();

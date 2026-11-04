@@ -338,8 +338,9 @@ class Archive {
     }
 
     /** Materialize borrowed ordered layers as an independently owned archive.
-     * Null prefixes request inference; allocated empty strings select the root.
-     * The result does not retain the input wrappers or callback contexts.
+     * Supply one prefix per layer, or null to infer all. Null entries infer
+     * individual prefixes. An empty slice with a nonnull pointer selects root.
+     * Keep inputs alive during the call. The result retains no input sources.
      */
     static Archive openPatch(Archive base, Archive[] patches, const(string)[] prefixes = null) {
         if (base is null) throw new MPQException("null base", ERROR_EXIST);
@@ -384,12 +385,18 @@ class Archive {
         return inputs;
     }
 
-    /** Open a detached stream using ordinary lookup in the final patched view. */
+    /**
+     * Open using ordinary lookup in the final patched view. Prefixes follow
+     * openPatch. Opening reconstructs and verifies the selected result in
+     * private scratch storage. The inputs can close after successful open.
+     * Closing the stream releases that storage.
+     */
     MpqStream openPatchStream(string name, Archive[] patches, const(string)[] prefixes = null) {
         return openPatchStreamImpl(name, patches, prefixes, false, 0, 0);
     }
 
-    /** Open the exact patched filename, locale and platform without fallback. */
+    /** Open the exact tuple, including (0, 0), without fallback. Prefixes
+     * follow openPatch, and the result owns its private scratch storage. */
     MpqStream openPatchStream(string name, ushort locale, ushort platform, Archive[] patches,
                               const(string)[] prefixes = null) {
         return openPatchStreamImpl(name, patches, prefixes, true, locale, platform);
@@ -530,7 +537,7 @@ class Archive {
         return result;
     }
 
-    /** Open the exact named identity on the stream's independently owned clone. */
+    /** Open the exact tuple on an owned clone sharing any caller-owned source. */
     MpqStream openStream(string name, ushort locale, ushort platform) {
         ensureOpen();
         mpq_stream_s* result;
@@ -571,7 +578,7 @@ class Archive {
         return file(cast(uint) number);
     }
 
-    /** Open an independent seekable logical-member stream by file number. */
+    /** Open by file number on an owned clone sharing any caller-owned source. */
     MpqStream openStream(uint number) {
         ensureOpen();
         mpq_stream_s* result;
@@ -579,7 +586,7 @@ class Archive {
         return new MpqStream(result, sourceState);
     }
 
-    /** Open an independent seekable logical-member stream by plaintext name. */
+    /** Open by ordinary filename lookup on an owned clone sharing any caller-owned source. */
     MpqStream openStream(string name) {
         ensureOpen();
         mpq_stream_s* result;

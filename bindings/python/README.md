@@ -64,10 +64,16 @@ lookup requires the filename to compute a separate hash.
 
 ### Logical member streams
 
-Use archive.open_stream(name) for incremental seekable member access. Streams
-retain an independent native archive clone, so they remain usable after the
-originating archive closes. Stream reads validate available sector Adler-32
-checksums, but do not implicitly verify whole-file CRC32/MD5 attributes.
+Open an ordinary stream by file number with `open_stream(number)`, by
+filename with `open_stream(name)`, or by exact identity with
+`open_stream(name, locale=locale, platform=platform)`. Named streams provide the
+filename for decryption when the key requires it. These streams own a
+native archive clone and can outlive the original archive. Callback-backed
+clones and ordinary streams still use the caller's source. Keep the callback,
+its context and stable backing storage valid until all dependent handles
+close. Stream reads check usable sector Adler-32 values. Whole-member
+CRC32/MD5 verification is separate. See [Read one patched member](#read-one-patched-member)
+for `open_patch_stream()`.
 
     with archive.open_stream("data/file.bin") as stream:
         chunk = stream.read(4096)
@@ -404,12 +410,14 @@ with result:
         contents = stream.read()
 ```
 
-The result is an independently owned read-only Archive. Layers are ordered;
-`Archive.open_patch(base, [])` creates an independent snapshot. A `None`
-prefix list or entry requests inference; `""` selects the root namespace.
-Explicit ordinary addition-only layers are accepted. Input wrappers and their
-callback sources are needed only during the call and their normal input
-lifetimes. Result clones and streams survive parent closure. Named modern
+Pass opened patch archives in application order. If supplied, `prefixes`
+has one entry per layer. A `None` list or entry requests inference,
+`""` selects root, and a nonempty string selects that namespace.
+`Archive.open_patch(base, [])` creates an independent snapshot.
+Explicit ordinary addition-only layers are accepted. The read-only result
+is independent of its inputs after successful open. Keep input callback
+resources alive for any other dependent handles. Result clones and streams
+retain the result's own storage after parent closure. Named modern
 materialization still requires unambiguous filenames and metadata. Verify
 physical signatures and raw checksums on the original input archives; these
 checks do not establish trust in reconstructed content. Temporary storage is
@@ -419,22 +427,26 @@ cleaned up after the final dependent closes, with best-effort I/O cleanup.
 
 ```python
 with Archive("base.mpq") as base, Archive("layer.mpq") as layer:
-    stream = base.open_patch_stream("member.bin", [layer], prefixes=[None])
+    stream = base.open_patch_stream("member.bin", [layer], prefixes=[None],
+                                    locale=0, platform=0)
 with stream:
     data = stream.read(4096)
 ```
 
-Supply both `locale=` and `platform=` for exact selection, including the
-neutral tuple `(0, 0)`.
+Omit both selectors for ordinary lookup in the final patched view. Passing
+both requests the exact tuple, as in the neutral example above.
 
-Layers apply in order. A null prefix collection or entry requests
-inference; an empty string selects root. Open performs the selected
-transform and validation synchronously, and the returned stream remains
-usable after all input archives and their callback resources close.
-Missing or deleted names use the existing missing-member error.
-Unrelated payloads may be unread and the operation does not authenticate
-the whole archive. Temporary disk use depends on the selected results
-and BSD0 transform. SINGLE members can also require whole-unit memory.
+Use the same layer order and prefix rules as for a full patched archive.
+Opening reconstructs and verifies the selected result synchronously in
+private seekable scratch storage. A missing or finally deleted identity
+returns the existing missing-member error. Patch or scratch-storage failures
+can prevent the stream from opening. After success the inputs can close, as
+shown above. Keep their callback resources valid for any other dependent
+handles. Closing the returned stream releases its scratch resources.
+
+Verification covers the selected payloads. Unrelated payloads may remain
+unread. Temporary disk use depends on the selected results and BSD0
+transform. SINGLE members can also require whole-unit memory.
 
 ### V4 raw-chunk policy
 
@@ -485,9 +497,9 @@ classic slot order. Aliases can share a file number. `IDENTITY_CLASSIC` and
 identities are unqualified `(0, 0)`; exact calls never fall back to another
 locale/platform. Both selectors must be integers in `0..65535`. Ambiguous,
 contradictory or reduced-hash layouts raise the existing format exception.
-Ordinary lookup retains its existing behavior. Exact named streams supply
-the encryption filename and own their native clone, so they survive parent
-closure. Custom source ownership follows the existing stream contract.
+A filename can have multiple identities. Ordinary selection uses the native
+filename lookup rules. Exact selection of `(0, 0)` requests only the neutral
+identity.
 
 Exact updates select one filename/locale/platform identity in the current
 stage, without neutral fallback:
@@ -515,11 +527,13 @@ v1/v2 updates retain their existing unrelated-suffix preservation.
 Use `Update.change_identity(name, locale, platform, new_locale, new_platform)`
 to change only a stored tuple. `locale` and `platform` select the old
 identity; `new_locale` and `new_platform` specify its destination tuple. The
-filename and payload stay unchanged. All four values must be in `0..65535`:
+filename and payload stay unchanged. `rename()` changes the filename and
+keeps the selected tuple. All four selector values must be in `0..65535`:
 
 ```python
 with mpq.Update.begin(path) as update:
-    update.change_identity("voice.bin", 0, 0, 0x409, 1)
+    update.change_identity("voice.bin", locale=0, platform=0,
+                           new_locale=0x409, new_platform=1)
     update.commit()
 ```
 
@@ -533,12 +547,12 @@ timestamps, raw policy and transaction ownership are unchanged, and rejected
 calls preserve the previous valid stage.
 
 Filename selection uses keyword-only `locale` and `platform` arguments on
-`file_number`, `open_stream`, `replace_data`, `replace_path`, `remove` and
-`rename`. Omit both (or pass both as None) for the existing default policy;
-supply both for an exact match, including `(0, 0)`. Partial selectors and
-out-of-range values raise ValueError; selectors cannot accompany a numeric
-stream member. Indexing and containment retain default selection. The binding dispatches default calls to ordinary C operations and qualified
-calls to explicit identity operations with scalar locale/platform arguments.
+`file_number`, `open_stream`, `open_patch_stream`, `replace_data`,
+`replace_path`, `replace_ranges`, `remove`, `rename` and `timestamp`. Omit both
+or pass both as `None` for ordinary selection. Supply both for an exact match,
+including `(0, 0)`. Partial or out-of-range selectors raise `ValueError`.
+Numeric stream opens take a file number alone. Indexing and containment
+retain ordinary selection.
 
 Add operations create an absent filename using the locale/platform in
 `FileCreateOptions`, without a selector. Replacement
