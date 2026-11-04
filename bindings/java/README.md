@@ -120,27 +120,35 @@ to generate sector Adler-32 tables, including for encrypted files. Empty,
 raw, and single-unit files ignore this flag. Generation is opt-in and
 complete reads automatically verify usable sector entries.
 
-`archive.verify(fileNumber)` explicitly compares sector Adler-32 and file
-CRC32/MD5. For one sector, `archive.verifyBlock(fileNumber, blockNumber)`
+`archive.verify(fileNumber)` defaults to `Mpq.VERIFY_ALL`.
+`verifyFileResult(fileNumber, flags)` takes an explicit member mask. For one
+sector, `archive.verifyBlock(fileNumber, blockNumber)`
 returns `Archive.BlockVerification` with `checksum()` (unsigned stored
 Adler-32 as `long`) and `mismatches()` (zero or `Mpq.VERIFY_SECTOR_CRC`).
 Unavailable checksums throw `LibmpqException` with `Mpq.ERROR_EXIST`.
 
-Use `Mpq.VERIFY_SECTOR_CRC`, `Mpq.VERIFY_FILE_CRC32`, `Mpq.VERIFY_FILE_MD5`, or
-`Mpq.VERIFY_RAW_MD5` to select checks. Sector checks cover decrypted packed
-bytes; file hashes cover extracted bytes. Missing values/tables are skipped.
-File checksum requests require attributes; sector/raw-only requests do not.
-`Mpq.VERIFY_ALL` selects all checks. The returned mismatch mask uses the same
-`Mpq.VERIFY_*` bits and is a subset of the request. Set bits mean available
-checksums mismatched; clear bits mean matched or unavailable/skipped.
-Operation errors throw existing exceptions. Zero does not prove availability.
-Complete lossless reads automatically compare available CRC32/MD5 values;
-lossy ADPCM is not compared because decoded bytes may differ from source hashes.
+Member checks are `Mpq.VERIFY_SECTOR_CRC` (`0x1`, sector Adler-32 over
+decrypted packed bytes), `Mpq.VERIFY_FILE_CRC32` (`0x2`) and
+`Mpq.VERIFY_FILE_MD5` (`0x4`) over logical member bytes, and
+`Mpq.VERIFY_RAW_MD5` (`0x8`) hashes stored MPQ v4 member chunks before member
+decryption or decompression, after MPQE transport decoding. It applies to
+nonempty stored members with a nonzero raw chunk size, excluding delete
+markers. For physical patch members it checks the stored patch payload.
 
-`Mpq.VERIFY_RAW_MD5` hashes v4 stored member chunks before file decryption or
-decompression, after MPQE transport decoding. It is skipped for older versions,
-disabled raw chunks and empty stored payloads. It checks physical patch members,
-not reconstructed patch-view output.
+`Mpq.VERIFY_ALL` was `0x7` in v0.8.1. In v0.9.0 it is `0xF`, adding RAW MD5.
+Client code rebuilt against the v0.9.0 binding uses the expanded constant.
+Existing client bytecode with an inlined constant can keep passing `0x7`.
+The no-flags `verify(fileNumber)` overload uses the loaded binding's default.
+Passing `0x7` explicitly keeps the original three checks.
+The extra RAW check can add I/O or report a mismatch. An inapplicable RAW
+check is skipped by mismatch-only verification and reported as unavailable
+by the detailed result. A digest mismatch is a result bit. Malformed
+required digest storage or a read failure can raise a native error.
+
+The mismatch-only call requires stored attributes for logical checksum
+requests and returns the mismatch mask for checks it performed. A clear
+bit can mean a match or an unavailable check. Complete lossless reads
+also compare usable CRC32/MD5 attributes automatically.
 
 `archive.fileFlags(fileNumber)` returns the unsigned stored block-table flags
 as a `long`. Inspect `Mpq.FILE_FLAG_*` bits; convenience booleans use this
@@ -599,7 +607,7 @@ selected number, never fallback selection; it is not cached in the parent.
 Circular internal zero placeholders and logical lossy ADPCM checks without
 decoded-byte provenance are unavailable. Ordinary CRC32 zero remains valid.
 Member verification establishes neither signature trust nor whole-archive
-integrity. Existing verification methods retain their behavior.
+integrity.
 
 For eligible nonempty v4 members, a nonzero raw chunk size declares required
 trailing RAW MD5 storage. Missing, truncated or overlapping arrays raise the
@@ -615,8 +623,9 @@ status, checked equal to the request, no unavailable checks and no mismatches.
 var result = archive.verifyEx(Mpq.VERIFY_METADATA_ALL);
 ```
 
-`Archive.verify()` verifies digital signatures. `Archive.verifyEx()` verifies
-archive structural and RAW metadata. It uses the native `archive_verify_ex()` and the eight
+The `Archive.verify` overloads taking a public key verify digital signatures.
+`Archive.verifyEx()` verifies archive structural and RAW metadata using
+the native `archive_verify_ex()` and the eight
 `LIBMPQ_VERIFY_METADATA_*` bits, combined by `LIBMPQ_VERIFY_METADATA_ALL`.
 It performs fresh bounded reads of stored header/table representations against
 opened descriptors, checking both object digests and stored reference fields.
@@ -628,8 +637,10 @@ than becoming unavailable. No newly changed geometry is adopted.
 The result masks partition requested checks into checked and unavailable, with
 mismatches a subset of checked. Complete matching coverage requires successful
 status, checked equal to the request, no unavailable checks and no mismatches.
-Errors clear all outputs. Zero flags perform no comparisons. Existing member
-`VERIFY_ALL` remains unchanged and is rejected by archive metadata verification.
+Errors clear all outputs. Zero flags perform no comparisons.
+`Archive.verifyEx()` defaults to `Mpq.VERIFY_METADATA_ALL` (`0xFF00`),
+the separate mask for archive header, table and table RAW checks. Archive
+metadata verification rejects member flags such as `VERIFY_ALL`.
 
 The source must remain stable; source reads do not promise uncached filesystem
 access or an atomic snapshot of concurrent writes. Embedded offsets and MPQE

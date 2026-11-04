@@ -1427,7 +1427,8 @@ class File:
     def verify(self, flags=VERIFY_ALL):
         """Return mismatches as a subset of the requested VERIFY_* flags.
 
-        File checks require attributes; sector/raw-only checks do not.
+        The default VERIFY_ALL includes v4 member RAW MD5. Logical checksum
+        requests require attributes; sector/raw-only checks do not.
         Unavailable checksums are skipped, so zero does not prove availability.
         Operation errors raise instead of returning a mismatch mask.
         """
@@ -1438,7 +1439,10 @@ class File:
                            self._archive._mpq, self.number, flags)
 
     def verify_result(self, flags=VERIFY_ALL, *, filename=None):
-        """Return immutable checksum coverage; filename is optional key context."""
+        """Return checked, unavailable and mismatch masks, defaulting to VERIFY_ALL.
+
+        The optional filename supplies key context.
+        """
         self._archive._ensure_open()
         if not isinstance(flags, int) or not 0 <= flags <= 0xffffffff:
             raise ValueError("verify flags must be an unsigned 32-bit integer")
@@ -1710,7 +1714,7 @@ class Archive:
         return MpqStream(stream, self._source_state)
 
     def verify_ex(self, flags=VERIFY_METADATA_ALL):
-        """Verify archive structural and RAW metadata. Use verify() for digital signatures."""
+        """Verify archive structural and RAW metadata, defaulting to VERIFY_METADATA_ALL."""
         self._ensure_open()
         if not isinstance(flags, int) or not 0 <= flags <= 0xffffffff:
             raise ValueError("verify flags must be an unsigned 32-bit integer")
