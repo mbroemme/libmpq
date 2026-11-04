@@ -12,9 +12,9 @@ module libmpq.options;
 
 import libmpq.native;
 
-/** Options controlling v1/v2/v3 archive creation; v3 updates remain unsupported. */
+/** Options controlling MPQ v1 through v4 archive creation. */
 struct ArchiveCreateOptions {
-    /** Native archive version selector. */
+    /** ARCHIVE_VERSION_* creation selector (0 through 3 for MPQ v1 through v4). */
     uint version_ = ARCHIVE_VERSION_ONE;
     /** Reserved archive file-entry capacity; zero selects the native default. */
     uint maxFiles;

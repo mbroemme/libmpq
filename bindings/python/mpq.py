@@ -412,7 +412,11 @@ def file_hash(filename):
 
 
 class ArchiveCreateOptions(ctypes.Structure):
-    """Native creation options; nonzero attributes reserve one internal file slot."""
+    """Native creation options.
+
+    version uses ARCHIVE_VERSION_* selectors 0 through 3 for MPQ v1 through v4.
+    Nonzero attributes reserve one internal file slot.
+    """
 
     _fields_ = [("version", ctypes.c_uint32), ("max_files", ctypes.c_uint32), ("sector_size", ctypes.c_uint32), ("flags", ctypes.c_uint32), ("attributes", ctypes.c_uint32)]
 
@@ -865,7 +869,13 @@ class VerificationResult:
 
 @dataclass(frozen=True)
 class ArchiveMetadata:
-    """Immutable archive metadata snapshot."""
+    """Immutable archive metadata snapshot.
+
+    version is the MPQ generation (1 through 4). files counts live canonical
+    entries, including stored internal members where present. offset is the
+    archive origin in the backing source. packed_size and unpacked_size sum
+    stored and logical entry sizes, respectively.
+    """
 
     packed_size: int
     unpacked_size: int
@@ -876,7 +886,11 @@ class ArchiveMetadata:
 
 @dataclass(frozen=True)
 class FileMetadata:
-    """Immutable metadata snapshot for one MPQ file entry."""
+    """Immutable metadata snapshot for one MPQ file entry.
+
+    offset is relative to the start of the MPQ archive. packed_size is the
+    stored size and unpacked_size is the logical size.
+    """
 
     packed_size: int
     unpacked_size: int
@@ -1390,7 +1404,10 @@ class MpqStream:
 
 
 class File:
-    """Metadata and complete/block access wrapper for one MPQ entry."""
+    """Metadata and complete/block access wrapper for one MPQ entry.
+
+    offset is the stored member position relative to the start of the MPQ.
+    """
 
     def verify_block(self, block):
         """Return (stored Adler-32, mismatches), with zero or VERIFY_SECTOR_CRC bits.
@@ -1541,7 +1558,13 @@ class File:
 
 
 class Archive:
-    """Opened MPQ archive with metadata, lookup, extraction, and clone support."""
+    """Opened MPQ archive with metadata, lookup, extraction, and clone support.
+
+    version reports the MPQ generation (1 through 4). files counts live
+    canonical entries, including stored internal members where present.
+    offset is the archive origin in the backing source and can be nonzero
+    for embedded archives. See ArchiveMetadata for the snapshot fields.
+    """
 
     def __init__(self, source, offset=-1):
         """Open a path or an unencrypted, uncompressed embedded :class:`File`."""
@@ -1716,7 +1739,7 @@ class Archive:
         return size.value
 
     def metadata(self):
-        """Return an immutable snapshot of archive-level metadata."""
+        """Return an ArchiveMetadata snapshot of sizes, origin, generation and entry count."""
         return ArchiveMetadata(self.packed_size, self.unpacked_size, self.offset, self.version, self.files)
 
     @classmethod

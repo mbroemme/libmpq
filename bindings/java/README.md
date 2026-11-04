@@ -40,6 +40,17 @@ The high-level API uses `Archive.open`, `Archive.openMpqe`, `Archive.create`,
 are reported as `LibmpqException` values containing the original code and
 diagnostic text.
 
+`Archive.version()` reports the MPQ generation (1 through 4).
+`ArchiveCreateOptions.version()` uses the `Mpq.ARCHIVE_VERSION_*` selectors
+(0 through 3). `Archive.fileCount()` counts live canonical entries, including
+stored internal members where present, independently of classic hash-table
+capacity. `Archive.offset()` is the archive origin in the backing source and
+can be nonzero for embedded archives. `Archive.fileOffset(number)` is the
+stored member position relative to the start of the MPQ. Archive packed and
+unpacked sizes sum stored and logical entry sizes, respectively. The archive's
+physical extent also accounts for layout and tables. The metadata snapshots
+use the same units and coordinates.
+
 ### Logical member streams
 
 Use Archive.openStream(name) for incremental seekable member access. The stream

@@ -10,9 +10,9 @@ package org.libmpq;
 
 /**
  * Immutable options passed to {@link Archive#create}.  The version field uses
- * libmpq's creation selectors: zero requests the v1 layout and one requests
- * the v2 layout; two requests mixed HET/BET and classic v3 tables.
- * The archive reports its public format version as one, two, or three.
+ * the {@code Mpq.ARCHIVE_VERSION_*} creation selectors (0 through 3 for
+ * MPQ v1 through v4). {@link Archive#version()} reports the generation
+ * (1 through 4).
  * The attributes field accepts Mpq.ATTRIBUTE_* bits; any nonzero combination
  * creates one attributes file and consumes one reserved slot. Zero disables it.
  */

@@ -40,9 +40,19 @@ corresponding Python built-in exception categories.
 
 ### Reading and writing
 
-Use `packed_size` and `unpacked_size` for archive/file sizes and `file.read()`
-for payload bytes. Decode text explicitly, for example
-`file.read().decode("utf-8")`.
+Use `packed_size` and `unpacked_size` for stored and logical entry sizes.
+At archive level these are sums across entries. The archive's physical extent
+also accounts for layout and tables. Use `file.read()` for payload bytes and
+decode text explicitly, for example `file.read().decode("utf-8")`.
+
+`archive.version` reports the MPQ generation (1 through 4). The
+`ArchiveCreateOptions.version` field and writer creation use
+`ARCHIVE_VERSION_*` selectors (0 through 3). `archive.files` counts live
+canonical entries, including stored internal members where present,
+independently of classic hash-table capacity. `archive.offset` is the archive
+origin in the backing source and can be nonzero for embedded archives.
+`file.offset` is the stored member position relative to the start of the MPQ.
+The corresponding `metadata()` snapshots use the same units and coordinates.
 
 ### Logical member streams
 

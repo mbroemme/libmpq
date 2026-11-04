@@ -16,9 +16,9 @@ package org.libmpq;
  *
  * @param packedSize sum of the stored file payload sizes
  * @param unpackedSize sum of the logical file sizes
- * @param offset archive header offset in the backing file
- * @param version public archive format version, normally one or two
- * @param fileCount number of public file entries
+ * @param offset archive origin in the backing source, which can be nonzero for an embedded MPQ
+ * @param version MPQ generation (1 through 4)
+ * @param fileCount number of live canonical entries, including stored internal members where present
  */
 public record ArchiveMetadata(long packedSize, long unpackedSize, long offset,
                               long version, long fileCount) { }

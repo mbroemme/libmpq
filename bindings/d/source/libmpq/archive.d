@@ -45,11 +45,11 @@ struct StormHash { uint hash1; uint hash2; uint hash3; }
 
 /** Aggregate metadata describing an opened archive. */
 struct ArchiveMetadata {
-    /** Total packed bytes in extractable entries. */ off_t packedSize;
-    /** Total unpacked bytes in extractable entries. */ off_t unpackedSize;
-    /** Archive start offset in the backing file. */ off_t offset;
-    /** Archive format selector. */ uint version_;
-    /** Number of valid file entries. */ uint fileCount;
+    /** Sum of stored sizes of live canonical entries. */ off_t packedSize;
+    /** Sum of logical sizes of live canonical entries. */ off_t unpackedSize;
+    /** Archive origin in the backing source. */ off_t offset;
+    /** MPQ generation (1 through 4). */ uint version_;
+    /** Count of live canonical entries, including stored internal members where present. */ uint fileCount;
 }
 
 /** Metadata describing one archive entry. */
@@ -498,9 +498,9 @@ class Archive {
 
     /** Return total packed payload bytes. */ off_t packedSize() { return metadata().packedSize; }
     /** Return total unpacked payload bytes. */ off_t unpackedSize() { return metadata().unpackedSize; }
-    /** Return archive start offset. */ off_t offset() { return metadata().offset; }
-    /** Return archive format selector. */ uint version_() { return metadata().version_; }
-    /** Return number of valid file entries. */ uint fileCount() { return metadata().fileCount; }
+    /** Return the archive origin in the backing source, which can be nonzero for embedded MPQs. */ off_t offset() { return metadata().offset; }
+    /** Return the MPQ generation (1 through 4). */ uint version_() { return metadata().version_; }
+    /** Return the count of live canonical entries, including stored internal members where present. */ uint fileCount() { return metadata().fileCount; }
 
     /** Enumerate reachable identities in their original classic slot order. */
     FileIdentity[] variants(string name) {
@@ -796,7 +796,7 @@ class File {
 
     /** Return packed size. */ off_t packedSize() { return metadata().packedSize; }
     /** Return unpacked size. */ off_t unpackedSize() { return metadata().unpackedSize; }
-    /** Return payload offset. */ off_t offset() { return metadata().offset; }
+    /** Return the stored payload offset relative to the start of the MPQ. */ off_t offset() { return metadata().offset; }
     /** Return block count. */ uint blockCount() { return metadata().blockCount; }
     /** Return encryption flag. */ uint encrypted() { return metadata().encrypted; }
     /** Return multi-compression flag. */ uint compressed() { return metadata().compressed; }

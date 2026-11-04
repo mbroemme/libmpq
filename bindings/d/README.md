@@ -44,10 +44,19 @@ archives explicitly; a destructor performs only best-effort cleanup because D
 destructors cannot report native close errors.
 
 Low-level calls use `libmpq__*` names. Use `Mpq.version_()` for the version
-string and the high-level wrappers for checked calls. Metadata is available
-through `packedSize()`, `unpackedSize()`, `fileCount()`, `blockCount()`, and
-`no()`. Archives provide `clone()`, `nativeHandle()`, and `fileList()` for
-independent readers, native access, and filename discovery.
+string and the high-level wrappers for checked calls. Archives provide
+`clone()`, `nativeHandle()`, and `fileList()` for independent readers, native
+access, and filename discovery.
+
+`Archive.version_()` reports the MPQ generation (1 through 4).
+`Archive.fileCount()` counts live canonical entries, including stored internal
+members where present, independently of classic hash-table capacity.
+`Archive.offset()` is the archive origin in the backing source and can be
+nonzero for embedded archives. `File.offset()` is the stored member position
+relative to the start of the MPQ. Archive `packedSize()` and `unpackedSize()`
+sum stored and logical entry sizes, respectively. The archive's physical
+extent also accounts for layout and tables. The `metadata()` snapshots use the
+same units and coordinates. File wrappers also expose `blockCount()` and `no()`.
 
 ### Logical member streams
 
@@ -85,7 +94,8 @@ KEY adjustments, generated listfile defaults and physical patch defaults remain.
 
 ## Archive creation
 
-Creation uses typed options and supports both archive versions:
+Creation supports MPQ v1 through v4. `ArchiveCreateOptions.version_` uses
+`ARCHIVE_VERSION_*` selectors (0 through 3):
 
 ```d
 auto options = ArchiveCreateOptions.v2();

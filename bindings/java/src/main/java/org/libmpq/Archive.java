@@ -540,7 +540,7 @@ public final class Archive implements AutoCloseable {
         return archiveLong(true);
     }
 
-    /** Returns the archive header offset in its backing file. */
+    /** Returns the archive origin in its backing source, which can be nonzero for embedded MPQs. */
     public long offset() throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
@@ -567,15 +567,14 @@ public final class Archive implements AutoCloseable {
     }
 
     /**
-     * Returns the public archive format version, normally one for v1 and two
-     * for v2.  This differs from the zero/one creation selectors in
-     * {@link ArchiveCreateOptions}.
+     * Returns the MPQ generation (1 through 4). Creation uses selectors
+     * 0 through 3 in {@link ArchiveCreateOptions}.
      */
     public long version() throws LibmpqException {
         return archiveUint(false);
     }
 
-    /** Returns the number of public file entries, excluding internal tables. */
+    /** Returns the count of live canonical entries, including stored internal members where present. */
     public long fileCount() throws LibmpqException {
         return archiveUint(true);
     }
@@ -678,7 +677,7 @@ public final class Archive implements AutoCloseable {
         return fileLong(number, true, false);
     }
 
-    /** Returns one entry's payload offset relative to the archive file. */
+    /** Returns one entry's stored payload offset relative to the start of the MPQ. */
     public long fileOffset(int number) throws LibmpqException {
         return fileLong(number, false, true);
     }

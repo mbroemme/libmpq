@@ -9,8 +9,8 @@
 package org.libmpq;
 
 /**
- * Immutable snapshot of one public MPQ file entry.  The offset is relative
- * to the archive's backing file, while sizes describe the stored and logical
+ * Immutable snapshot of one public MPQ file entry. The offset is relative
+ * to the start of the MPQ archive. Sizes describe the stored and logical
  * representations of the entry.
  *
  * @param packedSize stored payload size, including sector metadata where
