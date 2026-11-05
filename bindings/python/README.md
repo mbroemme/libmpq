@@ -54,6 +54,23 @@ origin in the backing source and can be nonzero for embedded archives.
 `file.offset` is the stored member position relative to the start of the MPQ.
 The corresponding `metadata()` snapshots use the same units and coordinates.
 
+Use `Archive(file)` to open a raw, contiguous MPQ member of a live plain MPQ
+opened from a host path. The embedded origin is the parent origin plus the
+member offset. Keep the original host path and its backing file stable while
+reopening. A live clone of a path-backed parent also supports this operation.
+
+```python
+with mpq.Archive("container.mpq") as parent:
+    with mpq.Archive(parent["nested.mpq"]) as nested:
+        data = nested["payload.bin"].read()
+```
+
+`Archive(file)` raises `ValueError` for callback, MPQE, and materialized patch
+parents. Callback display names are labels, and MPQE or patch-result
+coordinates belong to their respective backing sources. For a caller-owned
+source that presents the embedded MPQ bytes at a known position, use
+`Archive.open_io(source, size, offset=position)` to open that source directly.
+
 `Archive.file_number(name)` tries HET/BET when present and falls back to
 classic lookup on a miss. Supplying `locale` and `platform` selects an exact
 identity through classic or supported HET/BET metadata. HET/BET-only

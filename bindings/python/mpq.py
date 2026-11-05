@@ -1580,19 +1580,35 @@ class Archive:
     for embedded archives. See ArchiveMetadata for the snapshot fields.
     """
 
+    # Only the plain path opener establishes a host path for embedded members.
+    _host_path = None
+
     def __init__(self, source, offset=-1):
-        """Open a path or an unencrypted, uncompressed embedded :class:`File`."""
+        """Open a path or a raw embedded File from a live plain MPQ on disk."""
         self._source = source
         if isinstance(source, File):
-            if source.encrypted or source.compressed or source.imploded:
+            parent = source._archive
+            parent._ensure_open()
+            host_path = parent._host_path
+            if host_path is None:
+                raise ValueError("embedded path reopening requires a path-backed plain MPQ parent")
+            if (source.encrypted or source.compressed or source.imploded
+                    or source.flags & (FILE_FLAG_PATCH_FILE | FILE_FLAG_DELETE_MARKER)
+                    or source.packed_size < source.unpacked_size):
                 raise ValueError("embedded archives must be stored raw")
-            self.filename = source._archive.filename
-            offset = source._archive.offset + source.offset
+            offset = parent.offset + source.offset
+            self.filename = parent.filename
         else:
             self.filename = os.fspath(source)
+            host_path = _as_bytes(self.filename)
+            if host_path and not os.path.isabs(host_path):
+                # Pin the working directory without collapsing symlink/.. on POSIX.
+                host_path = (os.path.abspath(host_path) if os.name == "nt"
+                             else os.path.join(os.getcwdb(), host_path))
         self._mpq = _VOID_PTR()
         self._source_state = None
-        libmpq.libmpq__archive_open(ctypes.byref(self._mpq), _as_bytes(self.filename), offset)
+        libmpq.libmpq__archive_open(ctypes.byref(self._mpq), host_path, offset)
+        self._host_path = host_path
         self._opened = True
         self._load_metadata()
 
@@ -1849,6 +1865,7 @@ class Archive:
         self._ensure_open()
         clone = object.__new__(type(self))
         clone._source, clone.filename, clone._mpq = self._source, self.filename, _VOID_PTR()
+        clone._host_path = self._host_path
         libmpq.libmpq__archive_clone(ctypes.byref(clone._mpq), self._mpq)
         clone._source_state = (self._source_state.acquire()
                                if self._source_state is not None else None)
@@ -1860,6 +1877,7 @@ class Archive:
         """Close the native archive handle; repeated calls are harmless."""
         if self._opened:
             archive, self._mpq, self._opened = self._mpq, _VOID_PTR(), False
+            self._host_path = None
             try:
                 libmpq.libmpq__archive_close(archive)
             finally:

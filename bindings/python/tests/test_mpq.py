@@ -526,6 +526,144 @@ def test_logical_stream_encrypted_numeric_and_mpqe_lifetime():
         stream.close()
 
 
+@pytest.fixture
+def embedded_archive_paths(tmp_path):
+    paths = []
+    for label, payload in [("actual", b"actual"), ("decoy", b"decoy!")]:
+        inner = tmp_path / f"{label}-inner.mpq"
+        with mpq.Writer(inner) as writer:
+            writer.add("payload", payload)
+        outer = tmp_path / f"{label}-outer.mpq"
+        with mpq.Writer(outer, flags=mpq.ARCHIVE_CREATE_LISTFILE) as writer:
+            writer.add("nested.mpq", inner.read_bytes())
+        paths.append((outer, payload))
+    return paths
+
+
+def test_embedded_archive_path_and_clone(embedded_archive_paths, monkeypatch):
+    (actual, expected), (decoy, _) = embedded_archive_paths
+    monkeypatch.chdir(actual.parent)
+    with mpq.Archive.open(actual.name) as parent:
+        entry = parent["nested.mpq"]
+        with mpq.Archive(entry) as nested:
+            assert nested.offset == parent.offset + entry.offset
+            assert nested["payload"].read() == expected
+        clone = parent.clone()
+    with clone:
+        monkeypatch.chdir(actual.parent.parent)
+        with mpq.Archive(clone["nested.mpq"]) as nested:
+            assert nested["payload"].read() == expected
+        clone.filename = decoy
+        with mpq.Archive(clone["nested.mpq"]) as nested:
+            assert nested["payload"].read() == expected
+    with pytest.raises(mpq.LibmpqStateError, match="archive is closed"):
+        mpq.Archive(entry)
+
+
+def test_embedded_archive_cumulative_offsets(tmp_path, embedded_archive_paths):
+    (outer, expected), _ = embedded_archive_paths
+    container = tmp_path / "container.mpq"
+    with mpq.Writer(container) as writer:
+        writer.add("outer.mpq", outer.read_bytes())
+    wrapped = tmp_path / "container.w3x"
+    prefix = b"HM3W" + bytes(508)
+    wrapped.write_bytes(prefix + container.read_bytes())
+    with mpq.Archive(wrapped, offset=len(prefix)) as parent:
+        outer_entry = parent["outer.mpq"]
+        with mpq.Archive(outer_entry) as middle:
+            assert middle.offset == len(prefix) + outer_entry.offset
+            inner_entry = middle["nested.mpq"]
+            with mpq.Archive(inner_entry) as inner:
+                assert inner.offset == len(prefix) + outer_entry.offset + inner_entry.offset
+                assert inner["payload"].read() == expected
+
+
+@pytest.mark.parametrize("use_existing_path", [False, True])
+def test_embedded_archive_rejects_callback_display_path(
+    embedded_archive_paths, monkeypatch, use_existing_path
+):
+    (actual, expected), (decoy, other) = embedded_archive_paths
+    data = actual.read_bytes()
+    with mpq.Archive(actual) as actual_archive, mpq.Archive(decoy) as decoy_archive:
+        actual_member = actual_archive["nested.mpq"]
+        decoy_member = decoy_archive["nested.mpq"]
+        assert (actual_member.offset, actual_member.packed_size) == (
+            decoy_member.offset, decoy_member.packed_size
+        )
+        offset = actual_archive.offset + actual_member.offset
+        with mpq.Archive(decoy_member) as nested:
+            assert nested["payload"].read() == other != expected
+    with mpq.Archive.open_io(io.BytesIO(data), len(data), offset=offset) as nested:
+        assert nested["payload"].read() == expected
+
+    def unexpected_open(*args):
+        pytest.fail("embedded constructor attempted native path open")
+
+    display = str(decoy) if use_existing_path else "<callback display name>"
+    with mpq.Archive.open_io(io.BytesIO(data), len(data), source_name=display) as parent:
+        assert parent["nested.mpq"].read() == data[offset:offset + actual_member.packed_size]
+        clone = parent.clone()
+        with monkeypatch.context() as patch:
+            patch.setattr(mpq.libmpq, "libmpq__archive_open", unexpected_open)
+            with pytest.raises(ValueError, match="embedded path reopening"):
+                mpq.Archive(parent["nested.mpq"])
+    with clone:
+        monkeypatch.setattr(mpq.libmpq, "libmpq__archive_open", unexpected_open)
+        with pytest.raises(ValueError, match="embedded path reopening"):
+            mpq.Archive(clone["nested.mpq"])
+
+
+@pytest.mark.parametrize("source_kind", ["mpqe", "mpqe_io", "patch"])
+def test_embedded_archive_rejects_other_parent_sources(
+    tmp_path, embedded_archive_paths, monkeypatch, source_kind
+):
+    (outer, _), _ = embedded_archive_paths
+    with mpq.Archive(outer) as base:
+        contents = base["nested.mpq"].read()
+        if source_kind == "patch":
+            parent = mpq.Archive.open_patch(base, [])
+        else:
+            path = tmp_path / "outer.mpqe"
+            code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+            with mpq.Writer.create_mpqe(path, code) as writer:
+                writer.add("nested.mpq", contents)
+            if source_kind == "mpqe":
+                parent = mpq.Archive.open_mpqe(path, code)
+            else:
+                data = path.read_bytes()
+                parent = mpq.Archive.open_mpqe_io(io.BytesIO(data), len(data), code,
+                                                  source_name=str(outer))
+    with parent:
+        entry = parent["nested.mpq"]
+        assert entry.read() == contents
+
+        def unexpected_open(*args):
+            pytest.fail("embedded constructor attempted native path open")
+
+        monkeypatch.setattr(mpq.libmpq, "libmpq__archive_open", unexpected_open)
+        with pytest.raises(ValueError, match="embedded path reopening"):
+            mpq.Archive(entry)
+
+
+def test_embedded_archive_requires_raw_members(tmp_path, embedded_archive_paths):
+    (outer, _), _ = embedded_archive_paths
+    data = outer.read_bytes()
+    path = tmp_path / "nonraw.mpq"
+    with mpq.Writer(path) as writer:
+        compression = mpq.COMPRESSION_ZLIB
+        writer.add("compressed", data, mpq.FileCreateOptions.compressed(compression, compression))
+        writer.add("encrypted", data, mpq.FileCreateOptions.raw().encrypted())
+    with mpq.Archive(path) as parent:
+        for name in ("compressed", "encrypted"):
+            with pytest.raises(ValueError, match="must be stored raw"):
+                mpq.Archive(parent[name])
+    with mpq.Archive(FIXTURES / "mpq-v1-features-patch.mpq") as parent:
+        entry = parent["overview.txt"]
+        assert entry.flags & mpq.FILE_FLAG_PATCH_FILE
+        with pytest.raises(ValueError, match="must be stored raw"):
+            mpq.Archive(entry)
+
+
 def test_custom_io_sources_and_stream_lifetime():
     """Borrowed BytesIO sources stay alive for archive clones owned by streams."""
     data = (FIXTURES / "mpq-v1-features.mpq").read_bytes()
