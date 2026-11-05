@@ -21,8 +21,8 @@ authentication conventions are documented once in Shared fixture details.
 | `mpq-v1-features.mpq` | Classic v1 codecs, attributes, weak and strong signatures | `43bd0c32301f03647688eb84d21031826620cba1ce8617040362345f4e3ac3bc` |
 | `mpq-v1-features.mpqe` | MPQE-wrapped v1 features, weak signature only | `1961416258e68cf7b10c271b338ed2c3d45c56619e9446cd8a97caccc56481c7` |
 | `mpq-v1-features.w3x` | HM3W-wrapped v1 features, weak and strong signatures | `f45e7148b86b7a65bce5b92feae046683726dd79efa8f8e87f66afd02b56bdba` |
-| `mpq-v1-features-patch.mpq` | First v1 COPY layer, deletion and addition | `3bfedc1ef08745b9dca37dfc5daca70ec54ffb8f0cfcbe5235d4aa5de46451de` |
-| `mpq-v1-features-patch.w3x` | Second v1 COPY layer with a non-HM3W container prefix | `6c3d45c2b0339bda90c687371c8fc77f0227cec86d14a753001d6e52146bbff0` |
+| `mpq-v1-features-patch.mpq` | First v1 COPY layer, deletion and addition | `e4373a07e8b2870f4ecc2ee34d592f30301d54347b48e96188485a174232b332` |
+| `mpq-v1-features-patch.w3x` | Second v1 COPY layer with a non-HM3W container prefix | `04412429e0ebb3a887a70b5de3b57e4f14d61a7a452224663df776582143485b` |
 
 ### Base archive
 
@@ -123,7 +123,7 @@ to a standalone signed archive preserves signature validity.
 | --- | --- | --- |
 | `mpq-v2-features.mpq` | Classic v2 features including LZMA, attributes and both signatures | `5b6c8a1a91fcc21bfe871a770da78724b8aaf247fa0077efedaf4d8cf0ba0ff0` |
 | `mpq-v2-features.mpqe` | MPQE-wrapped v2 features, weak signature only | `8b139dbba5ac1b7b1f78220a49d2328ea7db91069f906676af7ab675182db2af` |
-| `mpq-v2-features-patch.mpq` | V2 COPY layer, deletion, addition and zero PATCH_BIT array | `d18803a69560195efa09caade732fb027250711289073d88c274458947a574e9` |
+| `mpq-v2-features-patch.mpq` | V2 COPY layer, deletion, addition and zero PATCH_BIT array | `d284a59c84f1964d43ab3cad574fa3199fd6429e7a53f9e938b2a4ff3176945a` |
 
 ### Base archive
 
