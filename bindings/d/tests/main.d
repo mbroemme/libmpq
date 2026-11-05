@@ -1806,7 +1806,115 @@ private void testCreateMpqeSink() {
     writer.close();
 }
 
+private void expectWriterError(void delegate() operation, int code, string context) {
+    try {
+        operation();
+    } catch (MPQException error) {
+        assert(error.code == code && error.functionName == context, error.msg);
+        return;
+    }
+    assert(false, "expected " ~ context ~ " to fail");
+}
+
+private void assertInactiveWriter(MpqFileWriter member) {
+    expectWriterError(() { member.write([cast(ubyte) 1]); }, ERROR_NOT_INITIALIZED, "MpqFileWriter");
+    expectWriterError(() { member.timestamp(0); }, ERROR_NOT_INITIALIZED, "MpqFileWriter");
+    expectWriterError(() { member.finish(); }, ERROR_NOT_INITIALIZED, "MpqFileWriter");
+    member.close();
+    member.close();
+}
+
+private void testMemberWriterLifetime() {
+    const code = cast(const(ubyte)[]) "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+    const ubyte[] payload = [3, 8, 4, 7];
+    foreach (wrapped; [false, true]) {
+        foreach (callback; [false, true]) {
+            auto path = temporaryArchive(wrapped ? "member-lifetime.mpqe" : "member-lifetime");
+            scope(exit) if (exists(path)) remove(path);
+            ubyte[] output;
+            uint writes, flushes;
+            MpqWriteAt writeAt = (off_t offset, scope const(ubyte)[] bytes) {
+                const start = cast(size_t) offset;
+                const end = start + bytes.length;
+                if (output.length < end)
+                    output.length = end;
+                output[start .. end] = bytes;
+                ++writes;
+            };
+            MpqFlushSink flush = () { ++flushes; };
+            Archive create() {
+                if (exists(path))
+                    remove(path);
+                output = null;
+                writes = flushes = 0;
+                if (!callback)
+                    return wrapped ? Archive.createMpqe(path, code) : Archive.create(path);
+                return wrapped ? Archive.createMpqeSink(writeAt, code, ArchiveCreateOptions.v1(), flush)
+                               : Archive.createSink(writeAt, ArchiveCreateOptions.v1(), null, flush);
+            }
+
+            // An unfinished member prevents publication, but native close consumes it.
+            auto archive = create();
+            auto member = archive.begin("unfinished", payload.length);
+            member.write(payload[0 .. 2]);
+            expectWriterError(() { archive.close(); }, ERROR_SIZE, "libmpq__archive_close");
+            assert(archive.isClosed());
+            const writesAtClose = writes;
+            assertInactiveWriter(member);
+            destroy(member);
+            archive.close();
+            assert(writes == writesAtClose && flushes == 0);
+
+            // Parent-first destruction must invalidate the token before native cleanup.
+            archive = create();
+            member = archive.begin("unfinished", payload.length);
+            member.write(payload[0 .. 2]);
+            destroy(archive);
+            assertInactiveWriter(member);
+            destroy(member);
+            assert(flushes == 0);
+
+            // Path writers can finish in the member destructor. Callback writers
+            // still require explicit member close to avoid calling delegates in GC.
+            archive = create();
+            member = archive.begin("member-first", payload.length);
+            member.write(payload);
+            destroy(member);
+            if (callback)
+                expectWriterError(() { archive.close(); }, ERROR_SIZE, "libmpq__archive_close");
+            else
+                archive.close();
+            assert(archive.isClosed() && flushes == 0);
+
+            // A rejected second begin must leave the original writer attached.
+            archive = create();
+            member = archive.begin("first", payload.length);
+            expectWriterError(() { archive.begin("busy", 0); }, ERROR_FORMAT,
+                              "libmpq__writer_begin");
+            member.write(payload);
+            member.finish();
+            auto last = archive.begin("last", payload.length);
+            assertInactiveWriter(member);
+            last.write(payload);
+            last.close();
+            archive.close();
+            assert(archive.isClosed());
+            const completedWrites = writes;
+            assertInactiveWriter(last);
+            assert(writes == completedWrites && flushes == (callback ? 1 : 0));
+            auto reader = callback
+                ? (wrapped ? Archive.openMpqeSource(new MemorySource(output), code)
+                           : Archive.openSource(new MemorySource(output)))
+                : (wrapped ? Archive.openMpqe(path, code) : Archive.open(path));
+            scope(exit) reader.close();
+            assert(reader.file("first").read() == payload);
+            assert(reader.file("last").read() == payload);
+        }
+    }
+}
+
 void main() {
+    testMemberWriterLifetime();
     testCreateSink();
     testCreateMpqeSink();
     testOversizedSingleWriter();

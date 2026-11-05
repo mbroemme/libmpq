@@ -11,6 +11,7 @@
 module libmpq.archive;
 
 import core.memory : GC;
+import core.stdc.stdlib : free, malloc;
 import std.string : splitLines, toStringz;
 import libmpq.errors : MPQException, checkStatus;
 import libmpq.native;
@@ -115,6 +116,21 @@ private class SinkState {
     }
 }
 
+// Keep this token outside the GC heap. Either owner may be finalized first,
+// so neither finalizer may depend on the other owner's GC-managed storage.
+private struct MemberWriterState {
+    mpq_writer_s* handle;
+    size_t references;
+}
+
+private void releaseMemberWriterState(ref MemberWriterState* state) {
+    if (state !is null) {
+        if (--state.references == 0)
+            free(state);
+        state = null;
+    }
+}
+
 private extern(C) int sinkWriteAt(void* context, off_t offset, const(ubyte)* buffer, size_t size) {
     try {
         auto state = cast(SinkState) context;
@@ -209,6 +225,7 @@ class Archive {
     private bool closed;
     private SourceState sourceState;
     private SinkState sinkState;
+    private MemberWriterState* memberWriter;
 
     /** Open an archive, optionally at a specific embedded offset. */
     this(string path, off_t offset = -1) {
@@ -453,23 +470,31 @@ class Archive {
 
     /** Close the native handle; repeated calls are harmless. */
     void close() {
-        if (closed) return;
-        auto status = libmpq__archive_close(handle);
-        closed = true;
-        handle = null;
-        sourceState = null;
-        releaseSink();
-        checkStatus(status, "libmpq__archive_close");
+        checkStatus(closeNative(false), "libmpq__archive_close");
     }
 
     /** Best-effort destructor cleanup; errors cannot be thrown here. */
     ~this() {
-        if (!closed && handle !is null) {
-            if (sinkState !is null)
-                sinkState.closed = true;
-            libmpq__archive_close(handle);
+        closeNative(true);
+    }
+
+    private int closeNative(bool destroying) {
+        if (closed)
+            return 0;
+        auto current = handle;
+        handle = null;
+        closed = true;
+        if (memberWriter !is null) {
+            memberWriter.handle = null;
+            releaseMemberWriterState(memberWriter);
         }
+        // Only explicit close may call into the caller's sink delegates.
+        if (destroying && sinkState !is null)
+            sinkState.closed = true;
+        auto status = current is null ? 0 : libmpq__archive_close(current);
+        sourceState = null;
         releaseSink();
+        return status;
     }
 
     private void releaseSink() {
@@ -610,12 +635,21 @@ class Archive {
                                           &nativeOptions), "libmpq__archive_add_path");
     }
 
-    /** Begin a streaming file writer with a declared unpacked size. */
+    /** Begin a streaming file writer with a declared unpacked size. Close the member before its archive. */
     MpqFileWriter begin(string name, off_t size, FileOptions options = FileOptions.raw()) {
-        ensureOpen(); auto nativeOptions = options.nativeOptions(); mpq_writer_s* writer;
-        checkStatus(libmpq__writer_begin(handle, toStringz(name), size, &nativeOptions, &writer),
+        ensureOpen();
+        auto nativeOptions = options.nativeOptions();
+        auto writer = new MpqFileWriter(size, sinkState is null);
+        auto state = cast(MemberWriterState*) malloc(MemberWriterState.sizeof);
+        if (state is null)
+            throw new MPQException("MpqFileWriter", ERROR_MALLOC);
+        scope(failure) free(state);
+        *state = MemberWriterState(null, 2);
+        checkStatus(libmpq__writer_begin(handle, toStringz(name), size, &nativeOptions, &state.handle),
                     "libmpq__writer_begin");
-        return new MpqFileWriter(writer, size, sinkState);
+        releaseMemberWriterState(memberWriter);
+        memberWriter = writer.state = state;
+        return writer;
     }
 
     /** Return the raw native handle for advanced ABI integrations. */
@@ -897,14 +931,17 @@ class MpqFileWriter {
     /** Set Windows FILETIME, not Unix time; the archive must enable its generation. */
     void timestamp(ulong filetime) {
         ensureActive();
-        checkStatus(libmpq__writer_timestamp(handle, filetime), "libmpq__writer_timestamp");
+        checkStatus(libmpq__writer_timestamp(state.handle, filetime), "libmpq__writer_timestamp");
     }
-    private mpq_writer_s* handle; private off_t declaredSize; private off_t writtenSize; private bool finishedState;
-    private SinkState sinkState;
-    private this(mpq_writer_s* handle, off_t declaredSize, SinkState sinkState) {
-        this.handle = handle;
+    private MemberWriterState* state;
+    private off_t declaredSize;
+    private off_t writtenSize;
+    private bool finishedState;
+    private bool finishOnDestroy;
+
+    private this(off_t declaredSize, bool finishOnDestroy) {
         this.declaredSize = declaredSize;
-        this.sinkState = sinkState;
+        this.finishOnDestroy = finishOnDestroy;
     }
 
     /** Append bytes; the input array is borrowed only for this call. */
@@ -912,35 +949,44 @@ class MpqFileWriter {
         ensureActive();
         if (writtenSize > declaredSize || data.length > cast(size_t) (declaredSize - writtenSize))
             throw new MPQException("MpqFileWriter.write", ERROR_SIZE);
-        checkStatus(libmpq__writer_write(handle, data.ptr, cast(off_t) data.length), "libmpq__writer_write");
+        checkStatus(libmpq__writer_write(state.handle, data.ptr, cast(off_t) data.length), "libmpq__writer_write");
         writtenSize += cast(off_t) data.length;
     }
     /** Finish and publish the entry, invalidating state before native cleanup. */
     void finish() {
         ensureActive();
-        auto current = handle;
-        handle = null;
+        checkStatus(finishNative(), "libmpq__writer_finish");
+    }
+
+    private int finishNative() {
+        auto current = state.handle;
+        state.handle = null;
         finishedState = true;
-        checkStatus(libmpq__writer_finish(current), "libmpq__writer_finish");
+        releaseMemberWriterState(state);
+        return libmpq__writer_finish(current);
     }
     /** Return whether the writer was finalized. */ bool finished() const { return finishedState; }
     /** Return bytes submitted so far. */ off_t written() const { return writtenSize; }
     /** Return the declared unpacked size. */ off_t declared() const { return declaredSize; }
     /** Finish an active stream, matching D's explicit resource-close pattern. */
     void close() {
-        if (finishedState || (sinkState !is null && sinkState.closed)) return;
-        auto current = handle;
-        handle = null;
-        finishedState = true;
-        checkStatus(libmpq__writer_finish(current), "libmpq__writer_finish");
+        if (active())
+            checkStatus(finishNative(), "libmpq__writer_finish");
+        else
+            releaseMemberWriterState(state);
     }
     /** Best-effort destructor cleanup; destructors cannot report errors. */
     ~this() {
-        if (sinkState is null && !finishedState && handle !is null)
-            libmpq__writer_finish(handle);
+        if (finishOnDestroy && active())
+            finishNative();
+        else
+            releaseMemberWriterState(state);
+    }
+    private bool active() const {
+        return state !is null && state.handle !is null;
     }
     private void ensureActive() {
-        if (finishedState || handle is null || (sinkState !is null && sinkState.closed))
+        if (!active())
             throw new MPQException("MpqFileWriter", ERROR_NOT_INITIALIZED);
     }
 }
