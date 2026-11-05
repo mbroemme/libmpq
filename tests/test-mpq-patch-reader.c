@@ -147,6 +147,7 @@ fixture_add_copy(
         writer, name, stored, LIBMPQ_PATCH_INFO_SIZE, stored + LIBMPQ_PATCH_INFO_SIZE,
         (libmpq__off_t)(stored_size - LIBMPQ_PATCH_INFO_SIZE), (libmpq__off_t)after_size, storage
     );
+
     /* Preserve the legacy fixture's ordinary serialization of the PATCH_BIT array. */
     writer->write_patch_mode = 0;
     return status;
