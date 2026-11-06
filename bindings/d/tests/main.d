@@ -46,6 +46,7 @@ private class MemorySource : MpqSource {
     private ubyte[] data;
     private bool fail;
     private bool collectOnRead;
+    private size_t readCalls;
 
     this(ubyte[] data, bool fail = false, bool collectOnRead = false) {
         this.data = data;
@@ -57,6 +58,7 @@ private class MemorySource : MpqSource {
 
     void readAt(ulong offset, ubyte[] buffer) {
         import core.memory : GC;
+        ++readCalls;
         if (collectOnRead) GC.collect();
         if (fail || offset > data.length || buffer.length > data.length - offset)
             throw new Exception("source read failure");
@@ -335,6 +337,51 @@ private void testFixture() {
     auto numeric = archive.openStream(archive.fileNumber("overview.txt"));
     assert(numeric.read(new ubyte[](64)) > 0);
     numeric.close();
+}
+
+private void testBlockSizeUnpacked() {
+    import std.exception : collectException;
+
+    auto root = buildPath(environment.get("LIBMPQ_SOURCE_DIR", "."), "tests", "fixtures");
+    auto source = new MemorySource(cast(ubyte[]) read(buildPath(root, "mpq-v1-features.mpq")));
+    auto archive = Archive.openSource(source);
+    scope(exit) archive.close();
+
+    auto file = archive.file("encrypted-compress.txt");
+    assert(file.encrypted() && file.compressed() && file.blockCount() == 2);
+    const reads = source.readCalls;
+    source.fail = true;
+    assert(file.blockSizeUnpacked(0) == 4096);
+    assert(file.blockSizeUnpacked(1) == 1760);
+    assert(source.readCalls == reads);
+    source.fail = false;
+
+    foreach (uint block; 0 .. 2) {
+        const size = file.blockSizeUnpacked(block);
+        assert(file.blockSizePacked(block) < size);
+        assert(file.readBlock(block).length == size);
+    }
+    auto single = archive.file("(listfile)");
+    assert(single.flags() & FILE_FLAG_SINGLE);
+    assert(single.blockCount() == 1);
+    assert(single.blockSizeUnpacked(0) == single.unpackedSize());
+    assert(single.readBlock(0).length == single.blockSizeUnpacked(0));
+
+    auto v3 = Archive.open(buildPath(root, "mpq-v3-features.mpq"));
+    scope(exit) v3.close();
+    auto empty = v3.file("zero.bin");
+    assert(empty.unpackedSize() == 0 && empty.blockCount() == 0);
+
+    foreach (entry; [file, single, empty]) {
+        const invalid = entry.blockCount();
+        auto error = collectException!MPQException(entry.blockSizeUnpacked(invalid));
+        assert(error !is null && error.code == ERROR_EXIST);
+        assert(error.functionName == "libmpq__block_size_unpacked");
+    }
+    archive.close();
+    auto closed = collectException!MPQException(file.blockSizeUnpacked(0));
+    assert(closed !is null && closed.code == ERROR_NOT_INITIALIZED);
+    assert(closed.functionName == "Archive");
 }
 
 private void testMpqeFixture() {
@@ -1958,6 +2005,7 @@ void main() {
     testMpqeCreate(ARCHIVE_VERSION_THREE);
     testMpqeCreate(ARCHIVE_VERSION_FOUR);
     testFixture();
+    testBlockSizeUnpacked();
     testStrongSignature();
     testStrongSigning();
     testMpqeFixture();

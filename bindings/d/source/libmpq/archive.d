@@ -895,6 +895,14 @@ class File {
         return result;
     }
 
+    /** Return the logical unpacked block size from metadata without reading its payload. */
+    off_t blockSizeUnpacked(uint blockNumber) {
+        off_t value;
+        checkStatus(libmpq__block_size_unpacked(archiveRef.nativeHandle(), number, blockNumber,
+                                              &value), "libmpq__block_size_unpacked");
+        return value;
+    }
+
     /** Return stored data bytes for one block, excluding offset/checksum tables. */
     off_t blockSizePacked(uint blockNumber) {
         off_t value;
@@ -913,13 +921,12 @@ class File {
 
     /** Read one unpacked block; native code manages its offset cache. */
     ubyte[] readBlock(uint blockNumber) {
-        auto archive = archiveRef.nativeHandle();
-        off_t expected;
-        checkStatus(libmpq__block_size_unpacked(archive, number, blockNumber, &expected), "libmpq__block_size_unpacked");
+        auto expected = blockSizeUnpacked(blockNumber);
         if (expected < 0 || cast(ulong) expected > size_t.max) throw new MPQException("File.readBlock", ERROR_SIZE);
         ubyte[] result; result.length = cast(size_t) expected; off_t transferred;
         auto pointer = result.length == 0 ? null : result.ptr;
-        checkStatus(libmpq__block_read(archive, number, blockNumber, pointer, expected, &transferred), "libmpq__block_read");
+        checkStatus(libmpq__block_read(archiveRef.nativeHandle(), number, blockNumber,
+                                     pointer, expected, &transferred), "libmpq__block_read");
         if (transferred < 0 || cast(ulong) transferred > result.length) throw new MPQException("File.readBlock", ERROR_SIZE);
         result.length = cast(size_t) transferred; return result;
     }

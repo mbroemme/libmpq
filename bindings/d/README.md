@@ -190,8 +190,14 @@ bits; metadata convenience booleans are derived from these flags.
 `file.blockCompression(block)` returns the stored method byte, or zero for
 raw storage/fallback, without decoding. LZMA is `0x12`, not the writer selector.
 
-`file.blockSizePacked(blockNumber)` returns stored data bytes, excluding
-offset and checksum tables, without decoding the sector.
+`file.blockSizeUnpacked(blockNumber)` returns one block's logical size from
+metadata without reading its payload. `file.blockSizePacked(blockNumber)`
+returns the stored data bytes, excluding offset and checksum tables.
+
+```d
+off_t logicalBytes = file.blockSizeUnpacked(0);
+off_t storedBytes = file.blockSizePacked(0);
+```
 
 `Archive.attributes()` returns archive-wide flags in a `Nullable!uint`, null
 if absent. `File.attributes()` returns a `FileAttributes` value and requires
