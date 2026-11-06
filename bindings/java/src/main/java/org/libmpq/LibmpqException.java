@@ -16,6 +16,7 @@ package org.libmpq;
 public final class LibmpqException extends Exception {
     private static final long serialVersionUID = 1L;
     private final int code;
+    private final int transferred;
 
     /**
      * Creates an exception preserving the native error code and diagnostic
@@ -25,8 +26,13 @@ public final class LibmpqException extends Exception {
      * @param message native diagnostic text without the numeric suffix
      */
     public LibmpqException(int code, String message) {
+        this(code, message, 0);
+    }
+
+    LibmpqException(int code, String message, int transferred) {
         super(message + " (" + code + ")");
         this.code = code;
+        this.transferred = transferred;
     }
 
     /**
@@ -35,5 +41,14 @@ public final class LibmpqException extends Exception {
      */
     public int code() {
         return code;
+    }
+
+    /**
+     * Returns the valid byte count copied into the caller's buffer before a
+     * stream read failed. Returns zero when no bytes were copied or the
+     * exception is from another operation.
+     */
+    public int transferred() {
+        return transferred;
     }
 }

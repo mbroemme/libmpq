@@ -1652,10 +1652,71 @@ class LibmpqTest {
         }
     }
 
-    /** Injects read failures and records the requests through the FFM adapter. */
+    @Test
+    void streamReadPreservesPartialResult(@TempDir Path directory) throws Exception {
+        int sector = 4096;
+        byte[] payload = new byte[3 * sector + 23];
+        for (int i = 0; i < payload.length; i++) {
+            payload[i] = (byte) (i / sector + 1);
+        }
+        Path path = directory.resolve("partial.mpq");
+        try (Archive writer = Archive.create(path, new ArchiveCreateOptions(
+                Mpq.ARCHIVE_VERSION_ONE, 16, sector, 0))) {
+            writer.add("payload", payload, FileOptions.raw());
+        }
+        for (int block = 0; block < 3; block++) {
+            try (var channel = new FailingChannel(Files.newByteChannel(path))) {
+                channel.fail = false;
+                int expected = block * sector;
+                MpqStream stream;
+                try (Archive archive = Archive.openSource(channel, null)) {
+                    channel.readFault = archive.fileOffset(archive.fileNumber("payload")) + expected;
+                    stream = archive.openStream("payload");
+                }
+                try (stream) {
+                    int offset = 3;
+                    byte[] buffer = new byte[payload.length + 8];
+                    byte[] expectedBuffer = buffer.clone();
+                    Arrays.fill(buffer, (byte) 0x7e);
+                    Arrays.fill(expectedBuffer, (byte) 0x7e);
+                    System.arraycopy(payload, 0, expectedBuffer, offset, expected);
+                    int calls = channel.readCalls;
+                    assertEquals(0, stream.read(buffer, offset, 0));
+                    assertEquals(calls, channel.readCalls);
+                    assertEquals(0, stream.position());
+                    LibmpqException error = assertThrows(LibmpqException.class,
+                        () -> stream.read(buffer, offset, payload.length));
+                    assertEquals(Mpq.ERROR_READ, error.code());
+                    assertEquals(expected, error.transferred());
+                    assertEquals(expected, stream.position());
+                    assertArrayEquals(expectedBuffer, buffer);
+
+                    channel.readFault = -1;
+                    var rest = new byte[payload.length - expected];
+                    assertEquals(rest.length, stream.read(rest));
+                    assertArrayEquals(Arrays.copyOfRange(payload, expected, payload.length), rest);
+                    assertEquals(-1, stream.read(buffer));
+                    stream.seek(-11, Mpq.SEEK_END);
+                    assertEquals(11, stream.read(buffer, offset, 32));
+                    assertArrayEquals(Arrays.copyOfRange(payload, payload.length - 11, payload.length),
+                                      Arrays.copyOfRange(buffer, offset, offset + 11));
+                    assertEquals(-1, stream.read(buffer));
+                    assertEquals(0, stream.read(new byte[0]));
+                    stream.seek(0, Mpq.SEEK_SET);
+                    var complete = new byte[payload.length];
+                    assertEquals(payload.length, stream.read(complete));
+                    assertArrayEquals(payload, complete);
+                }
+            }
+        }
+        assertEquals(0, new LibmpqException(Mpq.ERROR_READ, "read").transferred());
+    }
+
+    /** Injects I/O failures and records the requests through the FFM adapter. */
     private static final class FailingChannel implements SeekableByteChannel {
         private final SeekableByteChannel delegate;
         private boolean fail = true;
+        private long readFault = -1;
         private boolean failWrites;
         private int readCalls;
         private int writeCalls;
@@ -1664,7 +1725,7 @@ class LibmpqTest {
         FailingChannel(SeekableByteChannel delegate) { this.delegate = delegate; }
         @Override public int read(ByteBuffer target) throws IOException {
             readCalls++;
-            if (fail) throw new IOException("failure");
+            if (fail || delegate.position() == readFault) throw new IOException("failure");
             return delegate.read(target);
         }
         @Override public int write(ByteBuffer source) throws IOException {

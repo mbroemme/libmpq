@@ -28,7 +28,13 @@ public final class MpqStream implements AutoCloseable {
         this.sourceState = sourceState == null ? null : sourceState.retain();
     }
 
-    /** Read up to {@code length} bytes, returning -1 at EOF. */
+    /**
+     * Reads up to {@code length} bytes, returning -1 at EOF or 0 for a zero-length request.
+     * If native reading fails, the valid prefix has already been copied into
+     * {@code buffer} starting at {@code offset}. The exception's
+     * {@link LibmpqException#transferred()} reports the prefix length, and
+     * {@link #position()} includes it.
+     */
     public int read(byte[] buffer, int offset, int length) throws LibmpqException {
         requireOpen();
         Objects.checkFromIndexSize(offset, length, buffer.length);
@@ -38,17 +44,19 @@ public final class MpqStream implements AutoCloseable {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment nativeBuffer = arena.allocate(length, 1);
             MemorySegment transferred = arena.allocate(ValueLayout.JAVA_LONG);
-            Support.check(LibmpqNative.streamRead(handle, nativeBuffer, length, transferred));
+            int status = LibmpqNative.streamRead(handle, nativeBuffer, length, transferred);
             int count = Math.toIntExact(LibmpqNative.getLong(transferred));
-            if (count == 0) {
-                return -1;
+            if (count != 0) {
+                nativeBuffer.asSlice(0, count).asByteBuffer().get(buffer, offset, count);
             }
-            nativeBuffer.asByteBuffer().get(buffer, offset, count);
-            return count;
+            if (status < 0) {
+                throw new LibmpqException(status, Mpq.strerror(status), count);
+            }
+            return count == 0 ? -1 : count;
         }
     }
 
-    /** Read up to {@code buffer.length} bytes, returning -1 at EOF. */
+    /** Read into the whole array, with the same EOF and partial error behavior as the slice overload. */
     public int read(byte[] buffer) throws LibmpqException {
         return read(buffer, 0, buffer.length);
     }

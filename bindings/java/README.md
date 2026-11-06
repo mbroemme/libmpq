@@ -76,6 +76,22 @@ for `openPatchStream()`.
         int count = stream.read(buffer);
     }
 
+A native read can fail after advancing the stream. The caller's array contains
+the valid prefix at the requested offset, and `LibmpqException.transferred()`
+reports its length, which can be zero. `code()` still gives the native status.
+Successful reads still return the byte count, with `-1` at EOF for a positive
+request and zero for a zero-length request.
+
+```java
+byte[] buffer = new byte[8192];
+try {
+    int count = stream.read(buffer);
+} catch (LibmpqException error) {
+    int count = error.transferred(); // Valid bytes are in buffer[0..count).
+    long position = stream.position();
+}
+```
+
 ### Custom random-access I/O
 
 Use `Archive.openSource(channel, sourceName)` for a caller-owned

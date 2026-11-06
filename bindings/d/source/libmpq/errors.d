@@ -45,6 +45,17 @@ class MPQException : Exception {
     }
 }
 
+/** A native stream-read failure with the valid byte count in the caller's buffer. */
+final class StreamReadException : MPQException {
+    /** Length of the valid prefix, also reflected in the stream position. */
+    immutable size_t transferred;
+
+    this(int code, size_t transferred) {
+        super("libmpq__stream_read", code);
+        this.transferred = transferred;
+    }
+}
+
 /** Throw `MPQException` when a native call returns a negative status. */
 void checkStatus(int status, string functionName) {
     if (status < 0)

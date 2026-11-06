@@ -13,7 +13,7 @@ module libmpq.archive;
 import core.memory : GC;
 import core.stdc.stdlib : free, malloc;
 import std.string : splitLines, toStringz;
-import libmpq.errors : MPQException, checkStatus;
+import libmpq.errors : MPQException, StreamReadException, checkStatus;
 import libmpq.native;
 import libmpq.options : ArchiveCreateOptions, FileOptions;
 import std.typecons : Nullable, nullable;
@@ -695,13 +695,19 @@ class MpqStream {
         this.sourceState = sourceState;
     }
 
-    /** Read up to the supplied buffer length and return the copied byte count. */
+    /**
+     * Read up to the supplied buffer length and return the copied byte count.
+     * EOF and empty requests return zero. On a native error, the prefix
+     * reported by StreamReadException.transferred remains in the buffer and
+     * tell() includes that progress. No part of the buffer is retained.
+     */
     size_t read(ubyte[] buffer) {
         ensureOpen();
         off_t transferred;
         auto pointer = buffer.length == 0 ? null : buffer.ptr;
-        checkStatus(libmpq__stream_read(handle, pointer, cast(off_t) buffer.length, &transferred),
-                    "libmpq__stream_read");
+        auto status = libmpq__stream_read(handle, pointer, cast(off_t) buffer.length, &transferred);
+        if (status < 0)
+            throw new StreamReadException(status, cast(size_t) transferred);
         if (transferred < 0 || cast(ulong) transferred > buffer.length)
             throw new MPQException("MpqStream.read", ERROR_SIZE);
         return cast(size_t) transferred;

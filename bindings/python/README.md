@@ -103,6 +103,21 @@ for `open_patch_stream()`.
         chunk = stream.read(4096)
         stream.seek(0)
 
+A native read can fail after advancing the stream by the bytes it copied.
+The existing `LibmpqError` subclass carries `code`, `transferred` and
+`partial_data` for that read. A failure before copying has an empty prefix.
+Successful reads still return `bytes`, with empty bytes at EOF or for a
+zero-length request.
+
+```python
+try:
+    chunk = stream.read(8192)
+except mpq.LibmpqError as error:
+    partial = error.partial_data
+    count = error.transferred
+    position = stream.tell()
+```
+
 ### Custom random-access I/O
 
 Use `Archive.open_io(source, size, source_name=...)` for a caller-owned

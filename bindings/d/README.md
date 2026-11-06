@@ -83,6 +83,22 @@ for `openPatchStream()`.
     stream.seek(0, SeekOrigin.set);
     stream.close();
 
+A native read can fail after advancing the stream by the copied byte count.
+`StreamReadException` extends `MPQException` and gives the valid prefix
+length in `transferred`. The prefix can be empty. The existing error code
+and native diagnostic are preserved. Successful reads still return the byte
+count, with zero at EOF or for a zero-length request.
+
+```d
+ubyte[8192] buffer;
+try {
+    auto count = stream.read(buffer[]);
+} catch (StreamReadException error) {
+    auto partial = buffer[0 .. error.transferred];
+    auto position = stream.tell();
+}
+```
+
 ### Custom random-access I/O
 
 Implement `MpqSource` to open a caller-owned random-access source. Archives

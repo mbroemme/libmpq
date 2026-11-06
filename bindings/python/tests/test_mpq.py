@@ -689,6 +689,51 @@ def test_custom_io_sources_and_stream_lifetime():
     assert not source.closed
 
 
+@pytest.mark.parametrize("failing_block", [0, 1, 2])
+def test_stream_read_preserves_partial_result(tmp_path, failing_block):
+    sector = 4096
+    payload = b"A" * sector + b"B" * sector + b"C" * sector + b"D" * 23
+    path = tmp_path / "partial.mpq"
+    with mpq.Writer(path, sector_size=sector) as writer:
+        writer.add("payload", payload)
+
+    class FaultSource(io.BytesIO):
+        fault = None
+        failures = 0
+
+        def read(self, size=-1):
+            if self.tell() == self.fault:
+                self.failures += 1
+                raise OSError("injected sector read failure")
+            return super().read(size)
+
+    wire = path.read_bytes()
+    source = FaultSource(wire)
+    with mpq.Archive.open_io(source, len(wire)) as archive:
+        transferred = sector * failing_block
+        source.fault = archive["payload"].offset + transferred
+        stream = archive.open_stream("payload")
+    with stream:
+        assert stream.read(0) == b""
+        assert stream.tell() == source.failures == 0
+        with pytest.raises(mpq.LibmpqIOError) as caught:
+            stream.read(len(payload))
+        error = caught.value
+        assert error.code == mpq.ERROR_READ
+        assert error.transferred == stream.tell() == transferred
+        assert error.partial_data == payload[:transferred]
+        assert source.failures == 1
+
+        source.fault = None
+        assert stream.read() == payload[transferred:]
+        assert stream.read(1) == b""
+        stream.seek(-11, os.SEEK_END)
+        assert stream.read(32) == payload[-11:]
+        assert stream.read(1) == b""
+        stream.seek(0)
+        assert stream.read(len(payload)) == payload
+
+
 def test_custom_io_short_and_failing_reads():
     """Short reads and source exceptions become the binding's normal read error."""
     data = (FIXTURES / "mpq-v1-features.mpq").read_bytes()

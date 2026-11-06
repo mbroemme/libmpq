@@ -1367,7 +1367,12 @@ class MpqStream:
         return self.tell()
 
     def read(self, size=-1):
-        """Read decoded bytes; an omitted or negative size reads through EOF."""
+        """Read decoded bytes; an omitted or negative size reads through EOF.
+
+        A native read error raises LibmpqError with partial_data (bytes) and
+        transferred (its length). tell() includes this progress. At EOF a
+        successful read returns empty bytes.
+        """
         self._ensure_open()
         if size is None:
             size = -1
@@ -1379,9 +1384,14 @@ class MpqStream:
             return b""
         buffer = _native_buffer(size)
         transferred = _OFF_T()
-        libmpq.libmpq__stream_read(
-            self._stream, buffer, size, ctypes.byref(transferred)
-        )
+        try:
+            libmpq.libmpq__stream_read(
+                self._stream, buffer, size, ctypes.byref(transferred)
+            )
+        except LibmpqError as error:
+            error.partial_data = bytes(buffer[:transferred.value])
+            error.transferred = transferred.value
+            raise
         return bytes(buffer[:transferred.value])
 
     def close(self):

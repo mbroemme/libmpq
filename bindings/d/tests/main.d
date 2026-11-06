@@ -47,6 +47,7 @@ private class MemorySource : MpqSource {
     private bool fail;
     private bool collectOnRead;
     private size_t readCalls;
+    private ulong readFault = ulong.max;
 
     this(ubyte[] data, bool fail = false, bool collectOnRead = false) {
         this.data = data;
@@ -60,7 +61,8 @@ private class MemorySource : MpqSource {
         import core.memory : GC;
         ++readCalls;
         if (collectOnRead) GC.collect();
-        if (fail || offset > data.length || buffer.length > data.length - offset)
+        if (fail || offset == readFault || offset > data.length ||
+            buffer.length > data.length - offset)
             throw new Exception("source read failure");
         buffer[] = data[offset .. offset + buffer.length];
     }
@@ -449,6 +451,59 @@ private void testCustomSources() {
     ubyte[] mpqeActual = new ubyte[](mpqeExpected.length);
     assert(mpqeStream.read(mpqeActual) == mpqeActual.length && mpqeActual == mpqeExpected);
     mpqeStream.close();
+}
+
+private void testStreamReadPreservesPartialResult() {
+    import std.exception : collectException;
+
+    enum sector = 4096;
+    enum length = 3 * sector + 23;
+    ubyte[length] payload;
+    foreach (i, ref value; payload) value = cast(ubyte)(i / sector + 1);
+    auto path = temporaryArchive("partial-stream");
+    scope(exit) remove(path);
+    auto writer = Archive.create(path, ArchiveCreateOptions.v1());
+    writer.add("payload", payload[]);
+    writer.close();
+    auto source = new MemorySource(cast(ubyte[]) read(path));
+
+    foreach (size_t block; 0 .. 3) {
+        auto archive = Archive.openSource(source);
+        scope(exit) archive.close();
+        const expected = block * sector;
+        const fault = cast(ulong) archive.file("payload").offset() + expected;
+        auto stream = archive.openStream("payload");
+        scope(exit) stream.close();
+        archive.close();
+        source.readFault = fault;
+
+        enum offset = 3;
+        ubyte[length + 8] buffer;
+        ubyte[length + 8] expectedBuffer;
+        buffer[] = 0x7e;
+        expectedBuffer[] = 0x7e;
+        expectedBuffer[offset .. offset + expected] = payload[0 .. expected];
+        auto destination = buffer[offset .. offset + length];
+        const calls = source.readCalls;
+        assert(stream.read(destination[0 .. 0]) == 0);
+        assert(stream.tell() == 0 && source.readCalls == calls);
+        auto error = collectException!StreamReadException(stream.read(destination));
+        assert(error !is null && error.code == ERROR_READ);
+        assert(error.functionName == "libmpq__stream_read");
+        assert(error.transferred == expected && stream.tell() == expected);
+        assert(buffer[] == expectedBuffer[]);
+
+        source.readFault = ulong.max;
+        auto rest = destination[0 .. length - expected];
+        assert(stream.read(rest) == rest.length && rest == payload[expected .. $]);
+        assert(stream.read(destination) == 0);
+        stream.seek(-11, SeekOrigin.end);
+        assert(stream.read(destination[0 .. 32]) == 11);
+        assert(destination[0 .. 11] == payload[$ - 11 .. $]);
+        assert(stream.read(destination) == 0);
+        stream.seek(0);
+        assert(stream.read(destination) == length && destination == payload[]);
+    }
 }
 
 /** Verify UTF-32LE fixture bytes without using host-native character encoding. */
@@ -2010,6 +2065,7 @@ void main() {
     testStrongSigning();
     testMpqeFixture();
     testCustomSources();
+    testStreamReadPreservesPartialResult();
     testSparseFixtures();
     testMpqeCreate();
     testUpdate();
