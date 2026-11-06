@@ -23,6 +23,8 @@ import org.libmpq.ffi.LibmpqNative;
  * A closeable handle for an opened or newly created MPQ archive.  Each
  * instance owns one native archive handle; callers must keep it open while
  * querying or modifying the archive and should use try-with-resources.
+ * String name arguments use strict UTF-8. See {@link MpqName} and
+ * {@link NativePath} for byte-exact name and filesystem arguments.
  */
 public final class Archive implements AutoCloseable {
 
@@ -54,9 +56,15 @@ public final class Archive implements AutoCloseable {
     /** Optional filename provides key context for the selected number, not selection. */
     public VerificationResult verifyFileResult(int number, int flags, String filename)
             throws LibmpqException {
+        return verifyFileResultBytes(number, flags, Support.optionalName(filename));
+    }
+
+    /** Byte-exact form of {@link #verifyFileResult(int, int, String)}. */
+    public VerificationResult verifyFileResultBytes(int number, int flags, MpqName filename)
+            throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
-            MemorySegment name = filename == null ? MemorySegment.NULL : Support.text(arena, filename);
+            MemorySegment name = Support.nullableName(arena, filename);
             MemorySegment checked = arena.allocate(ValueLayout.JAVA_INT);
             MemorySegment unavailable = arena.allocate(ValueLayout.JAVA_INT);
             MemorySegment mismatches = arena.allocate(ValueLayout.JAVA_INT);
@@ -204,9 +212,14 @@ public final class Archive implements AutoCloseable {
      * @throws LibmpqException if the file cannot be opened or is malformed
      */
     public static Archive open(Path path, long offset) throws LibmpqException {
+        return openBytes(NativePath.of(path), offset);
+    }
+
+    /** Byte-exact form of {@link #open(Path, long)}. */
+    public static Archive openBytes(NativePath path, long offset) throws LibmpqException {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
-            Support.check(LibmpqNative.archiveOpen(output, Support.text(arena, path.toString()), offset));
+            Support.check(LibmpqNative.archiveOpen(output, path.marshal(arena), offset));
             return new Archive(LibmpqNative.getAddress(output));
         }
     }
@@ -248,13 +261,19 @@ public final class Archive implements AutoCloseable {
      */
     public static Archive openMpqe(Path path, byte[] authCode, long offset)
         throws LibmpqException {
+        return openMpqeBytes(NativePath.of(path), authCode, offset);
+    }
+
+    /** Byte-exact form of {@link #openMpqe(Path, byte[], long)}. */
+    public static Archive openMpqeBytes(NativePath path, byte[] authCode, long offset)
+        throws LibmpqException {
         Objects.requireNonNull(path, "path");
         Objects.requireNonNull(authCode, "authCode");
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
             MemorySegment authCodeSegment = Support.bytes(arena, authCode);
             Support.check(LibmpqNative.archiveOpenMpqe(
-                output, Support.text(arena, path.toString()), offset, authCodeSegment, authCode.length
+                output, path.marshal(arena), offset, authCodeSegment, authCode.length
             ));
             return new Archive(LibmpqNative.getAddress(output));
         }
@@ -269,10 +288,16 @@ public final class Archive implements AutoCloseable {
     /** Open a borrowed seekable channel at a standalone or embedded MPQ offset. */
     public static Archive openSource(SeekableByteChannel source, String sourceName, long offset)
         throws LibmpqException {
+        return openSourceBytes(source, Support.optionalName(sourceName), offset);
+    }
+
+    /** Byte-exact form of {@link #openSource(SeekableByteChannel, String, long)}. */
+    public static Archive openSourceBytes(SeekableByteChannel source, MpqName sourceName, long offset)
+        throws LibmpqException {
         SourceState state = new SourceState(source);
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
-            MemorySegment name = sourceName == null ? MemorySegment.NULL : Support.text(arena, sourceName);
+            MemorySegment name = Support.nullableName(arena, sourceName);
             Support.check(LibmpqNative.archiveOpenIo(output, MemorySegment.NULL, state.callback(),
                                                      state.size(), offset, name));
             return new Archive(LibmpqNative.getAddress(output), state);
@@ -285,11 +310,17 @@ public final class Archive implements AutoCloseable {
     /** Open a borrowed MPQE seekable channel using the supplied authentication code. */
     public static Archive openMpqeSource(SeekableByteChannel source, byte[] authCode,
                                          String sourceName, long offset) throws LibmpqException {
+        return openMpqeSourceBytes(source, authCode, Support.optionalName(sourceName), offset);
+    }
+
+    /** Byte-exact form of {@link #openMpqeSource(SeekableByteChannel, byte[], String, long)}. */
+    public static Archive openMpqeSourceBytes(SeekableByteChannel source, byte[] authCode,
+                                              MpqName sourceName, long offset) throws LibmpqException {
         Objects.requireNonNull(authCode, "authCode");
         SourceState state = new SourceState(source);
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
-            MemorySegment name = sourceName == null ? MemorySegment.NULL : Support.text(arena, sourceName);
+            MemorySegment name = Support.nullableName(arena, sourceName);
             Support.check(LibmpqNative.archiveOpenMpqeIo(
                 output, MemorySegment.NULL, state.callback(), state.size(), offset,
                 Support.bytes(arena, authCode), authCode.length, name
@@ -312,6 +343,11 @@ public final class Archive implements AutoCloseable {
      * @throws LibmpqException if creation or option validation fails
      */
     public static Archive create(Path path, ArchiveCreateOptions options) throws LibmpqException {
+        return createBytes(NativePath.of(path), options);
+    }
+
+    /** Byte-exact form of {@link #create(Path, ArchiveCreateOptions)}. */
+    public static Archive createBytes(NativePath path, ArchiveCreateOptions options) throws LibmpqException {
         if (options == null) {
             options = ArchiveCreateOptions.defaults();
         }
@@ -322,7 +358,7 @@ public final class Archive implements AutoCloseable {
                                             Support.uint32(options.maxFiles(), "maxFiles"),
                                             Support.uint32(options.sectorSize(), "sectorSize"),
                                             options.flags(), options.attributes());
-            Support.check(LibmpqNative.archiveCreate(output, Support.text(arena, path.toString()),
+            Support.check(LibmpqNative.archiveCreate(output, path.marshal(arena),
                                                       nativeOptions));
             return new Archive(LibmpqNative.getAddress(output));
         }
@@ -424,6 +460,12 @@ public final class Archive implements AutoCloseable {
     /** Creates a new MPQE-wrapped archive using caller-supplied authentication bytes. */
     public static Archive createMpqe(Path path, byte[] authCode,
                                      ArchiveCreateOptions options) throws LibmpqException {
+        return createMpqeBytes(NativePath.of(path), authCode, options);
+    }
+
+    /** Byte-exact form of {@link #createMpqe(Path, byte[], ArchiveCreateOptions)}. */
+    public static Archive createMpqeBytes(NativePath path, byte[] authCode,
+                                          ArchiveCreateOptions options) throws LibmpqException {
         Objects.requireNonNull(path, "path");
         Objects.requireNonNull(authCode, "authCode");
         if (options == null) {
@@ -437,7 +479,7 @@ public final class Archive implements AutoCloseable {
                                             Support.uint32(options.sectorSize(), "sectorSize"),
                                             options.flags(), options.attributes());
             Support.check(LibmpqNative.archiveCreateMpqe(
-                output, Support.text(arena, path.toString()), Support.bytes(arena, authCode),
+                output, path.marshal(arena), Support.bytes(arena, authCode),
                 authCode.length, nativeOptions
             ));
             return new Archive(LibmpqNative.getAddress(output));
@@ -451,6 +493,12 @@ public final class Archive implements AutoCloseable {
      * during the call. The returned archive retains none of their source state.
      */
     public static Archive openPatch(Archive base, List<Archive> patches, List<String> prefixes)
+            throws LibmpqException {
+        return openPatchBytes(base, patches, Support.names(prefixes));
+    }
+
+    /** Byte-exact form of {@link #openPatch(Archive, List<Archive>, List<String>)}. */
+    public static Archive openPatchBytes(Archive base, List<Archive> patches, List<MpqName> prefixes)
             throws LibmpqException {
         Objects.requireNonNull(base, "base");
         PatchInputs inputs = base.patchInputs(patches, prefixes);
@@ -472,10 +520,10 @@ public final class Archive implements AutoCloseable {
         }
     }
 
-    private PatchInputs patchInputs(List<Archive> patches, List<String> prefixes)
+    private PatchInputs patchInputs(List<Archive> patches, List<MpqName> prefixes)
             throws LibmpqException {
         Archive[] layers = Objects.requireNonNull(patches, "patches").toArray(Archive[]::new);
-        String[] names = prefixes == null ? null : prefixes.toArray(String[]::new);
+        MpqName[] names = prefixes == null ? null : prefixes.toArray(MpqName[]::new);
         if (names != null && names.length != layers.length) {
             throw new IllegalArgumentException("prefix count must match patch count");
         }
@@ -488,7 +536,7 @@ public final class Archive implements AutoCloseable {
 
     private record PatchPointers(MemorySegment handles, MemorySegment prefixes) {}
 
-    private record PatchInputs(Archive[] layers, String[] names) {
+    private record PatchInputs(Archive[] layers, MpqName[] names) {
         PatchPointers marshal(Arena arena) {
             MemorySegment handles = layers.length == 0 ? MemorySegment.NULL
                 : arena.allocate(ValueLayout.ADDRESS, layers.length);
@@ -497,11 +545,8 @@ public final class Archive implements AutoCloseable {
             for (int i = 0; i < layers.length; i++) {
                 handles.setAtIndex(ValueLayout.ADDRESS, i, layers[i].handle);
                 if (names != null) {
-                    if (names[i] != null && names[i].indexOf('\0') >= 0) {
-                        throw new IllegalArgumentException("prefixes must not contain NUL");
-                    }
                     nativeNames.setAtIndex(ValueLayout.ADDRESS, i,
-                        names[i] == null ? MemorySegment.NULL : Support.text(arena, names[i]));
+                        Support.nullableName(arena, names[i]));
                 }
             }
             return new PatchPointers(handles, nativeNames);
@@ -517,6 +562,12 @@ public final class Archive implements AutoCloseable {
      */
     public MpqStream openPatchStream(String filename, List<Archive> patches, List<String> prefixes)
             throws LibmpqException {
+        return openPatchStreamBytes(MpqName.ofUtf8(filename), patches, Support.names(prefixes));
+    }
+
+    /** Byte-exact form of {@link #openPatchStream(String, List<Archive>, List<String>)}. */
+    public MpqStream openPatchStreamBytes(MpqName filename, List<Archive> patches, List<MpqName> prefixes)
+            throws LibmpqException {
         return openPatchStream(filename, patches, prefixes, false, (short) 0, (short) 0);
     }
 
@@ -528,22 +579,30 @@ public final class Archive implements AutoCloseable {
     public MpqStream openPatchStream(String filename, int locale, int platform,
                                      List<Archive> patches, List<String> prefixes)
             throws LibmpqException {
+        return openPatchStreamBytes(MpqName.ofUtf8(filename), locale, platform, patches,
+                                    Support.names(prefixes));
+    }
+
+    /** Byte-exact form of {@link #openPatchStream(String, int, int, List<Archive>, List<String>)}. */
+    public MpqStream openPatchStreamBytes(MpqName filename, int locale, int platform,
+                                          List<Archive> patches, List<MpqName> prefixes)
+            throws LibmpqException {
         return openPatchStream(filename, patches, prefixes, true, identitySelector(locale),
                                identitySelector(platform));
     }
 
-    private MpqStream openPatchStream(String filename, List<Archive> patches, List<String> prefixes,
-                                      boolean exact, short locale, short platform)
+    private MpqStream openPatchStream(MpqName filename, List<Archive> patches,
+                                      List<MpqName> prefixes, boolean exact, short locale, short platform)
             throws LibmpqException {
         Objects.requireNonNull(filename, "filename");
-        if (filename.isEmpty() || filename.indexOf('\0') >= 0) {
-            throw new IllegalArgumentException("filename must be nonempty and must not contain NUL");
+        if (filename.isEmpty()) {
+            throw new IllegalArgumentException("filename must be nonempty");
         }
         PatchInputs inputs = patchInputs(patches, prefixes);
         try (Arena arena = Arena.ofConfined()) {
             PatchPointers pointers = inputs.marshal(arena);
             MemorySegment out = arena.allocate(ValueLayout.ADDRESS);
-            MemorySegment name = Support.text(arena, filename);
+            MemorySegment name = filename.marshal(arena);
             long count = inputs.layers().length;
             Support.check(exact
                 ? LibmpqNative.streamOpenPatchIdentity(handle, pointers.handles(), pointers.prefixes(),
@@ -645,10 +704,15 @@ public final class Archive implements AutoCloseable {
 
     /** Enumerate stored identities in native slot order; provenance is not a storage flag. */
     public List<FileIdentity> variants(String name) throws LibmpqException {
+        return variantsBytes(MpqName.ofUtf8(name));
+    }
+
+    /** Byte-exact form of {@link #variants(String)}. */
+    public List<FileIdentity> variantsBytes(MpqName name) throws LibmpqException {
         checkOpen();
         var result = new java.util.ArrayList<FileIdentity>();
         try (Arena arena = Arena.ofConfined()) {
-            MemorySegment encoded = Support.text(arena, name);
+            MemorySegment encoded = name.marshal(arena);
             MemorySegment output = arena.allocate(LibmpqNative.FILE_IDENTITY);
             for (long ordinal = 0; ordinal <= 0xffffffffL; ordinal++) {
                 int status = LibmpqNative.fileIdentity(handle, encoded, (int) ordinal, output);
@@ -668,22 +732,32 @@ public final class Archive implements AutoCloseable {
      * No selector fallback is applied.
      */
     public int fileNumber(String name, int locale, int platform) throws LibmpqException {
+        return fileNumberBytes(MpqName.ofUtf8(name), locale, platform);
+    }
+
+    /** Byte-exact form of {@link #fileNumber(String, int, int)}. */
+    public int fileNumberBytes(MpqName name, int locale, int platform) throws LibmpqException {
         checkOpen();
         short l = identitySelector(locale), p = identitySelector(platform);
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(ValueLayout.JAVA_INT);
-            Support.check(LibmpqNative.fileNumberFromIdentity(handle, Support.text(arena, name), l, p, output));
+            Support.check(LibmpqNative.fileNumberFromIdentity(handle, name.marshal(arena), l, p, output));
             return output.get(ValueLayout.JAVA_INT, 0);
         }
     }
 
     /** Open the exact tuple on an owned clone sharing any caller-owned source. */
     public MpqStream openStream(String name, int locale, int platform) throws LibmpqException {
+        return openStreamBytes(MpqName.ofUtf8(name), locale, platform);
+    }
+
+    /** Byte-exact form of {@link #openStream(String, int, int)}. */
+    public MpqStream openStreamBytes(MpqName name, int locale, int platform) throws LibmpqException {
         checkOpen();
         short l = identitySelector(locale), p = identitySelector(platform);
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
-            Support.check(LibmpqNative.streamOpenNameIdentity(handle, Support.text(arena, name), l, p, output));
+            Support.check(LibmpqNative.streamOpenNameIdentity(handle, name.marshal(arena), l, p, output));
             return new MpqStream(LibmpqNative.getAddress(output), sourceState);
         }
     }
@@ -703,10 +777,15 @@ public final class Archive implements AutoCloseable {
      * malformed metadata, or a closed archive
      */
     public int fileNumber(String filename) throws LibmpqException {
+        return fileNumberBytes(MpqName.ofUtf8(filename));
+    }
+
+    /** Byte-exact form of {@link #fileNumber(String)}. */
+    public int fileNumberBytes(MpqName filename) throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment result = arena.allocate(ValueLayout.JAVA_INT);
-            Support.check(LibmpqNative.fileNumber(handle, Support.text(arena, filename), result));
+            Support.check(LibmpqNative.fileNumber(handle, filename.marshal(arena), result));
             return LibmpqNative.getInt(result);
         }
     }
@@ -820,13 +899,18 @@ public final class Archive implements AutoCloseable {
      * The returned array is caller-owned; native errors throw LibmpqException.
      */
     public byte[] readPatchPayload(int number, String filename) throws LibmpqException {
+        return readPatchPayloadBytes(number, Support.optionalName(filename));
+    }
+
+    /** Byte-exact form of {@link #readPatchPayload(int, String)}. */
+    public byte[] readPatchPayloadBytes(int number, MpqName filename) throws LibmpqException {
         long size = patchPayloadSize(number);
         int capacity = Support.checkedArraySize(size);
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(capacity == 0 ? 1 : capacity, 1);
             MemorySegment transferred = arena.allocate(ValueLayout.JAVA_LONG);
             Support.check(LibmpqNative.patchPayloadRead(handle, number,
-                    filename == null ? MemorySegment.NULL : Support.text(arena, filename),
+                    Support.nullableName(arena, filename),
                     capacity == 0 ? MemorySegment.NULL : output, size, transferred));
             long count = transferred.get(ValueLayout.JAVA_LONG, 0);
             if (count < 0 || count > size) {
@@ -855,10 +939,15 @@ public final class Archive implements AutoCloseable {
 
     /** Open by ordinary filename lookup with the source lifetime of {@link #openStream(int)}. */
     public MpqStream openStream(String name) throws LibmpqException {
+        return openStreamBytes(MpqName.ofUtf8(name));
+    }
+
+    /** Byte-exact form of {@link #openStream(String)}. */
+    public MpqStream openStreamBytes(MpqName name) throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
-            Support.check(LibmpqNative.streamOpenName(handle, Support.text(arena, name), output));
+            Support.check(LibmpqNative.streamOpenName(handle, name.marshal(arena), output));
             return new MpqStream(LibmpqNative.getAddress(output), sourceState);
         }
     }
@@ -919,13 +1008,18 @@ public final class Archive implements AutoCloseable {
      * @param options storage options, or {@code null} for raw storage
      */
     public void add(String name, byte[] data, FileOptions options) throws LibmpqException {
+        addBytes(MpqName.ofUtf8(name), data, options);
+    }
+
+    /** Byte-exact form of {@link #add(String, byte[], FileOptions)}. */
+    public void addBytes(MpqName name, byte[] data, FileOptions options) throws LibmpqException {
         checkOpen();
         if (options == null) {
             options = FileOptions.raw();
         }
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment nativeOptions = fileOptions(arena, options);
-            Support.check(LibmpqNative.archiveAddData(handle, Support.text(arena, name),
+            Support.check(LibmpqNative.archiveAddData(handle, name.marshal(arena),
                                                 Support.bytes(arena, data), data.length, nativeOptions));
         }
     }
@@ -939,13 +1033,18 @@ public final class Archive implements AutoCloseable {
      * @param options storage options, or {@code null} for raw storage
      */
     public void addPath(String name, Path source, FileOptions options) throws LibmpqException {
+        addPathBytes(MpqName.ofUtf8(name), NativePath.of(source), options);
+    }
+
+    /** Byte-exact form of {@link #addPath(String, Path, FileOptions)}. */
+    public void addPathBytes(MpqName name, NativePath source, FileOptions options) throws LibmpqException {
         checkOpen();
         if (options == null) {
             options = FileOptions.raw();
         }
         try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.archiveAddPath(handle, Support.text(arena, name),
-                                                   Support.text(arena, source.toString()),
+            Support.check(LibmpqNative.archiveAddPath(handle, name.marshal(arena),
+                                                   source.marshal(arena),
                                                    fileOptions(arena, options)));
         }
     }
@@ -961,6 +1060,11 @@ public final class Archive implements AutoCloseable {
      * @return a closeable writer for the new entry
      */
     public MpqFileWriter begin(String name, long size, FileOptions options) throws LibmpqException {
+        return beginBytes(MpqName.ofUtf8(name), size, options);
+    }
+
+    /** Byte-exact form of {@link #begin(String, long, FileOptions)}. */
+    public MpqFileWriter beginBytes(MpqName name, long size, FileOptions options) throws LibmpqException {
         checkOpen();
         if (size < 0) {
             throw new IllegalArgumentException("size must not be negative");
@@ -970,7 +1074,7 @@ public final class Archive implements AutoCloseable {
         }
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
-            Support.check(LibmpqNative.writerBegin(handle, Support.text(arena, name), size,
+            Support.check(LibmpqNative.writerBegin(handle, name.marshal(arena), size,
                                                   fileOptions(arena, options), output));
             return new MpqFileWriter(this, LibmpqNative.getAddress(output), size);
         }

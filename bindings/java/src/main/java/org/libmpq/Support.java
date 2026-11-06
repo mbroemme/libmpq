@@ -11,7 +11,11 @@ package org.libmpq;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import org.libmpq.ffi.LibmpqNative;
 
 /** Internal memory, encoding, range, and native-error helpers for the binding. */
@@ -49,14 +53,43 @@ final class Support {
         return new String(bytes, StandardCharsets.UTF_8);
     }
 
-    /**
-     * Allocates a temporary NUL-terminated UTF-8 string for a C API argument.
-     * The caller must keep the supplied arena alive until the native call
-     * returns.
-     */
-    static MemorySegment text(Arena arena, String value) {
-        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
-        MemorySegment result = arena.allocate(bytes.length + 1, 1);
+    /** Encode UTF-8 without substituting for malformed UTF-16. */
+    static byte[] utf8(String value) {
+        try {
+            ByteBuffer encoded = StandardCharsets.UTF_8.newEncoder().encode(CharBuffer.wrap(value));
+            byte[] bytes = new byte[encoded.remaining()];
+            encoded.get(bytes);
+            return bytes;
+        } catch (CharacterCodingException error) {
+            throw new IllegalArgumentException("invalid UTF-16 input", error);
+        }
+    }
+
+    static byte[] copyCString(byte[] value) {
+        byte[] copy = value.clone();
+        for (byte b : copy) {
+            if (b == 0) {
+                throw new IllegalArgumentException("native strings must not contain NUL");
+            }
+        }
+        return copy;
+    }
+
+    static MpqName optionalName(String value) {
+        return value == null ? null : MpqName.ofUtf8(value);
+    }
+
+    static List<MpqName> names(List<String> values) {
+        return values == null ? null : values.stream().map(Support::optionalName).toList();
+    }
+
+    static MemorySegment nullableName(Arena arena, MpqName value) {
+        return value == null ? MemorySegment.NULL : value.marshal(arena);
+    }
+
+    /** Allocate a checked C string for the duration of a synchronous native call. */
+    static MemorySegment cString(Arena arena, byte[] bytes) {
+        MemorySegment result = arena.allocate((long) bytes.length + 1, 1);
         result.asSlice(0, bytes.length).copyFrom(MemorySegment.ofArray(bytes));
         result.set(ValueLayout.JAVA_BYTE, bytes.length, (byte) 0);
         return result;

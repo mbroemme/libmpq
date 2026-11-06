@@ -58,6 +58,51 @@ identities accept only `(0, 0)`. The `Mpq.StormHash` overload probes only
 the classic table. HET/BET lookup requires the filename to compute a separate
 hash.
 
+### Byte-exact names and host paths
+
+The existing `String` methods encode MPQ names, prefixes and source labels as
+strict UTF-8. They reject NUL and unpaired surrogates and preserve the original
+Unicode spelling. Use `MpqName.ofBytes(byte[])` for native spellings that need
+to retain their bytes, including names that aren't UTF-8. The native hashing,
+case and separator rules still apply. The corresponding `…Bytes` methods
+accept `MpqName`, including for lookup, exact selectors, writing, updates,
+name-aware verification and compaction. Use `MpqName.ofUtf8(String)` to pass a
+UTF-8 name to these methods. An optional null name stays null. For a patch
+prefix, null requests inference and an empty `MpqName` explicitly selects root.
+
+```java
+MpqName name = MpqName.ofBytes(new byte[] {'m', (byte) 0xff});
+try (Archive archive = Archive.open(path);
+     MpqStream stream = archive.openStreamBytes(name, 0, 0)) {
+    int count = stream.read(new byte[4096]);
+}
+```
+
+Filesystem paths have a separate encoding policy. Existing `Path` methods
+accept default-filesystem paths, resolve relative paths to absolute paths
+without normalizing their components, and on POSIX check that their UTF-8 bytes
+recreate the same `Path`. A path that fails this check raises
+`IllegalArgumentException` before native filesystem access. Java exposes no
+portable raw-byte accessor on `Path`. For a non-UTF-8 POSIX path, supply the
+original path bytes with `NativePath.ofBytes(byte[])`. Native byte methods
+cover plain and MPQE open/create, transaction and patch factories, and source
+paths for member add and replacement. `NativePath.of(Path)` lets these methods
+combine a checked default-filesystem path with a byte-exact MPQ name.
+
+```java
+NativePath host = NativePath.ofBytes(nativePathBytes);
+try (Archive archive = Archive.openBytes(host, 0)) {
+    long count = archive.fileCount();
+}
+```
+
+Both byte carriers copy their input arrays and reject embedded NUL. On Windows,
+libmpq's C filesystem APIs require UTF-8 and convert it to Win32 wide paths.
+Supply UTF-8 to `NativePath.ofBytes` on Windows. Arbitrary non-UTF-8 Windows
+path bytes or wide paths with unpaired surrogates cannot be represented by
+this native interface. MPQ member names retain their byte semantics regardless
+of the filesystem.
+
 ### Logical member streams
 
 Open an ordinary stream by file number with `openStream(number)`, by

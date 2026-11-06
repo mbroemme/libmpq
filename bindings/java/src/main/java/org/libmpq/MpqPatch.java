@@ -25,13 +25,18 @@ public final class MpqPatch implements AutoCloseable {
 
     /** Begin a patch without modifying its base archive. */
     public static MpqPatch begin(Path baseArchive, Path outputPatch) throws LibmpqException {
+        return beginBytes(NativePath.of(baseArchive), NativePath.of(outputPatch));
+    }
+
+    /** Byte-exact form of {@link #begin(Path, Path)}. */
+    public static MpqPatch beginBytes(NativePath baseArchive, NativePath outputPatch) throws LibmpqException {
         Objects.requireNonNull(baseArchive, "baseArchive");
         Objects.requireNonNull(outputPatch, "outputPatch");
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
             Support.check(LibmpqNative.patchBegin(output,
-                    Support.text(arena, baseArchive.toString()),
-                    Support.text(arena, outputPatch.toString())));
+                    baseArchive.marshal(arena),
+                    outputPatch.marshal(arena)));
             return new MpqPatch(LibmpqNative.getAddress(output));
         }
     }
@@ -39,14 +44,20 @@ public final class MpqPatch implements AutoCloseable {
     /** Begin an MPQE-wrapped patch using caller-supplied authentication bytes. */
     public static MpqPatch beginMpqe(Path baseArchive, Path outputPatch, byte[] authCode)
             throws LibmpqException {
+        return beginMpqeBytes(NativePath.of(baseArchive), NativePath.of(outputPatch), authCode);
+    }
+
+    /** Byte-exact form of {@link #beginMpqe(Path, Path, byte[])}. */
+    public static MpqPatch beginMpqeBytes(NativePath baseArchive, NativePath outputPatch, byte[] authCode)
+            throws LibmpqException {
         Objects.requireNonNull(baseArchive, "baseArchive");
         Objects.requireNonNull(outputPatch, "outputPatch");
         Objects.requireNonNull(authCode, "authCode");
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
             Support.check(LibmpqNative.patchBeginMpqe(output,
-                    Support.text(arena, baseArchive.toString()),
-                    Support.text(arena, outputPatch.toString()),
+                    baseArchive.marshal(arena),
+                    outputPatch.marshal(arena),
                     Support.bytes(arena, authCode), authCode.length));
             return new MpqPatch(LibmpqNative.getAddress(output));
         }
@@ -59,12 +70,16 @@ public final class MpqPatch implements AutoCloseable {
 
     /** Stage bytes with explicit ordinary-member storage options. */
     public void addData(String name, byte[] data, FileOptions options) throws LibmpqException {
+        addDataBytes(MpqName.ofUtf8(name), data, options);
+    }
+
+    /** Byte-exact form of {@link #addData(String, byte[], FileOptions)}. */
+    public void addDataBytes(MpqName name, byte[] data, FileOptions options) throws LibmpqException {
         checkOpen();
         Objects.requireNonNull(name, "name");
-        if (name.indexOf('\0') >= 0) throw new IllegalArgumentException("NUL in name");
         Objects.requireNonNull(data, "data");
         try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.patchAddData(handle, Support.text(arena, name),
+            Support.check(LibmpqNative.patchAddData(handle, name.marshal(arena),
                     Support.bytes(arena, data), data.length, options(arena, options)));
         }
     }
@@ -76,13 +91,17 @@ public final class MpqPatch implements AutoCloseable {
 
     /** Stage a filesystem source with explicit ordinary-member storage options. */
     public void addPath(String name, Path source, FileOptions options) throws LibmpqException {
+        addPathBytes(MpqName.ofUtf8(name), NativePath.of(source), options);
+    }
+
+    /** Byte-exact form of {@link #addPath(String, Path, FileOptions)}. */
+    public void addPathBytes(MpqName name, NativePath source, FileOptions options) throws LibmpqException {
         checkOpen();
         Objects.requireNonNull(name, "name");
-        if (name.indexOf('\0') >= 0) throw new IllegalArgumentException("NUL in name");
         Objects.requireNonNull(source, "source");
         try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.patchAddPath(handle, Support.text(arena, name),
-                    Support.text(arena, source.toString()), options(arena, options)));
+            Support.check(LibmpqNative.patchAddPath(handle, name.marshal(arena),
+                    source.marshal(arena), options(arena, options)));
         }
     }
 
@@ -93,11 +112,16 @@ public final class MpqPatch implements AutoCloseable {
 
     /** Stage bytes with explicit patch-member storage options. */
     public void replaceData(String name, byte[] data, FileOptions options) throws LibmpqException {
+        replaceDataBytes(MpqName.ofUtf8(name), data, options);
+    }
+
+    /** Byte-exact form of {@link #replaceData(String, byte[], FileOptions)}. */
+    public void replaceDataBytes(MpqName name, byte[] data, FileOptions options) throws LibmpqException {
         checkOpen();
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(data, "data");
         try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.patchReplaceData(handle, Support.text(arena, name),
+            Support.check(LibmpqNative.patchReplaceData(handle, name.marshal(arena),
                     Support.bytes(arena, data), data.length, options(arena, options)));
         }
     }
@@ -109,21 +133,31 @@ public final class MpqPatch implements AutoCloseable {
 
     /** Stage a filesystem source with explicit patch-member storage options. */
     public void replacePath(String name, Path source, FileOptions options) throws LibmpqException {
+        replacePathBytes(MpqName.ofUtf8(name), NativePath.of(source), options);
+    }
+
+    /** Byte-exact form of {@link #replacePath(String, Path, FileOptions)}. */
+    public void replacePathBytes(MpqName name, NativePath source, FileOptions options) throws LibmpqException {
         checkOpen();
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(source, "source");
         try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.patchReplacePath(handle, Support.text(arena, name),
-                    Support.text(arena, source.toString()), options(arena, options)));
+            Support.check(LibmpqNative.patchReplacePath(handle, name.marshal(arena),
+                    source.marshal(arena), options(arena, options)));
         }
     }
 
     /** Stage a delete marker for an existing named member. */
     public void remove(String name) throws LibmpqException {
+        removeBytes(MpqName.ofUtf8(name));
+    }
+
+    /** Byte-exact form of {@link #remove(String)}. */
+    public void removeBytes(MpqName name) throws LibmpqException {
         checkOpen();
         Objects.requireNonNull(name, "name");
         try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.patchRemove(handle, Support.text(arena, name)));
+            Support.check(LibmpqNative.patchRemove(handle, name.marshal(arena)));
         }
     }
 

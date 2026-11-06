@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.ByteBuffer;
 import java.nio.channels.SeekableByteChannel;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -36,6 +37,192 @@ import org.libmpq.ffi.LibmpqNative;
  * creation or fixture reading rather than mocking the FFM calls.
  */
 class LibmpqTest {
+    @Test
+    void byteExactPosixPaths(@TempDir Path directory) throws Exception {
+        Assumptions.assumeTrue(System.getProperty("os.name").equals("Linux"));
+        Path rawPath = Path.of(URI.create(directory.toUri() + "raw-%FF.mpq"));
+        Path decoy = directory.resolve("raw-\uFFFD.mpq");
+        assertEquals(decoy.toString(), rawPath.toString());
+        assertFalse(decoy.equals(rawPath));
+
+        byte[] directoryBytes = (directory + "/raw-").getBytes(StandardCharsets.UTF_8);
+        byte[] raw = Arrays.copyOf(directoryBytes, directoryBytes.length + 5);
+        raw[directoryBytes.length] = (byte) 0xff;
+        System.arraycopy(new byte[] {'.', 'm', 'p', 'q'}, 0, raw, directoryBytes.length + 1, 4);
+        NativePath nativePath = NativePath.ofBytes(raw);
+        Arrays.fill(raw, (byte) 0);
+        MpqName member = MpqName.ofUtf8("member");
+        try (Archive writer = Archive.create(decoy, null)) {
+            writer.add("member", new byte[] {42}, null);
+        }
+        byte[] before = Files.readAllBytes(decoy);
+
+        assertThrows(IllegalArgumentException.class, () -> Archive.open(rawPath));
+        assertThrows(IllegalArgumentException.class, () -> Archive.create(rawPath, null));
+        assertThrows(IllegalArgumentException.class, () -> MpqUpdate.begin(rawPath));
+        assertThrows(IllegalArgumentException.class, () -> NativePath.ofBytes(new byte[] {'a', 0}));
+        try (Archive writer = Archive.createBytes(nativePath, null)) {
+            writer.addBytes(member, new byte[] {7}, null);
+        }
+        assertTrue(Files.exists(rawPath));
+        try (MpqUpdate update = MpqUpdate.beginBytes(nativePath)) {
+            assertThrows(IllegalArgumentException.class,
+                () -> update.replacePath("member", rawPath, null));
+            update.replacePathBytes(member, 0, 0, NativePath.of(decoy), null);
+            update.commit();
+        }
+        try (Archive archive = Archive.openBytes(nativePath, 0)) {
+            assertArrayEquals(before, archive.readFile(archive.fileNumberBytes(member)));
+        }
+        assertArrayEquals(before, Files.readAllBytes(decoy));
+
+        byte[] auth = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
+        Path wrapped = Path.of(URI.create(directory.toUri() + "raw-%FE.mpqe"));
+        byte[] wrappedBytes = (directory + "/raw-?.mpqe").getBytes(StandardCharsets.UTF_8);
+        wrappedBytes[wrappedBytes.length - 6] = (byte) 0xfe;
+        NativePath wrappedPath = NativePath.ofBytes(wrappedBytes);
+        try (Archive writer = Archive.createMpqeBytes(wrappedPath, auth, null)) {
+            writer.addBytes(member, new byte[] {55}, null);
+        }
+        assertThrows(IllegalArgumentException.class, () -> Archive.openMpqe(wrapped, auth));
+        try (MpqUpdate update = MpqUpdate.beginMpqeBytes(wrappedPath, auth)) {
+            update.replaceDataBytes(member, new byte[] {71}, null);
+            update.commit();
+        }
+        try (Archive input = Archive.openMpqeBytes(wrappedPath, auth, 0);
+             SeekableByteChannel channel = Files.newByteChannel(wrapped);
+             Archive source = Archive.openMpqeSourceBytes(channel, auth,
+                 MpqName.ofBytes(new byte[] {(byte) 0xfe}), 0)) {
+            for (Archive archive : List.of(input, source)) {
+                assertArrayEquals(new byte[] {71}, archive.readFile(archive.fileNumberBytes(member)));
+            }
+        }
+
+        Path unicode = directory.resolve("space % e\u0301.mpq");
+        Path relative = Path.of("").toAbsolutePath().relativize(unicode);
+        try (Archive writer = Archive.create(relative, null)) {
+            writer.add("member", new byte[] {13}, null);
+        }
+        byte[] plain = Files.readAllBytes(unicode);
+        byte[] embedded = new byte[512 + plain.length];
+        System.arraycopy(plain, 0, embedded, 512, plain.length);
+        Files.write(unicode, embedded);
+        try (Archive archive = Archive.open(relative, 512)) {
+            assertEquals(512, archive.offset());
+            assertArrayEquals(new byte[] {13}, archive.readFile(archive.fileNumber("member")));
+        }
+    }
+
+    @Test
+    void byteExactMemberNames(@TempDir Path directory) throws Exception {
+        byte[] nameBytes = {'r', (byte) 0xff, '.', 'b'};
+        MpqName first = MpqName.ofBytes(nameBytes);
+        MpqName second = MpqName.ofBytes(new byte[] {'r', (byte) 0xfe, '.', 'b'});
+        nameBytes[1] = (byte) 0xfe;
+        assertFalse(Mpq.fileHashBytes(first).equals(Mpq.fileHashBytes(second)));
+        assertThrows(IllegalArgumentException.class, () -> Mpq.fileHash("bad\uD800"));
+        assertThrows(IllegalArgumentException.class, () -> Mpq.fileHash("bad\0name"));
+        assertThrows(IllegalArgumentException.class, () -> MpqName.ofBytes(new byte[] {'r', 0}));
+        assertEquals(Mpq.fileHash("caf\u00e9"), Mpq.fileHashBytes(MpqName.ofUtf8("caf\u00e9")));
+
+        for (int version : new int[] {Mpq.ARCHIVE_VERSION_ONE, Mpq.ARCHIVE_VERSION_FOUR}) {
+            Path path = directory.resolve("names-" + version + ".mpq");
+            boolean classic = version == Mpq.ARCHIVE_VERSION_ONE;
+            int locale = classic ? 1033 : 0;
+            int platform = classic ? 2 : 0;
+            FileOptions encrypted = new FileOptions(
+                Mpq.FILE_FLAG_SINGLE | Mpq.FILE_FLAG_ENCRYPTED | Mpq.FILE_FLAG_KEY,
+                0, 0, locale, platform);
+            byte[] payload = {1, 2, 3, 4, 5, 6, 7, 8};
+            try (Archive writer = Archive.create(path,
+                    new ArchiveCreateOptions(version, 16, 512, 0, Mpq.ATTRIBUTE_MD5))) {
+                writer.addBytes(first, payload, encrypted);
+                try (MpqFileWriter member = writer.beginBytes(second, 1, FileOptions.raw())) {
+                    member.write(new byte[] {99});
+                }
+                writer.add("caf\u00e9", new byte[] {5}, null);
+                assertThrows(IllegalArgumentException.class, () -> writer.add("bad\uDC00", payload, null));
+            }
+            try (SeekableByteChannel channel = Files.newByteChannel(path);
+                 Archive archive = Archive.openSourceBytes(channel, first, 0)) {
+                int number = archive.fileNumberBytes(first);
+                assertEquals(number, archive.fileNumber(Mpq.fileHashBytes(first)));
+                assertEquals(number, archive.fileNumberBytes(first, locale, platform));
+                List<FileIdentity> identities = archive.variantsBytes(first);
+                assertEquals(1, identities.size());
+                if (!classic) {
+                    assertTrue((identities.getFirst().flags() & Mpq.IDENTITY_BET) != 0);
+                }
+                assertArrayEquals(new byte[] {99}, archive.readFile(archive.fileNumberBytes(second)));
+                assertArrayEquals(new byte[] {5}, archive.readFile(archive.fileNumber("caf\u00e9")));
+                assertEquals(Mpq.VERIFY_FILE_MD5,
+                    archive.verifyFileResultBytes(number, Mpq.VERIFY_FILE_MD5, first).checked());
+                assertEquals(Mpq.ERROR_EXIST,
+                    assertThrows(LibmpqException.class, () -> archive.fileNumber("r\uFFFD.b")).code());
+            }
+            try (MpqUpdate update = MpqUpdate.begin(path)) {
+                update.removeBytes(second);
+                update.compactBytes(List.of(first));
+                update.replaceDataBytes(first, locale, platform, new byte[] {8, 6}, encrypted);
+                update.commit();
+            }
+            try (Archive archive = Archive.open(path);
+                 MpqStream stream = archive.openStreamBytes(first, locale, platform)) {
+                byte[] actual = new byte[2];
+                assertEquals(2, stream.read(actual));
+                assertArrayEquals(new byte[] {8, 6}, actual);
+                assertEquals(-1, stream.read(actual));
+            }
+        }
+    }
+
+    @Test
+    void byteExactPatchNamesAndPrefixes(@TempDir Path directory) throws Exception {
+        Path basePath = directory.resolve("base.mpq");
+        Path patchPath = directory.resolve("patch.mpq");
+        MpqName member = MpqName.ofBytes(new byte[] {'m', (byte) 0xff});
+        byte[] before = {1, 2};
+        byte[] after = {3, 4, 5};
+        ArchiveCreateOptions options = new ArchiveCreateOptions(
+            Mpq.ARCHIVE_VERSION_FOUR, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE);
+        try (Archive writer = Archive.create(basePath, options)) {
+            writer.addBytes(member, before, null);
+        }
+        try (MpqPatch author = MpqPatch.beginBytes(NativePath.of(basePath), NativePath.of(patchPath))) {
+            author.replaceDataBytes(member, after, null);
+            author.finish();
+        }
+        try (Archive base = Archive.open(basePath); Archive patch = Archive.open(patchPath);
+             MpqStream stream = base.openPatchStreamBytes(member, 0, 0, List.of(patch),
+                 List.of(MpqName.ofBytes(new byte[0])))) {
+            assertTrue(patch.readPatchPayloadBytes(patch.fileNumberBytes(member), member).length > after.length);
+            byte[] actual = new byte[3];
+            assertEquals(3, stream.read(actual));
+            assertArrayEquals(after, actual);
+        }
+        MpqName prefix = MpqName.ofBytes(new byte[] {'p', (byte) 0xfe});
+        MpqName prefixed = MpqName.ofBytes(new byte[] {'p', (byte) 0xfe, '\\', 'm', (byte) 0xff});
+        byte[] marker = "p-\\(patch_metadata)".getBytes(StandardCharsets.US_ASCII);
+        marker[1] = (byte) 0xfe;
+        try (Archive writer = Archive.create(patchPath, options)) {
+            writer.addBytes(prefixed, after, null);
+            writer.addBytes(MpqName.ofBytes(marker), new byte[] {7}, null);
+        }
+        try (Archive base = Archive.open(basePath); Archive patch = Archive.open(patchPath)) {
+            for (List<MpqName> prefixes : Arrays.asList(Arrays.asList((MpqName) null), List.of(prefix))) {
+                try (Archive view = Archive.openPatchBytes(base, List.of(patch), prefixes);
+                     MpqStream stream = base.openPatchStreamBytes(member, List.of(patch), prefixes)) {
+                    assertArrayEquals(after, view.readFile(view.fileNumberBytes(member)));
+                    byte[] actual = new byte[after.length];
+                    assertEquals(after.length, stream.read(actual));
+                    assertArrayEquals(after, actual);
+                }
+            }
+            assertThrows(LibmpqException.class,
+                () -> Archive.openPatchBytes(base, List.of(patch), List.of(MpqName.ofUtf8(""))));
+        }
+    }
+
     @Test
     void createSinkOwnership(@TempDir Path directory) throws Exception {
         Path path = directory.resolve("sink.mpq");

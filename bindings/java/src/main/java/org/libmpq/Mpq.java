@@ -164,15 +164,21 @@ public final class Mpq {
 
     /**
      * Calculates the three classic Storm hash values for a UTF-8 MPQ
-     * filename. The returned values are stored in Java {@code int}s but must
+     * filename. The input must be valid UTF-16 and contain no NUL. The
+     * returned values are stored in Java {@code int}s but must
      * be treated as unsigned 32-bit values when serialized or compared.
      *
      * @param filename MPQ filename using the archive's Storm hashing rules
      * @return the initial-slot hash and the two stored comparison hashes, in that order
      */
     public static StormHash fileHash(String filename) {
+        return fileHashBytes(MpqName.ofUtf8(filename));
+    }
+
+    /** Byte-exact form of {@link #fileHash(String)}. */
+    public static StormHash fileHashBytes(MpqName filename) {
         try (Arena arena = Arena.ofConfined()) {
-            MemorySegment name = Support.text(arena, filename);
+            MemorySegment name = filename.marshal(arena);
             MemorySegment hash1 = arena.allocate(java.lang.foreign.ValueLayout.JAVA_INT);
             MemorySegment hash2 = arena.allocate(java.lang.foreign.ValueLayout.JAVA_INT);
             MemorySegment hash3 = arena.allocate(java.lang.foreign.ValueLayout.JAVA_INT);
