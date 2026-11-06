@@ -9,7 +9,10 @@
 package org.libmpq;
 
 import java.lang.foreign.Arena;
+import java.lang.foreign.FunctionDescriptor;
+import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -21,15 +24,19 @@ import org.libmpq.ffi.LibmpqNative;
 /** Borrowed channel and upcall lifetime for one writable archive. */
 final class SinkState {
     private final SeekableByteChannel sink;
+    private final Archive.FlushCallback onFlush;
     private final Arena arena = Arena.ofShared();
     final MemorySegment read;
     final MemorySegment write;
+    final MemorySegment flush;
 
-    SinkState(SeekableByteChannel sink, boolean readBack) {
+    SinkState(SeekableByteChannel sink, boolean readBack, Archive.FlushCallback onFlush) {
         try {
             this.sink = Objects.requireNonNull(sink, "sink");
+            this.onFlush = onFlush;
             write = upcall("writeAt");
             read = readBack ? upcall("readAt") : MemorySegment.NULL;
+            flush = onFlush == null ? MemorySegment.NULL : flushUpcall();
         } catch (ReflectiveOperationException error) {
             arena.close();
             throw new IllegalStateException("Unable to create libmpq sink callbacks", error);
@@ -45,6 +52,23 @@ final class SinkState {
                                                          MemorySegment.class, long.class)
         ).bindTo(this);
         return LibmpqNative.sinkTransferUpcall(target, arena);
+    }
+
+    private MemorySegment flushUpcall() throws ReflectiveOperationException {
+        MethodHandle target = MethodHandles.lookup().findVirtual(
+            SinkState.class, "flushSink", MethodType.methodType(int.class, MemorySegment.class)
+        ).bindTo(this);
+        return Linker.nativeLinker().upcallStub(target,
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS), arena);
+    }
+
+    private int flushSink(MemorySegment context) {
+        try {
+            onFlush.flush();
+            return 0;
+        } catch (Throwable error) {
+            return Mpq.ERROR_CLOSE;
+        }
     }
 
     void release() {

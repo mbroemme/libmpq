@@ -681,9 +681,32 @@ empty seekable channel that provides zero-filled gaps. Set `readBack` to
 true only for a readable channel. V4 and signing require it. The adapter
 performs exact positioned transfers and keeps the channel open through
 archive close and afterward. Use try-with-resources for checked archive
-finalization. The caller may flush, publish or close the channel separately.
+finalization. This overload supplies no native flush callback. The caller
+may flush, publish or close the channel separately.
 Failed output may contain partial bytes. Oversized SINGLE still buffers
 the complete input unit.
+
+The overloads `createSink(channel, readBack, options, flush)` and
+`createMpqeSink(channel, authCode, options, flush)` accept an optional
+`Archive.FlushCallback`. Native close calls it synchronously once after
+successful final writes. An earlier finalization failure skips the callback.
+Use it to flush, synchronize or finalize application-managed sink state.
+The callback must not re-enter the writer. An exception from the callback
+makes archive close throw `LibmpqException` with `Mpq.ERROR_CLOSE`. Close
+consumes the archive even on error and leaves the channel caller-owned.
+Passing `null` gives the same behavior as the overloads without a callback.
+
+For example, when the application owns a `FileChannel` and chooses to force
+its writes:
+
+```java
+try (Archive writer = Archive.createSink(fileChannel, true, options,
+        () -> fileChannel.force(true))) {
+    writer.add("payload.bin", payload, FileOptions.raw());
+}
+```
+
+The binding leaves persistence to the application.
 
 ### Writing MPQE to a channel
 

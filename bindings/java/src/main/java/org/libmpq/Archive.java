@@ -8,6 +8,7 @@
  */
 package org.libmpq;
 
+import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -330,11 +331,34 @@ public final class Archive implements AutoCloseable {
     /**
      * Creates an archive in a borrowed, initially empty seekable channel.
      * The channel must supply zero-filled gaps. V4 and signing require readBack.
-     * The caller closes or flushes the channel after successful archive close.
+     * The caller manages flushing and closing the channel.
      */
     public static Archive createSink(SeekableByteChannel sink, boolean readBack, ArchiveCreateOptions options)
         throws LibmpqException {
         return createSink(sink, readBack, options, null);
+    }
+
+    /**
+     * Performs the caller's final sink operation during native archive close.
+     * The callback runs synchronously after successful output and must not re-enter
+     * the writer. A callback exception makes close report {@link Mpq#ERROR_CLOSE}.
+     */
+    @FunctionalInterface
+    public interface FlushCallback {
+        /** Flushes or finalizes application-managed sink state. */
+        void flush() throws IOException;
+    }
+
+    /**
+     * Creates an archive in a borrowed, initially empty seekable channel.
+     * The channel must supply zero-filled gaps. V4 and signing require readBack.
+     * Native close invokes a nonnull flush callback once after the final writes
+     * succeed. The caller retains ownership of the channel.
+     */
+    public static Archive createSink(SeekableByteChannel sink, boolean readBack,
+                                     ArchiveCreateOptions options, FlushCallback flush)
+        throws LibmpqException {
+        return createSinkInternal(sink, readBack, options, null, flush);
     }
 
     /** Creates an MPQE transport at close. The borrowed channel needs only write access. */
@@ -342,18 +366,31 @@ public final class Archive implements AutoCloseable {
     createMpqeSink(SeekableByteChannel sink, byte[] authCode, ArchiveCreateOptions options)
         throws LibmpqException
     {
-        return createSink(sink, false, options, Objects.requireNonNull(authCode, "authCode"));
+        return createMpqeSink(sink, authCode, options, null);
     }
 
-    private static Archive createSink(
-        SeekableByteChannel sink, boolean readBack, ArchiveCreateOptions options, byte[] authCode
+    /**
+     * Creates an MPQE transport at close over a borrowed write-only channel.
+     * Native close invokes a nonnull flush callback once after successful transport output.
+     * The caller retains ownership of the channel.
+     */
+    public static Archive createMpqeSink(SeekableByteChannel sink, byte[] authCode,
+                                         ArchiveCreateOptions options, FlushCallback flush)
+        throws LibmpqException {
+        return createSinkInternal(sink, false, options, Objects.requireNonNull(authCode, "authCode"),
+                                  flush);
+    }
+
+    private static Archive createSinkInternal(
+        SeekableByteChannel sink, boolean readBack, ArchiveCreateOptions options, byte[] authCode,
+        FlushCallback flush
     ) throws LibmpqException
     {
         if (options == null) {
             options = ArchiveCreateOptions.defaults();
         }
         Archive archive = new Archive(MemorySegment.NULL);
-        SinkState state = new SinkState(sink, readBack);
+        SinkState state = new SinkState(sink, readBack, flush);
         boolean success = false;
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(ValueLayout.ADDRESS);
@@ -364,12 +401,12 @@ public final class Archive implements AutoCloseable {
                                             options.flags(), options.attributes());
             if (authCode == null) {
                 Support.check(LibmpqNative.archiveCreateIo(
-                    output, MemorySegment.NULL, state.read, state.write, MemorySegment.NULL,
+                    output, MemorySegment.NULL, state.read, state.write, state.flush,
                     nativeOptions
                 ));
             } else {
                 Support.check(LibmpqNative.archiveCreateMpqeIo(
-                    output, MemorySegment.NULL, MemorySegment.NULL, state.write, MemorySegment.NULL,
+                    output, MemorySegment.NULL, MemorySegment.NULL, state.write, state.flush,
                     Support.bytes(arena, authCode), authCode.length, nativeOptions
                 ));
             }

@@ -20,6 +20,7 @@ import java.nio.channels.SeekableByteChannel;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Arrays;
@@ -110,6 +111,91 @@ class LibmpqTest {
             assertThrows(LibmpqException.class, writer::close);
             assertTrue(channel.isOpen());
             writer.close();
+        }
+    }
+
+    private static Archive createFlushTestSink(SeekableByteChannel channel, byte[] code,
+                                               Archive.FlushCallback flush) throws LibmpqException {
+        var options = new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_FOUR, 32, 4096, 0, 0);
+        return code == null ? Archive.createSink(channel, true, options, flush)
+                            : Archive.createMpqeSink(channel, code, options, flush);
+    }
+
+    @Test
+    void sinkFlushRunsAfterNativeWrites(@TempDir Path directory) throws Exception {
+        byte[] payload = "flush ordering".repeat(6400).getBytes(StandardCharsets.US_ASCII);
+        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
+        for (boolean wrapped : new boolean[] {false, true}) {
+            Path path = directory.resolve(wrapped ? "flush.mpqe" : "flush.mpq");
+            try (var channel = new FailingChannel(wrapped
+                    ? Files.newByteChannel(path, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
+                    : Files.newByteChannel(path, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE,
+                                           StandardOpenOption.READ))) {
+                channel.fail = wrapped;
+                channel.position(7);
+                int[] observed = new int[2];
+                long[] positionAtFlush = {-1};
+                Archive writer = createFlushTestSink(channel, wrapped ? code : null, () -> {
+                    observed[0]++;
+                    observed[1] = channel.writeCalls;
+                    positionAtFlush[0] = channel.position();
+                });
+                int writesBeforeClose;
+                try (writer) {
+                    writer.setRawChunkSize(4096);
+                    writer.add("payload", payload, FileOptions.raw());
+                    writesBeforeClose = channel.writeCalls;
+                    if (wrapped) assertEquals(0, writesBeforeClose);
+                    assertEquals(0, observed[0]);
+                    assertEquals(7, channel.position());
+                }
+                assertEquals(1, observed[0]);
+                assertTrue(observed[1] > writesBeforeClose);
+                assertEquals(channel.writeCalls, observed[1]);
+                assertEquals(7, positionAtFlush[0]);
+                assertEquals(7, channel.position());
+                assertTrue(channel.isOpen());
+                assertEquals(wrapped, channel.readCalls == 0);
+                writer.close();
+                assertEquals(1, observed[0]);
+                assertEquals(observed[1], channel.writeCalls);
+            }
+            try (Archive reader = wrapped ? Archive.openMpqe(path, code) : Archive.open(path)) {
+                assertArrayEquals(payload, reader.readFile(reader.fileNumber("payload")));
+            }
+        }
+    }
+
+    @Test
+    void sinkFlushErrorsAndEarlierWriteFailure(@TempDir Path directory) throws Exception {
+        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
+        for (boolean wrapped : new boolean[] {false, true}) {
+            for (boolean failWrites : new boolean[] {false, true}) {
+                Path path = directory.resolve("failed-flush-" + wrapped + "-" + failWrites);
+                try (var channel = new FailingChannel(Files.newByteChannel(path,
+                        StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, StandardOpenOption.READ))) {
+                    channel.fail = false;
+                    channel.position(7);
+                    int[] flushes = new int[1];
+                    Archive writer = createFlushTestSink(channel, wrapped ? code : null, () -> {
+                        flushes[0]++;
+                        throw new IOException("controlled flush failure");
+                    });
+                    try (writer) {
+                        writer.add("payload", new byte[] {1, 2, 3}, FileOptions.raw());
+                        channel.failWrites = failWrites;
+                        LibmpqException error = assertThrows(LibmpqException.class, writer::close);
+                        assertEquals(failWrites ? Mpq.ERROR_WRITE : Mpq.ERROR_CLOSE, error.code());
+                        assertEquals(failWrites ? 0 : 1, flushes[0]);
+                        int writes = channel.writeCalls;
+                        writer.close();
+                        assertEquals(failWrites ? 0 : 1, flushes[0]);
+                        assertEquals(writes, channel.writeCalls);
+                        assertEquals(7, channel.position());
+                        assertTrue(channel.isOpen());
+                    }
+                }
+            }
         }
     }
 
@@ -1570,16 +1656,20 @@ class LibmpqTest {
     private static final class FailingChannel implements SeekableByteChannel {
         private final SeekableByteChannel delegate;
         private boolean fail = true;
+        private boolean failWrites;
+        private int readCalls;
         private int writeCalls;
         private int largestWrite;
 
         FailingChannel(SeekableByteChannel delegate) { this.delegate = delegate; }
         @Override public int read(ByteBuffer target) throws IOException {
+            readCalls++;
             if (fail) throw new IOException("failure");
             return delegate.read(target);
         }
         @Override public int write(ByteBuffer source) throws IOException {
             writeCalls++;
+            if (failWrites) throw new IOException("write failure");
             largestWrite = Math.max(largestWrite, source.remaining());
             return delegate.write(source);
         }
