@@ -860,6 +860,79 @@ def test_version_errors_and_hashes():
                 version, mpq.COMPRESSION_SPARSE | mpq.COMPRESSION_WAVE_MONO, policy)
 
 
+def test_file_number_from_hash_classic():
+    hashes = mpq.file_hash("overview.txt")
+    with mpq.Archive(FIXTURES / "mpq-v1-features.mpq") as archive:
+        expected = archive.file_number("overview.txt")
+        number = archive.file_number_from_hash(hashes)
+        assert type(number) is int and number == expected
+        assert archive.file_number_from_hash(hashes) == expected
+        assert archive.file_number_from_hash(list(hashes)) == expected
+        with pytest.raises(mpq.LibmpqNotFoundError) as error:
+            archive.file_number_from_hash(mpq.file_hash("no-such-member.bin"))
+        assert error.value.code == mpq.ERROR_EXIST
+
+
+def test_file_number_from_hash_mixed_tables():
+    with mpq.Archive(FIXTURES / "mpq-v3-features.mpq") as archive:
+        assert archive.file_number_from_hash(mpq.file_hash("overview.txt")) == (
+            archive.file_number("overview.txt")
+        )
+        (identity,) = archive.variants("zero.bin")
+        assert identity.flags == mpq.IDENTITY_BET
+        assert archive.file_number("zero.bin") == identity.file_number
+        assert archive.file_number("zero.bin", locale=0, platform=0) == identity.file_number
+        with pytest.raises(mpq.LibmpqNotFoundError) as error:
+            archive.file_number_from_hash(mpq.file_hash("zero.bin"))
+        assert error.value.code == mpq.ERROR_EXIST
+
+
+def test_file_number_from_hash_without_classic_tables():
+    wire = bytearray((FIXTURES / "mpq-v3-features.mpq").read_bytes())
+    # The fixture stores HET/BET before the two classic tables at the end.
+    classic_start, = struct.unpack_from("<I", wire, 16)
+    del wire[classic_start:]
+    # Clear classic offsets/counts and update both declared archive sizes.
+    struct.pack_into("<IIIIQHH", wire, 16, 0, 0, 0, 0, 0, 0, 0)
+    struct.pack_into("<I", wire, 8, len(wire))
+    struct.pack_into("<Q", wire, 44, len(wire))
+    with mpq.Archive.open_io(io.BytesIO(wire), len(wire)) as archive:
+        (identity,) = archive.variants("overview.txt")
+        assert identity.flags == mpq.IDENTITY_BET
+        assert archive.file_number("overview.txt") == identity.file_number
+        with pytest.raises(mpq.LibmpqNotFoundError) as error:
+            archive.file_number_from_hash(mpq.file_hash("overview.txt"))
+        assert error.value.code == mpq.ERROR_EXIST
+
+
+@pytest.mark.parametrize("hashes,error", [
+    ((), ValueError),
+    ((1, 2), ValueError),
+    ([1, 2, 3, 4], ValueError),
+    ((-1, 2, 3), ValueError),
+    ((1, 0x100000000, 3), ValueError),
+    ((1, 2, 3.0), TypeError),
+    ((1, "2", 3), TypeError),
+    (b"abc", TypeError),
+    ("123", TypeError),
+    ({1: 0, 2: 0, 3: 0}, TypeError),
+    (None, TypeError),
+])
+def test_file_number_from_hash_invalid_input(hashes, error):
+    with mpq.Archive(FIXTURES / "mpq-v1-features.mpq") as archive:
+        with pytest.raises(error) as caught:
+            archive.file_number_from_hash(hashes)
+        assert type(caught.value) is error
+
+
+def test_file_number_from_hash_closed_archive():
+    archive = mpq.Archive(FIXTURES / "mpq-v1-features.mpq")
+    archive.close()
+    with pytest.raises(mpq.LibmpqStateError) as error:
+        archive.file_number_from_hash(mpq.file_hash("overview.txt"))
+    assert error.value.code == mpq.ERROR_NOT_INITIALIZED
+
+
 def test_wheel_uses_bundled_library():
     """Wheel tests must load the private library shipped in mpq_libs."""
     if not os.environ.get("LIBMPQ_EXPECT_BUNDLED"):

@@ -74,10 +74,17 @@ source that presents the embedded MPQ bytes at a known position, use
 `Archive.file_number(name)` tries HET/BET when present and falls back to
 classic lookup on a miss. Supplying `locale` and `platform` selects an exact
 identity through classic or supported HET/BET metadata. HET/BET-only
-identities accept only `(0, 0)`. `mpq.file_hash(name)` computes the three
-classic Storm hashes. Lookup by those hashes is available only through the
-low-level ctypes registration of `libmpq__file_number_from_hash()`. HET/BET
-lookup requires the filename to compute a separate hash.
+identities accept only `(0, 0)`. For precomputed classic Storm hashes, pass the
+three unsigned 32-bit values in `mpq.file_hash()` order:
+
+```python
+hashes = mpq.file_hash("overview.txt")
+number = archive.file_number_from_hash(hashes)
+```
+
+`file_number_from_hash()` probes the classic hash table. A missing table or
+entry raises `LibmpqNotFoundError` (`ERROR_EXIST`). Filename-based
+`file_number()` can still resolve members reachable only through HET/BET.
 
 ### Logical member streams
 

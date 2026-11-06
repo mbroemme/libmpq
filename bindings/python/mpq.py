@@ -17,6 +17,7 @@ import os
 import operator
 import sys
 import threading
+from collections.abc import Sequence as _Sequence
 from dataclasses import dataclass
 
 ERROR_OPEN = -1
@@ -1704,6 +1705,24 @@ class Archive:
         number = ctypes.c_uint32()
         _identity_call("libmpq__file_number", _identity_selection(locale, platform), self._mpq, _as_bytes(name), ctypes.byref(number))
         return number.value
+
+    def file_number_from_hash(self, hashes):
+        """Return a canonical file number using the classic hash table.
+
+        Supply a sequence of three unsigned 32-bit integers in file_hash() order.
+        Missing classic entries or tables raise LibmpqNotFoundError.
+        Use file_number() for filename-based HET/BET lookup.
+        """
+        self._ensure_open()
+        if not isinstance(hashes, _Sequence) or isinstance(hashes, (str, bytes, bytearray)):
+            raise TypeError("hashes must be a sequence of integers")
+        if len(hashes) != 3:
+            raise ValueError("hashes must contain exactly three values")
+        values = tuple(operator.index(hashes[index]) for index in range(3))
+        if any(not 0 <= value <= 0xffffffff for value in values):
+            raise ValueError("hash values must fit uint32_t")
+        return _read_value(libmpq.libmpq__file_number_from_hash, ctypes.c_uint32,
+                           self._mpq, *values)
 
     def variants(self, name):
         """Return immutable identities in native slot order, without fallback."""
