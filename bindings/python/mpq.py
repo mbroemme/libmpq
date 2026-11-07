@@ -204,12 +204,31 @@ _ERROR_TYPES = {
 }
 
 
-def _raw_chunk_size(value):
-    """Validate a raw policy without allowing ctypes integer truncation."""
-    size = operator.index(value)
-    if not 0 <= size <= 0xffffffff:
-        raise ValueError("raw chunk size must fit uint32_t")
-    return size
+_INTEGER_RANGES = {
+    _OFF_T: (-(1 << 63), (1 << 63) - 1),
+    ctypes.c_int32: (-(1 << 31), (1 << 31) - 1),
+    ctypes.c_uint16: (0, (1 << 16) - 1),
+    ctypes.c_uint32: (0, (1 << 32) - 1),
+    ctypes.c_uint64: (0, (1 << 64) - 1),
+}
+# size_t may alias one of the unsigned integer types above.
+_INTEGER_RANGES[ctypes.c_size_t] = (0, (1 << (8 * ctypes.sizeof(ctypes.c_size_t))) - 1)
+
+
+def _checked_int(value, ctype, name, *, minimum=None, error=ValueError):
+    """Convert an integer argument without allowing ctypes to narrow it."""
+    value = operator.index(value)
+    lower, upper = _INTEGER_RANGES[ctype]
+    if minimum is not None:
+        lower = minimum
+    if not lower <= value <= upper:
+        raise error("{} must be in native integer range".format(name))
+    return value
+
+
+def _callback_range(offset, size, extent):
+    """Check a native callback range before touching a Python buffer or source."""
+    return 0 <= offset <= extent and 0 <= size <= min(sys.maxsize, extent - offset)
 
 
 def _as_bytes(value):
@@ -232,7 +251,7 @@ def _auth_code_bytes(value):
 
 def strerror(code):
     """Return libmpq's static diagnostic text for a native return code."""
-    return _decode(libmpq.libmpq__strerror(int(code)))
+    return _decode(libmpq.libmpq__strerror(_checked_int(code, ctypes.c_int32, "status code")))
 
 
 def _check_error(result, function, arguments):
@@ -384,17 +403,22 @@ _configure("libmpq__block_read", ctypes.c_int32, _VOID_PTR, ctypes.c_uint32, cty
 
 def _sign_with_key(native_function, handle, signature_type, private_key):
     """Pass a temporary raw key to the existing native signer."""
+    signature_type = _checked_int(signature_type, ctypes.c_uint32, "signature type")
     key = bytes(private_key)
-    pointer = (ctypes.c_uint8 * len(key)).from_buffer_copy(key)
+    size = _checked_int(len(key), ctypes.c_size_t, "private key size")
+    pointer = (ctypes.c_uint8 * size).from_buffer_copy(key)
     try:
-        native_function(handle, signature_type, pointer, len(key))
+        native_function(handle, signature_type, pointer, size)
     finally:
-        ctypes.memset(pointer, 0, len(key))
+        ctypes.memset(pointer, 0, size)
 
 
 def archive_compression_allowed(archive_version, compression_mask, policy=COMPRESSION_POLICY_STANDARD):
     """Query whether writer compression is allowed using zero-based version and policy selectors."""
-    return bool(libmpq.libmpq__archive_compression_allowed(archive_version, compression_mask, policy))
+    return bool(libmpq.libmpq__archive_compression_allowed(
+        _checked_int(archive_version, ctypes.c_uint32, "archive version"),
+        _checked_int(compression_mask, ctypes.c_uint32, "compression mask"),
+        _checked_int(policy, ctypes.c_int32, "compression policy")))
 
 
 def version():
@@ -420,6 +444,11 @@ class ArchiveCreateOptions(ctypes.Structure):
     """
 
     _fields_ = [("version", ctypes.c_uint32), ("max_files", ctypes.c_uint32), ("sector_size", ctypes.c_uint32), ("flags", ctypes.c_uint32), ("attributes", ctypes.c_uint32)]
+
+    def __setattr__(self, name, value):
+        if name in ("version", "max_files", "sector_size", "flags", "attributes"):
+            value = _checked_int(value, ctypes.c_uint32, name)
+        super().__setattr__(name, value)
 
     @classmethod
     def defaults(cls):
@@ -457,16 +486,20 @@ class FileIdentity:
 
 
 def _identity_selector(value):
-    value = operator.index(value)
-    if not 0 <= value <= 0xffff:
-        raise ValueError("identity selector must fit uint16_t")
-    return value
+    return _checked_int(value, ctypes.c_uint16, "identity selector")
 
 
 class FileCreateOptions(ctypes.Structure):
     """Native options controlling file flags, codecs, locale, and platform."""
 
     _fields_ = [("flags", ctypes.c_uint32), ("compression_first", ctypes.c_uint32), ("compression_next", ctypes.c_uint32), ("locale", ctypes.c_uint16), ("platform", ctypes.c_uint16)]
+
+    def __setattr__(self, name, value):
+        if name in ("flags", "compression_first", "compression_next"):
+            value = _checked_int(value, ctypes.c_uint32, name)
+        elif name in ("locale", "platform"):
+            value = _checked_int(value, ctypes.c_uint16, name)
+        super().__setattr__(name, value)
 
     @classmethod
     def raw(cls):
@@ -527,11 +560,12 @@ class Update:
         archive or guarantee detection of an incorrect authentication code.
         """
         code = _auth_code_bytes(auth_code)
-        pointer = (ctypes.c_uint8 * len(code)).from_buffer_copy(code) if code else None
+        code_size = _checked_int(len(code), ctypes.c_size_t, "authentication code size")
+        pointer = (ctypes.c_uint8 * code_size).from_buffer_copy(code) if code else None
         update = cls.__new__(cls)
         update._update = _VOID_PTR()
         libmpq.libmpq__update_begin_mpqe(
-            ctypes.byref(update._update), _as_bytes(path), pointer, len(code)
+            ctypes.byref(update._update), _as_bytes(path), pointer, code_size
         )
         return update
 
@@ -559,22 +593,22 @@ class Update:
         self._ensure_open()
         selected = _identity_selection(locale, platform)
         entries = tuple(ranges)
-        native = (_ReplaceRange * len(entries))()
+        count = _checked_int(len(entries), ctypes.c_size_t, "range count")
+        native = (_ReplaceRange * count)()
         buffers = []
         for index, (offset, data) in enumerate(entries):
-            offset = operator.index(offset)
-            if not -(1 << 63) <= offset < (1 << 63):
-                raise OverflowError("range offset must fit a signed 64-bit integer")
+            offset = _checked_int(offset, _OFF_T, "range offset", error=OverflowError)
             with memoryview(data) as view:
-                if view.nbytes:
+                size = _checked_int(view.nbytes, ctypes.c_size_t, "range size")
+                if size:
                     data = view if view.c_contiguous else view.tobytes()
-                    buffer = (ctypes.c_uint8 * view.nbytes).from_buffer_copy(data)
+                    buffer = (ctypes.c_uint8 * size).from_buffer_copy(data)
                     buffers.append(buffer)
-                    native[index] = _ReplaceRange(offset, buffer, view.nbytes)
+                    native[index] = _ReplaceRange(offset, buffer, size)
                 else:
                     native[index] = _ReplaceRange(offset, None, 0)
         _identity_call("libmpq__update_replace_ranges", selected, self._update,
-                       _as_bytes(name), native if entries else None, len(entries))
+                       _as_bytes(name), native if entries else None, count)
 
     def add_data(self, name, data, options=None):
         """Stage a new member; duplicate names fail without changing the transaction."""
@@ -586,13 +620,14 @@ class Update:
         view = memoryview(data)
         try:
             view = view.cast("B")
+            size = _checked_int(len(view), _OFF_T, "data size")
             if view.readonly:
-                buffer = (ctypes.c_uint8 * len(view)).from_buffer_copy(view)
+                buffer = (ctypes.c_uint8 * size).from_buffer_copy(view)
             else:
-                buffer = (ctypes.c_uint8 * len(view)).from_buffer(view)
+                buffer = (ctypes.c_uint8 * size).from_buffer(view)
             operation(
-                self._update, _as_bytes(name), buffer if len(view) else None,
-                len(view), native_options
+                self._update, _as_bytes(name), buffer if size else None,
+                size, native_options
             )
         finally:
             view.release()
@@ -628,8 +663,9 @@ class Update:
         if isinstance(filenames, (str, bytes, os.PathLike)):
             raise TypeError("filenames must be an iterable of filenames")
         values = tuple(filenames)
-        pointer_limit = ctypes.c_size_t(-1).value // ctypes.sizeof(ctypes.c_char_p)
-        if len(values) > min(0xffffffff, pointer_limit):
+        count = _checked_int(len(values), ctypes.c_size_t, "filename count")
+        pointer_limit = _INTEGER_RANGES[ctypes.c_size_t][1] // ctypes.sizeof(ctypes.c_char_p)
+        if count > min(0xffffffff, pointer_limit):
             raise ValueError("filename count is not representable")
         encoded = []
         for value in values:
@@ -639,14 +675,13 @@ class Update:
             if not name or b"\0" in name:
                 raise ValueError("filenames must be nonempty and contain no NUL")
             encoded.append(name)
-        names = (ctypes.c_char_p * len(encoded))(*encoded) if encoded else None
-        libmpq.libmpq__update_compact_ex(self._update, names, len(encoded))
+        names = (ctypes.c_char_p * count)(*encoded) if encoded else None
+        libmpq.libmpq__update_compact_ex(self._update, names, count)
 
     def timestamp(self, name, filetime, *, locale=None, platform=None):
         """Set an existing unsigned Windows FILETIME without changing the payload."""
         self._ensure_open()
-        if not isinstance(filetime, int) or not 0 <= filetime <= 0xffffffffffffffff:
-            raise ValueError("filetime must be an unsigned 64-bit integer")
+        filetime = _checked_int(filetime, ctypes.c_uint64, "filetime")
         selected = _identity_selection(locale, platform)
         if selected is None:
             libmpq.libmpq__update_timestamp(self._update, _as_bytes(name), filetime)
@@ -732,12 +767,13 @@ class Patch:
     def begin_mpqe(cls, base_archive, output_patch, auth_code):
         """Begin creating an MPQE-wrapped patch with caller-supplied authentication."""
         code = _auth_code_bytes(auth_code)
-        pointer = (ctypes.c_uint8 * len(code)).from_buffer_copy(code) if code else None
+        code_size = _checked_int(len(code), ctypes.c_size_t, "authentication code size")
+        pointer = (ctypes.c_uint8 * code_size).from_buffer_copy(code) if code else None
         patch = cls.__new__(cls)
         patch._patch = _VOID_PTR()
         libmpq.libmpq__patch_begin_mpqe(
             ctypes.byref(patch._patch), _as_bytes(base_archive), _as_bytes(output_patch),
-            pointer, len(code)
+            pointer, code_size
         )
         return patch
 
@@ -755,15 +791,14 @@ class Patch:
         view = memoryview(data)
         try:
             view = view.cast("B")
-            if len(view) > (1 << 63) - 1:
-                raise OverflowError("data exceeds native offset range")
+            size = _checked_int(len(view), _OFF_T, "data size")
             if view.readonly:
-                buffer = (ctypes.c_uint8 * len(view)).from_buffer_copy(view)
+                buffer = (ctypes.c_uint8 * size).from_buffer_copy(view)
             else:
-                buffer = (ctypes.c_uint8 * len(view)).from_buffer(view)
+                buffer = (ctypes.c_uint8 * size).from_buffer(view)
             libmpq.libmpq__patch_add_data(
-                self._patch, encoded_name, buffer if len(view) else None,
-                len(view), native_options
+                self._patch, encoded_name, buffer if size else None,
+                size, native_options
             )
         finally:
             view.release()
@@ -785,13 +820,14 @@ class Patch:
         view = memoryview(data)
         try:
             view = view.cast("B")
+            size = _checked_int(len(view), _OFF_T, "data size")
             if view.readonly:
-                buffer = (ctypes.c_uint8 * len(view)).from_buffer_copy(view)
+                buffer = (ctypes.c_uint8 * size).from_buffer_copy(view)
             else:
-                buffer = (ctypes.c_uint8 * len(view)).from_buffer(view)
+                buffer = (ctypes.c_uint8 * size).from_buffer(view)
             libmpq.libmpq__patch_replace_data(
-                self._patch, _as_bytes(name), buffer if len(view) else None,
-                len(view), native_options
+                self._patch, _as_bytes(name), buffer if size else None,
+                size, native_options
             )
         finally:
             view.release()
@@ -820,7 +856,7 @@ class Patch:
     def raw_chunk_size(self, size):
         """Configure the patch's v4 writer before any member begins or signing succeeds."""
         self._ensure_open()
-        libmpq.libmpq__patch_raw_chunk_size_set(self._patch, _raw_chunk_size(size))
+        libmpq.libmpq__patch_raw_chunk_size_set(self._patch, _checked_int(size, ctypes.c_uint32, "raw chunk size"))
 
     def sign(self, private_key, signature_type=SIGNATURE_WEAK):
         """Configure weak or strong signing without consuming the patch."""
@@ -930,28 +966,27 @@ class WriterFile:
 
     def __init__(self, archive, name, size, options):
         """Begin a fixed-size file stream using copied storage options."""
-        if size < 0:
-            raise ValueError("size must not be negative")
+        size = _checked_int(size, _OFF_T, "member size", minimum=0)
         self._archive, self._writer = archive, _VOID_PTR()
-        self.expected_size, self.written_size = int(size), 0
+        self.expected_size, self.written_size = size, 0
         libmpq.libmpq__writer_begin(archive._mpq, _as_bytes(name), size, ctypes.byref(options), ctypes.byref(self._writer))
 
     def timestamp(self, filetime):
         """Set unsigned Windows FILETIME, not Unix time; generation must be enabled."""
         self._ensure_open()
-        if not isinstance(filetime, int) or not 0 <= filetime <= 0xffffffffffffffff:
-            raise ValueError("filetime must be an unsigned 64-bit integer")
+        filetime = _checked_int(filetime, ctypes.c_uint64, "filetime")
         libmpq.libmpq__writer_timestamp(self._writer, filetime)
 
     def write(self, data):
         """Append bytes and reject writes beyond the declared logical size."""
         self._ensure_open()
         data = bytes(data)
-        if len(data) > self.expected_size - self.written_size:
+        size = _checked_int(len(data), _OFF_T, "write size")
+        if size > self.expected_size - self.written_size:
             raise ValueError("write exceeds declared file size")
-        pointer = None if not data else (ctypes.c_uint8 * len(data)).from_buffer_copy(data)
-        libmpq.libmpq__writer_write(self._writer, pointer, len(data))
-        self.written_size += len(data)
+        pointer = None if not data else (ctypes.c_uint8 * size).from_buffer_copy(data)
+        libmpq.libmpq__writer_write(self._writer, pointer, size)
+        self.written_size += size
 
     def finish(self):
         """Finalize the stream; native state becomes invalid even on failure."""
@@ -1002,15 +1037,22 @@ class _SinkState:
 
     def _write_at(self, context, offset, buffer, size):
         try:
-            if not self.abandoned and self.sink.write_at(offset, ctypes.string_at(buffer, size)) == size:
-                return 0
+            if not self.abandoned and _callback_range(offset, size, _INTEGER_RANGES[_OFF_T][1]):
+                # ctypes.string_at() takes C int and can narrow a size_t request.
+                data = b""
+                if size:
+                    address = ctypes.addressof(buffer.contents)
+                    data = bytes((ctypes.c_uint8 * size).from_address(address))
+                written = self.sink.write_at(offset, data)
+                if operator.index(written) == size:
+                    return 0
         except BaseException:
             pass
         return ERROR_WRITE
 
     def _read_at(self, context, offset, buffer, size):
         try:
-            if not self.abandoned:
+            if not self.abandoned and _callback_range(offset, size, _INTEGER_RANGES[_OFF_T][1]):
                 data = memoryview(self.sink.read_at(offset, size)).tobytes()
                 if len(data) == size:
                     ctypes.memmove(buffer, data, size)
@@ -1066,10 +1108,11 @@ class Writer:
                     ctypes.byref(options),
                 )
             else:
-                pointer = (ctypes.c_uint8 * len(code)).from_buffer_copy(code) if code else None
+                code_size = _checked_int(len(code), ctypes.c_size_t, "authentication code size")
+                pointer = (ctypes.c_uint8 * code_size).from_buffer_copy(code) if code else None
                 libmpq.libmpq__archive_create_mpqe_io(
                     ctypes.byref(writer._mpq), None, state.read, state.write, state.flush,
-                    pointer, len(code), ctypes.byref(options),
+                    pointer, code_size, ctypes.byref(options),
                 )
         except BaseException:
             state.release()
@@ -1082,12 +1125,13 @@ class Writer:
                     max_files=0, sector_size=0, flags=0, attributes=0):
         """Create an MPQE-wrapped archive using caller-supplied authentication bytes."""
         code = _auth_code_bytes(auth_code)
+        code_size = _checked_int(len(code), ctypes.c_size_t, "authentication code size")
         options = ArchiveCreateOptions(version, max_files, sector_size, flags, attributes)
         writer = cls.__new__(cls)
         writer._mpq = _VOID_PTR()
-        pointer = (ctypes.c_uint8 * len(code)).from_buffer_copy(code) if code else None
+        pointer = (ctypes.c_uint8 * code_size).from_buffer_copy(code) if code else None
         libmpq.libmpq__archive_create_mpqe(
-            ctypes.byref(writer._mpq), _as_bytes(filename), pointer, len(code), ctypes.byref(options)
+            ctypes.byref(writer._mpq), _as_bytes(filename), pointer, code_size, ctypes.byref(options)
         )
         writer.filename, writer._opened = filename, True
         return writer
@@ -1104,14 +1148,15 @@ class Writer:
     def raw_chunk_size(self, size):
         """Configure v4 raw MD5 before member begin or successful signing."""
         self._ensure_open()
-        libmpq.libmpq__archive_raw_chunk_size_set(self._mpq, _raw_chunk_size(size))
+        libmpq.libmpq__archive_raw_chunk_size_set(self._mpq, _checked_int(size, ctypes.c_uint32, "raw chunk size"))
 
     def add(self, name, data, options=None):
         """Add complete bytes using raw storage or supplied options."""
         self._ensure_open()
         options, data = options or FileCreateOptions.raw(), bytes(data)
-        pointer = None if not data else (ctypes.c_uint8 * len(data)).from_buffer_copy(data)
-        return libmpq.libmpq__archive_add_data(self._mpq, _as_bytes(name), pointer, len(data), ctypes.byref(options))
+        size = _checked_int(len(data), _OFF_T, "data size")
+        pointer = None if not data else (ctypes.c_uint8 * size).from_buffer_copy(data)
+        return libmpq.libmpq__archive_add_data(self._mpq, _as_bytes(name), pointer, size, ctypes.byref(options))
 
     def sign(self, private_key, signature_type=SIGNATURE_WEAK):
         """Configure weak or plain strong signing at close using a raw private key."""
@@ -1119,7 +1164,7 @@ class Writer:
         _sign_with_key(libmpq.libmpq__archive_sign, self._mpq, signature_type, private_key)
 
     def begin(self, name, size, options=None):
-        """Begin a fixed-size streaming entry."""
+        """Begin a streaming entry with a nonnegative signed 64-bit size."""
         self._ensure_open()
         return WriterFile(self, name, size, options or FileCreateOptions.raw())
 
@@ -1227,10 +1272,12 @@ class Reader:
     def _read_block(self):
         """Decode the next sector and append it to the local queue."""
         size = _OFF_T()
-        libmpq.libmpq__block_size_unpacked(self._file._archive._mpq, self._file.number, self._cur_block, ctypes.byref(size))
+        number = self._file._native_number
+        block = _checked_int(self._cur_block, ctypes.c_uint32, "block index")
+        libmpq.libmpq__block_size_unpacked(self._file._archive._mpq, number, block, ctypes.byref(size))
         buffer = _native_buffer(size.value)
         transferred = _OFF_T()
-        libmpq.libmpq__block_read(self._file._archive._mpq, self._file.number, self._cur_block, buffer, size.value, ctypes.byref(transferred))
+        libmpq.libmpq__block_read(self._file._archive._mpq, number, block, buffer, size.value, ctypes.byref(transferred))
         self._buf.append(bytes(buffer[:transferred.value]))
         self._cur_block += 1
 
@@ -1283,8 +1330,7 @@ class _SourceState:
     """Keep a borrowed seek/read source and its native callback alive."""
 
     def __init__(self, source, size):
-        if not isinstance(size, int) or size < 0 or size > 0x7fffffffffffffff:
-            raise ValueError("source size must be a nonnegative signed 64-bit integer")
+        size = _checked_int(size, _OFF_T, "source size", minimum=0)
         if not callable(getattr(source, "seek", None)) or not callable(getattr(source, "read", None)):
             raise TypeError("source must provide seek(offset) and read(size)")
         self.source = source
@@ -1313,7 +1359,7 @@ class _SourceState:
         """Satisfy one exact native random-access read without leaking exceptions."""
         try:
             state = ctypes.cast(context, ctypes.POINTER(ctypes.py_object)).contents.value
-            if offset < 0 or size > state.size - offset:
+            if not _callback_range(offset, size, state.size):
                 return ERROR_READ
             source = state.source
             if source is None:
@@ -1359,11 +1405,12 @@ class MpqStream:
         return _read_value(libmpq.libmpq__stream_tell, _OFF_T, self._stream)
 
     def seek(self, offset, whence=os.SEEK_SET):
-        """Seek within the logical member; positions outside it are rejected."""
+        """Seek with a signed 64-bit offset; the result must be within the member."""
         self._ensure_open()
+        whence = _checked_int(whence, ctypes.c_int32, "whence")
         if whence not in (os.SEEK_SET, os.SEEK_CUR, os.SEEK_END):
             raise ValueError("invalid whence")
-        libmpq.libmpq__stream_seek(self._stream, int(offset), int(whence))
+        libmpq.libmpq__stream_seek(self._stream, _checked_int(offset, _OFF_T, "seek offset"), whence)
         return self.tell()
 
     def read(self, size=-1):
@@ -1376,10 +1423,10 @@ class MpqStream:
         self._ensure_open()
         if size is None:
             size = -1
-        if not isinstance(size, int):
-            raise TypeError("size must be an integer")
+        size = operator.index(size)
         if size < 0:
             size = self.size - self.tell()
+        size = _checked_int(size, _OFF_T, "read size", minimum=0)
         if size == 0:
             return b""
         buffer = _native_buffer(size)
@@ -1433,10 +1480,9 @@ class File:
         stored CRC32 and MD5 metadata.
         """
         self._archive._ensure_open()
-        if not isinstance(block, int) or not 0 <= block <= 0xffffffff:
-            raise ValueError("block must be an unsigned 32-bit integer")
+        block = _checked_int(block, ctypes.c_uint32, "block index")
         checksum, mismatches = ctypes.c_uint32(), ctypes.c_uint32()
-        libmpq.libmpq__block_verify(self._archive._mpq, self.number, block,
+        libmpq.libmpq__block_verify(self._archive._mpq, self._native_number, block,
                                   ctypes.byref(checksum), ctypes.byref(mismatches))
         return checksum.value, mismatches.value
 
@@ -1449,10 +1495,9 @@ class File:
         Operation errors raise instead of returning a mismatch mask.
         """
         self._archive._ensure_open()
-        if not isinstance(flags, int) or not 0 <= flags <= 0xffffffff:
-            raise ValueError("verify flags must be an unsigned 32-bit integer")
+        flags = _checked_int(flags, ctypes.c_uint32, "verify flags")
         return _read_value(libmpq.libmpq__file_verify, ctypes.c_uint32,
-                           self._archive._mpq, self.number, flags)
+                           self._archive._mpq, self._native_number, flags)
 
     def verify_result(self, flags=VERIFY_ALL, *, filename=None):
         """Return checked, unavailable and mismatch masks, defaulting to VERIFY_ALL.
@@ -1460,14 +1505,13 @@ class File:
         The optional filename supplies key context.
         """
         self._archive._ensure_open()
-        if not isinstance(flags, int) or not 0 <= flags <= 0xffffffff:
-            raise ValueError("verify flags must be an unsigned 32-bit integer")
+        flags = _checked_int(flags, ctypes.c_uint32, "verify flags")
         name = None if filename is None else _as_bytes(filename)
         if name is not None and b"\0" in name:
             raise ValueError("filename contains NUL")
         checked, unavailable, mismatches = (ctypes.c_uint32() for _ in range(3))
         libmpq.libmpq__file_verify_ex(
-            self._archive._mpq, self.number, name, flags,
+            self._archive._mpq, self._native_number, name, flags,
             ctypes.byref(checked), ctypes.byref(unavailable), ctypes.byref(mismatches))
         return VerificationResult(checked.value, unavailable.value, mismatches.value)
 
@@ -1480,13 +1524,14 @@ class File:
         """
         self._archive._ensure_open()
         value = _FileAttributes()
-        libmpq.libmpq__file_attributes(self._archive._mpq, self.number, ctypes.byref(value))
+        libmpq.libmpq__file_attributes(self._archive._mpq, self._native_number, ctypes.byref(value))
         return FileAttributes(value.flags, value.crc32, value.filetime,
                               bytes(value.md5), bool(value.patch_bit))
 
     def __init__(self, archive, number):
         """Load metadata for one public numeric file number."""
-        self._archive, self.number = archive, int(number)
+        self._archive = archive
+        self.number = _checked_int(number, ctypes.c_uint32, "file number")
         self.packed_size = _read_value(libmpq.libmpq__file_size_packed, _OFF_T, archive._mpq, self.number)
         self.unpacked_size = _read_value(libmpq.libmpq__file_size_unpacked, _OFF_T, archive._mpq, self.number)
         self.offset = _read_value(libmpq.libmpq__file_offset, _OFF_T, archive._mpq, self.number)
@@ -1496,15 +1541,22 @@ class File:
         self.compressed = bool(self.flags & FILE_FLAG_COMPRESS)
         self.imploded = bool(self.flags & FILE_FLAG_IMPLODE)
 
+    @property
+    def _native_number(self):
+        return _checked_int(self.number, ctypes.c_uint32, "file number")
+
     def metadata(self):
         """Return an immutable metadata snapshot for this entry."""
         return FileMetadata(self.packed_size, self.unpacked_size, self.offset, self.blocks, self.encrypted, self.compressed, self.imploded)
 
     def read(self):
         """Read and decode the complete entry into Python bytes."""
-        buffer = _native_buffer(self.unpacked_size)
+        number = self._native_number
+        size = _checked_int(self.unpacked_size, _OFF_T, "read size", minimum=0)
+        buffer = _native_buffer(size)
         transferred = _OFF_T()
-        libmpq.libmpq__file_read(self._archive._mpq, self.number, None if not self.unpacked_size else buffer, self.unpacked_size, ctypes.byref(transferred))
+        libmpq.libmpq__file_read(self._archive._mpq, number, buffer if size else None,
+                                size, ctypes.byref(transferred))
         return bytes(buffer[:transferred.value])
 
     @property
@@ -1512,7 +1564,7 @@ class File:
         """Decoded PTCH size, not the final patched target size."""
         self._archive._ensure_open()
         return _read_value(libmpq.libmpq__patch_payload_size, _OFF_T,
-                           self._archive._mpq, self.number)
+                           self._archive._mpq, self._native_number)
 
     def read_patch_payload(self, filename=None):
         """Return validated PTCH bytes without applying the patch or its prefix.
@@ -1526,7 +1578,7 @@ class File:
         buffer = _native_buffer(size)
         transferred = _OFF_T()
         libmpq.libmpq__patch_payload_read(
-            self._archive._mpq, self.number,
+            self._archive._mpq, self._native_number,
             None if filename is None else _as_bytes(filename),
             None if size == 0 else buffer, size, ctypes.byref(transferred))
         if transferred.value < 0 or transferred.value > size:
@@ -1535,6 +1587,7 @@ class File:
 
     def read_block(self, block):
         """Decode one block with native offset-cache management."""
+        block = operator.index(block)
         if block < 0 or block >= self.blocks:
             raise IndexError("block not in file")
         with self.open_reader() as reader:
@@ -1544,26 +1597,25 @@ class File:
 
     def block_size(self, block):
         """Return one decoded block's logical size with balanced table lifetime."""
+        block = _checked_int(block, ctypes.c_uint32, "block index")
         with self.open_reader():
             size = _OFF_T()
-            libmpq.libmpq__block_size_unpacked(self._archive._mpq, self.number, block, ctypes.byref(size))
+            libmpq.libmpq__block_size_unpacked(self._archive._mpq, self._native_number, block, ctypes.byref(size))
             return size.value
 
     def block_size_packed(self, block):
         """Return stored block bytes, excluding offset/checksum tables."""
         self._archive._ensure_open()
-        if not isinstance(block, int) or not 0 <= block <= 0xffffffff:
-            raise ValueError("block must be an unsigned 32-bit integer")
+        block = _checked_int(block, ctypes.c_uint32, "block index")
         return _read_value(libmpq.libmpq__block_size_packed, _OFF_T,
-                           self._archive._mpq, self.number, block)
+                           self._archive._mpq, self._native_number, block)
 
     def block_compression(self, block):
         """Return the stored method byte, not a writer selector; zero means raw."""
         self._archive._ensure_open()
-        if not isinstance(block, int) or not 0 <= block <= 0xffffffff:
-            raise ValueError("block must be an unsigned 32-bit integer")
+        block = _checked_int(block, ctypes.c_uint32, "block index")
         return _read_value(libmpq.libmpq__block_compression, ctypes.c_uint32,
-                           self._archive._mpq, self.number, block)
+                           self._archive._mpq, self._native_number, block)
 
     def open_reader(self):
         """Return a context-managed buffered reader over this entry."""
@@ -1607,9 +1659,10 @@ class Archive:
                     or source.flags & (FILE_FLAG_PATCH_FILE | FILE_FLAG_DELETE_MARKER)
                     or source.packed_size < source.unpacked_size):
                 raise ValueError("embedded archives must be stored raw")
-            offset = parent.offset + source.offset
+            offset = _checked_int(parent.offset + source.offset, _OFF_T, "embedded offset", minimum=0)
             self.filename = parent.filename
         else:
+            offset = _checked_int(offset, _OFF_T, "archive offset")
             self.filename = os.fspath(source)
             host_path = _as_bytes(self.filename)
             if host_path and not os.path.isabs(host_path):
@@ -1625,22 +1678,24 @@ class Archive:
 
     @classmethod
     def open(cls, source, offset=-1):
-        """Open a path with an explicit offset or embedded-header scanning."""
+        """Open a path at a signed 64-bit offset; -1 scans for an MPQ header."""
         return cls(source, offset)
 
     @classmethod
     def open_mpqe(cls, path, auth_code, offset=-1):
         """Open a caller-authenticated MPQE stream containing an MPQ archive."""
+        offset = _checked_int(offset, _OFF_T, "archive offset")
         code = _auth_code_bytes(auth_code)
+        code_size = _checked_int(len(code), ctypes.c_size_t, "authentication code size")
         archive = object.__new__(cls)
         archive._source = path
         archive.filename = os.fspath(path)
         archive._mpq = _VOID_PTR()
         archive._source_state = None
-        buffer = None if not code else (ctypes.c_uint8 * len(code)).from_buffer_copy(code)
+        buffer = None if not code else (ctypes.c_uint8 * code_size).from_buffer_copy(code)
         pointer = None if buffer is None else ctypes.cast(buffer, _BYTE_PTR)
         libmpq.libmpq__archive_open_mpqe(
-            ctypes.byref(archive._mpq), _as_bytes(archive.filename), offset, pointer, len(code)
+            ctypes.byref(archive._mpq), _as_bytes(archive.filename), offset, pointer, code_size
         )
         archive._opened = True
         archive._load_metadata()
@@ -1649,6 +1704,7 @@ class Archive:
     @classmethod
     def open_io(cls, source, size, offset=-1, source_name=None):
         """Open a borrowed seekable source using exact random-access callbacks."""
+        offset = _checked_int(offset, _OFF_T, "archive offset")
         state = _SourceState(source, size)
         archive = object.__new__(cls)
         archive._source = source_name if source_name is not None else "<custom source>"
@@ -1670,17 +1726,19 @@ class Archive:
     @classmethod
     def open_mpqe_io(cls, source, size, auth_code, offset=-1, source_name=None):
         """Open a borrowed seekable MPQE source using an exact-read callback."""
+        offset = _checked_int(offset, _OFF_T, "archive offset")
         code = _auth_code_bytes(auth_code)
+        code_size = _checked_int(len(code), ctypes.c_size_t, "authentication code size")
         state = _SourceState(source, size)
         archive = object.__new__(cls)
         archive._source = source_name if source_name is not None else "<custom source>"
         archive.filename, archive._mpq = source_name, _VOID_PTR()
         archive._source_state = state.acquire()
-        buffer = None if not code else (ctypes.c_uint8 * len(code)).from_buffer_copy(code)
+        buffer = None if not code else (ctypes.c_uint8 * code_size).from_buffer_copy(code)
         try:
             libmpq.libmpq__archive_open_mpqe_io(
                 ctypes.byref(archive._mpq), state.context, state._callback, state.size, offset,
-                None if buffer is None else ctypes.cast(buffer, _BYTE_PTR), len(code),
+                None if buffer is None else ctypes.cast(buffer, _BYTE_PTR), code_size,
                 None if source_name is None else _as_bytes(source_name)
             )
             archive._opened = True
@@ -1728,9 +1786,8 @@ class Archive:
             raise TypeError("hashes must be a sequence of integers")
         if len(hashes) != 3:
             raise ValueError("hashes must contain exactly three values")
-        values = tuple(operator.index(hashes[index]) for index in range(3))
-        if any(not 0 <= value <= 0xffffffff for value in values):
-            raise ValueError("hash values must fit uint32_t")
+        values = tuple(_checked_int(hashes[index], ctypes.c_uint32, "hash value")
+                       for index in range(3))
         return _read_value(libmpq.libmpq__file_number_from_hash, ctypes.c_uint32,
                            self._mpq, *values)
 
@@ -1758,21 +1815,19 @@ class Archive:
         self._ensure_open()
         selected = _identity_selection(locale, platform)
         stream = _VOID_PTR()
-        if isinstance(member, int):
+        if isinstance(member, (str, bytes, os.PathLike)):
+            _identity_call("libmpq__stream_open_name", selected, self._mpq, _as_bytes(member), ctypes.byref(stream))
+        else:
             if selected is not None:
                 raise ValueError("numeric streams do not accept identity selectors")
-            if not 0 <= member <= 0xffffffff:
-                raise IndexError("file number is out of range")
-            libmpq.libmpq__stream_open(self._mpq, member, ctypes.byref(stream))
-        else:
-            _identity_call("libmpq__stream_open_name", selected, self._mpq, _as_bytes(member), ctypes.byref(stream))
+            number = _checked_int(member, ctypes.c_uint32, "file number", error=IndexError)
+            libmpq.libmpq__stream_open(self._mpq, number, ctypes.byref(stream))
         return MpqStream(stream, self._source_state)
 
     def verify_ex(self, flags=VERIFY_METADATA_ALL):
         """Verify archive structural and RAW metadata, defaulting to VERIFY_METADATA_ALL."""
         self._ensure_open()
-        if not isinstance(flags, int) or not 0 <= flags <= 0xffffffff:
-            raise ValueError("verify flags must be an unsigned 32-bit integer")
+        flags = _checked_int(flags, ctypes.c_uint32, "verify flags")
         checked, unavailable, mismatches = (ctypes.c_uint32() for _ in range(3))
         libmpq.libmpq__archive_verify_ex(
             self._mpq, flags, ctypes.byref(checked), ctypes.byref(unavailable),
@@ -1782,10 +1837,12 @@ class Archive:
     def verify(self, public_key, signature_type=SIGNATURE_WEAK):
         """Return mismatch bits using a weak 128-byte or strong 512-byte public key."""
         self._ensure_open()
+        signature_type = _checked_int(signature_type, ctypes.c_uint32, "signature type")
         key = bytes(public_key)
-        pointer = (ctypes.c_uint8 * len(key)).from_buffer_copy(key)
+        size = _checked_int(len(key), ctypes.c_size_t, "public key size")
+        pointer = (ctypes.c_uint8 * size).from_buffer_copy(key)
         return _read_value(libmpq.libmpq__archive_verify, ctypes.c_uint32,
-                           self._mpq, signature_type, pointer, len(key))
+                           self._mpq, signature_type, pointer, size)
 
     def _load_metadata(self):
         """Populate archive metadata from native queries."""
@@ -1822,12 +1879,12 @@ class Archive:
         """
         if not isinstance(base, Archive):
             raise TypeError("base must be an Archive")
-        layers, handles, names = base._patch_inputs(patches, prefixes)
+        layers, handles, names, count = base._patch_inputs(patches, prefixes)
         result = object.__new__(cls)
         result._source = result.filename = "<patch composition>"
         result._mpq, result._source_state, result._opened = _VOID_PTR(), None, False
         libmpq.libmpq__archive_open_patch(ctypes.byref(result._mpq), base._mpq,
-                                        handles, names, len(layers))
+                                        handles, names, count)
         result._opened = True
         try:
             result._load_metadata()
@@ -1842,6 +1899,7 @@ class Archive:
     def _patch_inputs(self, patches, prefixes):
         """Marshal borrowed inputs and keep the archive objects alive."""
         layers = tuple(patches)
+        count = _checked_int(len(layers), ctypes.c_size_t, "patch count")
         self._ensure_open()
         for layer in layers:
             if not isinstance(layer, Archive):
@@ -1850,14 +1908,14 @@ class Archive:
         encoded = None
         if prefixes is not None:
             values = tuple(prefixes)
-            if len(values) != len(layers):
+            if len(values) != count:
                 raise ValueError("prefix count must match patch count")
             encoded = tuple(None if value is None else _as_bytes(value) for value in values)
             if any(value is not None and b"\0" in value for value in encoded):
                 raise ValueError("prefixes must not contain NUL")
-        handles = (_VOID_PTR * len(layers))(*(layer._mpq for layer in layers))
-        names = None if encoded is None else (ctypes.c_char_p * len(layers))(*encoded)
-        return layers, handles, names
+        handles = (_VOID_PTR * count)(*(layer._mpq for layer in layers))
+        names = None if encoded is None else (ctypes.c_char_p * count)(*encoded)
+        return layers, handles, names, count
 
     def open_patch_stream(self, filename, patches, prefixes=None, *, locale=None, platform=None):
         """Open a verified seekable member stream detached from all input archives.
@@ -1873,9 +1931,9 @@ class Archive:
         name = _as_bytes(filename)
         if not name or b"\0" in name:
             raise ValueError("filename must be nonempty and must not contain NUL")
-        layers, handles, names = self._patch_inputs(patches, prefixes)
+        layers, handles, names, count = self._patch_inputs(patches, prefixes)
         native = _VOID_PTR()
-        arguments = (self._mpq, handles, names, len(layers), name)
+        arguments = (self._mpq, handles, names, count, name)
         if selected is None:
             libmpq.libmpq__stream_open_patch(*arguments, ctypes.byref(native))
         else:

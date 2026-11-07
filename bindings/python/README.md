@@ -126,6 +126,32 @@ archives or derived streams are alive, but never closes it.
 
     archive = mpq.Archive.open_io(io.BytesIO(data), len(data), source_name="data.mpq")
 
+### Integer arguments
+
+The binding checks integers and objects implementing `__index__` against the
+corresponding C width before native conversion, including when setting fields
+on creation options. Archive offsets are nonnegative signed 64-bit positions
+or `-1` for header discovery. Stream seeks use signed 64-bit offsets and allow
+negative relative offsets. Caller-supplied source sizes and declared member
+lengths are nonnegative signed 64-bit values.
+
+File and block numbers, flags, and masks use unsigned 32-bit values. Exact
+locale and platform each use unsigned 16-bit values. FILETIME accepts the
+full unsigned 64-bit range. Noninteger and out-of-range arguments are rejected
+instead of being truncated. Values that fit the C type still have to meet
+the native operation's format and resource limits.
+
+```python
+import os
+import mpq
+
+with mpq.Archive.open("archive.mpq", offset=-1) as archive:
+    with archive.open_stream("member.bin") as stream:
+        if stream.size:
+            stream.seek(-1, os.SEEK_END)
+            last_byte = stream.read(1)
+```
+
 ## Archive creation
 
 Use the same context-manager pattern for ordinary and MPQE writers:

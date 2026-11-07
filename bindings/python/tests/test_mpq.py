@@ -1921,8 +1921,11 @@ def test_transactional_timestamps(tmp_path, version, wrapped):
     begin = lambda: (mpq.Update.begin_mpqe(path, code) if wrapped else mpq.Update.begin(path))
     with begin() as update:
         assert update.timestamp("voice", 0) is None
-        for invalid in [-1, 1 << 64, 1.5, "bad", None]:
+        for invalid in (-1, 1 << 64):
             with pytest.raises(ValueError):
+                update.timestamp("voice", invalid)
+        for invalid in (1.5, "bad", None):
+            with pytest.raises(TypeError):
                 update.timestamp("voice", invalid)
         for selectors in [dict(locale=1), dict(platform=0), dict(locale=-1, platform=0),
                           dict(locale=0, platform=65536)]:
@@ -2418,3 +2421,188 @@ def test_create_mpqe_io_writer_lifetime():
         if fault == "write":
             assert writes == 2 and len(sink.data.getvalue()) == batch + 1
             assert sink.transfers == [(0, batch), (batch, batch)]
+
+
+def test_numeric_width_archive_and_stream(tmp_path, monkeypatch):
+    class Integer:
+        def __init__(self, value):
+            self.value = value
+
+        def __index__(self):
+            return self.value
+
+    path = tmp_path / "numeric.mpq"
+    with mpq.Writer(path) as writer:
+        writer.add("data", b"abcdef")
+    wire = b"\0" * 512 + path.read_bytes()
+    path.write_bytes(wire)
+    for offset in (-1, Integer(512)):
+        with mpq.Archive.open_io(io.BytesIO(wire), Integer(len(wire)), offset) as archive:
+            assert archive.offset == 512
+            member = archive["data"]
+            assert member.block_size(Integer(0)) == 6
+            with archive.open_stream(Integer(member.number)) as stream:
+                assert stream.seek(Integer(-2), Integer(os.SEEK_END)) == 4
+                assert stream.seek(-1, os.SEEK_CUR) == 3
+                for invalid in (1 << 63, -(1 << 63) - 1, 1 << 64):
+                    with pytest.raises(ValueError):
+                        stream.seek(invalid)
+                for edge in (-(1 << 63), (1 << 63) - 1):
+                    with pytest.raises(mpq.LibmpqIOError) as caught:
+                        stream.seek(edge)
+                    assert caught.value.code == mpq.ERROR_SEEK
+                with pytest.raises(ValueError):
+                    stream.seek(0, 1 << 32)
+                with pytest.raises(TypeError):
+                    stream.seek(1.5)
+                with pytest.raises(ValueError):
+                    stream.read(1 << 64)
+                assert stream.tell() == 3
+                assert stream.read() == b"def"
+            for block in (-1, 1 << 32):
+                with pytest.raises(ValueError):
+                    member.block_size(block)
+            with pytest.raises(TypeError):
+                member.block_size(0.0)
+            with pytest.raises(mpq.LibmpqError):
+                member.block_size(0xffffffff)
+            with pytest.raises(ValueError):
+                mpq.File(archive, 1 << 32)
+            with pytest.raises(IndexError):
+                archive.open_stream(1 << 32)
+            member.number += 1 << 32
+            with pytest.raises(ValueError):
+                member.read()
+
+    def unexpected(*args):
+        pytest.fail("invalid input reached the native opener")
+
+    with monkeypatch.context() as patch:
+        for name in ("archive_open", "archive_open_mpqe", "archive_open_io", "archive_open_mpqe_io"):
+            patch.setattr(mpq.libmpq, "libmpq__" + name, unexpected)
+        for open_at in (
+            lambda offset: mpq.Archive(path, offset),
+            lambda offset: mpq.Archive.open_mpqe(path, b"", offset),
+            lambda offset: mpq.Archive.open_io(io.BytesIO(wire), len(wire), offset),
+            lambda offset: mpq.Archive.open_mpqe_io(io.BytesIO(wire), len(wire), b"", offset),
+        ):
+            with pytest.raises(ValueError):
+                open_at(1 << 64)
+            with pytest.raises(TypeError):
+                open_at(0.0)
+        for size in (-1, 1 << 63):
+            with pytest.raises(ValueError):
+                mpq.Archive.open_io(io.BytesIO(wire), size)
+
+
+@pytest.mark.parametrize("options", [mpq.ArchiveCreateOptions, mpq.FileCreateOptions])
+def test_numeric_width_option_fields(options):
+    for position, (name, field_type) in enumerate(options._fields_):
+        limit = 1 << (ctypes.sizeof(field_type) * 8)
+        value = options(**{name: limit - 1})
+        assert getattr(value, name) == limit - 1
+        for invalid in (-1, limit):
+            with pytest.raises(ValueError):
+                setattr(value, name, invalid)
+            with pytest.raises(ValueError):
+                options(*([0] * position), **{name: invalid})
+            with pytest.raises(ValueError):
+                options(*([0] * position + [invalid]))
+            assert getattr(value, name) == limit - 1
+        with pytest.raises(TypeError):
+            options(**{name: 0.0})
+
+
+def test_numeric_width_mutations(tmp_path):
+    path = tmp_path / "numeric-mutations.mpq"
+    with pytest.raises(ValueError):
+        mpq.Writer(path, version=1 << 32)
+    assert not path.exists()
+
+    with mpq.Writer(path, attributes=mpq.ATTRIBUTE_FILETIME | mpq.ATTRIBUTE_CRC32) as archive:
+        for size in (-1, 1 << 63, 1 << 64):
+            with pytest.raises(ValueError):
+                archive.begin("unintended", size)
+        with pytest.raises(ValueError):
+            archive.sign(b"", (1 << 32) + mpq.SIGNATURE_WEAK)
+        with pytest.raises(ValueError):
+            archive.raw_chunk_size = 1 << 32
+        options = mpq.FileCreateOptions(locale=0xffff, platform=0xffff)
+        with archive.begin("data", 3, options) as writer:
+            with pytest.raises(ValueError):
+                writer.timestamp(1 << 64)
+            writer.timestamp(1 << 63)
+            writer.write(b"abc")
+
+    with mpq.Archive(path) as archive:
+        assert "unintended" not in archive
+        assert archive["data"].attributes().filetime == 1 << 63
+        assert archive["data"].verify(mpq.VERIFY_FILE_CRC32) == 0
+        with pytest.raises(ValueError):
+            archive["data"].verify(1 << 32)
+        with pytest.raises(ValueError):
+            archive.verify(b"", (1 << 32) + mpq.SIGNATURE_WEAK)
+    original = path.read_bytes()
+    with mpq.Update(path) as update:
+        with pytest.raises(ValueError):
+            update.replace_data("data", b"wrong", locale=0x1ffff, platform=0xffff)
+        for offset in (1 << 63, -(1 << 63) - 1):
+            with pytest.raises(OverflowError):
+                update.replace_ranges("data", [(0, b"x"), (offset, b"a")],
+                                      locale=0xffff, platform=0xffff)
+        assert path.read_bytes() == original
+        update.timestamp("data", 0xffffffffffffffff, locale=0xffff, platform=0xffff)
+        update.replace_ranges("data", [(2, b"z")], locale=0xffff, platform=0xffff)
+        update.commit()
+    with mpq.Archive(path) as archive:
+        assert archive["data"].attributes().filetime == 0xffffffffffffffff
+        with archive.open_stream("data", locale=0xffff, platform=0xffff) as stream:
+            assert stream.read() == b"abz"
+
+    assert mpq.archive_compression_allowed(0, mpq.COMPRESSION_ZLIB)
+    assert not mpq.archive_compression_allowed(0, 0xffffffff)
+    for args in ((1 << 32, 0, 0), (0, -1, 0), (0, 0, 1 << 31), (0, 0, -(1 << 31) - 1)):
+        with pytest.raises(ValueError):
+            mpq.archive_compression_allowed(*args)
+    with pytest.raises(ValueError):
+        mpq.strerror(1 << 32)
+
+
+def test_numeric_width_callback_counts():
+    # size_t counts are normally derived from real buffers and containers.
+    # Probe their endpoints without constructing a buffer of that size.
+    limit = 1 << (ctypes.sizeof(ctypes.c_size_t) * 8)
+    assert mpq._checked_int(limit - 1, ctypes.c_size_t, "test size") == limit - 1
+    with pytest.raises(ValueError):
+        mpq._checked_int(limit, ctypes.c_size_t, "test size")
+
+    class Sink:
+        def __init__(self):
+            self.calls = []
+
+        def write_at(self, offset, data):
+            self.calls.append((offset, data))
+            return len(data) + limit
+
+        def read_at(self, offset, size):
+            self.calls.append((offset, size))
+            return b""
+
+    sink = Sink()
+    state = mpq._SinkState(sink)
+    buffer = (ctypes.c_uint8 * 1)(42)
+    assert state.read(None, -1, buffer, 1) == mpq.ERROR_READ
+    assert state.write(None, -1, buffer, 1) == mpq.ERROR_WRITE
+    assert state.write(None, (1 << 63) - 1, buffer, 1) == mpq.ERROR_WRITE
+    assert not sink.calls
+    assert state.write(None, 0, buffer, 1) == mpq.ERROR_WRITE
+    assert sink.calls == [(0, b"*")]
+
+    class FloatCount:
+        def write_at(self, offset, data):
+            return float(len(data))
+
+    with pytest.raises(mpq.LibmpqIOError) as caught:
+        with mpq.Writer.create_io(FloatCount()) as archive:
+            archive.add("data", b"a")
+    assert caught.value.code == mpq.ERROR_WRITE
