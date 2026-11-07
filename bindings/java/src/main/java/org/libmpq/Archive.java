@@ -377,7 +377,8 @@ public final class Archive implements AutoCloseable {
     /**
      * Performs the caller's final sink operation during native archive close.
      * The callback runs synchronously after successful output and must not re-enter
-     * the writer. A callback exception makes close report {@link Mpq#ERROR_CLOSE}.
+     * the writer. An ordinary exception makes close report {@link Mpq#ERROR_CLOSE}.
+     * Throw {@link LibmpqCallbackException} to report a specific native error.
      */
     @FunctionalInterface
     public interface FlushCallback {

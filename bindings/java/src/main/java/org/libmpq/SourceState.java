@@ -71,12 +71,13 @@ final class SourceState {
     long size() { return size; }
     MemorySegment callback() { return callback; }
 
-    /** Exact native callback. Java I/O failures are reduced to ERROR_READ. */
+    /** Exact native callback with ERROR_READ as the ordinary failure status. */
     private synchronized int readAt(MemorySegment context, long offset,
                                     MemorySegment output, long count) {
         if (offset < 0 || count < 0 || offset > size || count > size - offset) {
             return Mpq.ERROR_READ;
         }
+        int status = 0;
         try {
             long position = source.position();
             try {
@@ -88,11 +89,16 @@ final class SourceState {
                     }
                 }
                 return 0;
+            } catch (LibmpqCallbackException error) {
+                status = error.code();
+                return status;
             } finally {
                 source.position(position);
             }
+        } catch (LibmpqCallbackException error) {
+            return status != 0 ? status : error.code();
         } catch (Throwable error) {
-            return Mpq.ERROR_READ;
+            return status != 0 ? status : Mpq.ERROR_READ;
         }
     }
 }

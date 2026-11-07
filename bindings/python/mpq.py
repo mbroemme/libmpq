@@ -161,6 +161,16 @@ class LibmpqError(Exception):
         super().__init__("{} ({})".format(self.message, self.code))
 
 
+class LibmpqCallbackError(LibmpqError):
+    """Report a documented negative ERROR_* status from a positioned I/O callback."""
+
+    def __init__(self, code):
+        code = operator.index(code)
+        if code not in _ERROR_TYPES:
+            raise ValueError("callback status must be a documented negative libmpq error")
+        super().__init__(code, strerror(code))
+
+
 class LibmpqIOError(LibmpqError, OSError):
     """Native open, close, seek, read, or write failure."""
 
@@ -224,6 +234,17 @@ def _checked_int(value, ctype, name, *, minimum=None, error=ValueError):
     if not lower <= value <= upper:
         raise error("{} must be in native integer range".format(name))
     return value
+
+
+def _callback_status(error, fallback):
+    """Validate the callback signal again because exception attributes are writable."""
+    try:
+        code = error.code
+        if type(code) is int and code in _ERROR_TYPES:
+            return code
+    except BaseException:
+        pass
+    return fallback
 
 
 def _callback_range(offset, size, extent):
@@ -1046,6 +1067,8 @@ class _SinkState:
                 written = self.sink.write_at(offset, data)
                 if operator.index(written) == size:
                     return 0
+        except LibmpqCallbackError as error:
+            return _callback_status(error, ERROR_WRITE)
         except BaseException:
             pass
         return ERROR_WRITE
@@ -1057,6 +1080,8 @@ class _SinkState:
                 if len(data) == size:
                     ctypes.memmove(buffer, data, size)
                     return 0
+        except LibmpqCallbackError as error:
+            return _callback_status(error, ERROR_READ)
         except BaseException:
             pass
         return ERROR_READ
@@ -1066,6 +1091,8 @@ class _SinkState:
             if not self.abandoned:
                 self.sink.flush()
                 return 0
+        except LibmpqCallbackError as error:
+            return _callback_status(error, ERROR_CLOSE)
         except BaseException:
             pass
         return ERROR_CLOSE
@@ -1084,7 +1111,10 @@ class Writer:
     @classmethod
     def create_io(cls, sink, version=ARCHIVE_VERSION_ONE, max_files=0, sector_size=0,
                   flags=0, attributes=0):
-        """Create in an empty borrowed sink with positioned writes and optional reads/flush."""
+        """Create in an empty borrowed sink with positioned writes and optional reads/flush.
+
+        Raise LibmpqCallbackError in a callback to report a native error code.
+        """
         options = ArchiveCreateOptions(version, max_files, sector_size, flags, attributes)
         return cls._create_sink(sink, options)
 
@@ -1366,18 +1396,28 @@ class _SourceState:
                 return ERROR_READ
             with state._lock:
                 position = source.tell() if callable(getattr(source, "tell", None)) else None
+                status = None
                 try:
                     source.seek(offset)
                     data = source.read(size)
+                except LibmpqCallbackError as error:
+                    status = _callback_status(error, ERROR_READ)
+                    return status
                 finally:
                     if position is not None:
-                        source.seek(position)
+                        try:
+                            source.seek(position)
+                        except BaseException:
+                            if status is None:
+                                raise
             data = memoryview(data).tobytes()
             if len(data) != size:
                 return ERROR_READ
             if size:
                 ctypes.memmove(buffer, data, size)
             return 0
+        except LibmpqCallbackError as error:
+            return _callback_status(error, ERROR_READ)
         except BaseException:
             return ERROR_READ
 
@@ -1707,7 +1747,10 @@ class Archive:
 
     @classmethod
     def open_io(cls, source, size, offset=-1, source_name=None):
-        """Open a borrowed seekable source using exact random-access callbacks."""
+        """Open a borrowed seekable source using exact random-access callbacks.
+
+        Raise LibmpqCallbackError in a callback to report a native error code.
+        """
         offset = _checked_int(offset, _OFF_T, "archive offset")
         state = _SourceState(source, size)
         archive = object.__new__(cls)

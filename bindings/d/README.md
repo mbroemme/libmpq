@@ -816,6 +816,27 @@ ownership, and chooses persistence and publication. Failed operations can
 leave partial output. Oversized SINGLE still buffers the complete input
 unit.
 
+### Reporting a native callback status
+
+Throw `MPQCallbackException(code)` from `MpqSource.readAt`, a sink transfer,
+or the final flush to report a documented negative `ERROR_*` code to libmpq.
+Other exceptions map to `ERROR_READ`, `ERROR_WRITE`, or `ERROR_CLOSE` according
+to the callback. The transfer delegates return `void`. Fill or write the full
+borrowed slice, and throw when the transfer is incomplete.
+
+```d
+MpqFlushSink flush = () {
+    if (scratchUnavailable)
+        throw new MPQCallbackException(ERROR_MALLOC);
+};
+```
+
+The writer latches its first output failure and skips flush after an earlier
+failure. Higher-level native operations can translate a callback status.
+Close consumes the writer even on failure and releases the rooted delegates.
+Keep the sink available through close and the source available until all
+dependent archives and streams close. The caller retains ownership.
+
 ### Writing MPQE to a sink
 
 ```d

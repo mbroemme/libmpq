@@ -66,6 +66,8 @@ final class SinkState {
         try {
             onFlush.flush();
             return 0;
+        } catch (LibmpqCallbackException error) {
+            return error.code();
         } catch (Throwable error) {
             return Mpq.ERROR_CLOSE;
         }
@@ -89,6 +91,7 @@ final class SinkState {
         if (offset < 0 || size < 0 || size > Long.MAX_VALUE - offset) {
             return failure;
         }
+        int status = 0;
         try (Arena call = Arena.ofConfined()) {
             synchronized (sink) {
                 long original = sink.position();
@@ -106,13 +109,18 @@ final class SinkState {
                         }
                         position += chunk;
                     }
+                } catch (LibmpqCallbackException error) {
+                    status = error.code();
+                    return status;
                 } finally {
                     sink.position(original);
                 }
             }
             return 0;
+        } catch (LibmpqCallbackException error) {
+            return status != 0 ? status : error.code();
         } catch (Throwable error) {
-            return failure;
+            return status != 0 ? status : failure;
         }
     }
 }

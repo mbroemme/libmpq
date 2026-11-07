@@ -45,6 +45,7 @@ private string temporaryArchive(string suffix) {
 private class MemorySource : MpqSource {
     private ubyte[] data;
     private bool fail;
+    private int callbackStatus;
     private bool collectOnRead;
     private size_t readCalls;
     private ulong readFault = ulong.max;
@@ -61,6 +62,8 @@ private class MemorySource : MpqSource {
         import core.memory : GC;
         ++readCalls;
         if (collectOnRead) GC.collect();
+        if (callbackStatus != 0)
+            throw new MPQCallbackException(callbackStatus);
         if (fail || offset == readFault || offset > data.length ||
             buffer.length > data.length - offset)
             throw new Exception("source read failure");
@@ -1918,6 +1921,90 @@ private void expectWriterError(void delegate() operation, int code, string conte
     assert(false, "expected " ~ context ~ " to fail");
 }
 
+private void testCallbackStatuses() {
+    foreach (status; ERROR_UNPACK .. ERROR_OPEN + 1)
+        assert((new MPQCallbackException(status)).code == status);
+    foreach (status; [0, 1, ERROR_UNPACK - 1, int.min]) {
+        bool rejected;
+        try { auto error = new MPQCallbackException(status); }
+        catch (MPQCallbackException) { assert(false, "constructed invalid callback status"); }
+        catch (Exception) { rejected = true; }
+        assert(rejected);
+    }
+
+    const code = cast(const(ubyte)[]) "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
+    auto fixtureRoot = buildPath(environment.get("LIBMPQ_SOURCE_DIR", "."), "tests", "fixtures");
+    foreach (wrapped; [false, true]) {
+        auto wire = cast(ubyte[]) read(buildPath(fixtureRoot,
+            wrapped ? "mpq-v1-features.mpqe" : "mpq-v1-features.mpq"));
+        auto source = new MemorySource(wire);
+        source.callbackStatus = ERROR_MALLOC;
+        expectWriterError(() {
+            auto archive = wrapped ? Archive.openMpqeSource(source, code)
+                                   : Archive.openSource(source);
+            archive.close();
+        }, ERROR_MALLOC, wrapped ? "libmpq__archive_open_mpqe_io" : "libmpq__archive_open_io");
+        assert(source.readCalls == 1);
+
+        foreach (phase; ["write", "read", "flush", "ordinary-flush"]) {
+            if (wrapped && phase == "read") continue;
+            ubyte[] output;
+            uint writes, reads, flushes;
+            int writeStatus;
+            bool active;
+            MpqWriteAt writeAt = (off_t offset, scope const(ubyte)[] bytes) {
+                ++writes;
+                if (writeStatus != 0)
+                    throw new MPQCallbackException(writeStatus);
+                auto end = cast(size_t) offset + bytes.length;
+                if (output.length < end)
+                    output.length = end;
+                output[cast(size_t) offset .. end] = bytes;
+            };
+            MpqReadAt readAt = (off_t offset, scope ubyte[] bytes) {
+                ++reads;
+                if (active && phase == "read")
+                    throw new MPQCallbackException(ERROR_MALLOC);
+                bytes[] = output[cast(size_t) offset .. cast(size_t) offset + bytes.length];
+            };
+            MpqFlushSink flush = () {
+                ++flushes;
+                if (phase == "ordinary-flush")
+                    throw new Exception("ordinary flush failure");
+                throw new MPQCallbackException(ERROR_MALLOC);
+            };
+            auto writer = wrapped ? Archive.createMpqeSink(writeAt, code, ArchiveCreateOptions.v1(), flush)
+                                  : Archive.createSink(writeAt, ArchiveCreateOptions.v1(), readAt, flush);
+            scope(exit) writer.close();
+            const ubyte[] payload = [1, 2, 3];
+            writer.add("payload", payload);
+            if (phase == "read") writer.sign(weakPrivateKey());
+            if (wrapped) assert(writes == 0 && reads == 0 && flushes == 0);
+            active = true;
+            if (phase == "write") {
+                writeStatus = ERROR_MALLOC;
+                if (!wrapped) {
+                    expectWriterError(() { writer.add("failed", payload); }, ERROR_MALLOC,
+                                      "libmpq__archive_add_data");
+                    const count = writes;
+                    writeStatus = ERROR_WRITE;
+                    expectWriterError(() { writer.add("retry", payload); }, ERROR_MALLOC,
+                                      "libmpq__archive_add_data");
+                    assert(writes == count);
+                }
+            }
+            expectWriterError(() { writer.close(); },
+                              phase == "ordinary-flush" ? ERROR_CLOSE : ERROR_MALLOC,
+                              "libmpq__archive_close");
+            assert((reads > 0) == (phase == "read"));
+            assert(flushes == (phase == "flush" || phase == "ordinary-flush" ? 1 : 0));
+            const count = writes + reads + flushes;
+            writer.close();
+            assert(writes + reads + flushes == count);
+        }
+    }
+}
+
 private void assertInactiveWriter(MpqFileWriter member) {
     expectWriterError(() { member.write([cast(ubyte) 1]); }, ERROR_NOT_INITIALIZED, "MpqFileWriter");
     expectWriterError(() { member.timestamp(0); }, ERROR_NOT_INITIALIZED, "MpqFileWriter");
@@ -2019,6 +2106,7 @@ void main() {
     testMemberWriterLifetime();
     testCreateSink();
     testCreateMpqeSink();
+    testCallbackStatuses();
     testOversizedSingleWriter();
     {
         auto root = environment.get("LIBMPQ_SOURCE_DIR", ".");

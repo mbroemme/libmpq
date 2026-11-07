@@ -2643,3 +2643,131 @@ def test_explicit_block_size_alias(monkeypatch):
             entry = archive[name]
             assert entry.flags & mpq.FILE_FLAG_SINGLE
             assert entry.block_size_unpacked(0) == entry.block_size(0) == expected
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_source_callback_status(wrapped):
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+    wire = (FIXTURES / ("mpq-v1-features.mpqe" if wrapped else "mpq-v1-features.mpq")).read_bytes()
+
+    class Source(io.BytesIO):
+        fail = False
+        restore_failure = False
+        error = None
+
+        def read(self, size):
+            self.fail = True
+            if self.error is not None:
+                raise self.error
+            return super().read(size - 1)
+
+        def seek(self, offset, whence=0):
+            if self.fail and self.restore_failure:
+                raise OSError("cursor restore failed")
+            return super().seek(offset, whence)
+
+    for error, expected in (
+        (mpq.LibmpqCallbackError(mpq.ERROR_MALLOC), mpq.ERROR_MALLOC),
+        (mpq.LibmpqMemoryError(mpq.ERROR_MALLOC, "ordinary exception"), mpq.ERROR_READ),
+        (None, mpq.ERROR_READ),
+    ):
+        source = Source(wire)
+        source.seek(7)
+        source.error = error
+        source.restore_failure = isinstance(error, mpq.LibmpqCallbackError)
+        with pytest.raises(mpq.LibmpqError) as caught:
+            if wrapped:
+                mpq.Archive.open_mpqe_io(source, len(wire), code, offset=0)
+            else:
+                mpq.Archive.open_io(source, len(wire), offset=0)
+        assert caught.value.code == expected
+        assert not source.closed
+        assert source.fail
+        if not source.restore_failure:
+            assert source.tell() == 7
+
+
+@pytest.mark.parametrize("wrapped,phase", [
+    (False, "write"), (True, "write"), (False, "read"), (False, "flush"), (True, "flush"),
+])
+def test_sink_callback_status(wrapped, phase):
+    code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
+
+    class Sink:
+        data = bytearray()
+        events = []
+        active = False
+
+        def visit(self, operation):
+            self.events.append(operation)
+            if self.active and phase == operation:
+                raise mpq.LibmpqCallbackError(mpq.ERROR_MALLOC)
+
+        def write_at(self, offset, payload):
+            self.visit("write")
+            end = offset + len(payload)
+            if end > len(self.data):
+                self.data.extend(bytes(end - len(self.data)))
+            self.data[offset:end] = payload
+            return len(payload)
+
+        def read_at(self, offset, size):
+            assert not wrapped
+            self.visit("read")
+            return self.data[offset:offset + size]
+
+        def flush(self):
+            self.visit("flush")
+
+    sink = Sink()
+    writer = mpq.Writer.create_mpqe_io(sink, code) if wrapped else mpq.Writer.create_io(sink)
+    writer.add("payload", b"payload")
+    if phase == "read":
+        writer.sign(WEAK_PRIVATE_KEY)
+    if wrapped:
+        assert sink.events == []
+    sink.active = True
+    if phase == "write" and not wrapped:
+        with pytest.raises(mpq.LibmpqMemoryError):
+            writer.add("failed", b"more bytes")
+        events = list(sink.events)
+        sink.active = False
+        with pytest.raises(mpq.LibmpqMemoryError):
+            writer.add("retry", b"more bytes")
+        assert sink.events == events
+    with pytest.raises(mpq.LibmpqMemoryError) as caught:
+        writer.close()
+    assert caught.value.code == mpq.ERROR_MALLOC
+    assert sink.events[-1] == phase
+    if phase != "flush":
+        assert "flush" not in sink.events
+    elif wrapped:
+        assert "read" not in sink.events
+    events = list(sink.events)
+    writer.close()
+    assert sink.events == events
+
+
+def test_callback_status_domain_and_short_write():
+    for status in range(mpq.ERROR_UNPACK, mpq.ERROR_OPEN + 1):
+        assert mpq.LibmpqCallbackError(status).code == status
+    for status in (0, 1, mpq.ERROR_UNPACK - 1, 1 << 32):
+        with pytest.raises(ValueError):
+            mpq.LibmpqCallbackError(status)
+    with pytest.raises(TypeError):
+        mpq.LibmpqCallbackError(-6.0)
+
+    invalid = mpq.LibmpqCallbackError(mpq.ERROR_MALLOC)
+    invalid.code = 0
+
+    class FailingSink:
+        def write_at(self, offset, data):
+            if error is not None:
+                raise error
+            return len(data) - 1
+
+    for error in (None, OSError("ordinary write failure"), invalid):
+        with pytest.raises(mpq.LibmpqIOError) as caught:
+            with mpq.Writer.create_io(FailingSink()) as writer:
+                writer.add("payload", b"payload")
+        assert caught.value.code == mpq.ERROR_WRITE

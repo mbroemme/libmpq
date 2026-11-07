@@ -1903,12 +1903,99 @@ class LibmpqTest {
         assertEquals(0, new LibmpqException(Mpq.ERROR_READ, "read").transferred());
     }
 
+    @Test
+    void positionedSourceCallbackStatuses() throws Exception {
+        Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
+        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
+        for (boolean wrapped : new boolean[] {false, true}) {
+            Path path = root.resolve(wrapped ? "mpq-v1-features.mpqe" : "mpq-v1-features.mpq");
+            try (var channel = new FailingChannel(Files.newByteChannel(path))) {
+                channel.position(7);
+                for (int mode = 0; mode < 3; mode++) {
+                    channel.readStatus = mode == 0 ? Mpq.ERROR_MALLOC : 0;
+                    channel.fail = mode == 1;
+                    channel.shortRead = mode == 2;
+                    LibmpqException error = assertThrows(LibmpqException.class, () -> {
+                        try (Archive archive = wrapped ? Archive.openMpqeSource(channel, code, null, 0)
+                                                       : Archive.openSource(channel, null, 0)) { }
+                    });
+                    assertEquals(mode == 0 ? Mpq.ERROR_MALLOC : Mpq.ERROR_READ, error.code());
+                    assertEquals(7, channel.position());
+                    assertTrue(channel.isOpen());
+                }
+            }
+        }
+    }
+
+    @Test
+    void positionedSinkCallbackStatuses(@TempDir Path directory) throws Exception {
+        byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
+        for (boolean wrapped : new boolean[] {false, true}) {
+            for (String phase : wrapped ? List.of("write", "flush") : List.of("write", "read", "flush", "short")) {
+                try (var channel = new FailingChannel(Files.newByteChannel(
+                        directory.resolve("sink-" + wrapped + "-" + phase),
+                        StandardOpenOption.CREATE_NEW, StandardOpenOption.READ, StandardOpenOption.WRITE))) {
+                    channel.fail = wrapped;
+                    channel.position(7);
+                    int[] flushes = {0};
+                    Archive.FlushCallback flush = () -> {
+                        flushes[0]++;
+                        throw new LibmpqCallbackException(Mpq.ERROR_MALLOC);
+                    };
+                    try (Archive writer = wrapped ? Archive.createMpqeSink(channel, code, null, flush)
+                            : Archive.createSink(channel, true, ArchiveCreateOptions.v1(), flush)) {
+                        writer.add("payload", new byte[] {1, 2, 3}, null);
+                        if (phase.equals("read")) {
+                            writer.sign(weakPrivateKey());
+                            channel.readStatus = Mpq.ERROR_MALLOC;
+                        }
+                        if (phase.equals("write")) {
+                            channel.writeStatus = Mpq.ERROR_MALLOC;
+                            if (!wrapped) {
+                                assertEquals(Mpq.ERROR_MALLOC, assertThrows(LibmpqException.class,
+                                    () -> writer.add("failed", new byte[] {4}, null)).code());
+                                int writes = channel.writeCalls;
+                                channel.writeStatus = Mpq.ERROR_WRITE;
+                                assertEquals(Mpq.ERROR_MALLOC, assertThrows(LibmpqException.class,
+                                    () -> writer.add("retry", new byte[] {5}, null)).code());
+                                assertEquals(writes, channel.writeCalls);
+                            }
+                        }
+                        channel.shortWrite = phase.equals("short");
+                        int expected = phase.equals("short") ? Mpq.ERROR_WRITE : Mpq.ERROR_MALLOC;
+                        assertEquals(expected, assertThrows(LibmpqException.class, writer::close).code());
+                        assertEquals(phase.equals("flush") ? 1 : 0, flushes[0]);
+                        assertEquals(phase.equals("read"), channel.readCalls > 0);
+                        assertEquals(7, channel.position());
+                        assertTrue(channel.isOpen());
+                        int writes = channel.writeCalls;
+                        int reads = channel.readCalls;
+                        writer.close();
+                        assertEquals(writes, channel.writeCalls);
+                        assertEquals(reads, channel.readCalls);
+                        assertEquals(phase.equals("flush") ? 1 : 0, flushes[0]);
+                    }
+                }
+            }
+        }
+        for (int status = Mpq.ERROR_UNPACK; status <= Mpq.ERROR_OPEN; status++) {
+            assertEquals(status, new LibmpqCallbackException(status).code());
+        }
+        for (int status : new int[] {0, 1, Mpq.ERROR_UNPACK - 1, Integer.MIN_VALUE}) {
+            assertThrows(IllegalArgumentException.class, () -> new LibmpqCallbackException(status));
+        }
+    }
+
     /** Injects I/O failures and records the requests through the FFM adapter. */
     private static final class FailingChannel implements SeekableByteChannel {
         private final SeekableByteChannel delegate;
         private boolean fail = true;
         private long readFault = -1;
         private boolean failWrites;
+        private int readStatus;
+        private int writeStatus;
+        private boolean shortRead;
+        private boolean shortWrite;
         private int readCalls;
         private int writeCalls;
         private int largestWrite;
@@ -1916,11 +2003,15 @@ class LibmpqTest {
         FailingChannel(SeekableByteChannel delegate) { this.delegate = delegate; }
         @Override public int read(ByteBuffer target) throws IOException {
             readCalls++;
+            if (readStatus != 0) throw new LibmpqCallbackException(readStatus);
+            if (shortRead) return 0;
             if (fail || delegate.position() == readFault) throw new IOException("failure");
             return delegate.read(target);
         }
         @Override public int write(ByteBuffer source) throws IOException {
             writeCalls++;
+            if (writeStatus != 0) throw new LibmpqCallbackException(writeStatus);
+            if (shortWrite) return 0;
             if (failWrites) throw new IOException("write failure");
             largestWrite = Math.max(largestWrite, source.remaining());
             return delegate.write(source);

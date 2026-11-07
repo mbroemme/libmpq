@@ -775,10 +775,30 @@ byte count. V4 and signing require `read_at(offset, size)` to return the
 complete range. An optional `flush()` runs after successful finalization.
 Backfills preserve unrelated bytes, unwritten gaps read as zeros, and
 read-back sees previous writes immediately. Close the writer explicitly
-or use `with`. The caller retains and closes the sink. Callback exceptions
-become libmpq I/O errors. Failed output may be partial. The writer provides
+or use `with`. The caller retains and closes the sink. Failed output may be partial. The writer provides
 no atomic publication or durability guarantee. An oversized SINGLE still
 buffers the complete input unit.
+
+### Reporting a native callback status
+
+Raise `mpq.LibmpqCallbackError(code)` from a source read, sink write or
+read-back, or final flush to report a documented negative `mpq.ERROR_*`
+code to libmpq. Ordinary exceptions map to `ERROR_READ`, `ERROR_WRITE`, or
+`ERROR_CLOSE` according to the callback. Return the full requested bytes
+from a read and the exact number written from a write. Short transfers
+report the corresponding I/O error.
+
+```python
+def flush(self):
+    if self.scratch_unavailable:
+        raise mpq.LibmpqCallbackError(mpq.ERROR_MALLOC)
+```
+
+Libmpq latches the first output failure and skips flush after an earlier
+failure. Higher-level native operations can translate a callback status
+before returning it. Keep the caller-owned source available until dependent
+archives and streams close, and the sink available through writer close.
+Close consumes the writer even on failure. The caller closes its own storage.
 
 ### Writing MPQE to a caller-owned sink
 

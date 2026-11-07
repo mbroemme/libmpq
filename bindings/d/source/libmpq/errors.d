@@ -12,7 +12,7 @@ module libmpq.errors;
 
 import core.stdc.string : strlen;
 import std.string : format;
-import libmpq.native : libmpq__strerror;
+import libmpq.native : ERROR_OPEN, ERROR_UNPACK, libmpq__strerror;
 
 /**
  * Exception raised when a native libmpq operation returns a negative status.
@@ -42,6 +42,20 @@ class MPQException : Exception {
     private static string nativeMessage(int code) {
         auto message = libmpq__strerror(code);
         return message is null ? "unknown error" : message[0 .. strlen(message)].idup;
+    }
+}
+
+/** Signal a documented negative ERROR_* status from a positioned I/O callback. */
+final class MPQCallbackException : MPQException {
+    /** Throws Exception if code is outside the documented native error domain. */
+    this(int code) {
+        super("positioned I/O callback", checkedCode(code));
+    }
+
+    private static int checkedCode(int code) {
+        if (code < ERROR_UNPACK || code > ERROR_OPEN)
+            throw new Exception("callback status must be a documented negative libmpq error");
+        return code;
     }
 }
 

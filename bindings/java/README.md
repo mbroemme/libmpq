@@ -762,10 +762,29 @@ The overloads `createSink(channel, readBack, options, flush)` and
 `Archive.FlushCallback`. Native close calls it synchronously once after
 successful final writes. An earlier finalization failure skips the callback.
 Use it to flush, synchronize or finalize application-managed sink state.
-The callback must not re-enter the writer. An exception from the callback
+The callback must not re-enter the writer. An ordinary exception
 makes archive close throw `LibmpqException` with `Mpq.ERROR_CLOSE`. Close
 consumes the archive even on error and leaves the channel caller-owned.
 Passing `null` gives the same behavior as the overloads without a callback.
+
+Throw `LibmpqCallbackException` from a channel's positioned read or write,
+or from the final flush, to report a documented negative `Mpq.ERROR_*` code
+to libmpq. The type extends `IOException` and works with the existing callback
+signatures. Other channel exceptions and incomplete transfers still map to
+`ERROR_READ` or `ERROR_WRITE`. Native code can translate the callback status as
+part of the enclosing operation. The writer latches its first output failure
+and skips flush after an earlier failure.
+
+```java
+Archive.FlushCallback flush = () -> {
+    if (scratchUnavailable) {
+        throw new LibmpqCallbackException(Mpq.ERROR_MALLOC);
+    }
+};
+```
+
+The channel remains caller-owned. Keep a source open through close of all
+dependent archives and streams, and keep the sink open through writer close.
 
 For example, when the application owns a `FileChannel` and chooses to force
 its writes:

@@ -13,7 +13,7 @@ module libmpq.archive;
 import core.memory : GC;
 import core.stdc.stdlib : free, malloc;
 import std.string : splitLines, toStringz;
-import libmpq.errors : MPQException, StreamReadException, checkStatus;
+import libmpq.errors : MPQCallbackException, MPQException, StreamReadException, checkStatus;
 import libmpq.native;
 import libmpq.options : ArchiveCreateOptions, FileOptions;
 import std.typecons : Nullable, nullable;
@@ -67,6 +67,7 @@ struct FileMetadata {
 /** Caller-owned exact random-access source for Archive.openSource. */
 interface MpqSource {
     ulong size();
+    /** Fill the borrowed buffer or throw. MPQCallbackException selects a native status. */
     void readAt(ulong offset, ubyte[] buffer);
 }
 
@@ -91,16 +92,18 @@ sourceReadAt(void* context, off_t offset, ubyte* buffer, size_t size)
             return ERROR_READ;
         state.source.readAt(cast(ulong)offset, buffer[0 .. size]);
         return 0;
+    } catch (MPQCallbackException error) {
+        return error.code;
     } catch (Throwable) {
         return ERROR_READ;
     }
 }
 
-/** Exact positioned write into a borrowed sink. Throw on incomplete transfer. */
+/** Exact positioned write into a borrowed sink. Throw on incomplete transfer. MPQCallbackException selects a native status. */
 alias MpqWriteAt = void delegate(off_t offset, scope const(ubyte)[] buffer);
-/** Exact positioned read. Fill the full borrowed slice or throw. */
+/** Exact positioned read. Fill the full borrowed slice or throw. MPQCallbackException selects a native status. */
 alias MpqReadAt = void delegate(off_t offset, scope ubyte[] buffer);
-/** Optional final sink operation. Throw on failure. */
+/** Optional final sink operation. Throw on failure. MPQCallbackException selects a native status. */
 alias MpqFlushSink = void delegate();
 
 private class SinkState {
@@ -138,6 +141,8 @@ private extern(C) int sinkWriteAt(void* context, off_t offset, const(ubyte)* buf
             return ERROR_WRITE;
         state.writeAt(offset, buffer[0 .. size]);
         return 0;
+    } catch (MPQCallbackException error) {
+        return error.code;
     } catch (Throwable) {
         return ERROR_WRITE;
     }
@@ -150,6 +155,8 @@ private extern(C) int sinkReadAt(void* context, off_t offset, ubyte* buffer, siz
             return ERROR_READ;
         state.readAt(offset, buffer[0 .. size]);
         return 0;
+    } catch (MPQCallbackException error) {
+        return error.code;
     } catch (Throwable) {
         return ERROR_READ;
     }
@@ -162,6 +169,8 @@ private extern(C) int sinkFlush(void* context) {
             return ERROR_CLOSE;
         state.flush();
         return 0;
+    } catch (MPQCallbackException error) {
+        return error.code;
     } catch (Throwable) {
         return ERROR_CLOSE;
     }
