@@ -972,7 +972,7 @@ public final class Archive implements AutoCloseable {
         }
     }
 
-    /** Return one block's unpacked size. */
+    /** Returns the expected logical size of one block from metadata. */
     public long blockSize(int number, int block) throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
@@ -982,7 +982,11 @@ public final class Archive implements AutoCloseable {
         }
     }
 
-    /** Reads one decoded sector; native code manages the offset cache. */
+    /**
+     * Returns the bytes actually decoded for one block. The array can be
+     * shorter than the expected logical size from {@link #blockSize(int, int)}.
+     * Use {@link #blockSizePacked(int, int)} for the stored size.
+     */
     public byte[] readBlock(int number, int block) throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
@@ -993,6 +997,13 @@ public final class Archive implements AutoCloseable {
             Support.check(LibmpqNative.blockRead(handle, number, block,
                                                  result.length == 0 ? MemorySegment.NULL : output,
                                                  size, transferred));
+            long count = LibmpqNative.getLong(transferred);
+            if (count < 0 || count > result.length) {
+                throw new IllegalArgumentException("Invalid native block byte count");
+            }
+            if (count != result.length) {
+                result = new byte[(int) count];
+            }
             Support.copyTo(output, result);
             return result;
         }

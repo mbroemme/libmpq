@@ -14,6 +14,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.nio.ByteBuffer;
 import java.nio.channels.SeekableByteChannel;
@@ -25,6 +28,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Arrays;
+import java.util.zip.Deflater;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -2011,6 +2015,88 @@ class LibmpqTest {
             assertArrayEquals(repetitive, archive.readFile(archive.fileNumber("lzma.txt")));
             assertArrayEquals("path payload".getBytes(StandardCharsets.UTF_8),
                               archive.readFile(archive.fileNumber("source.txt")));
+        }
+    }
+
+    @Test
+    void readBlockReturnsActualDecodedLength(@TempDir Path directory) throws Exception {
+        Path path = directory.resolve("blocks.mpq");
+        byte[] single = new byte[4000];
+        Arrays.fill(single, (byte) 'J');
+        byte[] sectors = "encrypted sector".repeat(40).getBytes(StandardCharsets.US_ASCII);
+        FileOptions compressedSingle = new FileOptions(Mpq.FILE_FLAG_SINGLE | Mpq.FILE_FLAG_COMPRESS,
+            Mpq.COMPRESSION_ZLIB, Mpq.COMPRESSION_ZLIB, 0, 0);
+        FileOptions encryptedSectors = new FileOptions(Mpq.FILE_FLAG_COMPRESS | Mpq.FILE_FLAG_ENCRYPTED,
+            Mpq.COMPRESSION_ZLIB, Mpq.COMPRESSION_ZLIB, 0, 0);
+        try (Archive writer = Archive.create(path,
+                new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_ONE, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE))) {
+            writer.add("single.bin", single, compressedSingle);
+            writer.add("sectors.bin", sectors, encryptedSectors);
+            writer.add("empty.bin", new byte[0], new FileOptions(Mpq.FILE_FLAG_SINGLE, 0, 0, 0, 0));
+        }
+
+        int offset;
+        int packedSize;
+        try (Archive archive = Archive.open(path)) {
+            int number = archive.fileNumber("single.bin");
+            assertEquals(4000, archive.blockSize(number, 0));
+            assertEquals(Mpq.COMPRESSION_ZLIB, archive.blockCompression(number, 0));
+            assertArrayEquals(single, archive.readBlock(number, 0));
+            offset = Math.toIntExact(archive.offset() + archive.fileOffset(number));
+            packedSize = Math.toIntExact(archive.blockSizePacked(number, 0));
+
+            number = archive.fileNumber("sectors.bin");
+            assertEquals(Mpq.COMPRESSION_ZLIB, archive.blockCompression(number, 0));
+            assertEquals(512, archive.blockSize(number, 0));
+            assertEquals(sectors.length - 512, archive.blockSize(number, 1));
+            assertArrayEquals(Arrays.copyOfRange(sectors, 0, 512), archive.readBlock(number, 0));
+            assertArrayEquals(Arrays.copyOfRange(sectors, 512, sectors.length), archive.readBlock(number, 1));
+
+            int empty = archive.fileNumber("empty.bin");
+            assertEquals(1, archive.fileBlocks(empty));
+            assertEquals(0, archive.blockSize(empty, 0));
+            assertArrayEquals(new byte[0], archive.readBlock(empty, 0));
+            assertEquals(Mpq.ERROR_EXIST,
+                assertThrows(LibmpqException.class, () -> archive.readBlock(empty, 1)).code());
+        }
+
+        byte[] wire = Files.readAllBytes(path);
+        byte[] shortPayload = "short block".getBytes(StandardCharsets.US_ASCII);
+        assertEquals(11, shortPayload.length);
+        for (byte[] payload : List.of(shortPayload, new byte[0])) {
+            // Replace the zlib stream without changing the SINGLE member's table sizes.
+            byte[] packed = new byte[packedSize];
+            packed[0] = Mpq.COMPRESSION_ZLIB;
+            Deflater deflater = new Deflater();
+            try {
+                deflater.setInput(payload);
+                deflater.finish();
+                deflater.deflate(packed, 1, packedSize - 1);
+                assertTrue(deflater.finished());
+            } finally {
+                deflater.end();
+            }
+            System.arraycopy(packed, 0, wire, offset, packedSize);
+            Files.write(path, wire);
+            try (Archive archive = Archive.open(path); Arena arena = Arena.ofConfined()) {
+                int number = archive.fileNumber("single.bin");
+                assertEquals(4000, archive.blockSize(number, 0));
+                MemorySegment output = arena.allocate(4000);
+                MemorySegment transferred = arena.allocate(ValueLayout.JAVA_LONG);
+                assertEquals(0, LibmpqNative.blockRead(archive.nativeHandle(), number, 0,
+                                                       output, 4000, transferred));
+                assertEquals(payload.length, LibmpqNative.getLong(transferred));
+                assertArrayEquals(payload, archive.readBlock(number, 0));
+            }
+        }
+
+        // Keep the compression tag but replace the zlib header with invalid bytes.
+        Arrays.fill(wire, offset + 1, offset + packedSize, (byte) 0);
+        Files.write(path, wire);
+        try (Archive archive = Archive.open(path)) {
+            int number = archive.fileNumber("single.bin");
+            assertEquals(Mpq.ERROR_UNPACK,
+                assertThrows(LibmpqException.class, () -> archive.readBlock(number, 0)).code());
         }
     }
 

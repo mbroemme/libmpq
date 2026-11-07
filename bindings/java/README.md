@@ -226,8 +226,9 @@ byte, or zero for raw storage/fallback, without decoding. LZMA is `0x12`, not
 the writer selector.
 
 `archive.blockSizePacked(fileNumber, blockNumber)` returns stored data bytes,
-excluding offset and checksum tables. `archive.blockSize(...)` remains the
-decoded size used for read buffers.
+excluding offset and checksum tables. `archive.blockSize(...)` returns the
+expected logical size from metadata. `archive.readBlock(...)` returns exactly
+the decoded bytes transferred, which can be fewer than the expected size.
 
 `Archive.attributes()` returns archive-wide flags in an `OptionalInt`, empty
 if absent. `Archive.attributes(fileNumber)` returns a `FileAttributes` record
