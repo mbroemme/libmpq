@@ -67,7 +67,13 @@ struct FileMetadata {
 /** Caller-owned exact random-access source for Archive.openSource. */
 interface MpqSource {
     ulong size();
-    /** Fill the borrowed buffer or throw. MPQCallbackException selects a native status. */
+    /**
+     * Fill the borrowed native buffer synchronously with the exact bytes at
+     * offset, or throw. MPQCallbackException selects a native status.
+     * The writable slice is valid only during this call and must not escape.
+     * Keep the source and its backing data valid until all dependent
+     * archives, clones, and ordinary streams close.
+     */
     void readAt(ulong offset, ubyte[] buffer);
 }
 

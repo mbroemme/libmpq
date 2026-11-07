@@ -101,9 +101,20 @@ try {
 
 ### Custom random-access I/O
 
-Implement `MpqSource` to open a caller-owned random-access source. Archives
-and derived streams retain the source object while needed but never own an
-external resource represented by it.
+Implement `MpqSource` to open a caller-owned random-access source.
+`readAt(offset, buffer)` receives a temporary mutable slice backed by native
+storage. Fill the entire slice synchronously with the requested bytes, or
+throw if the transfer cannot be completed. Use `MPQCallbackException` to
+report a specific native status. The slice is valid only during the callback.
+Do not store it, let a reference escape, or use it asynchronously.
+
+Archives and ordinary streams retain the source object. The caller keeps its
+backing storage available and its bytes stable until the last dependent archive,
+clone, or ordinary stream closes. Closing the original archive can leave
+clones and streams that still need the source. Successfully opened
+[selected patched-member streams](#read-one-patched-member) and
+[full patched archive views](#composing-opened-archives) own their result
+storage independently of the input sources.
 
     auto archive = Archive.openSource(new MemorySource(data), "data.mpq");
 
@@ -418,8 +429,18 @@ on Windows (using the package's `bin/` directory). The compiler and native
 build metadata, including the libc build version, build environment, and
 maximum required glibc symbol version, is recorded in `BUILDINFO`; use the
 source package when the recorded compiler or platform does not match the
-consumer environment. Binary packages are built and tested for the following
-compiler/architecture matrix:
+consumer environment.
+
+Use the D interface files and compiled D wrapper from the same binding
+version, built for the matching compiler and target architecture. Rebuild
+your D client against the corresponding wrapper when upgrading. Private
+class layouts and virtual method tables can change while the public D source
+API remains compatible. Mixing compiled D artifacts across versions carries
+no binary compatibility guarantee. The [native C ABI](../../DEVELOPER.md)
+has its own compatibility contract.
+
+Binary packages are built and tested for the following compiler/architecture
+matrix:
 
 | Compiler | Linux glibc (Ubuntu 24.04) | Linux musl (Alpine 3.22) | macOS | Windows |
 | --- | --- | --- | --- | --- |
