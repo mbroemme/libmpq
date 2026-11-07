@@ -1034,8 +1034,8 @@ def test_fixture_metadata_and_extraction(name, version):
             assert archive[member].read().decode("utf-32") == SPARSE_TEXT
             stored, mismatches = archive[member].verify_block(0)
             assert 0 < stored < 0xffffffff and mismatches == 0
-            assert 0 < archive[member].block_size_packed(0) < archive[member].block_size(0)
-        assert entry.block_size_packed(0) == entry.block_size(0)
+            assert 0 < archive[member].block_size_packed(0) < archive[member].block_size_unpacked(0)
+        assert entry.block_size_packed(0) == entry.block_size_unpacked(0)
         with pytest.raises(mpq.LibmpqNotFoundError):
             archive["sparse.txt"].block_size_packed(0xffffffff)
         with pytest.raises(ValueError):
@@ -1062,7 +1062,7 @@ def test_mpqe_fixture_metadata_extraction_and_clone(name, version, offset):
         assert archive["overview.txt"].verify() == 0
         stored, mismatches = archive["sparse.txt"].verify_block(0)
         assert 0 < stored < 0xffffffff and mismatches == 0
-        assert 0 < archive["sparse.txt"].block_size_packed(0) < archive["sparse.txt"].block_size(0)
+        assert 0 < archive["sparse.txt"].block_size_packed(0) < archive["sparse.txt"].block_size_unpacked(0)
         clone = archive.clone()
         try:
             assert clone["overview.txt"].attributes() == archive["overview.txt"].attributes()
@@ -2440,7 +2440,7 @@ def test_numeric_width_archive_and_stream(tmp_path, monkeypatch):
         with mpq.Archive.open_io(io.BytesIO(wire), Integer(len(wire)), offset) as archive:
             assert archive.offset == 512
             member = archive["data"]
-            assert member.block_size(Integer(0)) == 6
+            assert member.block_size_unpacked(Integer(0)) == 6
             with archive.open_stream(Integer(member.number)) as stream:
                 assert stream.seek(Integer(-2), Integer(os.SEEK_END)) == 4
                 assert stream.seek(-1, os.SEEK_CUR) == 3
@@ -2461,11 +2461,11 @@ def test_numeric_width_archive_and_stream(tmp_path, monkeypatch):
                 assert stream.read() == b"def"
             for block in (-1, 1 << 32):
                 with pytest.raises(ValueError):
-                    member.block_size(block)
+                    member.block_size_unpacked(block)
             with pytest.raises(TypeError):
-                member.block_size(0.0)
+                member.block_size_unpacked(0.0)
             with pytest.raises(mpq.LibmpqError):
-                member.block_size(0xffffffff)
+                member.block_size_unpacked(0xffffffff)
             with pytest.raises(ValueError):
                 mpq.File(archive, 1 << 32)
             with pytest.raises(IndexError):
@@ -2606,3 +2606,40 @@ def test_numeric_width_callback_counts():
         with mpq.Writer.create_io(FloatCount()) as archive:
             archive.add("data", b"a")
     assert caught.value.code == mpq.ERROR_WRITE
+
+
+def test_explicit_block_size_alias(monkeypatch):
+    native = mpq.libmpq.libmpq__block_size_unpacked
+    calls = []
+
+    def count_query(archive, number, block, output):
+        calls.append(block)
+        return native(archive, number, block, output)
+
+    monkeypatch.setattr(mpq.libmpq, "libmpq__block_size_unpacked", count_query)
+    with mpq.Archive(FIXTURES / "mpq-v1-features.mpq") as archive:
+        member = archive["encrypted-compress.txt"]
+        assert 0 < member.block_size_packed(0) < 4096
+        for size in (member.block_size_unpacked, member.block_size):
+            calls.clear()
+            assert size(0) == 4096
+            assert size(block=1) == 1760
+            assert calls == [0, 1]
+            with pytest.raises(mpq.LibmpqNotFoundError) as caught:
+                size(2)
+            assert caught.value.code == mpq.ERROR_EXIST
+            assert calls == [0, 1, 2]
+            with pytest.raises(ValueError):
+                size(1 << 32)
+            assert calls == [0, 1, 2]
+
+    for size in (member.block_size_unpacked, member.block_size):
+        with pytest.raises(mpq.LibmpqNotFoundError) as caught:
+            size(0)
+        assert caught.value.code == mpq.ERROR_EXIST
+
+    with mpq.Archive(FIXTURES / "mpq-v4-features.mpq") as archive:
+        for name, expected in (("overview.txt", 27), ("empty.bin", 0)):
+            entry = archive[name]
+            assert entry.flags & mpq.FILE_FLAG_SINGLE
+            assert entry.block_size_unpacked(0) == entry.block_size(0) == expected

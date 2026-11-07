@@ -256,7 +256,16 @@ booleans.
 raw storage/fallback, without decoding. LZMA is `0x12`, not the writer selector.
 
 `file.block_size_packed(block)` returns stored data bytes, excluding offset
-and checksum tables. Use `file.block_size(block)` for the decoded size.
+and checksum tables. `file.block_size_unpacked(block)` returns the expected
+logical size from metadata. `file.read_block(block)` returns the actual decoded
+bytes, which may be fewer than the expected size. `file.block_size(block)`
+remains a supported compatibility alias for `file.block_size_unpacked(block)`.
+
+```python
+stored = file.block_size_packed(0)
+expected = file.block_size_unpacked(0)
+decoded = file.read_block(0)
+```
 
 `Archive.attributes()` returns archive-wide flags or `None` if absent.
 `File.attributes()` returns a `FileAttributes` result and requires the

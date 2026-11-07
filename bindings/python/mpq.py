@@ -1596,7 +1596,11 @@ class File:
             return reader._buf.pop()
 
     def block_size(self, block):
-        """Return one decoded block's logical size with balanced table lifetime."""
+        """Compatibility alias for block_size_unpacked()."""
+        return self.block_size_unpacked(block)
+
+    def block_size_unpacked(self, block):
+        """Return one block's expected logical size from archive metadata."""
         block = _checked_int(block, ctypes.c_uint32, "block index")
         with self.open_reader():
             size = _OFF_T()

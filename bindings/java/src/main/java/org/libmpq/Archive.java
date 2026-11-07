@@ -972,8 +972,13 @@ public final class Archive implements AutoCloseable {
         }
     }
 
-    /** Returns the expected logical size of one block from metadata. */
+    /** Compatibility alias for {@link #blockSizeUnpacked(int, int)}. */
     public long blockSize(int number, int block) throws LibmpqException {
+        return blockSizeUnpacked(number, block);
+    }
+
+    /** Returns the expected logical size of one block from metadata. */
+    public long blockSizeUnpacked(int number, int block) throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment result = arena.allocate(ValueLayout.JAVA_LONG);
@@ -984,13 +989,13 @@ public final class Archive implements AutoCloseable {
 
     /**
      * Returns the bytes actually decoded for one block. The array can be
-     * shorter than the expected logical size from {@link #blockSize(int, int)}.
+     * shorter than the expected logical size from {@link #blockSizeUnpacked(int, int)}.
      * Use {@link #blockSizePacked(int, int)} for the stored size.
      */
     public byte[] readBlock(int number, int block) throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
-            long size = blockSize(number, block);
+            long size = blockSizeUnpacked(number, block);
             byte[] result = new byte[Support.checkedArraySize(size)];
             MemorySegment output = arena.allocate(result.length == 0 ? 1 : result.length, 1);
             MemorySegment transferred = arena.allocate(ValueLayout.JAVA_LONG);

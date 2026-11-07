@@ -226,9 +226,18 @@ byte, or zero for raw storage/fallback, without decoding. LZMA is `0x12`, not
 the writer selector.
 
 `archive.blockSizePacked(fileNumber, blockNumber)` returns stored data bytes,
-excluding offset and checksum tables. `archive.blockSize(...)` returns the
-expected logical size from metadata. `archive.readBlock(...)` returns exactly
-the decoded bytes transferred, which can be fewer than the expected size.
+excluding offset and checksum tables.
+`archive.blockSizeUnpacked(fileNumber, blockNumber)` returns the expected
+logical size from metadata. `archive.readBlock(fileNumber, blockNumber)` returns
+the actual decoded bytes, which can be fewer than the expected size.
+`archive.blockSize(fileNumber, blockNumber)` remains a supported compatibility
+alias for `archive.blockSizeUnpacked(fileNumber, blockNumber)`.
+
+```java
+long stored = archive.blockSizePacked(fileNumber, 0);
+long expected = archive.blockSizeUnpacked(fileNumber, 0);
+byte[] decoded = archive.readBlock(fileNumber, 0);
+```
 
 `Archive.attributes()` returns archive-wide flags in an `OptionalInt`, empty
 if absent. `Archive.attributes(fileNumber)` returns a `FileAttributes` record

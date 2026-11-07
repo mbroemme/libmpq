@@ -1653,7 +1653,7 @@ class LibmpqTest {
                     assertEquals(0, sector.mismatches());
                     assertEquals(sector, mpqe.verifyBlock(mpqe.fileNumber(member), 0));
                     long packed = raw.blockSizePacked(raw.fileNumber(member), 0);
-                    assertTrue(packed > 0 && packed < raw.blockSize(raw.fileNumber(member), 0));
+                    assertTrue(packed > 0 && packed < raw.blockSizeUnpacked(raw.fileNumber(member), 0));
                     assertEquals(packed, mpqe.blockSizePacked(mpqe.fileNumber(member), 0));
                     int method = member.equals("sparse.txt") ? 0x20 :
                                  member.equals("sparse-zlib.txt") ? 0x22 : 0x30;
@@ -1666,7 +1666,7 @@ class LibmpqTest {
                     () -> raw.verifyBlock(raw.fileNumber("sparse.txt"), -1)).code());
                 assertEquals(Mpq.ERROR_EXIST, assertThrows(LibmpqException.class,
                     () -> raw.blockSizePacked(raw.fileNumber("sparse.txt"), -1)).code());
-                assertEquals(raw.blockSize(raw.fileNumber("overview.txt"), 0),
+                assertEquals(raw.blockSizeUnpacked(raw.fileNumber("overview.txt"), 0),
                              raw.blockSizePacked(raw.fileNumber("overview.txt"), 0));
                 assertEquals(0, raw.blockCompression(raw.fileNumber("overview.txt"), 0));
                 assertEquals(Mpq.ERROR_EXIST, assertThrows(LibmpqException.class,
@@ -2039,6 +2039,7 @@ class LibmpqTest {
         int packedSize;
         try (Archive archive = Archive.open(path)) {
             int number = archive.fileNumber("single.bin");
+            assertEquals(4000, archive.blockSizeUnpacked(number, 0));
             assertEquals(4000, archive.blockSize(number, 0));
             assertEquals(Mpq.COMPRESSION_ZLIB, archive.blockCompression(number, 0));
             assertArrayEquals(single, archive.readBlock(number, 0));
@@ -2047,17 +2048,27 @@ class LibmpqTest {
 
             number = archive.fileNumber("sectors.bin");
             assertEquals(Mpq.COMPRESSION_ZLIB, archive.blockCompression(number, 0));
-            assertEquals(512, archive.blockSize(number, 0));
-            assertEquals(sectors.length - 512, archive.blockSize(number, 1));
+            assertEquals(512, archive.blockSizeUnpacked(number, 0));
+            assertEquals(sectors.length - 512, archive.blockSizeUnpacked(number, 1));
             assertArrayEquals(Arrays.copyOfRange(sectors, 0, 512), archive.readBlock(number, 0));
             assertArrayEquals(Arrays.copyOfRange(sectors, 512, sectors.length), archive.readBlock(number, 1));
 
             int empty = archive.fileNumber("empty.bin");
             assertEquals(1, archive.fileBlocks(empty));
-            assertEquals(0, archive.blockSize(empty, 0));
+            assertEquals(0, archive.blockSizeUnpacked(empty, 0));
             assertArrayEquals(new byte[0], archive.readBlock(empty, 0));
             assertEquals(Mpq.ERROR_EXIST,
                 assertThrows(LibmpqException.class, () -> archive.readBlock(empty, 1)).code());
+            assertEquals(Mpq.ERROR_EXIST,
+                assertThrows(LibmpqException.class, () -> archive.blockSizeUnpacked(empty, 1)).code());
+            assertEquals(Mpq.ERROR_EXIST,
+                assertThrows(LibmpqException.class, () -> archive.blockSize(empty, 1)).code());
+
+            archive.close();
+            assertEquals(Mpq.ERROR_NOT_INITIALIZED,
+                assertThrows(LibmpqException.class, () -> archive.blockSizeUnpacked(empty, 0)).code());
+            assertEquals(Mpq.ERROR_NOT_INITIALIZED,
+                assertThrows(LibmpqException.class, () -> archive.blockSize(empty, 0)).code());
         }
 
         byte[] wire = Files.readAllBytes(path);
@@ -2080,7 +2091,7 @@ class LibmpqTest {
             Files.write(path, wire);
             try (Archive archive = Archive.open(path); Arena arena = Arena.ofConfined()) {
                 int number = archive.fileNumber("single.bin");
-                assertEquals(4000, archive.blockSize(number, 0));
+                assertEquals(4000, archive.blockSizeUnpacked(number, 0));
                 MemorySegment output = arena.allocate(4000);
                 MemorySegment transferred = arena.allocate(ValueLayout.JAVA_LONG);
                 assertEquals(0, LibmpqNative.blockRead(archive.nativeHandle(), number, 0,
