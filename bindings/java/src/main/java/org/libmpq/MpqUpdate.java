@@ -11,6 +11,7 @@ package org.libmpq;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.ref.Reference;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
@@ -155,11 +156,114 @@ public final class MpqUpdate implements AutoCloseable {
                 LibmpqNative.setReplaceRange(nativeRanges, i, range.offset(),
                         Support.bytes(arena, range.data), range.data.length);
             }
-            Support.check(exact
-                    ? LibmpqNative.updateReplaceRangesIdentity(handle, nativeName, locale, platform,
-                            nativeRanges, entries.size())
-                    : LibmpqNative.updateReplaceRanges(handle, nativeName, nativeRanges, entries.size()));
+            applyRanges(nativeName, locale, platform, nativeRanges, entries.size(), exact);
         }
+    }
+
+    /**
+     * A fixed-size replacement at a nonnegative logical offset. The descriptor
+     * keeps a reference to caller-owned native memory without copying its bytes.
+     * Keep the segment alive and unchanged throughout each staging call.
+     *
+     * @param offset logical byte offset in the selected member
+     * @param data native replacement bytes, including empty or read-only input
+     */
+    public record SegmentReplaceRange(long offset, MemorySegment data) {
+        /**
+         * Creates a descriptor and validates the offset and segment.
+         *
+         * @throws IllegalArgumentException if the offset is negative or the segment is invalid
+         * @throws NullPointerException if the segment is null
+         */
+        public SegmentReplaceRange {
+            if (offset < 0) {
+                throw new IllegalArgumentException("replacement offset must not be negative");
+            }
+            Support.checkNativeBuffer(data, false);
+        }
+    }
+
+    /**
+     * Stages fixed-size replacements from native memory using ordinary lookup.
+     * Later ranges win on overlap. The segments are borrowed until return.
+     * Empty vectors and zero-length ranges retain native validation semantics.
+     *
+     * @param name archive filename
+     * @param ranges replacement descriptors in application order
+     * @throws LibmpqException if the native transaction rejects the edit
+     */
+    public void replaceRangesSegment(String name, List<SegmentReplaceRange> ranges)
+            throws LibmpqException {
+        replaceRangesSegmentBytes(MpqName.ofUtf8(name), ranges);
+    }
+
+    /**
+     * Byte-exact form of {@link #replaceRangesSegment(String, List)}.
+     *
+     * @param name byte-exact archive filename
+     * @param ranges replacement descriptors in application order
+     * @throws LibmpqException if the native transaction rejects the edit
+     */
+    public void replaceRangesSegmentBytes(MpqName name, List<SegmentReplaceRange> ranges)
+            throws LibmpqException {
+        replaceRangesSegmentImpl(name, (short) 0, (short) 0, ranges, false);
+    }
+
+    /**
+     * Stages native-memory ranges for exactly the selected locale/platform.
+     * Later ranges win on overlap. The segments are borrowed until return.
+     *
+     * @param name archive filename
+     * @param locale unsigned 16-bit locale selector
+     * @param platform unsigned 16-bit platform selector
+     * @param ranges replacement descriptors in application order
+     * @throws LibmpqException if the native transaction rejects the edit
+     */
+    public void replaceRangesSegment(String name, int locale, int platform,
+                                     List<SegmentReplaceRange> ranges) throws LibmpqException {
+        replaceRangesSegmentBytes(MpqName.ofUtf8(name), locale, platform, ranges);
+    }
+
+    /**
+     * Byte-exact form of {@link #replaceRangesSegment(String, int, int, List)}.
+     *
+     * @param name byte-exact archive filename
+     * @param locale unsigned 16-bit locale selector
+     * @param platform unsigned 16-bit platform selector
+     * @param ranges replacement descriptors in application order
+     * @throws LibmpqException if the native transaction rejects the edit
+     */
+    public void replaceRangesSegmentBytes(MpqName name, int locale, int platform,
+                                          List<SegmentReplaceRange> ranges) throws LibmpqException {
+        replaceRangesSegmentImpl(name, selector(locale), selector(platform), ranges, true);
+    }
+
+    private void replaceRangesSegmentImpl(MpqName name, short locale, short platform,
+                                          List<SegmentReplaceRange> ranges, boolean exact)
+            throws LibmpqException {
+        checkOpen();
+        List<SegmentReplaceRange> entries = List.copyOf(ranges);
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment nativeName = name.marshal(arena);
+            MemorySegment nativeRanges = LibmpqNative.allocateReplaceRanges(arena, entries.size());
+            for (int i = 0; i < entries.size(); i++) {
+                SegmentReplaceRange range = entries.get(i);
+                MemorySegment data = range.data();
+                Support.checkNativeBuffer(data, false);
+                LibmpqNative.setReplaceRange(nativeRanges, i, range.offset(), data, data.byteSize());
+            }
+            applyRanges(nativeName, locale, platform, nativeRanges, entries.size(), exact);
+        } finally {
+            // Descriptor pointers alone do not keep segments in automatic arenas alive.
+            Reference.reachabilityFence(entries);
+        }
+    }
+
+    private void applyRanges(MemorySegment name, short locale, short platform, MemorySegment ranges,
+                             int count, boolean exact) throws LibmpqException {
+        Support.check(exact
+                ? LibmpqNative.updateReplaceRangesIdentity(handle, name, locale, platform, ranges, count)
+                : LibmpqNative.updateReplaceRanges(handle, name, ranges, count));
     }
 
     /** Stage replacement from bytes; null options use native defaults. */

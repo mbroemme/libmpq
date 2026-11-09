@@ -478,13 +478,25 @@ public final class LibmpqNative {
 
     public static void setReplaceRange(MemorySegment ranges, int index, long offset,
                                        MemorySegment data, int size) {
+        storeReplaceRange(ranges, index, offset, data, size);
+    }
+
+    /** Marshal a caller-owned range without narrowing its native size_t length. */
+    public static void setReplaceRange(MemorySegment ranges, int index, long offset,
+                                       MemorySegment data, long size) {
+        nativeSizeT(size);
+        storeReplaceRange(ranges, index, offset, data, size);
+    }
+
+    private static void storeReplaceRange(MemorySegment ranges, int index, long offset,
+                                          MemorySegment data, long size) {
         long base = RANGE_STRIDE * index;
         ranges.set(RANGE_OFFSET, base, offset);
         ranges.set(ValueLayout.ADDRESS, base + RANGE_DATA, data);
         if (C_SIZE_T instanceof ValueLayout.OfInt narrow) {
-            ranges.set(narrow, base + RANGE_SIZE, size);
+            ranges.set(narrow, base + RANGE_SIZE, (int) size);
         } else {
-            ranges.set((ValueLayout.OfLong) C_SIZE_T, base + RANGE_SIZE, (long) size);
+            ranges.set((ValueLayout.OfLong) C_SIZE_T, base + RANGE_SIZE, size);
         }
     }
 

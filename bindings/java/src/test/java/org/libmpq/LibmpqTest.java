@@ -19,6 +19,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.channels.SeekableByteChannel;
 import java.io.IOException;
 import java.net.URI;
@@ -1146,6 +1147,169 @@ class LibmpqTest {
     }
 
     @Test
+    void nativeSegmentArchiveAndWriter(@TempDir Path directory) throws Exception {
+        Path path = directory.resolve("native-buffers.mpq");
+        MpqName raw = MpqName.ofBytes(new byte[] {'n', (byte) 0xff});
+        byte[] payload = new byte[1031];
+        for (int i = 0; i < payload.length; i++) payload[i] = (byte) i;
+        var closedArena = Arena.ofConfined();
+        var closed = closedArena.allocate(1);
+        closedArena.close();
+        try (Archive archive = Archive.create(path, new ArchiveCreateOptions(
+                Mpq.ARCHIVE_VERSION_TWO, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE));
+             Arena arena = Arena.ofConfined()) {
+            MemorySegment input = arena.allocateFrom(ValueLayout.JAVA_BYTE, payload);
+            assertThrows(IllegalArgumentException.class, () -> archive.addDataSegment("array",
+                    MemorySegment.ofArray(payload), null));
+            assertThrows(IllegalArgumentException.class, () -> archive.addDataSegment("array", closed, null));
+            archive.addData("array", new byte[] {21}, null);
+            archive.addDataBytes(MpqName.ofUtf8("array-bytes"), new byte[] {22}, null);
+            archive.add("old-array", new byte[] {23}, null);
+            archive.addBytes(MpqName.ofUtf8("old-bytes"), new byte[] {24}, null);
+            archive.addDataSegmentBytes(raw, input.asReadOnly(), null);
+            archive.addDataSegment("empty", MemorySegment.NULL, null);
+            try (MpqFileWriter writer = archive.begin("streamed", payload.length, FileOptions.raw())) {
+                writer.writeSegment(MemorySegment.NULL);
+                writer.writeSegment(input.asSlice(0, 512));
+                assertThrows(IllegalArgumentException.class, () -> writer.writeSegment(input));
+                assertEquals(512, writer.writtenSize());
+                assertThrows(IllegalArgumentException.class, () -> writer.writeSegment(closed));
+                writer.writeSegment(input.asSlice(512, 512).asReadOnly());
+                writer.writeSegment(input.asSlice(1024));
+                assertEquals(payload.length, writer.writtenSize());
+            }
+        }
+        try (Archive archive = Archive.open(path); Arena arena = Arena.ofConfined()) {
+            assertArrayEquals(payload, archive.readFile(archive.fileNumberBytes(raw)));
+            assertEquals(0, archive.fileUnpackedSize(archive.fileNumber("empty")));
+            assertArrayEquals(new byte[] {21}, archive.readFile(archive.fileNumber("array")));
+            assertArrayEquals(new byte[] {22}, archive.readFile(archive.fileNumber("array-bytes")));
+            assertArrayEquals(new byte[] {23}, archive.readFile(archive.fileNumber("old-array")));
+            assertArrayEquals(new byte[] {24}, archive.readFile(archive.fileNumber("old-bytes")));
+            try (MpqStream stream = archive.openStream("streamed")) {
+                var destination = arena.allocate(payload.length);
+                assertThrows(IllegalArgumentException.class, () -> stream.readSegment(destination.asReadOnly()));
+                assertThrows(IllegalArgumentException.class, () -> stream.readSegment(MemorySegment.ofArray(payload)));
+                assertThrows(IllegalArgumentException.class, () -> stream.readSegment(closed));
+                assertEquals(0, stream.readSegment(MemorySegment.NULL));
+                assertEquals(payload.length, stream.readSegment(destination));
+                assertArrayEquals(payload, destination.toArray(ValueLayout.JAVA_BYTE));
+                assertEquals(0, stream.readSegment(destination));
+                assertEquals(-1, stream.read(new byte[1]));
+            }
+        }
+    }
+
+    @Test
+    void nativeSegmentWriterTerminalFailure(@TempDir Path directory) throws Exception {
+        Path path = directory.resolve("failed-segment-writer.mpq");
+        try (var channel = new FailingChannel(Files.newByteChannel(path,
+                    StandardOpenOption.CREATE_NEW, StandardOpenOption.READ, StandardOpenOption.WRITE));
+             Arena arena = Arena.ofConfined()) {
+            Archive archive = Archive.createSink(channel, true,
+                    new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_ONE, 8, 512, 0));
+            try (archive; MpqFileWriter writer = archive.begin("member", 1024, FileOptions.raw())) {
+                channel.writeStatus = Mpq.ERROR_MALLOC;
+                var payload = arena.allocate(1024);
+                assertEquals(Mpq.ERROR_MALLOC,
+                        assertThrows(LibmpqException.class, () -> writer.writeSegment(payload)).code());
+                channel.writeStatus = 0;
+                int calls = channel.writeCalls;
+                assertEquals(Mpq.ERROR_MALLOC, assertThrows(LibmpqException.class,
+                        () -> writer.writeSegment(MemorySegment.NULL)).code());
+                assertEquals(Mpq.ERROR_MALLOC, assertThrows(LibmpqException.class, writer::finish).code());
+                assertEquals(Mpq.ERROR_MALLOC, assertThrows(LibmpqException.class, archive::close).code());
+                assertThrows(IllegalStateException.class, () -> writer.writeSegment(payload));
+                assertEquals(calls, channel.writeCalls);
+            }
+            assertTrue(channel.isOpen());
+        }
+    }
+
+    @Test
+    void nativeSegmentReplaceRanges(@TempDir Path directory) throws Exception {
+        Path path = directory.resolve("ranges.mpq");
+        MpqName raw = MpqName.ofBytes(new byte[] {'r', (byte) 0xff});
+        try (Archive writer = Archive.create(path, new ArchiveCreateOptions(
+                Mpq.ARCHIVE_VERSION_TWO, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE))) {
+            writer.add("member", new byte[] {1, 2, 3, 4}, null);
+            writer.addBytes(raw, new byte[] {1, 2, 3, 4}, null);
+            writer.addBytes(raw, new byte[] {5, 6, 7, 8}, new FileOptions(0, 0, 0, 1033, 1));
+        }
+        byte[] original = Files.readAllBytes(path);
+        try (MpqUpdate update = MpqUpdate.begin(path)) {
+            MpqUpdate.SegmentReplaceRange dead;
+            try (Arena arena = Arena.ofConfined()) {
+                var data = arena.allocateFrom(ValueLayout.JAVA_BYTE, (byte) 9, (byte) 10);
+                var range = new MpqUpdate.SegmentReplaceRange(1, data.asReadOnly());
+                var overlap = new MpqUpdate.SegmentReplaceRange(2, data.asSlice(0, 1));
+                var empty = new MpqUpdate.SegmentReplaceRange(4, MemorySegment.NULL);
+                assertThrows(IllegalArgumentException.class, () -> new MpqUpdate.SegmentReplaceRange(-1, data));
+                assertThrows(IllegalArgumentException.class,
+                        () -> new MpqUpdate.SegmentReplaceRange(0, MemorySegment.ofArray(new byte[1])));
+                update.replaceRangesSegment("member", List.of(range, overlap, empty));
+                update.replaceRangesSegment("member", 0, 0, List.of(empty));
+                update.replaceRangesSegmentBytes(raw, List.of());
+                update.replaceRangesSegmentBytes(raw, 1033, 1, List.of(range));
+                assertEquals(Mpq.ERROR_SIZE, assertThrows(LibmpqException.class,
+                        () -> update.replaceRangesSegment("member", List.of(range,
+                                new MpqUpdate.SegmentReplaceRange(4, data)))).code());
+                dead = range;
+            }
+            assertThrows(IllegalArgumentException.class,
+                    () -> update.replaceRangesSegment("member", List.of(dead)));
+            update.replaceRanges("member", List.of(new MpqUpdate.ReplaceRange(0, new byte[] {42})));
+            assertArrayEquals(original, Files.readAllBytes(path));
+            update.commit();
+        }
+        try (Archive archive = Archive.open(path)) {
+            assertArrayEquals(new byte[] {42, 9, 9, 4}, archive.readFile(archive.fileNumber("member")));
+            assertArrayEquals(new byte[] {1, 2, 3, 4}, archive.readFile(archive.fileNumberBytes(raw, 0, 0)));
+            assertArrayEquals(new byte[] {5, 9, 10, 8}, archive.readFile(archive.fileNumberBytes(raw, 1033, 1)));
+        }
+    }
+
+    @Test
+    void nativeSegmentCapacityBeyondArrayLimit(@TempDir Path directory) throws Exception {
+        Assumptions.assumeTrue(System.getProperty("os.name").equals("Linux"));
+        Path path = directory.resolve("large-capacity.mpq");
+        try (Archive archive = Archive.create(path, ArchiveCreateOptions.v2())) {
+            archive.add("member", new byte[] {7, 13}, null);
+        }
+        try (Arena arena = Arena.ofConfined();
+             FileChannel sparse = FileChannel.open(directory.resolve("sparse"), StandardOpenOption.CREATE_NEW,
+                     StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.SPARSE);
+             Archive archive = Archive.open(path);
+             MpqStream stream = archive.openStream("member")) {
+            long capacity = (1L << 31) + 1;
+            MemorySegment output = sparse.map(FileChannel.MapMode.READ_WRITE, 0, capacity, arena);
+            assertEquals(2, stream.readSegment(output));
+            assertEquals(2, archive.readBlock(archive.fileNumber("member"), 0, output));
+            assertArrayEquals(new byte[] {7, 13}, output.asSlice(0, 2).toArray(ValueLayout.JAVA_BYTE));
+            assertEquals(0, stream.readSegment(output));
+            try (MpqUpdate update = MpqUpdate.begin(path)) {
+                assertEquals(Mpq.ERROR_SIZE, assertThrows(LibmpqException.class,
+                        () -> update.replaceRangesSegment("member",
+                                List.of(new MpqUpdate.SegmentReplaceRange(0, output)))).code());
+            }
+            try (Archive writer = Archive.create(directory.resolve("large-rejection.mpq"),
+                         ArchiveCreateOptions.v2())) {
+                FileOptions single = new FileOptions(Mpq.FILE_FLAG_SINGLE, 0, 0, 0, 0);
+                assertEquals(Mpq.ERROR_SIZE, assertThrows(LibmpqException.class,
+                        () -> writer.addDataSegment("too-large", output, single)).code());
+                try (MpqFileWriter member = writer.begin("valid", 2, FileOptions.raw())) {
+                    assertThrows(IllegalArgumentException.class, () -> member.writeSegment(output));
+                    assertEquals(0, member.writtenSize());
+                    member.writeSegment(output.asSlice(0, 2));
+                }
+            }
+            LibmpqException error = new LibmpqException(Mpq.ERROR_READ, "read", capacity);
+            assertEquals(capacity, error.transferredLong());
+            assertThrows(ArithmeticException.class, error::transferred);
+        }
+    }
+
+    @Test
     void updateFromNativeSegments(@TempDir Path directory) throws Exception {
         Path path = directory.resolve("segment-update.mpq");
         MpqName rawName = MpqName.ofBytes(new byte[] {'v', (byte) 0xff});
@@ -2022,7 +2186,7 @@ class LibmpqTest {
                     channel.readFault = archive.fileOffset(archive.fileNumber("payload")) + expected;
                     stream = archive.openStream("payload");
                 }
-                try (stream) {
+                try (stream; Arena arena = Arena.ofConfined()) {
                     int offset = 3;
                     byte[] buffer = new byte[payload.length + 8];
                     byte[] expectedBuffer = buffer.clone();
@@ -2039,6 +2203,15 @@ class LibmpqTest {
                     assertEquals(expected, error.transferred());
                     assertEquals(expected, stream.position());
                     assertArrayEquals(expectedBuffer, buffer);
+                    stream.seek(0, Mpq.SEEK_SET);
+                    MemorySegment output = arena.allocate(buffer.length).fill((byte) 0x7e);
+                    LibmpqException segmentError = assertThrows(LibmpqException.class,
+                            () -> stream.readSegment(output.asSlice(offset, payload.length)));
+                    assertEquals(Mpq.ERROR_READ, segmentError.code());
+                    assertEquals(expected, segmentError.transferredLong());
+                    assertEquals(expected, segmentError.transferred());
+                    assertEquals(expected, stream.position());
+                    assertArrayEquals(expectedBuffer, output.toArray(ValueLayout.JAVA_BYTE));
 
                     channel.readFault = -1;
                     var rest = new byte[payload.length - expected];
@@ -2286,12 +2459,20 @@ class LibmpqTest {
 
         int offset;
         int packedSize;
-        try (Archive archive = Archive.open(path)) {
+        try (Archive archive = Archive.open(path); Arena arena = Arena.ofConfined()) {
             int number = archive.fileNumber("single.bin");
             assertEquals(4000, archive.blockSizeUnpacked(number, 0));
             assertEquals(4000, archive.blockSize(number, 0));
             assertEquals(Mpq.COMPRESSION_ZLIB, archive.blockCompression(number, 0));
             assertArrayEquals(single, archive.readBlock(number, 0));
+            MemorySegment destination = arena.allocate(single.length);
+            assertEquals(single.length, archive.readBlock(number, 0, destination));
+            assertArrayEquals(single, destination.toArray(ValueLayout.JAVA_BYTE));
+            int singleNumber = number;
+            assertEquals(Mpq.ERROR_SIZE, assertThrows(LibmpqException.class,
+                    () -> archive.readBlock(singleNumber, 0, destination.asSlice(0, 3999))).code());
+            assertThrows(IllegalArgumentException.class,
+                    () -> archive.readBlock(singleNumber, 0, destination.asReadOnly()));
             offset = Math.toIntExact(archive.offset() + archive.fileOffset(number));
             packedSize = Math.toIntExact(archive.blockSizePacked(number, 0));
 
@@ -2302,10 +2483,20 @@ class LibmpqTest {
             assertArrayEquals(Arrays.copyOfRange(sectors, 0, 512), archive.readBlock(number, 0));
             assertArrayEquals(Arrays.copyOfRange(sectors, 512, sectors.length), archive.readBlock(number, 1));
 
+            assertEquals(512, archive.readBlock(number, 0, destination));
+            assertArrayEquals(Arrays.copyOfRange(sectors, 0, 512),
+                    destination.asSlice(0, 512).toArray(ValueLayout.JAVA_BYTE));
+            assertEquals(sectors.length - 512, archive.readBlock(number, 1, destination));
+            assertArrayEquals(Arrays.copyOfRange(sectors, 512, sectors.length),
+                    destination.asSlice(0, sectors.length - 512).toArray(ValueLayout.JAVA_BYTE));
+
             int empty = archive.fileNumber("empty.bin");
             assertEquals(1, archive.fileBlocks(empty));
             assertEquals(0, archive.blockSizeUnpacked(empty, 0));
             assertArrayEquals(new byte[0], archive.readBlock(empty, 0));
+            assertEquals(0, archive.readBlock(empty, 0, MemorySegment.NULL));
+            assertEquals(Mpq.ERROR_EXIST, assertThrows(LibmpqException.class,
+                    () -> archive.readBlock(empty, 1, MemorySegment.NULL)).code());
             assertEquals(Mpq.ERROR_EXIST,
                 assertThrows(LibmpqException.class, () -> archive.readBlock(empty, 1)).code());
             assertEquals(Mpq.ERROR_EXIST,
@@ -2347,6 +2538,10 @@ class LibmpqTest {
                                                        output, 4000, transferred));
                 assertEquals(payload.length, LibmpqNative.getLong(transferred));
                 assertArrayEquals(payload, archive.readBlock(number, 0));
+                output.fill((byte) 85);
+                assertEquals(payload.length, archive.readBlock(number, 0, output));
+                assertArrayEquals(payload, output.asSlice(0, payload.length).toArray(ValueLayout.JAVA_BYTE));
+                assertEquals((byte) 85, output.get(ValueLayout.JAVA_BYTE, payload.length));
             }
         }
 

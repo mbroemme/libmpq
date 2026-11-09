@@ -61,6 +61,32 @@ public final class MpqStream implements AutoCloseable {
         return read(buffer, 0, buffer.length);
     }
 
+    /**
+     * Reads into caller-owned writable native memory in one native call.
+     * Keep the segment alive and free from concurrent access until return.
+     * If reading fails, the valid prefix is already in the destination.
+     * {@link LibmpqException#transferredLong()} gives its full length, and
+     * {@link #position()} includes those bytes.
+     *
+     * @param destination writable native segment whose size is the requested capacity
+     * @return bytes transferred, or zero for EOF or an empty destination
+     * @throws LibmpqException if native reading fails
+     */
+    public long readSegment(MemorySegment destination) throws LibmpqException {
+        requireOpen();
+        Support.checkNativeBuffer(destination, true);
+        long capacity = destination.byteSize();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment transferred = arena.allocate(ValueLayout.JAVA_LONG);
+            int status = LibmpqNative.streamRead(handle, destination, capacity, transferred);
+            long count = Support.transferred(transferred, capacity);
+            if (status < 0) {
+                throw new LibmpqException(status, Mpq.strerror(status), count);
+            }
+            return count;
+        }
+    }
+
     /** Move to a valid logical position using Mpq.SEEK_SET, SEEK_CUR, or SEEK_END. */
     public void seek(long offset, int origin) throws LibmpqException {
         requireOpen();

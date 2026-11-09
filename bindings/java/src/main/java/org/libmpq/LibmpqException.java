@@ -17,6 +17,7 @@ public final class LibmpqException extends Exception {
     private static final long serialVersionUID = 1L;
     private final int code;
     private final int transferred;
+    private final long largeTransfer;
 
     /**
      * Creates an exception preserving the native error code and diagnostic
@@ -30,9 +31,15 @@ public final class LibmpqException extends Exception {
     }
 
     LibmpqException(int code, String message, int transferred) {
+        this(code, message, (long) transferred);
+    }
+
+    LibmpqException(int code, String message, long transferred) {
         super(message + " (" + code + ")");
         this.code = code;
-        this.transferred = transferred;
+        // Keep the serialized int field used by earlier binding versions.
+        this.transferred = transferred <= Integer.MAX_VALUE ? (int) transferred : 0;
+        this.largeTransfer = transferred > Integer.MAX_VALUE ? transferred : 0;
     }
 
     /**
@@ -47,8 +54,22 @@ public final class LibmpqException extends Exception {
      * Returns the valid byte count copied into the caller's buffer before a
      * stream read failed. Returns zero when no bytes were copied or the
      * exception is from another operation.
+     *
+     * @return valid prefix length as a Java int
+     * @throws ArithmeticException if a native-segment read transferred more than an int can hold
+     * @see #transferredLong()
      */
     public int transferred() {
-        return transferred;
+        return Math.toIntExact(transferredLong());
+    }
+
+    /**
+     * Returns the valid prefix length after a failed stream read, including
+     * counts beyond Java array limits. Returns zero for other operations.
+     *
+     * @return exact number of bytes transferred before the error
+     */
+    public long transferredLong() {
+        return largeTransfer != 0 ? largeTransfer : transferred;
     }
 }

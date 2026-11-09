@@ -48,16 +48,47 @@ public final class MpqFileWriter implements AutoCloseable {
      * @throws IllegalStateException if the writer has already been finished
      */
     public void write(byte[] data) throws LibmpqException {
+        requireActive();
+        checkWriteSize(data.length);
+        try (Arena arena = Arena.ofConfined()) {
+            writeNative(Support.bytes(arena, data), data.length);
+        }
+    }
+
+    /**
+     * Appends bytes from caller-owned native memory in one native call.
+     * Keep the segment alive and unchanged until return. Empty and read-only
+     * inputs are supported. Native output errors can occur after some bytes have
+     * been accepted and can latch on the parent archive.
+     *
+     * @param data native segment containing the bytes to append
+     * @throws LibmpqException if native writing fails
+     * @throws IllegalArgumentException if the segment is invalid or exceeds the declared size
+     * @throws IllegalStateException if the writer or its parent has closed
+     */
+    public void writeSegment(MemorySegment data) throws LibmpqException {
+        requireActive();
+        Support.checkNativeBuffer(data, false);
+        long length = data.byteSize();
+        checkWriteSize(length);
+        writeNative(data, length);
+    }
+
+    private void requireActive() {
         if (!archive.isOpenForWriter() || handle == null || handle.equals(MemorySegment.NULL)) {
             throw new IllegalStateException("Writer is finished");
         }
-        if (data.length > expected - written) {
+    }
+
+    private void checkWriteSize(long length) {
+        if (length > expected - written) {
             throw new IllegalArgumentException("write exceeds declared file size");
         }
-        try (Arena arena = Arena.ofConfined()) {
-            Support.check(LibmpqNative.writerWrite(handle, Support.bytes(arena, data), data.length));
-        }
-        written += data.length;
+    }
+
+    private void writeNative(MemorySegment data, long length) throws LibmpqException {
+        Support.check(LibmpqNative.writerWrite(handle, data, length));
+        written += length;
     }
 
     /**

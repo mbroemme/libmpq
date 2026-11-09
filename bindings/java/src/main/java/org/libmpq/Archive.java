@@ -1064,6 +1064,31 @@ public final class Archive implements AutoCloseable {
     }
 
     /**
+     * Decodes one block into caller-owned writable native memory. Capacity must
+     * cover the expected unpacked size, and native block and decoder limits apply.
+     * The segment must stay alive and free from concurrent access until return.
+     * This operation uses block decoding without implicit checksum verification.
+     *
+     * @param number public file number
+     * @param block block index within the member
+     * @param destination destination segment, including a zero-length segment for an empty block
+     * @return actual decoded byte count, which can be smaller than the expected size
+     * @throws LibmpqException if native block reading fails
+     */
+    public long readBlock(int number, int block, MemorySegment destination) throws LibmpqException {
+        checkOpen();
+        Support.checkNativeBuffer(destination, true);
+        long capacity = destination.byteSize();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment transferred = arena.allocate(ValueLayout.JAVA_LONG);
+            // The empty SINGLE decoder can still use a non-null output address.
+            MemorySegment output = destination.address() == 0 ? arena.allocate(1) : destination;
+            Support.check(LibmpqNative.blockRead(handle, number, block, output, capacity, transferred));
+            return Support.transferred(transferred, capacity);
+        }
+    }
+
+    /**
      * Adds a complete in-memory file to an archive being created.  The byte
      * array is copied or consumed by the native call before the method
      * returns, so its Java lifetime need not extend beyond this call.
@@ -1086,6 +1111,64 @@ public final class Archive implements AutoCloseable {
             MemorySegment nativeOptions = fileOptions(arena, options);
             Support.check(LibmpqNative.archiveAddData(handle, name.marshal(arena),
                                                 Support.bytes(arena, data), data.length, nativeOptions));
+        }
+    }
+
+    /**
+     * Adds a complete member from a Java array, with the same behavior as
+     * {@link #add(String, byte[], FileOptions)}.
+     *
+     * @param name archive filename
+     * @param data logical file bytes
+     * @param options storage options, or {@code null} for raw storage
+     * @throws LibmpqException if native writing fails
+     */
+    public void addData(String name, byte[] data, FileOptions options) throws LibmpqException {
+        add(name, data, options);
+    }
+
+    /**
+     * Adds a complete member from an array with a byte-exact filename.
+     *
+     * @param name byte-exact archive filename
+     * @param data logical file bytes
+     * @param options storage options, or {@code null} for raw storage
+     * @throws LibmpqException if native writing fails
+     */
+    public void addDataBytes(MpqName name, byte[] data, FileOptions options) throws LibmpqException {
+        addBytes(name, data, options);
+    }
+
+    /**
+     * Adds a complete member in one native call from caller-owned native memory.
+     * Empty and read-only input segments are supported. Keep the segment alive
+     * and unchanged until return. Native member and archive size limits apply.
+     *
+     * @param name archive filename
+     * @param data native segment containing the logical file bytes
+     * @param options storage options, or {@code null} for raw storage
+     * @throws LibmpqException if native writing fails
+     */
+    public void addDataSegment(String name, MemorySegment data, FileOptions options) throws LibmpqException {
+        addDataSegmentBytes(MpqName.ofUtf8(name), data, options);
+    }
+
+    /**
+     * Byte-exact form of {@link #addDataSegment(String, MemorySegment, FileOptions)}.
+     *
+     * @param name byte-exact archive filename
+     * @param data native segment containing the logical file bytes
+     * @param options storage options, or {@code null} for raw storage
+     * @throws LibmpqException if native writing fails
+     */
+    public void addDataSegmentBytes(MpqName name, MemorySegment data, FileOptions options)
+            throws LibmpqException {
+        checkOpen();
+        Support.checkNativeBuffer(data, false);
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment nativeOptions = fileOptions(arena, options == null ? FileOptions.raw() : options);
+            Support.check(LibmpqNative.archiveAddData(handle, name.marshal(arena),
+                    data, data.byteSize(), nativeOptions));
         }
     }
 

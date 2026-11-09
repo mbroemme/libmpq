@@ -191,6 +191,59 @@ the target size to `min(UINT32_MAX, SIZE_MAX) - 96` bytes for the patch
 headers. Archive generation, stored sizes, layout and codec restrictions
 can impose lower limits.
 
+### Member, stream, block and range operations with native memory
+
+`Archive.addDataSegment` adds a complete member in one native call.
+`addDataSegmentBytes` accepts a byte-exact `MpqName`. For arrays, use the
+explicit `addData` and `addDataBytes` names or the existing `add` and
+`addBytes` methods. `MpqFileWriter.writeSegment` appends a native segment
+in one call within the member's declared size. Empty inputs are allowed.
+An output error may occur after native code has accepted some input.
+Callback-backed and v4 path-backed writers can latch that error.
+
+`MpqStream.readSegment(destination)` returns a `long` byte count from one
+native read. Zero means EOF or a zero-length request. The array API still
+returns `-1` at EOF for a nonempty request. On a native error the caller's
+segment already contains the valid prefix, `transferredLong()` on the
+exception reports its exact length, and the stream position includes it.
+`transferred()` still reports counts that fit in an `int`.
+`Archive.readBlock(number, block, destination)` needs capacity for the
+nominal unpacked block but returns the actual decoded byte count.
+Block reads retain native decoding behavior without implicit checksum
+verification. Use `blockSizePacked` for the stored size.
+
+`replaceRangesSegment` and the byte-exact `replaceRangesSegmentBytes` take
+`SegmentReplaceRange` descriptors. The exact overload takes locale and
+platform immediately after the name. Offsets are nonnegative, segments are
+borrowed only during staging, and later ranges win on overlap. Commit
+publishes the stage. Empty vectors and zero-length ranges still undergo
+native validation. The array-backed `ReplaceRange` remains supported.
+
+```java
+try (Arena arena = Arena.ofConfined()) {
+    MemorySegment input = arena.allocateFrom(ValueLayout.JAVA_BYTE, (byte) 42);
+    writer.addDataSegment("member.bin", input, null);
+    update.replaceRangesSegment("member.bin",
+        List.of(new MpqUpdate.SegmentReplaceRange(0, input)));
+    MemorySegment output = arena.allocate(512);
+    long count = stream.readSegment(output);
+}
+```
+
+Import `List` from `java.util` and the segment types from `java.lang.foreign`.
+As with whole-buffer methods, use accessible native memory and synchronize
+closure and mutation with each call. Input may be read-only. Output must be
+writable. The binding borrows payloads directly and leaves the caller's arena
+open. Staged range bytes may be released before commit.
+
+Segment lengths and offsets use the native signed 64-bit contract, with
+native `size_t` lengths for range payloads. Streaming capacity must fit
+`SIZE_MAX` and available bytes are bounded by the member. Creation and range
+replacement remain subject to the format's 32-bit stored and logical sizes.
+The block decoder and oversized SINGLE writers have signed 32-bit limits.
+Range ends must fit the existing member, and archive layout restrictions can
+impose lower limits.
+
 ### Custom random-access I/O
 
 Use `Archive.openSource(channel, sourceName)` for a caller-owned
