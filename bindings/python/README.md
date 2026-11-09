@@ -38,6 +38,11 @@ Native failures raise `LibmpqError` subclasses with `.code` and `.message`
 attributes. I/O and missing-file subclasses remain compatible with the
 corresponding Python built-in exception categories.
 
+Native string inputs, including paths, member names, source labels and patch
+prefixes, raise `ValueError` if they contain an embedded NUL. Text is encoded
+as UTF-8 and NUL-free `bytes` inputs retain their original bytes. A `None` patch
+prefix requests inference. An empty string or `b""` selects the root namespace.
+
 ### Reading and writing
 
 Use `packed_size` and `unpacked_size` for stored and logical entry sizes.

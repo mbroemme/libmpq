@@ -12,8 +12,8 @@ module libmpq.archive;
 
 import core.memory : GC;
 import core.stdc.stdlib : free, malloc;
-import std.string : splitLines, toStringz;
-import libmpq.errors : MPQCallbackException, MPQException, StreamReadException, checkStatus;
+import std.string : splitLines;
+import libmpq.errors : MPQCallbackException, MPQException, StreamReadException, checkStatus, checkedStringz;
 import libmpq.native;
 import libmpq.options : ArchiveCreateOptions, FileOptions;
 import std.typecons : Nullable, nullable;
@@ -242,9 +242,9 @@ class Archive {
     private SinkState sinkState;
     private MemberWriterState* memberWriter;
 
-    /** Open an archive, optionally at a specific embedded offset. */
+    /** Open a NUL-free path, optionally at a specific embedded offset. */
     this(string path, off_t offset = -1) {
-        checkStatus(libmpq__archive_open(&handle, toStringz(path), offset),
+        checkStatus(libmpq__archive_open(&handle, checkedStringz(path), offset),
                     "libmpq__archive_open");
     }
 
@@ -260,7 +260,7 @@ class Archive {
                             off_t offset = -1) {
         mpq_archive_s* result;
         auto authPointer = authCode.length == 0 ? null : authCode.ptr;
-        checkStatus(libmpq__archive_open_mpqe(&result, toStringz(path), offset, authPointer,
+        checkStatus(libmpq__archive_open_mpqe(&result, checkedStringz(path), offset, authPointer,
                                                authCode.length),
                     "libmpq__archive_open_mpqe");
         return new Archive(result);
@@ -274,7 +274,7 @@ class Archive {
             throw new MPQException("Archive.openSource", ERROR_SIZE);
         auto state = new SourceState(source, sourceSize);
         mpq_archive_s* result;
-        auto name = sourceName is null ? null : toStringz(sourceName);
+        auto name = sourceName is null ? null : checkedStringz(sourceName);
         checkStatus(libmpq__archive_open_io(&result, cast(void*)state, &sourceReadAt,
                                              cast(off_t)state.size, offset, name),
                     "libmpq__archive_open_io");
@@ -291,7 +291,7 @@ class Archive {
             throw new MPQException("Archive.openMpqeSource", ERROR_SIZE);
         auto state = new SourceState(source, sourceSize);
         mpq_archive_s* result;
-        auto name = sourceName is null ? null : toStringz(sourceName);
+        auto name = sourceName is null ? null : checkedStringz(sourceName);
         auto authPointer = authCode.length == 0 ? null : authCode.ptr;
         checkStatus(libmpq__archive_open_mpqe_io(&result, cast(void*)state, &sourceReadAt,
                                                   cast(off_t)state.size, offset, authPointer,
@@ -307,7 +307,7 @@ class Archive {
                           ArchiveCreateOptions options = ArchiveCreateOptions.v1()) {
         auto nativeOptions = options.nativeOptions();
         mpq_archive_s* result;
-        checkStatus(libmpq__archive_create(&result, toStringz(path),
+        checkStatus(libmpq__archive_create(&result, checkedStringz(path),
                                             &nativeOptions),
                     "libmpq__archive_create");
         return new Archive(result);
@@ -363,7 +363,7 @@ class Archive {
         auto nativeOptions = options.nativeOptions();
         mpq_archive_s* result;
         auto authPointer = authCode.length == 0 ? null : authCode.ptr;
-        checkStatus(libmpq__archive_create_mpqe(&result, toStringz(path), authPointer,
+        checkStatus(libmpq__archive_create_mpqe(&result, checkedStringz(path), authPointer,
                                                  authCode.length, &nativeOptions),
                     "libmpq__archive_create_mpqe");
         return new Archive(result);
@@ -408,11 +408,8 @@ class Archive {
         foreach (i, layer; inputs.layers) {
             if (layer is null) throw new MPQException("null patch layer", ERROR_EXIST);
             inputs.handles[i] = layer.nativeHandle();
-            if (prefixes.ptr !is null && prefixes[i].ptr !is null) {
-                foreach (character; prefixes[i])
-                    if (character == 0) throw new MPQException("NUL prefix", ERROR_FORMAT);
-                inputs.names[i] = toStringz(prefixes[i]);
-            }
+            if (prefixes.ptr !is null && prefixes[i].ptr !is null)
+                inputs.names[i] = checkedStringz(prefixes[i]);
         }
         return inputs;
     }
@@ -437,12 +434,10 @@ class Archive {
     private MpqStream openPatchStreamImpl(string name, Archive[] patches, const(string)[] prefixes,
                                           bool exact, ushort locale, ushort platform) {
         if (name.length == 0) throw new MPQException("empty filename", ERROR_EXIST);
-        foreach (character; name)
-            if (character == 0) throw new MPQException("NUL filename", ERROR_FORMAT);
         auto inputs = preparePatchInputs(this, patches, prefixes);
         GC.addRoot(cast(void*) inputs);
         scope(exit) GC.removeRoot(cast(void*) inputs);
-        inputs.filename = toStringz(name);
+        inputs.filename = checkedStringz(name);
         mpq_stream_s* stream;
         if (exact)
             checkStatus(libmpq__stream_open_patch_identity(nativeHandle(), inputs.handles.ptr,
@@ -553,7 +548,7 @@ class Archive {
     FileIdentity[] variants(string name) {
         ensureOpen();
         FileIdentity[] result;
-        auto encoded = toStringz(name);
+        auto encoded = checkedStringz(name);
         for (ulong ordinal = 0; ordinal <= uint.max; ordinal++) {
             mpq_file_identity_s identity;
             auto status = libmpq__file_identity(handle, encoded, cast(uint)ordinal, &identity);
@@ -572,7 +567,7 @@ class Archive {
     uint fileNumber(string name, ushort locale, ushort platform) {
         ensureOpen();
         uint result;
-        checkStatus(libmpq__file_number_from_identity(handle, toStringz(name), locale, platform, &result),
+        checkStatus(libmpq__file_number_from_identity(handle, checkedStringz(name), locale, platform, &result),
                     "libmpq__file_number_from_identity");
         return result;
     }
@@ -581,7 +576,7 @@ class Archive {
     MpqStream openStream(string name, ushort locale, ushort platform) {
         ensureOpen();
         mpq_stream_s* result;
-        checkStatus(libmpq__stream_open_name_identity(handle, toStringz(name), locale, platform, &result),
+        checkStatus(libmpq__stream_open_name_identity(handle, checkedStringz(name), locale, platform, &result),
                     "libmpq__stream_open_name_identity");
         return new MpqStream(result, sourceState);
     }
@@ -589,7 +584,7 @@ class Archive {
     /** Resolve a filename through HET/BET when present, falling back to classic lookup on a miss. */
     uint fileNumber(string name) {
         ensureOpen(); uint result;
-        checkStatus(libmpq__file_number(handle, toStringz(name), &result),
+        checkStatus(libmpq__file_number(handle, checkedStringz(name), &result),
                     "libmpq__file_number");
         return result;
     }
@@ -630,7 +625,7 @@ class Archive {
     MpqStream openStream(string name) {
         ensureOpen();
         mpq_stream_s* result;
-        checkStatus(libmpq__stream_open_name(handle, toStringz(name), &result),
+        checkStatus(libmpq__stream_open_name(handle, checkedStringz(name), &result),
                     "libmpq__stream_open_name");
         return new MpqStream(result, sourceState);
     }
@@ -638,7 +633,7 @@ class Archive {
     /** Add a complete in-memory file to a writer archive. */
     void add(string name, const(ubyte)[] data, FileOptions options = FileOptions.raw()) {
         ensureOpen(); auto nativeOptions = options.nativeOptions();
-        checkStatus(libmpq__archive_add_data(handle, toStringz(name), data.ptr,
+        checkStatus(libmpq__archive_add_data(handle, checkedStringz(name), data.ptr,
                                      cast(off_t) data.length, &nativeOptions),
                     "libmpq__archive_add_data");
     }
@@ -646,7 +641,7 @@ class Archive {
     /** Add a filesystem file under a chosen archive name. */
     void addPath(string name, string sourcePath, FileOptions options = FileOptions.raw()) {
         ensureOpen(); auto nativeOptions = options.nativeOptions();
-        checkStatus(libmpq__archive_add_path(handle, toStringz(name), toStringz(sourcePath),
+        checkStatus(libmpq__archive_add_path(handle, checkedStringz(name), checkedStringz(sourcePath),
                                           &nativeOptions), "libmpq__archive_add_path");
     }
 
@@ -660,7 +655,7 @@ class Archive {
             throw new MPQException("MpqFileWriter", ERROR_MALLOC);
         scope(failure) free(state);
         *state = MemberWriterState(null, 2);
-        checkStatus(libmpq__writer_begin(handle, toStringz(name), size, &nativeOptions, &state.handle),
+        checkStatus(libmpq__writer_begin(handle, checkedStringz(name), size, &nativeOptions, &state.handle),
                     "libmpq__writer_begin");
         releaseMemberWriterState(memberWriter);
         memberWriter = writer.state = state;
@@ -804,11 +799,8 @@ class File {
     /** Return member coverage; optional filename supplies synchronous key context. */
     VerificationResult verifyResult(uint flags = VERIFY_ALL, string filename = null) {
         VerificationResult result;
-        import std.algorithm.searching : canFind;
-        if (filename.canFind('\0'))
-            throw new MPQException("File.verifyResult", ERROR_FORMAT);
         checkStatus(libmpq__file_verify_ex(archiveRef.nativeHandle(), number,
-                    filename is null ? null : filename.toStringz, flags,
+                    filename is null ? null : checkedStringz(filename), flags,
                     &result.checked, &result.unavailable, &result.mismatches),
                     "libmpq__file_verify_ex");
         return result;
@@ -897,17 +889,17 @@ class File {
     }
 
     /** Return caller-owned validated PTCH bytes, without its prefix or patch application.
-     * Supply the physical member filename when encryption needs a named key.
+     * Supply a NUL-free physical member filename when encryption needs a named key.
      */
     ubyte[] readPatchPayload(string filename = null) {
         auto archive = archiveRef.nativeHandle();
+        auto name = filename is null ? null : checkedStringz(filename);
         auto expected = patchPayloadSize();
         if (expected < 0 || cast(ulong) expected > size_t.max)
             throw new MPQException("File.readPatchPayload", ERROR_SIZE);
         ubyte[] result; result.length = cast(size_t) expected;
         off_t transferred;
-        checkStatus(libmpq__patch_payload_read(archive, number,
-                    filename is null ? null : toStringz(filename),
+        checkStatus(libmpq__patch_payload_read(archive, number, name,
                     result.length == 0 ? null : result.ptr, expected, &transferred),
                     "libmpq__patch_payload_read");
         if (transferred < 0 || cast(ulong) transferred > result.length)

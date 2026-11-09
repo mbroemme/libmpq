@@ -2771,3 +2771,82 @@ def test_callback_status_domain_and_short_write():
             with mpq.Writer.create_io(FailingSink()) as writer:
                 writer.add("payload", b"payload")
         assert caught.value.code == mpq.ERROR_WRITE
+
+
+@pytest.mark.parametrize("as_bytes", [False, True])
+def test_nul_path_rejection(tmp_path, monkeypatch, as_bytes):
+    path = tmp_path / "prefix.mpq"
+    output = tmp_path / "patch.mpq"
+    with mpq.Writer(path) as writer:
+        writer.add("member", b"original")
+    original = path.read_bytes()
+    output.write_bytes(original)
+    bad_path = str(path) + "\0ignored"
+    bad_output = str(output) + "\0ignored"
+    if as_bytes:
+        bad_path, bad_output = bad_path.encode(), bad_output.encode()
+    code = b"A" * 32
+
+    with mpq.Update.begin(path) as update, mpq.Patch.begin(path, tmp_path / "stage.mpq") as patch:
+        operations = [
+            ("archive_open", lambda: mpq.Archive.open(bad_path)),
+            ("archive_open_mpqe", lambda: mpq.Archive.open_mpqe(bad_path, code)),
+            ("archive_create", lambda: mpq.Writer(bad_path)),
+            ("archive_create_mpqe", lambda: mpq.Writer.create_mpqe(bad_path, code)),
+            ("update_begin", lambda: mpq.Update.begin(bad_path)),
+            ("patch_begin", lambda: mpq.Patch.begin(path, bad_output)),
+            ("patch_begin_mpqe", lambda: mpq.Patch.begin_mpqe(path, bad_output, code)),
+            ("update_replace_path_identity",
+             lambda: update.replace_path("member", bad_path, locale=0, platform=0)),
+            ("patch_add_path", lambda: patch.add_path("added", bad_path)),
+            ("patch_replace_path", lambda: patch.replace_path("member", bad_path)),
+        ]
+        for native, call in operations:
+            with monkeypatch.context() as guard:
+                guard.setattr(mpq.libmpq, "libmpq__" + native,
+                              lambda *args: pytest.fail("reached native operation"))
+                with pytest.raises(ValueError, match="native string.*NUL"):
+                    call()
+    assert path.read_bytes() == output.read_bytes() == original
+
+
+def test_nul_native_names(tmp_path, monkeypatch):
+    path = tmp_path / "names.mpq"
+    name, bad_name = b"raw-\xff", b"raw-\xff\0ignored"
+    with mpq.Writer(path) as writer:
+        with pytest.raises(ValueError, match="native string.*NUL"):
+            writer.begin(bad_name, 0)
+        writer.add(name, b"original")
+    wire = path.read_bytes()
+
+    with mpq.Archive.open(path) as archive, mpq.Update.begin(path) as update:
+        number = archive.file_number(name, locale=0, platform=0)
+        member = archive[number]
+        assert member.read() == b"original"
+        assert member.verify_result(filename=None).mismatches == 0
+        operations = [
+            ("file_hash", lambda: mpq.file_hash(bad_name)),
+            ("file_number", lambda: archive[bad_name]),
+            ("file_number_from_identity", lambda: archive.file_number(bad_name, locale=0, platform=0)),
+            ("stream_open_name_identity", lambda: archive.open_stream(bad_name, locale=0, platform=0)),
+            ("file_verify_ex", lambda: member.verify_result(filename=bad_name)),
+            ("patch_payload_size", lambda: member.read_patch_payload(bad_name)),
+            ("update_rename", lambda: update.rename(bad_name, "other")),
+            ("update_rename_identity", lambda: update.rename(name, bad_name, locale=0, platform=0)),
+            ("update_compact_ex", lambda: update.compact([name, bad_name])),
+            ("archive_open_io", lambda: mpq.Archive.open_io(io.BytesIO(wire), len(wire),
+                                                          source_name=bad_name)),
+            ("archive_open_mpqe_io", lambda: mpq.Archive.open_mpqe_io(
+                io.BytesIO(wire), len(wire), b"A" * 32, source_name=bad_name)),
+            ("archive_open_patch", lambda: mpq.Archive.open_patch(archive, [archive], [bad_name])),
+            ("stream_open_patch", lambda: archive.open_patch_stream(name, [archive], [bad_name])),
+            ("stream_open_patch_identity", lambda: archive.open_patch_stream(
+                bad_name, [], locale=0, platform=0)),
+        ]
+        for native, call in operations:
+            with monkeypatch.context() as guard:
+                guard.setattr(mpq.libmpq, "libmpq__" + native,
+                              lambda *args: pytest.fail("reached native operation"))
+                with pytest.raises(ValueError, match="native string.*NUL"):
+                    call()
+    assert path.read_bytes() == wire

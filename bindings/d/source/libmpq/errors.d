@@ -11,8 +11,8 @@
 module libmpq.errors;
 
 import core.stdc.string : strlen;
-import std.string : format;
-import libmpq.native : ERROR_OPEN, ERROR_UNPACK, libmpq__strerror;
+import std.string : format, toStringz;
+import libmpq.native : ERROR_FORMAT, ERROR_OPEN, ERROR_UNPACK, libmpq__strerror;
 
 /**
  * Exception raised when a native libmpq operation returns a negative status.
@@ -74,4 +74,12 @@ final class StreamReadException : MPQException {
 void checkStatus(int status, string functionName) {
     if (status < 0)
         throw new MPQException(functionName, status);
+}
+
+/** Marshal native string bytes without permitting C-string truncation. */
+package(libmpq) const(char)* checkedStringz(string value) {
+    foreach (char codeUnit; value)
+        if (codeUnit == 0)
+            throw new MPQException("native string", ERROR_FORMAT, "embedded NUL");
+    return toStringz(value);
 }

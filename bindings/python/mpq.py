@@ -253,13 +253,13 @@ def _callback_range(offset, size, extent):
 
 
 def _as_bytes(value):
-    """Convert text or path-like values to UTF-8 C-string bytes."""
+    """Encode text and preserve native bytes, rejecting embedded NUL."""
     value = os.fspath(value)
     if isinstance(value, str):
-        return value.encode("utf-8")
-    if isinstance(value, bytes):
-        return value
-    raise TypeError("expected str, bytes, or path-like value")
+        value = value.encode("utf-8")
+    if bytes.__contains__(value, b"\0"):
+        raise ValueError("native string must not contain NUL")
+    return value
 
 
 def _auth_code_bytes(value):
@@ -693,8 +693,8 @@ class Update:
             if value is None:
                 raise ValueError("filenames must not contain None")
             name = _as_bytes(value)
-            if not name or b"\0" in name:
-                raise ValueError("filenames must be nonempty and contain no NUL")
+            if not name:
+                raise ValueError("filenames must be nonempty")
             encoded.append(name)
         names = (ctypes.c_char_p * count)(*encoded) if encoded else None
         libmpq.libmpq__update_compact_ex(self._update, names, count)
@@ -806,8 +806,6 @@ class Patch:
         """Stage bytes-like addition; None passes ordinary writer defaults."""
         self._ensure_open()
         encoded_name = _as_bytes(name)
-        if b"\0" in encoded_name:
-            raise ValueError("name must not contain NUL")
         native_options = Update._options(options)
         view = memoryview(data)
         try:
@@ -828,8 +826,6 @@ class Patch:
         """Stage path addition; None passes ordinary writer defaults."""
         self._ensure_open()
         encoded_name, encoded_path = _as_bytes(name), _as_bytes(source_path)
-        if b"\0" in encoded_name or b"\0" in encoded_path:
-            raise ValueError("name and source path must not contain NUL")
         libmpq.libmpq__patch_add_path(
             self._patch, encoded_name, encoded_path, Update._options(options)
         )
@@ -1547,8 +1543,6 @@ class File:
         self._archive._ensure_open()
         flags = _checked_int(flags, ctypes.c_uint32, "verify flags")
         name = None if filename is None else _as_bytes(filename)
-        if name is not None and b"\0" in name:
-            raise ValueError("filename contains NUL")
         checked, unavailable, mismatches = (ctypes.c_uint32() for _ in range(3))
         libmpq.libmpq__file_verify_ex(
             self._archive._mpq, self._native_number, name, flags,
@@ -1610,16 +1604,17 @@ class File:
         """Return validated PTCH bytes without applying the patch or its prefix.
 
         Pass the physical member filename when encryption requires a named key.
-        Native errors raise; the returned bytes are owned by the caller.
+        The filename must not contain NUL. The returned bytes are caller-owned.
         """
+        self._archive._ensure_open()
+        name = None if filename is None else _as_bytes(filename)
         size = self.patch_payload_size
         if size < 0 or size > sys.maxsize:
             raise LibmpqSizeError(ERROR_SIZE, "PTCH payload size cannot fit in Python memory")
         buffer = _native_buffer(size)
         transferred = _OFF_T()
         libmpq.libmpq__patch_payload_read(
-            self._archive._mpq, self._native_number,
-            None if filename is None else _as_bytes(filename),
+            self._archive._mpq, self._native_number, name,
             None if size == 0 else buffer, size, ctypes.byref(transferred))
         if transferred.value < 0 or transferred.value > size:
             raise LibmpqSizeError(ERROR_SIZE, "Invalid native PTCH byte count")
@@ -1691,7 +1686,7 @@ class Archive:
     _host_path = None
 
     def __init__(self, source, offset=-1):
-        """Open a path or a raw embedded File from a live plain MPQ on disk."""
+        """Open a NUL-free path or a raw embedded File from a live plain MPQ."""
         self._source = source
         if isinstance(source, File):
             parent = source._archive
@@ -1958,8 +1953,6 @@ class Archive:
             if len(values) != count:
                 raise ValueError("prefix count must match patch count")
             encoded = tuple(None if value is None else _as_bytes(value) for value in values)
-            if any(value is not None and b"\0" in value for value in encoded):
-                raise ValueError("prefixes must not contain NUL")
         handles = (_VOID_PTR * count)(*(layer._mpq for layer in layers))
         names = None if encoded is None else (ctypes.c_char_p * count)(*encoded)
         return layers, handles, names, count
@@ -1976,8 +1969,8 @@ class Archive:
         """
         selected = _identity_selection(locale, platform)
         name = _as_bytes(filename)
-        if not name or b"\0" in name:
-            raise ValueError("filename must be nonempty and must not contain NUL")
+        if not name:
+            raise ValueError("filename must be nonempty")
         layers, handles, names, count = self._patch_inputs(patches, prefixes)
         native = _VOID_PTR()
         arguments = (self._mpq, handles, names, count, name)

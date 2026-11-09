@@ -11,7 +11,7 @@
 module libmpq.mpq;
 
 import core.stdc.string : strlen;
-import std.string : toStringz;
+import libmpq.errors : checkedStringz;
 
 public import libmpq.archive;
 public import libmpq.errors;
@@ -44,7 +44,7 @@ final class Mpq {
     /** Calculate the three classic Storm hashes for an archive entry name. */
     static StormHash fileHash(string name) {
         StormHash result;
-        libmpq__file_hash(toStringz(name), &result.hash1, &result.hash2, &result.hash3);
+        libmpq__file_hash(checkedStringz(name), &result.hash1, &result.hash2, &result.hash3);
         return result;
     }
 }

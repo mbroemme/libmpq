@@ -10,9 +10,8 @@
 /** Transactional filesystem archive updates. */
 module libmpq.update;
 
-import std.string : toStringz;
 import core.memory : GC;
-import libmpq.errors : MPQException, checkStatus;
+import libmpq.errors : MPQException, checkStatus, checkedStringz;
 import libmpq.native;
 import libmpq.options : FileOptions;
 
@@ -31,14 +30,14 @@ final class Update {
     /** Begin an isolated transaction over an existing filesystem MPQ. */
     static Update begin(string path) {
         mpq_update_s* result;
-        checkStatus(libmpq__update_begin(&result, toStringz(path)), "libmpq__update_begin");
+        checkStatus(libmpq__update_begin(&result, checkedStringz(path)), "libmpq__update_begin");
         return new Update(result);
     }
 
     /** Begin an authenticated MPQE update using borrowed authentication bytes. */
     static Update beginMpqe(string path, const(ubyte)[] authCode) {
         mpq_update_s* result;
-        checkStatus(libmpq__update_begin_mpqe(&result, toStringz(path),
+        checkStatus(libmpq__update_begin_mpqe(&result, checkedStringz(path),
                     authCode.length == 0 ? null : authCode.ptr, authCode.length),
                     "libmpq__update_begin_mpqe");
         return new Update(result);
@@ -48,7 +47,7 @@ final class Update {
     void replaceRanges(string name, const(ReplaceRange)[] ranges) {
         ensureOpen();
         auto nativeRanges = rangeVector(ranges);
-        checkStatus(libmpq__update_replace_ranges(handle, toStringz(name),
+        checkStatus(libmpq__update_replace_ranges(handle, checkedStringz(name),
                     nativeRanges.ptr, nativeRanges.length), "libmpq__update_replace_ranges");
     }
 
@@ -57,7 +56,7 @@ final class Update {
                        const(ReplaceRange)[] ranges) {
         ensureOpen();
         auto nativeRanges = rangeVector(ranges);
-        checkStatus(libmpq__update_replace_ranges_identity(handle, toStringz(name),
+        checkStatus(libmpq__update_replace_ranges_identity(handle, checkedStringz(name),
                     locale, platform, nativeRanges.ptr, nativeRanges.length),
                     "libmpq__update_replace_ranges_identity");
     }
@@ -86,7 +85,7 @@ final class Update {
         ensureOpen();
         if (data.length > cast(size_t)long.max)
             throw new MPQException("Update.addData", ERROR_SIZE);
-        checkStatus(libmpq__update_add_data(handle, toStringz(name),
+        checkStatus(libmpq__update_add_data(handle, checkedStringz(name),
                     data.length == 0 ? null : data.ptr, cast(off_t)data.length,
                     options), "libmpq__update_add_data");
     }
@@ -94,14 +93,14 @@ final class Update {
     /** Stage a new member from a caller-owned source path. */
     void addPath(string name, string sourcePath) {
         ensureOpen();
-        checkStatus(libmpq__update_add_path(handle, toStringz(name), toStringz(sourcePath), null),
+        checkStatus(libmpq__update_add_path(handle, checkedStringz(name), checkedStringz(sourcePath), null),
                     "libmpq__update_add_path");
     }
 
     void addPath(string name, string sourcePath, FileOptions options) {
         ensureOpen();
         auto nativeOptions = options.nativeOptions();
-        checkStatus(libmpq__update_add_path(handle, toStringz(name), toStringz(sourcePath), &nativeOptions),
+        checkStatus(libmpq__update_add_path(handle, checkedStringz(name), checkedStringz(sourcePath), &nativeOptions),
                     "libmpq__update_add_path");
     }
 
@@ -121,7 +120,7 @@ final class Update {
         ensureOpen();
         if (data.length > cast(size_t)long.max)
             throw new MPQException("Update.replaceData", ERROR_SIZE);
-        checkStatus(libmpq__update_replace_data(handle, toStringz(name), data.length == 0 ? null : data.ptr, cast(off_t)data.length, options), "libmpq__update_replace_data");
+        checkStatus(libmpq__update_replace_data(handle, checkedStringz(name), data.length == 0 ? null : data.ptr, cast(off_t)data.length, options), "libmpq__update_replace_data");
     }
 
     /** Stage path replacement using native defaults and preserving identity. */
@@ -138,7 +137,7 @@ final class Update {
     private void replacePathImpl(string name, string sourcePath,
                                  const(mpq_file_options_s)* options) {
         ensureOpen();
-        checkStatus(libmpq__update_replace_path(handle, toStringz(name), toStringz(sourcePath), options),
+        checkStatus(libmpq__update_replace_path(handle, checkedStringz(name), checkedStringz(sourcePath), options),
                     "libmpq__update_replace_path");
     }
 
@@ -170,10 +169,7 @@ final class Update {
         foreach (i, name; filenames) {
             if (name.length == 0)
                 throw new MPQException("empty filename", ERROR_EXIST);
-            foreach (character; name)
-                if (character == 0)
-                    throw new MPQException("NUL filename", ERROR_FORMAT);
-            inputs.names[i] = toStringz(name);
+            inputs.names[i] = checkedStringz(name);
         }
         checkStatus(libmpq__update_compact_ex(handle,
                     inputs.names.length == 0 ? null : inputs.names.ptr, inputs.names.length),
@@ -183,26 +179,26 @@ final class Update {
     /** Set an existing Windows FILETIME; shared rows only accept same-value no-ops. */
     void timestamp(string name, ulong filetime) {
         ensureOpen();
-        checkStatus(libmpq__update_timestamp(handle, toStringz(name), filetime), "libmpq__update_timestamp");
+        checkStatus(libmpq__update_timestamp(handle, checkedStringz(name), filetime), "libmpq__update_timestamp");
     }
 
     /** Set Windows FILETIME on the exact filename, locale and platform. */
     void timestamp(string name, ushort locale, ushort platform, ulong filetime) {
         ensureOpen();
-        checkStatus(libmpq__update_timestamp_identity(handle, toStringz(name), filetime, locale, platform), "libmpq__update_timestamp_identity");
+        checkStatus(libmpq__update_timestamp_identity(handle, checkedStringz(name), filetime, locale, platform), "libmpq__update_timestamp_identity");
     }
 
     /** Stage removal of one named member. */
     void remove(string name) {
         ensureOpen();
-        checkStatus(libmpq__update_remove(handle, toStringz(name)),
+        checkStatus(libmpq__update_remove(handle, checkedStringz(name)),
                     "libmpq__update_remove");
     }
 
     /** Stage a filename change. */
     void rename(string oldName, string newName) {
         ensureOpen();
-        checkStatus(libmpq__update_rename(handle, toStringz(oldName), toStringz(newName)), "libmpq__update_rename");
+        checkStatus(libmpq__update_rename(handle, checkedStringz(oldName), checkedStringz(newName)), "libmpq__update_rename");
     }
 
     /** Replace only the exact locale/platform identity. */
@@ -221,7 +217,7 @@ final class Update {
         ensureOpen();
         if (data.length > cast(size_t)long.max)
             throw new MPQException("Update.replaceData", ERROR_SIZE);
-        checkStatus(libmpq__update_replace_data_identity(handle, toStringz(name), locale, platform, data.length == 0 ? null : data.ptr, cast(off_t)data.length, options), "libmpq__update_replace_data_identity");
+        checkStatus(libmpq__update_replace_data_identity(handle, checkedStringz(name), locale, platform, data.length == 0 ? null : data.ptr, cast(off_t)data.length, options), "libmpq__update_replace_data_identity");
     }
 
     /** Replace an exact identity from a caller-owned source path. */
@@ -238,21 +234,21 @@ final class Update {
     private void replacePathIdentityImpl(string name, ushort locale, ushort platform,
             string sourcePath, const(mpq_file_options_s)* options) {
         ensureOpen();
-        checkStatus(libmpq__update_replace_path_identity(handle, toStringz(name), locale, platform, toStringz(sourcePath), options),
+        checkStatus(libmpq__update_replace_path_identity(handle, checkedStringz(name), locale, platform, checkedStringz(sourcePath), options),
                     "libmpq__update_replace_path_identity");
     }
 
     /** Remove only the selected identity. */
     void remove(string name, ushort locale, ushort platform) {
         ensureOpen();
-        checkStatus(libmpq__update_remove_identity(handle, toStringz(name), locale, platform),
+        checkStatus(libmpq__update_remove_identity(handle, checkedStringz(name), locale, platform),
                     "libmpq__update_remove_identity");
     }
 
     /** Rename one exact identity, preserving its selectors. */
     void rename(string oldName, ushort locale, ushort platform, string newName) {
         ensureOpen();
-        checkStatus(libmpq__update_rename_identity(handle, toStringz(oldName), toStringz(newName), locale, platform), "libmpq__update_rename_identity");
+        checkStatus(libmpq__update_rename_identity(handle, checkedStringz(oldName), checkedStringz(newName), locale, platform), "libmpq__update_rename_identity");
     }
 
     /**
@@ -263,7 +259,7 @@ final class Update {
     void changeIdentity(string name, ushort locale, ushort platform,
                      ushort newLocale, ushort newPlatform) {
         ensureOpen();
-        checkStatus(libmpq__update_change_identity(handle, toStringz(name), locale, platform,
+        checkStatus(libmpq__update_change_identity(handle, checkedStringz(name), locale, platform,
                     newLocale, newPlatform), "libmpq__update_change_identity");
     }
 

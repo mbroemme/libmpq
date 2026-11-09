@@ -10,8 +10,7 @@
 /** Staged patch archive creation. */
 module libmpq.patch;
 
-import std.string : toStringz;
-import libmpq.errors : MPQException, checkStatus;
+import libmpq.errors : MPQException, checkStatus, checkedStringz;
 import libmpq.native;
 import libmpq.options : FileOptions;
 
@@ -24,8 +23,8 @@ final class Patch {
     /** Begin a patch without changing its base archive. */
     static Patch begin(string baseArchive, string outputPatch) {
         mpq_patch_s* result;
-        checkStatus(libmpq__patch_begin(&result, toStringz(baseArchive),
-                    toStringz(outputPatch)), "libmpq__patch_begin");
+        checkStatus(libmpq__patch_begin(&result, checkedStringz(baseArchive),
+                    checkedStringz(outputPatch)), "libmpq__patch_begin");
         return new Patch(result);
     }
 
@@ -33,8 +32,8 @@ final class Patch {
     static Patch beginMpqe(string baseArchive, string outputPatch,
                            const(ubyte)[] authCode) {
         mpq_patch_s* result;
-        checkStatus(libmpq__patch_begin_mpqe(&result, toStringz(baseArchive),
-                    toStringz(outputPatch), authCode.length == 0 ? null : authCode.ptr,
+        checkStatus(libmpq__patch_begin_mpqe(&result, checkedStringz(baseArchive),
+                    checkedStringz(outputPatch), authCode.length == 0 ? null : authCode.ptr,
                     authCode.length), "libmpq__patch_begin_mpqe");
         return new Patch(result);
     }
@@ -53,11 +52,10 @@ final class Patch {
     private void addDataImpl(string name, const(ubyte)[] data,
                                  const(mpq_file_options_s)* options) {
         ensureOpen();
-        foreach (character; name)
-            if (character == 0) throw new MPQException("Patch.addData", ERROR_FORMAT);
+        auto encoded = checkedStringz(name);
         if (data.length > cast(size_t)long.max)
             throw new MPQException("Patch.addData", ERROR_SIZE);
-        checkStatus(libmpq__patch_add_data(handle, toStringz(name),
+        checkStatus(libmpq__patch_add_data(handle, encoded,
                     data.length == 0 ? null : data.ptr, cast(off_t)data.length,
                     options), "libmpq__patch_add_data");
     }
@@ -76,12 +74,8 @@ final class Patch {
     private void addPathImpl(string name, string sourcePath,
                                  const(mpq_file_options_s)* options) {
         ensureOpen();
-        foreach (character; name)
-            if (character == 0) throw new MPQException("Patch.addPath", ERROR_FORMAT);
-        foreach (character; sourcePath)
-            if (character == 0) throw new MPQException("Patch.addPath", ERROR_FORMAT);
-        checkStatus(libmpq__patch_add_path(handle, toStringz(name),
-                    toStringz(sourcePath), options),
+        checkStatus(libmpq__patch_add_path(handle, checkedStringz(name),
+                    checkedStringz(sourcePath), options),
                     "libmpq__patch_add_path");
     }
 
@@ -101,7 +95,7 @@ final class Patch {
         ensureOpen();
         if (data.length > cast(size_t)long.max)
             throw new MPQException("Patch.replaceData", ERROR_SIZE);
-        checkStatus(libmpq__patch_replace_data(handle, toStringz(name),
+        checkStatus(libmpq__patch_replace_data(handle, checkedStringz(name),
                     data.length == 0 ? null : data.ptr, cast(off_t)data.length,
                     options), "libmpq__patch_replace_data");
     }
@@ -120,15 +114,15 @@ final class Patch {
     private void replacePathImpl(string name, string sourcePath,
                                  const(mpq_file_options_s)* options) {
         ensureOpen();
-        checkStatus(libmpq__patch_replace_path(handle, toStringz(name),
-                    toStringz(sourcePath), options),
+        checkStatus(libmpq__patch_replace_path(handle, checkedStringz(name),
+                    checkedStringz(sourcePath), options),
                     "libmpq__patch_replace_path");
     }
 
     /** Stage a delete marker for an existing named member. */
     void remove(string name) {
         ensureOpen();
-        checkStatus(libmpq__patch_remove(handle, toStringz(name)),
+        checkStatus(libmpq__patch_remove(handle, checkedStringz(name)),
                     "libmpq__patch_remove");
     }
 

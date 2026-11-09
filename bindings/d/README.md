@@ -38,6 +38,11 @@ auto entry = archive.file("(listfile)");
 auto data = entry.read();
 ```
 
+Native string inputs, including paths, member names, source labels and patch
+prefixes, reject embedded NUL with `MPQException` (`ERROR_FORMAT`) before
+calling libmpq. NUL-free D strings retain their original bytes. A null patch
+prefix requests inference. A non-null empty prefix selects the root namespace.
+
 All arrays passed to the writer are borrowed for the duration of the call.
 Arrays returned by `read` and `readBlock` are owned by the caller. Always close
 archives explicitly; a destructor performs only best-effort cleanup because D

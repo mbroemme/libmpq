@@ -2102,7 +2102,80 @@ private void testMemberWriterLifetime() {
     }
 }
 
+private void testNativeStringBoundaries() {
+    import std.algorithm.searching : canFind;
+
+    void requireNul(scope void delegate() action) {
+        bool rejected;
+        try { action(); }
+        catch (MPQException error) {
+            assert(error.code == ERROR_FORMAT && error.functionName == "native string");
+            assert(error.msg.canFind("NUL"));
+            rejected = true;
+        }
+        assert(rejected);
+    }
+
+    auto path = temporaryArchive("native-string");
+    auto output = temporaryArchive("native-string-output");
+    scope(exit) remove(path);
+    scope(exit) remove(output);
+    enum name = "raw-\xFF";
+    enum badName = name ~ "\0ignored";
+    auto writer = Archive.create(path);
+    requireNul(() { writer.begin(badName, 0).close(); });
+    writer.add(name, cast(const(ubyte)[]) "original");
+    writer.close();
+
+    auto original = cast(ubyte[]) read(path);
+    write(output, original);
+    auto badPath = path ~ "\0ignored";
+    auto badOutput = output ~ "\0ignored";
+    auto code = new ubyte[32];
+    requireNul(() { Archive.open(badPath).close(); });
+    requireNul(() { Archive.openMpqe(badPath, code).close(); });
+    requireNul(() { Archive.create(badPath).close(); });
+    requireNul(() { Archive.createMpqe(badPath, code).close(); });
+    requireNul(() { Update.begin(badPath).abort(); });
+    requireNul(() { Patch.begin(path, badOutput).abort(); });
+    requireNul(() { Patch.beginMpqe(path, badOutput, code).abort(); });
+
+    auto update = Update.begin(path);
+    scope(exit) update.abort();
+    requireNul(() { update.replacePath(name, 0, 0, badPath); });
+    requireNul(() { update.rename(badName, "other"); });
+    requireNul(() { update.rename(name, 0, 0, badName); });
+    requireNul(() { update.compact([name, badName]); });
+    auto patch = Patch.begin(path, output);
+    scope(exit) patch.abort();
+    requireNul(() { patch.addPath("added", badPath); });
+    requireNul(() { patch.replacePath(name, badPath); });
+    assert(read(path) == original && read(output) == original);
+
+    auto archive = Archive.open(path);
+    scope(exit) archive.close();
+    auto number = archive.fileNumber(name, 0, 0);
+    auto member = archive.file(number);
+    assert(member.read() == cast(const(ubyte)[]) "original");
+    assert(member.verifyResult(VERIFY_ALL, null).mismatches == 0);
+    requireNul(() { Mpq.fileHash(badName); });
+    requireNul(() { archive.file(badName); });
+    requireNul(() { archive.fileNumber(badName, 0, 0); });
+    requireNul(() { archive.openStream(badName, 0, 0).close(); });
+    requireNul(() { member.verifyResult(VERIFY_ALL, badName); });
+    requireNul(() { member.readPatchPayload(badName); });
+    requireNul(() { Archive.openPatch(archive, [archive], [badName]).close(); });
+    requireNul(() { archive.openPatchStream(name, [archive], [badName]).close(); });
+    requireNul(() { archive.openPatchStream(badName, 0, 0, []).close(); });
+
+    auto source = new MemorySource(original);
+    requireNul(() { Archive.openSource(source, badName).close(); });
+    requireNul(() { Archive.openMpqeSource(source, code, badName).close(); });
+    assert(source.readCalls == 0);
+}
+
 void main() {
+    testNativeStringBoundaries();
     testMemberWriterLifetime();
     testCreateSink();
     testCreateMpqeSink();
