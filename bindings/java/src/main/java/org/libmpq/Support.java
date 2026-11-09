@@ -16,6 +16,7 @@ import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Objects;
 import org.libmpq.ffi.LibmpqNative;
 
 /** Internal memory, encoding, range, and native-error helpers for the binding. */
@@ -107,6 +108,33 @@ final class Support {
         MemorySegment result = arena.allocate(value.length, 1);
         result.copyFrom(MemorySegment.ofArray(value));
         return result;
+    }
+
+    /** Validate caller-owned contiguous native storage before passing its address to C. */
+    static void checkNativeBuffer(MemorySegment buffer, boolean writable) {
+        Objects.requireNonNull(buffer, "buffer");
+        if (!buffer.scope().isAlive() || !buffer.isAccessibleBy(Thread.currentThread())) {
+            throw new IllegalArgumentException("buffer is closed or inaccessible from this thread");
+        }
+        if (!buffer.isNative() || (writable && buffer.isReadOnly())) {
+            throw new IllegalArgumentException(writable
+                ? "buffer must be writable native memory" : "buffer must be native memory");
+        }
+        long size = buffer.byteSize();
+        long address = buffer.address();
+        long last = address + size - 1;
+        if (size < 0 || (size != 0 && (address == 0 || Long.compareUnsigned(last, address) < 0
+                || (ValueLayout.ADDRESS.byteSize() == 4 && Long.compareUnsigned(last, 0xffff_ffffL) > 0)))) {
+            throw new IllegalArgumentException("invalid native buffer extent");
+        }
+    }
+
+    static long transferred(MemorySegment count, long capacity) {
+        long size = LibmpqNative.getLong(count);
+        if (size < 0 || size > capacity) {
+            throw new IllegalArgumentException("invalid native transfer count");
+        }
+        return size;
     }
 
     /** Copies native output bytes into a Java destination array. */

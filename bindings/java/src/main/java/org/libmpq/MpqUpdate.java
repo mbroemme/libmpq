@@ -73,6 +73,28 @@ public final class MpqUpdate implements AutoCloseable {
         }
     }
 
+    /**
+     * Stage a new member from caller-owned native memory. Keep the segment alive
+     * and its bytes stable until the synchronous call returns.
+     */
+    public void addDataSegment(String name, MemorySegment data,
+                                   FileOptions options) throws LibmpqException {
+        addDataSegmentBytes(MpqName.ofUtf8(name), data, options);
+    }
+
+    /** Byte-exact form of {@link #addDataSegment(String, MemorySegment, FileOptions)}. */
+    public void addDataSegmentBytes(MpqName name, MemorySegment data,
+                                        FileOptions options) throws LibmpqException {
+        checkOpen();
+        Objects.requireNonNull(name, "name");
+        Support.checkNativeBuffer(data, false);
+        long size = data.byteSize();
+        try (Arena arena = Arena.ofConfined()) {
+            Support.check(LibmpqNative.updateAddData(handle, name.marshal(arena),
+                    size == 0 ? MemorySegment.NULL : data, size, options(arena, options)));
+        }
+    }
+
     /** Stage a new member from a caller-owned source path. */
     public void addPath(String name, Path source, FileOptions options) throws LibmpqException {
         addPathBytes(MpqName.ofUtf8(name), NativePath.of(source), options);
@@ -155,6 +177,28 @@ public final class MpqUpdate implements AutoCloseable {
                 handle, name.marshal(arena), Support.bytes(arena, data), data.length,
                 options(arena, options)
             ));
+        }
+    }
+
+    /**
+     * Stage a replacement from caller-owned native memory. Keep the segment alive
+     * and its bytes stable until the synchronous call returns.
+     */
+    public void replaceDataSegment(String name, MemorySegment data,
+                                   FileOptions options) throws LibmpqException {
+        replaceDataSegmentBytes(MpqName.ofUtf8(name), data, options);
+    }
+
+    /** Byte-exact form of {@link #replaceDataSegment(String, MemorySegment, FileOptions)}. */
+    public void replaceDataSegmentBytes(MpqName name, MemorySegment data,
+                                        FileOptions options) throws LibmpqException {
+        checkOpen();
+        Objects.requireNonNull(name, "name");
+        Support.checkNativeBuffer(data, false);
+        long size = data.byteSize();
+        try (Arena arena = Arena.ofConfined()) {
+            Support.check(LibmpqNative.updateReplaceData(handle, name.marshal(arena),
+                    size == 0 ? MemorySegment.NULL : data, size, options(arena, options)));
         }
     }
 
@@ -298,6 +342,30 @@ public final class MpqUpdate implements AutoCloseable {
                 handle, name.marshal(arena), selectedLocale, selectedPlatform,
                 Support.bytes(arena, data), data.length, options(arena, options)
             ));
+        }
+    }
+
+    /**
+     * Stage an exact-identity replacement from caller-owned native memory. Keep the segment alive
+     * and its bytes stable until the synchronous call returns.
+     */
+    public void replaceDataSegment(String name, int locale, int platform, MemorySegment data,
+                                   FileOptions options) throws LibmpqException {
+        replaceDataSegmentBytes(MpqName.ofUtf8(name), locale, platform, data, options);
+    }
+
+    /** Byte-exact form of {@link #replaceDataSegment(String, int, int, MemorySegment, FileOptions)}. */
+    public void replaceDataSegmentBytes(MpqName name, int locale, int platform, MemorySegment data,
+                                        FileOptions options) throws LibmpqException {
+        checkOpen();
+        Objects.requireNonNull(name, "name");
+        short selectedLocale = selector(locale);
+        short selectedPlatform = selector(platform);
+        Support.checkNativeBuffer(data, false);
+        long size = data.byteSize();
+        try (Arena arena = Arena.ofConfined()) {
+            Support.check(LibmpqNative.updateReplaceDataIdentity(handle, name.marshal(arena), selectedLocale, selectedPlatform,
+                    size == 0 ? MemorySegment.NULL : data, size, options(arena, options)));
         }
     }
 

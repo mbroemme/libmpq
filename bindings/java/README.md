@@ -137,6 +137,60 @@ try {
 }
 ```
 
+### Whole-buffer operations with native memory
+
+`Archive.readFile(number, destination)` and
+`Archive.readPatchPayload(number, filename, destination)` write into a
+caller-owned native `MemorySegment` and return a `long` transferred count.
+Use `readPatchPayloadBytes(number, mpqName, destination)` for byte-exact
+physical names. Supply capacity for the whole logical member or decoded
+PTCH body, respectively. Query it with `fileUnpackedSize(number)` or
+`patchPayloadSize(number)`. The whole-file read retains native integrity
+checks for the complete member that incremental stream reads do not perform.
+A failed whole-file read can leave bytes in the destination.
+
+```java
+try (Arena arena = Arena.ofConfined()) {
+    long size = archive.fileUnpackedSize(number);
+    MemorySegment destination = arena.allocate(Math.max(1L, size)).asSlice(0, size);
+    long count = archive.readFile(number, destination);
+}
+```
+
+`MpqUpdate` and `MpqPatch` accept native data through `addDataSegment` and
+`replaceDataSegment`. `MpqUpdate.replaceDataSegment` also takes the exact
+locale and platform selectors immediately after the name. The corresponding
+`addDataSegmentBytes` and `replaceDataSegmentBytes` methods accept `MpqName`.
+The distinct mutation names preserve overload resolution for existing
+array calls that pass `null`.
+
+```java
+try (Arena arena = Arena.ofConfined()) {
+    MemorySegment payload = arena.allocateFrom(ValueLayout.JAVA_BYTE, (byte) 42);
+    update.replaceDataSegment("member.bin", payload, null);
+}
+```
+
+Import `Arena`, `MemorySegment` and `ValueLayout` from `java.lang.foreign`.
+The segment must describe a valid contiguous native range accessible to the
+calling thread. Destinations must be writable. Keep the segment alive and
+synchronize any closure or mutation with the call. The binding borrows
+the range synchronously, so the caller can release it after the method returns,
+including before update commit or patch finish. Heap segments are rejected.
+The binding passes the payload address directly. Native PTCH decoding and
+patch generation may still allocate their own working buffers.
+
+Array methods remain available up to Java's array and allocation limits.
+Segment lengths use the native signed 64-bit capacity or length. Actual
+members remain subject to native format and resource limits. Whole-file
+reads, staged data changes and patch additions use the format's 32-bit
+member-size fields. SINGLE storage also has a signed 32-bit block limit.
+Decoded PTCH sizes come from the patch-info header's unsigned 32-bit field
+and still require native staging memory. Physical patch replacement limits
+the target size to `min(UINT32_MAX, SIZE_MAX) - 96` bytes for the patch
+headers. Archive generation, stored sizes, layout and codec restrictions
+can impose lower limits.
+
 ### Custom random-access I/O
 
 Use `Archive.openSource(channel, sourceName)` for a caller-owned

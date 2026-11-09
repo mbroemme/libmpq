@@ -84,6 +84,28 @@ public final class MpqPatch implements AutoCloseable {
         }
     }
 
+    /**
+     * Stage a new ordinary patch member from caller-owned native memory. Keep the segment alive
+     * and its bytes stable until the synchronous call returns.
+     */
+    public void addDataSegment(String name, MemorySegment data,
+                                   FileOptions options) throws LibmpqException {
+        addDataSegmentBytes(MpqName.ofUtf8(name), data, options);
+    }
+
+    /** Byte-exact form of {@link #addDataSegment(String, MemorySegment, FileOptions)}. */
+    public void addDataSegmentBytes(MpqName name, MemorySegment data,
+                                        FileOptions options) throws LibmpqException {
+        checkOpen();
+        Objects.requireNonNull(name, "name");
+        Support.checkNativeBuffer(data, false);
+        long size = data.byteSize();
+        try (Arena arena = Arena.ofConfined()) {
+            Support.check(LibmpqNative.patchAddData(handle, name.marshal(arena),
+                    size == 0 ? MemorySegment.NULL : data, size, options(arena, options)));
+        }
+    }
+
     /** Stage a filesystem source using ordinary writer defaults. */
     public void addPath(String name, Path source) throws LibmpqException {
         addPath(name, source, null);
@@ -123,6 +145,28 @@ public final class MpqPatch implements AutoCloseable {
         try (Arena arena = Arena.ofConfined()) {
             Support.check(LibmpqNative.patchReplaceData(handle, name.marshal(arena),
                     Support.bytes(arena, data), data.length, options(arena, options)));
+        }
+    }
+
+    /**
+     * Stage a physical patch replacement from caller-owned native memory. Keep the segment alive
+     * and its bytes stable until the synchronous call returns.
+     */
+    public void replaceDataSegment(String name, MemorySegment data,
+                                   FileOptions options) throws LibmpqException {
+        replaceDataSegmentBytes(MpqName.ofUtf8(name), data, options);
+    }
+
+    /** Byte-exact form of {@link #replaceDataSegment(String, MemorySegment, FileOptions)}. */
+    public void replaceDataSegmentBytes(MpqName name, MemorySegment data,
+                                        FileOptions options) throws LibmpqException {
+        checkOpen();
+        Objects.requireNonNull(name, "name");
+        Support.checkNativeBuffer(data, false);
+        long size = data.byteSize();
+        try (Arena arena = Arena.ofConfined()) {
+            Support.check(LibmpqNative.patchReplaceData(handle, name.marshal(arena),
+                    size == 0 ? MemorySegment.NULL : data, size, options(arena, options)));
         }
     }
 

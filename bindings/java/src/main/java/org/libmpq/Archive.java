@@ -885,6 +885,27 @@ public final class Archive implements AutoCloseable {
         }
     }
 
+    /**
+     * Reads and verifies a whole member into caller-owned writable native memory.
+     * The destination must hold the expected logical size. Keep it accessible
+     * and unchanged by other threads until this synchronous call returns.
+     * A native error can leave bytes in the destination.
+     *
+     * @return the actual number of decoded bytes
+     */
+    public long readFile(int number, MemorySegment destination) throws LibmpqException {
+        checkOpen();
+        Support.checkNativeBuffer(destination, true);
+        long capacity = destination.byteSize();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment transferred = arena.allocate(ValueLayout.JAVA_LONG);
+            // A zero-length SINGLE block can still use the caller's output address.
+            MemorySegment output = capacity == 0 ? arena.allocate(1) : destination;
+            Support.check(LibmpqNative.fileRead(handle, number, output, capacity, transferred));
+            return Support.transferred(transferred, capacity);
+        }
+    }
+
     /** Return decoded PTCH size, distinct from the final patched target size. */
     public long patchPayloadSize(int number) throws LibmpqException {
         checkOpen();
@@ -920,6 +941,33 @@ public final class Archive implements AutoCloseable {
             byte[] result = new byte[Support.checkedArraySize(count)];
             Support.copyTo(output, result);
             return result;
+        }
+    }
+
+    /**
+     * Reads validated decoded PTCH bytes into writable native memory and
+     * returns the transferred length. The optional filename supplies key
+     * context. Use {@link #patchPayloadSize(int)} for the destination size.
+     */
+    public long readPatchPayload(int number, String filename, MemorySegment destination)
+            throws LibmpqException {
+        return readPatchPayloadBytes(number, Support.optionalName(filename), destination);
+    }
+
+    /**
+     * Byte-exact form of {@link #readPatchPayload(int, String, MemorySegment)}.
+     * The destination is borrowed for the synchronous call.
+     */
+    public long readPatchPayloadBytes(int number, MpqName filename, MemorySegment destination)
+            throws LibmpqException {
+        checkOpen();
+        Support.checkNativeBuffer(destination, true);
+        long capacity = destination.byteSize();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment transferred = arena.allocate(ValueLayout.JAVA_LONG);
+            Support.check(LibmpqNative.patchPayloadRead(handle, number,
+                    Support.nullableName(arena, filename), destination, capacity, transferred));
+            return Support.transferred(transferred, capacity);
         }
     }
 
