@@ -7,12 +7,14 @@
 
 """End-to-end tests for the public Python binding and native libmpq ABI."""
 
+import array
 import ctypes
 import concurrent.futures
 import gc
 import hashlib
 import io
 import inspect
+import mmap
 import os
 import struct
 import sys
@@ -87,6 +89,174 @@ def test_patch_payload_integrity():
         assert entry.patch_payload_size == 84
         with pytest.raises(mpq.LibmpqFormatError):
             entry.read_patch_payload()
+        destination = bytearray(b"!" * 84)
+        with pytest.raises(mpq.LibmpqFormatError) as caught:
+            entry.read_patch_payload_into(destination)
+        assert caught.value.code == mpq.ERROR_FORMAT
+        assert not hasattr(caught.value, "transferred")
+        assert destination == b"!" * 84
+
+
+@pytest.mark.parametrize("kind", ["file", "block", "patch_payload", "stream"])
+def test_caller_owned_read_buffer(kind, monkeypatch, tmp_path):
+    """Exercise the public operation with real buffers and the original native function."""
+    path = tmp_path / "mapped.mpq"
+    with mpq.Archive(FIXTURES / "mpq-v1-features.mpq") as archive, \
+         mpq.Archive(FIXTURES / "mpq-v1-features-patch.mpq") as patch, \
+         archive.open_stream("overview.txt") as stream:
+        entry = archive["overview.txt"]
+        patch_entry = patch["overview.txt"]
+        reads = {
+            "file": (entry.read_into, entry.read),
+            "block": (lambda buffer: entry.read_block_into(0, buffer), lambda: entry.read_block(0)),
+            "patch_payload": (patch_entry.read_patch_payload_into, patch_entry.read_patch_payload),
+            "stream": (stream.read_into, stream.read),
+        }
+        read, read_bytes = reads[kind]
+        expected = read_bytes()
+        size = len(expected)
+        calls = []
+        symbol = f"libmpq__{kind}_read"
+        native = getattr(mpq.libmpq, symbol)
+
+        def spy(*args):
+            calls.append((ctypes.cast(args[-3], ctypes.c_void_p).value, args[-2]))
+            return native(*args)
+
+        def unexpected(*args):
+            pytest.fail("unexpected native metadata or verification call")
+
+        monkeypatch.setattr(mpq.libmpq, symbol, spy)
+        for extra in ("patch_payload_size", "block_size_unpacked", "block_verify"):
+            monkeypatch.setattr(mpq.libmpq, f"libmpq__{extra}", unexpected)
+
+        for capacity in (size, size + 7):
+            destination = bytearray(b"!" * capacity)
+            stream.seek(0)
+            assert read(destination) == size
+            assert destination == expected + b"!" * (capacity - size)
+            assert calls.pop() == (ctypes.addressof(ctypes.c_uint8.from_buffer(destination)), capacity)
+            assert not calls
+            destination.extend(b"!")  # The temporary exports have been released.
+
+        backing = bytearray(b"!" * (size + 7))
+        with memoryview(backing)[3:-4] as view:
+            stream.seek(0)
+            assert read(view) == size
+            assert calls.pop() == (ctypes.addressof(ctypes.c_uint8.from_buffer(backing)) + 3, size)
+            assert not calls
+            assert not view.readonly  # The caller's view remains usable.
+        assert backing == b"!!!" + expected + b"!!!!"
+
+        words = array.array("I", [0])
+        words *= (size + words.itemsize - 1) // words.itemsize
+        stream.seek(0)
+        assert read(words) == size
+        assert words.tobytes()[:size] == expected
+        assert calls.pop()[1] == len(words) * words.itemsize
+        assert not calls
+
+        with path.open("w+b") as file:
+            file.truncate(size + 1)
+            with mmap.mmap(file.fileno(), size + 1, access=mmap.ACCESS_WRITE) as mapped:
+                mapped[size:] = b"!"
+                stream.seek(0)
+                assert read(mapped) == size
+                assert mapped[:] == expected + b"!"
+                assert calls.pop()[1] == size + 1
+                assert not calls
+
+        released = memoryview(backing)
+        released.release()
+        with memoryview(bytes(backing)) as readonly, memoryview(backing)[::2] as strided:
+            for invalid in (bytes(backing), readonly, strided, object()):
+                with pytest.raises(TypeError):
+                    read(invalid)
+            with pytest.raises(ValueError):
+                read(released)
+        assert not calls
+
+        with mmap.mmap(-1, size - 1) as short:
+            stream.seek(0)
+            if kind == "stream":
+                assert read(short) == size - 1
+                assert short[:] == expected[:-1]
+                assert stream.tell() == size - 1
+            else:
+                with pytest.raises(mpq.LibmpqSizeError) as caught:
+                    read(short)
+                assert caught.value.code == mpq.ERROR_SIZE
+                assert not hasattr(caught.value, "transferred")
+            assert calls.pop()[1] == size - 1
+            assert not calls
+        # Closing the mmap succeeded even while the exception traceback lived.
+
+        if kind == "stream":
+            assert read(bytearray(3)) == 1
+            assert read(bytearray(3)) == 0
+            assert stream.tell() == size
+            assert read(bytearray()) == 0
+            assert [capacity for _, capacity in calls] == [3, 3, 0]
+            calls.clear()
+        else:
+            with pytest.raises(mpq.LibmpqSizeError) as caught:
+                read(bytearray())
+            assert caught.value.code == mpq.ERROR_SIZE
+            assert calls.pop()[1] == 0
+            assert not calls
+
+        stream.close()
+        patch.close()
+        archive.close()
+        with pytest.raises(mpq.LibmpqStateError) as caught:
+            read(bytearray(size))
+        assert caught.value.code == mpq.ERROR_NOT_INITIALIZED
+        assert not calls
+
+
+def test_read_patch_payload_into_name_context(tmp_path, monkeypatch):
+    base, output = tmp_path / "base.mpq", tmp_path / "patch.mpq"
+    name = b"physical-\xff"
+    with mpq.Writer(base) as writer:
+        writer.add_data(name, b"original")
+    with mpq.Patch.begin(base, output) as patch:
+        options = mpq.FileCreateOptions(mpq.FILE_FLAG_SINGLE | mpq.FILE_FLAG_ENCRYPTED, 0, 0, 0, 0)
+        patch.replace_data(name, b"replacement", options)
+        patch.finish()
+
+    with mpq.Archive(output) as archive:
+        entry = archive[name]
+        expected = entry.read_patch_payload(name)
+        destination = bytearray(b"!" * len(expected))
+        assert expected.startswith(b"PTCH")
+        assert len(expected) != entry.unpacked_size
+        native = mpq.libmpq.libmpq__patch_payload_read
+        calls = []
+
+        def spy(*args):
+            calls.append(args[2])
+            return native(*args)
+
+        monkeypatch.setattr(mpq.libmpq, "libmpq__patch_payload_read", spy)
+        for invalid in ("bad\0name", b"bad\0name"):
+            with pytest.raises(ValueError, match="NUL"):
+                entry.read_patch_payload_into(destination, invalid)
+        assert not calls
+        for spelling in (None, b""):
+            with pytest.raises(mpq.LibmpqError) as caught:
+                entry.read_patch_payload_into(destination, spelling)
+            with pytest.raises(mpq.LibmpqError) as legacy:
+                entry.read_patch_payload(spelling)
+            assert caught.value.code == legacy.value.code
+            assert destination == b"!" * len(expected)
+        assert entry.read_patch_payload_into(destination, filename=name) == len(expected)
+        assert destination == expected
+        assert calls == [None, None, b"", b"", name]
+
+    with mpq.Archive(base) as archive:
+        with pytest.raises(mpq.LibmpqNotFoundError) as caught:
+            archive[name].read_patch_payload_into(bytearray(100))
+        assert caught.value.code == mpq.ERROR_EXIST
 
 
 def test_patch_payload_allocation_bounds(monkeypatch):
@@ -691,7 +861,8 @@ def test_custom_io_sources_and_stream_lifetime():
 
 
 @pytest.mark.parametrize("failing_block", [0, 1, 2])
-def test_stream_read_preserves_partial_result(tmp_path, failing_block):
+@pytest.mark.parametrize("into", [False, True])
+def test_stream_read_preserves_partial_result(tmp_path, failing_block, into, monkeypatch):
     sector = 4096
     payload = b"A" * sector + b"B" * sector + b"C" * sector + b"D" * 23
     path = tmp_path / "partial.mpq"
@@ -717,12 +888,30 @@ def test_stream_read_preserves_partial_result(tmp_path, failing_block):
     with stream:
         assert stream.read(0) == b""
         assert stream.tell() == source.failures == 0
-        with pytest.raises(mpq.LibmpqIOError) as caught:
-            stream.read(len(payload))
+        if into:
+            destination = bytearray(b"!" * len(payload))
+            native = mpq.libmpq.libmpq__stream_read
+            calls = []
+
+            def spy(*args):
+                calls.append(args[-2])
+                return native(*args)
+
+            with monkeypatch.context() as guard:
+                guard.setattr(mpq.libmpq, "libmpq__stream_read", spy)
+                with pytest.raises(mpq.LibmpqIOError) as caught:
+                    stream.read_into(destination)
+            assert calls == [len(payload)]
+            assert destination == payload[:transferred] + b"!" * (len(payload) - transferred)
+            destination.extend(b"!")
+            assert not hasattr(caught.value, "partial_data")
+        else:
+            with pytest.raises(mpq.LibmpqIOError) as caught:
+                stream.read(len(payload))
+            assert caught.value.partial_data == payload[:transferred]
         error = caught.value
         assert error.code == mpq.ERROR_READ
         assert error.transferred == stream.tell() == transferred
-        assert error.partial_data == payload[:transferred]
         assert source.failures == 1
 
         source.fault = None
@@ -1235,8 +1424,80 @@ def test_explicit_verification_mismatches(tmp_path, corrupt):
         if corrupt:
             with pytest.raises(mpq.LibmpqIOError):
                 entry.read()
+            with pytest.raises(mpq.LibmpqIOError) as caught:
+                entry.read_into(bytearray(len(payload)))
+            assert caught.value.code == mpq.ERROR_READ
+            assert not hasattr(caught.value, "transferred")
         else:
             assert entry.read() == payload
+            buffer = bytearray(len(payload))
+            assert entry.read_into(buffer) == len(payload)
+            assert buffer == payload
+
+
+def test_read_block_into_actual_decoded_size(tmp_path, monkeypatch):
+    path = tmp_path / "reader-blocks.mpq"
+    single = mpq.FileCreateOptions.compressed(mpq.COMPRESSION_ZLIB, mpq.COMPRESSION_ZLIB)
+    single.flags |= mpq.FILE_FLAG_SINGLE
+    multi = b"A" * 512 + b"B" * 23
+    with mpq.Writer(path, sector_size=512) as writer:
+        writer.add_data("sectorized", multi)
+        writer.add_data("single", b"J" * 4000, single)
+        writer.add_data("empty", b"", mpq.FileCreateOptions(flags=mpq.FILE_FLAG_SINGLE))
+    with mpq.Archive(path) as archive:
+        entry = archive["sectorized"]
+        for block, expected in enumerate((multi[:512], multi[512:])):
+            buffer = bytearray(b"!" * 520)
+            assert entry.read_block_into(block, buffer) == len(expected)
+            assert buffer == expected + b"!" * (len(buffer) - len(expected))
+        with pytest.raises(mpq.LibmpqNotFoundError) as caught:
+            entry.read_block_into(0xffffffff, bytearray(512))
+        assert caught.value.code == mpq.ERROR_EXIST
+        with monkeypatch.context() as guard:
+            def unexpected(*args):
+                pytest.fail("invalid block index reached C")
+
+            guard.setattr(mpq.libmpq, "libmpq__block_read", unexpected)
+            for invalid in (-1, 1 << 32):
+                with pytest.raises(ValueError):
+                    entry.read_block_into(invalid, bytearray(512))
+            with pytest.raises(TypeError):
+                entry.read_block_into(0.0, bytearray(512))
+        entry = archive["empty"]
+        assert entry.read_block_into(0, bytearray()) == entry.read_into(bytearray()) == 0
+        assert entry.read_block(0) == entry.read() == b""
+        entry = archive["single"]
+        offset = archive.offset + entry.offset
+        packed_size = entry.block_size_packed(0)
+        buffer = bytearray(4000)
+        assert entry.read_block_into(0, buffer) == len(buffer)
+        assert buffer == b"J" * 4000
+
+    wire = bytearray(path.read_bytes())
+    for expected in (b"short block", b""):
+        # Change the zlib payload while preserving the nominal size in the tables.
+        packed = bytes([mpq.COMPRESSION_ZLIB]) + zlib.compress(expected)
+        assert len(packed) <= packed_size
+        wire[offset:offset + packed_size] = packed.ljust(packed_size, b"\0")
+        path.write_bytes(wire)
+        with mpq.Archive(path) as archive:
+            entry = archive["single"]
+            assert entry.block_size_unpacked(0) == 4000
+            assert entry.read_block(0) == expected
+            buffer = bytearray(b"!" * 4001)
+            assert entry.read_block_into(0, buffer) == len(expected)
+            assert buffer == expected + b"!" * (len(buffer) - len(expected))
+            with pytest.raises(mpq.LibmpqSizeError) as caught:
+                entry.read_block_into(0, bytearray(3999))
+            assert caught.value.code == mpq.ERROR_SIZE
+
+    wire[offset + 1:offset + packed_size] = bytes(packed_size - 1)
+    path.write_bytes(wire)
+    with mpq.Archive(path) as archive:
+        with pytest.raises(mpq.LibmpqUnpackError) as caught:
+            archive["single"].read_block_into(0, bytearray(4000))
+        assert caught.value.code == mpq.ERROR_UNPACK
+        assert not hasattr(caught.value, "transferred")
 
 
 @pytest.mark.parametrize("chunk_size", [0, 1, 2, 3])

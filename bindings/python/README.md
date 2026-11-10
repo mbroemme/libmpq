@@ -123,6 +123,55 @@ except mpq.LibmpqError as error:
     position = stream.tell()
 ```
 
+### Reading into caller-owned storage
+
+Use a writable C-contiguous buffer such as a `bytearray`, writable
+`memoryview`, an appropriately sliced view, or a writable `mmap`. The
+binding passes the view's address and byte capacity directly to C without
+copying the destination. It uses the length in bytes even for a view with
+multi-byte elements, and checks that capacity fits a signed 64-bit integer.
+Read-only, strided and released views are rejected. The caller owns the
+storage and must keep it available throughout the call. Do not resize,
+unmap, close or concurrently mutate the destination while C is using it.
+
+```python
+import mpq
+
+with mpq.Archive("archive.mpq") as archive:
+    entry = archive["overview.txt"]
+    content = bytearray(entry.unpacked_size)
+    file_count = entry.read_into(content)
+
+    block = bytearray(entry.block_size_unpacked(0))
+    block_count = entry.read_block_into(0, block)
+
+    with archive.open_stream("overview.txt") as stream:
+        chunk = bytearray(4096)
+        stream_count = stream.read_into(chunk)
+
+with mpq.Archive("changes.mpq") as patch:
+    entry = patch["overview.txt"]
+    payload = bytearray(entry.patch_payload_size)
+    payload_count = entry.read_patch_payload_into(payload, filename="overview.txt")
+```
+
+Each method returns the actual count in bytes from one native read. Whole-file
+reads perform the usual integrity checks. Block reads require nominal block
+capacity and can return fewer bytes after decoding. They use the ordinary
+block decoder without separate checksum verification. PTCH reads return the
+validated physical payload and accept the optional physical member name for
+key derivation. Use the relevant size query to prepare storage when its
+capacity is unknown.
+
+`MpqStream.read_into()` returns zero at EOF or for a zero-capacity
+destination. On failure, the native status is in `error.code`, and the
+first `error.transferred` bytes of the destination remain valid. The cursor
+includes those bytes. The exception omits `partial_data` because the prefix
+is in the supplied buffer. Whole-file, block and PTCH reads provide a byte
+count on success only. Use `read()`, `read_block()` and
+`read_patch_payload()` for return-bytes reads, including the existing
+`partial_data` convention on `MpqStream.read()` errors.
+
 ### Custom random-access I/O
 
 Use `Archive.open_io(source, size, source_name=...)` for a caller-owned

@@ -18,6 +18,7 @@ import operator
 import sys
 import threading
 from collections.abc import Sequence as _Sequence
+from contextlib import contextmanager as _contextmanager
 from dataclasses import dataclass
 
 ERROR_OPEN = -1
@@ -234,6 +235,23 @@ def _checked_int(value, ctype, name, *, minimum=None, error=ValueError):
     if not lower <= value <= upper:
         raise error("{} must be in native integer range".format(name))
     return value
+
+
+@_contextmanager
+def _writable_buffer(buffer):
+    """Borrow the actual address and byte capacity of a writable C-contiguous view."""
+    with memoryview(buffer) as view:
+        if view.readonly or not view.c_contiguous:
+            raise TypeError("buffer must be writable and C-contiguous")
+        size = _checked_int(view.nbytes, _OFF_T, "buffer capacity", minimum=0)
+        # A zero-element export also supplies the address of an empty view.
+        anchor = (ctypes.c_uint8 * min(1, size)).from_buffer(view)
+        try:
+            # Keep the export local so the pointer can survive in a traceback
+            # without keeping the caller's buffer pinned after the call.
+            yield ctypes.cast(ctypes.addressof(anchor), _BYTE_PTR), size
+        finally:
+            del anchor
 
 
 def _callback_status(error, fallback):
@@ -1481,6 +1499,23 @@ class MpqStream:
             raise
         return bytes(buffer[:transferred.value])
 
+    def read_into(self, buffer):
+        """Read once into writable C-contiguous storage and return the byte count.
+
+        EOF and empty buffers return zero. On a native error, transferred
+        identifies the valid prefix in buffer and the cursor includes those
+        bytes. The exception has no partial_data copy.
+        """
+        self._ensure_open()
+        transferred = _OFF_T()
+        with _writable_buffer(buffer) as (pointer, size):
+            try:
+                libmpq.libmpq__stream_read(self._stream, pointer, size, ctypes.byref(transferred))
+            except LibmpqError as error:
+                error.transferred = transferred.value
+                raise
+        return transferred.value
+
     def close(self):
         """Consume the native handle once; repeated Python closes are harmless."""
         if self._stream:
@@ -1597,6 +1632,19 @@ class File:
                                 size, ctypes.byref(transferred))
         return bytes(buffer[:transferred.value])
 
+    def read_into(self, buffer):
+        """Read and verify the whole member into writable C-contiguous storage.
+
+        Return the number of bytes written on success. A native error may
+        leave bytes in buffer, but it does not report a valid prefix.
+        """
+        self._archive._ensure_open()
+        transferred = _OFF_T()
+        with _writable_buffer(buffer) as (pointer, size):
+            libmpq.libmpq__file_read(self._archive._mpq, self._native_number,
+                                    pointer, size, ctypes.byref(transferred))
+        return transferred.value
+
     @property
     def patch_payload_size(self):
         """Decoded PTCH size, not the final patched target size."""
@@ -1624,6 +1672,20 @@ class File:
             raise LibmpqSizeError(ERROR_SIZE, "Invalid native PTCH byte count")
         return bytes(buffer[:transferred.value])
 
+    def read_patch_payload_into(self, buffer, filename=None):
+        """Read validated physical PTCH bytes into writable C-contiguous storage.
+
+        Return the decoded payload byte count. filename supplies the optional
+        physical member name for key derivation.
+        """
+        self._archive._ensure_open()
+        name = None if filename is None else _as_bytes(filename)
+        transferred = _OFF_T()
+        with _writable_buffer(buffer) as (pointer, size):
+            libmpq.libmpq__patch_payload_read(self._archive._mpq, self._native_number, name,
+                                             pointer, size, ctypes.byref(transferred))
+        return transferred.value
+
     def read_block(self, block):
         """Decode one block with native offset-cache management."""
         block = operator.index(block)
@@ -1633,6 +1695,20 @@ class File:
             reader._cur_block = block
             reader._read_block()
             return reader._buf.pop()
+
+    def read_block_into(self, block, buffer):
+        """Decode a block into writable C-contiguous storage and return its byte count.
+
+        The capacity must cover the nominal unpacked block size. The returned
+        count can be smaller. This operation performs block decoding.
+        """
+        self._archive._ensure_open()
+        block = _checked_int(block, ctypes.c_uint32, "block index")
+        transferred = _OFF_T()
+        with _writable_buffer(buffer) as (pointer, size):
+            libmpq.libmpq__block_read(self._archive._mpq, self._native_number, block,
+                                     pointer, size, ctypes.byref(transferred))
+        return transferred.value
 
     def block_size(self, block):
         """Compatibility alias for block_size_unpacked()."""
