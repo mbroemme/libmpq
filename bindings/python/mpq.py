@@ -1913,18 +1913,32 @@ class Archive:
         return _read_value(libmpq.libmpq__file_number_from_hash, ctypes.c_uint32,
                            self._mpq, *values)
 
+    def _file_identity(self, encoded, ordinal):
+        native = _FileIdentity()
+        libmpq.libmpq__file_identity(self._mpq, encoded, ordinal, ctypes.byref(native))
+        return FileIdentity(native.file_number, native.flags, native.locale, native.platform)
+
+    def file_identity(self, name, identity_index):
+        """Return one FileIdentity at a zero-based ordinal in native slot order.
+
+        The order is independent of locale priority. An absent ordinal raises
+        LibmpqNotFoundError with ERROR_EXIST. Use variants() to enumerate them all.
+        """
+        self._ensure_open()
+        encoded = _as_bytes(name)
+        ordinal = _checked_int(identity_index, ctypes.c_uint32, "identity index")
+        return self._file_identity(encoded, ordinal)
+
     def variants(self, name):
         """Return immutable identities in native slot order, without fallback."""
         self._ensure_open()
         encoded, result = _as_bytes(name), []
         for ordinal in range(0x100000000):
-            native = _FileIdentity()
             try:
-                libmpq.libmpq__file_identity(self._mpq, encoded, ordinal, ctypes.byref(native))
+                identity = self._file_identity(encoded, ordinal)
             except LibmpqNotFoundError:
                 return tuple(result)
-            result.append(FileIdentity(native.file_number, native.flags,
-                                       native.locale, native.platform))
+            result.append(identity)
         raise OverflowError("too many identities")
 
     def open_stream(self, member, *, locale=None, platform=None):

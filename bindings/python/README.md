@@ -616,6 +616,7 @@ raise `ValueError` or `TypeError` before native conversion.
 ### Exact filename identities
 
 ```python
+first = archive.file_identity("dir/file.bin", 0)
 identities = archive.variants("dir/file.bin")
 for identity in identities:
     print(identity.file_number, identity.flags, identity.locale, identity.platform)
@@ -623,6 +624,12 @@ number = archive.file_number("dir/file.bin", locale=0x409, platform=1)
 with archive.open_stream("dir/file.bin", locale=0x409, platform=1) as stream:
     content = stream.read()
 ```
+
+`file_identity(name, identity_index)` makes one native query and returns one
+immutable `FileIdentity`. The index is a zero-based unsigned 32-bit ordinal in
+native order, which is independent of locale priority. An unavailable ordinal
+raises `LibmpqNotFoundError` with `ERROR_EXIST`. Use `variants(name)` for the
+complete enumeration.
 
 `variants()` returns a tuple of immutable `FileIdentity` records in native
 classic slot order. Aliases can share a file number. `IDENTITY_CLASSIC` and

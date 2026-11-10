@@ -2030,6 +2030,114 @@ def test_raw_chunk_signing_and_patch(tmp_path, wrapped):
             writer.raw_chunk_size = 17
 
 
+def test_file_identity_single_native_call(tmp_path, monkeypatch):
+    class SecondOrdinal:
+        def __index__(self):
+            return 1
+
+    path = tmp_path / "ordinals.mpq"
+    name = "voice.bin"
+    raw_name = b"member-\xff"
+    selectors = [(0xffff, 0xffff), (0, 0)]
+    with mpq.Writer(path, max_files=16) as writer:
+        for locale, platform in selectors:
+            writer.add_data(name, b"voice", mpq.FileCreateOptions(0, 0, 0, locale, platform))
+        writer.add_data(raw_name, b"raw")
+
+    # The first name takes its home slot. Its second identity takes the next
+    # slot. The native result uses ascending slot numbers, even after wrap.
+    count, = struct.unpack_from("<I", path.read_bytes(), 24)
+    if mpq.file_hash(name)[0] % count == count - 1:
+        selectors.reverse()
+
+    native = mpq.libmpq.libmpq__file_identity
+    calls = []
+
+    def spy(handle, encoded, ordinal, output):
+        calls.append((encoded, ordinal))
+        return native(handle, encoded, ordinal, output)
+
+    def unexpected_lookup(*args):
+        pytest.fail("identity lookup dispatched through a different native operation")
+
+    with mpq.Archive(path) as archive:
+        expected = tuple(
+            mpq.FileIdentity(archive.file_number(name, locale=locale, platform=platform),
+                             mpq.IDENTITY_CLASSIC, locale, platform)
+            for locale, platform in selectors
+        )
+        raw_number = archive.file_number(raw_name)
+        monkeypatch.setattr(mpq.libmpq, "libmpq__file_identity", spy)
+        monkeypatch.setattr(mpq.libmpq, "libmpq__file_number", unexpected_lookup)
+        monkeypatch.setattr(mpq.libmpq, "libmpq__file_number_from_identity", unexpected_lookup)
+
+        for ordinal, index in enumerate((0, SecondOrdinal())):
+            identity = archive.file_identity(name, index)
+            assert type(identity) is mpq.FileIdentity
+            assert identity == expected[ordinal]
+            assert calls == [(b"voice.bin", ordinal)]
+            calls.clear()
+        assert archive.file_identity(raw_name, 0) == (
+            mpq.FileIdentity(raw_number, mpq.IDENTITY_CLASSIC, 0, 0)
+        )
+        assert calls == [(raw_name, 0)]
+        calls.clear()
+
+        for missing_name, ordinal in ((name, 2), (name, 100), (name, 0xffffffff), ("absent", 0)):
+            with pytest.raises(mpq.LibmpqNotFoundError) as caught:
+                archive.file_identity(missing_name, ordinal)
+            assert caught.value.code == mpq.ERROR_EXIST
+            assert calls == [(missing_name.encode(), ordinal)]
+            calls.clear()
+        assert archive.variants(name) == expected
+        assert calls == [(b"voice.bin", ordinal) for ordinal in range(3)]
+        calls.clear()
+        assert archive.variants("absent") == ()
+        assert calls == [(b"absent", 0)]
+        calls.clear()
+
+        for invalid_name in ("voice.bin\x00suffix", b"voice.bin\x00suffix"):
+            with pytest.raises(ValueError, match="NUL"):
+                archive.file_identity(invalid_name, 0)
+        for invalid in (-1, 0x100000000):
+            with pytest.raises(ValueError, match="identity index"):
+                archive.file_identity(name, invalid)
+        for invalid in (1.0, "1", None):
+            with pytest.raises(TypeError):
+                archive.file_identity(name, invalid)
+        assert not calls
+
+    with pytest.raises(mpq.LibmpqStateError) as caught:
+        archive.file_identity(name, 0)
+    assert caught.value.code == mpq.ERROR_NOT_INITIALIZED
+    with pytest.raises(mpq.LibmpqStateError):
+        archive.variants(name)
+    assert not calls
+
+
+def test_file_identity_bet_only_and_format_error(monkeypatch):
+    native = mpq.libmpq.libmpq__file_identity
+    calls = []
+
+    def spy(handle, encoded, ordinal, output):
+        calls.append((encoded, ordinal))
+        return native(handle, encoded, ordinal, output)
+
+    with mpq.Archive(FIXTURES / "mpq-v3-features.mpq") as archive:
+        monkeypatch.setattr(mpq.libmpq, "libmpq__file_identity", spy)
+        assert archive.file_identity("zero.bin", 0) == mpq.FileIdentity(
+            archive.file_number("zero.bin"), mpq.IDENTITY_BET, 0, 0
+        )
+        assert calls == [(b"zero.bin", 0)]
+        calls.clear()
+        # Exact extended identity lookup rejects names beyond the HET limit.
+        name = b"x" * 265
+        with pytest.raises(mpq.LibmpqFormatError) as caught:
+            archive.file_identity(name, 0)
+        assert caught.value.code == mpq.ERROR_FORMAT
+        assert calls == [(name, 0)]
+
+
 @pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO])
 @pytest.mark.parametrize("wrapped", [False, True])
 def test_exact_identities(tmp_path, version, wrapped):
