@@ -2138,15 +2138,19 @@ class LibmpqTest {
         Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
         try (SeekableByteChannel channel = Files.newByteChannel(root.resolve("mpq-v1-features.mpq"))) {
             channel.position(3);
-            Archive archive = Archive.openSource(channel, "fixture.mpq");
-            assertEquals(3, channel.position());
-            byte[] expected = archive.readFile(archive.fileNumber("overview.txt"));
-            assertEquals(3, channel.position());
-            try (MpqStream stream = archive.openStream("overview.txt")) {
+            try (Archive archive = Archive.openSource(channel, "fixture.mpq");
+                 Archive clone = archive.cloneArchive()) {
+                assertEquals(3, channel.position());
+                byte[] expected = archive.readFile(archive.fileNumber("overview.txt"));
                 archive.close();
-                byte[] actual = new byte[expected.length];
-                assertEquals(expected.length, stream.read(actual));
-                assertArrayEquals(expected, actual);
+                assertArrayEquals(expected, clone.readFile(clone.fileNumber("overview.txt")));
+                try (MpqStream stream = clone.openStream("overview.txt")) {
+                    clone.close();
+                    byte[] actual = new byte[expected.length];
+                    assertEquals(expected.length, stream.read(actual));
+                    assertArrayEquals(expected, actual);
+                }
+                assertEquals(3, channel.position());
             }
             assertTrue(channel.isOpen());
         }

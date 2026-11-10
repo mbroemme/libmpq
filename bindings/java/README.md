@@ -249,6 +249,15 @@ impose lower limits.
 Use `Archive.openSource(channel, sourceName)` for a caller-owned
 `SeekableByteChannel`. The binding retains it while archives or derived streams
 need it, serializes seek/read callbacks, and never closes the channel.
+Keep the channel valid through the last dependent reader. Each native
+request is filled exactly, using bounded `ByteBuffer` views even when the
+request exceeds one buffer's capacity. The views write directly into the
+native destination without a request-sized allocation or payload copy.
+The channel must not retain the views.
+Positive short reads continue within the same request. Zero progress,
+premature EOF and source errors fail the request. The adapter attempts to
+restore the caller's cursor and keeps the first error if restoration also
+fails. Native archive limits and addressable memory still bound requests.
 
     Archive archive = Archive.openSource(channel, "data.mpq");
 

@@ -285,7 +285,12 @@ public final class Archive implements AutoCloseable {
         return openSource(source, sourceName, -1);
     }
 
-    /** Open a borrowed seekable channel at a standalone or embedded MPQ offset. */
+    /**
+     * Open a borrowed seekable channel at a standalone or embedded MPQ offset.
+     * Each native request is filled exactly using bounded views of its destination.
+     * The channel must not retain those views. It remains caller-owned and must
+     * stay valid until this archive and its dependent clones and streams close.
+     */
     public static Archive openSource(SeekableByteChannel source, String sourceName, long offset)
         throws LibmpqException {
         return openSourceBytes(source, Support.optionalName(sourceName), offset);
