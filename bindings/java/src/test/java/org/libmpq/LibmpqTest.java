@@ -1150,6 +1150,7 @@ class LibmpqTest {
     void nativeSegmentArchiveAndWriter(@TempDir Path directory) throws Exception {
         Path path = directory.resolve("native-buffers.mpq");
         MpqName raw = MpqName.ofBytes(new byte[] {'n', (byte) 0xff});
+        MpqName rawArray = MpqName.ofBytes(new byte[] {'a', (byte) 0xff});
         byte[] payload = new byte[1031];
         for (int i = 0; i < payload.length; i++) payload[i] = (byte) i;
         var closedArena = Arena.ofConfined();
@@ -1162,8 +1163,11 @@ class LibmpqTest {
             assertThrows(IllegalArgumentException.class, () -> archive.addDataSegment("array",
                     MemorySegment.ofArray(payload), null));
             assertThrows(IllegalArgumentException.class, () -> archive.addDataSegment("array", closed, null));
+            assertThrows(NullPointerException.class, () -> archive.add("array", null, null));
+            assertThrows(NullPointerException.class, () -> archive.addBytes(raw, null, null));
             archive.addData("array", new byte[] {21}, null);
-            archive.addDataBytes(MpqName.ofUtf8("array-bytes"), new byte[] {22}, null);
+            archive.addDataBytes(rawArray, new byte[] {22}, null);
+            archive.addData("empty-array", new byte[0], null);
             archive.add("old-array", new byte[] {23}, null);
             archive.addBytes(MpqName.ofUtf8("old-bytes"), new byte[] {24}, null);
             archive.addDataSegmentBytes(raw, input.asReadOnly(), null);
@@ -1182,8 +1186,9 @@ class LibmpqTest {
         try (Archive archive = Archive.open(path); Arena arena = Arena.ofConfined()) {
             assertArrayEquals(payload, archive.readFile(archive.fileNumberBytes(raw)));
             assertEquals(0, archive.fileUnpackedSize(archive.fileNumber("empty")));
+            assertEquals(0, archive.fileUnpackedSize(archive.fileNumber("empty-array")));
             assertArrayEquals(new byte[] {21}, archive.readFile(archive.fileNumber("array")));
-            assertArrayEquals(new byte[] {22}, archive.readFile(archive.fileNumber("array-bytes")));
+            assertArrayEquals(new byte[] {22}, archive.readFile(archive.fileNumberBytes(rawArray)));
             assertArrayEquals(new byte[] {23}, archive.readFile(archive.fileNumber("old-array")));
             assertArrayEquals(new byte[] {24}, archive.readFile(archive.fileNumber("old-bytes")));
             try (MpqStream stream = archive.openStream("streamed")) {
@@ -2037,6 +2042,48 @@ class LibmpqTest {
                 channel.fail = true;
                 assertThrows(LibmpqException.class, () -> archive.verifyEx());
             }
+        }
+    }
+
+    @Test
+    void explicitFileVerification(@TempDir Path directory) throws Exception {
+        Path path = directory.resolve("verify-file.mpq");
+        try (Archive writer = Archive.create(path, new ArchiveCreateOptions(
+                Mpq.ARCHIVE_VERSION_FOUR, 16, 512, 0, Mpq.ATTRIBUTE_MD5))) {
+            writer.addData("member", new byte[] {7, 13}, null);
+        }
+        long digestOffset;
+        try (Archive archive = Archive.open(path)) {
+            int number = archive.fileNumber("member");
+            assertEquals(0, archive.verifyFile(number));
+            assertEquals(archive.verify(number), archive.verifyFile(number));
+            digestOffset = archive.offset() + archive.fileOffset(number) + archive.filePackedSize(number);
+        }
+        byte[] image = Files.readAllBytes(path);
+        image[Math.toIntExact(digestOffset)] ^= 1;
+        Files.write(path, image);
+        try (Archive archive = Archive.open(path)) {
+            int number = archive.fileNumber("member");
+            int raw = Mpq.VERIFY_RAW_MD5;
+            assertEquals(raw, archive.verifyFile(number));
+            assertEquals(raw, archive.verify(number));
+            assertEquals(archive.verifyFile(number, Mpq.VERIFY_ALL), archive.verifyFile(number));
+            for (int flags = 0; flags <= Mpq.VERIFY_ALL; flags++) {
+                assertEquals(flags & raw, archive.verifyFile(number, flags));
+                assertEquals(flags & raw, archive.verify(number, flags));
+            }
+            assertEquals(Mpq.ERROR_FORMAT, assertThrows(LibmpqException.class,
+                () -> archive.verifyFile(number, Mpq.VERIFY_METADATA_ALL)).code());
+            assertEquals(Mpq.ERROR_FORMAT, assertThrows(LibmpqException.class,
+                () -> archive.verify(number, Mpq.VERIFY_METADATA_ALL)).code());
+            assertEquals(Mpq.ERROR_EXIST, assertThrows(LibmpqException.class,
+                () -> archive.verifyFile(-1)).code());
+            assertEquals(Mpq.ERROR_EXIST, assertThrows(LibmpqException.class,
+                () -> archive.verify(-1)).code());
+            assertEquals(new Archive.VerificationResult(Mpq.VERIFY_FILE_MD5 | raw,
+                    Mpq.VERIFY_SECTOR_CRC | Mpq.VERIFY_FILE_CRC32, raw),
+                archive.verifyFileResult(number, Mpq.VERIFY_ALL));
+            assertEquals(0, archive.verifyEx().mismatches());
         }
     }
 

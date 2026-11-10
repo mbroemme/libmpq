@@ -12,6 +12,7 @@ import concurrent.futures
 import gc
 import hashlib
 import io
+import inspect
 import os
 import struct
 import sys
@@ -1156,6 +1157,57 @@ def test_creation_streaming_compression_clone_and_blocks(tmp_path, version):
         finally:
             clone.close()
         assert archive["raw.bin"].read() == b"raw payload"
+
+
+@pytest.mark.parametrize("method", [mpq.Writer.add_data, mpq.Writer.add])
+def test_writer_add_data_alias(tmp_path, monkeypatch, method):
+    assert str(inspect.signature(method)) == "(self, name, data, options=None)"
+    path = tmp_path / "add-data.mpq"
+    source = tmp_path / "source"
+    source.write_bytes(b"path payload")
+    calls = []
+    native_data = mpq.libmpq.libmpq__archive_add_data
+    native_path = mpq.libmpq.libmpq__archive_add_path
+
+    def add_data(*args):
+        calls.append("data")
+        return native_data(*args)
+
+    def add_path(*args):
+        calls.append("path")
+        return native_path(*args)
+
+    monkeypatch.setattr(mpq.libmpq, "libmpq__archive_add_data", add_data)
+    monkeypatch.setattr(mpq.libmpq, "libmpq__archive_add_path", add_path)
+    with mpq.Writer(path) as writer:
+        method(writer, "default", bytearray(b"payload"))
+        assert calls == ["data"]
+        method(writer, name="empty", data=b"", options=None)
+        assert calls == ["data"] * 2
+        options = mpq.FileCreateOptions(mpq.FILE_FLAG_SINGLE, 0, 0, 1033, 2)
+        method(writer, "custom", memoryview(b"payload"), options)
+        assert calls == ["data"] * 3
+        with pytest.raises(mpq.LibmpqNotFoundError) as missing:
+            method(writer, "", b"payload")
+        assert missing.value.code == mpq.ERROR_EXIST
+        assert calls == ["data"] * 4
+        for bad_name in ("bad\0name", b"bad\0name"):
+            with pytest.raises(ValueError, match="NUL"):
+                method(writer, bad_name, b"payload")
+        assert calls == ["data"] * 4
+        writer.add_path("from-path", source)
+    with pytest.raises(mpq.LibmpqStateError) as closed:
+        method(writer, "closed", b"payload")
+    assert closed.value.code == mpq.ERROR_NOT_INITIALIZED
+    assert calls == ["data"] * 4 + ["path"]
+    with mpq.Archive(path) as archive:
+        assert archive["default"].read() == b"payload"
+        assert not archive["default"].flags & mpq.FILE_FLAG_SINGLE
+        assert archive["empty"].read() == b""
+        custom = archive[archive.file_number("custom", locale=1033, platform=2)]
+        assert custom.read() == b"payload"
+        assert custom.flags & mpq.FILE_FLAG_SINGLE
+        assert archive["from-path"].read() == b"path payload"
 
 
 @pytest.mark.parametrize("corrupt", [

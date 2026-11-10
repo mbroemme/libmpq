@@ -630,8 +630,13 @@ class Archive {
         return new MpqStream(result, sourceState);
     }
 
-    /** Add a complete in-memory file to a writer archive. */
+    /** Compatibility alias for $(LREF addData). */
     void add(string name, const(ubyte)[] data, FileOptions options = FileOptions.raw()) {
+        addData(name, data, options);
+    }
+
+    /** Add a complete in-memory member using raw storage or the supplied options. */
+    final void addData(string name, const(ubyte)[] data, FileOptions options = FileOptions.raw()) {
         ensureOpen(); auto nativeOptions = options.nativeOptions();
         checkStatus(libmpq__archive_add_data(handle, checkedStringz(name), data.ptr,
                                      cast(off_t) data.length, &nativeOptions),

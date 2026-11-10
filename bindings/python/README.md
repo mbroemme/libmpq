@@ -163,13 +163,17 @@ Use the same context-manager pattern for ordinary and MPQE writers:
 
 ```python
 with mpq.Writer("created.mpq", version=mpq.ARCHIVE_VERSION_THREE) as writer:
-    writer.add("payload.bin", b"payload", mpq.FileCreateOptions.raw())
+    writer.add_data("payload.bin", b"payload", mpq.FileCreateOptions.raw())
 
 with mpq.Writer.create_mpqe(
     "created.mpqe", b"LIBMPQ-MPQE-EXAMPLE-AUTH-CODE-01"
 ) as writer:
-    writer.add("payload.bin", b"payload")
+    writer.add_data("payload.bin", b"payload")
 ```
+
+`Writer.add_data(name, data, options=None)` adds a complete member from
+memory. `Writer.add()` remains a supported compatibility alias with the
+same arguments. Use `Writer.add_path()` to add a filesystem file.
 
 MPQE creation writes a private plaintext temporary file before atomically
 replacing the destination with the encrypted archive. Use `Update.begin_mpqe`
@@ -225,9 +229,10 @@ to generate sector Adler-32 tables, including for encrypted files. Empty,
 raw, and single-unit files ignore this flag. Generation is opt-in and
 complete reads automatically verify usable sector entries.
 
-`File.verify()` and `File.verify_result()` default to `VERIFY_ALL`. For one
-sector, `archive["file.txt"].verify_block(block_number)`
-returns `(stored_adler32, mismatches)`. Mismatches is zero or
+`File.verify()` returns a member checksum mismatch mask.
+`File.verify_result()` also reports which checks ran and which were unavailable.
+Both default to `VERIFY_ALL`. For one sector,
+`archive["file.txt"].verify_block(block_number)` returns `(stored_adler32, mismatches)`. Mismatches is zero or
 `VERIFY_SECTOR_CRC`; an unavailable checksum raises `LibmpqNotFoundError`
 rather than reporting a match.
 
@@ -533,7 +538,7 @@ transform. SINGLE members can also require whole-unit memory.
 with mpq.Writer("output.mpq", version=mpq.ARCHIVE_VERSION_FOUR) as writer:
     writer.raw_chunk_size = 17  # 0 disables trailing raw MD5
     assert writer.raw_chunk_size == 17
-    writer.add("data.txt", b"content")
+    writer.add_data("data.txt", b"content")
 ```
 
 `Writer.raw_chunk_size` and `Patch.raw_chunk_size` are writable properties for
@@ -812,7 +817,7 @@ For example, with a sink implementing `write_at` and optionally `flush`:
 
 ```python
 with Writer.create_mpqe_io(sink, auth_code, version=ARCHIVE_VERSION_FOUR) as archive:
-    archive.add("payload.bin", payload)
+    archive.add_data("payload.bin", payload)
 ```
 
 Close emits only MPQE transport. The private plaintext stage supplies read-back,

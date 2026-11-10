@@ -79,6 +79,60 @@ private const(ubyte)[] weakPrivateKey() {
     return cast(const(ubyte)[]) x"a13dab4de25f08acc393e15923b73aed2554013742f1079c1f1e6011c566948e5f0267ddf51175169e7bbeed8efe9ee8b6f63c4602f5089e97b02e1fe00ce8a748315364c0c92a1a284b2ae77d5d49adea3bad7bafa639710661d443c0ad882f6c8d6787affd7f68145217cde42cf4dc2acb0ca2aeca535baf894084e590d719";
 }
 
+private void testArchiveAddData() {
+    static assert(__traits(isVirtualMethod, Archive.add));
+    static assert(!__traits(isVirtualMethod, Archive.addData));
+    foreach (legacy; [false, true]) {
+        auto path = temporaryArchive(legacy ? "add-legacy" : "add-data");
+        auto source = path ~ ".source";
+        scope(exit) { remove(path); remove(source); }
+        auto writer = Archive.create(path);
+        scope(exit) writer.close();
+        void delegate(string, const(ubyte)[], FileOptions) add =
+            legacy ? &writer.add : &writer.addData;
+        const(ubyte)[] payload = cast(const(ubyte)[]) "archive data";
+        if (legacy)
+            writer.add("default", payload);
+        else
+            writer.addData("default", payload);
+        auto options = FileOptions.raw();
+        options.flags = FILE_FLAG_SINGLE;
+        options.locale = 1033;
+        options.platform = 2;
+        add("custom", payload, options);
+        add("empty", null, FileOptions.raw());
+        bool missing;
+        try { add("", payload, options); }
+        catch (MPQException error) {
+            assert(error.code == ERROR_EXIST && error.functionName == "libmpq__archive_add_data");
+            missing = true;
+        }
+        assert(missing);
+        bool rejected;
+        try { add("bad\0name", payload, options); }
+        catch (MPQException error) {
+            assert(error.code == ERROR_FORMAT && error.functionName == "native string");
+            rejected = true;
+        }
+        assert(rejected);
+        write(source, "path payload");
+        writer.addPath("from-path", source);
+        writer.close();
+        bool closed;
+        try { add("closed", payload, options); }
+        catch (MPQException error) { closed = error.code == ERROR_NOT_INITIALIZED; }
+        assert(closed);
+        auto archive = Archive.open(path);
+        scope(exit) archive.close();
+        assert(archive.file("default").read() == payload);
+        assert((archive.file("default").flags() & FILE_FLAG_SINGLE) == 0);
+        auto custom = archive.file(archive.fileNumber("custom", 1033, 2));
+        assert(custom.read() == payload && (custom.flags() & FILE_FLAG_SINGLE) != 0);
+        assert(archive.file("empty").read().length == 0);
+        assert(archive.file("from-path").read() == cast(const(ubyte)[]) "path payload");
+    }
+}
+
 private void testVersionAndErrors() {
     auto publicKey = weakPublicKey();
     auto privateKey = weakPrivateKey();
@@ -2175,6 +2229,7 @@ private void testNativeStringBoundaries() {
 }
 
 void main() {
+    testArchiveAddData();
     testNativeStringBoundaries();
     testMemberWriterLifetime();
     testCreateSink();

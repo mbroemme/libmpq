@@ -195,9 +195,10 @@ can impose lower limits.
 
 `Archive.addDataSegment` adds a complete member in one native call.
 `addDataSegmentBytes` accepts a byte-exact `MpqName`. For arrays, use the
-explicit `addData` and `addDataBytes` names or the existing `add` and
-`addBytes` methods. `MpqFileWriter.writeSegment` appends a native segment
-in one call within the member's declared size. Empty inputs are allowed.
+explicit `addData` and `addDataBytes` names. `add` and `addBytes` remain
+supported compatibility aliases. Use `addPath` for filesystem input.
+`MpqFileWriter.writeSegment` appends a native segment in one call within
+the member's declared size. Empty inputs are allowed.
 An output error may occur after native code has accepted some input.
 Callback-backed and v4 path-backed writers can latch that error.
 
@@ -303,9 +304,11 @@ to generate sector Adler-32 tables, including for encrypted files. Empty,
 raw, and single-unit files ignore this flag. Generation is opt-in and
 complete reads automatically verify usable sector entries.
 
-`archive.verify(fileNumber)` defaults to `Mpq.VERIFY_ALL`.
-`verifyFileResult(fileNumber, flags)` takes an explicit member mask. For one
-sector, `archive.verifyBlock(fileNumber, blockNumber)`
+`archive.verifyFile(fileNumber[, flags])` returns the member checksum
+mismatch mask. The one-argument form uses `Mpq.VERIFY_ALL`. The
+`verify(fileNumber[, flags])` overloads remain supported compatibility aliases.
+`verifyFileResult(fileNumber, flags)` also reports checked and unavailable
+checks. For one sector, `archive.verifyBlock(fileNumber, blockNumber)`
 returns `Archive.BlockVerification` with `checksum()` (unsigned stored
 Adler-32 as `long`) and `mismatches()` (zero or `Mpq.VERIFY_SECTOR_CRC`).
 Unavailable checksums throw `LibmpqException` with `Mpq.ERROR_EXIST`.
@@ -321,7 +324,6 @@ markers. For physical patch members it checks the stored patch payload.
 `Mpq.VERIFY_ALL` was `0x7` in v0.8.1. In v0.9.0 it is `0xF`, adding RAW MD5.
 Client code rebuilt against the v0.9.0 binding uses the expanded constant.
 Existing client bytecode with an inlined constant can keep passing `0x7`.
-The no-flags `verify(fileNumber)` overload uses the loaded binding's default.
 Passing `0x7` explicitly keeps the original three checks.
 The extra RAW check can add I/O or report a mismatch. An inapplicable RAW
 check is skipped by mismatch-only verification and reported as unavailable
@@ -616,7 +618,7 @@ try (Archive archive = Archive.create(Path.of("output.mpq"),
                                  Mpq.ARCHIVE_CREATE_LISTFILE))) {
     archive.setRawChunkSize(17); // 0 disables trailing raw MD5
     long configured = archive.getRawChunkSize();
-    archive.add("data.txt", "content".getBytes(), null);
+    archive.addData("data.txt", "content".getBytes(), null);
 }
 ```
 
@@ -908,7 +910,7 @@ its writes:
 ```java
 try (Archive writer = Archive.createSink(fileChannel, true, options,
         () -> fileChannel.force(true))) {
-    writer.add("payload.bin", payload, FileOptions.raw());
+    writer.addData("payload.bin", payload, FileOptions.raw());
 }
 ```
 
@@ -918,7 +920,7 @@ The binding leaves persistence to the application.
 
 ```java
 try (Archive writer = Archive.createMpqeSink(channel, authCode, options)) {
-    writer.add("payload.bin", payload, FileOptions.raw());
+    writer.addData("payload.bin", payload, FileOptions.raw());
 }
 ```
 

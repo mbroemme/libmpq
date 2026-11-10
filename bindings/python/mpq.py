@@ -1177,6 +1177,10 @@ class Writer:
         libmpq.libmpq__archive_raw_chunk_size_set(self._mpq, _checked_int(size, ctypes.c_uint32, "raw chunk size"))
 
     def add(self, name, data, options=None):
+        """Compatibility alias for :meth:`add_data`."""
+        return self.add_data(name, data, options)
+
+    def add_data(self, name, data, options=None):
         """Add complete bytes using raw storage or supplied options."""
         self._ensure_open()
         options, data = options or FileCreateOptions.raw(), bytes(data)

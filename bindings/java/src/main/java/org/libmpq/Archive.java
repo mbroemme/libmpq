@@ -138,18 +138,37 @@ public final class Archive implements AutoCloseable {
         }
     }
 
-    /** Verify all available file checksums and return mismatch bits. */
+    /** Compatibility alias for {@link #verifyFile(int)}. */
     public int verify(int number) throws LibmpqException {
-        return verify(number, Mpq.VERIFY_ALL);
+        return verifyFile(number);
     }
 
-    /** Return mismatches as a subset of flags; clear bits mean matched or unavailable.
-     * File checks require attributes; sector-only checks do not. Errors throw. */
+    /** Compatibility alias for {@link #verifyFile(int, int)}. */
     public int verify(int number, int flags) throws LibmpqException {
+        return verifyFile(number, flags);
+    }
+
+    /** Verify member checksums selected by {@link Mpq#VERIFY_ALL} and return mismatch bits. */
+    public int verifyFile(int fileNumber) throws LibmpqException {
+        return verifyFile(fileNumber, Mpq.VERIFY_ALL);
+    }
+
+    /**
+     * Verify the requested member checksums and return mismatch bits.
+     * Clear bits mean matched or unavailable. Zero flags request no checks.
+     * Use {@link #verifyFileResult(int, int)} for availability information.
+     *
+     * @param fileNumber archive member number
+     * @param verifyFlags member checksum flags
+     * @return mismatches as a subset of the requested flags
+     * @throws LibmpqException if native verification fails, including a logical
+     *         checksum request on an archive without attributes
+     */
+    public int verifyFile(int fileNumber, int verifyFlags) throws LibmpqException {
         checkOpen();
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment mismatches = arena.allocate(ValueLayout.JAVA_INT);
-            Support.check(LibmpqNative.fileVerify(handle, number, flags, mismatches));
+            Support.check(LibmpqNative.fileVerify(handle, fileNumber, verifyFlags, mismatches));
             return mismatches.get(ValueLayout.JAVA_INT, 0);
         }
     }
@@ -1120,8 +1139,8 @@ public final class Archive implements AutoCloseable {
     }
 
     /**
-     * Adds a complete member from a Java array, with the same behavior as
-     * {@link #add(String, byte[], FileOptions)}.
+     * Adds a complete member from a Java array.
+     * {@link #add(String, byte[], FileOptions)} is the compatibility alias.
      *
      * @param name archive filename
      * @param data logical file bytes
@@ -1134,6 +1153,7 @@ public final class Archive implements AutoCloseable {
 
     /**
      * Adds a complete member from an array with a byte-exact filename.
+     * {@link #addBytes(MpqName, byte[], FileOptions)} is the compatibility alias.
      *
      * @param name byte-exact archive filename
      * @param data logical file bytes

@@ -146,8 +146,12 @@ auto options = ArchiveCreateOptions.v2();
 options.version_ = ARCHIVE_VERSION_THREE;
 auto archive = Archive.create("new.mpq", options);
 scope(exit) archive.close();
-archive.add("hello.txt", cast(const(ubyte)[])"hello\n");
+archive.addData("hello.txt", cast(const(ubyte)[])"hello\n");
 ```
+
+`Archive.addData(name, data, options = FileOptions.raw())` adds a complete
+member from memory. `Archive.add()` remains a supported compatibility alias
+with the same arguments. Use `Archive.addPath()` for filesystem input.
 
 Use `ARCHIVE_VERSION_FOUR` with the same creation APIs for v4 MPQ or MPQE
 output with 16 KiB raw chunks by default. V4 updates preserve the source raw-chunk size.
@@ -188,9 +192,10 @@ to generate sector Adler-32 tables, including for encrypted files. Empty,
 raw, and single-unit files ignore this flag. Generation is opt-in and
 complete reads automatically verify usable sector entries.
 
-`File.verify()` and `File.verifyResult()` default to `VERIFY_ALL`. For one
-sector, `archive.file("file.txt").verifyBlock(blockNumber)` returns
-`BlockVerification` with `checksum` (stored Adler-32) and `mismatches` (zero
+`File.verify()` returns a member checksum mismatch mask. `File.verifyResult()`
+also reports which checks ran and which were unavailable. Both default to
+`VERIFY_ALL`. For one sector, `archive.file("file.txt").verifyBlock(blockNumber)`
+returns `BlockVerification` with `checksum` (stored Adler-32) and `mismatches` (zero
 or `VERIFY_SECTOR_CRC`). Unavailable checksums throw `ERROR_EXIST`.
 
 Member checks are `VERIFY_SECTOR_CRC` (`0x1`, sector Adler-32 over
@@ -590,7 +595,7 @@ auto archive = Archive.create("output.mpq", options);
 scope(exit) archive.close();
 archive.setRawChunkSize(17); // 0 disables trailing raw MD5
 assert(archive.getRawChunkSize() == 17);
-archive.add("data.txt", cast(const(ubyte)[])"content");
+archive.addData("data.txt", cast(const(ubyte)[])"content");
 ```
 
 `Archive.setRawChunkSize(size)` and `Patch.setRawChunkSize(size)` configure
@@ -867,7 +872,7 @@ dependent archives and streams close. The caller retains ownership.
 
 ```d
 auto writer = Archive.createMpqeSink(writeAt, authCode, options, flush);
-writer.add("payload.bin", payload);
+writer.addData("payload.bin", payload);
 writer.close();
 ```
 
