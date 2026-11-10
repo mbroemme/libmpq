@@ -29,6 +29,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Arrays;
+import java.util.concurrent.CompletableFuture;
 import java.util.zip.Deflater;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -1271,6 +1272,94 @@ class LibmpqTest {
             assertArrayEquals(new byte[] {42, 9, 9, 4}, archive.readFile(archive.fileNumber("member")));
             assertArrayEquals(new byte[] {1, 2, 3, 4}, archive.readFile(archive.fileNumberBytes(raw, 0, 0)));
             assertArrayEquals(new byte[] {5, 9, 10, 8}, archive.readFile(archive.fileNumberBytes(raw, 1033, 1)));
+        }
+    }
+
+    @Test
+    void nativeDescriptorReplaceRanges(@TempDir Path directory) throws Exception {
+        Path path = directory.resolve("native-ranges.mpq");
+        MpqName raw = MpqName.ofBytes(new byte[] {'r', (byte) 0xff});
+        byte[] initial = {1, 2, 3, 4};
+        try (Archive writer = Archive.create(path, new ArchiveCreateOptions(
+                Mpq.ARCHIVE_VERSION_TWO, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE))) {
+            writer.add("member", initial, null);
+            writer.addBytes(raw, initial, null);
+            writer.addBytes(raw, new byte[] {5, 6, 7, 8}, new FileOptions(0, 0, 0, 1033, 1));
+        }
+        byte[] original = Files.readAllBytes(path);
+        try (MpqUpdate update = MpqUpdate.begin(path)) {
+            try (Arena arena = Arena.ofConfined()) {
+                var first = arena.allocateFrom(ValueLayout.JAVA_BYTE, (byte) 7, (byte) 8, (byte) 9);
+                var later = arena.allocateFrom(ValueLayout.JAVA_BYTE, (byte) 6, (byte) 5);
+                long stride = LibmpqNative.replaceRangeLayout().byteSize();
+                var ranges = LibmpqNative.allocateReplaceRanges(arena, 4).asSlice(stride);
+                LibmpqNative.setReplaceRange(ranges, 0, 1, first.asReadOnly(), first.byteSize());
+                LibmpqNative.setReplaceRange(ranges, 1, 0, later, later.byteSize());
+                LibmpqNative.setReplaceRange(ranges, 2, 4, MemorySegment.NULL, 0L);
+
+                update.replaceRangesNative("member", ranges.asReadOnly(), 3L);
+                update.replaceRangesNativeBytes(raw, 1033, 1, ranges, 3L);
+                update.replaceRangesNative("member", 0, 0, ranges.asSlice(0, 0), 0L);
+                update.replaceRangesNativeBytes(raw, MemorySegment.NULL, 0L);
+
+                LibmpqNative.setReplaceRange(ranges, 0, -1, first, 1L);
+                assertEquals(Mpq.ERROR_SEEK, assertThrows(LibmpqException.class,
+                    () -> update.replaceRangesNative("member", ranges, 1L)).code());
+                LibmpqNative.setReplaceRange(ranges, 0, 4, first, 1L);
+                assertEquals(Mpq.ERROR_SIZE, assertThrows(LibmpqException.class,
+                    () -> update.replaceRangesNativeBytes(raw, 1033, 1, ranges, 1L)).code());
+                assertEquals(Mpq.ERROR_EXIST, assertThrows(LibmpqException.class,
+                    () -> update.replaceRangesNative("missing", ranges, 1L)).code());
+                assertTrue(ranges.scope().isAlive());
+                assertTrue(first.scope().isAlive() && later.scope().isAlive());
+            }
+            assertArrayEquals(original, Files.readAllBytes(path));
+            update.commit();
+        }
+        try (Archive archive = Archive.open(path)) {
+            byte[] expected = {6, 5, 8, 9};
+            assertArrayEquals(expected, archive.readFile(archive.fileNumber("member")));
+            assertArrayEquals(expected, archive.readFile(archive.fileNumberBytes(raw, 1033, 1)));
+            assertArrayEquals(initial, archive.readFile(archive.fileNumberBytes(raw, 0, 0)));
+        }
+    }
+
+    @Test
+    void nativeDescriptorRangeValidation(@TempDir Path directory) throws Exception {
+        Path path = directory.resolve("invalid-native-ranges.mpq");
+        try (Archive writer = Archive.create(path, null)) {
+            writer.add("member", new byte[] {1}, null);
+        }
+        try (MpqUpdate update = MpqUpdate.begin(path); Arena arena = Arena.ofConfined()) {
+            var layout = LibmpqNative.replaceRangeLayout();
+            var vector = arena.allocate(layout.byteSize() + 1, layout.byteAlignment());
+            var descriptor = vector.asSlice(0, layout.byteSize());
+            assertThrows(IllegalArgumentException.class,
+                () -> update.replaceRangesNative("member", descriptor, -1L));
+            assertThrows(IllegalArgumentException.class,
+                () -> update.replaceRangesNative("member", descriptor, Long.MAX_VALUE));
+            assertThrows(IllegalArgumentException.class,
+                () -> update.replaceRangesNative("member", descriptor, 2L));
+            assertThrows(IllegalArgumentException.class,
+                () -> update.replaceRangesNative("member", vector.asSlice(1), 1L));
+            assertThrows(IllegalArgumentException.class,
+                () -> update.replaceRangesNative("member", MemorySegment.NULL, 1L));
+            assertThrows(IllegalArgumentException.class,
+                () -> update.replaceRangesNative("member", MemorySegment.ofArray(new byte[0]), 0L));
+            assertThrows(IllegalArgumentException.class,
+                () -> update.replaceRangesNative("member", 65536, 0, MemorySegment.NULL, 0L));
+            CompletableFuture.runAsync(() -> assertThrows(IllegalArgumentException.class,
+                () -> update.replaceRangesNative("member", descriptor, 1L))).get();
+
+            MemorySegment closed;
+            try (Arena temporary = Arena.ofConfined()) {
+                closed = temporary.allocate(layout);
+            }
+            assertThrows(IllegalArgumentException.class,
+                () -> update.replaceRangesNative("member", closed, 1L));
+            update.close();
+            assertThrows(IllegalStateException.class,
+                () -> update.replaceRangesNative("member", MemorySegment.NULL, 0L));
         }
     }
 

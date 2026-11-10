@@ -13,11 +13,14 @@ import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.StructLayout;
 import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.nio.ByteOrder;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -457,7 +460,6 @@ public final class LibmpqNative {
         return valueLayout;
     }
 
-    /** Converts a non-negative Java length without truncating native size_t. */
     private static final ValueLayout.OfLong RANGE_OFFSET =
             C_LONG.withByteAlignment(canonicalValueLayout("long long").byteAlignment());
     private static final long RANGE_ALIGNMENT = Math.max(
@@ -467,9 +469,38 @@ public final class LibmpqNative {
     private static final long RANGE_SIZE = align(RANGE_DATA + ValueLayout.ADDRESS.byteSize(),
             C_SIZE_T.byteAlignment());
     private static final long RANGE_STRIDE = align(RANGE_SIZE + C_SIZE_T.byteSize(), RANGE_ALIGNMENT);
+    private static final StructLayout RANGE_LAYOUT = rangeLayout();
 
     private static long align(long size, long alignment) {
         return (size + alignment - 1) & -alignment;
+    }
+
+    private static StructLayout rangeLayout() {
+        List<MemoryLayout> fields = new ArrayList<>();
+        fields.add(RANGE_OFFSET.withName("offset"));
+        addPadding(fields, RANGE_DATA - RANGE_OFFSET.byteSize());
+        fields.add(ValueLayout.ADDRESS.withName("data"));
+        addPadding(fields, RANGE_SIZE - RANGE_DATA - ValueLayout.ADDRESS.byteSize());
+        fields.add(C_SIZE_T.withName("size"));
+        addPadding(fields, RANGE_STRIDE - RANGE_SIZE - C_SIZE_T.byteSize());
+        return MemoryLayout.structLayout(fields.toArray(MemoryLayout[]::new));
+    }
+
+    private static void addPadding(List<MemoryLayout> fields, long bytes) {
+        if (bytes != 0) {
+            fields.add(MemoryLayout.paddingLayout(bytes));
+        }
+    }
+
+    /**
+     * Returns the ABI layout of one native range descriptor. The member names
+     * are {@code offset}, {@code data}, and {@code size}. Its byte size is
+     * the descriptor stride and includes any trailing padding.
+     *
+     * @return the native {@code mpq_update_replace_range_s} layout
+     */
+    public static StructLayout replaceRangeLayout() {
+        return RANGE_LAYOUT;
     }
 
     public static MemorySegment allocateReplaceRanges(Arena arena, int count) {
@@ -502,15 +533,50 @@ public final class LibmpqNative {
 
     public static int updateReplaceRanges(MemorySegment update, MemorySegment name,
                                           MemorySegment ranges, int count) {
-        return callInt(UPDATE_REPLACE_RANGES, update, name, ranges, nativeSizeT(count));
+        return updateReplaceRanges(update, name, ranges, (long) count);
+    }
+
+    /**
+     * Calls the ordinary native range transaction with a checked size_t count.
+     * The caller supplies a valid vector and its payloads until return.
+     *
+     * @param update native update handle
+     * @param name native member name
+     * @param ranges native descriptor vector, or {@link MemorySegment#NULL} for zero count
+     * @param rangeCount descriptor count
+     * @return native status
+     * @throws IllegalArgumentException if the count is negative or exceeds native size_t
+     */
+    public static int updateReplaceRanges(MemorySegment update, MemorySegment name,
+                                          MemorySegment ranges, long rangeCount) {
+        return callInt(UPDATE_REPLACE_RANGES, update, name, ranges, nativeSizeT(rangeCount));
     }
 
     public static int updateReplaceRangesIdentity(MemorySegment update, MemorySegment name,
             short locale, short platform, MemorySegment ranges, int count) {
-        return callInt(UPDATE_REPLACE_RANGES_IDENTITY, update, name, locale, platform,
-                ranges, nativeSizeT(count));
+        return updateReplaceRangesIdentity(update, name, locale, platform, ranges, (long) count);
     }
 
+    /**
+     * Calls the exact native range transaction with a checked size_t count.
+     * The caller supplies a valid vector and its payloads until return.
+     *
+     * @param update native update handle
+     * @param name native member name
+     * @param locale unsigned native locale bits
+     * @param platform unsigned native platform bits
+     * @param ranges native descriptor vector, or {@link MemorySegment#NULL} for zero count
+     * @param rangeCount descriptor count
+     * @return native status
+     * @throws IllegalArgumentException if the count is negative or exceeds native size_t
+     */
+    public static int updateReplaceRangesIdentity(MemorySegment update, MemorySegment name,
+            short locale, short platform, MemorySegment ranges, long rangeCount) {
+        return callInt(UPDATE_REPLACE_RANGES_IDENTITY, update, name, locale, platform,
+                ranges, nativeSizeT(rangeCount));
+    }
+
+    /** Converts a non-negative Java length without truncating native size_t. */
     private static Object nativeSizeT(long value) {
         Class<?> carrier = C_SIZE_T.carrier();
 

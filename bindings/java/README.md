@@ -245,6 +245,56 @@ The block decoder and oversized SINGLE writers have signed 32-bit limits.
 Range ends must fit the existing member, and archive layout restrictions can
 impose lower limits.
 
+### Caller-owned native range vectors
+
+`replaceRanges` and `replaceRangesSegment` accept Java lists. To pass a
+native descriptor vector directly, use `replaceRangesNative` or the
+byte-exact `replaceRangesNativeBytes`. Both take a `long` descriptor count.
+Their exact overloads take locale and platform immediately after the name.
+The direct `LibmpqNative.updateReplaceRanges` and
+`updateReplaceRangesIdentity` methods also accept a `long` count and
+retain their existing `int` overloads.
+
+```java
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemoryLayout;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.nio.file.Path;
+import org.libmpq.MpqUpdate;
+import org.libmpq.ffi.LibmpqNative;
+
+try (MpqUpdate update = MpqUpdate.begin(Path.of("archive.mpq"))) {
+    try (Arena arena = Arena.ofConfined()) {
+        var layout = LibmpqNative.replaceRangeLayout();
+        MemorySegment ranges = arena.allocate(MemoryLayout.sequenceLayout(2, layout));
+        MemorySegment first = arena.allocateFrom(ValueLayout.JAVA_BYTE, (byte) 42, (byte) 43);
+        MemorySegment second = arena.allocateFrom(ValueLayout.JAVA_BYTE, (byte) 44);
+        LibmpqNative.setReplaceRange(ranges, 0, 0, first, first.byteSize());
+        LibmpqNative.setReplaceRange(ranges, 1, 1, second, second.byteSize());
+        update.replaceRangesNative("member.bin", ranges.asReadOnly(), 2L);
+    }
+    update.commit();
+}
+```
+
+`replaceRangeLayout()` describes the native `offset`, `data`, and `size`
+members, including padding. Use its byte size as the stride and its
+alignment for the start of the vector. The count and each payload length
+must fit the active ABI's `size_t`. The vector segment must cover the full
+count, and ranges must fit the logical member and native format limits.
+Use `MemorySegment.NULL` or an empty native segment for a zero count.
+Zero-length descriptors still undergo native validation.
+
+The binding borrows the vector in its original order and C applies later
+ranges over earlier ones. Keep the descriptor arena and all embedded
+payload pointers valid, accessible and unchanged until staging returns.
+Java validates the descriptor segment and its extent. The caller supplies
+valid storage for each embedded pointer. Neither arena is closed by the
+binding, and both can be released before commit. Large count propagation
+can be checked at the FFM boundary without allocating or processing a
+multi-gigabyte descriptor vector.
+
 ### Custom random-access I/O
 
 Use `Archive.openSource(channel, sourceName)` for a caller-owned

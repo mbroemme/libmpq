@@ -259,8 +259,93 @@ public final class MpqUpdate implements AutoCloseable {
         }
     }
 
+    /**
+     * Stages a caller-owned native descriptor vector using ordinary lookup.
+     * Use {@link LibmpqNative#replaceRangeLayout()} to lay out the vector.
+     * Later descriptors win on overlap. Keep the vector and every referenced
+     * payload alive, accessible and unchanged until this call returns.
+     * The vector may be read-only. The caller is responsible for the validity
+     * of embedded payload pointers. Native range validation applies.
+     * Commit publishes the stage.
+     *
+     * @param name archive filename
+     * @param ranges native descriptor vector, or {@link MemorySegment#NULL} for zero count
+     * @param rangeCount number of descriptors in application order
+     * @throws IllegalArgumentException if the vector or count is invalid
+     * @throws LibmpqException if the native transaction rejects the edit
+     */
+    public void replaceRangesNative(String name, MemorySegment ranges, long rangeCount)
+            throws LibmpqException {
+        replaceRangesNativeBytes(MpqName.ofUtf8(name), ranges, rangeCount);
+    }
+
+    /**
+     * Byte-exact form of {@link #replaceRangesNative(String, MemorySegment, long)}.
+     *
+     * @param name byte-exact archive filename
+     * @param ranges borrowed native descriptor vector
+     * @param rangeCount number of descriptors in application order
+     * @throws IllegalArgumentException if the vector or count is invalid
+     * @throws LibmpqException if the native transaction rejects the edit
+     */
+    public void replaceRangesNativeBytes(MpqName name, MemorySegment ranges, long rangeCount)
+            throws LibmpqException {
+        replaceRangesNativeImpl(name, (short) 0, (short) 0, ranges, rangeCount, false);
+    }
+
+    /**
+     * Stages a native vector for one exact locale/platform identity.
+     * Buffer, ownership, and ordering rules match
+     * {@link #replaceRangesNative(String, MemorySegment, long)}.
+     *
+     * @param name archive filename
+     * @param locale unsigned 16-bit locale selector
+     * @param platform unsigned 16-bit platform selector
+     * @param ranges borrowed native descriptor vector
+     * @param rangeCount number of descriptors in application order
+     * @throws IllegalArgumentException if the selector, vector or count is invalid
+     * @throws LibmpqException if the native transaction rejects the edit
+     */
+    public void replaceRangesNative(String name, int locale, int platform,
+                                    MemorySegment ranges, long rangeCount) throws LibmpqException {
+        replaceRangesNativeBytes(MpqName.ofUtf8(name), locale, platform, ranges, rangeCount);
+    }
+
+    /**
+     * Byte-exact form of {@link #replaceRangesNative(String, int, int, MemorySegment, long)}.
+     *
+     * @param name byte-exact archive filename
+     * @param locale unsigned 16-bit locale selector
+     * @param platform unsigned 16-bit platform selector
+     * @param ranges borrowed native descriptor vector
+     * @param rangeCount number of descriptors in application order
+     * @throws IllegalArgumentException if the selector, vector or count is invalid
+     * @throws LibmpqException if the native transaction rejects the edit
+     */
+    public void replaceRangesNativeBytes(MpqName name, int locale, int platform,
+                                         MemorySegment ranges, long rangeCount) throws LibmpqException {
+        replaceRangesNativeImpl(name, selector(locale), selector(platform), ranges, rangeCount, true);
+    }
+
+    private void replaceRangesNativeImpl(MpqName name, short locale, short platform,
+                                         MemorySegment ranges, long rangeCount, boolean exact)
+            throws LibmpqException {
+        checkOpen();
+        Support.checkNativeBuffer(ranges, false);
+        var layout = LibmpqNative.replaceRangeLayout();
+        if (rangeCount < 0 || rangeCount > ranges.byteSize() / layout.byteSize()) {
+            throw new IllegalArgumentException("descriptor count must fit the native vector extent");
+        }
+        if (rangeCount != 0 && ranges.address() % layout.byteAlignment() != 0) {
+            throw new IllegalArgumentException("range descriptor vector is misaligned");
+        }
+        try (Arena arena = Arena.ofConfined()) {
+            applyRanges(name.marshal(arena), locale, platform, ranges, rangeCount, exact);
+        }
+    }
+
     private void applyRanges(MemorySegment name, short locale, short platform, MemorySegment ranges,
-                             int count, boolean exact) throws LibmpqException {
+                             long count, boolean exact) throws LibmpqException {
         Support.check(exact
                 ? LibmpqNative.updateReplaceRangesIdentity(handle, name, locale, platform, ranges, count)
                 : LibmpqNative.updateReplaceRanges(handle, name, ranges, count));
