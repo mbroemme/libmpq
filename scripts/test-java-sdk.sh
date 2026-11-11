@@ -72,14 +72,12 @@ native_path()
 unset JAVA_TOOL_OPTIONS _JAVA_OPTIONS JDK_JAVA_OPTIONS
 unset LD_LIBRARY_PATH DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH
 runtime_path=${PATH}
-runtime_env_exclude=${MSYS2_ENV_CONV_EXCL:-}
 case "${platform}" in
 	MINGW*|MSYS*)
-		# Pass native argument paths and an explicit Windows PATH to the smoke JVM.
 		export MSYS2_ARG_CONV_EXCL='*' MSYS_NO_PATHCONV=1
 		system="$(cygpath -au "${SystemRoot:-${SYSTEMROOT:?Missing Windows system directory}}")"
-		runtime_path="$(cygpath -wp "${library%/*}:${system}/System32:${system}")"
-		runtime_env_exclude="${runtime_env_exclude:+${runtime_env_exclude};}PATH"
+		# Git Bash converts PATH itself when launching the native JVM.
+		runtime_path="${library%/*}:${system}/System32:${system}"
 		;;
 esac
 
@@ -96,7 +94,7 @@ run_smoke()
 {
 	local directory=$1
 	shift
-	MSYS2_ENV_CONV_EXCL="${runtime_env_exclude}" PATH="${runtime_path}" \
+	PATH="${runtime_path}" \
 		"${java}" --enable-native-access=ALL-UNNAMED \
 		"-Djava.library.path=${directory}" "$@" -cp "${classes}" \
 		org.libmpq.JavaSdkSmoke "${version}" "${architecture}"
