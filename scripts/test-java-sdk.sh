@@ -42,7 +42,7 @@ case "${platform}" in
 	Linux) relative_library=lib/libmpq.so ;;
 	Darwin) relative_library=lib/libmpq.dylib ;;
 	MINGW*|MSYS*)
-		relative_library=bin/libmpq.dll
+		relative_library=bin/mpq.dll
 		sdk="$(cygpath -au "${sdk}")"
 		;;
 	*) fail "Unsupported SDK platform: ${platform}" ;;

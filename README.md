@@ -235,7 +235,7 @@ runners build both architectures, run the C regression suite through CTest,
 and compile and execute installed consumers. Autotools remains the POSIX and
 MinGW-w64 build frontend, including native aarch64 via MSYS2 CLANGARM64.
 
-The instructions below cover the native C SDK. For Windows binding packages
+Both Windows C SDKs provide `mpq.dll`. For Windows binding packages
 and requirements, see the [Python](bindings/python/README.md),
 [Java](bindings/java/README.md), and [D](bindings/d/README.md) guides.
 

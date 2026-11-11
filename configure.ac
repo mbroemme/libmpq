@@ -38,8 +38,11 @@ esac
 # Initialize Libtool and disable static-library builds.
 LT_INIT([win32-dll disable-static])
 
-# Check the Windows RNG and security APIs used by the filesystem helpers.
+# Keep the MinGW development library names and link an unversioned runtime DLL.
 AS_CASE([$host_os], [mingw*], [
+	soname_spec='${libname#lib}$shared_ext'
+
+	# Check the Windows RNG and security APIs used by the filesystem helpers.
 	AC_CHECK_LIB([bcrypt], [BCryptGenRandom], [], [AC_MSG_ERROR([*** bcrypt is required on Windows])])
 	AC_CHECK_LIB([advapi32], [OpenProcessToken], [], [AC_MSG_ERROR([*** advapi32 is required on Windows])])
 ])

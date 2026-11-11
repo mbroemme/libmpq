@@ -11,14 +11,13 @@ The JAR uses a separately installed native library. Maven builds the runtime,
 sources, and Javadoc JARs. The SDK must match the JVM architecture and its
 codec libraries must be available to the native loader.
 
-By default the JVM searches for `libmpq.dll` on Windows, `libmpq.so` on Linux,
-or `libmpq.dylib` on macOS. For the Windows MSVC SDK, add its `bin` directory
+By default the JVM loads `mpq.dll` on Windows, `libmpq.so` on Linux, or
+`libmpq.dylib` on macOS. For either Windows SDK, add its `bin` directory
 to `PATH` for the codec DLLs and supply it in `-Djava.library.path` for Java's
 library search.
 
 Set `-Dorg.libmpq.library` to the absolute native-library path to override
-the search. Use this option for a versioned MinGW SDK DLL such as
-`libmpq-4.dll`, pointing to the file under the SDK's `bin` directory.
+the search.
 
 The canonical release installation path is Maven Central:
 

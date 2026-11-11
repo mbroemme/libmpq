@@ -191,17 +191,21 @@ esac
 name="libmpq-${version}-windows-${suffix}"
 [[ "${stage##*/}" == "${name}" && "${output##*/}" == "${name}.zip" ]] || fail 'Invalid SDK directory or ZIP name'
 [[ -f "${stage}/include/libmpq/mpq.h" && -f "${stage}/lib/${library}" ]] || fail 'Missing installed header or import library'
-roots=("${stage}/bin/"libmpq*.dll)
-[[ ${#roots[@]} == 1 && -f "${roots[0]}" ]] || fail 'Expected exactly one libmpq DLL'
+[[ -f "${stage}/bin/mpq.dll" ]] || fail 'Missing installed mpq.dll'
+for path in "${stage}/bin/"*.dll; do
+	base="${path##*/}"
+	case "${base,,}" in
+		libmpq.dll|libmpq-*.dll) fail "Unexpected legacy DLL: ${base}" ;;
+	esac
+	if [[ "${mode}" == prepare && "${base}" != mpq.dll ]]; then
+		fail 'Prepare requires a clean install without runtime DLLs'
+	fi
+done
 [[ -z "$(find "${stage}" -name libmpq.a -print)" ]] || fail 'Static libmpq archive must not be published'
 [[ -z "$(find "${stage}" -type l -print)" ]] || fail 'Unexpected SDK symlink'
 system="$(unix_path "${SystemRoot:-${SYSTEMROOT:?SystemRoot is required}}")/System32"
 
 if [[ "${mode}" == prepare ]]; then
-	for path in "${stage}/bin/"*.dll; do
-		base="${path##*/}"
-		[[ "${base,,}" == libmpq* ]] || fail 'Prepare requires a clean install without runtime DLLs'
-	done
 	dependency_closure yes
 	cp "${source}/README.md" "${source}/DEVELOPER.md" \
 		"${source}/RELEASING.md" "${source}/MPQ.md" \

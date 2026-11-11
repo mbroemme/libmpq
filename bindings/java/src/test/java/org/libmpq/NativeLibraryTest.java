@@ -25,24 +25,22 @@ import org.junit.jupiter.api.io.TempDir;
 /** Exercise library discovery in fresh JVMs because the FFM facade initializes once. */
 class NativeLibraryTest {
     @Test
-    void windowsSelectsCanonicalNameWithoutLegacyFallback(@TempDir Path directory) throws Exception {
-        Path library = configuredLibrary();
-        Path canonical = Files.copy(library, directory.resolve(System.mapLibraryName("libmpq")));
-        Files.copy(library, directory.resolve(System.mapLibraryName("mpq")));
-        assertLoaded(run(directory, "Windows 11", null));
-
-        Files.delete(canonical);
-        Result result = run(directory, "Windows 11", null);
-        assertNotEquals(0, result.exitCode(), result.output());
-        assertTrue(result.output().contains("UnsatisfiedLinkError"), result.output());
-        assertTrue(result.output().contains("no libmpq in java.library.path"), result.output());
+    void usesOneLogicalNameForEveryOs(@TempDir Path directory) throws Exception {
+        Files.copy(configuredLibrary(), directory.resolve(System.mapLibraryName("mpq")));
+        for (String osName : List.of("Linux", "Mac OS X", "Windows 11")) {
+            assertLoaded(run(directory, osName, null));
+        }
     }
 
     @Test
-    void unixUsesExistingLibraryName(@TempDir Path directory) throws Exception {
-        Files.copy(configuredLibrary(), directory.resolve(System.mapLibraryName("mpq")));
-        assertLoaded(run(directory, "Linux", null));
-        assertLoaded(run(directory, "Mac OS X", null));
+    void missingCanonicalLibraryDoesNotFallBack(@TempDir Path directory) throws Exception {
+        Path library = configuredLibrary();
+        Files.copy(library, directory.resolve(System.mapLibraryName("libmpq")));
+        Files.copy(library, directory.resolve(System.mapLibraryName("libmpq-4")));
+        Result result = run(directory, "Windows 11", null);
+        assertNotEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("UnsatisfiedLinkError"), result.output());
+        assertTrue(result.output().contains("no mpq in java.library.path"), result.output());
     }
 
     @Test
@@ -50,7 +48,7 @@ class NativeLibraryTest {
         Path library = configuredLibrary();
         assertLoaded(run(directory, "Windows 11", library));
 
-        Files.copy(library, directory.resolve(System.mapLibraryName("libmpq")));
+        Files.copy(library, directory.resolve(System.mapLibraryName("mpq")));
         Path missing = directory.resolve("missing-library");
         Result result = run(directory, "Windows 11", missing);
         assertNotEquals(0, result.exitCode(), result.output());

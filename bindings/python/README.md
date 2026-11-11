@@ -525,7 +525,7 @@ release Python ZIP contains one sdist and all eight Linux/Windows/macOS
 wheels as a supplementary GitHub Release download. The sdist contains the
 canonical C and header sources and is free of native build products.
 
-Windows wheels bundle `mpq_libs/libmpq.dll` and its required non-system
+Windows wheels bundle `mpq_libs/mpq.dll` and its required non-system
 runtime DLLs, so no separately installed libmpq SDK is needed. Local Windows
 wheel builds must set `LIBMPQ_LIBRARY` to a prebuilt shared CMake DLL; the
 backend does not compile Windows sources itself.

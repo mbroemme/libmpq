@@ -69,7 +69,7 @@ if [[ "${LIBMPQ_D_OS}" == windows ]]; then
 	: "${LIBMPQ_D_MSVC_BIN:?MSVC developer tools directory is required}"
 	export PATH="$(cygpath -au "${LIBMPQ_D_MSVC_BIN}"):${PATH}"
 	test -s "${native_sdk}/lib/libmpq.lib"
-	test -s "${native_sdk}/bin/libmpq.dll"
+	test -s "${native_sdk}/bin/mpq.dll"
 	export LIBMPQ_D_SYSTEM_LIB="${LIB:-}"
 
 	# The unchanged source recipe links mpq. Keep its compatibility import

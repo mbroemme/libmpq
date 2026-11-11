@@ -277,6 +277,7 @@ elif [[ "${LIBMPQ_D_OS}" == macos ]]; then
 	grep -Fx "macos_deployment_target=${MACOSX_DEPLOYMENT_TARGET}" "${native_sdk}/BUILDINFO"
 else
 	native_sdk="release/libmpq-${LIBMPQ_D_VERSION}-windows-msvc-${msvc_arch}"
+	test -s "${native_sdk}/bin/mpq.dll"
 	cp -a "${native_sdk}/bin" "${native_sdk}/licenses" "${package_dir}/"
 	cp "${native_sdk}/lib/libmpq.lib" "${package_dir}/lib/"
 	for binary in "${package_dir}/bin/"*.dll "${package_dir}/lib/libmpq.lib" libmpq.exe; do

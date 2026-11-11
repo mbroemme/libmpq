@@ -83,13 +83,13 @@ def _stage_test_fixtures():
 def _build_native():
     """Compile the native library into a temporary platform-specific file."""
     override = os.environ.get("LIBMPQ_LIBRARY")
-    suffix = {"win32": ".dll", "darwin": ".dylib"}.get(sys.platform, ".so")
+    name = {"win32": "mpq.dll", "darwin": "libmpq.dylib"}.get(sys.platform, "libmpq.so")
     if sys.platform == "win32" and not override:
         raise RuntimeError(
             "Windows wheel builds require LIBMPQ_LIBRARY from a shared CMake build"
         )
     output_dir = Path(tempfile.mkdtemp(prefix="libmpq-python-native-"))
-    output = output_dir / ("libmpq" + suffix)
+    output = output_dir / name
     if override:
         shutil.copy2(override, output)
         return output, output_dir
@@ -139,8 +139,7 @@ def _bundle_wheel(wheel_path, native_path, wheel_directory):
     # tag supplied by the local build or by the release repair step.
     output_name = "-".join(wheel_path.name[:-4].split("-")[:-1] + [platform_tag]) + ".whl"
     output_path = Path(wheel_directory) / output_name
-    native_name = "libmpq" + native_path.suffix
-    native_member = "mpq_libs/" + native_name
+    native_member = "mpq_libs/" + native_path.name
 
     files = {}
     with zipfile.ZipFile(wheel_path, "r") as source:

@@ -40,7 +40,7 @@ set -euo pipefail
 case "$1" in
 	-f)
 		machine="${TEST_MACHINE}"
-		if [[ "${2##*/}" != libmpq.dll ]]; then machine="${TEST_RUNTIME_MACHINE:-${machine}}"; fi
+		if [[ "${2##*/}" != mpq.dll ]]; then machine="${TEST_RUNTIME_MACHINE:-${machine}}"; fi
 		case "${machine}" in
 			8664) format=pei-x86-64 ;;
 			AA64) format=coff-arm64 ;;
@@ -63,7 +63,7 @@ set -euo pipefail
 case "$2" in
 	/headers)
 		machine="${TEST_MACHINE}"
-		if [[ "${3##*/}" != libmpq.dll ]]; then machine="${TEST_RUNTIME_MACHINE:-${machine}}"; fi
+		if [[ "${3##*/}" != mpq.dll ]]; then machine="${TEST_RUNTIME_MACHINE:-${machine}}"; fi
 		printf '    %s machine (mock architecture)\r\n' "${machine}"
 		;;
 	/dependents)
@@ -99,7 +99,7 @@ reset_stage()
 	rm -rf "${stage}"
 	mkdir -p "${stage}/bin" "${stage}/lib/pkgconfig" "${stage}/include/libmpq"
 	touch "${stage}/include/libmpq/mpq.h" "${stage}/lib/${library}"
-	printf 'CODEC.DLL\nKERNEL32.dll\napi-ms-win-crt-runtime-l1-1-0.dll\n' > "${stage}/bin/libmpq.dll"
+	printf 'CODEC.DLL\nKERNEL32.dll\napi-ms-win-crt-runtime-l1-1-0.dll\n' > "${stage}/bin/mpq.dll"
 	printf 'prefix=/usr\n' > "${stage}/lib/pkgconfig/libmpq.pc"
 	printf '#!/bin/sh\nprefix=/usr\nprintf "%%s\\n" "${prefix}"\n' > "${stage}/bin/libmpq-config"
 }
@@ -130,6 +130,14 @@ for combination in msvc:x64 msvc:arm64 mingw:x86_64 mingw:aarch64; do
 	reset_stage
 	expect_failure bash "${project}/scripts/package-windows.sh" prepare "${options[@]}" --architecture unsupported
 	grep -q 'Unsupported Windows toolchain/architecture' "${temporary}/failure.log"
+	mv "${stage}/bin/mpq.dll" "${stage}/bin/libmpq.dll"
+	expect_failure bash "${project}/scripts/package-windows.sh" prepare "${options[@]}"
+	grep -q 'Missing installed mpq.dll' "${temporary}/failure.log"
+	mv "${stage}/bin/libmpq.dll" "${stage}/bin/mpq.dll"
+	touch "${stage}/bin/libmpq-4.dll"
+	expect_failure bash "${project}/scripts/package-windows.sh" prepare "${options[@]}"
+	grep -q 'Unexpected legacy DLL' "${temporary}/failure.log"
+	rm "${stage}/bin/libmpq-4.dll"
 
 	# MinGW uses aarch64, not the MSVC arm64 spelling.
 	expect_failure bash "${project}/scripts/package-windows.sh" prepare "${options[@]}" --toolchain mingw --architecture arm64
@@ -184,7 +192,7 @@ for combination in msvc:x64 msvc:arm64 mingw:x86_64 mingw:aarch64; do
 	reset_stage
 	expect_failure env TEST_INSPECT_STATUS=1 bash "${project}/scripts/package-windows.sh" prepare "${options[@]}"
 	grep -q 'Cannot inspect' "${temporary}/failure.log"
-	: > "${stage}/bin/libmpq.dll"
+	: > "${stage}/bin/mpq.dll"
 	expect_failure bash "${project}/scripts/package-windows.sh" prepare "${options[@]}"
 	grep -q 'No PE imports' "${temporary}/failure.log"
 done

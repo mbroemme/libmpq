@@ -1158,7 +1158,7 @@ linking, for example `-Wl,-rpath,"${LIBMPQ_ROOT}/lib"`.
 
 Extract `libmpq-X.Y.Z-windows-msvc-x64.zip` for x64 or
 `libmpq-X.Y.Z-windows-msvc-arm64.zip` for ARM64. Both are built and tested on
-native Windows runners. The SDK contains `bin/libmpq.dll`, the
+native Windows runners. The SDK contains `bin/mpq.dll`, the
 `lib/libmpq.lib` import library, and the public header `include/libmpq/mpq.h`.
 Required non-system runtime DLLs are bundled under `bin/`, together with
 `libmpq.pdb` when available.
@@ -1172,7 +1172,7 @@ required.
 
 Extract `libmpq-X.Y.Z-windows-mingw-x86_64.zip` for MINGW64 x86_64 or
 `libmpq-X.Y.Z-windows-mingw-aarch64.zip` for native Windows ARM64 using MSYS2
-CLANGARM64. The SDK contains `bin/libmpq*.dll`, the `lib/libmpq.dll.a` import
+CLANGARM64. The SDK contains `bin/mpq.dll`, the `lib/libmpq.dll.a` import
 library, and the public header `include/libmpq/mpq.h`. Required non-system
 runtime DLLs are bundled under `bin/`. No libmpq-specific consumer
 preprocessor define is required.
@@ -1181,6 +1181,12 @@ Add `lib/pkgconfig/` to `PKG_CONFIG_PATH` and use
 `pkg-config --cflags --libs libmpq` for compiler and linker flags. The SDK
 also provides `bin/libmpq-config` for use from a shell such as MSYS2 Bash. Put
 the SDK's `bin/` directory on `PATH` when running applications.
+
+On MinGW, Libtool derives the import library from `libmpq.la` and links the
+DLL using a separate runtime name. The MinGW configuration sets the runtime
+name to `mpq.dll` at link time. Both Windows toolchains embed that name in
+their import libraries. Relink or rebuild binaries that import an older DLL
+name before using this SDK.
 
 ### Binding development
 
@@ -1197,10 +1203,11 @@ in `bindings/python/mpq.py`, package metadata is in
 Autotools does not detect or install the Python package; use the PEP 517
 backend and pip/PyPI instead.
 
-Windows release wheels use prebuilt MSVC SDK DLLs for x64 and ARM64. On macOS,
-both release lanes validate the public export set of a fresh source-built
-wheel and the installed repaired wheel. To check an installed wheel's bundled
-library against an installed C SDK header, run:
+Windows release wheels bundle the prebuilt MSVC SDK's `mpq.dll` for x64 and
+ARM64 with its codec dependencies. Both macOS release lanes validate the
+public export set of a fresh source-built wheel and the installed repaired
+wheel. To check an installed wheel's bundled library against an installed
+C SDK header, run:
 
 ```sh
 bash scripts/check-native-exports.sh /path/to/sdk/include/libmpq/mpq.h \
@@ -1247,8 +1254,9 @@ LIBRARY_PATH="$PWD/src/.libs" LD_LIBRARY_PATH="$PWD/src/.libs" \
     dub run --config=tests --compiler=ldc2
 ```
 
-Windows release package validation uses the matching MSVC SDK. The release
-matrix tests DMD and LDC packages on x64 and LDC packages on ARM64.
+Windows release package validation uses the matching MSVC SDK, including
+`libmpq.lib` and its `mpq.dll` runtime. The release matrix tests DMD and LDC
+packages on x64 and LDC packages on ARM64.
 
 See [bindings/d/README.md](bindings/d/README.md) for DUB usage, compiler
 requirements, binary package details, and examples.
@@ -1278,11 +1286,11 @@ bash scripts/test-java-sdk.sh /path/to/sdk 0.9.0 x86_64
 ```
 
 Use `aarch64` for an ARM64 SDK. On Windows, run the launcher in Git Bash
-against the MSVC SDK with its codec DLLs in `bin/`. Default discovery uses
-`libmpq.dll`. For a versioned MinGW SDK DLL, use the explicit library
-property as described in the binding guide. CI tests the shared MSVC x64 SDK
-and the extracted macOS ARM64 and Linux ARM64 glibc SDKs. Windows release
-validation also tests the extracted MSVC x64 ZIP.
+against an SDK with `mpq.dll` and its codec DLLs in `bin/`. The binding uses
+`System.loadLibrary("mpq")` on all supported platforms and retains the
+`org.libmpq.library` override. CI tests the shared MSVC x64 SDK and the
+extracted macOS ARM64 and Linux ARM64 glibc SDKs. Windows release validation
+also tests the extracted MSVC x64 ZIP.
 
 The binding also supports the normal system loader path:
 

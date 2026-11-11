@@ -430,7 +430,7 @@ LIBRARY_PATH="$PWD/src/.libs" LD_LIBRARY_PATH="$PWD/src/.libs" \
 
 Release downloads also provide compiler-specific binary packages. They contain
 the D interface files, a precompiled static D archive, and the native shared
-library (`libmpq.so` on Linux, `libmpq.dylib` on macOS, `libmpq.dll` on
+library (`libmpq.so` on Linux, `libmpq.dylib` on macOS, `mpq.dll` on
 Windows). Unix packages preserve the shared-library symlinks. The binary
 package supplies the bundled native library to the linker. At runtime, its
 library directory must be available through the platform's loader search
@@ -488,7 +488,7 @@ Windows archives are `libmpq-d-X.Y.Z-dmd-windows-x86_64.zip` and
 `libmpq-d-X.Y.Z/` directory, using the MSVC x64 native SDK. Its `lib/`
 directory contains the compiler-specific `libmpq-dmd.lib` or `libmpq-ldc.lib`
 and the MSVC import library `libmpq.lib`. The `bin/` directory contains
-`libmpq.dll` and its required non-system runtime DLLs, with their licenses
+`mpq.dll` and its required non-system runtime DLLs, with their licenses
 under `licenses/`. Add the extracted `bin/` directory to `PATH` when running
 applications. DUB selects the precompiled library through
 `windows-x86_64-<compiler>` metadata. Both compilers are tested using an

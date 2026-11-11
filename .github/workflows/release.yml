@@ -134,6 +134,9 @@ jobs:
           ${headers} = & dumpbin.exe /nologo /headers "${env:RUNNER_TEMP}/consumer.exe"
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
           if (-not (${headers} -match '^\s*${{ matrix.machine }}\s+machine\s+\(')) { throw 'Consumer PE architecture mismatch' }
+          ${imports} = & dumpbin.exe /nologo /dependents "${env:RUNNER_TEMP}/consumer.exe"
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          if (-not (${imports} -match '^\s+mpq\.dll\s*$')) { throw 'Consumer must import mpq.dll' }
 
           # Exclude vcpkg and the build tree from runtime dependency resolution.
           ${savedPath} = ${env:PATH}
@@ -255,6 +258,7 @@ jobs:
           consumer="$(cygpath -u "${RUNNER_TEMP}")/consumer.exe"
           "${CC}" $(pkg-config --cflags libmpq) tests/test-mpq-consumer.c $(pkg-config --libs libmpq) -o "${consumer}"
           test "$(objdump -f "${consumer}" | sed -nE 's/^.*file format[[:space:]]+([^[:space:]]+)[[:space:]]*$/\1/p')" = '${{ matrix.pe_format }}'
+          objdump -p "${consumer}" | grep -Ei '^[[:space:]]*DLL Name:[[:space:]]+mpq\.dll[[:space:]]*$'
 
           # Only the staged SDK and Windows system DLLs may satisfy imports.
           system_root="$(cygpath -u "${SystemRoot:-${SYSTEMROOT}}")"

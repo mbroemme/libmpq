@@ -101,8 +101,13 @@ jobs:
             cl.exe /nologo /MD "/I${prefix}/include" tests/test-mpq-consumer.c "/Fe${env:RUNNER_TEMP}/consumer.exe" "/Fo${env:RUNNER_TEMP}/consumer.obj" /link "/LIBPATH:${prefix}/lib" libmpq.lib ${codecLibraries} bcrypt.lib advapi32.lib
           }
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          if ('${{ matrix.shared }}' -eq 'ON') {
+            ${imports} = & dumpbin.exe /nologo /dependents "${env:RUNNER_TEMP}/consumer.exe"
+            if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+            if (-not (${imports} -match '^\s+mpq\.dll\s*$')) { throw 'Consumer must import mpq.dll' }
+          }
           ${binaries} = @("${env:RUNNER_TEMP}/consumer.exe")
-          if ('${{ matrix.shared }}' -eq 'ON') { ${binaries} += "${prefix}/bin/libmpq.dll" }
+          if ('${{ matrix.shared }}' -eq 'ON') { ${binaries} += "${prefix}/bin/mpq.dll" }
           foreach (${binary} in ${binaries}) {
             ${headers} = & dumpbin.exe /nologo /headers ${binary}
             if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
@@ -221,6 +226,7 @@ jobs:
           test "$(objdump -f "${prefix}/consumer.exe" | sed -nE 's/^.*file format[[:space:]]+([^[:space:]]+)[[:space:]]*$/\1/p')" = '${{ matrix.pe_format }}'
           test "$("${prefix}/bin/libmpq-config" --version)" = "${version}"
           if test "${LINKAGE}" = shared; then
+            objdump -p "${prefix}/consumer.exe" | grep -Ei '^[[:space:]]*DLL Name:[[:space:]]+mpq\.dll[[:space:]]*$'
             system_root="$(cygpath -u "${SystemRoot:-${SYSTEMROOT}}")"
             PATH="${prefix}/bin:${system_root}/System32:${system_root}" "${prefix}/consumer.exe" "${version}" "$(cygpath -w "${PWD}/tests/fixtures/mpq-v1-features.mpq")"
           else

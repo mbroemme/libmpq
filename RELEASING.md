@@ -62,7 +62,8 @@ extraction location. macOS packages do not bundle system codec libraries.
 
 MSVC x64 and ARM64 use CMake; MinGW x86_64 and aarch64 use Autotools with
 MINGW64 and CLANGARM64 respectively. Windows SDKs contain shared libraries
-only; MSVC includes the Release PDB when available. Bash packaging helpers
+only, with `bin/mpq.dll` as the runtime DLL for both toolchains. MSVC includes
+the Release PDB when available. Bash packaging helpers
 inspect PE imports recursively with `dumpbin` or `objdump`. Non-system DLLs
 are bundled from the selected toolchain. Their licenses are copied using vcpkg
 ownership metadata or MSYS2 `pacman` package records. Windows packaging checks
@@ -98,7 +99,7 @@ eight Linux/Windows/macOS wheels.
 
 Windows wheels reuse the shared MSVC/CMake build with matching `x64-windows`
 or `arm64-windows` vcpkg dependencies. The backend receives `LIBMPQ_LIBRARY`
-and bundles `mpq_libs/libmpq.dll`; delvewheel uses `--analyze-existing`,
+and bundles `mpq_libs/mpq.dll`. Delvewheel uses `--analyze-existing`,
 `--custom-patch`, and the matching runtime directory through `--add-path`
 to bundle required non-system dependencies. No separate libmpq SDK is
 required. Release validation checks the repaired wheel tags and every
@@ -157,7 +158,7 @@ Windows adds `libmpq-d-X.Y.Z-<compiler>-windows-x86_64.zip` for DMD and LDC on
 `windows-latest`. The existing MSVC x64 CMake/vcpkg shared build runs CTest
 before installation. The Windows SDK helper supplies recursive runtime DLL
 discovery, architecture validation, and dependency licenses. Each D package
-contains `bin/libmpq.dll` and its non-system dependencies, `lib/libmpq.lib`,
+contains `bin/mpq.dll` and its non-system dependencies, `lib/libmpq.lib`,
 and the precompiled `lib/libmpq-<compiler>.lib` in MS-COFF format. DUB's
 `windows-x86_64-<compiler>` configuration selects both packaged libraries.
 PE/COFF checks require the package architecture for every DLL, library object,

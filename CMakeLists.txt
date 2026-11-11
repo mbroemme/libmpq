@@ -89,8 +89,14 @@ if(WIN32)
     target_link_libraries(mpq-core PUBLIC bcrypt advapi32)
     target_link_libraries(mpq PRIVATE bcrypt advapi32)
 
-    # Native Windows outputs are libmpq.dll and its toolchain's import library.
-    set_target_properties(mpq PROPERTIES OUTPUT_NAME libmpq PREFIX "")
+    # Link the DLL as mpq.dll while retaining the development library name.
+    set_target_properties(mpq PROPERTIES
+        RUNTIME_OUTPUT_NAME mpq
+        ARCHIVE_OUTPUT_NAME libmpq
+        PDB_NAME libmpq
+        PREFIX ""
+        IMPORT_PREFIX ""
+    )
 endif()
 
 # Install only the public header; private filesystem/codec headers stay internal.

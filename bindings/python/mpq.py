@@ -109,7 +109,7 @@ def _native_buffer(size):
 def _candidate_library_names():
     """Return platform shared-library names in preferred loading order."""
     if os.name == "nt":
-        return ("libmpq.dll", "mpq.dll")
+        return ("mpq.dll",)
     if os.uname().sysname == "Darwin":
         return ("libmpq.dylib", "libmpq.so")
     return ("libmpq.so", "libmpq.so.4")

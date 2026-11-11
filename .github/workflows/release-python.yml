@@ -191,10 +191,10 @@ jobs:
           ${vs} = & ${vswhere} -latest -products '*' -requires ${{ matrix.vs_component }} -property installationPath
           Import-Module "${vs}/Common7/Tools/Microsoft.VisualStudio.DevShell.dll"
           Enter-VsDevShell -VsInstallPath "${vs}" -SkipAutomaticLocation -DevCmdArguments '-arch=${{ matrix.python_arch }} -host_arch=${{ matrix.python_arch }}'
-          ${headers} = & dumpbin.exe /nologo /headers "${stage}/bin/libmpq.dll"
+          ${headers} = & dumpbin.exe /nologo /headers "${stage}/bin/mpq.dll"
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
           if (-not (${headers} -match '^\s*${{ matrix.machine }}\s+machine\s+\(')) { throw 'libmpq PE architecture mismatch' }
-          "LIBMPQ_LIBRARY=${stage}/bin/libmpq.dll" >> "${env:GITHUB_ENV}"
+          "LIBMPQ_LIBRARY=${stage}/bin/mpq.dll" >> "${env:GITHUB_ENV}"
           "LIBMPQ_RUNTIME=${env:VCPKG_INSTALLATION_ROOT}/installed/${{ matrix.vcpkg_triplet }}/bin" >> "${env:GITHUB_ENV}"
       - name: Build and repair wheel
         uses: pypa/cibuildwheel@v4.2.0
@@ -221,7 +221,7 @@ jobs:
           expected = Tag("py3", "none", os.environ["WHEEL_PLATFORM"])
           assert tags == {expected}, tags
           with zipfile.ZipFile(wheels[0]) as wheel:
-              assert "mpq_libs/libmpq.dll" in wheel.namelist()
+              assert "mpq_libs/mpq.dll" in wheel.namelist()
               metadata = next(n for n in wheel.namelist() if n.endswith(".dist-info/WHEEL"))
               assert [line for line in wheel.read(metadata).decode().splitlines()
                       if line.startswith("Tag: ")] == [f"Tag: {expected}"]
