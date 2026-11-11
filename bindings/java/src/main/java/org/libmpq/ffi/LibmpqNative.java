@@ -439,7 +439,7 @@ public final class LibmpqNative {
         if (explicit != null && !explicit.isBlank()) {
             return SymbolLookup.libraryLookup(Path.of(explicit), Arena.global());
         }
-        System.loadLibrary("mpq");
+        System.loadLibrary(System.getProperty("os.name").startsWith("Windows") ? "libmpq" : "mpq");
         return SymbolLookup.loaderLookup();
     }
 

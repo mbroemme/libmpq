@@ -7,11 +7,18 @@ through `org.libmpq.ffi.LibmpqNative` and safer `AutoCloseable` wrappers in
 
 ## Installation
 
-The JAR does not contain a native library. Autotools does not install the
-Java binding; Maven builds the platform-independent runtime, sources, and
-Javadoc JARs. Build and install libmpq separately, then either set
-`org.libmpq.library` to the absolute native-library path or make `mpq`
-available through the platform library search path.
+The JAR uses a separately installed native library. Maven builds the runtime,
+sources, and Javadoc JARs. The SDK must match the JVM architecture and its
+codec libraries must be available to the native loader.
+
+By default the JVM searches for `libmpq.dll` on Windows, `libmpq.so` on Linux,
+or `libmpq.dylib` on macOS. For the Windows MSVC SDK, add its `bin` directory
+to `PATH` for the codec DLLs and supply it in `-Djava.library.path` for Java's
+library search.
+
+Set `-Dorg.libmpq.library` to the absolute native-library path to override
+the search. Use this option for a versioned MinGW SDK DLL such as
+`libmpq-4.dll`, pointing to the file under the SDK's `bin` directory.
 
 The canonical release installation path is Maven Central:
 

@@ -514,6 +514,10 @@ target `win_amd64` and `win_arm64`. macOS wheels target `macosx_11_0_x86_64`
 and `macosx_11_0_arm64`, with native Intel and Apple Silicon builds. All eight
 wheels use the `py3-none` ABI.
 
+Use a wheel whose platform and architecture match the Python interpreter.
+The bundled native library exposes libmpq's public C API. Private native
+implementation symbols are outside the wheel ABI.
+
 Linux release wheels contain a private native library at `mpq_libs/libmpq.so`. It
 is loaded by its exact package path through `ctypes`, intentionally has no ELF
 `DT_SONAME`, and does not require a separate system libmpq installation. The

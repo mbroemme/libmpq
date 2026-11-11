@@ -109,6 +109,8 @@ def _build_native():
         f'-DVERSION="{_VERSION}"',
         "-fPIC",
     ]
+    if sys.platform.startswith("linux") or sys.platform == "darwin":
+        command.append("-fvisibility=hidden")
     command += includes + [str(path) for path in sources]
     if sys.platform == "darwin":
         command += ["-dynamiclib", "-o", str(output)]
