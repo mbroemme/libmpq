@@ -1197,6 +1197,18 @@ in `bindings/python/mpq.py`, package metadata is in
 Autotools does not detect or install the Python package; use the PEP 517
 backend and pip/PyPI instead.
 
+Windows release wheels use prebuilt MSVC SDK DLLs for x64 and ARM64. On macOS,
+both release lanes validate the public export set of a fresh source-built
+wheel and the installed repaired wheel. To check an installed wheel's bundled
+library against an installed C SDK header, run:
+
+```sh
+bash scripts/check-native-exports.sh /path/to/sdk/include/libmpq/mpq.h \
+    /path/to/site-packages/mpq_libs/libmpq.dylib
+```
+
+The same check accepts the bundled `libmpq.so` on Linux.
+
 For development from a source checkout, build the native library and run the
 tests with an explicit native-library override:
 
@@ -1235,6 +1247,9 @@ LIBRARY_PATH="$PWD/src/.libs" LD_LIBRARY_PATH="$PWD/src/.libs" \
     dub run --config=tests --compiler=ldc2
 ```
 
+Windows release package validation uses the matching MSVC SDK. The release
+matrix tests DMD and LDC packages on x64 and LDC packages on ARM64.
+
 See [bindings/d/README.md](bindings/d/README.md) for DUB usage, compiler
 requirements, binary package details, and examples.
 
@@ -1245,14 +1260,29 @@ or newer. It uses the Java Foreign Function and Memory API and exposes both
 the low-level `org.libmpq.ffi.LibmpqNative` mapping and higher-level
 `AutoCloseable` classes such as `Archive` and `MpqFileWriter`.
 
-The Java JAR is platform-independent and does not contain `libmpq.so`. Supply
-the native library explicitly:
+The platform-independent Java JAR requires a matching external native SDK.
+Supply the native library explicitly:
 
 ```sh
 mvn -B -f bindings/java/pom.xml test \
     -Dorg.libmpq.library="$PWD/src/.libs/libmpq.so" \
     -Dlibmpq.sourceDir="$PWD"
 ```
+
+For an extracted or installed SDK, run the standalone smoke test with a
+matching JDK. The launcher compiles for Java 22 and exercises both default
+discovery and the explicit override, including positioned-source reads:
+
+```sh
+bash scripts/test-java-sdk.sh /path/to/sdk 0.9.0 x86_64
+```
+
+Use `aarch64` for an ARM64 SDK. On Windows, run the launcher in Git Bash
+against the MSVC SDK with its codec DLLs in `bin/`. Default discovery uses
+`libmpq.dll`. For a versioned MinGW SDK DLL, use the explicit library
+property as described in the binding guide. CI tests the shared MSVC x64 SDK
+and the extracted macOS ARM64 and Linux ARM64 glibc SDKs. Windows release
+validation also tests the extracted MSVC x64 ZIP.
 
 The binding also supports the normal system loader path:
 

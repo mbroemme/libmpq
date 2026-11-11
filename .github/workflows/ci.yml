@@ -113,6 +113,28 @@ jobs:
           if (-not ${version}) { throw 'Missing CMake project version' }
           & "${env:RUNNER_TEMP}/consumer.exe" ${version}
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+          if ('${{ matrix.architecture }}' -eq 'x64' -and '${{ matrix.shared }}' -eq 'ON') {
+            ${name} = "libmpq-${version}-windows-msvc-x64"
+            ${stage} = "${env:RUNNER_TEMP}/${name}"
+            Move-Item -LiteralPath ${prefix} -Destination ${stage}
+            ${bash} = "${env:ProgramFiles}/Git/bin/bash.exe"
+            & ${bash} scripts/package-windows.sh prepare --toolchain msvc --architecture x64 --stage "${stage}" --runtime "${env:VCPKG_INSTALLATION_ROOT}/installed/${{ matrix.vcpkg_triplet }}" --output "${stage}.zip" --version "${version}"
+            if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
+            "LIBMPQ_JAVA_SDK=${stage}" >> ${env:GITHUB_ENV}
+            "LIBMPQ_JAVA_SDK_VERSION=${version}" >> ${env:GITHUB_ENV}
+          }
+      - name: Set up Java for the Windows SDK consumer
+        if: matrix.architecture == 'x64' && matrix.shared == 'ON'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Test Java with the MSVC SDK and packaged codec DLLs
+        if: matrix.architecture == 'x64' && matrix.shared == 'ON'
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles}/Git/bin/bash.exe" scripts/test-java-sdk.sh "${env:LIBMPQ_JAVA_SDK}" "${env:LIBMPQ_JAVA_SDK_VERSION}" x86_64
+          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
   mingw:
     name: MinGW-w64 ${{ matrix.architecture }} Autotools (${{ matrix.linkage }})
     runs-on: ${{ matrix.runner }}
@@ -762,6 +784,22 @@ jobs:
                 "release/libmpq-${version}-linux-glibc-${LIBMPQ_NATIVE_ARCHITECTURE}.tar.gz" \
                 tests/fixtures/mpq-v1-features.mpq
             '
+      - name: Set up Java for the Linux ARM64 SDK consumer
+        if: matrix.architecture == 'aarch64'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Test Java with the extracted Linux ARM64 SDK
+        if: matrix.architecture == 'aarch64'
+        run: |
+          set -euxo pipefail
+          version="$(./configure --version | sed -n '1s/^libmpq configure //p')"
+          name="libmpq-${version}-linux-glibc-aarch64"
+          temporary="$(mktemp -d)"
+          trap 'rm -rf -- "${temporary}"' EXIT
+          tar -xzf "release/${name}.tar.gz" -C "${temporary}"
+          bash scripts/test-java-sdk.sh "${temporary}/${name}" "${version}" aarch64
 
   native-musl:
     name: Native C SDK package (musl) (${{ matrix.architecture }})
@@ -862,6 +900,20 @@ jobs:
           bash scripts/test-macos-package.sh \
             "release/libmpq-${version}-macos-arm64.tar.gz" \
             tests/fixtures/mpq-v1-features.mpq arm64
+      - name: Set up Java for the macOS ARM64 SDK consumer
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Test Java with the extracted macOS ARM64 SDK
+        run: |
+          set -euxo pipefail
+          version="$(./configure --version | sed -n '1s/^libmpq configure //p')"
+          name="libmpq-${version}-macos-arm64"
+          temporary="$(mktemp -d)"
+          trap 'rm -rf -- "${temporary}"' EXIT
+          tar -xzf "release/${name}.tar.gz" -C "${temporary}"
+          bash scripts/test-java-sdk.sh "${temporary}/${name}" "${version}" aarch64
 
   native-macos-x86_64:
     name: Native C SDK package (macOS x86_64)
