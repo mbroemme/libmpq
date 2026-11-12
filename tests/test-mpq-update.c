@@ -106,36 +106,9 @@ write_bytes(const char *path, const uint8_t *bytes, size_t size)
 static int
 read_bytes(const char *path, uint8_t **bytes, size_t *size)
 {
-    FILE *file;
-    long length;
-    uint8_t *data;
-    int result = 0;
-
     *bytes = NULL;
     *size = 0;
-    file = fopen(path, "rb");
-    if (file == NULL || fseek(file, 0, SEEK_END) != 0 || (length = ftell(file)) < 0 ||
-        fseek(file, 0, SEEK_SET) != 0) {
-        if (file != NULL)
-            (void)fclose(file);
-        return -1;
-    }
-    data = malloc((size_t)length == 0 ? 1 : (size_t)length);
-    if (data == NULL) {
-        (void)fclose(file);
-        return -1;
-    }
-    if ((size_t)length != 0 && fread(data, 1, (size_t)length, file) != (size_t)length)
-        result = -1;
-    if (fclose(file) != 0)
-        result = -1;
-    if (result != 0) {
-        free(data);
-        return -1;
-    }
-    *bytes = data;
-    *size = (size_t)length;
-    return 0;
+    return test_read_path(path, bytes, size);
 }
 
 static int

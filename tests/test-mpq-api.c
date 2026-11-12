@@ -81,7 +81,9 @@ test_custom_io(const char *path)
 
     TEST_CHECK(test_read_path(path, &raw, &source.size) == 0);
     source.data = raw;
+#if SIZE_MAX > INT64_MAX
     TEST_CHECK(source.size <= INT64_MAX);
+#endif
     TEST_CHECK(
         libmpq__archive_open_io(NULL, &source, memory_read_at, source.size, 0, NULL) ==
         LIBMPQ_ERROR_EXIST

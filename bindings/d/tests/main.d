@@ -67,7 +67,8 @@ private class MemorySource : MpqSource {
         if (fail || offset == readFault || offset > data.length ||
             buffer.length > data.length - offset)
             throw new Exception("source read failure");
-        buffer[] = data[offset .. offset + buffer.length];
+        const start = cast(size_t)offset;
+        buffer[] = data[start .. start + buffer.length];
     }
 }
 

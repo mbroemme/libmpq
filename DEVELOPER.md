@@ -1082,6 +1082,45 @@ practical. These benchmarks are not part of `make check`. Compare before and
 after results on the same machine and build configuration; the timings are not
 portable performance guarantees.
 
+### Linux ILP32 qualification
+
+The native source qualification targets use Debian trixie glibc 2.41,
+GCC 14 or Clang 19 in C99 mode, and development libraries for zlib, bzip2 and
+liblzma. CI records the installed package revisions for each run.
+
+- **i686** uses `i686-linux-gnu` with `-march=i686`, qualified against
+  Debian i386 userspace on a QEMU Pentium III. Earlier i686 CPU models are
+  outside this qualification.
+- **ARMv7** uses `arm-linux-gnueabihf` with `-march=armv7-a
+  -mfpu=vfpv3-d16 -mfloat-abi=hard`. The QEMU Cortex-A9 runs with NEON and
+  the upper 16 VFP registers disabled. The target uses the VFP-register
+  hard-float calling convention.
+
+Autotools applies `_FILE_OFFSET_BITS=64`. Keep large-file support enabled.
+Time ABI selection follows the target toolchain and libc. Debian's ARM GCC
+uses time64 by default, while Clang can use time32 with wide files and inodes.
+libmpq's public offset, timestamp and callback types are independent of these
+private libc types. A 32-bit process still has a 32-bit address space.
+
+On either native target, use the standard build and test commands from the
+repository root.
+
+```sh
+sh autogen.sh
+./configure
+make -j"$(nproc)"
+make check
+```
+
+Use a disk-backed build directory with at least 12 GiB free. The 4 GiB
+writer regression copies transaction data densely. On an amd64 CI host,
+the workflow selects a target sysroot and runs `make check` with explicit
+QEMU through Automake's `LOG_COMPILER`. It runs the strict GCC and Clang
+suites serially and checks the installed headers, static archive and
+shared-library ELF32 metadata and exports. Native 32-bit SDKs are built
+from source. The separate Python matrix checks the full installed-wheel
+suite on both targets.
+
 ## SDK integration and language bindings
 
 ### Native C SDK packages
@@ -1194,6 +1233,11 @@ The in-tree Python, Java and D bindings are maintained and released alongside
 the corresponding libmpq version. Each binding has its own package metadata,
 tests and API documentation. Release packaging and registry publication are
 covered in [RELEASING.md](RELEASING.md).
+
+On Linux i686 and ARMv7, CI runs the full installed-wheel suite with matching
+CPython 3.13 interpreters. Local runtime checks cover Java 25 Zero callbacks
+and the full D suite with LDC and matching druntime and Phobos. The release
+matrix lists the downloadable architectures. DMD ARMv7 remains unqualified.
 
 #### Python
 

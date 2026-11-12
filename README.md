@@ -107,6 +107,9 @@ with MSVC (x64 and ARM64). CMake builds with other toolchains are for
 development and validation. Linux release shared libraries use Libtool
 versioning and carry the SONAME `libmpq.so.4`.
 
+Linux i686 and ARMv7 hard-float source builds use glibc. See the
+[ILP32 qualification and toolchain requirements](DEVELOPER.md#linux-ilp32-qualification).
+
 ### Unix (Autotools)
 
 For build and install use the commands below. If `--prefix=/usr` is used, the
