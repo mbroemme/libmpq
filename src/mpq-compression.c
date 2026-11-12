@@ -661,11 +661,13 @@ libmpq__compression_candidate_size(size_t input_size, uint32_t mask, size_t *cap
             input_size + input_size / 100 > SIZE_MAX - 1024)
             return LIBMPQ_ERROR_SIZE;
         size = input_size + input_size / 100 + 1024;
-        if ((mask == LIBMPQ_COMPRESSION_ZLIB &&
-             ((uint64_t)input_size > (uInt)-1 || (uint64_t)size > (uInt)-1)) ||
-            (mask == LIBMPQ_COMPRESSION_BZIP2 &&
-             ((uint64_t)input_size > UINT_MAX || (uint64_t)size > UINT_MAX)))
+
+/* Both zlib's uInt and bzip2's transfer lengths are unsigned int. */
+#if SIZE_MAX > UINT_MAX
+        if ((mask == LIBMPQ_COMPRESSION_ZLIB || mask == LIBMPQ_COMPRESSION_BZIP2) &&
+            (input_size > UINT_MAX || size > UINT_MAX))
             return LIBMPQ_ERROR_SIZE;
+#endif
     }
     *capacity = size;
     return 0;
