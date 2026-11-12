@@ -233,10 +233,10 @@ archives do not bundle private copies of these codec libraries.
 
 ### Windows
 
-The native C library supports MSVC x64 and ARM64 through CMake. Native CI
-runners build both architectures, run the C regression suite through CTest,
-and compile and execute installed consumers. Autotools remains the POSIX and
-MinGW-w64 build frontend, including native aarch64 via MSYS2 CLANGARM64.
+The native C library supports MSVC x64 and ARM64 through CMake. Regular CI
+runs the CTest suite on both architectures. Release and extended validation
+also check installed SDK consumers. Autotools remains the POSIX and MinGW-w64
+build frontend, including native aarch64 via MSYS2 CLANGARM64.
 
 Both Windows C SDKs provide `mpq.dll`. For Windows binding packages
 and requirements, see the [Python](bindings/python/README.md),
@@ -283,9 +283,9 @@ For ARM64, use an MSYS2 CLANGARM64 shell on Windows ARM64. Install
 `--host=aarch64-w64-mingw32`; compiler and binary tools must resolve from
 `/clangarm64/bin`. This uses native Clang/LLVM, not a cross compiler.
 
-Provide MinGW-built zlib, bzip2, and lzma libraries, not Unix libraries. For
-cross-builds, set dependency include/library search paths as needed and run
-`make check LOG_COMPILER=wine` with the DLL directories in `WINEPATH`.
+Provide MinGW-built zlib, bzip2, and lzma libraries. For cross-builds, set the
+include and library search paths for the target dependencies. Run the full
+`make check` suite on Microsoft Windows.
 For a static-only build use `--disable-shared --enable-static`; the generated
 `libmpq-config --cflags --libs` supplies the include path and required libraries.
 

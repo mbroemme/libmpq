@@ -979,16 +979,18 @@ these checks establish compilation compatibility, not runtime test success.
 Lint uses the same build-only mechanism to collect test compile commands for
 clang-tidy.
 
-CI retains full native runtime suites for the ordinary optimized Linux GCC
-build, Clang ASan/UBSan/LSan, GCC coverage, big-endian s390x, Windows MSVC and
-MinGW on both architectures/linkages, and the glibc, musl and macOS SDK
-configurations. The ordinary Linux Clang build compiles regression programs
-without repeating the full suite. Instrumented coverage still executes all
-native tests before collecting gcovr reports. Packaging and release workflows
-keep their independent platform runtime checks and installed-consumer tests.
-No large-file assertions are skipped or changed; runtime validation with
-multi-gigabyte files should use disk-backed working directories rather than
-memory-backed temporary storage.
+Regular native CI runs the full suite with GCC on Linux x86-64, ARM64, i686,
+ARMv7 armhf and big-endian s390x, with MSVC shared builds on Windows x64 and
+ARM64, and with Apple Clang on macOS x86-64 and ARM64. A Linux x86-64 Clang
+run enables ASan, UBSan and leak checks. GCC coverage runs the full suite
+before collecting gcovr reports.
+
+Manually run the CI workflow with `extended_native` enabled to add the
+GCC/Clang dialect matrix, the ILP32 Clang suites, and both MSVC and MinGW
+static builds with installed consumers on Windows x64 and ARM64. The release
+workflows retain the shared SDK checks, including both MinGW architectures
+and the Linux glibc and musl packages. Use disk-backed working directories
+for the multi-gigabyte native regressions.
 
 GCC coverage retains `-O0 -g --coverage` to preserve source line and branch
 visibility. Its complete native suite runs with two Automake workers to overlap
@@ -1115,11 +1117,12 @@ make check
 Use a disk-backed build directory with at least 12 GiB free. The 4 GiB
 writer regression copies transaction data densely. On an amd64 CI host,
 the workflow selects a target sysroot and runs `make check` with explicit
-QEMU through Automake's `LOG_COMPILER`. It runs the strict GCC and Clang
-suites serially and checks the installed headers, static archive and
-shared-library ELF32 metadata and exports. Native 32-bit SDKs are built
-from source. The separate Python matrix checks the full installed-wheel
-suite on both targets.
+QEMU through Automake's `LOG_COMPILER`. The strict GCC suites run in regular
+CI. Enable `extended_native` in a manual run to also exercise strict Clang,
+including ARMv7's time32 configuration. Both modes check the installed
+headers, static archive, ELF32 metadata and shared-library exports. Native
+32-bit SDKs are built from source. The separate Python matrix checks the
+full installed-wheel suite on both targets.
 
 ## SDK integration and language bindings
 
