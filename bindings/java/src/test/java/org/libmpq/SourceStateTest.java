@@ -17,11 +17,14 @@ import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import org.libmpq.ffi.LibmpqNative;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -36,7 +39,21 @@ class SourceStateTest {
     @BeforeAll
     static void requireNativeLibrary() {
         LibmpqTest.requireNativeLibrary();
-        Assumptions.assumeTrue(ValueLayout.ADDRESS.byteSize() == Long.BYTES);
+    }
+
+    @Test
+    void nativeCountPreservesUnsignedBitsAndWideOffset() throws Throwable {
+        Transfer transfer = new Transfer();
+        var target = MethodHandles.lookup().findVirtual(Transfer.class, "read",
+                MethodType.methodType(int.class, MemorySegment.class, long.class,
+                        MemorySegment.class, long.class)).bindTo(transfer);
+        long count = 0x8000_0011L;
+        try (Arena arena = Arena.ofConfined()) {
+            var stub = LibmpqNative.readAtUpcall(target, arena);
+            assertEquals(Mpq.ERROR_MALLOC, invoke(stub, LARGE_OFFSET, MemorySegment.NULL, count));
+            assertEquals(LARGE_OFFSET, transfer.offset);
+            assertEquals(count, transfer.count);
+        }
     }
 
     @Test
@@ -106,10 +123,11 @@ class SourceStateTest {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment output = arena.allocate(8);
             assertEquals(Mpq.ERROR_READ, invoke(channel, -1, output, 1));
-            assertEquals(Mpq.ERROR_READ, invoke(channel, 0, output, -1));
+            assertEquals(Mpq.ERROR_READ, invoke(channel, 0, MemorySegment.NULL, -1));
             assertEquals(Mpq.ERROR_READ, invoke(channel, Long.MAX_VALUE - 1, output, 2));
             assertEquals(Mpq.ERROR_READ, invoke(channel, 0, MemorySegment.NULL, 1));
-            assertEquals(Mpq.ERROR_READ, invoke(channel, 0, MemorySegment.ofAddress(Long.MAX_VALUE), 2));
+            long end = ValueLayout.ADDRESS.byteSize() == 4 ? 0xffff_ffffL : Long.MAX_VALUE;
+            assertEquals(Mpq.ERROR_READ, invoke(channel, 0, MemorySegment.ofAddress(end), 2));
             assertEquals(Mpq.ERROR_READ, invoke(channel, 0, MemorySegment.ofAddress(-1L), 2));
             assertEquals(0, channel.reads);
             assertEquals(0, channel.seeks);
@@ -122,6 +140,7 @@ class SourceStateTest {
     @Test
     void largeRequestsReachChannelWithoutPopulatingFullMapping(@TempDir Path directory) throws Throwable {
         Assumptions.assumeTrue(System.getProperty("os.name").equals("Linux"));
+        Assumptions.assumeTrue(ValueLayout.ADDRESS.byteSize() == Long.BYTES);
         long capacity = (long) Integer.MAX_VALUE + 1;
         try (Arena arena = Arena.ofConfined();
              FileChannel file = FileChannel.open(directory.resolve("sparse"), StandardOpenOption.CREATE_NEW,
@@ -149,13 +168,34 @@ class SourceStateTest {
             throws Throwable {
         SourceState state = new SourceState(channel);
         try {
-            Linker linker = Linker.nativeLinker();
-            var descriptor = FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS,
-                    ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, linker.canonicalLayouts().get("size_t"));
-            var call = linker.downcallHandle(state.callback(), descriptor);
-            return (int) call.invokeExact(MemorySegment.NULL, offset, output, count);
+            return invoke(state.callback(), offset, output, count);
         } finally {
             state.discard();
+        }
+    }
+
+    private static int invoke(MemorySegment stub, long offset, MemorySegment output, long count)
+            throws Throwable {
+        Linker linker = Linker.nativeLinker();
+        var size = (ValueLayout) linker.canonicalLayouts().get("size_t");
+        var descriptor = FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS,
+                linker.canonicalLayouts().get("long long"), ValueLayout.ADDRESS, size);
+        var call = linker.downcallHandle(stub, descriptor);
+        if (size.carrier() == int.class) {
+            return (int) call.invokeExact(MemorySegment.NULL, offset, output, (int) count);
+        }
+        return (int) call.invokeExact(MemorySegment.NULL, offset, output, count);
+    }
+
+    private static final class Transfer {
+        long offset;
+        long count;
+
+        int read(MemorySegment context, long position, MemorySegment output, long size) {
+            // Record the values without accessing the simulated destination.
+            offset = position;
+            count = size;
+            return Mpq.ERROR_MALLOC;
         }
     }
 

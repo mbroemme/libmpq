@@ -835,6 +835,37 @@ def test_embedded_archive_requires_raw_members(tmp_path, embedded_archive_paths)
             mpq.Archive(entry)
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="requires Linux sparse-file semantics")
+def test_large_file_embedded_archive(tmp_path):
+    name = b"member-\xff"
+    payload = b"embedded payload"
+    standalone = tmp_path / "archive.mpq"
+    with mpq.Writer(standalone) as writer:
+        writer.add_data(name, payload)
+
+    origin = (1 << 32) + 512
+    path = tmp_path / "sparse.mpq"
+    with path.open("wb") as output:
+        output.seek(origin)
+        output.write(standalone.read_bytes())
+
+    with mpq.Archive(path, offset=origin) as archive:
+        assert archive.offset == origin
+        assert archive.file_identity(name, 0).file_number == archive[name].number
+        buffer = bytearray(len(payload))
+        assert archive[name].read_into(buffer) == len(payload)
+        assert buffer == payload
+        with pytest.raises(mpq.LibmpqError) as error:
+            archive.file_identity(name, 1)
+        assert error.value.code == mpq.ERROR_EXIST
+
+    with path.open("rb") as source:
+        source.seek(7)
+        with mpq.Archive.open_io(source, path.stat().st_size, offset=origin) as archive:
+            assert archive[name].read() == payload
+        assert source.tell() == 7
+
+
 def test_custom_io_sources_and_stream_lifetime():
     """Borrowed BytesIO sources stay alive for archive clones owned by streams."""
     data = (FIXTURES / "mpq-v1-features.mpq").read_bytes()

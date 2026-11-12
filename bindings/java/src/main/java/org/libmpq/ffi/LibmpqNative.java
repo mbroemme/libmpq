@@ -17,6 +17,8 @@ import java.lang.foreign.StructLayout;
 import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.nio.ByteOrder;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -35,7 +37,7 @@ public final class LibmpqNative {
     private static final ValueLayout.OfInt C_INT = ValueLayout.JAVA_INT.withOrder(ByteOrder.nativeOrder());
     private static final ValueLayout.OfShort C_SHORT =
         ValueLayout.JAVA_SHORT.withOrder(ByteOrder.nativeOrder());
-    private static final ValueLayout.OfLong C_LONG = ValueLayout.JAVA_LONG.withOrder(ByteOrder.nativeOrder());
+    private static final ValueLayout.OfLong C_LONG = (ValueLayout.OfLong) canonicalValueLayout("long long");
     private static final ValueLayout C_SIZE_T = canonicalValueLayout("size_t");
 
     /**
@@ -684,23 +686,27 @@ public final class LibmpqNative {
         return callInt(ARCHIVE_OPEN_MPQE_IO, out, context, readAt, sourceSize, offset,
                        authCode, nativeSizeT(authCodeSize), sourceName);
     }
-    /** Creates an ABI-correct upcall stub for the public libmpq_read_at_fn type. */
+    /**
+     * Creates an upcall for the positioned-read ABI. A target accepting a long
+     * count also accepts an unsigned native int count on 32-bit platforms.
+     */
     public static MemorySegment readAtUpcall(MethodHandle target, Arena arena) {
+        if (C_SIZE_T.carrier() == int.class && target.type().parameterCount() == 4 &&
+            target.type().parameterType(3) == long.class) {
+            try {
+                MethodHandle unsigned = MethodHandles.publicLookup().findStatic(
+                    Integer.class, "toUnsignedLong", MethodType.methodType(long.class, int.class));
+                target = MethodHandles.filterArguments(target, 3, unsigned);
+            } catch (ReflectiveOperationException error) {
+                throw new IllegalStateException("Unable to adapt size_t", error);
+            }
+        }
         return LINKER.upcallStub(target, FunctionDescriptor.of(
             C_INT, ValueLayout.ADDRESS, C_LONG, ValueLayout.ADDRESS, C_SIZE_T
         ), arena);
     }
     /** Creates an upcall for exact positioned sink transfers. */
     public static MemorySegment sinkTransferUpcall(MethodHandle target, Arena arena) {
-        if (C_SIZE_T.carrier() == int.class) {
-            try {
-                MethodHandle unsigned = java.lang.invoke.MethodHandles.publicLookup().findStatic(
-                    Integer.class, "toUnsignedLong", java.lang.invoke.MethodType.methodType(long.class, int.class));
-                target = java.lang.invoke.MethodHandles.filterArguments(target, 3, unsigned);
-            } catch (ReflectiveOperationException error) {
-                throw new IllegalStateException("Unable to adapt size_t", error);
-            }
-        }
         return readAtUpcall(target, arena);
     }
 

@@ -109,6 +109,8 @@ def _build_native():
         f'-DVERSION="{_VERSION}"',
         "-fPIC",
     ]
+    if sys.platform.startswith("linux"):
+        command.append("-D_FILE_OFFSET_BITS=64")
     if sys.platform.startswith("linux") or sys.platform == "darwin":
         command.append("-fvisibility=hidden")
     command += includes + [str(path) for path in sources]
