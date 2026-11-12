@@ -27,6 +27,13 @@ AM_CONDITIONAL([ENABLE_FUZZING], [test "x$enable_fuzzing" = xyes])
 # Check for the required build tools.
 AC_USE_SYSTEM_EXTENSIONS
 AC_PROG_CC
+
+# On Linux, select the wide filesystem ABI for every source and test object,
+# including translation units that do not use the generated config.h.
+AS_CASE([$host_os], [linux*], [
+	AS_IF([test "x$enable_largefile" != xno],
+		[CPPFLAGS="$CPPFLAGS -D_FILE_OFFSET_BITS=64"])
+])
 AC_SYS_LARGEFILE
 
 # Use C99 by default while allowing callers to select a newer C dialect.
