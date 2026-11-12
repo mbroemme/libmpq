@@ -144,6 +144,8 @@ static const uint8_t test_strong_signature_public_key[512] = {
 
 void test_failure(const char *file, unsigned line, const char *condition);
 int test_temp_path(char *path, size_t path_size, const char *tag);
+
+/* Read a complete fixture of at most 64 MiB. Outputs are set on success. */
 int test_read_path(const char *path, uint8_t **data, size_t *size);
 void test_payload(uint8_t *data, size_t size, uint32_t seed);
 void test_sparse_payload(uint8_t *data, size_t size);

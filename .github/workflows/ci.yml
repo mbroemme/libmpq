@@ -559,6 +559,113 @@ jobs:
           set -euxo pipefail
           make -j"$(nproc)" check TESTS= V=1
 
+  linux-ilp32:
+    name: Linux ILP32 (${{ matrix.architecture }})
+    needs: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: i686
+            debian_architecture: i386
+          - architecture: ARMv7 armhf
+            debian_architecture: armhf
+    env:
+      DEBIAN_ARCHITECTURE: ${{ matrix.debian_architecture }}
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build and test with GCC and Clang
+        run: |
+          set -euxo pipefail
+          docker run --rm -i -e DEBIAN_ARCHITECTURE -v "${GITHUB_WORKSPACE}:/workspace:ro" \
+            debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 \
+            bash -s <<'BASH'
+          set -euxo pipefail
+          export LC_ALL=C DEBIAN_FRONTEND=noninteractive
+          arch="${DEBIAN_ARCHITECTURE}"
+          case "${arch}" in
+            i386)
+              target=i686-linux-gnu
+              flags=-march=i686
+              runner="qemu-i386 -cpu pentium3 -L /usr/${target}"
+              machine='Intel 80386'
+              ;;
+            armhf)
+              target=arm-linux-gnueabihf
+              flags='-march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard'
+              runner="qemu-arm -cpu cortex-a9,neon=off,vfp-d32=off -L /usr/${target}"
+              machine=ARM
+              ;;
+            *) exit 2 ;;
+          esac
+
+          temporary="$(mktemp -d /var/tmp/libmpq-ilp32.XXXXXXXX)"
+          trap 'rm -rf -- "${temporary}"' EXIT
+          case "$(stat -f -c %T "${temporary}")" in
+            tmpfs|ramfs)
+              printf 'Use disk-backed storage for the 4 GiB writer regression.\n' >&2
+              exit 1
+              ;;
+          esac
+          available="$(df -Pk "${temporary}" | awk 'NR == 2 { print $4 }')"
+          if (( available < 12 * 1024 * 1024 )); then
+            printf 'The native suites require 12 GiB of free disk space.\n' >&2
+            exit 1
+          fi
+
+          dpkg --add-architecture "${arch}"
+          apt-get update
+          apt-get install -y --no-install-recommends autoconf automake libtool make binutils \
+            clang qemu-user "gcc-${target}" "libc6-dev-${arch}-cross" \
+            "libbz2-dev:${arch}" "liblzma-dev:${arch}" "zlib1g-dev:${arch}"
+          dpkg-query -W "libc6:${arch}" "libc6-${arch}-cross" "libbz2-dev:${arch}" \
+            "liblzma-dev:${arch}" "zlib1g-dev:${arch}" "gcc-${target}" clang qemu-user
+
+          cp -R /workspace "${temporary}/source"
+          source_dir="${temporary}/source"
+          (cd "${source_dir}" && sh autogen.sh)
+          for compiler in gcc clang; do
+            cc="${target}-gcc"
+            if [[ "${compiler}" == clang ]]; then
+              cc="clang --target=${target} --gcc-toolchain=/usr"
+            fi
+            build="${temporary}/${compiler}"
+            sdk="${build}/sdk"
+            mkdir "${build}"
+            cd "${build}"
+            CC="${cc}" CFLAGS="-O2 -g -std=c99 -Wall -Wextra -Wpedantic -Werror ${flags}" \
+              "${source_dir}/configure" --build=x86_64-linux-gnu --host="${target}" \
+              --prefix="${sdk}" --enable-shared --enable-static
+            make -j"$(nproc)"
+            make check LOG_COMPILER="${runner}" || { cat tests/test-suite.log; exit 1; }
+            grep -Eq '^# SKIP: +0$' tests/test-suite.log
+            make install
+            cmp "${source_dir}/include/libmpq/mpq.h" "${sdk}/include/libmpq/mpq.h"
+            test -s "${sdk}/lib/libmpq.a"
+            library="${sdk}/lib/libmpq.so.4"
+            bash "${source_dir}/scripts/check-native-exports.sh" \
+              "${sdk}/include/libmpq/mpq.h" "${library}"
+            readelf -h "${library}" | grep 'Class:.*ELF32'
+            readelf -h "${library}" | grep "Machine:[[:space:]]*${machine}$"
+            readelf -d "${library}" | grep -F 'Library soname: [libmpq.so.4]'
+            if [[ "${arch}" == armhf ]]; then
+              readelf -A "${library}" | grep 'Tag_ABI_VFP_args: VFP registers'
+            fi
+            nm -u src/.libs/mpq-update.o | grep 'fstat64'
+            nm -u tests/test_patch_reader-test-mpq-patch-reader.o | grep 'readdir64'
+          done
+          BASH
+
   big-endian:
     name: Big-endian (s390x)
     needs: lint
@@ -1034,19 +1141,28 @@ jobs:
             -Dlibmpq.sourceDir="${GITHUB_WORKSPACE}"
 
   python:
-    name: Python bindings (Python ${{ matrix.python-version }})
+    name: Python bindings (Python ${{ matrix.python-version }}, ${{ matrix.architecture }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         python-version: ['3.11', '3.12', '3.13', '3.14']
+        architecture: [x86_64]
+        include:
+          - python-version: '3.13'
+            architecture: i686
+            debian_architecture: i386
+          - python-version: '3.13'
+            architecture: ARMv7 armhf
+            debian_architecture: armhf
     defaults:
       run:
         shell: bash
 
     steps:
       - name: Install native build dependencies
+        if: matrix.architecture == 'x86_64'
         run: |
           set -euxo pipefail
           sudo apt-get update
@@ -1064,6 +1180,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Python
+        if: matrix.architecture == 'x86_64'
         uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
@@ -1071,11 +1188,13 @@ jobs:
           cache-dependency-path: bindings/python/pyproject.toml
 
       - name: Install Python test tools
+        if: matrix.architecture == 'x86_64'
         run: |
           set -euxo pipefail
           python -m pip install --upgrade pip pytest build setuptools wheel
 
       - name: Build native library
+        if: matrix.architecture == 'x86_64'
         run: |
           set -euxo pipefail
           sh autogen.sh
@@ -1083,6 +1202,7 @@ jobs:
           make -j"$(nproc)" V=1
 
       - name: Test Python bindings
+        if: matrix.architecture == 'x86_64'
         env:
           LIBMPQ_LIBRARY: ${{ github.workspace }}/src/.libs/libmpq.so
           PYTHONPATH: ${{ github.workspace }}/bindings/python
@@ -1091,12 +1211,14 @@ jobs:
           python -m pytest bindings/python/tests
 
       - name: Build Python package smoke artifact
+        if: matrix.architecture == 'x86_64'
         working-directory: bindings/python
         run: |
           set -euxo pipefail
           python -m build --wheel --no-isolation
 
       - name: Test installed Python wheel
+        if: matrix.architecture == 'x86_64'
         run: |
           set -euxo pipefail
           wheel="$(find bindings/python/dist -maxdepth 1 -name '*.whl' \
@@ -1113,3 +1235,61 @@ jobs:
               "${temporary}/venv/bin/python" -m pytest \
               "${GITHUB_WORKSPACE}/bindings/python/tests"
           )
+
+      - name: Test installed Python wheel on Linux ILP32
+        if: matrix.architecture != 'x86_64'
+        env:
+          DEBIAN_ARCHITECTURE: ${{ matrix.debian_architecture }}
+        run: |
+          set -euxo pipefail
+          docker run --rm -i -e DEBIAN_ARCHITECTURE -v "${GITHUB_WORKSPACE}:/workspace:ro" \
+            debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 \
+            bash -s <<'BASH'
+          set -euxo pipefail
+          export LC_ALL=C DEBIAN_FRONTEND=noninteractive
+          arch="${DEBIAN_ARCHITECTURE}"
+          case "${arch}" in
+            i386) target=i686-linux-gnu; qemu="qemu-i386"; platform=linux_i686; machine='Intel 80386' ;;
+            armhf) target=arm-linux-gnueabihf; qemu="qemu-arm"; platform=linux_armv7l; machine=ARM ;;
+            *) exit 2 ;;
+          esac
+          dpkg --add-architecture "${arch}"
+          apt-get update
+          apt-get install -y --no-install-recommends binutils qemu-user "gcc-${target}" \
+            "libc6-dev-${arch}-cross" "libbz2-dev:${arch}" "liblzma-dev:${arch}" \
+            "zlib1g-dev:${arch}" "libffi8:${arch}" "libexpat1:${arch}" \
+            python3-build python3-setuptools python3-wheel python3-pip python3-pytest
+
+          temporary="$(mktemp -d /var/tmp/libmpq-wheel.XXXXXXXX)"
+          trap 'rm -rf -- "${temporary}"' EXIT
+          cp -R /workspace "${temporary}/source"
+          cd "${temporary}/source/bindings/python"
+          env -u LIBMPQ_LIBRARY -u PYTHONPATH CC="${target}-gcc" \
+            LIBMPQ_WHEEL_PLATFORM="${platform}" \
+            python3 -m build --wheel --no-isolation --outdir "${temporary}/wheel"
+          shopt -s nullglob
+          wheels=("${temporary}"/wheel/*-py3-none-"${platform}".whl)
+          test "${#wheels[@]}" -eq 1
+
+          cd "${temporary}"
+          apt-get download "python3.13-minimal:${arch}" "libpython3.13-minimal:${arch}" \
+            "libpython3.13-stdlib:${arch}"
+          for package in ./*.deb; do dpkg-deb -x "${package}" "${temporary}/target"; done
+          py=("${qemu}" -L "/usr/${target}" "${temporary}/target/usr/bin/python3.13")
+          export PYTHONHOME="${temporary}/target/usr"
+          export PYTHONPATH=/usr/lib/python3/dist-packages
+          unset LIBMPQ_LIBRARY
+          "${py[@]}" -P -m pip install --no-index --no-deps \
+            --target "${temporary}/installed" "${wheels[0]}"
+          export PYTHONPATH="${temporary}/installed:${PYTHONPATH}"
+          library="${temporary}/installed/mpq_libs/libmpq.so"
+          bash /workspace/scripts/check-native-exports.sh /workspace/include/libmpq/mpq.h "${library}"
+          readelf -h "${library}" | grep 'Class:.*ELF32'
+          readelf -h "${library}" | grep "Machine:[[:space:]]*${machine}$"
+          if [[ "${arch}" == armhf ]]; then
+            readelf -A "${library}" | grep 'Tag_ABI_VFP_args: VFP registers'
+          fi
+          LIBMPQ_EXPECT_BUNDLED=1 "${py[@]}" -P -m pytest -q --import-mode=importlib \
+            --junitxml="${temporary}/wheel-tests.xml" "${temporary}/source/bindings/python/tests"
+          grep -Eq '<testsuite[[:space:]][^>]*skipped="0"' "${temporary}/wheel-tests.xml"
+          BASH

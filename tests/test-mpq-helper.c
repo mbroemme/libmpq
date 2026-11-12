@@ -193,17 +193,26 @@ test_temp_path(char *path, size_t path_size, const char *tag)
     return result > 0 && (size_t)result < path_size ? 0 : -1;
 }
 
-/* Read a complete regular file into newly allocated caller-owned memory. */
+#ifdef _WIN32
+#define TEST_FSEEK _fseeki64
+#define TEST_FTELL _ftelli64
+#else
+#define TEST_FSEEK fseeko
+#define TEST_FTELL ftello
+#endif
+
+/* Measure with wide offsets before allocating a small fixture buffer. */
 int
 test_read_path(const char *path, uint8_t **data, size_t *size)
 {
     FILE *stream = fopen(path, "rb");
-    long length;
+    libmpq__off_t length;
     uint8_t *buffer = NULL;
     if (stream == NULL)
         return -1;
-    if (fseek(stream, 0, SEEK_END) != 0 || (length = ftell(stream)) < 0 ||
-        fseek(stream, 0, SEEK_SET) != 0) {
+    if (TEST_FSEEK(stream, 0, SEEK_END) != 0 || (length = TEST_FTELL(stream)) < 0 ||
+        length > 64 * INT64_C(1024) * 1024 || (uintmax_t)length >= SIZE_MAX ||
+        TEST_FSEEK(stream, 0, SEEK_SET) != 0) {
         fclose(stream);
         return -1;
     }
