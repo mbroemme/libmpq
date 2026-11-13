@@ -979,10 +979,12 @@ these checks establish compilation compatibility, not runtime test success.
 Lint uses the same build-only mechanism to collect test compile commands for
 clang-tidy.
 
-On every push and pull request, native CI runs the full suite with GCC on
-Linux x86-64, ARM64, i686, ARMv7 armhf and big-endian s390x, with MSVC shared
-builds on Windows x64 and ARM64, and with Apple Clang on macOS x86-64 and
-ARM64. A separate Linux x86-64 Clang run enables ASan, UBSan and leak checks.
+On every push and pull request, lint and static analysis must pass before
+the native and sanitizer jobs can run in parallel. Native CI runs the full
+suite with GCC on Linux x86-64, ARM64, i686, ARMv7 armhf and big-endian s390x,
+with MSVC shared builds on Windows x64 and ARM64, and with Apple Clang on
+macOS x86-64 and ARM64. A separate Linux x86-64 Clang run enables ASan, UBSan
+and leak checks.
 The scheduled fuzz workflow runs the instrumented fuzz targets daily.
 The CI workflow has no manual validation matrix. Release tags trigger
 artifact validation, including the shared MSVC and MinGW SDKs and the Linux

@@ -28,8 +28,9 @@ permissions:
   contents: read
 
 jobs:
-  windows:
-    name: Native Windows ${{ matrix.architecture }} (MSVC)
+  native-windows:
+    name: Native Windows ${{ matrix.architecture_label }} (MSVC)
+    needs: lint
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -37,6 +38,7 @@ jobs:
         architecture: [x64, arm64]
         include:
           - architecture: x64
+            architecture_label: x64
             runner: windows-latest
             cmake_platform: x64
             vcpkg_triplet: x64-windows
@@ -44,6 +46,7 @@ jobs:
             vs_component: Microsoft.VisualStudio.Component.VC.Tools.x86.x64
             machine: '8664'
           - architecture: arm64
+            architecture_label: ARM64
             runner: windows-11-vs2026-arm
             cmake_platform: ARM64
             vcpkg_triplet: arm64-windows
@@ -281,7 +284,7 @@ jobs:
           set -euxo pipefail
           make check V=1
 
-  build:
+  native-linux-x64:
     name: Native Linux x86-64 (GCC)
     needs: lint
     runs-on: ubuntu-latest
@@ -428,8 +431,8 @@ jobs:
           set -euxo pipefail
           dub run --config=tests --compiler=dmd
 
-  linux-ilp32:
-    name: Linux ILP32 (${{ matrix.architecture }})
+  native-linux-ilp32:
+    name: Native Linux ${{ matrix.architecture }} (GCC)
     needs: lint
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -529,8 +532,8 @@ jobs:
           nm -u tests/test_patch_reader-test-mpq-patch-reader.o | grep 'readdir64'
           BASH
 
-  big-endian:
-    name: Big-endian (s390x)
+  native-linux-s390x:
+    name: Native Linux s390x (GCC, big-endian)
     needs: lint
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -575,7 +578,7 @@ jobs:
 
   coverage-pages:
     name: Publish coverage report
-    needs: build
+    needs: native-linux-x64
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -653,7 +656,7 @@ jobs:
           LC_ALL=C readelf -h libmpq | grep -E 'Machine:[[:space:]]+AArch64$'
 
   native-macos:
-    name: Native macOS ${{ matrix.architecture }} (Apple Clang)
+    name: Native macOS ${{ matrix.architecture_label }} (Apple Clang)
     needs: lint
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -661,8 +664,10 @@ jobs:
       matrix:
         include:
           - architecture: x86_64
+            architecture_label: x86-64
             runner: macos-15-intel
           - architecture: arm64
+            architecture_label: ARM64
             runner: macos-15
     timeout-minutes: 30
     env:
