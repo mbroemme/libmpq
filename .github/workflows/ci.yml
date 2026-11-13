@@ -378,6 +378,22 @@ jobs:
             --filter "${GITHUB_WORKSPACE}/src/" \
             --html-details coverage/index.html
 
+      - name: Summarize native coverage
+        run: |
+          set -euo pipefail
+          summary="$(jq -ers '
+            def percent($metric):
+              .[$metric + "_percent"]
+              | if type == "number" and . >= 0 and . <= 100 then "\(.)%"
+                else error("invalid \($metric) coverage percentage") end;
+            if length == 1 then .[0] else error("expected one gcovr coverage summary") end
+            | "## Native coverage", "", "| Metric | Coverage |", "| --- | ---: |",
+              "| Lines | \(percent("line")) |",
+              "| Functions | \(percent("function")) |",
+              "| Branches | \(percent("branch")) |"
+          ' coverage/summary.json)"
+          printf '%s\n' "${summary}" >> "${GITHUB_STEP_SUMMARY}"
+
       - name: Upload GCC coverage report
         uses: actions/upload-artifact@v7
         with:

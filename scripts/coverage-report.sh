@@ -26,8 +26,6 @@ die() {
 
 usage() {
 	printf 'Usage: %s badge --input SUMMARY --output SVG\n' "${0##*/}" >&2
-	printf '       %s comment --current SUMMARY --head-sha SHA --report-url URL --output MARKDOWN [--base SUMMARY --base-sha SHA]\n' \
-		"${0##*/}" >&2
 	exit 1
 }
 
@@ -44,66 +42,17 @@ format_percentage() {
 	}'
 }
 
-format_delta() {
-	local base_covered="$1"
-	local base_total="$2"
-	local current_covered="$3"
-	local current_total="$4"
-
-	awk -v base_covered="${base_covered}" -v base_total="${base_total}" \
-		-v current_covered="${current_covered}" -v current_total="${current_total}" 'BEGIN {
-		base = base_total == 0 ? 0 : 100 * base_covered / base_total
-		current = current_total == 0 ? 0 : 100 * current_covered / current_total
-		printf "%+.2f", current - base
-	}'
-}
-
-load_summary() {
+load_line_counts() {
 	local input_path="$1"
-	local output_name="$2"
-	local rendered_metrics
-	local -n output="${output_name}"
 
 	[[ -f "${input_path}" ]] || die "coverage summary does not exist: ${input_path}"
-	if ! rendered_metrics="$(jq -er --argjson maximum_counter "${maximum_counter}" '
-		def valid_counter:
-			if type == "number" then
-				floor == . and . >= 0 and . <= $maximum_counter
-			else
-				false
-			end;
-		def metric($name; $covered_name; $total_name):
-			.[$covered_name] as $covered |
-			.[$total_name] as $total |
-			if ($covered | valid_counter) and ($total | valid_counter) and
-				$covered <= $total then
-				[$name, $covered, $total] | @tsv
-			else
-				error("invalid " + $name + " coverage counters")
-			end;
-		metric("Lines"; "line_covered"; "line_total"),
-		metric("Functions"; "function_covered"; "function_total"),
-		metric("Branches"; "branch_covered"; "branch_total")
-	' "${input_path}")"; then
-		die "invalid coverage summary: ${input_path}"
-	fi
-
-	readarray -t "${output_name}" <<< "${rendered_metrics}"
-	[[ "${#output[@]}" -eq 3 ]] || die "invalid coverage summary: ${input_path}"
-}
-
-metric_fields() {
-	local metric="$1"
-	local output_name="$2"
-	local -n output="${output_name}"
-	local name
-	local covered
-	local total
-
-	IFS=$'\t' read -r name covered total <<< "${metric}"
-	output=("${name}" "${covered}" "${total}")
-	[[ -n "${output[0]}" && "${output[1]}" =~ ^[0-9]+$ && "${output[2]}" =~ ^[0-9]+$ ]] ||
-		die 'invalid parsed coverage metric'
+	jq -ers --argjson maximum_counter "${maximum_counter}" '
+		if length == 1 then .[0] else error("expected one gcovr coverage summary") end
+		| [.line_covered, .line_total]
+		| if all(.[]; type == "number" and floor == . and . >= 0 and . <= $maximum_counter)
+		     and .[0] <= .[1] then @tsv
+		  else error("invalid line coverage counters") end
+	' "${input_path}"
 }
 
 badge_color() {
@@ -123,14 +72,13 @@ badge_color() {
 render_badge() {
 	local input_path="$1"
 	local output_path="$2"
-	local -a metrics
-	local -a line_metric
+	local counts covered total
 	local percentage
 	local color
 
-	load_summary "${input_path}" metrics
-	metric_fields "${metrics[0]}" line_metric
-	percentage="$(format_percentage "${line_metric[1]}" "${line_metric[2]}")"
+	counts="$(load_line_counts "${input_path}")" || die "invalid coverage summary: ${input_path}"
+	IFS=$'\t' read -r covered total <<< "${counts}"
+	percentage="$(format_percentage "${covered}" "${total}")"
 	color="$(badge_color "${percentage}")"
 
 	cat > "${output_path}" <<EOF
@@ -155,109 +103,20 @@ render_badge() {
 EOF
 }
 
-render_comment() {
-	local current_path="$1"
-	local head_sha="$2"
-	local report_url="$3"
-	local output_path="$4"
-	local base_path="${5:-}"
-	local base_sha="${6:-}"
-	local -a current_metrics
-	local -a base_metrics
-	local -a current_metric
-	local -a base_metric
-	local index
-	local percentage
-	local delta
-	local line_delta=''
-
-	load_summary "${current_path}" current_metrics
-	if [[ -n "${base_path}" ]]; then
-		load_summary "${base_path}" base_metrics
-	fi
-
-	{
-		printf '## Coverage report\n\n'
-		if [[ -z "${base_path}" ]]; then
-			printf 'Current CI run: `%s`.\n\n' "${head_sha:0:12}"
-			printf 'An exact base-commit coverage artifact is unavailable, so no delta is reported.\n\n'
-			printf '| Metric | PR |\n| --- | ---: |\n'
-			for metric in "${current_metrics[@]}"; do
-				metric_fields "${metric}" current_metric
-				percentage="$(format_percentage "${current_metric[1]}" "${current_metric[2]}")"
-				printf '| %s | %s%% |\n' "${current_metric[0]}" "${percentage}"
-			done
-		else
-			printf 'Base: `%s`. Current CI run: `%s`.\n\n' "${base_sha:0:12}" "${head_sha:0:12}"
-			printf '| Metric | Base | PR | Delta |\n| --- | ---: | ---: | ---: |\n'
-			for index in "${!current_metrics[@]}"; do
-				metric_fields "${base_metrics[index]}" base_metric
-				metric_fields "${current_metrics[index]}" current_metric
-				percentage="$(format_percentage "${base_metric[1]}" "${base_metric[2]}")"
-				delta="$(format_delta "${base_metric[1]}" "${base_metric[2]}" "${current_metric[1]}" "${current_metric[2]}")"
-				printf '| %s | %s%% | %s%% | %s pp |\n' \
-					"${current_metric[0]}" "${percentage}" \
-					"$(format_percentage "${current_metric[1]}" "${current_metric[2]}")" "${delta}"
-				if [[ "${current_metric[0]}" == 'Lines' ]]; then
-					line_delta="${delta}"
-				fi
-			done
-			printf '\n'
-			if awk -v delta="${line_delta}" 'BEGIN { exit !(delta > 0) }'; then
-				printf '✅ Line coverage increased by %s percentage points.\n' "${line_delta}"
-			elif awk -v delta="${line_delta}" 'BEGIN { exit !(delta == 0) }'; then
-				printf '✅ Line coverage is unchanged by %s percentage points.\n' "${line_delta}"
-			else
-				printf '⚠️ Line coverage decreased by %s percentage points.\n' "${line_delta}"
-			fi
-		fi
-		printf '\n[Detailed coverage report](%s)\n' "${report_url}"
-	} > "${output_path}"
-}
-
-[[ $# -ge 1 ]] || usage
-readonly command="$1"
+[[ "${1:-}" == badge ]] || usage
 shift
 
 input_path=''
 output_path=''
-base_path=''
-base_sha=''
-current_path=''
-head_sha=''
-report_url=''
-
 while (($# > 0)); do
+	[[ $# -ge 2 ]] || usage
 	case "$1" in
-		--base|--base-sha|--current|--head-sha|--input|--output|--report-url)
-			[[ $# -ge 2 ]] || usage
-			case "$1" in
-				--base) base_path="$2" ;;
-				--base-sha) base_sha="$2" ;;
-				--current) current_path="$2" ;;
-				--head-sha) head_sha="$2" ;;
-				--input) input_path="$2" ;;
-				--output) output_path="$2" ;;
-				--report-url) report_url="$2" ;;
-			esac
-			shift 2
-			;;
+		--input) input_path="$2" ;;
+		--output) output_path="$2" ;;
 		*) usage ;;
 	esac
+	shift 2
 done
 
-case "${command}" in
-	badge)
-		[[ -n "${input_path}" && -n "${output_path}" ]] || usage
-		render_badge "${input_path}" "${output_path}"
-		;;
-	comment)
-		[[ -n "${current_path}" && -n "${head_sha}" && -n "${report_url}" && -n "${output_path}" ]] || usage
-		if [[ -n "${base_path}" && -z "${base_sha}" ]] || [[ -z "${base_path}" && -n "${base_sha}" ]]; then
-			die '--base and --base-sha must be provided together'
-		fi
-		render_comment "${current_path}" "${head_sha}" "${report_url}" "${output_path}" \
-			"${base_path}" "${base_sha}"
-		;;
-	*) usage ;;
-esac
+[[ -n "${input_path}" && -n "${output_path}" ]] || usage
+render_badge "${input_path}" "${output_path}"

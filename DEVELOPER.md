@@ -999,8 +999,9 @@ suite then uses that same shared library.
 The GCC job uses `python:3.11-slim-trixie` and Debian's packaged gcovr.
 Direct gcovr invocations process the actual large RSA execution counters without
 extra counter-limit options. Source selection and coverage requirements remain
-unchanged. XML, JSON, HTML, badges and PR/Pages consumers retain their existing
-interfaces.
+unchanged. The GCC job summary shows line, function and branch coverage. XML,
+JSON, HTML and SVG remain downloadable artifacts, and successful pushes to
+`master` publish the HTML report and badge to GitHub Pages.
 
 ### Transaction failure coverage
 
