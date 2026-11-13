@@ -42,33 +42,31 @@ for command in git shellcheck; do
 	fi
 done
 
-printf 'Checking shell scripts...\n'
-shell_scripts=(
-	scripts/check
-	scripts/check-comment-spacing
-	scripts/check-function-spacing
-	scripts/check-c-identifiers
-	scripts/check-c-standards
-	scripts/build-d-binary-package.sh
-	scripts/build-java-package.sh
-	scripts/coverage-report.sh
-	scripts/generate-fuzz-corpus.sh
-	scripts/minimize-fuzz-crash.sh
-	scripts/package-d-binary.sh
-	scripts/package-d-source.sh
-	scripts/package-linux-binary.sh
-	scripts/package-macos-binary.sh
-	scripts/package-windows.sh
-	scripts/test-windows-package.sh
-	scripts/validate-release.sh
-	scripts/test-linux-package.sh
-	scripts/test-macos-package.sh
-	scripts/test-java-package.sh
-	scripts/test-python-sdist.sh
+check_shell_scripts()
+(
+	export LC_ALL=C
+	local bash_shebang='^#![[:blank:]]*(/[^[:blank:]]*)?/(bash|env[[:blank:]]+(-S[[:blank:]]+)?bash)([[:blank:]]|$)'
+	local script shebang
+	local -a shell_scripts=()
+
+	sh -n autogen.sh
+	for script in scripts/*; do
+		[[ -f "${script}" && ! -L "${script}" ]] || continue
+		if [[ ! -r "${script}" ]]; then
+			printf 'Cannot read shell script candidate: %s\n' "${script}" >&2
+			exit 1
+		fi
+		IFS= read -r shebang < "${script}" || [[ -n "${shebang}" ]] || continue
+		if [[ "${shebang}" =~ ${bash_shebang} ]]; then
+			bash -n -- "${script}"
+			shell_scripts+=("${script}")
+		fi
+	done
+	shellcheck -S error autogen.sh "${shell_scripts[@]}"
 )
-sh -n autogen.sh
-bash -n "${shell_scripts[@]}"
-shellcheck -S error autogen.sh "${shell_scripts[@]}"
+
+printf 'Checking shell scripts...\n'
+check_shell_scripts
 
 printf 'Checking tracked text whitespace...\n'
 if git grep -nI '[[:blank:]]$' -- .; then
