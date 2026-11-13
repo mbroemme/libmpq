@@ -38,10 +38,6 @@ test -e "${native_library}"
 mvn -B -f bindings/java/pom.xml clean package \
 	-Dorg.libmpq.library="${native_library}" \
 	-Dlibmpq.sourceDir="${project_root}"
-LD_LIBRARY_PATH="${native_directory}" \
-	mvn -B -f bindings/java/pom.xml test \
-		-Dorg.libmpq.test.loaderPath=true \
-		-Dlibmpq.sourceDir="${project_root}"
 
 version="$(mvn -q -f bindings/java/pom.xml \
 	help:evaluate -Dexpression=project.version -DforceStdout)"

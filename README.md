@@ -234,8 +234,8 @@ archives do not bundle private copies of these codec libraries.
 ### Windows
 
 The native C library supports MSVC x64 and ARM64 through CMake. Regular CI
-runs the CTest suite on both architectures. Release and extended validation
-also check installed SDK consumers. Autotools remains the POSIX and MinGW-w64
+runs the CTest suite on both architectures. Release-tag validation also
+checks installed SDK consumers. Autotools remains the POSIX and MinGW-w64
 build frontend, including native aarch64 via MSYS2 CLANGARM64.
 
 Both Windows C SDKs provide `mpq.dll`. For Windows binding packages

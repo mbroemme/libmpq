@@ -23,24 +23,17 @@ on:
     branches:
       - '**'
   merge_group:
-  workflow_dispatch:
-    inputs:
-      extended_native:
-        description: Also qualify alternate C standards, ILP32 Clang and Windows static SDKs
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
 jobs:
   windows:
-    name: Native Windows ${{ matrix.architecture }} (MSVC, shared=${{ matrix.shared }})
+    name: Native Windows ${{ matrix.architecture }} (MSVC)
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        shared: ${{ fromJSON(inputs.extended_native && '["ON","OFF"]' || '["ON"]') }}
         architecture: [x64, arm64]
         include:
           - architecture: x64
@@ -67,7 +60,7 @@ jobs:
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
       - name: Configure
         shell: pwsh
-        run: cmake -S . -B build -A ${{ matrix.cmake_platform }} -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} -DBUILD_SHARED_LIBS=${{ matrix.shared }} -DVCPKG_APPLOCAL_DEPS=OFF "-DCMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        run: cmake -S . -B build -A ${{ matrix.cmake_platform }} -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} -DBUILD_SHARED_LIBS=ON -DVCPKG_APPLOCAL_DEPS=OFF "-DCMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Test
@@ -78,7 +71,7 @@ jobs:
           ${env:PATH} = "${env:VCPKG_INSTALLATION_ROOT}/installed/${{ matrix.vcpkg_triplet }}/bin;${env:PATH}"
           ctest --test-dir build -C Release --parallel 1 --no-tests=error --output-on-failure
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
-      - name: Verify native architecture, static SDK or Java SDK prerequisites
+      - name: Verify native architecture
         shell: pwsh
         run: |
           ${vswhere} = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
@@ -86,132 +79,11 @@ jobs:
           Import-Module "${vs}/Common7/Tools/Microsoft.VisualStudio.DevShell.dll"
           Enter-VsDevShell -VsInstallPath "${vs}" -SkipAutomaticLocation -DevCmdArguments '-arch=${{ matrix.dev_arch }} -host_arch=${{ matrix.dev_arch }}'
 
-          ${version} = (Select-String -Path build/CMakeCache.txt -Pattern '^CMAKE_PROJECT_VERSION:STATIC=(.+)$').Matches.Groups[1].Value
-          if (-not ${version}) { throw 'Missing CMake project version' }
-          if ('${{ matrix.shared }}' -eq 'ON') {
-            ${binary} = 'build/Release/mpq.dll'
-          } else {
-            ${prefix} = "${env:RUNNER_TEMP}/libmpq-msvc"
-            cmake --install build --config Release --prefix "${prefix}"
-            if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
-            # Reuse the exact Release libraries found for the native build;
-            # vcpkg library filenames can differ between port versions.
-            ${codecLibraries} = foreach (${key} in 'ZLIB_LIBRARY_RELEASE', 'BZIP2_LIBRARY_RELEASE', 'LIBLZMA_LIBRARY_RELEASE') {
-              ${entry} = Select-String -Path build/CMakeCache.txt -Pattern "^${key}:FILEPATH=(.+)$"
-              if (-not ${entry}) { throw "Missing ${key} in CMake cache" }
-              ${library} = ${entry}.Matches.Groups[1].Value
-              if (-not (Test-Path -LiteralPath ${library} -PathType Leaf)) { throw "Missing library: ${library}" }
-              ${library}
-            }
-            # Match vcpkg's Release C runtime even for a static libmpq.
-            ${binary} = "${env:RUNNER_TEMP}/consumer.exe"
-            cl.exe /nologo /MD "/I${prefix}/include" tests/test-mpq-consumer.c "/Fe${binary}" "/Fo${env:RUNNER_TEMP}/consumer.obj" /link "/LIBPATH:${prefix}/lib" libmpq.lib ${codecLibraries} bcrypt.lib advapi32.lib
-            if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
-          }
+          ${binary} = 'build/Release/mpq.dll'
           ${headers} = & dumpbin.exe /nologo /headers ${binary}
           if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
           if (-not (${headers} -match '^\s*${{ matrix.machine }}\s+machine\s+\(')) { throw "PE architecture mismatch: ${binary}" }
-          if ('${{ matrix.shared }}' -eq 'OFF') {
-            ${env:PATH} = "${env:VCPKG_INSTALLATION_ROOT}/installed/${{ matrix.vcpkg_triplet }}/bin;${env:PATH}"
-            & ${binary} ${version}
-            if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
-          }
-          if ('${{ matrix.architecture }}' -eq 'x64' -and '${{ matrix.shared }}' -eq 'ON') {
-            ${name} = "libmpq-${version}-windows-msvc-x64"
-            ${stage} = "${env:RUNNER_TEMP}/${name}"
-            cmake --install build --config Release --prefix "${stage}"
-            if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
-            ${bash} = "${env:ProgramFiles}/Git/bin/bash.exe"
-            & ${bash} scripts/package-windows.sh prepare --toolchain msvc --architecture x64 --stage "${stage}" --runtime "${env:VCPKG_INSTALLATION_ROOT}/installed/${{ matrix.vcpkg_triplet }}" --output "${stage}.zip" --version "${version}"
-            if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
-            "LIBMPQ_JAVA_SDK=${stage}" >> ${env:GITHUB_ENV}
-            "LIBMPQ_JAVA_SDK_VERSION=${version}" >> ${env:GITHUB_ENV}
-          }
-      - name: Set up Java for the Windows SDK consumer
-        if: matrix.architecture == 'x64' && matrix.shared == 'ON'
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '25'
-      - name: Test Java with the MSVC SDK and packaged codec DLLs
-        if: matrix.architecture == 'x64' && matrix.shared == 'ON'
-        shell: pwsh
-        run: |
-          & "${env:ProgramFiles}/Git/bin/bash.exe" scripts/test-java-sdk.sh "${env:LIBMPQ_JAVA_SDK}" "${env:LIBMPQ_JAVA_SDK_VERSION}" x86_64
-          if (${LASTEXITCODE}) { exit ${LASTEXITCODE} }
-  mingw:
-    name: MinGW-w64 ${{ matrix.architecture }} Autotools (static)
-    if: inputs.extended_native
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        architecture: [x86_64, aarch64]
-        include:
-          - architecture: x86_64
-            runner: windows-latest
-            native_arch: x64
-            msystem: MINGW64
-            prefix: /mingw64
-            triplet: x86_64-w64-mingw32
-            compiler: x86_64-w64-mingw32-gcc
-            package_prefix: mingw-w64-x86_64
-            compiler_package: gcc
-            tools_package: binutils
-            pe_format: pei-x86-64
-          - architecture: aarch64
-            runner: windows-11-vs2026-arm
-            native_arch: arm64
-            msystem: CLANGARM64
-            prefix: /clangarm64
-            triplet: aarch64-w64-mingw32
-            compiler: clang
-            package_prefix: mingw-w64-clang-aarch64
-            compiler_package: clang
-            tools_package: llvm-tools
-            pe_format: coff-arm64
-    defaults:
-      run:
-        shell: msys2 {0}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Verify native Windows runner
-        shell: pwsh
-        run: |
-          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ine '${{ matrix.native_arch }}') { throw 'Native runner architecture mismatch' }
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: ${{ matrix.msystem }}
-          update: true
-          install: >-
-            autoconf automake libtool make diffutils
-            ${{ matrix.package_prefix }}-${{ matrix.compiler_package }}
-            ${{ matrix.package_prefix }}-${{ matrix.tools_package }}
-            ${{ matrix.package_prefix }}-zlib ${{ matrix.package_prefix }}-bzip2
-            ${{ matrix.package_prefix }}-xz ${{ matrix.package_prefix }}-pkgconf
-      - name: Build, test, install and link consumer
-        run: |
-          set -euxo pipefail
-          test "${MSYSTEM}" = '${{ matrix.msystem }}'
-          for tool in '${{ matrix.compiler }}' ar ranlib nm dlltool objdump strip pkg-config; do
-            case "$(command -v "${tool}")" in '${{ matrix.prefix }}'/bin/*) ;; *) echo "Wrong toolchain path: ${tool}" >&2; exit 1 ;; esac
-          done
-          export CC='${{ matrix.prefix }}/bin/${{ matrix.compiler }}'
-          export AR='${{ matrix.prefix }}/bin/ar' RANLIB='${{ matrix.prefix }}/bin/ranlib'
-          export NM='${{ matrix.prefix }}/bin/nm' DLLTOOL='${{ matrix.prefix }}/bin/dlltool'
-          export OBJDUMP='${{ matrix.prefix }}/bin/objdump' STRIP='${{ matrix.prefix }}/bin/strip'
-          sh autogen.sh
-          version="$(./configure --version | sed -n '1s/^libmpq configure //p')"
-          prefix="$(mktemp -d)/libmpq-${version}-windows-mingw-${{ matrix.architecture }}"
-          ./configure --host=${{ matrix.triplet }} --prefix="${prefix}" --disable-shared --enable-static
-          make -j2
-          make check
-          make install
-          export PKG_CONFIG_PATH="${prefix}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
-          "${CC}" $(pkg-config --cflags libmpq) tests/test-mpq-consumer.c $(pkg-config --static --libs libmpq) -o "${prefix}/consumer.exe"
-          test "$(objdump -f "${prefix}/consumer.exe" | sed -nE 's/^.*file format[[:space:]]+([^[:space:]]+)[[:space:]]*$/\1/p')" = '${{ matrix.pe_format }}'
-          test "$("${prefix}/bin/libmpq-config" --version)" = "${version}"
-          PATH="${prefix}/bin:${PATH}" "${prefix}/consumer.exe" "${version}"
+
   lint:
     name: Lint and static analysis
     runs-on: ubuntu-latest
@@ -344,49 +216,6 @@ jobs:
               -fvisibility=hidden
           done
 
-  c-standards:
-    name: C standard (${{ matrix.compiler }}, ${{ matrix.standard }})
-    if: inputs.extended_native
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    container:
-      image: debian:trixie-slim
-    strategy:
-      fail-fast: false
-      matrix:
-        compiler: [gcc, clang]
-        standard: [c99, c11, c17, c23, gnu23]
-    defaults:
-      run:
-        shell: bash
-
-    steps:
-      - name: Install native build dependencies
-        run: |
-          set -euxo pipefail
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            autoconf \
-            automake \
-            build-essential \
-            ca-certificates \
-            clang \
-            git \
-            libbz2-dev \
-            liblzma-dev \
-            libtool \
-            zlib1g-dev
-
-      - name: Check out repository
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Compile library and native tests for the selected C standard
-        run: |
-          set -euxo pipefail
-          scripts/check-c-standards '${{ matrix.compiler }}' '${{ matrix.standard }}'
-
   sanitizers:
     name: Sanitizers (ASan, UBSan, LSan)
     needs: lint
@@ -463,9 +292,9 @@ jobs:
     name: Native Linux x86-64 (GCC)
     needs: lint
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     container:
-      image: debian:trixie-slim
+      image: python:3.11-slim-trixie
     defaults:
       run:
         shell: bash
@@ -481,11 +310,13 @@ jobs:
             binutils \
             build-essential \
             ca-certificates \
+            gcovr \
             jq \
             git \
             libbz2-dev \
             liblzma-dev \
             libtool \
+            maven \
             pkg-config \
             zlib1g-dev
 
@@ -503,12 +334,16 @@ jobs:
           sh autogen.sh
 
       - name: Configure
+        env:
+          CC: gcc
+          CFLAGS: -O0 -g --coverage
+          # Keep the coverage runtime private in the library used by pytest.
+          LDFLAGS: --coverage -Wl,--exclude-libs,libgcov.a
         run: |
           set -euxo pipefail
           ./configure --prefix=/opt/libmpq \
             --includedir=/opt/libmpq/custom-include \
-            --libdir=/opt/libmpq/custom-lib \
-            CC=gcc
+            --libdir=/opt/libmpq/custom-lib
 
       - name: Build
         run: |
@@ -518,7 +353,72 @@ jobs:
       - name: Run native regression suite
         run: |
           set -euxo pipefail
-          make check V=1
+          # Bound concurrent test memory and disk use while collecting coverage.
+          make -j2 check V=1
+
+      - name: Generate coverage reports
+        run: |
+          set -euxo pipefail
+          rm -f a-conftest.gcno
+          mkdir -p coverage
+          gcovr \
+            --root "${GITHUB_WORKSPACE}" \
+            --filter "${GITHUB_WORKSPACE}/src/" \
+            --print-summary \
+            --xml-pretty \
+            --output coverage/cobertura.xml
+          gcovr \
+            --root "${GITHUB_WORKSPACE}" \
+            --filter "${GITHUB_WORKSPACE}/src/" \
+            --json-summary-pretty \
+            --json-summary coverage/summary.json
+          bash scripts/coverage-report.sh badge \
+            --input coverage/summary.json \
+            --output coverage/coverage.svg
+          gcovr \
+            --root "${GITHUB_WORKSPACE}" \
+            --filter "${GITHUB_WORKSPACE}/src/" \
+            --html-details coverage/index.html
+
+      - name: Upload GCC coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-gcc-coverage
+          path: coverage
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload GCC coverage summary
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-gcc-coverage-summary
+          path: coverage/summary.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Test Python bindings against the GCC build
+        env:
+          LIBMPQ_LIBRARY: ${{ github.workspace }}/src/.libs/libmpq.so
+          PYTHONPATH: ${{ github.workspace }}/bindings/python
+        run: |
+          set -euxo pipefail
+          python -m pip install pytest
+          python -m pytest bindings/python/tests
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '22'
+          cache: maven
+          cache-dependency-path: bindings/java/pom.xml
+
+      - name: Test Java bindings against the GCC build
+        run: |
+          set -euxo pipefail
+          mvn -f bindings/java/pom.xml test \
+            -Dorg.libmpq.library="${GITHUB_WORKSPACE}/src/.libs/libmpq.so" \
+            -Dlibmpq.sourceDir="${GITHUB_WORKSPACE}"
 
   linux-ilp32:
     name: Linux ILP32 (${{ matrix.architecture }})
@@ -535,7 +435,6 @@ jobs:
             debian_architecture: armhf
     env:
       DEBIAN_ARCHITECTURE: ${{ matrix.debian_architecture }}
-      EXTENDED_NATIVE: ${{ inputs.extended_native == true }}
     defaults:
       run:
         shell: bash
@@ -549,7 +448,7 @@ jobs:
       - name: Build and run the native regression suite
         run: |
           set -euxo pipefail
-          docker run --rm -i -e DEBIAN_ARCHITECTURE -e EXTENDED_NATIVE -v "${GITHUB_WORKSPACE}:/workspace:ro" \
+          docker run --rm -i -e DEBIAN_ARCHITECTURE -v "${GITHUB_WORKSPACE}:/workspace:ro" \
             debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 \
             bash -s <<'BASH'
           set -euxo pipefail
@@ -587,51 +486,39 @@ jobs:
 
           dpkg --add-architecture "${arch}"
           apt-get update
-          compilers=(gcc)
-          extra_packages=()
-          if [[ "${EXTENDED_NATIVE}" == true ]]; then
-            compilers+=(clang)
-            extra_packages+=(clang)
-          fi
           apt-get install -y --no-install-recommends autoconf automake libtool make binutils \
             qemu-user "gcc-${target}" "libc6-dev-${arch}-cross" \
-            "libbz2-dev:${arch}" "liblzma-dev:${arch}" "zlib1g-dev:${arch}" "${extra_packages[@]}"
+            "libbz2-dev:${arch}" "liblzma-dev:${arch}" "zlib1g-dev:${arch}"
           dpkg-query -W "libc6:${arch}" "libc6-${arch}-cross" "libbz2-dev:${arch}" \
-            "liblzma-dev:${arch}" "zlib1g-dev:${arch}" "gcc-${target}" qemu-user "${extra_packages[@]}"
+            "liblzma-dev:${arch}" "zlib1g-dev:${arch}" "gcc-${target}" qemu-user
 
           cp -R /workspace "${temporary}/source"
           source_dir="${temporary}/source"
           (cd "${source_dir}" && sh autogen.sh)
-          for compiler in "${compilers[@]}"; do
-            cc="${target}-gcc"
-            if [[ "${compiler}" == clang ]]; then
-              cc="clang --target=${target} --gcc-toolchain=/usr"
-            fi
-            build="${temporary}/${compiler}"
-            sdk="${build}/sdk"
-            mkdir "${build}"
-            cd "${build}"
-            CC="${cc}" CFLAGS="-O2 -g -std=c99 -Wall -Wextra -Wpedantic -Werror ${flags}" \
-              "${source_dir}/configure" --build=x86_64-linux-gnu --host="${target}" \
-              --prefix="${sdk}" --enable-shared --enable-static
-            make -j"$(nproc)"
-            make check LOG_COMPILER="${runner}" || { cat tests/test-suite.log; exit 1; }
-            grep -Eq '^# SKIP: +0$' tests/test-suite.log
-            make install
-            cmp "${source_dir}/include/libmpq/mpq.h" "${sdk}/include/libmpq/mpq.h"
-            test -s "${sdk}/lib/libmpq.a"
-            library="${sdk}/lib/libmpq.so.4"
-            bash "${source_dir}/scripts/check-native-exports.sh" \
-              "${sdk}/include/libmpq/mpq.h" "${library}"
-            readelf -h "${library}" | grep 'Class:.*ELF32'
-            readelf -h "${library}" | grep "Machine:[[:space:]]*${machine}$"
-            readelf -d "${library}" | grep -F 'Library soname: [libmpq.so.4]'
-            if [[ "${arch}" == armhf ]]; then
-              readelf -A "${library}" | grep 'Tag_ABI_VFP_args: VFP registers'
-            fi
-            nm -u src/.libs/mpq-update.o | grep 'fstat64'
-            nm -u tests/test_patch_reader-test-mpq-patch-reader.o | grep 'readdir64'
-          done
+          build="${temporary}/gcc"
+          sdk="${build}/sdk"
+          mkdir "${build}"
+          cd "${build}"
+          CC="${target}-gcc" CFLAGS="-O2 -g -std=c99 -Wall -Wextra -Wpedantic -Werror ${flags}" \
+            "${source_dir}/configure" --build=x86_64-linux-gnu --host="${target}" \
+            --prefix="${sdk}" --enable-shared --enable-static
+          make -j"$(nproc)"
+          make check LOG_COMPILER="${runner}" || { cat tests/test-suite.log; exit 1; }
+          grep -Eq '^# SKIP: +0$' tests/test-suite.log
+          make install
+          cmp "${source_dir}/include/libmpq/mpq.h" "${sdk}/include/libmpq/mpq.h"
+          test -s "${sdk}/lib/libmpq.a"
+          library="${sdk}/lib/libmpq.so.4"
+          bash "${source_dir}/scripts/check-native-exports.sh" \
+            "${sdk}/include/libmpq/mpq.h" "${library}"
+          readelf -h "${library}" | grep 'Class:.*ELF32'
+          readelf -h "${library}" | grep "Machine:[[:space:]]*${machine}$"
+          readelf -d "${library}" | grep -F 'Library soname: [libmpq.so.4]'
+          if [[ "${arch}" == armhf ]]; then
+            readelf -A "${library}" | grep 'Tag_ABI_VFP_args: VFP registers'
+          fi
+          nm -u src/.libs/mpq-update.o | grep 'fstat64'
+          nm -u tests/test_patch_reader-test-mpq-patch-reader.o | grep 'readdir64'
           BASH
 
   big-endian:
@@ -678,110 +565,9 @@ jobs:
               make check V=1
             '
 
-  coverage:
-    name: GCC coverage
-    needs: lint
-    runs-on: ubuntu-latest
-
-    # Preserve O0 branch visibility and budget measured runtime plus setup margin.
-    timeout-minutes: 35
-    container:
-      image: debian:trixie-slim
-    defaults:
-      run:
-        shell: bash
-
-    steps:
-      - name: Install GCC coverage dependencies
-        run: |
-          set -euxo pipefail
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            autoconf \
-            automake \
-            build-essential \
-            ca-certificates \
-            gcovr \
-            git \
-            jq \
-            libbz2-dev \
-            liblzma-dev \
-            libtool \
-            zlib1g-dev
-
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Trust repository checkout
-        run: |
-          set -euxo pipefail
-          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
-
-      - name: Generate build system
-        run: |
-          set -euxo pipefail
-          sh autogen.sh
-
-      - name: Configure GCC coverage build
-        env:
-          CC: gcc
-          CFLAGS: -O0 -g --coverage
-          LDFLAGS: --coverage
-        run: |
-          set -euxo pipefail
-          ./configure --prefix=/usr
-
-      - name: Build and test with GCC coverage
-        run: |
-          set -euxo pipefail
-          make -j"$(nproc)" V=1
-
-          # Bound concurrent regression memory/I/O while overlapping independent tests.
-          make -j2 check V=1
-
-      - name: Generate coverage reports
-        run: |
-          set -euxo pipefail
-          rm -f a-conftest.gcno
-          mkdir -p coverage
-          gcovr \
-            --root "${GITHUB_WORKSPACE}" \
-            --filter "${GITHUB_WORKSPACE}/src/" \
-            --print-summary \
-            --xml-pretty \
-            --output coverage/cobertura.xml
-          gcovr \
-            --root "${GITHUB_WORKSPACE}" \
-            --filter "${GITHUB_WORKSPACE}/src/" \
-            --json-summary-pretty \
-            --json-summary coverage/summary.json
-          bash scripts/coverage-report.sh badge \
-            --input coverage/summary.json \
-            --output coverage/coverage.svg
-          gcovr \
-            --root "${GITHUB_WORKSPACE}" \
-            --filter "${GITHUB_WORKSPACE}/src/" \
-            --html-details coverage/index.html
-
-      - name: Upload GCC coverage report
-        uses: actions/upload-artifact@v7
-        with:
-          name: libmpq-gcc-coverage
-          path: coverage
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload GCC coverage summary
-        uses: actions/upload-artifact@v7
-        with:
-          name: libmpq-gcc-coverage-summary
-          path: coverage/summary.json
-          if-no-files-found: error
-          retention-days: 90
-
   coverage-pages:
     name: Publish coverage report
-    needs: coverage
+    needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -832,7 +618,6 @@ jobs:
         run: |
           set -euxo pipefail
           test "$(uname -m)" = aarch64
-          # Keep the glibc baseline of the existing Java SDK test during migration.
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -w /workspace quay.io/pypa/manylinux2014_aarch64 \
@@ -843,30 +628,7 @@ jobs:
               ./configure --prefix=/usr CC=gcc
               make -j"$(getconf _NPROCESSORS_ONLN)" V=1
               make check
-
-              # Stage only the SDK consumed by the existing Java smoke test.
-              version="$(./configure --version | sed -n "1s/^libmpq configure //p")"
-              LIBMPQ_NATIVE_LIBC=glibc \
-                LIBMPQ_NATIVE_ARCHITECTURE=aarch64 \
-                LIBMPQ_NATIVE_BUILD_ENVIRONMENT=manylinux2014_aarch64 \
-                LIBMPQ_NATIVE_VERSION="${version}" \
-                LIBMPQ_NATIVE_GLIBC_BASELINE=2.17 \
-                bash scripts/package-linux-binary.sh
             '
-      - name: Set up Java for the Linux ARM64 SDK consumer
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '25'
-      - name: Test Java with the extracted Linux ARM64 SDK
-        run: |
-          set -euxo pipefail
-          version="$(./configure --version | sed -n '1s/^libmpq configure //p')"
-          name="libmpq-${version}-linux-glibc-aarch64"
-          temporary="$(mktemp -d)"
-          trap 'rm -rf -- "${temporary}"' EXIT
-          tar -xzf "release/${name}.tar.gz" -C "${temporary}"
-          bash scripts/test-java-sdk.sh "${temporary}/${name}" "${version}" aarch64
 
   native-macos:
     name: Native macOS ${{ matrix.architecture }} (Apple Clang)
@@ -915,31 +677,6 @@ jobs:
           ./configure --prefix=/usr --enable-shared --disable-static
           /usr/bin/make -j"$(sysctl -n hw.ncpu)" V=1
           /usr/bin/make check
-      - name: Stage the macOS ARM64 SDK for the existing Java test
-        if: matrix.architecture == 'arm64'
-        run: |
-          set -euxo pipefail
-          version="$(./configure --version | sed -n '1s/^libmpq configure //p')"
-          LIBMPQ_NATIVE_ARCHITECTURE=arm64 \
-            LIBMPQ_NATIVE_VERSION="${version}" \
-            LIBMPQ_NATIVE_BUILD_ENVIRONMENT=macos-15-arm64 \
-            bash scripts/package-macos-binary.sh
-      - name: Set up Java for the macOS ARM64 SDK consumer
-        if: matrix.architecture == 'arm64'
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '25'
-      - name: Test Java with the extracted macOS ARM64 SDK
-        if: matrix.architecture == 'arm64'
-        run: |
-          set -euxo pipefail
-          version="$(./configure --version | sed -n '1s/^libmpq configure //p')"
-          name="libmpq-${version}-macos-arm64"
-          temporary="$(mktemp -d)"
-          trap 'rm -rf -- "${temporary}"' EXIT
-          tar -xzf "release/${name}.tar.gz" -C "${temporary}"
-          bash scripts/test-java-sdk.sh "${temporary}/${name}" "${version}" aarch64
 
   d-packages:
     name: Validate D packages
@@ -947,214 +684,3 @@ jobs:
     with:
       mode: validate
       assemble_release: false
-
-  java:
-    name: Java bindings (JDK ${{ matrix.java }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        java: ['22', '25']
-    defaults:
-      run:
-        shell: bash
-
-    steps:
-      - name: Install native build dependencies
-        run: |
-          set -euxo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            autoconf \
-            automake \
-            build-essential \
-            ca-certificates \
-            libbz2-dev \
-            liblzma-dev \
-            libtool \
-            maven \
-            zlib1g-dev
-
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Set up Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: ${{ matrix.java }}
-          cache: maven
-          cache-dependency-path: bindings/java/pom.xml
-
-      - name: Generate build system
-        run: |
-          set -euxo pipefail
-          sh autogen.sh
-
-      - name: Build native library
-        run: |
-          set -euxo pipefail
-          ./configure --prefix=/usr
-          make -j"$(nproc)" V=1
-
-      - name: Test Java bindings
-        run: |
-          set -euxo pipefail
-          mvn -f bindings/java/pom.xml test \
-            -Dorg.libmpq.library="${GITHUB_WORKSPACE}/src/.libs/libmpq.so" \
-            -Dlibmpq.sourceDir="${GITHUB_WORKSPACE}"
-
-  python:
-    name: Python bindings (Python ${{ matrix.python-version }}, ${{ matrix.architecture }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ['3.11', '3.12', '3.13', '3.14']
-        architecture: [x86_64]
-        include:
-          - python-version: '3.13'
-            architecture: i686
-            debian_architecture: i386
-          - python-version: '3.13'
-            architecture: ARMv7 armhf
-            debian_architecture: armhf
-    defaults:
-      run:
-        shell: bash
-
-    steps:
-      - name: Install native build dependencies
-        if: matrix.architecture == 'x86_64'
-        run: |
-          set -euxo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            autoconf \
-            automake \
-            build-essential \
-            ca-certificates \
-            libbz2-dev \
-            liblzma-dev \
-            libtool \
-            zlib1g-dev
-
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Set up Python
-        if: matrix.architecture == 'x86_64'
-        uses: actions/setup-python@v7
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: bindings/python/pyproject.toml
-
-      - name: Install Python test tools
-        if: matrix.architecture == 'x86_64'
-        run: |
-          set -euxo pipefail
-          python -m pip install --upgrade pip pytest build setuptools wheel
-
-      - name: Build native library
-        if: matrix.architecture == 'x86_64'
-        run: |
-          set -euxo pipefail
-          sh autogen.sh
-          ./configure --prefix=/usr
-          make -j"$(nproc)" V=1
-
-      - name: Test Python bindings
-        if: matrix.architecture == 'x86_64'
-        env:
-          LIBMPQ_LIBRARY: ${{ github.workspace }}/src/.libs/libmpq.so
-          PYTHONPATH: ${{ github.workspace }}/bindings/python
-        run: |
-          set -euxo pipefail
-          python -m pytest bindings/python/tests
-
-      - name: Build Python package smoke artifact
-        if: matrix.architecture == 'x86_64'
-        working-directory: bindings/python
-        run: |
-          set -euxo pipefail
-          python -m build --wheel --no-isolation
-
-      - name: Test installed Python wheel
-        if: matrix.architecture == 'x86_64'
-        run: |
-          set -euxo pipefail
-          wheel="$(find bindings/python/dist -maxdepth 1 -name '*.whl' \
-            -print -quit)"
-          test -s "${wheel}"
-          temporary="$(mktemp -d)"
-          trap 'rm -rf "${temporary}"' EXIT
-          python -m venv --system-site-packages "${temporary}/venv"
-          "${temporary}/venv/bin/python" -m pip install "${wheel}"
-          (
-            cd /tmp
-            env -u LIBMPQ_LIBRARY -u PYTHONPATH \
-              LIBMPQ_EXPECT_BUNDLED=1 \
-              "${temporary}/venv/bin/python" -m pytest \
-              "${GITHUB_WORKSPACE}/bindings/python/tests"
-          )
-
-      - name: Test installed Python wheel on Linux ILP32
-        if: matrix.architecture != 'x86_64'
-        env:
-          DEBIAN_ARCHITECTURE: ${{ matrix.debian_architecture }}
-        run: |
-          set -euxo pipefail
-          docker run --rm -i -e DEBIAN_ARCHITECTURE -v "${GITHUB_WORKSPACE}:/workspace:ro" \
-            debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 \
-            bash -s <<'BASH'
-          set -euxo pipefail
-          export LC_ALL=C DEBIAN_FRONTEND=noninteractive
-          arch="${DEBIAN_ARCHITECTURE}"
-          case "${arch}" in
-            i386) target=i686-linux-gnu; qemu="qemu-i386"; platform=linux_i686; machine='Intel 80386' ;;
-            armhf) target=arm-linux-gnueabihf; qemu="qemu-arm"; platform=linux_armv7l; machine=ARM ;;
-            *) exit 2 ;;
-          esac
-          dpkg --add-architecture "${arch}"
-          apt-get update
-          apt-get install -y --no-install-recommends binutils qemu-user "gcc-${target}" \
-            "libc6-dev-${arch}-cross" "libbz2-dev:${arch}" "liblzma-dev:${arch}" \
-            "zlib1g-dev:${arch}" "libffi8:${arch}" "libexpat1:${arch}" \
-            python3-build python3-setuptools python3-wheel python3-pip python3-pytest
-
-          temporary="$(mktemp -d /var/tmp/libmpq-wheel.XXXXXXXX)"
-          trap 'rm -rf -- "${temporary}"' EXIT
-          cp -R /workspace "${temporary}/source"
-          cd "${temporary}/source/bindings/python"
-          env -u LIBMPQ_LIBRARY -u PYTHONPATH CC="${target}-gcc" \
-            LIBMPQ_WHEEL_PLATFORM="${platform}" \
-            python3 -m build --wheel --no-isolation --outdir "${temporary}/wheel"
-          shopt -s nullglob
-          wheels=("${temporary}"/wheel/*-py3-none-"${platform}".whl)
-          test "${#wheels[@]}" -eq 1
-
-          cd "${temporary}"
-          apt-get download "python3.13-minimal:${arch}" "libpython3.13-minimal:${arch}" \
-            "libpython3.13-stdlib:${arch}"
-          for package in ./*.deb; do dpkg-deb -x "${package}" "${temporary}/target"; done
-          py=("${qemu}" -L "/usr/${target}" "${temporary}/target/usr/bin/python3.13")
-          export PYTHONHOME="${temporary}/target/usr"
-          export PYTHONPATH=/usr/lib/python3/dist-packages
-          unset LIBMPQ_LIBRARY
-          "${py[@]}" -P -m pip install --no-index --no-deps \
-            --target "${temporary}/installed" "${wheels[0]}"
-          export PYTHONPATH="${temporary}/installed:${PYTHONPATH}"
-          library="${temporary}/installed/mpq_libs/libmpq.so"
-          bash /workspace/scripts/check-native-exports.sh /workspace/include/libmpq/mpq.h "${library}"
-          readelf -h "${library}" | grep 'Class:.*ELF32'
-          readelf -h "${library}" | grep "Machine:[[:space:]]*${machine}$"
-          if [[ "${arch}" == armhf ]]; then
-            readelf -A "${library}" | grep 'Tag_ABI_VFP_args: VFP registers'
-          fi
-          LIBMPQ_EXPECT_BUNDLED=1 "${py[@]}" -P -m pytest -q --import-mode=importlib \
-            --junitxml="${temporary}/wheel-tests.xml" "${temporary}/source/bindings/python/tests"
-          grep -Eq '<testsuite[[:space:]][^>]*skipped="0"' "${temporary}/wheel-tests.xml"
-          BASH

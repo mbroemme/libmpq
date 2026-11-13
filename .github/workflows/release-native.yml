@@ -75,6 +75,24 @@ jobs:
                 tests/fixtures/mpq-v1-features.mpq
             '
 
+      - name: Set up Java for the Linux ARM64 SDK consumer
+        if: github.ref_type == 'tag' && matrix.architecture == 'aarch64'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Test Java with the extracted Linux ARM64 SDK
+        if: github.ref_type == 'tag' && matrix.architecture == 'aarch64'
+        run: |
+          set -euxo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          name="libmpq-${version}-linux-glibc-aarch64"
+          temporary="$(mktemp -d)"
+          trap 'rm -rf -- "${temporary}"' EXIT
+          tar -xzf "release/${name}.tar.gz" -C "${temporary}"
+          bash scripts/test-java-sdk.sh "${temporary}/${name}" "${version}" aarch64
+
       - name: Upload native glibc SDK package
         uses: actions/upload-artifact@v7
         with:
@@ -200,6 +218,24 @@ jobs:
           bash scripts/test-macos-package.sh \
             "release/libmpq-${version}-macos-arm64.tar.gz" \
             tests/fixtures/mpq-v1-features.mpq arm64
+
+      - name: Set up Java for the macOS ARM64 SDK consumer
+        if: github.ref_type == 'tag'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Test Java with the extracted macOS ARM64 SDK
+        if: github.ref_type == 'tag'
+        run: |
+          set -euxo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          name="libmpq-${version}-macos-arm64"
+          temporary="$(mktemp -d)"
+          trap 'rm -rf -- "${temporary}"' EXIT
+          tar -xzf "release/${name}.tar.gz" -C "${temporary}"
+          bash scripts/test-java-sdk.sh "${temporary}/${name}" "${version}" aarch64
 
       - name: Upload native macOS arm64 SDK package
         uses: actions/upload-artifact@v7

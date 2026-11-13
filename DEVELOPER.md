@@ -979,27 +979,21 @@ these checks establish compilation compatibility, not runtime test success.
 Lint uses the same build-only mechanism to collect test compile commands for
 clang-tidy.
 
-Regular native CI runs the full suite with GCC on Linux x86-64, ARM64, i686,
-ARMv7 armhf and big-endian s390x, with MSVC shared builds on Windows x64 and
-ARM64, and with Apple Clang on macOS x86-64 and ARM64. A Linux x86-64 Clang
-run enables ASan, UBSan and leak checks. GCC coverage runs the full suite
-before collecting gcovr reports.
+On every push and pull request, native CI runs the full suite with GCC on
+Linux x86-64, ARM64, i686, ARMv7 armhf and big-endian s390x, with MSVC shared
+builds on Windows x64 and ARM64, and with Apple Clang on macOS x86-64 and
+ARM64. A separate Linux x86-64 Clang run enables ASan, UBSan and leak checks.
+The CI workflow has no manual validation matrix. Release tags trigger
+artifact validation, including the shared MSVC and MinGW SDKs and the Linux
+glibc and musl packages. Use disk-backed working directories for the
+multi-gigabyte native regressions.
 
-Manually run the CI workflow with `extended_native` enabled to add the
-GCC/Clang dialect matrix, the ILP32 Clang suites, and both MSVC and MinGW
-static builds with installed consumers on Windows x64 and ARM64. The release
-workflows retain the shared SDK checks, including both MinGW architectures
-and the Linux glibc and musl packages. Use disk-backed working directories
-for the multi-gigabyte native regressions.
+The primary Linux x86-64 GCC build uses `-O0 -g --coverage` so its one
+native suite also supplies the gcovr reports. Two Automake workers overlap
+independent tests while bounding memory and disk use. The Python source
+suite then uses that same shared library.
 
-GCC coverage retains `-O0 -g --coverage` to preserve source line and branch
-visibility. Its complete native suite runs with two Automake workers to overlap
-independent regression programs without unbounded concurrent memory or I/O.
-The 35-minute job budget includes the CPU-heavy transaction/signature tests,
-setup, compilation, report generation and uploads; parallelism does not shorten
-the longest individual test.
-
-The coverage job uses `debian:trixie-slim` and its packaged gcovr 7.2.
+The GCC job uses `python:3.11-slim-trixie` and Debian's packaged gcovr.
 Direct gcovr invocations process the actual large RSA execution counters without
 extra counter-limit options. Source selection and coverage requirements remain
 unchanged. XML, JSON, HTML, badges and PR/Pages consumers retain their existing
@@ -1117,12 +1111,9 @@ make check
 Use a disk-backed build directory with at least 12 GiB free. The 4 GiB
 writer regression copies transaction data densely. On an amd64 CI host,
 the workflow selects a target sysroot and runs `make check` with explicit
-QEMU through Automake's `LOG_COMPILER`. The strict GCC suites run in regular
-CI. Enable `extended_native` in a manual run to also exercise strict Clang,
-including ARMv7's time32 configuration. Both modes check the installed
-headers, static archive, ELF32 metadata and shared-library exports. Native
-32-bit SDKs are built from source. The separate Python matrix checks the
-full installed-wheel suite on both targets.
+QEMU through Automake's `LOG_COMPILER`. Both strict GCC jobs check the
+installed headers, static archive, ELF32 metadata and shared-library
+exports. Native 32-bit SDKs are built from source.
 
 ## SDK integration and language bindings
 
@@ -1237,10 +1228,10 @@ the corresponding libmpq version. Each binding has its own package metadata,
 tests and API documentation. Release packaging and registry publication are
 covered in [RELEASING.md](RELEASING.md).
 
-On Linux i686 and ARMv7, CI runs the full installed-wheel suite with matching
-CPython 3.13 interpreters. Local runtime checks cover Java 25 Zero callbacks
-and the full D suite with LDC and matching druntime and Phobos. The release
-matrix lists the downloadable architectures. DMD ARMv7 remains unqualified.
+Local Linux i686 and ARMv7 runtime checks have covered CPython 3.13 wheels,
+Java 25 Zero callbacks, and the full D suite with LDC and matching druntime
+and Phobos. The release matrix lists the downloadable architectures. DMD
+ARMv7 remains unqualified.
 
 #### Python
 
@@ -1249,6 +1240,12 @@ in `bindings/python/mpq.py`, package metadata is in
 `bindings/python/pyproject.toml`, and tests are in `bindings/python/tests`.
 Autotools does not detect or install the Python package; use the PEP 517
 backend and pip/PyPI instead.
+
+Each push and pull request runs one full Python source suite on CPython 3.11
+with the Linux x86-64 GCC shared library. The package declares Python 3.11
+as its minimum and lists support through 3.14. Release tags automatically
+validate the distribution wheels and source archive, including isolated
+installed-wheel tests.
 
 Windows release wheels bundle the prebuilt MSVC SDK's `mpq.dll` for x64 and
 ARM64 with its codec dependencies. Both macOS release lanes validate the
@@ -1271,6 +1268,7 @@ sh autogen.sh
 ./configure
 make
 LIBMPQ_LIBRARY="$PWD/src/.libs/libmpq.so" \
+    PYTHONPATH="$PWD/bindings/python" \
     python -m pytest bindings/python/tests
 ```
 
@@ -1316,7 +1314,9 @@ the low-level `org.libmpq.ffi.LibmpqNative` mapping and higher-level
 `AutoCloseable` classes such as `Archive` and `MpqFileWriter`.
 
 The platform-independent Java JAR requires a matching external native SDK.
-Supply the native library explicitly:
+Regular CI runs the full Maven suite once on JDK 22, using the same Linux
+x86-64 GCC shared library as the native and Python suites. To run the Java
+suite from a checkout, supply the built native library explicitly.
 
 ```sh
 mvn -B -f bindings/java/pom.xml test \
@@ -1335,9 +1335,10 @@ bash scripts/test-java-sdk.sh /path/to/sdk 0.9.0 x86_64
 Use `aarch64` for an ARM64 SDK. On Windows, run the launcher in Git Bash
 against an SDK with `mpq.dll` and its codec DLLs in `bin/`. The binding uses
 `System.loadLibrary("mpq")` on all supported platforms and retains the
-`org.libmpq.library` override. CI tests the shared MSVC x64 SDK and the
-extracted macOS ARM64 and Linux ARM64 glibc SDKs. Windows release validation
-also tests the extracted MSVC x64 ZIP.
+`org.libmpq.library` override. Release-tag validation uses the launcher
+with the extracted MSVC x64, macOS ARM64 and Linux ARM64 glibc SDKs. The
+Java release build runs the full Maven suite during `package` and then
+validates the extracted runtime JAR with both loader modes.
 
 The binding also supports the normal system loader path:
 
