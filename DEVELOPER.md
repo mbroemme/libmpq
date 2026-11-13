@@ -1286,8 +1286,12 @@ import libmpq.mpq;
 ```
 
 Autotools includes the D sources in source distributions but does not install
-them. DUB/code.dlang.org owns D package installation. From a checkout, build
-the native library and run the tests with DMD or LDC:
+them. DUB/code.dlang.org owns D package installation. Regular CI runs the
+full DUB suite with DMD on Linux x86-64 and LDC on native Linux ARM64.
+Both runs use the shared library from their existing GCC jobs. Release tags
+independently validate the D source package and compiler-specific binary
+wrappers, including extracted-package consumers. From a checkout, build the
+native library and run the tests with DMD or LDC.
 
 ```sh
 sh autogen.sh

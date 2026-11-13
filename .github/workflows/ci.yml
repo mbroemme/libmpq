@@ -313,11 +313,13 @@ jobs:
             gcovr \
             jq \
             git \
+            gpg \
             libbz2-dev \
             liblzma-dev \
             libtool \
             maven \
             pkg-config \
+            xz-utils \
             zlib1g-dev
 
       - name: Check out repository
@@ -419,6 +421,19 @@ jobs:
           mvn -f bindings/java/pom.xml test \
             -Dorg.libmpq.library="${GITHUB_WORKSPACE}/src/.libs/libmpq.so" \
             -Dlibmpq.sourceDir="${GITHUB_WORKSPACE}"
+
+      - name: Set up DMD
+        uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: dmd
+
+      - name: Test D bindings with DMD
+        env:
+          LIBRARY_PATH: ${{ github.workspace }}/src/.libs
+          LD_LIBRARY_PATH: ${{ github.workspace }}/src/.libs
+        run: |
+          set -euxo pipefail
+          dub run --config=tests --compiler=dmd
 
   linux-ilp32:
     name: Linux ILP32 (${{ matrix.architecture }})
@@ -630,6 +645,20 @@ jobs:
               make check
             '
 
+      - name: Set up LDC
+        uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ldc
+
+      - name: Test D bindings with native ARM64 LDC
+        env:
+          LIBRARY_PATH: ${{ github.workspace }}/src/.libs
+          LD_LIBRARY_PATH: ${{ github.workspace }}/src/.libs
+        run: |
+          set -euxo pipefail
+          dub run --config=tests --compiler=ldc2
+          LC_ALL=C readelf -h libmpq | grep -E 'Machine:[[:space:]]+AArch64$'
+
   native-macos:
     name: Native macOS ${{ matrix.architecture }} (Apple Clang)
     needs: lint
@@ -677,10 +706,3 @@ jobs:
           ./configure --prefix=/usr --enable-shared --disable-static
           /usr/bin/make -j"$(sysctl -n hw.ncpu)" V=1
           /usr/bin/make check
-
-  d-packages:
-    name: Validate D packages
-    uses: ./.github/workflows/release-d.yml
-    with:
-      mode: validate
-      assemble_release: false
