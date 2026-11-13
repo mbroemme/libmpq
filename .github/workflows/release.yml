@@ -315,39 +315,43 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
+          packages=(
+            "release/source/libmpq-${RELEASE_VERSION}.tar.gz"
+            "release/source/libmpq-${RELEASE_VERSION}.tar.bz2"
+            "release/native/libmpq-${RELEASE_VERSION}-linux-glibc-x86_64.tar.gz"
+            "release/native/libmpq-${RELEASE_VERSION}-linux-glibc-aarch64.tar.gz"
+            "release/native/libmpq-${RELEASE_VERSION}-linux-musl-x86_64.tar.gz"
+            "release/native/libmpq-${RELEASE_VERSION}-linux-musl-aarch64.tar.gz"
+            "release/native/libmpq-${RELEASE_VERSION}-macos-arm64.tar.gz"
+            "release/native/libmpq-${RELEASE_VERSION}-macos-x86_64.tar.gz"
+            "release/windows-msvc/libmpq-${RELEASE_VERSION}-windows-msvc-x64.zip"
+            "release/windows-msvc/libmpq-${RELEASE_VERSION}-windows-msvc-arm64.zip"
+            "release/windows-mingw/libmpq-${RELEASE_VERSION}-windows-mingw-x86_64.zip"
+            "release/windows-mingw/libmpq-${RELEASE_VERSION}-windows-mingw-aarch64.zip"
+            "release/python/libmpq-python-${RELEASE_VERSION}.zip"
+            "release/java/target/libmpq-java-${RELEASE_VERSION}.zip"
+            "release/d/libmpq-d-${RELEASE_VERSION}.zip"
+          )
+          printf '%s\0' "${packages[@]}" | LC_ALL=C sort -z > expected-inputs
+
+          # Ignore nonempty parent directories, but reject unexpected empty directories and files.
+          find release -mindepth 1 \( ! -type d -o -empty \) \
+            ! \( -type f -path release/java/pom.xml \) -print0 |
+            LC_ALL=C sort -z > actual-inputs
+          if ! cmp -s expected-inputs actual-inputs; then
+            echo 'Downloaded release paths do not match the package allowlist.' >&2
+            exit 1
+          fi
+
           mkdir -p dist
-          : > expected-assets
-          collect() {
-            local directory="$1" name="$2"
-            local -a matches
-            mapfile -t matches < <(find "${directory}" -type f -name "${name}" -print)
-            if ((${#matches[@]} != 1)); then
-              echo "Expected exactly one ${name} in ${directory}." >&2
+          for package in "${packages[@]}"; do
+            if [[ ! -f "${package}" || -L "${package}" || ! -s "${package}" ]]; then
+              echo "Expected a nonempty regular package file: ${package}" >&2
               exit 1
             fi
-            test -s "${matches[0]}"
-            cp "${matches[0]}" "dist/${name}"
-            printf '%s\n' "${name}" >> expected-assets
-          }
-          collect release/source "libmpq-${RELEASE_VERSION}.tar.gz"
-          collect release/source "libmpq-${RELEASE_VERSION}.tar.bz2"
-          collect release/python "libmpq-python-${RELEASE_VERSION}.zip"
-          collect release/java "libmpq-java-${RELEASE_VERSION}.zip"
-          collect release/d "libmpq-d-${RELEASE_VERSION}.zip"
-          test -s "release/native/libmpq-${RELEASE_VERSION}-linux-glibc-x86_64.tar.gz"
-          test -s "release/native/libmpq-${RELEASE_VERSION}-linux-glibc-aarch64.tar.gz"
-          test -s "release/native/libmpq-${RELEASE_VERSION}-linux-musl-x86_64.tar.gz"
-          test -s "release/native/libmpq-${RELEASE_VERSION}-linux-musl-aarch64.tar.gz"
-          test -s "release/native/libmpq-${RELEASE_VERSION}-macos-arm64.tar.gz"
-          test -s "release/native/libmpq-${RELEASE_VERSION}-macos-x86_64.tar.gz"
-          while IFS= read -r package; do
-            collect release/native "${package}"
-          done < <(find release/native -type f -name "libmpq-${RELEASE_VERSION}-*.tar.gz" -printf '%f\n' | LC_ALL=C sort -u)
-          collect release/windows-msvc "libmpq-${RELEASE_VERSION}-windows-msvc-x64.zip"
-          collect release/windows-msvc "libmpq-${RELEASE_VERSION}-windows-msvc-arm64.zip"
-          collect release/windows-mingw "libmpq-${RELEASE_VERSION}-windows-mingw-x86_64.zip"
-          collect release/windows-mingw "libmpq-${RELEASE_VERSION}-windows-mingw-aarch64.zip"
-          LC_ALL=C sort -o expected-assets expected-assets
+            cp "${package}" "dist/${package##*/}"
+          done
+          printf '%s\n' "${packages[@]##*/}" | LC_ALL=C sort > expected-assets
           cd dist
           find . -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort > ../actual-assets
           diff -u ../expected-assets ../actual-assets
