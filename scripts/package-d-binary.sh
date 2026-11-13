@@ -373,7 +373,7 @@ fi
 if [[ "${LIBMPQ_D_OS}" == linux ]]; then
 	DUB_HOME="${consumer_dub_home}" \
 		LD_LIBRARY_PATH="${extracted}/${package_name}/lib" \
-		dub run --root="${consumer}" --compiler="${LIBMPQ_D_DUB_COMPILER}"
+		dub build --root="${consumer}" --compiler="${LIBMPQ_D_DUB_COMPILER}"
 	consumer_binary="${consumer}/libmpq-consumer"
 	test -x "${consumer_binary}"
 	validate_architecture "${consumer_binary}"
