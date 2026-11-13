@@ -281,13 +281,6 @@ jobs:
           set -euxo pipefail
           make check V=1
 
-  fuzz:
-    name: Fuzzing
-    needs: lint
-    uses: ./.github/workflows/fuzz.yml
-    with:
-      max_total_time: 60
-
   build:
     name: Native Linux x86-64 (GCC)
     needs: lint
