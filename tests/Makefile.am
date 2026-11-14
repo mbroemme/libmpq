@@ -326,8 +326,10 @@ EXTRA_DIST = \
 	fixtures/mpq-v1-features.w3x \
 	fixtures/mpq-v2-features.mpq \
 	fixtures/mpq-v2-features-patch.mpq \
-	fixtures/mpq-v2-features.mpqe
-
-EXTRA_DIST += fixtures/mpq-v3-features.mpq fixtures/mpq-v3-features.mpqe fixtures/mpq-v3-features-patch.mpq
-
-EXTRA_DIST += fixtures/mpq-v4-features.mpq fixtures/mpq-v4-features.mpqe fixtures/mpq-v4-features-patch.mpq
+	fixtures/mpq-v2-features.mpqe \
+	fixtures/mpq-v3-features.mpq \
+	fixtures/mpq-v3-features.mpqe \
+	fixtures/mpq-v3-features-patch.mpq \
+	fixtures/mpq-v4-features.mpq \
+	fixtures/mpq-v4-features.mpqe \
+	fixtures/mpq-v4-features-patch.mpq

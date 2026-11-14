@@ -301,6 +301,12 @@ encryption effect, and the writer ignores sector CRC requests for empty,
 single-unit or uncompressed storage. Dedicated physical patch APIs handle
 patch members and delete markers separately.
 
+`LIBMPQ_FILE_FLAG_KEY` (`0x00020000`) selects offset- and size-adjusted
+encryption-key derivation. It modifies `ENCRYPTED`; it does not enable encryption
+on its own. The effective key is `(basename_key + uint32(MPQ-relative offset))
+XOR uint32(uncompressed size)`, with modulo-2^32 arithmetic. Embedded prefixes
+are excluded from this offset. The flag provides no integrity guarantee.
+
 ### Writer compression policy
 
 For MPQ v2+ creation, `LIBMPQ_COMPRESSION_LZMA` is an exclusive API selector,
@@ -328,6 +334,31 @@ policies reject SPARSE combined with WAVE ADPCM: lossy ADPCM cannot preserve
 SPARSE control bytes. If skipped stages leave a method disallowed by the
 selected policy, the original sector is stored raw. The first WAVE sector
 stays lossless (zlib for STANDARD v2).
+
+### Caller-owned archive output
+
+`libmpq__archive_create_io()` shares the archive and member encoders with
+path output. An optional descriptor tracks the output cursor and maximum
+successful write end. Read-back for v4 RAW MD5 and signing observes the
+sink directly. V4 requires a read callback at creation. Older generations
+may omit it for unsigned writing. The optional flush runs after metadata
+and signatures. Callbacks transfer exact ranges and supply zero-filled
+gaps without requiring the writer to pad sparse storage.
+
+The caller retains the initially empty sink and callback context through
+consuming close. A terminal error prevents further output callbacks.
+The library leaves disposal, persistence and publication to the caller.
+Sectorized writes retain existing bounded input buffers. Oversized SINGLE
+still buffers the complete input unit and any codec workspace.
+
+`libmpq__archive_create_mpqe_io()` uses an owner-only plaintext stage in the
+system temporary directory. The existing MPQE transform streams its encrypted
+bytes to the caller's sink during consuming close in batches of up to 16 KiB.
+The transform still uses 64-byte cipher blocks and writes only the actual
+transport bytes. RAW MD5 and permitted signing read from the private stage. The final
+sink needs only positioned writes and can optionally flush after successful
+stage cleanup. This output has the same non-atomic publication contract as
+`libmpq__archive_create_io()`.
 
 ## Advanced API workflows
 
@@ -418,6 +449,61 @@ its stored sector checksum. Lossy ADPCM decoding cannot reproduce the writer's
 source bytes byte-for-byte, so automatic file-level CRC32/MD5 comparison is
 intentionally skipped. Explicit `libmpq__file_verify()` requests still compare
 the decoded output and may report a mismatch; sector checks are unaffected.
+
+Availability-aware member verification uses `libmpq__file_verify_ex()` with
+separate checked, unavailable and mismatch masks. On success their coverage
+union equals the request; partial sector coverage can set both coverage
+masks. Complete matching coverage requires checked equal to the request and
+both unavailable and mismatches zero. Operational errors clear all outputs.
+The legacy verifier retains its mismatch-only contract and skipped checks.
+
+The optional filename is borrowed decryption-key context for the selected
+canonical number, with no lookup fallback or parent key-cache changes. Exact
+selection remains a separate identity lookup. Missing logical attributes and
+inapplicable checks are unavailable; malformed metadata, read and decode errors
+remain errors. Nonzero v4 raw chunk size declares expected trailing RAW MD5
+arrays for eligible nonempty members. Missing, truncated or overlapping required
+arrays are errors, regardless of table order or adjacent storage. A matching
+unkeyed digest establishes neither provenance nor cryptographic authenticity.
+Circular zero CRC placeholders and logical ADPCM checks lacking proven
+decoded-byte provenance are unavailable. Ordinary CRC32 zero remains
+valid. Raw checks do not need plaintext keys. Member checks establish neither
+signature trust nor complete archive integrity. Archive metadata verification
+remains a separate phase.
+
+Extended RAW verification lazily copies live payload and metadata ranges into
+an immutable private index with sorted starts and prefix maximum ends. It costs
+O(N log N) preprocessing, O(N) memory and O(log N) per overlap query. Clones
+share completed indexes using the existing externally serialized lifetime
+contract; the last close frees them. Clones created before preprocessing can
+build their own index once. Named verification prepares the parent index
+before opening its key-isolated clone. Failed construction remains retryable.
+Index construction does not certify overlapping storage: queries still reject
+conflicts. The legacy verifier neither constructs nor queries this index.
+
+### Archive metadata verification
+
+Archive metadata verification uses `libmpq__archive_verify_ex()` and the eight
+`LIBMPQ_VERIFY_METADATA_*` bits, combined by `LIBMPQ_VERIFY_METADATA_ALL`.
+It performs fresh bounded reads of stored header/table representations against
+opened descriptors, checking both object digests and stored reference fields.
+Present empty tables with supplied digests compare MD5(empty). Missing optional
+metadata is unavailable; required nonzero-v4 HET/BET RAW arrays that are missing,
+truncated or overlapping are errors. Changed reference fields mismatch rather
+than becoming unavailable. No newly changed geometry is adopted.
+
+The result masks partition requested checks into checked and unavailable, with
+mismatches a subset of checked. Complete matching coverage requires successful
+status, checked equal to the request, no unavailable checks and no mismatches.
+Errors clear all outputs. Zero flags perform no comparisons. Existing member
+`VERIFY_ALL` remains unchanged and is rejected by archive metadata verification.
+
+The source must remain stable; source reads do not promise uncached filesystem
+access or an atomic snapshot of concurrent writes. Embedded offsets and MPQE
+logical reads use existing source handling. Unkeyed MD5 establishes neither
+provenance nor authenticity, MPQE transport authenticity or whole-archive
+integrity. `archive_verify()` remains public-key signature verification;
+`file_verify_ex()` remains member verification.
 
 ### Archive signatures
 
@@ -590,6 +676,13 @@ A true no-op still validates input but changes no bytes, path, signatures, dirty
 state or knowledge. Callers may need to supply the same names again. This is not
 a separate registration lifecycle and does not change ordinary clean commits
 or the ordinary named-update collector's distinct-alias restrictions.
+
+Transaction filename knowledge consists of owned spellings, not cached file
+numbers. Before adopting a reconstruction, live spellings are resolved against
+the candidate and copied into replacement provenance. Failed preparation leaves
+the preceding stage and provenance intact. Removed spellings are discarded;
+compatible live aliases remain subject to the existing encryption-provenance
+checks. Validated no-ops neither learn names nor rebuild a stage.
 
 When removing a weak signature, compaction edits `(listfile)` only if it lists
 that signature. Other lines and separators remain unchanged. Changed listfiles
@@ -1360,96 +1453,3 @@ LD_LIBRARY_PATH="$PWD/src/.libs" \
 See [bindings/java/README.md](bindings/java/README.md) and
 [bindings/java/pom.xml](bindings/java/pom.xml) for Maven configuration,
 project metadata, and API information.
-
-Availability-aware member verification uses `libmpq__file_verify_ex()` with
-separate checked, unavailable and mismatch masks. On success their coverage
-union equals the request; partial sector coverage can set both coverage
-masks. Complete matching coverage requires checked equal to the request and
-both unavailable and mismatches zero. Operational errors clear all outputs.
-The legacy verifier retains its mismatch-only contract and skipped checks.
-
-The optional filename is borrowed decryption-key context for the selected
-canonical number, with no lookup fallback or parent key-cache changes. Exact
-selection remains a separate identity lookup. Missing logical attributes and
-inapplicable checks are unavailable; malformed metadata, read and decode errors
-remain errors. Nonzero v4 raw chunk size declares expected trailing RAW MD5
-arrays for eligible nonempty members. Missing, truncated or overlapping required
-arrays are errors, regardless of table order or adjacent storage. A matching
-unkeyed digest establishes neither provenance nor cryptographic authenticity.
-Circular zero CRC placeholders and logical ADPCM checks lacking proven
-decoded-byte provenance are unavailable. Ordinary CRC32 zero remains
-valid. Raw checks do not need plaintext keys. Member checks establish neither
-signature trust nor complete archive integrity. Archive metadata verification
-remains a separate phase.
-
-Extended RAW verification lazily copies live payload and metadata ranges into
-an immutable private index with sorted starts and prefix maximum ends. It costs
-O(N log N) preprocessing, O(N) memory and O(log N) per overlap query. Clones
-share completed indexes using the existing externally serialized lifetime
-contract; the last close frees them. Clones created before preprocessing can
-build their own index once. Named verification prepares the parent index
-before opening its key-isolated clone. Failed construction remains retryable.
-Index construction does not certify overlapping storage: queries still reject
-conflicts. The legacy verifier neither constructs nor queries this index.
-
-### Archive metadata verification
-
-Archive metadata verification uses `libmpq__archive_verify_ex()` and the eight
-`LIBMPQ_VERIFY_METADATA_*` bits, combined by `LIBMPQ_VERIFY_METADATA_ALL`.
-It performs fresh bounded reads of stored header/table representations against
-opened descriptors, checking both object digests and stored reference fields.
-Present empty tables with supplied digests compare MD5(empty). Missing optional
-metadata is unavailable; required nonzero-v4 HET/BET RAW arrays that are missing,
-truncated or overlapping are errors. Changed reference fields mismatch rather
-than becoming unavailable. No newly changed geometry is adopted.
-
-The result masks partition requested checks into checked and unavailable, with
-mismatches a subset of checked. Complete matching coverage requires successful
-status, checked equal to the request, no unavailable checks and no mismatches.
-Errors clear all outputs. Zero flags perform no comparisons. Existing member
-`VERIFY_ALL` remains unchanged and is rejected by archive metadata verification.
-
-The source must remain stable; source reads do not promise uncached filesystem
-access or an atomic snapshot of concurrent writes. Embedded offsets and MPQE
-logical reads use existing source handling. Unkeyed MD5 establishes neither
-provenance nor authenticity, MPQE transport authenticity or whole-archive
-integrity. `archive_verify()` remains public-key signature verification;
-`file_verify_ex()` remains member verification.
-
-`LIBMPQ_FILE_FLAG_KEY` (`0x00020000`) selects offset- and size-adjusted
-encryption-key derivation. It modifies `ENCRYPTED`; it does not enable encryption
-on its own. The effective key is `(basename_key + uint32(MPQ-relative offset))
-XOR uint32(uncompressed size)`, with modulo-2^32 arithmetic. Embedded prefixes
-are excluded from this offset. The flag provides no integrity guarantee.
-
-Transaction filename knowledge consists of owned spellings, not cached file
-numbers. Before adopting a reconstruction, live spellings are resolved against
-the candidate and copied into replacement provenance. Failed preparation leaves
-the preceding stage and provenance intact. Removed spellings are discarded;
-compatible live aliases remain subject to the existing encryption-provenance
-checks. Validated no-ops neither learn names nor rebuild a stage.
-
-### Caller-owned archive output
-
-`libmpq__archive_create_io()` shares the archive and member encoders with
-path output. An optional descriptor tracks the output cursor and maximum
-successful write end. Read-back for v4 RAW MD5 and signing observes the
-sink directly. V4 requires a read callback at creation. Older generations
-may omit it for unsigned writing. The optional flush runs after metadata
-and signatures. Callbacks transfer exact ranges and supply zero-filled
-gaps without requiring the writer to pad sparse storage.
-
-The caller retains the initially empty sink and callback context through
-consuming close. A terminal error prevents further output callbacks.
-The library leaves disposal, persistence and publication to the caller.
-Sectorized writes retain existing bounded input buffers. Oversized SINGLE
-still buffers the complete input unit and any codec workspace.
-
-`libmpq__archive_create_mpqe_io()` uses an owner-only plaintext stage in the
-system temporary directory. The existing MPQE transform streams its encrypted
-bytes to the caller's sink during consuming close in batches of up to 16 KiB.
-The transform still uses 64-byte cipher blocks and writes only the actual
-transport bytes. RAW MD5 and permitted signing read from the private stage. The final
-sink needs only positioned writes and can optionally flush after successful
-stage cleanup. This output has the same non-atomic publication contract as
-`libmpq__archive_create_io()`.
