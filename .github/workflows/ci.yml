@@ -622,11 +622,6 @@ jobs:
               exit 1
               ;;
           esac
-          available="$(df -Pk "${temporary}" | awk 'NR == 2 { print $4 }')"
-          if (( available < 12 * 1024 * 1024 )); then
-            printf 'The native suites require 12 GiB of free disk space.\n' >&2
-            exit 1
-          fi
 
           dpkg --add-architecture "${arch}"
           apt-get update
