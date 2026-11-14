@@ -309,11 +309,9 @@ jobs:
             gcovr \
             jq \
             git \
-            gpg \
             libbz2-dev \
             liblzma-dev \
             libtool \
-            maven \
             pkg-config \
             xz-utils \
             zlib1g-dev
@@ -335,7 +333,7 @@ jobs:
         env:
           CC: gcc
           CFLAGS: -O0 -g --coverage
-          # Keep the coverage runtime private in the library used by pytest.
+          # Keep the coverage runtime private in the shared library.
           LDFLAGS: --coverage -Wl,--exclude-libs,libgcov.a
         run: |
           set -euxo pipefail
@@ -410,14 +408,97 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      - name: Archive the x86-64 shared library
+        run: |
+          set -euxo pipefail
+          cd src/.libs
+          tar -cf "${RUNNER_TEMP}/libmpq-linux-x64.tar" libmpq.so*
+
+      - name: Upload the x86-64 shared library
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-linux-x64
+          path: ${{ runner.temp }}/libmpq-linux-x64.tar
+          if-no-files-found: error
+          retention-days: 7
+
+  binding-python:
+    name: Python 3.11 (pytest)
+    needs: native-linux-x64
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: python:3.11-slim-trixie
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install runtime dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates git libbz2-1.0 liblzma5 zlib1g
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Download the x86-64 shared library
+        uses: actions/download-artifact@v7
+        with:
+          name: libmpq-linux-x64
+          path: ${{ runner.temp }}
+
+      - name: Extract the x86-64 shared library
+        run: |
+          mkdir -p src/.libs
+          tar -xf "${RUNNER_TEMP}/libmpq-linux-x64.tar" -C src/.libs
+
       - name: Test Python bindings against the GCC build
         env:
           LIBMPQ_LIBRARY: ${{ github.workspace }}/src/.libs/libmpq.so
           PYTHONPATH: ${{ github.workspace }}/bindings/python
+          # The shared build is instrumented. Prevent binding runs from writing gcov data.
+          GCOV_PREFIX: /dev/null
+          GCOV_ERROR_FILE: /dev/null
         run: |
           set -euxo pipefail
           python -m pip install pytest
           python -m pytest bindings/python/tests
+
+  binding-java:
+    name: Java 22 (Maven/JUnit)
+    needs: native-linux-x64
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: python:3.11-slim-trixie
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install runtime dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates git libbz2-1.0 liblzma5 maven zlib1g
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Download the x86-64 shared library
+        uses: actions/download-artifact@v7
+        with:
+          name: libmpq-linux-x64
+          path: ${{ runner.temp }}
+
+      - name: Extract the x86-64 shared library
+        run: |
+          mkdir -p src/.libs
+          tar -xf "${RUNNER_TEMP}/libmpq-linux-x64.tar" -C src/.libs
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -428,11 +509,47 @@ jobs:
           cache-dependency-path: bindings/java/pom.xml
 
       - name: Test Java bindings against the GCC build
+        env:
+          GCOV_PREFIX: /dev/null
+          GCOV_ERROR_FILE: /dev/null
         run: |
           set -euxo pipefail
           mvn -f bindings/java/pom.xml test \
             -Dorg.libmpq.library="${GITHUB_WORKSPACE}/src/.libs/libmpq.so" \
             -Dlibmpq.sourceDir="${GITHUB_WORKSPACE}"
+
+  binding-d-dmd:
+    name: D (DMD, Linux x86-64)
+    needs: native-linux-x64
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: python:3.11-slim-trixie
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install compiler and runtime dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential ca-certificates git gpg libbz2-1.0 liblzma5 xz-utils zlib1g
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Download the x86-64 shared library
+        uses: actions/download-artifact@v7
+        with:
+          name: libmpq-linux-x64
+          path: ${{ runner.temp }}
+
+      - name: Extract the x86-64 shared library
+        run: |
+          mkdir -p src/.libs
+          tar -xf "${RUNNER_TEMP}/libmpq-linux-x64.tar" -C src/.libs
 
       - name: Set up DMD
         uses: dlang-community/setup-dlang@v2
@@ -443,6 +560,8 @@ jobs:
         env:
           LIBRARY_PATH: ${{ github.workspace }}/src/.libs
           LD_LIBRARY_PATH: ${{ github.workspace }}/src/.libs
+          GCOV_PREFIX: /dev/null
+          GCOV_ERROR_FILE: /dev/null
         run: |
           set -euxo pipefail
           dub run --config=tests --compiler=dmd
@@ -656,6 +775,48 @@ jobs:
               make -j"$(getconf _NPROCESSORS_ONLN)" V=1
               make check
             '
+
+      - name: Archive the ARM64 shared library
+        run: |
+          set -euxo pipefail
+          cd src/.libs
+          tar -cf "${RUNNER_TEMP}/libmpq-linux-arm64.tar" libmpq.so*
+
+      - name: Upload the ARM64 shared library
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpq-linux-arm64
+          path: ${{ runner.temp }}/libmpq-linux-arm64.tar
+          if-no-files-found: error
+          retention-days: 7
+
+  binding-d-ldc:
+    name: D (LDC, Linux ARM64)
+    needs: native-linux-arm64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Download the ARM64 shared library
+        uses: actions/download-artifact@v7
+        with:
+          name: libmpq-linux-arm64
+          path: ${{ runner.temp }}
+
+      - name: Extract the ARM64 shared library
+        run: |
+          set -euxo pipefail
+          mkdir -p src/.libs
+          tar -xf "${RUNNER_TEMP}/libmpq-linux-arm64.tar" -C src/.libs
+          LC_ALL=C readelf -h src/.libs/libmpq.so | grep -E 'Machine:[[:space:]]+AArch64$'
 
       - name: Set up LDC
         uses: dlang-community/setup-dlang@v2
