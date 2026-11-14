@@ -141,9 +141,9 @@ jobs:
               -timeout=5 \
               "${RUNNER_TEMP}/libmpq-fuzz-corpus/${corpus}" 2>&1 | \
               tee "${artifact_root}/${corpus}.log"
-            status="${PIPESTATUS[0]}"
+            pipeline_status=("${PIPESTATUS[@]}")
             set -e
-            if ((status != 0)); then
+            if ((pipeline_status[0] != 0)); then
               while IFS= read -r -d '' crash_input; do
                 output="${artifact_root}/minimized/${corpus}/$(basename "${crash_input}")"
                 mkdir -p "$(dirname "${output}")"
@@ -154,7 +154,11 @@ jobs:
                 find "${artifact_root}/${corpus}" -maxdepth 1 -type f \
                   \( -name 'crash-*' -o -name 'leak-*' -o -name 'timeout-*' \) -print0
               )
-              exit "${status}"
+              exit "${pipeline_status[0]}"
+            fi
+            if ((pipeline_status[1] != 0)); then
+              printf 'Fuzzing log for %s failed (tee exited %s)\n' "${corpus}" "${pipeline_status[1]}" >&2
+              exit "${pipeline_status[1]}"
             fi
           done
 
