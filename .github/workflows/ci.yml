@@ -54,7 +54,7 @@ jobs:
             vs_component: Microsoft.VisualStudio.Component.VC.Tools.ARM64
             machine: 'AA64'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install native dependencies
         shell: pwsh
         run: |
@@ -505,8 +505,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '22'
-          cache: maven
-          cache-dependency-path: bindings/java/pom.xml
 
       - name: Test Java bindings against the GCC build
         env:
