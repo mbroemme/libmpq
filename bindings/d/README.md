@@ -138,7 +138,7 @@ KEY adjustments, generated listfile defaults and physical patch defaults remain.
 
 ## Archive creation
 
-Creation supports MPQ v1 through v4. `ArchiveCreateOptions.version_` uses
+Creation supports MPQ v1–v4. `ArchiveCreateOptions.version_` uses
 `ARCHIVE_VERSION_*` selectors (0 through 3):
 
 ```d
@@ -161,8 +161,8 @@ authentication bytes. It finalizes a private plaintext temporary file before
 atomically replacing the destination. Use `Update.beginMpqe` for changes to an
 existing MPQE archive. Crash cleanup is best effort. `Update.addData` and
 `addPath` add absent staged names, with optional `FileOptions`; duplicates
-fail and replacement remains existing-only. V3/v4 updates can retain unrelated
-unnamed members with sufficient stored identities; see the
+fail and replacement remains existing-only. MPQ v3 and v4 updates can retain
+unrelated unnamed members with sufficient stored identities; see the
 [transaction limits](../../DEVELOPER.md#transactional-modification).
 Remove-then-add uses the same ordinary or MPQE transaction.
 
@@ -248,8 +248,8 @@ Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
 `ATTRIBUTE_MD5`, and `ATTRIBUTE_PATCH_BIT` in the `attributes` field of
 `ArchiveCreateOptions`. Zero disables generation; any nonzero combination
 creates one `(attributes)` file and consumes one reserved slot. Unknown bits
-are rejected. Creation flags remain separate. These options work for both MPQ
-v1, v2, v3, and v4, including MPQE creation. Payload version 100 is
+are rejected. Creation flags remain separate. These options work for MPQ
+archives, including MPQE creation. Payload version 100 is
 independent of the archive format version.
 
 Per-file flags distinguish unavailable fields from zero. Complete lossless
@@ -370,7 +370,7 @@ discards it, and destruction of an unfinished patch aborts automatically.
 Omitting `FileOptions` passes native NULL and uses native patch defaults;
 the explicit-options overload configures patch-member storage. Patch rename is not supported; explicit locale/platform must match the base
 member. Signing configures the active patch without consuming it; an
-ordinary MPQ v1/v2/v3 patch may configure weak and strong signatures
+ordinary MPQ v1, v2, or v3 patch may configure weak and strong signatures
 separately; its MPQE variant supports weak signing only. V4 patches default to raw-chunk MD5, preventing weak signing.
 Call `Patch.setRawChunkSize(0)` before signing to allow weak signatures on
 plain or MPQE output. MPQE strong signing remains unsupported. After
@@ -663,7 +663,7 @@ Unsupported or ambiguous metadata is rejected. A rejected operation preserves
 the previous valid stage; commit/abort consume the transaction. Exact rebuilds
 preserve discoverable embedded prefixes and the original MPQ origin, reject
 unsupported trailers, and preserve source raw-chunk policy. Ordinary legacy
-v1/v2 updates retain their existing unrelated-suffix preservation.
+v1 and v2 updates retain their existing unrelated-suffix preservation.
 
 `Update.changeIdentity(name, locale, platform, newLocale, newPlatform)` uses
 `ushort` values: `locale` and `platform` select the old identity, while

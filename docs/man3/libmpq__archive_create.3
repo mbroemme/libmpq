@@ -26,7 +26,7 @@ libmpq__archive_create \- create a seekable MPQ archive
 .BI ");"
 .fi
 .SH DESCRIPTION
-Creates an MPQ v1, v2, v3, or v4 archive at \fImpq_filename\fP. On success,
+Creates an MPQ archive at \fImpq_filename\fP. On success,
 \fI*mpq_archive\fP is a caller-owned writer handle. Add members using the
 streaming writer or archive-add convenience functions, then finalize the
 archive with \fBlibmpq__archive_close\fP(). Plain creation opens or truncates the
@@ -57,7 +57,7 @@ LIBMPQ_ATTRIBUTE_FILETIME, LIBMPQ_ATTRIBUTE_MD5, and
 LIBMPQ_ATTRIBUTE_PATCH_BIT. Zero disables generation; any nonzero
 combination creates one (attributes) file and consumes one reserved slot.
 Unknown attribute bits are rejected. Version-100 attributes work in
-MPQ v1, v2, v3, and v4, independently of the archive format version.
+MPQ archives independently of the archive format version.
 .PP
 Capacity includes the attributes entry and listfile if enabled; the internal
 attributes name is reserved. Finalization writes the listfile, attributes,

@@ -98,7 +98,7 @@ the bases and MPQE variants before the legacy patch archives:
 ./test-patch-reader --refresh
 ```
 
-The first command recreates v1/v2 MPQs and MPQE variants. It reconstructs
+The first command recreates v1 and v2 MPQs and MPQE variants. It reconstructs
 original WAVE samples from the shared formula, uses EXTENDED policy and fixed
 timestamps, and signs through the public writer before MPQE
 encryption. Private attributes serialization preserves explicit sector-CRC
@@ -391,8 +391,9 @@ Set `LIBMPQ_LIBRARY` to the freshly built library when it is not installed.
 
 ### Synthetic text and storage methods
 
-The following members are shared by the v1/v2 bases and retained by the
-independent v3 base recipe. The v2/v3-only LZMA member is described with v2.
+The following members are shared by the v1 and v2 bases and retained by the
+independent v3 base recipe. The LZMA member, present only in v2 and v3, is
+described with v2.
 
 Compressed lossless text members are deliberately repeated and compressible,
 so the advertised codec is stored instead of raw fallback:
@@ -457,7 +458,8 @@ Source sizes are 14044 and 28044 bytes, spanning four and seven sectors.
 The first sector uses zlib (`0x02`) and is byte-exact, including the 44-byte
 header. Later sectors, including the partial last sector, use Huffman +
 mono ADPCM (`0x41`) or stereo ADPCM (`0x81`). These selections are allowed
-by STANDARD in v1/v2; the recipes use EXTENDED for the Huffman/chain text cases.
+by STANDARD in v1 and v2; the recipes use EXTENDED for the Huffman/chain
+text cases.
 
 Source samples match `make_wave(7000, channels)` in `tests/test-mpq-wave.c`:
 for frame `i`, `phase = (i * 17) % 4096` and
@@ -485,7 +487,7 @@ rather than libmpq's signer. Matching disposable key material also exercises
 strong-signature creation. These are not Blizzard or product-specific keys;
 never use test private keys for real signing.
 
-Standalone v1/v2 weak signatures are recreated through the public writer;
+Standalone v1 and v2 weak signatures are recreated through the public writer;
 the independent v3 base recipe recomputes its weak signature. Version-local
 descriptions identify the strong-trailer variant or its absence. All checked-in
 patch fixtures are unsigned.
@@ -518,8 +520,8 @@ these do not require additional committed binaries.
 ### Common preparation
 
 Use a disposable source copy that already contains the canonical fixtures.
-The v1/v2 refresh recipes read existing lossless payloads and storage options;
-they are not bootstrap generators for an empty fixture directory.
+The v1 and v2 refresh recipes read existing lossless payloads and storage
+options; they are not bootstrap generators for an empty fixture directory.
 Build with the existing zlib, bzip2, and liblzma prerequisites. No StormLib is
 required. For an Autotools build in that copy:
 

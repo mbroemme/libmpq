@@ -59,7 +59,7 @@ Commit and abort consume the update handle, including on error.
 .PP
 Discoverable embedded archives retain all prefix bytes and the original MPQ
 origin, including validated user-data relationships. Named reconstruction rejects
-unrelated trailers; ordinary legacy v1/v2 operations retain their suffix policy.
+unrelated trailers; ordinary legacy v1 and v2 operations retain their suffix policy.
 See libmpq__update_begin(3) for discovery and temporary-storage requirements.
 .SH RETURN VALUE
 Returns 0 on success or a negative libmpq error.

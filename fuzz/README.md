@@ -38,11 +38,11 @@ output allocations are capped at 64 KiB unless stated otherwise.
 | Archive readers | `fuzz-archive-open`, `fuzz-mpqe-open` | Raw MPQ/MPQE bytes; direct/embedded opening and authenticated MPQE chunk decoding | 1 MiB |
 | Encrypted archives | `fuzz-encrypted-archive` | Mutations of a valid encrypted archive, including hash/block tables and known-key reads | 1 MiB |
 | File API | `fuzz-file-read` | Names/index selectors against a generated valid archive; names capped at 255 bytes | 64 KiB |
-| Writer API | `fuzz-writer-roundtrip` | Three selector bytes for archive options, file storage and sector size, then payload; creates/reopens/verifies v1/v2/v3/v4 MPQ or MPQE | 64 KiB |
+| Writer API | `fuzz-writer-roundtrip` | Three selector bytes for archive options, file storage and sector size, then payload; creates/reopens/verifies MPQ v1–v4 archives with or without MPQE wrapping | 64 KiB |
 | Attributes | `fuzz-attributes` | Two count/self selector bytes, then serialized attributes; at most 32 rows | 4 KiB |
 | Extended tables | `fuzz-ext-table` | Decoded HET/BET wire bytes, bypassing encryption; envelope/geometry, bounded probing, records, flags, NameHash2 and canonical entries | 1 MiB |
 | Patches | `fuzz-patch-apply` | `uint16_t` base-length selector modulo `input_size - 1`, then base and PTCH bytes; prefix parsing and COPY/BSD0 application | 8 KiB |
-| Sector integration | `fuzz-sector-decode` | Mode/version byte, `uint16_t` output-size-minus-one, then sector data; PKWARE or multi-codec decoding with v1/v2 semantics | 128 KiB |
+| Sector integration | `fuzz-sector-decode` | Mode/version byte, `uint16_t` output-size-minus-one, then sector data; PKWARE or multi-codec decoding with v1 and v2 semantics | 128 KiB |
 | Focused codecs | `fuzz-pkware-decode`, `fuzz-huffman-decode`, `fuzz-zlib-decode`, `fuzz-bzip2-decode`, `fuzz-lzma-decode`, `fuzz-sparse-decode` | `uint16_t` output-size-minus-one, then codec data; LZMA uses MPQ multi-compression framing with v2 semantics | 128 KiB |
 | ADPCM | `fuzz-wave-decode` | Mono/stereo selector byte, `uint16_t` output-size-minus-one, then WAVE codec data | 128 KiB |
 

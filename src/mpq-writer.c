@@ -1593,7 +1593,7 @@ finalize_archive(mpq_archive_s *a)
     wire_header = a->mpq_header;
     wire_header.mpq_magic = LIBMPQ_HEADER;
 
-    /* V2 readers use physical bounds and hi-block offsets. V3/v4 also store the full extent. */
+    /* V2 readers use physical bounds and hi-block offsets. MPQ v3 and v4 store the full extent. */
     wire_header.archive_size = (uint32_t)(end & UINT32_MAX);
     result = libmpq__header_encode(&wire_header, header, sizeof(header));
     if (result < 0)

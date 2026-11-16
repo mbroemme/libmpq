@@ -251,9 +251,9 @@ Creation defaults to `COMPRESSION_POLICY_STANDARD`. Pass
 Use `mpq.archive_compression_allowed(version, mask, policy)` to query whether
 a compression selection is allowed by the writer policy. Version uses
 `ARCHIVE_VERSION_ONE`, `ARCHIVE_VERSION_TWO`, `ARCHIVE_VERSION_THREE`, or
-`ARCHIVE_VERSION_FOUR`. V3/v4 creation emits HET/BET plus classic tables.
-Transactions can retain unrelated unnamed members with sufficient stored
-identities; see the
+`ARCHIVE_VERSION_FOUR`. MPQ v3 and v4 creation emits HET/BET plus classic
+tables. Transactions can retain unrelated unnamed members with sufficient
+stored identities; see the
 [transaction limits](../../DEVELOPER.md#transactional-modification).
 V4 creation, including MPQE, uses 16 KiB raw chunks; v4 updates preserve the
 source raw-chunk size. `Update.add_data()` and `Update.add_path()` add absent staged
@@ -339,7 +339,7 @@ Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
 `Writer` or `Writer.create_mpqe()`. Zero disables generation; any nonzero
 combination creates one `(attributes)` file and consumes one reserved slot.
 Unknown bits are rejected. Creation flags remain separate. These options work
-for MPQ v1, v2, v3, and v4, including MPQE creation. Payload version 100 is
+for MPQ archives, including MPQE creation. Payload version 100 is
 independent of the archive format version.
 
 Per-file flags distinguish unavailable fields from zero. Complete lossless
@@ -456,8 +456,9 @@ automatically. Omitting replacement options passes native NULL and uses native
 patch defaults; pass `FileCreateOptions` explicitly to configure patch-member
 storage. Patch options must match the base member's locale/platform identity.
 Patch rename is not supported. Signing configures the active patch
-without consuming it. Plain v1/v2/v3 patches may configure weak and strong
-signatures separately; their MPQE variants support weak signing only. V4 patches default to raw-chunk MD5, preventing weak signing.
+without consuming it. Plain MPQ v1, v2, and v3 patches may configure weak and
+strong signatures separately; their MPQE variants support weak signing only.
+V4 patches default to raw-chunk MD5, preventing weak signing.
 Call `patch.raw_chunk_size = 0` before signing to allow weak signatures on
 plain or MPQE output. MPQE strong signing remains unsupported.
 After `finish()`, use `Archive.signatures()` and `Archive.verify()`
@@ -666,7 +667,7 @@ Unsupported or ambiguous metadata is rejected. A rejected operation preserves
 the previous valid stage; commit/abort consume the transaction. Exact rebuilds
 preserve discoverable embedded prefixes and the original MPQ origin, reject
 unsupported trailers, and preserve source raw-chunk policy. Ordinary legacy
-v1/v2 updates retain their existing unrelated-suffix preservation.
+v1 and v2 updates retain their existing unrelated-suffix preservation.
 
 Use `Update.change_identity(name, locale, platform, new_locale, new_platform)`
 to change only a stored tuple. `locale` and `platform` select the old

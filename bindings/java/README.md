@@ -34,7 +34,7 @@ The canonical release installation path is Maven Central:
 Use `Mpq.ARCHIVE_VERSION_THREE` in existing `ArchiveCreateOptions` to create
 mixed HET/BET plus classic v3 archives, or `Mpq.ARCHIVE_VERSION_FOUR` for v4.
 V4 MPQ and MPQE creation uses 16 KiB raw chunks; v4 updates preserve the
-source raw-chunk size. V3/v4 transactions can retain unrelated unnamed
+source raw-chunk size. MPQ v3 and v4 transactions can retain unrelated unnamed
 members when their stored identities are sufficient; see the
 [transaction limits](../../DEVELOPER.md#transactional-modification).
 `MpqUpdate.addData()` and `addPath()` add absent staged names;
@@ -428,7 +428,7 @@ Creation is opt-in: combine `ATTRIBUTE_CRC32`, `ATTRIBUTE_FILETIME`,
 `ArchiveCreateOptions`. Constants live on `Mpq`. Zero disables generation; any
 nonzero combination creates one `(attributes)` file and consumes one reserved
 slot. Unknown bits are rejected. Creation flags remain separate. These options
-work for MPQ v1, v2, v3, and v4, including MPQE creation. Payload version 100
+work for MPQ archives, including MPQE creation. Payload version 100
 is independent of the archive format version.
 
 Per-file flags distinguish unavailable fields from zero. Complete lossless
@@ -548,9 +548,10 @@ only during begin; closing without finish aborts instead of publishing.
 discards it, and closing an unfinished patch aborts automatically. Omitted
 `FileOptions` pass native NULL and use native patch defaults; explicit
 options configure patch-member storage. Patch rename is not supported. Explicit locale/platform must match the base member. Signing
-configures the active patch without consuming it. Plain v1/v2/v3 patches may
-configure weak and strong signatures separately; their MPQE variants support
-weak signing only. V4 patches default to raw-chunk MD5, preventing weak signing.
+configures the active patch without consuming it. Plain MPQ v1, v2, and v3
+patches may configure weak and strong signatures separately; their MPQE
+variants support weak signing only. V4 patches default to raw-chunk MD5,
+preventing weak signing.
 Call `MpqPatch.setRawChunkSize(0)` before signing to allow weak signatures on
 plain or MPQE output. MPQE strong signing remains unsupported. After `finish()`, use
 `Archive.signatures()` and `Archive.verify()` on the finished artifact.
@@ -745,7 +746,7 @@ Unsupported or ambiguous metadata is rejected. A rejected operation preserves
 the previous valid stage; commit/abort consume the transaction. Exact rebuilds
 preserve discoverable embedded prefixes and the original MPQ origin, reject
 unsupported trailers, and preserve source raw-chunk policy. Ordinary legacy
-v1/v2 updates retain their existing unrelated-suffix preservation.
+v1 and v2 updates retain their existing unrelated-suffix preservation.
 
 `MpqUpdate.changeIdentity(name, locale, platform, newLocale, newPlatform)` changes
 only the selected tuple. `locale` and `platform` select the old identity;

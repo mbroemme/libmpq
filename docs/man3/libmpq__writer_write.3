@@ -56,8 +56,8 @@ or finish if all declared bytes have already been accepted.
 Sector encoding or output failures latch the first terminal error for
 callback-backed writers (including staged MPQE) and v4 path-backed writers.
 Later writes, finish and archive close return the latched error.
-Path-backed v1 through v3 do not latch these failures in this call; a
-failed sector write may already have accepted some input.
+Path-backed writers for MPQ v1, v2, and v3 do not latch these failures in
+this call; a failed sector write may already have accepted some input.
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__archive_create (3),

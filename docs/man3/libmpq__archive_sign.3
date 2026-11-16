@@ -27,10 +27,10 @@ libmpq__archive_sign \- configure archive signing before writer close
 .BI ");"
 .fi
 .SH DESCRIPTION
-Configures \fIarchive\fP, an active MPQ v1, v2, v3, or v4 writer, to generate one
+Configures \fIarchive\fP, an active MPQ writer, to generate one
 \fIsignature_type\fP: \fBLIBMPQ_SIGNATURE_WEAK\fP or
 \fBLIBMPQ_SIGNATURE_STRONG\fP. A file writer must not be active. Each
-type may be configured once; ordinary MPQ v1/v2/v3 archives may use both.
+type may be configured once; ordinary MPQ v1, v2, and v3 archives may use both.
 Weak-signature creation is unsupported for MPQ v4 output with raw-chunk MD5
 enabled and returns \fBLIBMPQ_ERROR_FORMAT\fP without modifying the writer.
 Signing would rewrite an already hashed member. Public v4 creation defaults

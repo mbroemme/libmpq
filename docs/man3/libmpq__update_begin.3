@@ -25,7 +25,7 @@ libmpq__update_begin \- begin a filesystem MPQ update transaction
 Creates a same-directory private working copy of an existing regular MPQ or
 container with an embedded MPQ at \fIpath\fP. The original file is unchanged
 until commit. Discoverable embedded prefixes and original MPQ-header positions
-are preserved. Ordinary legacy v1/v2 updates also retain supported unrelated
+are preserved. Ordinary legacy v1 and v2 updates also retain supported unrelated
 trailing bytes; named reconstruction rejects unrelated trailers. Stale weak
 and strong signatures are removed on modification. On
 failure, \fI*update\fP is NULL. MPQE archives require
@@ -52,7 +52,7 @@ and
 .BR libmpq__update_compact (3)
 for their specific checks.
 .PP
-V3/v4 mutations use available filenames and stored lookup identities.
+MPQ v3 and v4 mutations use available filenames and stored lookup identities.
 Unrelated unnamed entries can be retained with fixed classic probe slots or
 complete normalized 64-bit HET/BET hashes and consistent row provenance.
 Classic hash capacity cannot grow without the missing probe-start hashes.

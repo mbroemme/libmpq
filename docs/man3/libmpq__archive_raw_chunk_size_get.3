@@ -26,9 +26,9 @@ libmpq__archive_raw_chunk_size_get \- query archive raw-MD5 chunk size
 .fi
 .SH DESCRIPTION
 Query the configured size on writable archives or the stored v4 header size
-on readers. MPQ v1/v2/v3 return zero. Use libmpq__archive_version(3) to distinguish
-older formats from v4 with disabled raw arrays. This operation is read-only;
-it does not verify checksums or prove their availability.
+on readers. MPQ v1, v2, and v3 return zero. Use libmpq__archive_version(3) to
+distinguish older formats from v4 with disabled raw arrays. This operation is
+read-only; it does not verify checksums or prove their availability.
 .SH RETURN VALUE
 Return 0 on success or a negative libmpq error code.
 The output is cleared on failure when its pointer is valid.

@@ -607,9 +607,9 @@ int32_t libmpq__file_number_from_identity(
 .BI ");"
 .fi
 .SH DESCRIPTION
-\fIlibmpq\fP reads and creates MPQ v1/v2/v3/v4 archives, including embedded
+\fIlibmpq\fP reads and creates MPQ v1\(env4 archives, including embedded
 MPQ containers. V3 creation emits both HET/BET and classic tables.
-V3/v4 transactions can retain unrelated unnamed members with sufficient
+MPQ v3 and v4 transactions can retain unrelated unnamed members with sufficient
 stored identities; see libmpq__update_begin(3) for restrictions.
 .SS "Archive Opening and Custom I/O"
 Open filesystem archives with \fBlibmpq__archive_open\fP(3) or provide a
@@ -626,7 +626,7 @@ Patch-file members instead expose their decoded, unapplied PTCH bodies through
 \fBlibmpq__patch_payload_size\fP(3) and
 \fBlibmpq__patch_payload_read\fP(3).
 .SS "Archive Creation and Writers"
-Create MPQ v1/v2/v3/v4 archives with \fBlibmpq__archive_create\fP(3).
+Create MPQ archives with \fBlibmpq__archive_create\fP(3).
 Use \fBlibmpq__archive_create_io\fP(3) for a fresh caller-owned sink.
 Use \fBlibmpq__archive_create_mpqe_io\fP(3) to send MPQE transport to an
 initially empty caller-owned sink at archive close. A private plaintext MPQ
@@ -651,7 +651,7 @@ fallback, including (0,0), and preserve unrelated aliases. Replacement
 retains the selected tuple; explicit storage options must match it. libmpq__update_change_identity(3) selects the old
 locale/platform tuple explicitly and changes it to the new tuple without
 changing the filename or payload.
-V3/v4 rebuilds require sufficient lookup identities and supported metadata;
+MPQ v3 and v4 rebuilds require sufficient lookup identities and supported metadata;
 unsupported inputs fail rather than silently omit files. Modified signatures
 are removed.
 .SS "Patch Archives"

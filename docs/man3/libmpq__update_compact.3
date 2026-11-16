@@ -39,7 +39,7 @@ candidate. It does not imply successful plaintext verification of every member.
 Actual reconstruction removes stale signatures and regenerates applicable
 structural and raw MD5 using the original v4 raw-chunk policy.
 .PP
-Supported v1-v4 classic and representable HET/BET layouts reuse
+Supported classic MPQ layouts and representable HET/BET layouts reuse
 identity-preserving packed reconstruction. Unknown unencrypted and
 position-independent encrypted payloads can move as opaque stored bytes.
 Ciphertext copying is not plaintext verification. KEY relocation requires
@@ -86,7 +86,7 @@ validated before adoption; pre-adoption failures preserve the previous stage. Ab
 publication preserve the original under the normal transaction guarantees.
 .PP
 Named update reconstruction preserves the same supported embedded prefixes
-without imposing dense placement. Ordinary legacy v1/v2 updates retain their
+without imposing dense placement. Ordinary legacy v1 and v2 updates retain their
 existing unrelated-suffix behavior. For MPQE, prefix preservation
 refers to the decoded logical source, using existing MPQE re-encryption and publication.
 .PP

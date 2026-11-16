@@ -26,7 +26,7 @@ libmpq__update_add_path \- stage a new MPQ member from a filesystem path
 .SH DESCRIPTION
 Adds an absent filename using bytes read from the caller-owned source path.
 The source is not retained, modified or removed. Storage options, duplicate
-checks, rollback and v3/v4 filename requirements are identical to
+checks, rollback and filename requirements for v3 and v4 are identical to
 libmpq__update_add_data(3). Remove-then-add is supported; replacement is not
 an upsert operation.
 .PP
@@ -38,7 +38,7 @@ that tuple; use libmpq__update_change_identity(3) to change a stored tuple.
 .PP
 Discoverable embedded archives retain all prefix bytes and the original MPQ
 origin under the existing format restrictions. Named reconstruction rejects
-unrelated trailers; ordinary legacy v1/v2 operations retain their suffix policy.
+unrelated trailers; ordinary legacy v1 and v2 operations retain their suffix policy.
 See libmpq__update_begin(3) for discovery and temporary-storage requirements.
 .SH RETURN VALUE
 Returns zero on success or a negative libmpq error. A duplicate returns

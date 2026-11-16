@@ -29,13 +29,14 @@ libmpq__archive_create_io \- create an MPQ in caller-owned storage
 .BI ");"
 .fi
 .SH DESCRIPTION
-Create a v1, v2, v3, or v4 MPQ in an initially empty seekable output at
+Create an MPQ archive in an initially empty seekable output at
 logical origin zero. The caller supplies write-at and any required read-at
 capability. NULL options select the defaults of
 .BR libmpq__archive_create (3).
 V4 creation requires read-at, including if RAW chunks will later be
-disabled. Unsigned v1 through v3 may omit it. Signing requires read-at.
-Weak signing remains unavailable for v4 with RAW chunks enabled.
+disabled. Unsigned MPQ v1, v2, and v3 archives may omit it.
+Signing requires read-at. Weak signing remains unavailable for v4 with RAW
+chunks enabled.
 .PP
 Read and write callbacks receive a borrowed byte buffer, nonnegative signed
 64-bit offset and native \fIsize_t\fP length. Return zero only after transferring

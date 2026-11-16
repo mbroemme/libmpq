@@ -9,12 +9,12 @@ the source tree, normally under `/tmp`.
 | `writer-roundtrip/pkware-short-runs.txt` | Writer round-trip regression with short repeated byte runs |
 
 `scripts/generate-fuzz-corpus.sh` first copies this directory into the output,
-preserving target subdirectories, then adds synthetic MPQ v1/v2/v3/v4 archives,
-the v3/v4 patch archives, MPQE v1/v2/v3/v4 archives, and framed structural/codec
-inputs. Generated cases include malformed headers/offsets, truncation,
-COPY/BSD0, SPARSE zero runs, clipped literals and oversized lengths, malformed
-LZMA headers, and zero-rich SPARSE/combined-codec writer inputs. Fixture
-contents, checksums and regeneration belong in
+preserving target subdirectories, then adds synthetic MPQ v1–v4 archives,
+MPQ v3 and v4 patch archives, MPQE-wrapped MPQ v1–v4 archives, and framed
+structural/codec inputs. Generated cases include malformed headers/offsets,
+truncation, COPY/BSD0, SPARSE zero runs, clipped literals and oversized
+lengths, malformed LZMA headers, and zero-rich SPARSE/combined-codec writer
+inputs. Fixture contents, checksums and regeneration belong in
 [tests/fixtures/README.md](../../tests/fixtures/README.md). Build/run commands
 and input contracts are in [the fuzzing guide](../README.md).
 

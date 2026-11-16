@@ -2345,7 +2345,7 @@ patch_apply_layer(
         goto done;
     }
 
-    /* Legacy table rewriting applies only to v1/v2 archive headers. */
+    /* Legacy table rewriting applies only to v1 and v2 archive headers. */
     if (lower->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_TWO) {
         status = LIBMPQ_ERROR_FORMAT;
         goto done;
@@ -3351,7 +3351,7 @@ patch_select_regular(
 
     /*
      * Match patch_apply_layer(): a v3 layer with only classic tables can
-     * apply to a v1/v2 lower archive without rebuilding it as a named view.
+     * apply to a lower archive in v1 or v2 without rebuilding it as a named view.
      */
     for (size_t i = 0; i < count; ++i)
         named |= patches[i]->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR ||

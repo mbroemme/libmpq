@@ -241,10 +241,11 @@ older writable generations return `LIBMPQ_ERROR_FORMAT`, and terminal writer
 errors take precedence. Rejected calls preserve the prior size.
 
 `libmpq__archive_raw_chunk_size_get(archive, &size)` queries the configured
-or loaded policy on writers/readers. V1/v2/v3 return zero; use archive version to
-separate that case from v4 with disabled raw arrays. It neither changes policy
-nor verifies checksums. Raw MD5 covers physical stored bytes, not logical
-content, and configuration does not provide an update/conversion option. Use
+or loaded policy on writers/readers. MPQ v1, v2, and v3 return zero. Use the
+archive version to separate that case from v4 with disabled raw arrays. The
+query neither changes policy nor verifies checksums. Raw MD5 covers physical
+stored bytes, not logical content, and configuration does not provide an
+update/conversion option. Use
 `libmpq__patch_raw_chunk_size_get(patch, &size)` to query a live patch writer,
 including after configuration locks. This does not mutate its state. A failed
 patch query clears the output and preserves any terminal writer error.
@@ -546,7 +547,7 @@ original path changes only on commit. For example:
 
 `libmpq__update_add_data()` and `libmpq__update_add_path()` require an absent
 staged filename. They support remove-then-add; replacement remains strictly
-replacement-only. MPQ v3/v4 filename and metadata requirements are described
+replacement-only. MPQ v3 and v4 filename and metadata requirements are described
 in [MPQ.md](MPQ.md).
 
 ```c
@@ -715,7 +716,7 @@ MPQ temporary until the prefixed candidate is closed. MPQE publication may
 need an encrypted candidate; prefix bytes refer to the decoded logical source.
 Existing cleanup, decoding checks and source-preservation guarantees apply.
 Named transactional updates also preserve discoverable embedded prefixes and
-the original MPQ origin across v1-v4, within their existing format restrictions.
+the original MPQ origin, within their existing format restrictions.
 They allow gaps; invoke compaction last when dense placement matters.
 
 `libmpq__update_timestamp(update, name, filetime)` changes existing FILETIME
@@ -747,7 +748,7 @@ status = libmpq__update_replace_data_identity(
 );
 ```
 
-In classic-only v1-v4 archives, replacement detaches one selected alias into a
+In classic-only MPQ archives, replacement detaches one selected alias into a
 new payload; remove and rename preserve all other aliases and their original
 packed contents. NULL replacement options keep the selected locale/platform
 with default storage; explicit options must match. Mixed classic/HET/BET
@@ -766,10 +767,11 @@ unchanged until commit. Existing name-based operations retain their behavior.
 new_locale, new_platform)` selects the old tuple exactly and changes only its locale and
 platform to the new tuple, preserving the filename and payload. Identical
 tuples validate the source and succeed without rebuilding; missing sources or
-occupied destinations return EXIST. Classic-only v1-v4 support shared aliases.
-Mixed targets require consistent one-to-one classic/BET mappings with complete
-hashes; HET/BET-only entries cannot acquire qualifiers. Ambiguous metadata and
-special-member mutations return FORMAT. Existing reconstruction limits apply.
+occupied destinations return EXIST. Classic-only MPQ archives support shared
+aliases. Mixed targets require consistent one-to-one classic/BET mappings
+with complete hashes; HET/BET-only entries cannot acquire qualifiers.
+Ambiguous metadata and special-member mutations return FORMAT. Existing
+reconstruction limits apply.
 
 Ordinary payload offsets, packed bytes, flags, attributes and timestamps are
 retained. If no internal `(signature)` member is present, listfiles also keep
@@ -780,14 +782,14 @@ associations and probe slots are preserved. V4 raw policy and transaction
 publication guarantees remain unchanged. Rejected calls preserve the preceding
 valid stage.
 
-Legacy v1/v2 updates retain unchanged packed entries even without `(listfile)`
-names, and preserve embedded prefixes and unrelated trailing bytes. Their
-rebuilt archive extent must fit the legacy 32-bit size field. V3/v4 use a
-named rebuild instead, with the requirements below.
+Legacy v1 and v2 updates retain unchanged packed entries even without
+`(listfile)` names, and preserve embedded prefixes and unrelated trailing
+bytes. Their rebuilt archive extent must fit the legacy 32-bit size field.
+MPQ v3 and v4 use a named rebuild instead, with the requirements below.
 
-V3/v4 operations learn filenames from `(listfile)`, the operation's source
-name, internal-file names, and earlier successful operations in the same
-transaction. Repeated identical names and ASCII case or slash/backslash
+MPQ v3 and v4 operations learn filenames from `(listfile)`, the operation's
+source name, internal-file names, and earlier successful operations in the
+same transaction. Repeated identical names and ASCII case or slash/backslash
 variants are one normalized name. Distinct complete names resolving to the
 same logical entry are ambiguous and return FORMAT. Empty CRLF/LF lines are
 ignored; embedded null bytes and unresolvable listed names reject
@@ -858,8 +860,7 @@ encrypted publication.
 
 ### Patch archive creation
 
-The public patch handle creates a new MPQ v1/v2/v3/v4 patch artifact without
-modifying the base archive:
+The public patch handle creates an MPQ patch archive without modifying the base:
 
 ```c
 mpq_patch_s *patch = NULL;
@@ -887,8 +888,8 @@ caller-supplied authentication code; addition, replacement, removal, finish,
 and abort then follow the same lifecycle. Authenticated patch readers can
 consume the result using that patch layer's own code. Signing is optional
 and configured with `libmpq__patch_sign()` before finish. It delegates to the
-existing archive writer: v1/v2/v3 plain patches may use weak, strong, or both
-signatures; their MPQE variants support weak signatures only. V4 patches
+existing archive writer: plain MPQ v1, v2, and v3 patches may use weak, strong,
+or both signatures; their MPQE variants support weak signatures only. V4 patches
 default to enabled raw-chunk MD5, preventing weak signing. Set their raw size
 to zero before signing to allow weak signatures, including on MPQE output.
 Plain v4 supports strong signing at any raw size; MPQE excludes strong signing.
@@ -995,15 +996,15 @@ concurrent close/read.
 
 Patch matching primarily uses each entry's MPQ hash identity, including locale
 and platform. `(listfile)` is optional metadata that enriches entries with
-plaintext names. For legacy v1/v2 materialization, an unnamed patch entry can
-replace an existing hash identity when its payload can be decoded without a
-name-derived key. A new patch-only member requires a recoverable plaintext
+plaintext names. For legacy v1 and v2 materialization, an unnamed patch entry
+can replace an existing hash identity when its payload can be decoded without
+a name-derived key. A new patch-only member requires a recoverable plaintext
 name so its hash-table probe position can be computed. Otherwise that entry is
 rejected rather than silently omitted. Unnamed legacy base members and their
-packed data remain intact. V3/v4 named materialization requires complete,
-unambiguous names for every retained member and rejects missing coverage,
-aliases/locales or reserved metadata it cannot represent. V4 bases and patch
-layers are read-only inputs, including MPQE and mixed-version
+packed data remain intact. MPQ v3 and v4 named materialization requires
+complete, unambiguous names for every retained member and rejects missing
+coverage, aliases/locales or reserved metadata it cannot represent. V4 bases
+and patch layers are read-only inputs, including MPQE and mixed-version
 chains. Changed intermediates are v3 and regenerate HET/BET plus classic tables
 through the existing writer; modified encrypted members use their final output
 offsets. Raw MD5 verifies a physical source member; it is unavailable on

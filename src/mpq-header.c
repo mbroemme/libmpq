@@ -208,7 +208,7 @@ libmpq__header_v4_full_encode(
     return 0;
 }
 
-/* Select the declared size without truncating the full v3/v4 archive extent. */
+/* Select the declared size without truncating the full archive extent in v3 and v4. */
 uint64_t
 libmpq__header_archive_size(const mpq_header_s *header, const mpq_header_v3_s *v3)
 {
