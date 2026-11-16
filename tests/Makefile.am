@@ -164,7 +164,12 @@ COMMON_SOURCES = test-mpq-helper.c test-mpq-helper.h
 test_bit_SOURCES = test-mpq-bit.c $(COMMON_SOURCES)
 test_bit_LDADD = $(top_builddir)/src/mpq-bit.lo $(LDADD)
 test_ext_table_SOURCES = test-mpq-ext-table.c $(COMMON_SOURCES)
-test_ext_table_LDADD = $(PRIVATE_EXT_TABLE_LDADD) $(top_builddir)/src/mpq-ext-table-builder.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
+test_ext_table_LDADD = \
+	$(PRIVATE_EXT_TABLE_LDADD) \
+	$(top_builddir)/src/mpq-ext-table-builder.lo \
+	$(top_builddir)/src/mpq-crypto.lo \
+	$(PRIVATE_COMPRESSION_LDADD) \
+	$(LDADD)
 test_het_SOURCES = test-mpq-het.c $(COMMON_SOURCES)
 test_het_LDADD = $(test_ext_table_LDADD)
 test_bet_SOURCES = test-mpq-bet.c $(COMMON_SOURCES)
@@ -173,33 +178,74 @@ test_bet_LDADD = $(test_ext_table_LDADD)
 test_ext_table_builder_SOURCES = test-mpq-ext-table-builder.c $(COMMON_SOURCES)
 test_ext_table_builder_LDADD = $(test_ext_table_LDADD)
 test_block_SOURCES = test-mpq-block.c $(COMMON_SOURCES)
-test_block_LDADD = $(top_builddir)/src/mpq-block.lo $(top_builddir)/src/mpq-endian.lo $(LDADD)
+test_block_LDADD = \
+	$(top_builddir)/src/mpq-block.lo \
+	$(top_builddir)/src/mpq-endian.lo \
+	$(LDADD)
 test_file_SOURCES = test-mpq-file.c $(COMMON_SOURCES)
-test_file_LDADD = $(top_builddir)/src/mpq-source.lo $(PRIVATE_MPQE_LDADD) $(LDADD)
+test_file_LDADD = \
+	$(top_builddir)/src/mpq-source.lo \
+	$(PRIVATE_MPQE_LDADD) \
+	$(LDADD)
 test_source_SOURCES = test-mpq-source.c $(COMMON_SOURCES)
 test_source_LDADD = $(test_file_LDADD)
 test_verify_SOURCES = test-mpq-verify.c $(COMMON_SOURCES)
 test_verify_LDADD = $(test_attributes_LDADD)
 test_attributes_SOURCES = test-mpq-attributes.c $(COMMON_SOURCES)
-test_attributes_LDADD = $(PRIVATE_VERIFY_LDADD) $(top_builddir)/src/mpq-attributes.lo $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-reader.lo $(top_builddir)/src/mpq-block.lo $(top_builddir)/src/mpq-hash.lo $(top_builddir)/src/mpq-header.lo $(top_builddir)/src/mpq-source.lo $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-crypto.lo $(PRIVATE_EXT_TABLE_LDADD) $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
+test_attributes_LDADD = \
+	$(PRIVATE_VERIFY_LDADD) \
+	$(top_builddir)/src/mpq-attributes.lo \
+	$(top_builddir)/src/mpq-md5.lo \
+	$(top_builddir)/src/mpq-reader.lo \
+	$(top_builddir)/src/mpq-entry.lo \
+	$(top_builddir)/src/mpq-block.lo \
+	$(top_builddir)/src/mpq-hash.lo \
+	$(top_builddir)/src/mpq-header.lo \
+	$(top_builddir)/src/mpq-source.lo \
+	$(top_builddir)/src/mpq-mpqe.lo \
+	$(top_builddir)/src/mpq-crypto.lo \
+	$(PRIVATE_EXT_TABLE_LDADD) \
+	$(PRIVATE_COMPRESSION_LDADD) \
+	$(LDADD)
+
 # Reader lifetime helpers live in the verifier, whose signature checks use the writer.
-PRIVATE_VERIFY_LDADD = $(top_builddir)/src/mpq-verify.lo $(top_builddir)/src/mpq-writer.lo $(top_builddir)/src/mpq-ext-table-builder.lo $(top_builddir)/src/mpq-signature.lo $(top_builddir)/src/mpq-rsa.lo $(top_builddir)/src/mpq-sha1.lo
-PRIVATE_EXT_TABLE_LDADD = $(top_builddir)/src/mpq-het.lo $(top_builddir)/src/mpq-bet.lo $(top_builddir)/src/mpq-bit.lo $(top_builddir)/src/mpq-ext-table.lo
+PRIVATE_VERIFY_LDADD = \
+	$(top_builddir)/src/mpq-verify.lo \
+	$(top_builddir)/src/mpq-writer.lo \
+	$(top_builddir)/src/mpq-ext-table-builder.lo \
+	$(top_builddir)/src/mpq-signature.lo \
+	$(top_builddir)/src/mpq-rsa.lo \
+	$(top_builddir)/src/mpq-sha1.lo
+PRIVATE_EXT_TABLE_LDADD = \
+	$(top_builddir)/src/mpq-het.lo \
+	$(top_builddir)/src/mpq-bet.lo \
+	$(top_builddir)/src/mpq-bit.lo \
+	$(top_builddir)/src/mpq-ext-table.lo
 test_md5_SOURCES = test-mpq-md5.c $(COMMON_SOURCES)
 test_signature_SOURCES = test-mpq-signature.c $(COMMON_SOURCES)
 test_signature_LDADD = $(test_attributes_LDADD)
-test_md5_LDADD = $(top_builddir)/src/mpq-md5.lo $(top_builddir)/src/mpq-endian.lo $(LDADD)
+test_md5_LDADD = \
+	$(top_builddir)/src/mpq-md5.lo \
+	$(top_builddir)/src/mpq-endian.lo \
+	$(LDADD)
 test_compression_SOURCES = test-mpq-compression.c $(COMMON_SOURCES)
 test_compression_LDADD = $(PRIVATE_COMPRESSION_LDADD) $(LDADD)
 test_lzma_SOURCES = test-mpq-lzma.c $(COMMON_SOURCES)
 test_sparse_SOURCES = test-mpq-sparse.c $(COMMON_SOURCES)
-test_crypto_SOURCES = test-mpq-crypto.c ../src/mpq-crypto.c ../src/mpq-endian.c $(COMMON_SOURCES)
+test_crypto_SOURCES = \
+	test-mpq-crypto.c \
+	../src/mpq-crypto.c \
+	../src/mpq-endian.c \
+	$(COMMON_SOURCES)
 test_huffman_SOURCES = test-mpq-huffman.c ../src/mpq-huffman.c $(COMMON_SOURCES)
 test_malformed_SOURCES = test-mpq-malformed.c $(COMMON_SOURCES)
 test_mpqe_SOURCES = test-mpq-mpqe.c $(COMMON_SOURCES)
 test_endian_SOURCES = test-mpq-endian.c ../src/mpq-endian.c $(COMMON_SOURCES)
 test_hash_SOURCES = test-mpq-hash.c $(COMMON_SOURCES)
-test_hash_LDADD = $(top_builddir)/src/mpq-hash.lo $(top_builddir)/src/mpq-endian.lo $(LDADD)
+test_hash_LDADD = \
+	$(top_builddir)/src/mpq-hash.lo \
+	$(top_builddir)/src/mpq-endian.lo \
+	$(LDADD)
 test_header_SOURCES = test-mpq-header.c $(COMMON_SOURCES)
 test_header_LDADD = \
 	$(top_builddir)/src/mpq-block.lo \
@@ -211,7 +257,8 @@ test_header_LDADD = \
 test_fixtures_SOURCES = test-mpq-fixtures.c $(COMMON_SOURCES)
 test_fixtures_LDADD = $(test_attributes_LDADD)
 test_mpq_SOURCES = test-mpq-api.c $(COMMON_SOURCES)
-test_pkware_SOURCES = test-mpq-pkware.c \
+test_pkware_SOURCES = \
+	test-mpq-pkware.c \
 	../src/mpq-compression.c \
 	../src/mpq-pkware.c \
 	../src/mpq-huffman.c \
@@ -234,7 +281,11 @@ test_update_LDADD = \
 	$(top_builddir)/src/mpq-update.lo \
 	$(top_builddir)/src/mpq-stream.lo \
 	$(test_attributes_LDADD)
-test_wave_SOURCES = test-mpq-wave.c ../src/mpq-wave.c ../src/mpq-endian.c $(COMMON_SOURCES)
+test_wave_SOURCES = \
+	test-mpq-wave.c \
+	../src/mpq-wave.c \
+	../src/mpq-endian.c \
+	$(COMMON_SOURCES)
 test_writer_SOURCES = test-mpq-writer.c $(COMMON_SOURCES)
 test_writer_LDADD = $(test_attributes_LDADD)
 
@@ -245,23 +296,36 @@ libmpq_fault_alloc_la_SOURCES = \
 	../src/mpq-file.c \
 	../src/mpq-compression.c \
 	../src/mpq-pkware.c
-libmpq_fault_alloc_la_CPPFLAGS = $(AM_CPPFLAGS) -I$(top_builddir) \
-	-DLIBMPQ_TEST_ALLOC_INTERCEPT -include "$(abs_srcdir)/test-mpq-helper.h"
+libmpq_fault_alloc_la_CPPFLAGS = \
+	$(AM_CPPFLAGS) \
+	-I$(top_builddir) \
+	-DLIBMPQ_TEST_ALLOC_INTERCEPT \
+	-include "$(abs_srcdir)/test-mpq-helper.h"
 $(libmpq_fault_alloc_la_OBJECTS): $(srcdir)/test-mpq-helper.h
 
 # Local API wrappers call the replacements. The base archive then supplies
 # the remaining objects without loading the production shared library.
-test_writer_alloc_SOURCES = test-mpq-writer-alloc.c ../src/mpq-api.c $(COMMON_SOURCES)
+test_writer_alloc_SOURCES = \
+	test-mpq-writer-alloc.c \
+	../src/mpq-api.c \
+	$(COMMON_SOURCES)
 test_writer_alloc_CPPFLAGS = $(AM_CPPFLAGS) -I$(top_builddir)
-test_writer_alloc_LDADD = libmpq-fault-alloc.la $(top_builddir)/src/libmpq-fault-base.a
+test_writer_alloc_LDADD = \
+	libmpq-fault-alloc.la \
+	$(top_builddir)/src/libmpq-fault-base.a
 
 # Bootstrap the base for direct test builds. Recursive check builds src first.
 $(top_builddir)/src/libmpq-fault-base.a:
 	$(MAKE) -C $(top_builddir)/src libmpq-fault-base.a
 
 # Reuse the library's already-built hidden MPQE helper objects for private checks.
-PRIVATE_MPQE_LDADD = $(top_builddir)/src/mpq-mpqe.lo $(top_builddir)/src/mpq-endian.lo
-test_mpqe_LDADD = $(top_builddir)/src/mpq-source.lo $(PRIVATE_MPQE_LDADD) $(LDADD)
+PRIVATE_MPQE_LDADD = \
+	$(top_builddir)/src/mpq-mpqe.lo \
+	$(top_builddir)/src/mpq-endian.lo
+test_mpqe_LDADD = \
+	$(top_builddir)/src/mpq-source.lo \
+	$(PRIVATE_MPQE_LDADD) \
+	$(LDADD)
 
 # Reuse production codec objects for direct malformed-codec regressions.
 PRIVATE_COMPRESSION_LDADD = \
@@ -279,18 +343,42 @@ test_pkware_LDADD = $(top_builddir)/src/mpq-sparse.lo $(LDADD)
 
 # Fixture-dependent tests resolve archives from the source tree, including
 # when Automake runs them from a separate VPATH or distcheck build directory.
-test_mpq_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
-test_huffman_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
-test_lzma_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
-test_fixtures_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
-test_mpqe_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
-test_pkware_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
-test_reader_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
-test_patch_reader_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
-test_patch_writer_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
-test_signature_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
-test_update_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
-test_wave_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_mpq_CPPFLAGS = \
+	$(AM_CPPFLAGS) \
+	-DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_huffman_CPPFLAGS = \
+	$(AM_CPPFLAGS) \
+	-DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_lzma_CPPFLAGS = \
+	$(AM_CPPFLAGS) \
+	-DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_fixtures_CPPFLAGS = \
+	$(AM_CPPFLAGS) \
+	-DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_mpqe_CPPFLAGS = \
+	$(AM_CPPFLAGS) \
+	-DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_pkware_CPPFLAGS = \
+	$(AM_CPPFLAGS) \
+	-DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_reader_CPPFLAGS = \
+	$(AM_CPPFLAGS) \
+	-DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_patch_reader_CPPFLAGS = \
+	$(AM_CPPFLAGS) \
+	-DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_patch_writer_CPPFLAGS = \
+	$(AM_CPPFLAGS) \
+	-DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_signature_CPPFLAGS = \
+	$(AM_CPPFLAGS) \
+	-DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_update_CPPFLAGS = \
+	$(AM_CPPFLAGS) \
+	-DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
+test_wave_CPPFLAGS = \
+	$(AM_CPPFLAGS) \
+	-DFIXTURE_DIR='"$(top_srcdir)/tests/fixtures"'
 
 # Ship the deterministic fixture corpus and all module-mapped test sources.
 EXTRA_DIST = \

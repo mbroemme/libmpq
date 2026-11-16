@@ -60,6 +60,7 @@ GENERAL_SRCS = \
 	mpq-compression.c \
 	mpq-crypto.c \
 	mpq-endian.c \
+	mpq-entry.c \
 	mpq-ext-table.c \
 	mpq-ext-table-builder.c \
 	mpq-file.c \

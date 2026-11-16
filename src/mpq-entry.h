@@ -42,21 +42,9 @@ typedef struct
     uint8_t source_mask;           /* Sources present; logical reads do not require either index. */
 } mpq_entry_s;
 
-/* Convert classic wire metadata once; format writers still own the original tables. */
-static inline void
-libmpq__entry_from_classic(
+void libmpq__entry_from_classic(
     mpq_entry_s *entry, const mpq_block_s *block, const mpq_block_ex_s *high, uint32_t index
-)
-{
-    entry->offset = block->offset | ((uint64_t)high->offset_high << 32);
-    entry->packed_size = block->packed_size;
-    entry->unpacked_size = block->unpacked_size;
-    entry->flags = block->flags;
-    entry->classic_source_index = index;
-    entry->bet_source_index = UINT32_MAX;
-    entry->source_mask = LIBMPQ_ENTRY_SOURCE_CLASSIC;
-    entry->file_number = UINT32_MAX;
-}
+);
 
 /* Per-member reader/cache state for decryption and packed sector offsets. */
 typedef struct
