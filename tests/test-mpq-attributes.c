@@ -164,7 +164,7 @@ test_roundtrip(uint32_t version, uint32_t flags, int mpqe)
         status = libmpq__archive_open(&archive, path, -1);
     REQUIRE(status == 0);
     REQUIRE(libmpq__archive_attributes(archive, &found) == (flags ? 0 : LIBMPQ_ERROR_EXIST));
-    if (version == LIBMPQ_ARCHIVE_VERSION_ONE && flags != 0)
+    if (version == LIBMPQ_ARCHIVE_VERSION_1 && flags != 0)
         REQUIRE(archive->mpq_header.hash_table_offset > archive->mpq_header.header_size);
     REQUIRE(found == flags);
     REQUIRE(libmpq__file_number(archive, "digits.txt", &number) == 0);
@@ -428,7 +428,7 @@ cleanup:
 static int
 test_zero_md5_placeholder(void)
 {
-    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_ONE, 4, 512, 0,
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_1, 4, 512, 0,
                                              LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 };
     mpq_archive_s *archive = NULL;
     mpq_file_attributes_s attributes;

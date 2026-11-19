@@ -81,7 +81,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     (void)libmpq__compression_decompress_multi(
         (uint8_t *)(data + LIBMPQ_FUZZ_CODEC_FRAME_SIZE),
         (uint32_t)(size - LIBMPQ_FUZZ_CODEC_FRAME_SIZE), output, output_size,
-        LIBMPQ_ARCHIVE_VERSION_TWO
+        LIBMPQ_ARCHIVE_VERSION_2
     );
 #else
 #error "Unsupported focused codec"

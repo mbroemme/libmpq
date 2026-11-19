@@ -38,9 +38,9 @@ archive-creation defaults. The accepted options.flags bits are
 LIBMPQ_ARCHIVE_CREATE_LISTFILE and LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED.
 Any other flag bit returns LIBMPQ_ERROR_FORMAT before opening the destination.
 .PP
-LIBMPQ_ARCHIVE_VERSION_THREE selects MPQ v3 with a 0x44-byte header,
+LIBMPQ_ARCHIVE_VERSION_3 selects MPQ v3 with a 0x44-byte header,
 HET/BET and classic hash/block tables sharing the same logical rows.
-LIBMPQ_ARCHIVE_VERSION_FOUR selects MPQ v4 with a 0xD0-byte header,
+LIBMPQ_ARCHIVE_VERSION_4 selects MPQ v4 with a 0xD0-byte header,
 explicit stored-table sizes, structural MD5 and default 0x4000-byte raw chunks.
 Use libmpq__archive_raw_chunk_size_set(3) before member writing or signing
 to select another size.
@@ -72,7 +72,7 @@ int32_t
 create_sample(void)
 {
     const mpq_archive_create_options_s options = {
-        .version = LIBMPQ_ARCHIVE_VERSION_TWO,
+        .version = LIBMPQ_ARCHIVE_VERSION_2,
         .max_files = 8,
         .sector_size = 4096
     };

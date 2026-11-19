@@ -64,7 +64,7 @@ fill_bytes(uint8_t *data, size_t size)
 static int
 create_signed_archive(const char *path, const uint8_t *data, size_t size, uint32_t types)
 {
-    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_ONE, 16, 4096, 0, 0 };
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_1, 16, 4096, 0, 0 };
     mpq_file_options_s file_options = { 0, 0, 0, 0, 0 };
     uint8_t strong_private[512];
     mpq_archive_s *archive = NULL;

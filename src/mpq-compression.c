@@ -490,7 +490,7 @@ decompress_multi(
     in_size--;
 
     /* MPQ v2+ serializes LZMA as special method 0x12, not a bitmask chain. */
-    if (format_version >= LIBMPQ_ARCHIVE_VERSION_TWO &&
+    if (format_version >= LIBMPQ_ARCHIVE_VERSION_2 &&
         decompress_flag == LIBMPQ_COMPRESSION_LZMA_METHOD) {
         return decompress_lzma(in_buf, in_size, out_buf, out_size);
     }
@@ -597,12 +597,12 @@ libmpq__compression_allowed(
     uint32_t format_version, uint32_t mask, libmpq_compression_policy_t policy
 )
 {
-    if (format_version > LIBMPQ_ARCHIVE_VERSION_FOUR ||
+    if (format_version > LIBMPQ_ARCHIVE_VERSION_4 ||
         (policy != LIBMPQ_COMPRESSION_POLICY_STANDARD &&
          policy != LIBMPQ_COMPRESSION_POLICY_EXTENDED))
         return 0;
     if (mask == LIBMPQ_COMPRESSION_LZMA)
-        return format_version >= LIBMPQ_ARCHIVE_VERSION_TWO;
+        return format_version >= LIBMPQ_ARCHIVE_VERSION_2;
     if (mask & LIBMPQ_COMPRESSION_LZMA)
         return 0;
 
@@ -613,15 +613,14 @@ libmpq__compression_allowed(
     if ((mask & (LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO)) ==
         (LIBMPQ_COMPRESSION_WAVE_MONO | LIBMPQ_COMPRESSION_WAVE_STEREO))
         return 0;
-    if (format_version >= LIBMPQ_ARCHIVE_VERSION_TWO &&
+    if (format_version >= LIBMPQ_ARCHIVE_VERSION_2 &&
         (mask & (LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) ==
             (LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) {
         return 0;
     }
 
     /* STANDARD v2 uses a fixed method list instead of arbitrary chains. */
-    if (format_version >= LIBMPQ_ARCHIVE_VERSION_TWO &&
-        policy == LIBMPQ_COMPRESSION_POLICY_STANDARD)
+    if (format_version >= LIBMPQ_ARCHIVE_VERSION_2 && policy == LIBMPQ_COMPRESSION_POLICY_STANDARD)
         return mask == 0 || mask == LIBMPQ_COMPRESSION_ZLIB || mask == LIBMPQ_COMPRESSION_PKZIP ||
                mask == LIBMPQ_COMPRESSION_BZIP2 || mask == LIBMPQ_COMPRESSION_SPARSE ||
                mask == (LIBMPQ_COMPRESSION_SPARSE | LIBMPQ_COMPRESSION_ZLIB) ||

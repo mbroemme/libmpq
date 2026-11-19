@@ -84,13 +84,17 @@ public final class Mpq {
     public static final int ERROR_UNPACK = -12;
 
     /** Creation selector for the MPQ v1 archive layout. */
-    public static final int ARCHIVE_VERSION_ONE = 0;
+    public static final int ARCHIVE_VERSION_1 = 0;
     /** Creation selector for the MPQ v2 archive layout. */
-    public static final int ARCHIVE_VERSION_TWO = 1;
+    public static final int ARCHIVE_VERSION_2 = 1;
     /** Creation selector for the mixed HET/BET and classic MPQ v3 layout. */
-    public static final int ARCHIVE_VERSION_THREE = 2;
+    public static final int ARCHIVE_VERSION_3 = 2;
     /** Creation selector for MPQ v4 with stored-table and raw-chunk MD5 digests. */
-    public static final int ARCHIVE_VERSION_FOUR = 3;
+    public static final int ARCHIVE_VERSION_4 = 3;
+    /** Compatibility alias for the v0.8.1 MPQ v1 selector. */
+    public static final int ARCHIVE_VERSION_ONE = ARCHIVE_VERSION_1;
+    /** Compatibility alias for the v0.8.1 MPQ v2 selector. */
+    public static final int ARCHIVE_VERSION_TWO = ARCHIVE_VERSION_2;
     /** Creation flag requesting a generated {@code (listfile)} entry. */
     public static final int ARCHIVE_CREATE_LISTFILE = 0x00000001;
     /** Select EXTENDED compression in archive creation flags; zero defaults to STANDARD. */

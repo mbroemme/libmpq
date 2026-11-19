@@ -15,7 +15,7 @@ import libmpq.native;
 /** Options controlling MPQ v1 through v4 archive creation. */
 struct ArchiveCreateOptions {
     /** ARCHIVE_VERSION_* creation selector (0 through 3 for MPQ v1 through v4). */
-    uint version_ = ARCHIVE_VERSION_ONE;
+    uint version_ = ARCHIVE_VERSION_1;
     /** Reserved archive file-entry capacity; zero selects the native default. */
     uint maxFiles;
     /** Unpacked sector size; zero selects the native default. */
@@ -28,14 +28,14 @@ struct ArchiveCreateOptions {
     /** Return defaults for a v1 archive. */
     static ArchiveCreateOptions v1() {
         auto result = ArchiveCreateOptions();
-        result.version_ = ARCHIVE_VERSION_ONE;
+        result.version_ = ARCHIVE_VERSION_1;
         return result;
     }
 
     /** Return defaults for a v2 archive. */
     static ArchiveCreateOptions v2() {
         auto result = ArchiveCreateOptions();
-        result.version_ = ARCHIVE_VERSION_TWO;
+        result.version_ = ARCHIVE_VERSION_2;
         return result;
     }
 

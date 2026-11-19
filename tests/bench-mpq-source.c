@@ -163,7 +163,7 @@ open_archive(
 static int
 make_archive(const char *path, const uint8_t *data, size_t size, const bench_mode_s *mode, int mpqe)
 {
-    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_ONE, 16, 4096, 0, 0 };
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_1, 16, 4096, 0, 0 };
     mpq_archive_s *archive = NULL;
     int32_t result;
 
@@ -188,7 +188,7 @@ make_archive(const char *path, const uint8_t *data, size_t size, const bench_mod
 static int
 make_many_archive(const char *path)
 {
-    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_ONE, 1024, 4096, 0, 0 };
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_1, 1024, 4096, 0, 0 };
     mpq_file_options_s file_options = { 0, 0, 0, 0, 0 };
     mpq_archive_s *archive = NULL;
     uint8_t data[128];

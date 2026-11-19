@@ -534,7 +534,7 @@ test_v3_fixture(void)
 
     /* The public version query is one-based; the decoded wire version is two. */
     TEST_CHECK(libmpq__archive_version(encrypted, &version) == 0 && version == 3);
-    TEST_CHECK(encrypted->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE);
+    TEST_CHECK(encrypted->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_3);
     TEST_CHECK(libmpq__archive_files(plain, &plain_files) == 0);
     TEST_CHECK(libmpq__archive_files(encrypted, &encrypted_files) == 0);
     TEST_CHECK(plain_files == encrypted_files && encrypted_files == 18);

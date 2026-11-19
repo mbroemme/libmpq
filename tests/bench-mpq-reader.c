@@ -83,7 +83,7 @@ fill_bytes(uint8_t *data, size_t size)
 static int
 make_archive(const char *path, const uint8_t *data, size_t size, const bench_mode_s *mode)
 {
-    mpq_archive_create_options_s creation = { LIBMPQ_ARCHIVE_VERSION_ONE, 16, 4096, 0, 0 };
+    mpq_archive_create_options_s creation = { LIBMPQ_ARCHIVE_VERSION_1, 16, 4096, 0, 0 };
     mpq_archive_s *archive = NULL;
     int32_t result = libmpq__archive_create(&archive, path, &creation);
 
@@ -218,7 +218,7 @@ done:
 static int
 make_small_archive(const char *path)
 {
-    mpq_archive_create_options_s creation = { LIBMPQ_ARCHIVE_VERSION_ONE, 1024, 4096, 0, 0 };
+    mpq_archive_create_options_s creation = { LIBMPQ_ARCHIVE_VERSION_1, 1024, 4096, 0, 0 };
     mpq_archive_s *archive = NULL;
     uint8_t data[BENCH_SMALL_SIZE];
     char name[32];

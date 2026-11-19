@@ -291,8 +291,8 @@ patch_writer_member(
     canonical = state->base->mpq_map[*number].entry_index;
     entry = &state->base->mpq_entry[canonical];
     if ((entry->source_mask & LIBMPQ_ENTRY_SOURCE_BET) != 0) {
-        if ((state->base->mpq_header.version < LIBMPQ_ARCHIVE_VERSION_THREE ||
-             state->base->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_FOUR) ||
+        if ((state->base->mpq_header.version < LIBMPQ_ARCHIVE_VERSION_3 ||
+             state->base->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_4) ||
             libmpq__entry_index_from_bet(state->base, entry->bet_source_index, &translated) != 0 ||
             translated != canonical)
             return LIBMPQ_ERROR_FORMAT;
@@ -598,7 +598,7 @@ patch_writer_begin_internal(
     if (result != 0)
         goto fail;
     if (state->base->archive_offset != 0 ||
-        state->base->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_FOUR) {
+        state->base->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_4) {
         result = LIBMPQ_ERROR_FORMAT;
         goto fail;
     }
@@ -816,7 +816,7 @@ patch_add_validate(mpq_patch_writer_s *state, const char *name, const mpq_file_o
     if (result != 0)
         return result;
     libmpq__file_hash(name, &hashes[0], &hashes[1], &hashes[2]);
-    if (state->archive->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_THREE) {
+    if (state->archive->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_3) {
         result = libmpq__het_hash_filename(name, &name_hash);
         if (result != 0)
             return result;
@@ -842,7 +842,7 @@ patch_add_validate(mpq_patch_writer_s *state, const char *name, const mpq_file_o
                 return LIBMPQ_ERROR_FORMAT;
             return LIBMPQ_ERROR_EXIST;
         }
-        if (state->archive->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_THREE) {
+        if (state->archive->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_3) {
             result = libmpq__het_hash_filename(state->archive->write_names[i], &existing_hash);
             if (result != 0)
                 return result;

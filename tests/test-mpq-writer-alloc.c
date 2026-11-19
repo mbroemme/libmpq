@@ -200,7 +200,7 @@ test_single_allocations(void)
         for (int failure = 0; failure < 12; failure++) {
             mpq_archive_s *archive = NULL;
             mpq_writer_s *writer = NULL;
-            mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_FOUR, 8, 4096, 0, 0 };
+            mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_4, 8, 4096, 0, 0 };
             mpq_file_options_s options = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
             char path[512];
             TEST_CHECK(test_temp_path(path, sizeof(path), "single-alloc") == 0);

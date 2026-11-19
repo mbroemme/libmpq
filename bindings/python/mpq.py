@@ -34,10 +34,15 @@ ERROR_EXIST = -10
 ERROR_DECRYPT = -11
 ERROR_UNPACK = -12
 
-ARCHIVE_VERSION_ONE = 0
-ARCHIVE_VERSION_TWO = 1
-ARCHIVE_VERSION_THREE = 2
-ARCHIVE_VERSION_FOUR = 3
+ARCHIVE_VERSION_1 = 0
+ARCHIVE_VERSION_2 = 1
+ARCHIVE_VERSION_3 = 2
+ARCHIVE_VERSION_4 = 3
+
+# Source compatibility with the v0.8.1 selectors.
+ARCHIVE_VERSION_ONE = ARCHIVE_VERSION_1
+ARCHIVE_VERSION_TWO = ARCHIVE_VERSION_2
+
 ARCHIVE_CREATE_LISTFILE = 0x00000001
 ARCHIVE_CREATE_COMPRESSION_EXTENDED = 0x00000002
 ATTRIBUTE_CRC32 = 0x01
@@ -492,7 +497,7 @@ class ArchiveCreateOptions(ctypes.Structure):
     @classmethod
     def defaults(cls):
         """Return options selecting libmpq's documented defaults."""
-        return cls(ARCHIVE_VERSION_ONE, 0, 0, 0)
+        return cls(ARCHIVE_VERSION_1, 0, 0, 0)
 
     @classmethod
     def v1(cls):
@@ -502,7 +507,7 @@ class ArchiveCreateOptions(ctypes.Structure):
     @classmethod
     def v2(cls):
         """Return options for a default v2 archive."""
-        return cls(ARCHIVE_VERSION_TWO, 0, 0, 0)
+        return cls(ARCHIVE_VERSION_2, 0, 0, 0)
 
 
 IDENTITY_CLASSIC = 0x00000001
@@ -1115,7 +1120,7 @@ class _SinkState:
 class Writer:
     """Closeable seekable archive creator."""
 
-    def __init__(self, filename, version=ARCHIVE_VERSION_ONE, max_files=0, sector_size=0, flags=0, attributes=0):
+    def __init__(self, filename, version=ARCHIVE_VERSION_1, max_files=0, sector_size=0, flags=0, attributes=0):
         """Create an archive; nonzero ATTRIBUTE_* bits reserve one attributes file slot."""
         options = ArchiveCreateOptions(version, max_files, sector_size, flags, attributes)
         self._mpq = _VOID_PTR()
@@ -1123,7 +1128,7 @@ class Writer:
         self.filename, self._opened = filename, True
 
     @classmethod
-    def create_io(cls, sink, version=ARCHIVE_VERSION_ONE, max_files=0, sector_size=0,
+    def create_io(cls, sink, version=ARCHIVE_VERSION_1, max_files=0, sector_size=0,
                   flags=0, attributes=0):
         """Create in an empty borrowed sink with positioned writes and optional reads/flush.
 
@@ -1133,7 +1138,7 @@ class Writer:
         return cls._create_sink(sink, options)
 
     @classmethod
-    def create_mpqe_io(cls, sink, auth_code, version=ARCHIVE_VERSION_ONE, max_files=0,
+    def create_mpqe_io(cls, sink, auth_code, version=ARCHIVE_VERSION_1, max_files=0,
                        sector_size=0, flags=0, attributes=0):
         """Emit an MPQE transport to a borrowed sink at close. Read-back is unnecessary."""
         options = ArchiveCreateOptions(version, max_files, sector_size, flags, attributes)
@@ -1165,7 +1170,7 @@ class Writer:
         return writer
 
     @classmethod
-    def create_mpqe(cls, filename, auth_code, version=ARCHIVE_VERSION_ONE,
+    def create_mpqe(cls, filename, auth_code, version=ARCHIVE_VERSION_1,
                     max_files=0, sector_size=0, flags=0, attributes=0):
         """Create an MPQE-wrapped archive using caller-supplied authentication bytes."""
         code = _auth_code_bytes(auth_code)

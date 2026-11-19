@@ -198,7 +198,7 @@ libmpq__verify_archive_ex(
         return LIBMPQ_ERROR_FORMAT;
     if (flags == 0)
         return 0;
-    if (archive->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_FOUR) {
+    if (archive->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_4) {
         *unavailable = flags;
         return 0;
     }
@@ -540,7 +540,7 @@ verify_raw_md5(
     uint8_t expected[LIBMPQ_MD5_SIZE];
     mpq_md5_s md5;
     int32_t status;
-    if (archive->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_FOUR || chunk_size == 0 ||
+    if (archive->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_4 || chunk_size == 0 ||
         remaining == 0 || (entry->flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) != 0)
         return 0;
     status = libmpq__reader_validate_payload_range(archive, entry_index, 0, remaining);
@@ -863,7 +863,7 @@ libmpq__verify_file_ex(
             } while (identity.file_number != file_number);
         }
         if ((flags & LIBMPQ_VERIFY_RAW_MD5) != 0 &&
-            archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
+            archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4 &&
             archive->mpq_header_v4.raw_chunk_size != 0 && entry->packed_size != 0 &&
             (entry->flags & LIBMPQ_FILE_FLAG_DELETE_MARKER) == 0) {
             status = raw_index_prepare(archive, allocate);

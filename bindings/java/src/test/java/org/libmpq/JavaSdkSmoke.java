@@ -28,7 +28,7 @@ final class JavaSdkSmoke {
         Path path = Path.of("sdk-smoke.mpq");
         try {
             try (Archive writer = Archive.create(path,
-                    new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_FOUR, 8, 4096, 0))) {
+                    new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_4, 8, 4096, 0))) {
                 writer.addData(MEMBER, PAYLOAD, null);
             }
             try (Archive archive = Archive.open(path)) {

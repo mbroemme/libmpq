@@ -92,7 +92,7 @@ fill_small(uint8_t data[BENCH_SMALL_SIZE], unsigned file)
 static int
 create_archive(const char *path, unsigned capacity, mpq_archive_s **archive)
 {
-    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_ONE, capacity, 4096, 0, 0 };
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_1, capacity, 4096, 0, 0 };
 
     return libmpq__archive_create(archive, path, &options) != 0;
 }

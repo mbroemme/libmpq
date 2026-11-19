@@ -30,8 +30,8 @@ Query whether a compression selection is allowed for an archive version
 and writer policy. Readers remain permissive and never require this policy
 setting.
 .SS "Arguments and Selectors"
-The version uses LIBMPQ_ARCHIVE_VERSION_ONE (0), LIBMPQ_ARCHIVE_VERSION_TWO (1),
-LIBMPQ_ARCHIVE_VERSION_THREE (2), or LIBMPQ_ARCHIVE_VERSION_FOUR (3), not the
+The version uses LIBMPQ_ARCHIVE_VERSION_1 (0), LIBMPQ_ARCHIVE_VERSION_2 (1),
+LIBMPQ_ARCHIVE_VERSION_3 (2), or LIBMPQ_ARCHIVE_VERSION_4 (3), not the
 one-based archive-version accessor. MPQ v3 and v4 use the same codec policy as v2.
 The policy type libmpq_compression_policy_t is a signed int32_t.
 A zero mask selects raw storage. LZMA uses LIBMPQ_COMPRESSION_LZMA (0x100),
@@ -70,7 +70,7 @@ int32_t
 allows_v2_zlib(void)
 {
     int32_t allowed = libmpq__archive_compression_allowed(
-        LIBMPQ_ARCHIVE_VERSION_TWO, LIBMPQ_COMPRESSION_ZLIB,
+        LIBMPQ_ARCHIVE_VERSION_2, LIBMPQ_COMPRESSION_ZLIB,
         LIBMPQ_COMPRESSION_POLICY_STANDARD
     );
     /* 1 allows this selector and 0 rejects it. */

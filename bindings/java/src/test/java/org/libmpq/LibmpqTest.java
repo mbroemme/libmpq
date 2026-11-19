@@ -131,9 +131,9 @@ class LibmpqTest {
         assertThrows(IllegalArgumentException.class, () -> MpqName.ofBytes(new byte[] {'r', 0}));
         assertEquals(Mpq.fileHash("caf\u00e9"), Mpq.fileHashBytes(MpqName.ofUtf8("caf\u00e9")));
 
-        for (int version : new int[] {Mpq.ARCHIVE_VERSION_ONE, Mpq.ARCHIVE_VERSION_FOUR}) {
+        for (int version : new int[] {Mpq.ARCHIVE_VERSION_1, Mpq.ARCHIVE_VERSION_4}) {
             Path path = directory.resolve("names-" + version + ".mpq");
-            boolean classic = version == Mpq.ARCHIVE_VERSION_ONE;
+            boolean classic = version == Mpq.ARCHIVE_VERSION_1;
             int locale = classic ? 1033 : 0;
             int platform = classic ? 2 : 0;
             FileOptions encrypted = new FileOptions(
@@ -190,7 +190,7 @@ class LibmpqTest {
         byte[] before = {1, 2};
         byte[] after = {3, 4, 5};
         ArchiveCreateOptions options = new ArchiveCreateOptions(
-            Mpq.ARCHIVE_VERSION_FOUR, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE);
+            Mpq.ARCHIVE_VERSION_4, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE);
         try (Archive writer = Archive.create(basePath, options)) {
             writer.addBytes(member, before, null);
         }
@@ -237,7 +237,7 @@ class LibmpqTest {
                 java.nio.file.StandardOpenOption.CREATE_NEW, java.nio.file.StandardOpenOption.WRITE,
                 java.nio.file.StandardOpenOption.READ)) {
             try (Archive writer = Archive.createSink(channel, true,
-                    new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_FOUR, 32, 4096, 0, 0))) {
+                    new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_4, 32, 4096, 0, 0))) {
                 try (MpqFileWriter member = writer.begin("output", payload.length, FileOptions.raw())) {
                     member.write(payload);
                 }
@@ -279,7 +279,7 @@ class LibmpqTest {
             try (
                 Archive writer = Archive.createMpqeSink(
                     channel, code,
-                    new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_FOUR, 32, 4096, 0, 0)
+                    new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_4, 32, 4096, 0, 0)
                 )
             ) {
                 try (
@@ -309,7 +309,7 @@ class LibmpqTest {
 
     private static Archive createFlushTestSink(SeekableByteChannel channel, byte[] code,
                                                Archive.FlushCallback flush) throws LibmpqException {
-        var options = new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_FOUR, 32, 4096, 0, 0);
+        var options = new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_4, 32, 4096, 0, 0);
         return code == null ? Archive.createSink(channel, true, options, flush)
                             : Archive.createMpqeSink(channel, code, options, flush);
     }
@@ -514,7 +514,7 @@ class LibmpqTest {
                 Path path = directory.resolve("sign.mpq");
                 try (Archive writer = Archive.create(path,
                         new ArchiveCreateOptions(version, 8, 512, 0, Mpq.ATTRIBUTE_FILETIME))) {
-                    if (version == Mpq.ARCHIVE_VERSION_FOUR) writer.setRawChunkSize(0);
+                    if (version == Mpq.ARCHIVE_VERSION_4) writer.setRawChunkSize(0);
                     writer.add("voice", new byte[] {1, 2, 3}, null);
                 }
                 if (embedded) {
@@ -592,8 +592,8 @@ class LibmpqTest {
 
     @Test
     void transactionalTimestamps(@TempDir Path directory) throws Exception {
-        for (int version : new int[] {Mpq.ARCHIVE_VERSION_ONE, Mpq.ARCHIVE_VERSION_TWO,
-                                     Mpq.ARCHIVE_VERSION_THREE, Mpq.ARCHIVE_VERSION_FOUR}) {
+        for (int version : new int[] {Mpq.ARCHIVE_VERSION_1, Mpq.ARCHIVE_VERSION_2,
+                                     Mpq.ARCHIVE_VERSION_3, Mpq.ARCHIVE_VERSION_4}) {
             Path path = directory.resolve("timestamp.mpq");
             try (Archive writer = Archive.create(path,
                     new ArchiveCreateOptions(version, 8, 512, 0, Mpq.ATTRIBUTE_FILETIME))) {
@@ -626,10 +626,10 @@ class LibmpqTest {
     @Test
     void changeIdentity(@TempDir Path directory) throws Exception {
 
-        for (int version : new int[] {Mpq.ARCHIVE_VERSION_ONE, Mpq.ARCHIVE_VERSION_TWO,
-                                     Mpq.ARCHIVE_VERSION_THREE, Mpq.ARCHIVE_VERSION_FOUR}) {
+        for (int version : new int[] {Mpq.ARCHIVE_VERSION_1, Mpq.ARCHIVE_VERSION_2,
+                                     Mpq.ARCHIVE_VERSION_3, Mpq.ARCHIVE_VERSION_4}) {
             Path path = directory.resolve("change-identity.mpq");
-            boolean classic = version <= Mpq.ARCHIVE_VERSION_TWO;
+            boolean classic = version <= Mpq.ARCHIVE_VERSION_2;
             try (Archive writer = Archive.create(path, new ArchiveCreateOptions(version, 8, 4096, 0))) {
                 writer.add("voice", "neutral".getBytes(StandardCharsets.UTF_8),
                         new FileOptions(Mpq.FILE_FLAG_ENCRYPTED | Mpq.FILE_FLAG_KEY, 0, 0, 0, 0));
@@ -679,10 +679,10 @@ class LibmpqTest {
     void exactUpdateStages(@TempDir Path directory) throws Exception {
         Path source = directory.resolve("replacement.bin");
         Files.write(source, "path bytes".getBytes(StandardCharsets.UTF_8));
-        for (int version : new int[] {Mpq.ARCHIVE_VERSION_ONE, Mpq.ARCHIVE_VERSION_TWO,
-                                     Mpq.ARCHIVE_VERSION_THREE, Mpq.ARCHIVE_VERSION_FOUR}) {
+        for (int version : new int[] {Mpq.ARCHIVE_VERSION_1, Mpq.ARCHIVE_VERSION_2,
+                                     Mpq.ARCHIVE_VERSION_3, Mpq.ARCHIVE_VERSION_4}) {
             Path path = directory.resolve("exact.mpq");
-            boolean classic = version <= Mpq.ARCHIVE_VERSION_TWO;
+            boolean classic = version <= Mpq.ARCHIVE_VERSION_2;
             int locale = classic ? 0x409 : 0;
             int platform = classic ? 1 : 0;
             try (Archive writer = Archive.create(path,
@@ -744,7 +744,7 @@ class LibmpqTest {
         assertEquals(16, LibmpqNative.FILE_IDENTITY.byteSize());
         assertEquals(8, LibmpqNative.FILE_IDENTITY.byteOffset(java.lang.foreign.MemoryLayout.PathElement.groupElement("locale")));
         Path path = directory.resolve("identities.mpq");
-        for (int version : new int[] {Mpq.ARCHIVE_VERSION_ONE, Mpq.ARCHIVE_VERSION_TWO}) {
+        for (int version : new int[] {Mpq.ARCHIVE_VERSION_1, Mpq.ARCHIVE_VERSION_2}) {
             var options = new ArchiveCreateOptions(version, 8, 4096, 0);
             try (Archive writer = Archive.create(path, options)) {
                 writer.add("voice", "neutral".getBytes(), new FileOptions(Mpq.FILE_FLAG_ENCRYPTED, 0, 0, 0, 0));
@@ -780,7 +780,7 @@ class LibmpqTest {
     void rawChunkConfiguration(@TempDir Path directory) throws Exception {
         byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.UTF_8);
         Path path = directory.resolve("raw.mpq");
-        ArchiveCreateOptions options = new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_FOUR, 8, 512, Mpq.ARCHIVE_CREATE_LISTFILE);
+        ArchiveCreateOptions options = new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_4, 8, 512, Mpq.ARCHIVE_CREATE_LISTFILE);
         for (boolean wrapped : new boolean[] {false, true}) {
             for (long chunk : new long[] {0, 1, 17, 0x4000, 0xffffffffL}) {
                 try (Archive archive = wrapped ? Archive.createMpqe(path, code, options) : Archive.create(path, options)) {
@@ -838,7 +838,7 @@ class LibmpqTest {
         byte[] payload = new byte[17003];
         for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i * 37 + 11);
         byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.UTF_8);
-        for (int version : new int[] {Mpq.ARCHIVE_VERSION_ONE, Mpq.ARCHIVE_VERSION_FOUR}) {
+        for (int version : new int[] {Mpq.ARCHIVE_VERSION_1, Mpq.ARCHIVE_VERSION_4}) {
             Path basePath = directory.resolve("base.mpq");
             Path output = directory.resolve("patch.mpq");
             Path source = directory.resolve("source.bin");
@@ -891,7 +891,7 @@ class LibmpqTest {
     void ownedPatchComposition(@TempDir Path directory) throws Exception {
         Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
         Path addition = directory.resolve("addition.mpq");
-        try (Archive writer = Archive.create(addition, new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_FOUR, 8, 4096, Mpq.ARCHIVE_CREATE_LISTFILE))) {
+        try (Archive writer = Archive.create(addition, new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_4, 8, 4096, Mpq.ARCHIVE_CREATE_LISTFILE))) {
             writer.add("added.txt", "ordinary addition".getBytes(StandardCharsets.UTF_8), null);
         }
         for (int mode = 0; mode < 3; ++mode) {
@@ -952,7 +952,7 @@ class LibmpqTest {
         }
         intermediate[17] ^= 0x5a;
         try (Archive writer = Archive.create(middle,
-                new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_TWO, 8, 4096, Mpq.ARCHIVE_CREATE_LISTFILE))) {
+                new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_2, 8, 4096, Mpq.ARCHIVE_CREATE_LISTFILE))) {
             writer.add(name, intermediate, null);
             writer.add("empty", new byte[0], null);
             writer.add("voice", new byte[] {1}, new FileOptions(0, 0, 0, 1033, 2));
@@ -1029,7 +1029,7 @@ class LibmpqTest {
         Path root = Path.of(System.getProperty("libmpq.sourceDir", "."), "tests", "fixtures");
         Path path = directory.resolve("namespaced.mpq");
         try (Archive writer = Archive.create(path,
-                new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_FOUR, 8, 4096, Mpq.ARCHIVE_CREATE_LISTFILE))) {
+                new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_4, 8, 4096, Mpq.ARCHIVE_CREATE_LISTFILE))) {
             writer.add("Base\\extra.txt", "prefix payload".getBytes(StandardCharsets.UTF_8), null);
             writer.add("Base\\(patch_metadata)", "namespace marker".getBytes(StandardCharsets.UTF_8), null);
         }
@@ -1094,7 +1094,7 @@ class LibmpqTest {
         Path path = directory.resolve("segment-read.mpq");
         byte[] payload = {4, 8, 15, 16, 23, 42};
         try (Archive writer = Archive.create(path, new ArchiveCreateOptions(
-                Mpq.ARCHIVE_VERSION_ONE, 16, 512, 0, Mpq.ATTRIBUTE_MD5))) {
+                Mpq.ARCHIVE_VERSION_1, 16, 512, 0, Mpq.ATTRIBUTE_MD5))) {
             writer.add("payload", payload, null);
             writer.add("empty", new byte[0], new FileOptions(Mpq.FILE_FLAG_SINGLE, 0, 0, 0, 0));
         }
@@ -1158,7 +1158,7 @@ class LibmpqTest {
         var closed = closedArena.allocate(1);
         closedArena.close();
         try (Archive archive = Archive.create(path, new ArchiveCreateOptions(
-                Mpq.ARCHIVE_VERSION_TWO, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE));
+                Mpq.ARCHIVE_VERSION_2, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE));
              Arena arena = Arena.ofConfined()) {
             MemorySegment input = arena.allocateFrom(ValueLayout.JAVA_BYTE, payload);
             assertThrows(IllegalArgumentException.class, () -> archive.addDataSegment("array",
@@ -1213,7 +1213,7 @@ class LibmpqTest {
                     StandardOpenOption.CREATE_NEW, StandardOpenOption.READ, StandardOpenOption.WRITE));
              Arena arena = Arena.ofConfined()) {
             Archive archive = Archive.createSink(channel, true,
-                    new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_ONE, 8, 512, 0));
+                    new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_1, 8, 512, 0));
             try (archive; MpqFileWriter writer = archive.begin("member", 1024, FileOptions.raw())) {
                 channel.writeStatus = Mpq.ERROR_MALLOC;
                 var payload = arena.allocate(1024);
@@ -1237,7 +1237,7 @@ class LibmpqTest {
         Path path = directory.resolve("ranges.mpq");
         MpqName raw = MpqName.ofBytes(new byte[] {'r', (byte) 0xff});
         try (Archive writer = Archive.create(path, new ArchiveCreateOptions(
-                Mpq.ARCHIVE_VERSION_TWO, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE))) {
+                Mpq.ARCHIVE_VERSION_2, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE))) {
             writer.add("member", new byte[] {1, 2, 3, 4}, null);
             writer.addBytes(raw, new byte[] {1, 2, 3, 4}, null);
             writer.addBytes(raw, new byte[] {5, 6, 7, 8}, new FileOptions(0, 0, 0, 1033, 1));
@@ -1281,7 +1281,7 @@ class LibmpqTest {
         MpqName raw = MpqName.ofBytes(new byte[] {'r', (byte) 0xff});
         byte[] initial = {1, 2, 3, 4};
         try (Archive writer = Archive.create(path, new ArchiveCreateOptions(
-                Mpq.ARCHIVE_VERSION_TWO, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE))) {
+                Mpq.ARCHIVE_VERSION_2, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE))) {
             writer.add("member", initial, null);
             writer.addBytes(raw, initial, null);
             writer.addBytes(raw, new byte[] {5, 6, 7, 8}, new FileOptions(0, 0, 0, 1033, 1));
@@ -1408,7 +1408,7 @@ class LibmpqTest {
         Path path = directory.resolve("segment-update.mpq");
         MpqName rawName = MpqName.ofBytes(new byte[] {'v', (byte) 0xff});
         try (Archive writer = Archive.create(path, new ArchiveCreateOptions(
-                Mpq.ARCHIVE_VERSION_TWO, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE))) {
+                Mpq.ARCHIVE_VERSION_2, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE))) {
             writer.addBytes(rawName, new byte[] {1}, null);
             writer.addBytes(rawName, new byte[] {2}, new FileOptions(0, 0, 0, 1033, 1));
             writer.add("ordinary", new byte[] {3}, null);
@@ -1445,7 +1445,7 @@ class LibmpqTest {
         MpqName rawName = MpqName.ofBytes(new byte[] {'m', (byte) 0xff});
         byte[] replacement = {11, 12, 13};
         try (Archive writer = Archive.create(basePath, new ArchiveCreateOptions(
-                Mpq.ARCHIVE_VERSION_FOUR, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE))) {
+                Mpq.ARCHIVE_VERSION_4, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE))) {
             writer.addBytes(rawName, new byte[] {1, 2}, null);
         }
         FileOptions encrypted = new FileOptions(
@@ -1716,7 +1716,7 @@ class LibmpqTest {
         Files.write(source, "from path".getBytes(StandardCharsets.UTF_8));
         FileOptions identity = new FileOptions(0, 0, 0, 0x409, 1);
         ArchiveCreateOptions creation = new ArchiveCreateOptions(
-                Mpq.ARCHIVE_VERSION_ONE, 8, 0, 0, 0);
+                Mpq.ARCHIVE_VERSION_1, 8, 0, 0, 0);
         try (Archive archive = Archive.create(path, creation)) {
             archive.add("localized", "original".getBytes(StandardCharsets.UTF_8), identity);
         }
@@ -2018,11 +2018,11 @@ class LibmpqTest {
         assertLayoutFields(LibmpqNative.FILE_ATTRIBUTES_LAYOUT,
             new String[] {"flags", "crc32", "filetime", "md5", "patch_bit", "reserved"},
             new long[] {0, 4, 8, 16, 32, 36}, new long[] {4, 4, 8, 16, 4, 4});
-        assertFalse(Mpq.archiveCompressionAllowed(Mpq.ARCHIVE_VERSION_TWO,
+        assertFalse(Mpq.archiveCompressionAllowed(Mpq.ARCHIVE_VERSION_2,
             Mpq.COMPRESSION_HUFFMAN, Mpq.COMPRESSION_POLICY_STANDARD));
-        assertTrue(Mpq.archiveCompressionAllowed(Mpq.ARCHIVE_VERSION_TWO,
+        assertTrue(Mpq.archiveCompressionAllowed(Mpq.ARCHIVE_VERSION_2,
             Mpq.COMPRESSION_HUFFMAN, Mpq.COMPRESSION_POLICY_EXTENDED));
-        for (int version : new int[] {Mpq.ARCHIVE_VERSION_ONE, Mpq.ARCHIVE_VERSION_TWO}) {
+        for (int version : new int[] {Mpq.ARCHIVE_VERSION_1, Mpq.ARCHIVE_VERSION_2}) {
             for (int policy : new int[] {Mpq.COMPRESSION_POLICY_STANDARD, Mpq.COMPRESSION_POLICY_EXTENDED}) {
                 for (int method : new int[] {0x20, 0x22, 0x30}) {
                     assertTrue(Mpq.archiveCompressionAllowed(version, method, policy));
@@ -2138,7 +2138,7 @@ class LibmpqTest {
     void explicitFileVerification(@TempDir Path directory) throws Exception {
         Path path = directory.resolve("verify-file.mpq");
         try (Archive writer = Archive.create(path, new ArchiveCreateOptions(
-                Mpq.ARCHIVE_VERSION_FOUR, 16, 512, 0, Mpq.ATTRIBUTE_MD5))) {
+                Mpq.ARCHIVE_VERSION_4, 16, 512, 0, Mpq.ATTRIBUTE_MD5))) {
             writer.addData("member", new byte[] {7, 13}, null);
         }
         long digestOffset;
@@ -2314,7 +2314,7 @@ class LibmpqTest {
         }
         Path path = directory.resolve("partial.mpq");
         try (Archive writer = Archive.create(path, new ArchiveCreateOptions(
-                Mpq.ARCHIVE_VERSION_ONE, 16, sector, 0))) {
+                Mpq.ARCHIVE_VERSION_1, 16, sector, 0))) {
             writer.add("payload", payload, FileOptions.raw());
         }
         for (int block = 0; block < 3; block++) {
@@ -2528,7 +2528,7 @@ class LibmpqTest {
         byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
         byte[] payload = "Java MPQE writer regression\n".getBytes(StandardCharsets.UTF_8);
         Files.write(path, "previous destination".getBytes(StandardCharsets.UTF_8));
-        ArchiveCreateOptions options = new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_TWO,
+        ArchiveCreateOptions options = new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_2,
             8, 4096, 0, Mpq.ATTRIBUTE_CRC32);
         try (Archive archive = Archive.createMpqe(path, code, options)) {
             archive.add("payload.txt", payload, FileOptions.raw());
@@ -2591,7 +2591,7 @@ class LibmpqTest {
         FileOptions encryptedSectors = new FileOptions(Mpq.FILE_FLAG_COMPRESS | Mpq.FILE_FLAG_ENCRYPTED,
             Mpq.COMPRESSION_ZLIB, Mpq.COMPRESSION_ZLIB, 0, 0);
         try (Archive writer = Archive.create(path,
-                new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_ONE, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE))) {
+                new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_1, 16, 512, Mpq.ARCHIVE_CREATE_LISTFILE))) {
             writer.add("single.bin", single, compressedSingle);
             writer.add("sectors.bin", sectors, encryptedSectors);
             writer.add("empty.bin", new byte[0], new FileOptions(Mpq.FILE_FLAG_SINGLE, 0, 0, 0, 0));
@@ -2698,7 +2698,7 @@ class LibmpqTest {
     /** Extended-table creation shares metadata, stream and MPQE paths. */
     @Test
     void createsExtendedArchives(@TempDir Path directory) throws Exception {
-        for (int version : new int[] {Mpq.ARCHIVE_VERSION_THREE, Mpq.ARCHIVE_VERSION_FOUR}) {
+        for (int version : new int[] {Mpq.ARCHIVE_VERSION_3, Mpq.ARCHIVE_VERSION_4}) {
             byte[] payload = new byte[12000];
             java.util.Arrays.fill(payload, (byte) 'V');
             byte[] code = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001".getBytes(StandardCharsets.US_ASCII);
@@ -2772,7 +2772,7 @@ class LibmpqTest {
     void streamsAndRejectsMissingFile(@TempDir Path directory) throws Exception {
         Path path = directory.resolve("stream.mpq");
         byte[] payload = "streamed".getBytes(StandardCharsets.UTF_8);
-        ArchiveCreateOptions options = new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_ONE,
+        ArchiveCreateOptions options = new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_1,
             8, 4096, 0, Mpq.ATTRIBUTE_CRC32 |
             Mpq.ATTRIBUTE_FILETIME | Mpq.ATTRIBUTE_MD5);
         try (Archive archive = Archive.create(path, options)) {

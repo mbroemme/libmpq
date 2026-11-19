@@ -127,16 +127,22 @@ typedef int32_t (*libmpq_flush_fn)(void *context);
 /* Archive format and creation constants. */
 
 /*
- * On-disk archive format versions (not combinable flags). Creation accepts
- * ONE, TWO, THREE, and FOUR. V3/v4 creation emits HET/BET and classic tables;
- * V3/v4 updates can preserve supported unrelated unknown-name entries; see
+ * On-disk archive format selectors (not combinable flags). Creation accepts
+ * LIBMPQ_ARCHIVE_VERSION_1 through LIBMPQ_ARCHIVE_VERSION_4 (values 0 through
+ * 3). These macros can be used in preprocessor expressions.
+ * MPQ v3 and v4 creation emits HET/BET and classic tables. Updates in these
+ * versions can preserve supported unrelated unknown-name entries. See
  * libmpq__update_begin() for reconstruction restrictions.
  * libmpq__archive_version() reports the corresponding one-based generation.
  */
-#define LIBMPQ_ARCHIVE_VERSION_ONE 0
-#define LIBMPQ_ARCHIVE_VERSION_TWO 1
-#define LIBMPQ_ARCHIVE_VERSION_THREE 2
-#define LIBMPQ_ARCHIVE_VERSION_FOUR 3
+#define LIBMPQ_ARCHIVE_VERSION_1 0
+#define LIBMPQ_ARCHIVE_VERSION_2 1
+#define LIBMPQ_ARCHIVE_VERSION_3 2
+#define LIBMPQ_ARCHIVE_VERSION_4 3
+
+/* Deprecated since v0.9.0, scheduled for removal in v1.0.0. */
+#define LIBMPQ_ARCHIVE_VERSION_ONE LIBMPQ_ARCHIVE_VERSION_1
+#define LIBMPQ_ARCHIVE_VERSION_TWO LIBMPQ_ARCHIVE_VERSION_2
 
 /*
  * Archive-creation flags accepted by mpq_archive_create_options_s.flags.

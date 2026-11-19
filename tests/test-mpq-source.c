@@ -101,7 +101,7 @@ done:
 static int
 test_archive_calls(void)
 {
-    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_ONE, 8, 4096, 0, 0 };
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_1, 8, 4096, 0, 0 };
     mpq_file_options_s file_options = { 0, 0, 0, 0, 0 };
     uint8_t expected[8192];
     uint8_t actual[sizeof(expected)];

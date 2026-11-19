@@ -614,7 +614,7 @@ test_logical_extent(void)
     uint32_t signatures;
     uint32_t mismatches;
     size_t digest_read = 0;
-    archive.mpq_header.version = LIBMPQ_ARCHIVE_VERSION_TWO;
+    archive.mpq_header.version = LIBMPQ_ARCHIVE_VERSION_2;
     archive.mpq_header.header_size = 44;
     archive.mpq_header.archive_size = 136;
     archive.mpq_header.hash_table_offset = 44;
@@ -653,7 +653,7 @@ test_logical_extent(void)
     TEST_CHECK(digest_read == 16384 && mismatches == 0);
 
     /* V3 uses its full-width extent, including high-offset weak and strong files. */
-    archive.mpq_header.version = LIBMPQ_ARCHIVE_VERSION_THREE;
+    archive.mpq_header.version = LIBMPQ_ARCHIVE_VERSION_3;
     archive.mpq_header.header_size = 68;
     archive.mpq_header_v3.archive_size = (UINT64_C(1) << 32) + 136;
     source.backend.read_at = high_strong_read;
@@ -677,7 +677,7 @@ test_logical_extent(void)
         ) == LIBMPQ_ERROR_READ
     );
     TEST_CHECK(digest_read == 16384 && mismatches == 0);
-    archive.mpq_header.version = LIBMPQ_ARCHIVE_VERSION_TWO;
+    archive.mpq_header.version = LIBMPQ_ARCHIVE_VERSION_2;
     archive.mpq_header.header_size = 44;
     source.backend.read_at = high_read;
 
@@ -779,7 +779,7 @@ test_strong_writer_signatures(void)
     static const uint8_t payload[] = "strong writer signature";
     static const uint8_t auth[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
     mpq_archive_s *archive = NULL;
-    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_ONE, 8, 4096, 0, 0 };
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_1, 8, 4096, 0, 0 };
     mpq_file_options_s raw_options = { 0, 0, 0, 0, 0 };
     uint8_t strong_private[LIBMPQ_RSA_STRONG_KEY_SIZE];
     uint8_t invalid[LIBMPQ_RSA_STRONG_KEY_SIZE];
@@ -792,7 +792,7 @@ test_strong_writer_signatures(void)
 
     test_strong_signature_private_key(strong_private);
     TEST_CHECK(test_temp_path(path, sizeof(path), "strong-writer") == 0);
-    for (version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_THREE; ++version) {
+    for (version = LIBMPQ_ARCHIVE_VERSION_1; version <= LIBMPQ_ARCHIVE_VERSION_3; ++version) {
         options.version = version;
         TEST_CHECK(libmpq__archive_create(&archive, path, &options) == 0);
         TEST_CHECK(
@@ -812,13 +812,13 @@ test_strong_writer_signatures(void)
         );
         TEST_CHECK(libmpq__archive_close(archive) == 0);
         archive = NULL;
-        if (version == LIBMPQ_ARCHIVE_VERSION_ONE) {
+        if (version == LIBMPQ_ARCHIVE_VERSION_1) {
             TEST_CHECK(test_temp_path(renamed, sizeof(renamed), "strong-writer-renamed") == 0);
             TEST_CHECK(rename(path, renamed) == 0);
         }
         TEST_CHECK(
             libmpq__archive_open(
-                &archive, version == LIBMPQ_ARCHIVE_VERSION_ONE ? renamed : path, 0
+                &archive, version == LIBMPQ_ARCHIVE_VERSION_1 ? renamed : path, 0
             ) == 0
         );
         TEST_CHECK(libmpq__archive_signatures(archive, &signatures) == 0);
@@ -833,11 +833,11 @@ test_strong_writer_signatures(void)
         TEST_CHECK(mismatches == 0);
         TEST_CHECK(libmpq__archive_close(archive) == 0);
         archive = NULL;
-        if (version == LIBMPQ_ARCHIVE_VERSION_ONE)
+        if (version == LIBMPQ_ARCHIVE_VERSION_1)
             TEST_CHECK(remove(renamed) == 0);
     }
 
-    options.version = LIBMPQ_ARCHIVE_VERSION_ONE;
+    options.version = LIBMPQ_ARCHIVE_VERSION_1;
     TEST_CHECK(libmpq__archive_create(&archive, path, &options) == 0);
     TEST_CHECK(
         libmpq__archive_sign(
@@ -928,7 +928,7 @@ int
 main(void)
 {
     mpq_archive_s *a = NULL;
-    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_ONE, 8, 4096,
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_1, 8, 4096,
                                              LIBMPQ_ARCHIVE_CREATE_LISTFILE,
                                              LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 };
     mpq_file_options_s raw_options = { 0, 0, 0, 0, 0 };
@@ -1104,7 +1104,7 @@ main(void)
     TEST_CHECK(check_archive(changed, 0, 1) == 0);
     free(archive_data);
 
-    options.version = LIBMPQ_ARCHIVE_VERSION_TWO;
+    options.version = LIBMPQ_ARCHIVE_VERSION_2;
     options.attributes = 0;
     TEST_CHECK(libmpq__archive_create(&a, changed, &options) == 0);
     TEST_CHECK(libmpq__archive_sign(a, 1, test_signature_private_key, 128) == 0);

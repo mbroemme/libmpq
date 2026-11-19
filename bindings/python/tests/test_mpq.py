@@ -313,8 +313,8 @@ def test_logical_stream_lifetime_seek_and_eof():
         stream.tell()
 
 
-@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO, mpq.ARCHIVE_VERSION_THREE,
-                                     mpq.ARCHIVE_VERSION_FOUR])
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_1, mpq.ARCHIVE_VERSION_2, mpq.ARCHIVE_VERSION_3,
+                                     mpq.ARCHIVE_VERSION_4])
 def test_transactional_update_binding(tmp_path, version):
     """All staged operations commit or abort without reusing consumed handles."""
     path = tmp_path / "update.mpq"
@@ -441,8 +441,8 @@ def test_update_localized_member_defaults(tmp_path):
         update.abort()
 
 
-@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO, mpq.ARCHIVE_VERSION_THREE,
-                                     mpq.ARCHIVE_VERSION_FOUR])
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_1, mpq.ARCHIVE_VERSION_2, mpq.ARCHIVE_VERSION_3,
+                                     mpq.ARCHIVE_VERSION_4])
 def test_authenticated_mpqe_update(tmp_path, version):
     """MPQE uses the ordinary Update operations and consuming lifecycle."""
     path = tmp_path / "update.mpqe"
@@ -502,7 +502,7 @@ def test_authenticated_mpqe_update(tmp_path, version):
     assert path.read_bytes() == committed
 
 
-@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_FOUR])
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_1, mpq.ARCHIVE_VERSION_4])
 def test_patch_creation_binding(tmp_path, version):
     """Patch creation stages replacements and deletion without changing the base."""
     base = tmp_path / "base.mpq"
@@ -578,7 +578,7 @@ def test_patch_creation_binding(tmp_path, version):
         patch.remove("data")
 
 
-@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_FOUR])
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_1, mpq.ARCHIVE_VERSION_4])
 def test_mpqe_patch_creation_binding(tmp_path, version):
     """The MPQE factory retains the ordinary Patch lifecycle and borrows auth bytes."""
     base = tmp_path / "base.mpq"
@@ -1029,7 +1029,7 @@ def test_weak_signature(tmp_path):
         assert archive.verify(public) == mpq.SIGNATURE_WEAK
 
 
-@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO])
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_1, mpq.ARCHIVE_VERSION_2])
 def test_strong_signature_round_trip(tmp_path, version):
     """Writer strong signing emits a plain NGIS trailer that verifies after reopening."""
     path = tmp_path / f"strong-v{version}.mpq"
@@ -1113,10 +1113,10 @@ def test_version_errors_and_hashes():
                                    ctypes.POINTER(ctypes.c_int64)]
     assert block_verify.argtypes == [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
                                     ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32)]
-    assert not mpq.archive_compression_allowed(mpq.ARCHIVE_VERSION_TWO, mpq.COMPRESSION_HUFFMAN)
-    assert mpq.archive_compression_allowed(mpq.ARCHIVE_VERSION_TWO, mpq.COMPRESSION_HUFFMAN,
+    assert not mpq.archive_compression_allowed(mpq.ARCHIVE_VERSION_2, mpq.COMPRESSION_HUFFMAN)
+    assert mpq.archive_compression_allowed(mpq.ARCHIVE_VERSION_2, mpq.COMPRESSION_HUFFMAN,
                                      mpq.COMPRESSION_POLICY_EXTENDED)
-    for version in (mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO, mpq.ARCHIVE_VERSION_THREE):
+    for version in (mpq.ARCHIVE_VERSION_1, mpq.ARCHIVE_VERSION_2, mpq.ARCHIVE_VERSION_3):
         for policy in (mpq.COMPRESSION_POLICY_STANDARD, mpq.COMPRESSION_POLICY_EXTENDED):
             for method in (mpq.COMPRESSION_SPARSE,
                            mpq.COMPRESSION_SPARSE | mpq.COMPRESSION_ZLIB,
@@ -1297,8 +1297,8 @@ def test_mpqe_fixture_metadata_extraction_and_clone(name, version, offset):
         mpq.Archive.open_mpqe(FIXTURES / name, code[:-1], offset)
 
 
-@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_TWO, mpq.ARCHIVE_VERSION_THREE,
-                                     mpq.ARCHIVE_VERSION_FOUR])
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_2, mpq.ARCHIVE_VERSION_3,
+                                     mpq.ARCHIVE_VERSION_4])
 def test_mpqe_creation_replaces_destination(tmp_path, version):
     """MPQE creation publishes a complete archive over an existing target."""
     path = tmp_path / "created.mpqe"
@@ -1320,8 +1320,8 @@ def test_mpqe_creation_replaces_destination(tmp_path, version):
         mpq.Writer(tmp_path / "invalid.mpq", attributes=0x10)
 
 
-@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_TWO, mpq.ARCHIVE_VERSION_THREE,
-                                     mpq.ARCHIVE_VERSION_FOUR])
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_2, mpq.ARCHIVE_VERSION_3,
+                                     mpq.ARCHIVE_VERSION_4])
 def test_creation_streaming_compression_clone_and_blocks(tmp_path, version):
     """Creation APIs round-trip raw, compressed, path, stream, clone, and blocks."""
     archive_path = tmp_path / "created.mpq"
@@ -1349,7 +1349,7 @@ def test_creation_streaming_compression_clone_and_blocks(tmp_path, version):
             stream.write(streamed[:1000])
             stream.write(streamed[1000:])
 
-    if version == mpq.ARCHIVE_VERSION_FOUR:
+    if version == mpq.ARCHIVE_VERSION_4:
         wire = archive_path.read_bytes()
         assert struct.unpack_from("<I", wire, 4)[0] == 0xd0
         assert struct.unpack_from("<H", wire, 12)[0] == 3
@@ -1535,7 +1535,7 @@ def test_read_block_into_actual_decoded_size(tmp_path, monkeypatch):
 def test_v4_raw_md5(tmp_path, chunk_size):
     """Reuse writer-produced classic tables; independently hash raw v4 bytes."""
     path = tmp_path / "raw-md5.mpq"
-    with mpq.Writer(path, version=mpq.ARCHIVE_VERSION_TWO, max_files=8) as writer:
+    with mpq.Writer(path, version=mpq.ARCHIVE_VERSION_2, max_files=8) as writer:
         writer.add("raw", b"abc")
     with mpq.Archive(path, offset=0) as archive:
         offset = archive["raw"].offset
@@ -1775,7 +1775,7 @@ def test_open_patch_owned(tmp_path, source_kind, prefixes):
         base = mpq.Archive(base_path)
     patch = mpq.Archive(FIXTURES / "mpq-v4-features-patch.mpq")
     overlay_path = tmp_path / "addition.mpq"
-    with mpq.Writer(overlay_path, version=mpq.ARCHIVE_VERSION_FOUR,
+    with mpq.Writer(overlay_path, version=mpq.ARCHIVE_VERSION_4,
                     flags=mpq.ARCHIVE_CREATE_LISTFILE) as writer:
         writer.add("addition.txt", b"ordinary addition")
     overlay = mpq.Archive(overlay_path)
@@ -1815,7 +1815,7 @@ def test_open_patch_stream_detached(tmp_path):
     last_path = tmp_path / "last.mpq"
     middle = bytearray(65 + i % 23 for i in range(8192))
     middle[17] ^= 0x5a
-    with mpq.Writer(middle_path, version=mpq.ARCHIVE_VERSION_TWO,
+    with mpq.Writer(middle_path, version=mpq.ARCHIVE_VERSION_2,
                     flags=mpq.ARCHIVE_CREATE_LISTFILE) as writer:
         writer.add(name, middle)
         writer.add("empty", b"")
@@ -1901,7 +1901,7 @@ def test_open_patch_arguments():
 
 def test_open_patch_namespace(tmp_path):
     path = tmp_path / "namespaced.mpq"
-    with mpq.Writer(path, version=mpq.ARCHIVE_VERSION_FOUR,
+    with mpq.Writer(path, version=mpq.ARCHIVE_VERSION_4,
                     flags=mpq.ARCHIVE_CREATE_LISTFILE) as writer:
         writer.add("Base\\extra.txt", b"prefix payload")
         writer.add("Base\\(patch_metadata)", b"namespace marker")
@@ -1914,7 +1914,7 @@ def test_open_patch_namespace(tmp_path):
                 mpq.Archive.open_patch(base, [patch], prefixes)
 
 
-@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_FOUR])
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_1, mpq.ARCHIVE_VERSION_4])
 @pytest.mark.parametrize("wrapped", [False, True])
 @pytest.mark.parametrize("mixed", [False, True])
 def test_patch_ordinary_additions(tmp_path, version, wrapped, mixed):
@@ -1976,9 +1976,9 @@ def test_patch_ordinary_additions(tmp_path, version, wrapped, mixed):
 def test_raw_chunk_configuration(tmp_path, chunk, wrapped):
     code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
     path = tmp_path / "raw-policy.mpq"
-    create = (lambda: mpq.Writer.create_mpqe(path, code, version=mpq.ARCHIVE_VERSION_FOUR,
+    create = (lambda: mpq.Writer.create_mpqe(path, code, version=mpq.ARCHIVE_VERSION_4,
                                             flags=mpq.ARCHIVE_CREATE_LISTFILE)) if wrapped else lambda: mpq.Writer(
-        path, version=mpq.ARCHIVE_VERSION_FOUR, flags=mpq.ARCHIVE_CREATE_LISTFILE)
+        path, version=mpq.ARCHIVE_VERSION_4, flags=mpq.ARCHIVE_CREATE_LISTFILE)
     with create() as writer:
         assert writer.raw_chunk_size == 0x4000
         for invalid in (-1, 0x100000000, 1.5, "17"):
@@ -2012,7 +2012,7 @@ def test_raw_chunk_configuration(tmp_path, chunk, wrapped):
 def test_raw_chunk_signing_and_patch(tmp_path, wrapped):
     code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
     path, output = tmp_path / "raw-signing.mpq", tmp_path / "patch.mpq"
-    create = (lambda: mpq.Writer.create_mpqe(path, code, version=mpq.ARCHIVE_VERSION_FOUR)) if wrapped else lambda: mpq.Writer(path, version=mpq.ARCHIVE_VERSION_FOUR)
+    create = (lambda: mpq.Writer.create_mpqe(path, code, version=mpq.ARCHIVE_VERSION_4)) if wrapped else lambda: mpq.Writer(path, version=mpq.ARCHIVE_VERSION_4)
     with create() as writer:
         with pytest.raises(mpq.LibmpqFormatError):
             writer.sign(WEAK_PRIVATE_KEY)
@@ -2030,7 +2030,7 @@ def test_raw_chunk_signing_and_patch(tmp_path, wrapped):
         assert archive.signatures() == mpq.SIGNATURE_WEAK
         assert archive.verify(WEAK_PUBLIC_KEY) == 0
     base = tmp_path / "base.mpq"
-    with mpq.Writer(base, version=mpq.ARCHIVE_VERSION_FOUR, flags=mpq.ARCHIVE_CREATE_LISTFILE) as writer:
+    with mpq.Writer(base, version=mpq.ARCHIVE_VERSION_4, flags=mpq.ARCHIVE_CREATE_LISTFILE) as writer:
         writer.add("base", b"base")
     for chunk in (0, 1, 17, 0x4000, 0xffffffff):
         begin = (lambda: mpq.Patch.begin_mpqe(base, output, code)) if wrapped else lambda: mpq.Patch.begin(base, output)
@@ -2169,7 +2169,7 @@ def test_file_identity_bet_only_and_format_error(monkeypatch):
         assert calls == [(name, 0)]
 
 
-@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO])
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_1, mpq.ARCHIVE_VERSION_2])
 @pytest.mark.parametrize("wrapped", [False, True])
 def test_exact_identities(tmp_path, version, wrapped):
     path = tmp_path / "identities.mpq"
@@ -2212,7 +2212,7 @@ def test_exact_identities(tmp_path, version, wrapped):
     stream.close()
 
 
-@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_THREE, mpq.ARCHIVE_VERSION_FOUR])
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_3, mpq.ARCHIVE_VERSION_4])
 @pytest.mark.parametrize("wrapped", [False, True])
 def test_exact_extended_identity_sources(tmp_path, version, wrapped):
     path = tmp_path / "exact-source.mpq"
@@ -2236,15 +2236,15 @@ def test_exact_extended_identity_sources(tmp_path, version, wrapped):
     stream.close()
 
 
-@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO,
-                                     mpq.ARCHIVE_VERSION_THREE, mpq.ARCHIVE_VERSION_FOUR])
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_1, mpq.ARCHIVE_VERSION_2,
+                                     mpq.ARCHIVE_VERSION_3, mpq.ARCHIVE_VERSION_4])
 @pytest.mark.parametrize("wrapped", [False, True])
 def test_exact_update_stages(tmp_path, version, wrapped):
     path = tmp_path / "exact-update.mpq"
     source = tmp_path / "replacement.bin"
     source.write_bytes(b"path bytes")
     code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
-    classic = version in (mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO)
+    classic = version in (mpq.ARCHIVE_VERSION_1, mpq.ARCHIVE_VERSION_2)
     locale, platform = (0x409, 1) if classic else (0, 0)
     options = mpq.FileCreateOptions.raw()
     options.locale, options.platform = locale, platform
@@ -2290,13 +2290,13 @@ def test_exact_update_stages(tmp_path, version, wrapped):
         assert archive.variants("renamed") == ()
 
 
-@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO,
-                                     mpq.ARCHIVE_VERSION_THREE, mpq.ARCHIVE_VERSION_FOUR])
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_1, mpq.ARCHIVE_VERSION_2,
+                                     mpq.ARCHIVE_VERSION_3, mpq.ARCHIVE_VERSION_4])
 @pytest.mark.parametrize("wrapped", [False, True])
 def test_change_identity(tmp_path, version, wrapped):
     path = tmp_path / "change-identity.mpq"
     code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
-    classic = version <= mpq.ARCHIVE_VERSION_TWO
+    classic = version <= mpq.ARCHIVE_VERSION_2
     create = (mpq.Writer.create_mpqe(path, code, version=version) if wrapped
               else mpq.Writer(path, version=version))
     with create as writer:
@@ -2358,8 +2358,8 @@ def test_change_identity(tmp_path, version, wrapped):
     assert path.read_bytes() == committed
 
 
-@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_ONE, mpq.ARCHIVE_VERSION_TWO,
-                                     mpq.ARCHIVE_VERSION_THREE, mpq.ARCHIVE_VERSION_FOUR])
+@pytest.mark.parametrize("version", [mpq.ARCHIVE_VERSION_1, mpq.ARCHIVE_VERSION_2,
+                                     mpq.ARCHIVE_VERSION_3, mpq.ARCHIVE_VERSION_4])
 @pytest.mark.parametrize("wrapped", [False, True])
 def test_transactional_timestamps(tmp_path, version, wrapped):
     path = tmp_path / "timestamp.mpq"
@@ -2753,7 +2753,7 @@ def test_oversized_single_writer(tmp_path, version, wrapped):
     stream.write(payload[:4097])
     with pytest.raises(mpq.LibmpqSizeError):
         stream.finish()
-    if version == mpq.ARCHIVE_VERSION_FOUR:
+    if version == mpq.ARCHIVE_VERSION_4:
         with pytest.raises(mpq.LibmpqSizeError):
             writer.close()
     else:
@@ -2779,7 +2779,7 @@ def test_create_io_writer_lifetime():
 
     sink = Sink()
     payload = b"callback storage" * 1000
-    with mpq.Writer.create_io(sink, version=mpq.ARCHIVE_VERSION_FOUR) as archive:
+    with mpq.Writer.create_io(sink, version=mpq.ARCHIVE_VERSION_4) as archive:
         with archive.begin("hello", len(payload)) as writer:
             writer.write(payload[:4321])
             writer.write(payload[4321:])
@@ -2842,7 +2842,7 @@ def test_create_mpqe_io_writer_lifetime():
     assert caught.value.code == mpq.ERROR_DECRYPT
     assert sink.writes == sink.flushes == 0
 
-    with mpq.Writer.create_mpqe_io(sink, code, version=mpq.ARCHIVE_VERSION_FOUR) as archive:
+    with mpq.Writer.create_mpqe_io(sink, code, version=mpq.ARCHIVE_VERSION_4) as archive:
         code[:] = b"x" * len(code)
         with archive.begin("hello", len(payload)) as writer:
             writer.write(payload[:4321])

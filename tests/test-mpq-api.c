@@ -240,15 +240,15 @@ static int
 test_create_errors(void)
 {
     mpq_archive_s *archive = NULL;
-    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_ONE, 8, 4096, 0, 0 };
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_1, 8, 4096, 0, 0 };
     char path[128];
 
     TEST_CHECK(test_temp_path(path, sizeof(path), "invalid") == 0);
     TEST_CHECK(libmpq__archive_create(NULL, path, &options) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__archive_create(&archive, NULL, &options) == LIBMPQ_ERROR_EXIST);
-    options.version = LIBMPQ_ARCHIVE_VERSION_FOUR + 1;
+    options.version = LIBMPQ_ARCHIVE_VERSION_4 + 1;
     TEST_CHECK(libmpq__archive_create(&archive, path, &options) == LIBMPQ_ERROR_FORMAT);
-    options.version = LIBMPQ_ARCHIVE_VERSION_ONE;
+    options.version = LIBMPQ_ARCHIVE_VERSION_1;
     options.sector_size = 1000;
     TEST_CHECK(libmpq__archive_create(&archive, path, &options) == LIBMPQ_ERROR_FORMAT);
     options.sector_size = 4096;
@@ -536,7 +536,7 @@ main(void)
     TEST_CHECK(fwrite(source, 1, sizeof(source) - 1, source_file) == sizeof(source) - 1);
     TEST_CHECK(fclose(source_file) == 0);
 
-    TEST_CHECK(test_add_archive(&archive, archive_path, LIBMPQ_ARCHIVE_VERSION_ONE, 0) == 0);
+    TEST_CHECK(test_add_archive(&archive, archive_path, LIBMPQ_ARCHIVE_VERSION_1, 0) == 0);
     TEST_CHECK(test_writer_errors(archive) == 0);
     TEST_CHECK(
         libmpq__archive_add_data(archive, "payload", payload, sizeof(payload) - 1, NULL) == 0

@@ -143,7 +143,7 @@ Creation supports MPQ v1–v4. `ArchiveCreateOptions.version_` uses
 
 ```d
 auto options = ArchiveCreateOptions.v2();
-options.version_ = ARCHIVE_VERSION_THREE;
+options.version_ = ARCHIVE_VERSION_3;
 auto archive = Archive.create("new.mpq", options);
 scope(exit) archive.close();
 archive.addData("hello.txt", cast(const(ubyte)[])"hello\n");
@@ -153,7 +153,7 @@ archive.addData("hello.txt", cast(const(ubyte)[])"hello\n");
 member from memory. `Archive.add()` remains a supported compatibility alias
 with the same arguments. Use `Archive.addPath()` for filesystem input.
 
-Use `ARCHIVE_VERSION_FOUR` with the same creation APIs for v4 MPQ or MPQE
+Use `ARCHIVE_VERSION_4` with the same creation APIs for v4 MPQ or MPQE
 output with 16 KiB raw chunks by default. V4 updates preserve the source raw-chunk size.
 
 `Archive.createMpqe` creates a new encrypted MPQE stream from borrowed
@@ -590,7 +590,7 @@ transform. SINGLE members can also require whole-unit memory.
 
 ```d
 auto options = ArchiveCreateOptions.v1();
-options.version_ = ARCHIVE_VERSION_FOUR;
+options.version_ = ARCHIVE_VERSION_4;
 auto archive = Archive.create("output.mpq", options);
 scope(exit) archive.close();
 archive.setRawChunkSize(17); // 0 disables trailing raw MD5

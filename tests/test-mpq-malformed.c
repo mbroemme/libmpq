@@ -139,7 +139,7 @@ test_malformed_sector_offsets(void)
 
     TEST_CHECK(test_temp_path(path, sizeof(path), "malformed-sector") == 0);
     memset(payload, 'S', sizeof(payload));
-    TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_ONE, 0) == 0);
+    TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_1, 0) == 0);
     TEST_CHECK(
         libmpq__archive_add_data(archive, "sector.bin", payload, sizeof(payload), &compressed) == 0
     );

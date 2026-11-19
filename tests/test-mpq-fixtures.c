@@ -760,7 +760,7 @@ build_v3_fixture(const char *path, int mixed, int packed)
     );
     position += stored_size;
     header = source->mpq_header;
-    header.version = LIBMPQ_ARCHIVE_VERSION_THREE;
+    header.version = LIBMPQ_ARCHIVE_VERSION_3;
     header.header_size = 68;
     header.hash_table_offset = header.block_table_offset = 0;
     if (mixed) {
@@ -1084,7 +1084,7 @@ test_v3_patch_fixture(void)
     TEST_CHECK(libmpq__load_le64(wire + 44) == wire_size);
     free(wire);
     TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
-    TEST_CHECK(archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE && archive->files == 7);
+    TEST_CHECK(archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_3 && archive->files == 7);
     TEST_CHECK(
         archive->mpq_het.header.entry_count == 7 && archive->mpq_bet.header.entry_count == 7
     );
@@ -1179,7 +1179,7 @@ build_v4_fixture(const char *path, int mpqe)
     static const uint8_t auth[] = "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
     static const char *const names[] = { "overview.txt", "large.bin", "folder/sector.txt",
                                          "remove.txt", "empty.bin" };
-    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_FOUR, 16, 4096,
+    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_4, 16, 4096,
                                             LIBMPQ_ARCHIVE_CREATE_LISTFILE,
                                             LIBMPQ_ATTRIBUTE_CRC32 | LIBMPQ_ATTRIBUTE_MD5 |
                                                 LIBMPQ_ATTRIBUTE_FILETIME };
@@ -1264,7 +1264,7 @@ test_v4_fixture(const char *path, int mpqe)
         TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
     TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_HET_SIGNATURE) == 0);
     TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_BET_SIGNATURE) == 0);
-    TEST_CHECK(archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR);
+    TEST_CHECK(archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4);
     TEST_CHECK(
         archive->mpq_header.header_size == 0xd0 && archive->mpq_header_v4.raw_chunk_size == 0x4000
     );
@@ -1372,7 +1372,7 @@ test_v4_fixture_update(void)
     TEST_CHECK(libmpq__update_commit(update) == 0);
     TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
     TEST_CHECK(
-        archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
+        archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4 &&
         archive->mpq_header_v4.raw_chunk_size == 0x4000
     );
     TEST_CHECK(libmpq__reader_verify_ext_raw_md5(archive, LIBMPQ_HET_SIGNATURE) == 0);

@@ -85,7 +85,7 @@ create_file_archive(
     const char *path, const uint8_t *data, size_t size, const integrity_case_s *kind
 )
 {
-    mpq_archive_create_options_s archive_options = { LIBMPQ_ARCHIVE_VERSION_ONE, 16, 4096, 0,
+    mpq_archive_create_options_s archive_options = { LIBMPQ_ARCHIVE_VERSION_1, 16, 4096, 0,
                                                      kind->attributes };
     mpq_file_options_s file_options = { kind->storage, LIBMPQ_COMPRESSION_ZLIB,
                                         LIBMPQ_COMPRESSION_ZLIB, 0, 0 };

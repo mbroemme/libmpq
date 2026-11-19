@@ -337,7 +337,7 @@ test_encrypted_base(void)
 static int
 test_unlisted_base_member(void)
 {
-    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_ONE, 8, 4096, 0, 0 };
+    mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_1, 8, 4096, 0, 0 };
     mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
     char base_path[1024];
     char patch_path[1024];
@@ -389,7 +389,7 @@ test_abort(void)
 
     TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "patch-writer-abort-base") == 0);
     TEST_CHECK(test_temp_path(patch_path, sizeof(patch_path), "patch-writer-abort") == 0);
-    TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
+    TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_1) == 0);
     TEST_CHECK(libmpq__patch_writer_begin(&writer, base_path, patch_path) == 0);
     TEST_CHECK(
         libmpq__patch_writer_replace(writer, "missing.txt", new_data, sizeof(new_data) - 1, NULL) ==
@@ -490,10 +490,10 @@ check_splice_layout(
 static int
 test_delta_selection(uint8_t kind, uint32_t version)
 {
-    const char *name = version == LIBMPQ_ARCHIVE_VERSION_THREE ? "folder/delta.bin" : "delta.bin";
+    const char *name = version == LIBMPQ_ARCHIVE_VERSION_3 ? "folder/delta.bin" : "delta.bin";
     mpq_archive_create_options_s options = {
-        version, 8, 4096,
-        version == LIBMPQ_ARCHIVE_VERSION_THREE ? LIBMPQ_ARCHIVE_CREATE_LISTFILE : 0, 0
+        version, 8, 4096, version == LIBMPQ_ARCHIVE_VERSION_3 ? LIBMPQ_ARCHIVE_CREATE_LISTFILE : 0,
+        0
     };
     mpq_file_options_s storage = { 0, 0, 0, 0, 0 };
     char base_path[1024];
@@ -550,9 +550,8 @@ test_delta_selection(uint8_t kind, uint32_t version)
     TEST_CHECK(libmpq__file_number(patch, name, &number) == 0);
     TEST_CHECK(
         patch->mpq_entry[patch->mpq_map[number].entry_index].source_mask ==
-        (version >= LIBMPQ_ARCHIVE_VERSION_THREE
-             ? LIBMPQ_ENTRY_SOURCE_CLASSIC | LIBMPQ_ENTRY_SOURCE_BET
-             : LIBMPQ_ENTRY_SOURCE_CLASSIC)
+        (version >= LIBMPQ_ARCHIVE_VERSION_3 ? LIBMPQ_ENTRY_SOURCE_CLASSIC | LIBMPQ_ENTRY_SOURCE_BET
+                                             : LIBMPQ_ENTRY_SOURCE_CLASSIC)
     );
     block = patch->mpq_entry[patch->mpq_map[number].entry_index].classic_source_index;
     TEST_CHECK(libmpq__file_flags(patch, number, &flags) == 0);
@@ -609,7 +608,7 @@ test_delta_selection(uint8_t kind, uint32_t version)
     TEST_CHECK(libmpq__patch_view_open(&view, base_path, layers, 1) == 0);
     TEST_CHECK(check_file(libmpq__patch_view_archive(view), name, after, after_size) == 0);
     TEST_CHECK(libmpq__patch_view_close(view) == 0);
-    if (version == LIBMPQ_ARCHIVE_VERSION_THREE) {
+    if (version == LIBMPQ_ARCHIVE_VERSION_3) {
         char stage_path[1024];
         char next_path[1024];
         uint8_t final[sizeof(after)];
@@ -787,7 +786,7 @@ test_public_patch_data(void)
         replacement[i] = (uint8_t)(i * 37u + i / 11u);
     TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "patch-api-base") == 0);
     TEST_CHECK(test_temp_path(patch_path, sizeof(patch_path), "patch-api-output") == 0);
-    TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
+    TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_2) == 0);
     TEST_CHECK(libmpq__patch_begin(NULL, base_path, patch_path) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__patch_begin(&patch, base_path, patch_path) == 0);
     TEST_CHECK(patch != NULL);
@@ -885,7 +884,7 @@ test_v3_signed_chain(void)
     char second_path[1024];
     const char *layers[] = { first_path, second_path };
     uint8_t strong_private[512];
-    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_THREE, 16, 4096,
+    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_3, 16, 4096,
                                             LIBMPQ_ARCHIVE_CREATE_LISTFILE, 0 };
     mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_SINGLE, 0, 0, 0, 0 };
     mpq_archive_s *archive = NULL;
@@ -964,7 +963,7 @@ test_v3_signed_chain(void)
             TEST_CHECK(libmpq__patch_view_open(&view, base_path, layers, count) == 0);
             archive = libmpq__patch_view_archive(view);
             TEST_CHECK(
-                archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE &&
+                archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_3 &&
                 archive->mpq_header.header_size == 0x44
             );
             TEST_CHECK(
@@ -1235,7 +1234,7 @@ test_public_patch_path_abort(void)
     TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "patch-path-base") == 0);
     TEST_CHECK(test_temp_path(patch_path, sizeof(patch_path), "patch-path-output") == 0);
     TEST_CHECK(test_temp_path(source_path, sizeof(source_path), "patch-path-source") == 0);
-    TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_TWO) == 0);
+    TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_2) == 0);
     source = fopen(source_path, "wb");
     TEST_CHECK(source != NULL);
     TEST_CHECK(fwrite(replacement, 1, sizeof(replacement), source) == sizeof(replacement));
@@ -1290,7 +1289,7 @@ test_public_patch_storage_size(uint32_t version, uint32_t flags, int oversized)
     uint8_t replacement[10000];
     size_t replacement_size =
         oversized ? 9001
-        : (flags & LIBMPQ_FILE_FLAG_SINGLE) != 0 || version >= LIBMPQ_ARCHIVE_VERSION_THREE
+        : (flags & LIBMPQ_FILE_FLAG_SINGLE) != 0 || version >= LIBMPQ_ARCHIVE_VERSION_3
             ? 1024
             : sizeof(replacement);
     uint8_t *image = NULL;
@@ -1320,9 +1319,8 @@ test_public_patch_storage_size(uint32_t version, uint32_t flags, int oversized)
     TEST_CHECK(libmpq__file_number(stored, "replace.txt", &number) == 0);
     TEST_CHECK(
         stored->mpq_entry[stored->mpq_map[number].entry_index].source_mask ==
-        (version >= LIBMPQ_ARCHIVE_VERSION_THREE
-             ? LIBMPQ_ENTRY_SOURCE_CLASSIC | LIBMPQ_ENTRY_SOURCE_BET
-             : LIBMPQ_ENTRY_SOURCE_CLASSIC)
+        (version >= LIBMPQ_ARCHIVE_VERSION_3 ? LIBMPQ_ENTRY_SOURCE_CLASSIC | LIBMPQ_ENTRY_SOURCE_BET
+                                             : LIBMPQ_ENTRY_SOURCE_CLASSIC)
     );
     block = stored->mpq_entry[stored->mpq_map[number].entry_index].classic_source_index;
     offset = (uint64_t)stored->archive_offset + stored->mpq_block[block].offset +
@@ -1363,7 +1361,7 @@ test_public_patch_storage_size(uint32_t version, uint32_t flags, int oversized)
             );
         }
     }
-    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+    if (version == LIBMPQ_ARCHIVE_VERSION_4) {
         uint32_t mismatches;
         TEST_CHECK(
             libmpq__file_verify(stored, number, LIBMPQ_VERIFY_RAW_MD5, &mismatches) == 0 &&
@@ -1449,7 +1447,7 @@ test_public_mpqe_patch(void)
     TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "patch-mpqe-api-base") == 0);
     TEST_CHECK(test_temp_path(patch_path, sizeof(patch_path), "patch-mpqe-api-output") == 0);
     TEST_CHECK(test_temp_path(abort_path, sizeof(abort_path), "patch-mpqe-api-abort") == 0);
-    TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
+    TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_1) == 0);
     TEST_CHECK(
         libmpq__patch_begin_mpqe(
             NULL, base_path, patch_path, mpqe_patch_auth_code, sizeof(mpqe_patch_auth_code) - 1
@@ -1643,7 +1641,7 @@ make_patch_base_bet_only(const char *path)
     memset(output + 16, 0, 28);
     libmpq__store_le32(output + 8, (uint32_t)end);
     libmpq__store_le64(output + 44, end);
-    if (base->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+    if (base->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4) {
         mpq_md5_s md5;
         TEST_CHECK(
             libmpq__header_v4_full_decode(
@@ -1782,7 +1780,7 @@ test_v3_patch_unsupported_members(void)
 
     TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "patch-v3-unsupported-base") == 0);
     TEST_CHECK(test_temp_path(patch_path, sizeof(patch_path), "patch-v3-unsupported-output") == 0);
-    TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_THREE) == 0);
+    TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_3) == 0);
     TEST_CHECK(test_read_path(base_path, &image, &size) == 0);
     table_end = libmpq__load_le32(image + 16);
     TEST_CHECK(table_end < size && table_end > LIBMPQ_HEADER_V3_WIRE_SIZE);
@@ -1960,7 +1958,7 @@ test_extended_patch_source(
             LIBMPQ_ERROR_FORMAT
         );
     }
-    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR && !mpqe) {
+    if (version == LIBMPQ_ARCHIVE_VERSION_4 && !mpqe) {
         uint8_t key[512];
         test_strong_signature_private_key(key);
         TEST_CHECK(
@@ -1984,16 +1982,16 @@ test_extended_patch_source(
     TEST_CHECK(result == 0);
     TEST_CHECK(libmpq__source_read_at(archive->source, 0, header, sizeof(header)) == 0);
     TEST_CHECK(
-        libmpq__load_le32(header + 4) == (version == LIBMPQ_ARCHIVE_VERSION_FOUR ? 0xd0u : 0x44u)
+        libmpq__load_le32(header + 4) == (version == LIBMPQ_ARCHIVE_VERSION_4 ? 0xd0u : 0x44u)
     );
     TEST_CHECK(libmpq__load_le16(header + 12) == version);
     TEST_CHECK(archive->mpq_header.version == version);
     TEST_CHECK(
         archive->mpq_header_v3.archive_size +
-            (version == LIBMPQ_ARCHIVE_VERSION_FOUR && !mpqe ? 260 : 0) ==
+            (version == LIBMPQ_ARCHIVE_VERSION_4 && !mpqe ? 260 : 0) ==
         archive->file_size
     );
-    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR && !mpqe) {
+    if (version == LIBMPQ_ARCHIVE_VERSION_4 && !mpqe) {
         uint32_t mismatches;
         TEST_CHECK(
             libmpq__archive_verify(
@@ -2009,7 +2007,7 @@ test_extended_patch_source(
     {
         uint64_t het_raw = 0;
         uint64_t bet_raw = 0;
-        if (version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+        if (version == LIBMPQ_ARCHIVE_VERSION_4) {
             uint32_t chunk = archive->mpq_header_v4.raw_chunk_size;
             het_raw = ((het_size - 1) / chunk + 1) * 16;
             bet_raw = ((bet_size - 1) / chunk + 1) * 16;
@@ -2027,7 +2025,7 @@ test_extended_patch_source(
     }
     TEST_CHECK(libmpq__archive_files(archive, &count) == 0 && count == 4);
     TEST_CHECK(libmpq__file_number(archive, name, &number) == 0);
-    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+    if (version == LIBMPQ_ARCHIVE_VERSION_4) {
         uint32_t mismatches;
         TEST_CHECK(archive->mpq_header_v4.raw_chunk_size == 0x4000);
         TEST_CHECK(
@@ -2113,7 +2111,7 @@ test_extended_patch_source(
 
         TEST_CHECK(libmpq__patch_view_open_sources(&view, &base_source, &layer, 1) == 0);
         archive = libmpq__patch_view_archive(view);
-        TEST_CHECK(archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE);
+        TEST_CHECK(archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_3);
         TEST_CHECK(archive->mpq_header.header_size == LIBMPQ_HEADER_V3_WIRE_SIZE);
         TEST_CHECK(archive->het_data != NULL && archive->bet_data != NULL);
         TEST_CHECK(check_file(archive, name, new_data, sizeof(new_data) - 1) == 0);
@@ -2163,7 +2161,7 @@ test_v3_patch_creation(uint32_t flags, uint8_t mpqe)
 {
     return test_extended_patch_source(
         flags, mpqe, 0, LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY,
-        LIBMPQ_ARCHIVE_VERSION_THREE
+        LIBMPQ_ARCHIVE_VERSION_3
     );
 }
 
@@ -2171,9 +2169,7 @@ test_v3_patch_creation(uint32_t flags, uint8_t mpqe)
 static int
 test_v3_patch_source(uint32_t flags, uint8_t mpqe, uint8_t layout, uint32_t source_flags)
 {
-    return test_extended_patch_source(
-        flags, mpqe, layout, source_flags, LIBMPQ_ARCHIVE_VERSION_THREE
-    );
+    return test_extended_patch_source(flags, mpqe, layout, source_flags, LIBMPQ_ARCHIVE_VERSION_3);
 }
 
 /* Reproduce independently known intermediate contents through the ordinary writer. */
@@ -2218,7 +2214,7 @@ test_public_v4_chain(uint32_t base_version, uint32_t first_version, int mpqe)
         TEST_CHECK(test_temp_path(paths[i], sizeof(paths[i]), tags[i]) == 0);
     TEST_CHECK(test_chain_source(paths[0], base_version, 0, expected) == 0);
     for (unsigned i = 0; i < 2; ++i) {
-        uint32_t version = i == 0 ? first_version : LIBMPQ_ARCHIVE_VERSION_FOUR;
+        uint32_t version = i == 0 ? first_version : LIBMPQ_ARCHIVE_VERSION_4;
         mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED,
                                        LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
         uint32_t mismatch;
@@ -2288,7 +2284,7 @@ test_public_v4_chain(uint32_t base_version, uint32_t first_version, int mpqe)
         TEST_CHECK(status == 0);
     }
     archive = libmpq__patch_view_archive(view);
-    TEST_CHECK(archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE);
+    TEST_CHECK(archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_3);
     TEST_CHECK(check_file(archive, "folder/reference.bin", expected, sizeof(expected)) == 0);
     TEST_CHECK(check_file(archive, "stay", (const uint8_t *)"stable", 6) == 0);
     TEST_CHECK(libmpq__file_number(archive, "remove", &number) == LIBMPQ_ERROR_EXIST);
@@ -2323,7 +2319,7 @@ test_added_wire(mpq_archive_s *archive)
     key = (0x4bf79918u + (uint32_t)entry->offset) ^ (uint32_t)entry->unpacked_size;
     TEST_CHECK(libmpq__crypto_decrypt_block(offsets, sizeof(offsets), key - 1) == 0);
     TEST_CHECK(libmpq__load_le32(offsets) == sizeof(offsets));
-    if (archive->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_FOUR)
+    if (archive->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_4)
         return 0;
     TEST_CHECK(libmpq__file_number(archive, "added/data.bin", &number) == 0);
     entry = &archive->mpq_entry[archive->mpq_map[number].entry_index];
@@ -2418,7 +2414,7 @@ test_public_additions(uint32_t version, uint8_t mpqe, uint8_t mixed)
     TEST_CHECK(
         libmpq__patch_add_path(patch, "added/data.bin", "missing", NULL) == LIBMPQ_ERROR_EXIST
     );
-    if (version >= LIBMPQ_ARCHIVE_VERSION_THREE)
+    if (version >= LIBMPQ_ARCHIVE_VERSION_3)
         TEST_CHECK(
             libmpq__patch_add_data(patch, "added\\data.bin", data, 1, NULL) == LIBMPQ_ERROR_FORMAT
         );
@@ -2498,7 +2494,7 @@ test_public_additions(uint32_t version, uint8_t mpqe, uint8_t mixed)
         libmpq__file_verify(physical, number, LIBMPQ_VERIFY_ALL, &mismatches) == 0 &&
         mismatches == 0
     );
-    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+    if (version == LIBMPQ_ARCHIVE_VERSION_4) {
         TEST_CHECK(physical->mpq_header_v4.raw_chunk_size == 0x4000);
         TEST_CHECK(libmpq__reader_verify_ext_raw_md5(physical, LIBMPQ_HET_SIGNATURE) == 0);
         TEST_CHECK(libmpq__reader_verify_ext_raw_md5(physical, LIBMPQ_BET_SIGNATURE) == 0);
@@ -2772,7 +2768,7 @@ test_patch_raw_policy(uint32_t chunk, uint8_t mpqe)
     uint32_t mismatch;
     TEST_CHECK(test_temp_path(base_path, sizeof(base_path), "raw-patch-base") == 0);
     TEST_CHECK(test_temp_path(patch_path, sizeof(patch_path), "raw-patch-policy") == 0);
-    TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_FOUR) == 0);
+    TEST_CHECK(create_base(base_path, LIBMPQ_ARCHIVE_VERSION_4) == 0);
     TEST_CHECK(
         (mpqe ? libmpq__patch_begin_mpqe(
                     &patch, base_path, patch_path, mpqe_patch_auth_code,
@@ -2862,35 +2858,35 @@ main(void)
     for (uint8_t mpqe = 0; mpqe < 2; mpqe++)
         for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++)
             TEST_CHECK(test_patch_raw_policy(sizes[i], mpqe) == 0);
-    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_FOUR;
+    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_1; version <= LIBMPQ_ARCHIVE_VERSION_4;
          version++) {
         for (uint8_t mpqe = 0; mpqe < 2; mpqe++)
             for (uint8_t mixed = 0; mixed < 2; mixed++)
                 TEST_CHECK(test_public_additions(version, mpqe, mixed) == 0);
         TEST_CHECK(test_add_ambiguous_identity(version) == 0);
         TEST_CHECK(test_added_prefix_layers(version) == 0);
-        if (version >= LIBMPQ_ARCHIVE_VERSION_THREE)
+        if (version >= LIBMPQ_ARCHIVE_VERSION_3)
             TEST_CHECK(test_add_hash_publication(version) == 0);
 #ifndef _WIN32
         TEST_CHECK(test_add_terminal_error(version, 0) == 0);
         TEST_CHECK(test_add_terminal_error(version, 1) == 0);
 #endif
     }
-    TEST_CHECK(round_trip(LIBMPQ_ARCHIVE_VERSION_ONE, 1, 0) == 0);
-    TEST_CHECK(round_trip(LIBMPQ_ARCHIVE_VERSION_ONE, 0, 1) == 0);
-    TEST_CHECK(round_trip(LIBMPQ_ARCHIVE_VERSION_ONE, 1, 1) == 0);
-    TEST_CHECK(round_trip(LIBMPQ_ARCHIVE_VERSION_TWO, 1, 1) == 0);
+    TEST_CHECK(round_trip(LIBMPQ_ARCHIVE_VERSION_1, 1, 0) == 0);
+    TEST_CHECK(round_trip(LIBMPQ_ARCHIVE_VERSION_1, 0, 1) == 0);
+    TEST_CHECK(round_trip(LIBMPQ_ARCHIVE_VERSION_1, 1, 1) == 0);
+    TEST_CHECK(round_trip(LIBMPQ_ARCHIVE_VERSION_2, 1, 1) == 0);
     TEST_CHECK(test_encrypted_base() == 0);
     TEST_CHECK(test_unlisted_base_member() == 0);
-    TEST_CHECK(test_delta_selection(1, LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
-    TEST_CHECK(test_delta_selection(2, LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
+    TEST_CHECK(test_delta_selection(1, LIBMPQ_ARCHIVE_VERSION_1) == 0);
+    TEST_CHECK(test_delta_selection(2, LIBMPQ_ARCHIVE_VERSION_1) == 0);
     TEST_CHECK(test_splice_candidate() == 0);
-    TEST_CHECK(test_delta_selection(0, LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
-    TEST_CHECK(test_delta_selection(1, LIBMPQ_ARCHIVE_VERSION_THREE) == 0);
-    TEST_CHECK(test_delta_selection(0, LIBMPQ_ARCHIVE_VERSION_THREE) == 0);
+    TEST_CHECK(test_delta_selection(0, LIBMPQ_ARCHIVE_VERSION_1) == 0);
+    TEST_CHECK(test_delta_selection(1, LIBMPQ_ARCHIVE_VERSION_3) == 0);
+    TEST_CHECK(test_delta_selection(0, LIBMPQ_ARCHIVE_VERSION_3) == 0);
     TEST_CHECK(test_public_patch_data() == 0);
-    TEST_CHECK(test_public_patch_signing(LIBMPQ_ARCHIVE_VERSION_ONE) == 0);
-    TEST_CHECK(test_public_patch_signing(LIBMPQ_ARCHIVE_VERSION_THREE) == 0);
+    TEST_CHECK(test_public_patch_signing(LIBMPQ_ARCHIVE_VERSION_1) == 0);
+    TEST_CHECK(test_public_patch_signing(LIBMPQ_ARCHIVE_VERSION_3) == 0);
     TEST_CHECK(test_v3_patch_creation(LIBMPQ_FILE_FLAG_SINGLE, 0) == 0);
     TEST_CHECK(
         test_v3_patch_creation(LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED, 0) == 0
@@ -2901,52 +2897,36 @@ main(void)
     TEST_CHECK(
         test_v3_patch_creation(LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED, 1) == 0
     );
-    TEST_CHECK(test_delta_selection(0, LIBMPQ_ARCHIVE_VERSION_FOUR) == 0);
-    TEST_CHECK(test_delta_selection(1, LIBMPQ_ARCHIVE_VERSION_FOUR) == 0);
+    TEST_CHECK(test_delta_selection(0, LIBMPQ_ARCHIVE_VERSION_4) == 0);
+    TEST_CHECK(test_delta_selection(1, LIBMPQ_ARCHIVE_VERSION_4) == 0);
     TEST_CHECK(
         test_extended_patch_source(
             LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 0, 0,
             LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY,
-            LIBMPQ_ARCHIVE_VERSION_FOUR
+            LIBMPQ_ARCHIVE_VERSION_4
         ) == 0
     );
     TEST_CHECK(
         test_extended_patch_source(
             LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY, 1, 0,
-            LIBMPQ_FILE_FLAG_SINGLE, LIBMPQ_ARCHIVE_VERSION_FOUR
+            LIBMPQ_FILE_FLAG_SINGLE, LIBMPQ_ARCHIVE_VERSION_4
         ) == 0
     );
     TEST_CHECK(
         test_extended_patch_source(
             LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED, 0, 1,
             LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY,
-            LIBMPQ_ARCHIVE_VERSION_FOUR
+            LIBMPQ_ARCHIVE_VERSION_4
         ) == 0
     );
-    TEST_CHECK(
-        test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_FOUR, LIBMPQ_ARCHIVE_VERSION_FOUR, 0) == 0
-    );
-    TEST_CHECK(
-        test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_FOUR, LIBMPQ_ARCHIVE_VERSION_FOUR, 1) == 0
-    );
-    TEST_CHECK(
-        test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_THREE, LIBMPQ_ARCHIVE_VERSION_FOUR, 0) == 0
-    );
-    TEST_CHECK(
-        test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_FOUR, LIBMPQ_ARCHIVE_VERSION_THREE, 0) == 0
-    );
-    TEST_CHECK(
-        test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_FOUR, LIBMPQ_ARCHIVE_VERSION_ONE, 0) == 0
-    );
-    TEST_CHECK(
-        test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_FOUR, LIBMPQ_ARCHIVE_VERSION_TWO, 1) == 0
-    );
-    TEST_CHECK(
-        test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_ONE, LIBMPQ_ARCHIVE_VERSION_FOUR, 0) == 0
-    );
-    TEST_CHECK(
-        test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_TWO, LIBMPQ_ARCHIVE_VERSION_FOUR, 0) == 0
-    );
+    TEST_CHECK(test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_4, LIBMPQ_ARCHIVE_VERSION_4, 0) == 0);
+    TEST_CHECK(test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_4, LIBMPQ_ARCHIVE_VERSION_4, 1) == 0);
+    TEST_CHECK(test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_3, LIBMPQ_ARCHIVE_VERSION_4, 0) == 0);
+    TEST_CHECK(test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_4, LIBMPQ_ARCHIVE_VERSION_3, 0) == 0);
+    TEST_CHECK(test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_4, LIBMPQ_ARCHIVE_VERSION_1, 0) == 0);
+    TEST_CHECK(test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_4, LIBMPQ_ARCHIVE_VERSION_2, 1) == 0);
+    TEST_CHECK(test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_1, LIBMPQ_ARCHIVE_VERSION_4, 0) == 0);
+    TEST_CHECK(test_public_v4_chain(LIBMPQ_ARCHIVE_VERSION_2, LIBMPQ_ARCHIVE_VERSION_4, 0) == 0);
     TEST_CHECK(test_v3_patch_unsupported_members() == 0);
     TEST_CHECK(test_v3_patch_source(LIBMPQ_FILE_FLAG_SINGLE, 0, 2, LIBMPQ_FILE_FLAG_SINGLE) == 0);
     TEST_CHECK(
@@ -2978,19 +2958,17 @@ main(void)
     TEST_CHECK(test_public_mpqe_patch_chain() == 0);
     TEST_CHECK(test_v3_signed_chain() == 0);
     TEST_CHECK(test_public_patch_path_abort() == 0);
-    TEST_CHECK(test_public_patch_storage(LIBMPQ_ARCHIVE_VERSION_TWO, 0) == 0);
+    TEST_CHECK(test_public_patch_storage(LIBMPQ_ARCHIVE_VERSION_2, 0) == 0);
+    TEST_CHECK(test_public_patch_storage(LIBMPQ_ARCHIVE_VERSION_2, LIBMPQ_FILE_FLAG_COMPRESS) == 0);
     TEST_CHECK(
-        test_public_patch_storage(LIBMPQ_ARCHIVE_VERSION_TWO, LIBMPQ_FILE_FLAG_COMPRESS) == 0
-    );
-    TEST_CHECK(
-        test_public_patch_storage(LIBMPQ_ARCHIVE_VERSION_TWO, LIBMPQ_FILE_FLAG_ENCRYPTED) == 0
+        test_public_patch_storage(LIBMPQ_ARCHIVE_VERSION_2, LIBMPQ_FILE_FLAG_ENCRYPTED) == 0
     );
     TEST_CHECK(
         test_public_patch_storage(
-            LIBMPQ_ARCHIVE_VERSION_TWO, LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED
+            LIBMPQ_ARCHIVE_VERSION_2, LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED
         ) == 0
     );
-    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_FOUR;
+    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_1; version <= LIBMPQ_ARCHIVE_VERSION_4;
          ++version) {
         TEST_CHECK(
             test_public_patch_storage(

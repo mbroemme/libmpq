@@ -92,7 +92,7 @@ encoding_roundtrip(const uint8_t *wire, size_t size, bool compress, int smaller)
         memcpy(decoded + size, wire, 12);
         result = libmpq__compression_decompress_table(
             decoded + 12, (uint32_t)stored_payload, decoded + size + 12, (uint32_t)payload_size,
-            LIBMPQ_ARCHIVE_VERSION_THREE
+            LIBMPQ_ARCHIVE_VERSION_3
         );
         TEST_CHECK(
             result != (int32_t)payload_size ||
@@ -107,7 +107,7 @@ encoding_roundtrip(const uint8_t *wire, size_t size, bool compress, int smaller)
         TEST_CHECK(
             libmpq__compression_decompress_table(
                 stored + 12, (uint32_t)stored_payload, decoded + 12, (uint32_t)payload_size,
-                LIBMPQ_ARCHIVE_VERSION_THREE
+                LIBMPQ_ARCHIVE_VERSION_3
             ) == (int32_t)payload_size
         );
     } else {

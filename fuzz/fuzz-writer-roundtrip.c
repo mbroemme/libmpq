@@ -56,13 +56,13 @@ file_options(uint8_t selector, uint32_t version)
     uint32_t codec;
     mpq_file_options_s options = { 0, 0, 0, 0, 0 };
 
-    if (version >= LIBMPQ_ARCHIVE_VERSION_TWO && (selector & 0x20U) != 0U)
+    if (version >= LIBMPQ_ARCHIVE_VERSION_2 && (selector & 0x20U) != 0U)
         codec = LIBMPQ_COMPRESSION_LZMA;
     else
         codec = codecs[selector % (sizeof(codecs) / sizeof(codecs[0]))];
 
     /* MPQ v2 reserves serialized 0x12 for LZMA, not zlib plus bzip2. */
-    if (version >= LIBMPQ_ARCHIVE_VERSION_TWO &&
+    if (version >= LIBMPQ_ARCHIVE_VERSION_2 &&
         (codec & (LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) ==
             (LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2)) {
         codec = LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_PKZIP;

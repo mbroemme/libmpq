@@ -162,7 +162,7 @@ test_high_byte_names(void)
     memset(payload, 'H', sizeof(payload));
     for (uint32_t phase = 0; phase < 5; ++phase)
         TEST_CHECK(libmpq__crypto_hash_string(byte, phase * 0x100u) == expected[phase]);
-    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_THREE;
+    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_1; version <= LIBMPQ_ARCHIVE_VERSION_3;
          ++version) {
         mpq_archive_create_options_s create = { version, 4, 512, 0, 0 };
         mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED, 0, 0,
@@ -220,9 +220,9 @@ test_directory_members(void)
     uint8_t output[1600];
     char path[128];
     memset(payload, 'R', sizeof(payload));
-    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_ONE; version <= LIBMPQ_ARCHIVE_VERSION_THREE;
+    for (uint32_t version = LIBMPQ_ARCHIVE_VERSION_1; version <= LIBMPQ_ARCHIVE_VERSION_3;
          ++version) {
-        for (unsigned wrapped = 0; wrapped < (version == LIBMPQ_ARCHIVE_VERSION_ONE ? 1u : 2u);
+        for (unsigned wrapped = 0; wrapped < (version == LIBMPQ_ARCHIVE_VERSION_1 ? 1u : 2u);
              ++wrapped) {
             mpq_archive_create_options_s create = { version, 8, 512, 0, 0 };
             mpq_archive_s *archive = NULL;
@@ -297,7 +297,7 @@ static int
 test_reference_directory_member(const char *path)
 {
     const char *name = "folder\\reference.bin";
-    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_THREE, 4, 512, 0, 0 };
+    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_3, 4, 512, 0, 0 };
     mpq_file_options_s storage = { LIBMPQ_FILE_FLAG_SINGLE | LIBMPQ_FILE_FLAG_ENCRYPTED, 0, 0, 0,
                                    0 };
     mpq_archive_s *archive = NULL;

@@ -71,7 +71,7 @@ fill_bytes(uint8_t *data, size_t size, uint32_t seed)
 static int
 make_archive(const char *path, const uint8_t *data, size_t size)
 {
-    mpq_archive_create_options_s creation = { LIBMPQ_ARCHIVE_VERSION_ONE, 16, 4096,
+    mpq_archive_create_options_s creation = { LIBMPQ_ARCHIVE_VERSION_1, 16, 4096,
                                               LIBMPQ_ARCHIVE_CREATE_LISTFILE, 0 };
     mpq_file_options_s storage = { 0, 0, 0, 0, 0 };
     mpq_archive_s *archive = NULL;

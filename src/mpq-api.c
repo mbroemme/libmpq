@@ -765,9 +765,9 @@ libmpq__archive_raw_chunk_size_get(mpq_archive_s *archive, uint32_t *raw_chunk_s
     *raw_chunk_size = 0;
     if (archive == NULL)
         return LIBMPQ_ERROR_EXIST;
-    if (archive->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_FOUR)
+    if (archive->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_4)
         return LIBMPQ_ERROR_FORMAT;
-    if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+    if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4)
         *raw_chunk_size = archive->mpq_header_v4.raw_chunk_size;
     return 0;
 }

@@ -45,7 +45,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
     compression_type =
         (data[0] & 1U) != 0U ? LIBMPQ_FLAG_COMPRESS_PKZIP : LIBMPQ_FLAG_COMPRESS_MULTI;
-    format_version = (data[0] & 2U) != 0U ? LIBMPQ_ARCHIVE_VERSION_TWO : LIBMPQ_ARCHIVE_VERSION_ONE;
+    format_version = (data[0] & 2U) != 0U ? LIBMPQ_ARCHIVE_VERSION_2 : LIBMPQ_ARCHIVE_VERSION_1;
     output = malloc(output_size);
     if (output == NULL) {
         return 0;

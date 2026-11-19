@@ -71,7 +71,7 @@ test_header_vectors(void)
     TEST_CHECK(decoded.block_table_count == base.block_table_count);
 
     base.header_size = sizeof(v2);
-    base.version = LIBMPQ_ARCHIVE_VERSION_TWO;
+    base.version = LIBMPQ_ARCHIVE_VERSION_2;
     TEST_CHECK(libmpq__header_encode(&base, wire, sizeof(wire)) == 0);
     TEST_CHECK(
         libmpq__header_ex_encode(
@@ -86,7 +86,7 @@ test_header_vectors(void)
         ) == 0
     );
     TEST_CHECK(decoded.header_size == sizeof(v2));
-    TEST_CHECK(decoded.version == LIBMPQ_ARCHIVE_VERSION_TWO);
+    TEST_CHECK(decoded.version == LIBMPQ_ARCHIVE_VERSION_2);
     TEST_CHECK(decoded_ex.extended_offset == extension.extended_offset);
     TEST_CHECK(decoded_ex.hash_table_offset_high == extension.hash_table_offset_high);
     TEST_CHECK(decoded_ex.block_table_offset_high == extension.block_table_offset_high);
@@ -141,7 +141,7 @@ test_v3_vector(void)
     TEST_CHECK(decoded.archive_size == extension.archive_size);
     TEST_CHECK(decoded.bet_table_offset == extension.bet_table_offset);
     TEST_CHECK(decoded.het_table_offset == extension.het_table_offset);
-    base.version = LIBMPQ_ARCHIVE_VERSION_THREE;
+    base.version = LIBMPQ_ARCHIVE_VERSION_3;
     base.header_size = LIBMPQ_HEADER_V3_WIRE_SIZE;
     base.archive_size = 123;
     TEST_CHECK(libmpq__header_archive_size(&base, &decoded) == extension.archive_size);
@@ -178,7 +178,7 @@ static int
 test_v4_vectors(void)
 {
     mpq_header_s base = {
-        LIBMPQ_HEADER, 208,         0x12345678u, LIBMPQ_ARCHIVE_VERSION_FOUR, 3, 0x01020304u,
+        LIBMPQ_HEADER, 208,         0x12345678u, LIBMPQ_ARCHIVE_VERSION_4, 3, 0x01020304u,
         0x05060708u,   0x090a0b0cu, 0x0d0e0f10u
     };
     mpq_header_ex_s ex = { UINT64_C(0x1112131415161718), 0x191au, 0x1b1cu };
@@ -370,7 +370,7 @@ test_v4_errors(void)
     for (unsigned int field = 0; field < 3; ++field) {
         mpq_header_s invalid = base;
         if (field == 0)
-            invalid.version = LIBMPQ_ARCHIVE_VERSION_THREE;
+            invalid.version = LIBMPQ_ARCHIVE_VERSION_3;
         else if (field == 1)
             invalid.header_size = 207;
         else
@@ -434,7 +434,7 @@ static int
 v3_fixture(v3_source_s *source, uint32_t header_size, uint64_t shift, uint64_t base)
 {
     mpq_header_s header = {
-        LIBMPQ_HEADER,    header_size, 0, LIBMPQ_ARCHIVE_VERSION_THREE, 3, header_size,
+        LIBMPQ_HEADER,    header_size, 0, LIBMPQ_ARCHIVE_VERSION_3, 3, header_size,
         header_size + 64, 4,           1
     };
     mpq_header_ex_s ex = { shift + header_size + 80, (uint16_t)(shift >> 32),
@@ -603,7 +603,7 @@ test_v3_rejection(void)
     TEST_CHECK(archive == NULL);
     TEST_CHECK(v3_fixture(&source, 68, 0, 0) == 0);
     TEST_CHECK(libmpq__header_decode(&header, source.bytes, 32) == 0);
-    header.version = LIBMPQ_ARCHIVE_VERSION_FOUR; /* A v4 declaration requires its full header. */
+    header.version = LIBMPQ_ARCHIVE_VERSION_4; /* A v4 declaration requires its full header. */
     TEST_CHECK(libmpq__header_encode(&header, source.bytes, 32) == 0);
     TEST_CHECK(
         libmpq__archive_open_io(
@@ -655,7 +655,7 @@ test_v4_disabled(void)
         ) == LIBMPQ_ERROR_FORMAT
     );
     TEST_CHECK(archive == NULL);
-    options.version = LIBMPQ_ARCHIVE_VERSION_FOUR + 1;
+    options.version = LIBMPQ_ARCHIVE_VERSION_4 + 1;
     TEST_CHECK(
         libmpq__archive_create(&archive, "unsupported-version.mpq", &options) == LIBMPQ_ERROR_FORMAT
     );

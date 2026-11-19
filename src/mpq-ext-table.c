@@ -69,7 +69,7 @@ libmpq__ext_table_encode(
         /* Zlib framing is shared with v2 and v3. */
         result = libmpq__compression_encode_sector(
             wire + LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE, payload_size, LIBMPQ_COMPRESSION_ZLIB,
-            LIBMPQ_ARCHIVE_VERSION_TWO, LIBMPQ_COMPRESSION_POLICY_STANDARD, &payload, &payload_size,
+            LIBMPQ_ARCHIVE_VERSION_2, LIBMPQ_COMPRESSION_POLICY_STANDARD, &payload, &payload_size,
             &mask
         );
         if (result != 0)

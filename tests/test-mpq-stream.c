@@ -100,7 +100,7 @@ done:
 int
 main(void)
 {
-    mpq_archive_create_options_s creation = { LIBMPQ_ARCHIVE_VERSION_ONE, 16, 4096, 0, 0 };
+    mpq_archive_create_options_s creation = { LIBMPQ_ARCHIVE_VERSION_1, 16, 4096, 0, 0 };
     uint8_t expected[STREAM_TEST_SIZE];
     mpq_archive_s *archive = NULL;
     char path[128];

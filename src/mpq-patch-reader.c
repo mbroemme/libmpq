@@ -556,7 +556,7 @@ patch_body_view(
     if (info->length > block->packed_size || info->length > UINT64_MAX - block->offset)
         return LIBMPQ_ERROR_FORMAT;
     uint64_t shifted = block->offset + info->length;
-    if (shifted > UINT32_MAX && archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE)
+    if (shifted > UINT32_MAX && archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_1)
         return LIBMPQ_ERROR_FORMAT;
     *seed = NULL;
     if (name != NULL && (block->flags & (LIBMPQ_FLAG_ENCRYPTED | LIBMPQ_FILE_FLAG_KEY)) ==
@@ -1526,7 +1526,7 @@ patch_write_tables(mpq_archive_s *archive, FILE *output)
         return LIBMPQ_ERROR_WRITE;
     }
     free(raw);
-    if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO) {
+    if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_2) {
         extended_offset = (uint64_t)(libmpq__file_tell(output) - archive->archive_offset);
         for (uint32_t i = 0; i < archive->mpq_header.block_table_count; i++) {
             uint8_t word[2];
@@ -1550,7 +1550,7 @@ patch_write_tables(mpq_archive_s *archive, FILE *output)
     result = libmpq__header_encode(&wire_header, header, sizeof(header));
     if (result < 0)
         return result;
-    if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO) {
+    if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_2) {
         wire_ex.extended_offset = extended_offset;
         wire_ex.hash_table_offset_high = 0;
         wire_ex.block_table_offset_high = 0;
@@ -1694,7 +1694,7 @@ patch_source_open(mpq_archive_s **archive, const mpq_patch_source_s *source)
                  : libmpq__archive_open_mpqe(
                        archive, source->path, -1, source->auth_code, source->auth_code_size
                    );
-    if (result == 0 && (*archive)->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_FOUR) {
+    if (result == 0 && (*archive)->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_4) {
         (void)libmpq__archive_close(*archive);
         *archive = NULL;
         return LIBMPQ_ERROR_FORMAT;
@@ -1956,7 +1956,7 @@ patch_materialize_named(
     mpq_patch_entry_s *entries = NULL;
     mpq_archive_s *writer = NULL;
     mpq_archive_s *check = NULL;
-    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_THREE, 0, 0,
+    mpq_archive_create_options_s create = { LIBMPQ_ARCHIVE_VERSION_3, 0, 0,
                                             LIBMPQ_ARCHIVE_CREATE_LISTFILE |
                                                 LIBMPQ_ARCHIVE_CREATE_COMPRESSION_EXTENDED,
                                             0 };
@@ -2308,8 +2308,8 @@ patch_apply_layer(
     status = libmpq__archive_open(&lower, view->path, view->archive_offset);
     if (status != 0)
         goto done;
-    if (lower->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_THREE ||
-        patch->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR || patch->het_data != NULL) {
+    if (lower->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_3 ||
+        patch->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4 || patch->het_data != NULL) {
         status = patch_materialize_named(view, &lower, patch, source, explicit_layer);
         goto done;
     }
@@ -2346,7 +2346,7 @@ patch_apply_layer(
     }
 
     /* Legacy table rewriting applies only to v1 and v2 archive headers. */
-    if (lower->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_TWO) {
+    if (lower->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_2) {
         status = LIBMPQ_ERROR_FORMAT;
         goto done;
     }
@@ -2648,7 +2648,7 @@ patch_view_compose(
         goto error;
     }
     state->archive_offset = base->archive_offset;
-    if (base->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_THREE) {
+    if (base->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_3) {
 
         /* Rebuild directly from the opened sources, without a full intermediate base copy. */
         if (fclose(temporary) != 0) {
@@ -3343,8 +3343,7 @@ patch_select_regular(
     uint32_t distance = UINT32_MAX;
     uint32_t slots = base->mpq_header.hash_table_count;
     uint32_t start = slots == 0 ? 0 : libmpq__crypto_hash_string(filename, 0) % slots;
-    uint8_t named =
-        base->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_THREE || base->het_data != NULL;
+    uint8_t named = base->mpq_header.version >= LIBMPQ_ARCHIVE_VERSION_3 || base->het_data != NULL;
     uint8_t inserted = 0;
     uint8_t changed = 0;
     uint8_t orphan = 0;
@@ -3354,7 +3353,7 @@ patch_select_regular(
      * apply to a lower archive in v1 or v2 without rebuilding it as a named view.
      */
     for (size_t i = 0; i < count; ++i)
-        named |= patches[i]->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR ||
+        named |= patches[i]->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4 ||
                  patches[i]->het_data != NULL;
 
     for (size_t i = 0; i < plan->count;) {

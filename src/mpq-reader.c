@@ -132,10 +132,10 @@ classic_table_size(const mpq_archive_s *archive, int block, size_t decoded, size
     uint64_t length = decoded;
     uint32_t version = archive->mpq_header.version;
     *stored = decoded;
-    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+    if (version == LIBMPQ_ARCHIVE_VERSION_4) {
         length = block ? archive->mpq_header_v4.block_table_size
                        : archive->mpq_header_v4.hash_table_size;
-    } else if (decoded != 0 && version >= LIBMPQ_ARCHIVE_VERSION_TWO) {
+    } else if (decoded != 0 && version >= LIBMPQ_ARCHIVE_VERSION_2) {
         if (next > position) {
             if (next - position < length)
                 length = next - position;
@@ -144,7 +144,7 @@ classic_table_size(const mpq_archive_s *archive, int block, size_t decoded, size
                 libmpq__header_archive_size(&archive->mpq_header, &archive->mpq_header_v3);
 
             /* V2's 32-bit size is reliable here only when it agrees with the source. */
-            if (version == LIBMPQ_ARCHIVE_VERSION_THREE ||
+            if (version == LIBMPQ_ARCHIVE_VERSION_3 ||
                 (archive->archive_offset >= 0 &&
                  (uint64_t)archive->archive_offset <= archive->file_size &&
                  end == archive->file_size - (uint64_t)archive->archive_offset)) {
@@ -235,7 +235,7 @@ libmpq__reader_verify_ext_raw_md5(mpq_archive_s *archive, uint32_t signature)
     if (signature != LIBMPQ_HET_SIGNATURE && signature != LIBMPQ_BET_SIGNATURE)
         return LIBMPQ_ERROR_FORMAT;
     chunk_size = archive->mpq_header_v4.raw_chunk_size;
-    if (archive->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_FOUR || chunk_size == 0)
+    if (archive->mpq_header.version != LIBMPQ_ARCHIVE_VERSION_4 || chunk_size == 0)
         return LIBMPQ_ERROR_EXIST;
     positions[0] = archive->mpq_header.hash_table_offset |
                    ((uint64_t)archive->mpq_header_ex.hash_table_offset_high << 32);
@@ -362,7 +362,7 @@ libmpq__reader_ext_table_sizes(const mpq_archive_s *archive, uint64_t *het_size,
     if (het_size == NULL || bet_size == NULL || archive == NULL)
         return LIBMPQ_ERROR_FORMAT;
     *het_size = *bet_size = 0;
-    if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+    if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4) {
         int32_t result = validate_table_extent(
             archive, archive->mpq_header_v3.het_table_offset, archive->mpq_header_v4.het_table_size,
             archive->mpq_header_v3.het_table_offset != 0 ? LIBMPQ_EXT_TABLE_HEADER_WIRE_SIZE + 1
@@ -501,7 +501,7 @@ classic_table_load(mpq_archive_s *archive, int block, size_t decoded, uint8_t **
     if (input == NULL)
         return LIBMPQ_ERROR_MALLOC;
     result = libmpq__source_read_at(archive->source, base + position, input, stored);
-    if (result == 0 && archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+    if (result == 0 && archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4)
         result = verify_md5(
             input, stored,
             block ? archive->mpq_header_v4.block_table_md5 : archive->mpq_header_v4.hash_table_md5
@@ -570,11 +570,11 @@ ext_table_load(
     uint32_t data_size;
     uint64_t decoded_size;
     size_t payload_size;
-    int v4 = archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR;
+    int v4 = archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4;
     int32_t result;
     *output = NULL;
     *output_size = 0;
-    if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
+    if (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4 &&
         validate_table_extent(
             archive, offset, stored_size, sizeof(envelope) + 1, LIBMPQ_EXT_TABLE_MAX_SIZE
         ) != 0)
@@ -611,7 +611,7 @@ ext_table_load(
         libmpq__load_le32(envelope + 4) != LIBMPQ_EXT_TABLE_VERSION || data_size == 0 ||
         data_size > INT32_MAX || decoded_size > LIBMPQ_EXT_TABLE_MAX_SIZE ||
         decoded_size > SIZE_MAX ||
-        (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
+        (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4 &&
          data_size < (signature == LIBMPQ_HET_SIGNATURE ? LIBMPQ_HET_HEADER_WIRE_SIZE
                                                         : LIBMPQ_BET_HEADER_WIRE_SIZE))) {
         result = LIBMPQ_ERROR_FORMAT;
@@ -772,17 +772,17 @@ libmpq__archive_required_extent(const mpq_archive_s *archive, uint64_t *size)
         *size = 0;
     if (archive == NULL || size == NULL)
         return LIBMPQ_ERROR_EXIST;
-    if (archive->archive_offset < 0 || archive->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_FOUR ||
+    if (archive->archive_offset < 0 || archive->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_4 ||
         (archive->entry_count != 0 && archive->mpq_entry == NULL))
         return LIBMPQ_ERROR_FORMAT;
     extent = archive->mpq_header.header_size;
     if (extent < LIBMPQ_HEADER_WIRE_SIZE ||
-        (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO &&
+        (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_2 &&
          extent < LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE) ||
-        (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE &&
+        (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_3 &&
          extent != LIBMPQ_HEADER_WIRE_SIZE &&
          extent < LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE) ||
-        (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
+        (archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4 &&
          extent != LIBMPQ_HEADER_V4_WIRE_SIZE))
         return LIBMPQ_ERROR_FORMAT;
     hash = archive->mpq_header.hash_table_offset |
@@ -802,7 +802,7 @@ libmpq__archive_required_extent(const mpq_archive_s *archive, uint64_t *size)
     if (archive->mpq_header_ex.extended_offset != 0 &&
         extend_extent(
             archive->mpq_header_ex.extended_offset,
-            archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR
+            archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4
                 ? archive->mpq_header_v4.hi_block_table_size
                 : (uint64_t)archive->mpq_header.block_table_count * LIBMPQ_BLOCK_EX_ENTRY_WIRE_SIZE,
             &extent
@@ -841,7 +841,7 @@ libmpq__archive_signature_extent(const mpq_archive_s *archive, uint64_t *size)
     result = libmpq__archive_required_extent(archive, &required);
     if (result != 0)
         return result;
-    extent = archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO
+    extent = archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_2
                  ? required
                  : libmpq__header_archive_size(&archive->mpq_header, &archive->mpq_header_v3);
     if (extent < required || (uint64_t)archive->archive_offset > archive->file_size ||
@@ -1629,8 +1629,8 @@ libmpq__reader_validate_payload_range(
     }
 
     payload_offset = mpq_archive->mpq_entry[entry_index].offset;
-    if (mpq_archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE ||
-        mpq_archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+    if (mpq_archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_3 ||
+        mpq_archive->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4) {
         uint64_t extent =
             libmpq__header_archive_size(&mpq_archive->mpq_header, &mpq_archive->mpq_header_v3);
 
@@ -2177,7 +2177,7 @@ libmpq__reader_archive_open_source(
             goto error;
 
         if ((*mpq_archive)->mpq_header.mpq_magic == LIBMPQ_HEADER) {
-            if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE) {
+            if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_1) {
 
                 /* Protected archives may store a bogus header size; normalize it locally. */
                 if ((*mpq_archive)->mpq_header.header_size != LIBMPQ_HEADER_WIRE_SIZE) {
@@ -2185,7 +2185,7 @@ libmpq__reader_archive_open_source(
                 }
             }
 
-            if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO) {
+            if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_2) {
                 if ((*mpq_archive)->mpq_header.header_size !=
                     LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE) {
                     (*mpq_archive)->mpq_header.header_size =
@@ -2193,7 +2193,7 @@ libmpq__reader_archive_open_source(
                 }
             }
 
-            if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE &&
+            if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_3 &&
                 ((*mpq_archive)->mpq_header.header_size < LIBMPQ_HEADER_WIRE_SIZE ||
                  ((*mpq_archive)->mpq_header.header_size != LIBMPQ_HEADER_WIRE_SIZE &&
                   (*mpq_archive)->mpq_header.header_size <
@@ -2205,8 +2205,8 @@ libmpq__reader_archive_open_source(
                 goto error;
             }
 
-            if ((*mpq_archive)->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_FOUR ||
-                ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
+            if ((*mpq_archive)->mpq_header.version > LIBMPQ_ARCHIVE_VERSION_4 ||
+                ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4 &&
                  ((*mpq_archive)->mpq_header.header_size != LIBMPQ_HEADER_V4_WIRE_SIZE ||
                   sizeof(header_v4_data) > (*mpq_archive)->file_size - (uint64_t)archive_offset))) {
                 result = LIBMPQ_ERROR_FORMAT;
@@ -2235,7 +2235,7 @@ libmpq__reader_archive_open_source(
     (*mpq_archive)->block_size = 512U << (*mpq_archive)->mpq_header.block_size;
     (*mpq_archive)->archive_offset = archive_offset;
 
-    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_ONE &&
+    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_1 &&
         (table_size(
              (*mpq_archive)->mpq_header.hash_table_count, LIBMPQ_HASH_ENTRY_WIRE_SIZE, &table_bytes
          ) < 0 ||
@@ -2250,8 +2250,8 @@ libmpq__reader_archive_open_source(
     }
 
     /* MPQ v2 and v3 store high table offsets immediately after the base header. */
-    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_TWO ||
-        ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE &&
+    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_2 ||
+        ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_3 &&
          (*mpq_archive)->mpq_header.header_size >=
              LIBMPQ_HEADER_WIRE_SIZE + LIBMPQ_HEADER_EX_WIRE_SIZE)) {
         if ((uint64_t)archive_offset > UINT64_MAX - LIBMPQ_HEADER_WIRE_SIZE ||
@@ -2274,7 +2274,7 @@ libmpq__reader_archive_open_source(
     }
 
     /* A short v3 header has no v3 extension; its zeroed fields remain absent. */
-    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE) {
+    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_3) {
         if ((*mpq_archive)->mpq_header.header_size == LIBMPQ_HEADER_V3_WIRE_SIZE) {
             result = libmpq__source_read_at(
                 source,
@@ -2294,7 +2294,7 @@ libmpq__reader_archive_open_source(
             goto error;
     }
 
-    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4) {
         result = libmpq__source_read_at(
             source, (uint64_t)archive_offset, header_v4_data, sizeof(header_v4_data)
         );
@@ -2416,7 +2416,7 @@ libmpq__reader_archive_open_source(
                 result = LIBMPQ_ERROR_FORMAT;
             goto error;
         }
-        if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+        if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4) {
             result = verify_md5(
                 table_data, (size_t)(*mpq_archive)->mpq_header_v4.hi_block_table_size,
                 (*mpq_archive)->mpq_header_v4.hi_block_table_md5
@@ -2444,8 +2444,8 @@ libmpq__reader_archive_open_source(
         );
     }
 
-    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_THREE ||
-        (*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_FOUR) {
+    if ((*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_3 ||
+        (*mpq_archive)->mpq_header.version == LIBMPQ_ARCHIVE_VERSION_4) {
         uint64_t extent;
 
         result = load_het_bet(*mpq_archive);

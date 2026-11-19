@@ -59,8 +59,8 @@ test_partial_chains(void)
         for (mask = 0x41; mask <= 0x81; mask += 0x40) {
             TEST_CHECK(
                 libmpq__compression_encode_sector(
-                    input, size, mask, LIBMPQ_ARCHIVE_VERSION_TWO,
-                    LIBMPQ_COMPRESSION_POLICY_EXTENDED, &packed, &packed_size, &emitted
+                    input, size, mask, LIBMPQ_ARCHIVE_VERSION_2, LIBMPQ_COMPRESSION_POLICY_EXTENDED,
+                    &packed, &packed_size, &emitted
                 ) == 0
             );
             matches = emitted == (size == 12 ? mask & ~1U : 1U);
@@ -68,8 +68,8 @@ test_partial_chains(void)
             TEST_CHECK(matches);
             TEST_CHECK(
                 libmpq__compression_encode_sector(
-                    input, size, mask, LIBMPQ_ARCHIVE_VERSION_TWO,
-                    LIBMPQ_COMPRESSION_POLICY_STANDARD, &packed, &packed_size, &emitted
+                    input, size, mask, LIBMPQ_ARCHIVE_VERSION_2, LIBMPQ_COMPRESSION_POLICY_STANDARD,
+                    &packed, &packed_size, &emitted
                 ) == 0
             );
             matches = emitted == 0 && packed_size == size && memcmp(packed, input, size) == 0;
@@ -196,7 +196,7 @@ test_v1_legacy_0x12(void)
     packed[0] = LIBMPQ_COMPRESSION_BZIP2 | LIBMPQ_COMPRESSION_ZLIB;
     memcpy(packed + 1, bzip2_data, bzip2_size);
     unpacked = libmpq__compression_decompress_multi(
-        packed, bzip2_size + 1U, output, sizeof(output), LIBMPQ_ARCHIVE_VERSION_ONE
+        packed, bzip2_size + 1U, output, sizeof(output), LIBMPQ_ARCHIVE_VERSION_1
     );
     TEST_CHECK(unpacked == (int32_t)sizeof(output));
     TEST_CHECK(memcmp(output, input, sizeof(input)) == 0);
@@ -307,7 +307,7 @@ test_invalid_streams(void)
     TEST_CHECK(
         libmpq__compression_decompress_block(
             packed, packed_size, output, sizeof(input), LIBMPQ_FLAG_COMPRESS_PKZIP,
-            LIBMPQ_ARCHIVE_VERSION_ONE
+            LIBMPQ_ARCHIVE_VERSION_1
         ) == (int32_t)sizeof(input)
     );
 
@@ -315,7 +315,7 @@ test_invalid_streams(void)
     TEST_CHECK(
         libmpq__compression_decompress_block(
             packed, packed_size, output, sizeof(output), LIBMPQ_FLAG_COMPRESS_PKZIP,
-            LIBMPQ_ARCHIVE_VERSION_ONE
+            LIBMPQ_ARCHIVE_VERSION_1
         ) == LIBMPQ_ERROR_UNPACK
     );
     masked[0] = LIBMPQ_COMPRESSION_PKZIP;
@@ -324,7 +324,7 @@ test_invalid_streams(void)
     TEST_CHECK(
         libmpq__compression_decompress_block(
             masked, packed_size + 1, output, sizeof(output), LIBMPQ_FLAG_COMPRESS_MULTI,
-            LIBMPQ_ARCHIVE_VERSION_ONE
+            LIBMPQ_ARCHIVE_VERSION_1
         ) == LIBMPQ_ERROR_UNPACK
     );
     return 0;

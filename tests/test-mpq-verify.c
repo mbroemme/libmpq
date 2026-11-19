@@ -824,7 +824,7 @@ test_verification_coverage(uint32_t version)
     test_payload(data, sizeof(data), 71);
     REQUIRE(test_temp_path(path, sizeof(path), "verify-coverage") == 0);
     REQUIRE(libmpq__archive_create(&archive, path, &options) == 0);
-    if (version == LIBMPQ_ARCHIVE_VERSION_FOUR)
+    if (version == LIBMPQ_ARCHIVE_VERSION_4)
         REQUIRE(libmpq__archive_raw_chunk_size_set(archive, 0) == 0);
     REQUIRE(
         libmpq__archive_sign(

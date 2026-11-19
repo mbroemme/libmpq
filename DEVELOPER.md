@@ -219,14 +219,24 @@ when that verification is required.
 
 ### Streaming and one-shot writers
 
-The public creation APIs accept versions through `LIBMPQ_ARCHIVE_VERSION_FOUR`
-(3), including `LIBMPQ_ARCHIVE_VERSION_THREE` (2). The default remains v1,
+The public creation APIs accept versions through `LIBMPQ_ARCHIVE_VERSION_4`
+(3), including `LIBMPQ_ARCHIVE_VERSION_3` (2). The default remains v1,
 1024 entries, and 4096-byte sectors; explicit capacity, sector size,
 compression policy, listfile, attributes, timestamps, and signing options
 retain their meanings. MPQE creation uses the same writer and unchanged
 transport encryption. Public v4 creation defaults to 16 KiB (`0x4000`) raw
 chunks and generates structural and raw-chunk MD5 digests automatically.
 Transactions preserve the source raw-chunk size, including zero.
+
+The canonical C preprocessor macros `LIBMPQ_ARCHIVE_VERSION_1` through
+`LIBMPQ_ARCHIVE_VERSION_4` have zero-based values 0 through 3. They can be
+used in C and C++ expressions and preprocessor conditions such as `#if`.
+
+`LIBMPQ_ARCHIVE_VERSION_ONE` and `LIBMPQ_ARCHIVE_VERSION_TWO` and their
+Python, Java, and D counterparts remain available for v0.8.1 source
+compatibility. These names are deprecated since v0.9.0 and scheduled for
+removal in v1.0.0. Their use generates no compiler or runtime deprecation
+warnings. Use the numbered selectors in new code.
 
 Use `libmpq__archive_raw_chunk_size_set(archive, size)` or
 `libmpq__patch_raw_chunk_size_set(patch, size)` before any member begins,

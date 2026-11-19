@@ -103,7 +103,7 @@ test_v2_lzma_round_trip(const char *path)
     uint32_t number;
 
     memset(payload, 'L', sizeof(payload));
-    TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_TWO, 0) == 0);
+    TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_2, 0) == 0);
     TEST_CHECK(
         libmpq__archive_add_data(archive, "lzma.txt", payload, sizeof(payload), &options) == 0
     );
@@ -133,7 +133,7 @@ test_lzma_raw_fallback(const char *path)
     uint8_t *stored = NULL;
     size_t stored_size;
 
-    TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_TWO, 0) == 0);
+    TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_2, 0) == 0);
     TEST_CHECK(
         libmpq__archive_add_data(archive, "tiny.txt", payload, sizeof(payload), &options) == 0
     );
@@ -163,7 +163,7 @@ test_lzma_framing_validation(const char *path)
     FILE *file;
 
     memset(payload, 'F', sizeof(payload));
-    TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_TWO, 0) == 0);
+    TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_2, 0) == 0);
     TEST_CHECK(
         libmpq__archive_add_data(archive, "framing.txt", payload, sizeof(payload), &options) == 0
     );
@@ -212,7 +212,7 @@ test_stormlib_no_eopm(void)
     TEST_CHECK(
         libmpq__compression_decompress_multi(
             (uint8_t *)stormlib_no_eopm_packed, sizeof(stormlib_no_eopm_packed), output,
-            sizeof(output), LIBMPQ_ARCHIVE_VERSION_TWO
+            sizeof(output), LIBMPQ_ARCHIVE_VERSION_2
         ) == (int32_t)sizeof(output)
     );
     TEST_CHECK(memcmp(output, stormlib_no_eopm_expected, sizeof(output)) == 0);
@@ -228,7 +228,7 @@ test_v1_lzma_rejected(void)
     TEST_CHECK(
         libmpq__compression_decompress_multi(
             (uint8_t *)stormlib_no_eopm_packed, sizeof(stormlib_no_eopm_packed), output,
-            sizeof(output), LIBMPQ_ARCHIVE_VERSION_ONE
+            sizeof(output), LIBMPQ_ARCHIVE_VERSION_1
         ) == LIBMPQ_ERROR_UNPACK
     );
     return 0;
@@ -249,30 +249,30 @@ test_malformed_lzma(void)
     TEST_CHECK(
         libmpq__compression_decompress_multi(
             truncated_header, sizeof(truncated_header), output, sizeof(output),
-            LIBMPQ_ARCHIVE_VERSION_TWO
+            LIBMPQ_ARCHIVE_VERSION_2
         ) == LIBMPQ_ERROR_UNPACK
     );
     TEST_CHECK(
         libmpq__compression_decompress_multi(
-            header_only, sizeof(header_only), output, sizeof(output), LIBMPQ_ARCHIVE_VERSION_TWO
+            header_only, sizeof(header_only), output, sizeof(output), LIBMPQ_ARCHIVE_VERSION_2
         ) == LIBMPQ_ERROR_UNPACK
     );
     TEST_CHECK(
         libmpq__compression_decompress_multi(
             invalid_properties, sizeof(invalid_properties), output, sizeof(output),
-            LIBMPQ_ARCHIVE_VERSION_TWO
+            LIBMPQ_ARCHIVE_VERSION_2
         ) == LIBMPQ_ERROR_UNPACK
     );
     TEST_CHECK(
         libmpq__compression_decompress_multi(
             oversized_decoder, sizeof(oversized_decoder), output, sizeof(output),
-            LIBMPQ_ARCHIVE_VERSION_TWO
+            LIBMPQ_ARCHIVE_VERSION_2
         ) == LIBMPQ_ERROR_UNPACK
     );
     TEST_CHECK(
         libmpq__compression_decompress_multi(
             truncated_stream, sizeof(truncated_stream), output, sizeof(output),
-            LIBMPQ_ARCHIVE_VERSION_TWO
+            LIBMPQ_ARCHIVE_VERSION_2
         ) == LIBMPQ_ERROR_UNPACK
     );
     return 0;
@@ -292,14 +292,14 @@ test_selector_validation(const char *path)
         LIBMPQ_COMPRESSION_HUFFMAN | LIBMPQ_COMPRESSION_ZLIB | LIBMPQ_COMPRESSION_BZIP2, 0, 0
     };
 
-    TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_ONE, 0) == 0);
+    TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_1, 0) == 0);
     TEST_CHECK(
         libmpq__archive_add_data(archive, "v1-lzma", payload, sizeof(payload), &lzma) ==
         LIBMPQ_ERROR_FORMAT
     );
     TEST_CHECK(libmpq__archive_close(archive) == 0);
     archive = NULL;
-    TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_TWO, 0) == 0);
+    TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_2, 0) == 0);
     TEST_CHECK(
         libmpq__archive_add_data(archive, "ambiguous", payload, sizeof(payload), &ambiguous) ==
         LIBMPQ_ERROR_FORMAT

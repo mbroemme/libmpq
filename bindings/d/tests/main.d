@@ -150,15 +150,15 @@ private void testVersionAndErrors() {
     assert(Mpq.version_().length > 0);
     assert(Mpq.strerror(ERROR_OPEN).length > 0);
     assert(Mpq.strerror(-999).length > 0);
-    assert(!Mpq.archiveCompressionAllowed(ARCHIVE_VERSION_TWO, COMPRESSION_HUFFMAN));
-    assert(Mpq.archiveCompressionAllowed(ARCHIVE_VERSION_TWO, COMPRESSION_HUFFMAN,
+    assert(!Mpq.archiveCompressionAllowed(ARCHIVE_VERSION_2, COMPRESSION_HUFFMAN));
+    assert(Mpq.archiveCompressionAllowed(ARCHIVE_VERSION_2, COMPRESSION_HUFFMAN,
                                    COMPRESSION_POLICY_EXTENDED));
 }
 
 private void testCreateReadAndMetadata(uint archiveVersion) {
     static assert(FILE_FLAG_KEY == 0x00020000);
-    auto path = temporaryArchive(archiveVersion == ARCHIVE_VERSION_ONE ? "v1" : "v2");
-    auto options = archiveVersion == ARCHIVE_VERSION_ONE ?
+    auto path = temporaryArchive(archiveVersion == ARCHIVE_VERSION_1 ? "v1" : "v2");
+    auto options = archiveVersion == ARCHIVE_VERSION_1 ?
         ArchiveCreateOptions.v1() : ArchiveCreateOptions.v2();
     options.version_ = archiveVersion;
     options.sectorSize = 4096;
@@ -182,7 +182,7 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
     auto checksummed = FileOptions.compressed(COMPRESSION_ZLIB, COMPRESSION_ZLIB);
     checksummed.flags |= FILE_FLAG_SECTOR_CRC;
     archive.add("compressed.txt", repetitive, checksummed);
-    if (archiveVersion >= ARCHIVE_VERSION_TWO) {
+    if (archiveVersion >= ARCHIVE_VERSION_2) {
         archive.add("lzma.txt", repetitive,
                     FileOptions.compressed(COMPRESSION_LZMA, COMPRESSION_LZMA));
     }
@@ -280,7 +280,7 @@ private void testCreateReadAndMetadata(uint archiveVersion) {
     assert(memberStream.read(last[]) == 1 && last[0] == payload[$ - 1]);
     memberStream.close();
     memberStream.close();
-    if (archiveVersion == ARCHIVE_VERSION_TWO)
+    if (archiveVersion == ARCHIVE_VERSION_2)
         assert(reopened.file("lzma.txt").read() == repetitive);
     assert(reopened.file("source.txt").read() == cast(const(ubyte)[])"path payload");
     auto clone = reopened.clone();
@@ -585,7 +585,7 @@ private void testSparseFixtures() {
             assert(encrypted.file(name).read() == expected);
         }
     }
-    foreach (archiveVersion; [ARCHIVE_VERSION_ONE, ARCHIVE_VERSION_TWO])
+    foreach (archiveVersion; [ARCHIVE_VERSION_1, ARCHIVE_VERSION_2])
         foreach (policy; [COMPRESSION_POLICY_STANDARD, COMPRESSION_POLICY_EXTENDED]) {
             foreach (method; [COMPRESSION_SPARSE, COMPRESSION_SPARSE | COMPRESSION_ZLIB,
                               COMPRESSION_SPARSE | COMPRESSION_BZIP2])
@@ -595,7 +595,7 @@ private void testSparseFixtures() {
         }
 }
 
-private void testMpqeCreate(uint archiveVersion = ARCHIVE_VERSION_TWO) {
+private void testMpqeCreate(uint archiveVersion = ARCHIVE_VERSION_2) {
     auto path = temporaryArchive("created.mpqe");
     immutable ubyte[] authCode =
         cast(immutable(ubyte)[])"LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
@@ -775,7 +775,7 @@ private void testMpqeUpdate() {
     after.close();
 }
 
-private void testExtendedAddUpdate(bool encrypted, uint archiveVersion = ARCHIVE_VERSION_THREE) {
+private void testExtendedAddUpdate(bool encrypted, uint archiveVersion = ARCHIVE_VERSION_3) {
     auto path = temporaryArchive("v3-update");
     auto source = path ~ ".source";
     scope(exit) { remove(path); remove(source); }
@@ -856,7 +856,7 @@ private void testUpdateLocalizedDefaults() {
     update.abort();
 }
 
-private void testPatchCreation(uint archiveVersion = ARCHIVE_VERSION_ONE) {
+private void testPatchCreation(uint archiveVersion = ARCHIVE_VERSION_1) {
     auto base = temporaryArchive("patch-base");
     auto output = temporaryArchive("patch-output");
     auto source = base ~ ".source";
@@ -953,7 +953,7 @@ private void testPatchCreation(uint archiveVersion = ARCHIVE_VERSION_ONE) {
     rmdir(output);
 }
 
-private void testMpqePatchCreation(uint archiveVersion = ARCHIVE_VERSION_ONE) {
+private void testMpqePatchCreation(uint archiveVersion = ARCHIVE_VERSION_1) {
     auto base = temporaryArchive("mpqe-patch-base");
     auto output = temporaryArchive("mpqe-patch-output");
     immutable ubyte[] authCode =
@@ -1167,7 +1167,7 @@ private void testOpenPatch() {
     auto addition = temporaryArchive("patch-addition");
     scope(exit) remove(addition);
     auto options = ArchiveCreateOptions.v1();
-    options.version_ = ARCHIVE_VERSION_FOUR;
+    options.version_ = ARCHIVE_VERSION_4;
     options.flags = ARCHIVE_CREATE_LISTFILE;
     auto writer = Archive.create(addition, options);
     writer.add("added.txt", cast(const(ubyte)[]) "ordinary addition");
@@ -1237,7 +1237,7 @@ private void testSelectedPatchStreams() {
     }
     enum name = "folder/sector.txt";
     auto options = ArchiveCreateOptions.v1();
-    options.version_ = ARCHIVE_VERSION_TWO;
+    options.version_ = ARCHIVE_VERSION_2;
     options.flags = ARCHIVE_CREATE_LISTFILE;
     auto writer = Archive.create(middle, options);
     ubyte[8192] intermediate;
@@ -1341,7 +1341,7 @@ private void testOpenPatchNamespaces() {
     auto path = temporaryArchive("patch-namespace");
     scope(exit) remove(path);
     auto options = ArchiveCreateOptions.v1();
-    options.version_ = ARCHIVE_VERSION_FOUR;
+    options.version_ = ARCHIVE_VERSION_4;
     options.flags = ARCHIVE_CREATE_LISTFILE;
     auto writer = Archive.create(path, options);
     writer.add("Base\\extra.txt", cast(const(ubyte)[]) "prefix payload");
@@ -1366,7 +1366,7 @@ private void testOpenPatchNamespaces() {
 }
 
 private void testPatchAdditions() {
-    foreach (archiveVersion; [ARCHIVE_VERSION_ONE, ARCHIVE_VERSION_FOUR]) {
+    foreach (archiveVersion; [ARCHIVE_VERSION_1, ARCHIVE_VERSION_4]) {
         auto basePath = temporaryArchive("patch-add-base");
         auto output = temporaryArchive("patch-add-output");
         auto source = basePath ~ ".source";
@@ -1438,7 +1438,7 @@ private void testRawChunkConfiguration() {
         if (exists(output)) remove(output);
     }
     auto options = ArchiveCreateOptions.v1();
-    options.version_ = ARCHIVE_VERSION_FOUR;
+    options.version_ = ARCHIVE_VERSION_4;
     options.flags = ARCHIVE_CREATE_LISTFILE;
     auto code = cast(const(ubyte)[]) "LIBMPQ-MPQE-TEST-AUTH-CODE-00001";
     foreach (wrapped; [false, true]) foreach (uint chunk; [0u, 1u, 17u, 0x4000u, uint.max]) {
@@ -1501,7 +1501,7 @@ private void testRawChunkConfiguration() {
 private void testExactIdentities() {
     string path = temporaryArchive("identities");
     scope(exit) remove(path);
-    foreach (version_; [ARCHIVE_VERSION_ONE, ARCHIVE_VERSION_TWO]) {
+    foreach (version_; [ARCHIVE_VERSION_1, ARCHIVE_VERSION_2]) {
         auto options = ArchiveCreateOptions.v1();
         options.version_ = version_;
         auto writer = Archive.create(path, options);
@@ -1551,13 +1551,13 @@ private void testExactUpdateStages() {
     auto source = path ~ ".source";
     scope(exit) { if (exists(path)) remove(path); remove(source); }
     write(source, "path bytes");
-    foreach (version_; [ARCHIVE_VERSION_ONE, ARCHIVE_VERSION_TWO,
-                       ARCHIVE_VERSION_THREE, ARCHIVE_VERSION_FOUR]) {
+    foreach (version_; [ARCHIVE_VERSION_1, ARCHIVE_VERSION_2,
+                       ARCHIVE_VERSION_3, ARCHIVE_VERSION_4]) {
         auto create = ArchiveCreateOptions.v1();
         create.version_ = version_;
         create.attributes = ATTRIBUTE_FILETIME;
         auto writer = Archive.create(path, create);
-        bool classic = version_ <= ARCHIVE_VERSION_TWO;
+        bool classic = version_ <= ARCHIVE_VERSION_2;
         ushort locale = classic ? 0x409 : 0;
         ushort platform = classic ? 1 : 0;
         auto options = FileOptions.raw();
@@ -1642,12 +1642,12 @@ private void testExactUpdateStages() {
 private void testChangeIdentity() {
     auto path = temporaryArchive("change-identity");
     scope(exit) if (exists(path)) remove(path);
-    foreach (version_; [ARCHIVE_VERSION_ONE, ARCHIVE_VERSION_TWO,
-                       ARCHIVE_VERSION_THREE, ARCHIVE_VERSION_FOUR]) {
+    foreach (version_; [ARCHIVE_VERSION_1, ARCHIVE_VERSION_2,
+                       ARCHIVE_VERSION_3, ARCHIVE_VERSION_4]) {
         auto create = ArchiveCreateOptions.v1();
         create.version_ = version_;
         auto writer = Archive.create(path, create);
-        bool classic = version_ <= ARCHIVE_VERSION_TWO;
+        bool classic = version_ <= ARCHIVE_VERSION_2;
         auto options = FileOptions.raw();
         options.flags = FILE_FLAG_ENCRYPTED | FILE_FLAG_KEY;
         writer.add("voice", cast(const(ubyte)[])"neutral", options);
@@ -1708,7 +1708,7 @@ private void testTransactionalSigning() {
     scope(exit) if (exists(path)) remove(path);
     foreach (version_; 0u .. 4u) {
         auto writer = Archive.create(path, ArchiveCreateOptions(version_, 8, 512, 0, ATTRIBUTE_FILETIME));
-        if (version_ == ARCHIVE_VERSION_FOUR) writer.setRawChunkSize(0);
+        if (version_ == ARCHIVE_VERSION_4) writer.setRawChunkSize(0);
         writer.add("voice", cast(const(ubyte)[]) "payload");
         writer.close();
         write(path, new ubyte[512] ~ cast(ubyte[]) read(path));
@@ -1771,8 +1771,8 @@ private void testTransactionalCompaction() {
 private void testTransactionalTimestamps() {
     auto path = temporaryArchive("timestamp");
     scope(exit) if (exists(path)) remove(path);
-    foreach (version_; [ARCHIVE_VERSION_ONE, ARCHIVE_VERSION_TWO,
-                       ARCHIVE_VERSION_THREE, ARCHIVE_VERSION_FOUR]) {
+    foreach (version_; [ARCHIVE_VERSION_1, ARCHIVE_VERSION_2,
+                       ARCHIVE_VERSION_3, ARCHIVE_VERSION_4]) {
         auto create = ArchiveCreateOptions.v1();
         create.version_ = version_;
         create.attributes = ATTRIBUTE_FILETIME;
@@ -1910,7 +1910,7 @@ private void testCreateSink() {
         if (output.length < end)
             output.length = end;
         output[cast(size_t) offset .. end] = data;
-    }, ArchiveCreateOptions(ARCHIVE_VERSION_FOUR), (off_t offset, scope ubyte[] data) {
+    }, ArchiveCreateOptions(ARCHIVE_VERSION_4), (off_t offset, scope ubyte[] data) {
         data[] = output[cast(size_t) offset .. cast(size_t) offset + data.length];
     }, () { ++flushes; });
     const ubyte[] data = [3, 8, 4, 7];
@@ -1945,7 +1945,7 @@ private void testCreateMpqeSink() {
         assert(offset == output.length);
         output ~= bytes;
         ++writes;
-    }, code, ArchiveCreateOptions(ARCHIVE_VERSION_FOUR), () { ++flushes; });
+    }, code, ArchiveCreateOptions(ARCHIVE_VERSION_4), () { ++flushes; });
     writer.add("output", payload);
     assert(writes == 0 && flushes == 0);
     writer.close();
@@ -2270,12 +2270,12 @@ void main() {
     testV4FeatureFixtures();
     testPatchPayloadFixtures();
     testVersionAndErrors();
-    testCreateReadAndMetadata(ARCHIVE_VERSION_ONE);
-    testCreateReadAndMetadata(ARCHIVE_VERSION_TWO);
-    testCreateReadAndMetadata(ARCHIVE_VERSION_THREE);
-    testCreateReadAndMetadata(ARCHIVE_VERSION_FOUR);
-    testMpqeCreate(ARCHIVE_VERSION_THREE);
-    testMpqeCreate(ARCHIVE_VERSION_FOUR);
+    testCreateReadAndMetadata(ARCHIVE_VERSION_1);
+    testCreateReadAndMetadata(ARCHIVE_VERSION_2);
+    testCreateReadAndMetadata(ARCHIVE_VERSION_3);
+    testCreateReadAndMetadata(ARCHIVE_VERSION_4);
+    testMpqeCreate(ARCHIVE_VERSION_3);
+    testMpqeCreate(ARCHIVE_VERSION_4);
     testFixture();
     testBlockSizeUnpacked();
     testStrongSignature();
@@ -2290,12 +2290,12 @@ void main() {
     testUpdateLocalizedDefaults();
     testExtendedAddUpdate(false);
     testExtendedAddUpdate(true);
-    testExtendedAddUpdate(false, ARCHIVE_VERSION_FOUR);
-    testExtendedAddUpdate(true, ARCHIVE_VERSION_FOUR);
+    testExtendedAddUpdate(false, ARCHIVE_VERSION_4);
+    testExtendedAddUpdate(true, ARCHIVE_VERSION_4);
     testPatchCreation();
-    testPatchCreation(ARCHIVE_VERSION_FOUR);
+    testPatchCreation(ARCHIVE_VERSION_4);
     testMpqePatchCreation();
-    testMpqePatchCreation(ARCHIVE_VERSION_FOUR);
+    testMpqePatchCreation(ARCHIVE_VERSION_4);
     testPatchSigning();
     testFailures();
 }

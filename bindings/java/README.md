@@ -31,8 +31,8 @@ The canonical release installation path is Maven Central:
 
 ## Basic archive usage
 
-Use `Mpq.ARCHIVE_VERSION_THREE` in existing `ArchiveCreateOptions` to create
-mixed HET/BET plus classic v3 archives, or `Mpq.ARCHIVE_VERSION_FOUR` for v4.
+Use `Mpq.ARCHIVE_VERSION_3` in existing `ArchiveCreateOptions` to create
+mixed HET/BET plus classic v3 archives, or `Mpq.ARCHIVE_VERSION_4` for v4.
 V4 MPQ and MPQE creation uses 16 KiB raw chunks; v4 updates preserve the
 source raw-chunk size. MPQ v3 and v4 transactions can retain unrelated unnamed
 members when their stored identities are sufficient; see the
@@ -671,7 +671,7 @@ transform. SINGLE members can also require whole-unit memory.
 
 ```java
 try (Archive archive = Archive.create(Path.of("output.mpq"),
-        new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_FOUR, 8, 4096,
+        new ArchiveCreateOptions(Mpq.ARCHIVE_VERSION_4, 8, 4096,
                                  Mpq.ARCHIVE_CREATE_LISTFILE))) {
     archive.setRawChunkSize(17); // 0 disables trailing raw MD5
     long configured = archive.getRawChunkSize();

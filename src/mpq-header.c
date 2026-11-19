@@ -169,7 +169,7 @@ libmpq__header_v4_full_decode(
         size < LIBMPQ_HEADER_V4_WIRE_SIZE)
         return LIBMPQ_ERROR_SIZE;
     libmpq__header_decode(&base, wire, LIBMPQ_HEADER_WIRE_SIZE);
-    if (base.mpq_magic != LIBMPQ_HEADER || base.version != LIBMPQ_ARCHIVE_VERSION_FOUR ||
+    if (base.mpq_magic != LIBMPQ_HEADER || base.version != LIBMPQ_ARCHIVE_VERSION_4 ||
         base.header_size != LIBMPQ_HEADER_V4_WIRE_SIZE)
         return LIBMPQ_ERROR_FORMAT;
 
@@ -194,7 +194,7 @@ libmpq__header_v4_full_encode(
     if (header == NULL || ex == NULL || v3 == NULL || v4 == NULL || wire == NULL ||
         size < LIBMPQ_HEADER_V4_WIRE_SIZE)
         return LIBMPQ_ERROR_SIZE;
-    if (header->mpq_magic != LIBMPQ_HEADER || header->version != LIBMPQ_ARCHIVE_VERSION_FOUR ||
+    if (header->mpq_magic != LIBMPQ_HEADER || header->version != LIBMPQ_ARCHIVE_VERSION_4 ||
         header->header_size != LIBMPQ_HEADER_V4_WIRE_SIZE)
         return LIBMPQ_ERROR_FORMAT;
 
@@ -214,9 +214,9 @@ libmpq__header_archive_size(const mpq_header_s *header, const mpq_header_v3_s *v
 {
     if (header == NULL)
         return 0;
-    if ((header->version == LIBMPQ_ARCHIVE_VERSION_THREE &&
+    if ((header->version == LIBMPQ_ARCHIVE_VERSION_3 &&
          header->header_size >= LIBMPQ_HEADER_V3_WIRE_SIZE) ||
-        (header->version == LIBMPQ_ARCHIVE_VERSION_FOUR &&
+        (header->version == LIBMPQ_ARCHIVE_VERSION_4 &&
          header->header_size >= LIBMPQ_HEADER_V4_WIRE_SIZE))
         return v3 == NULL ? 0 : v3->archive_size;
     return header->archive_size;

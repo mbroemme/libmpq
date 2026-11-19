@@ -211,7 +211,7 @@ with mpq.Archive.open("archive.mpq", offset=-1) as archive:
 Use the same context-manager pattern for ordinary and MPQE writers:
 
 ```python
-with mpq.Writer("created.mpq", version=mpq.ARCHIVE_VERSION_THREE) as writer:
+with mpq.Writer("created.mpq", version=mpq.ARCHIVE_VERSION_3) as writer:
     writer.add_data("payload.bin", b"payload", mpq.FileCreateOptions.raw())
 
 with mpq.Writer.create_mpqe(
@@ -250,8 +250,8 @@ Creation defaults to `COMPRESSION_POLICY_STANDARD`. Pass
 `Writer.create_mpqe` for additional, potentially less interoperable methods.
 Use `mpq.archive_compression_allowed(version, mask, policy)` to query whether
 a compression selection is allowed by the writer policy. Version uses
-`ARCHIVE_VERSION_ONE`, `ARCHIVE_VERSION_TWO`, `ARCHIVE_VERSION_THREE`, or
-`ARCHIVE_VERSION_FOUR`. MPQ v3 and v4 creation emits HET/BET plus classic
+`ARCHIVE_VERSION_1`, `ARCHIVE_VERSION_2`, `ARCHIVE_VERSION_3`, or
+`ARCHIVE_VERSION_4`. MPQ v3 and v4 creation emits HET/BET plus classic
 tables. Transactions can retain unrelated unnamed members with sufficient
 stored identities; see the
 [transaction limits](../../DEVELOPER.md#transactional-modification).
@@ -589,7 +589,7 @@ transform. SINGLE members can also require whole-unit memory.
 ### V4 raw-chunk policy
 
 ```python
-with mpq.Writer("output.mpq", version=mpq.ARCHIVE_VERSION_FOUR) as writer:
+with mpq.Writer("output.mpq", version=mpq.ARCHIVE_VERSION_4) as writer:
     writer.raw_chunk_size = 17  # 0 disables trailing raw MD5
     assert writer.raw_chunk_size == 17
     writer.add_data("data.txt", b"content")
@@ -877,7 +877,7 @@ Use `Writer.create_mpqe_io(sink, auth_code, ...)` with the same writer options.
 For example, with a sink implementing `write_at` and optionally `flush`:
 
 ```python
-with Writer.create_mpqe_io(sink, auth_code, version=ARCHIVE_VERSION_FOUR) as archive:
+with Writer.create_mpqe_io(sink, auth_code, version=ARCHIVE_VERSION_4) as archive:
     archive.add_data("payload.bin", payload)
 ```
 

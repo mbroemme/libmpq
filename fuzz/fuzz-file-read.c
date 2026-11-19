@@ -41,7 +41,7 @@ static int
 create_seed_archive(void)
 {
     mpq_archive_s *archive = NULL;
-    mpq_archive_create_options_s archive_options = { LIBMPQ_ARCHIVE_VERSION_ONE, 16, 4096,
+    mpq_archive_create_options_s archive_options = { LIBMPQ_ARCHIVE_VERSION_1, 16, 4096,
                                                      LIBMPQ_ARCHIVE_CREATE_LISTFILE, 0 };
     mpq_file_options_s raw = { 0, 0, 0, 0, 0 };
     mpq_file_options_s compressed = { LIBMPQ_FILE_FLAG_COMPRESS, LIBMPQ_COMPRESSION_ZLIB,
