@@ -52,6 +52,18 @@ preserve earlier valid stages. Partial output failures latch a terminal error
 and prevent successful publication. Finish and abort consume the patch handle,
 including on error. Abort discards unpublished output. The existing MPQE
 staging/publication and signing restrictions are unchanged.
+.SH EXAMPLE
+.nf
+/* patch is staged. docs/extra.txt is absent from the base and the staged patch.
+ * input/extra.txt supplies the full new contents. */
+int32_t
+patch_extra_from_disk(mpq_patch_s *patch)
+{
+    return libmpq__patch_add_path(
+        patch, "docs/extra.txt", "input/extra.txt", NULL
+    );
+}
+.fi
 .SH RETURN VALUE
 Return 0 on success or an existing negative libmpq error code on failure.
 .SH ERRORS

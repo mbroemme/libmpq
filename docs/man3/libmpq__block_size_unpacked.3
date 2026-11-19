@@ -34,6 +34,22 @@ The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The \fIfile_number\fP and \fIblock_number\fP
 arguments select the block. The function stores its unpacked size in
 \fIunpacked_size\fP. No explicit offset-table management is needed.
+.SH EXAMPLE
+.nf
+#include <inttypes.h>
+#include <stdio.h>
+
+/* number selects a member with at least one block in the open reader. */
+int32_t
+show_first_block_unpacked(mpq_archive_s *archive, uint32_t number)
+{
+    libmpq__off_t size;
+    int32_t status = libmpq__block_size_unpacked(archive, number, 0, &size);
+    if (status == 0)
+        printf("First block logical bytes: %" PRId64 "\en", size);
+    return status;
+}
+.fi
 .SH RETURN VALUE
 On success, a zero is returned and on error one of the following constants.
 .SH ERRORS

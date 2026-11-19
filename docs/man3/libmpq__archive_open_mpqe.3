@@ -43,6 +43,24 @@ log, persist, or otherwise manage authentication codes.
 MPQE cannot identify a well-formed but incorrect code. libmpq parses the
 resulting bytes normally, which can produce \fBLIBMPQ_ERROR_FORMAT\fP or
 another ordinary parser error.
+.SH EXAMPLE
+.nf
+/* code is the matching authentication code, at least 32 bytes. */
+int32_t
+count_wrapped_members(const uint8_t *code, size_t code_size, uint32_t *count)
+{
+    mpq_archive_s *archive = NULL;
+    int32_t status = libmpq__archive_open_mpqe(
+        &archive, "wrapped.mpqe", 0, code, code_size
+    );
+    if (status != 0)
+        return status;
+
+    status = libmpq__archive_files(archive, count);
+    int32_t close_status = libmpq__archive_close(archive);
+    return status != 0 ? status : close_status;
+}
+.fi
 .SH RETURN VALUE
 On success, *\fImpq_archive\fP is set to a new \fBmpq_archive_s\fP and zero
 is returned. On failure, the output handle is set to NULL. In addition to the

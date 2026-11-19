@@ -67,6 +67,19 @@ Commit publishes only finalized output. Modifications follow the existing
 signature-invalidation policy. Transactions containing only no-op requests
 preserve the original bytes.
 Commit and abort consume the transaction, including on error.
+.SH EXAMPLE
+.nf
+/* update is a live transaction.
+ * Move the classic\N'45'backed US English entry from platform 0 to 1.
+ * The destination tuple is absent. */
+int32_t
+stage_sample_platform_change(mpq_update_s *update)
+{
+    return libmpq__update_change_identity(
+        update, "docs/sample.txt", 0x0409, 0, 0x0409, 1
+    );
+}
+.fi
 .SH RETURN VALUE
 Returns 0 on success or a negative libmpq error.
 .SH ERRORS

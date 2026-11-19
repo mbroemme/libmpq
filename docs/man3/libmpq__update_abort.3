@@ -25,6 +25,17 @@ libmpq__update_abort \- discard a staged MPQ update
 Discards the private working copy and leaves the original destination
 unchanged. Cleanup is attempted even if one step fails. The handle is consumed
 regardless of the result; do not use it again.
+.SH EXAMPLE
+.nf
+/* *owned is the caller's live update handle. Discard staged changes. */
+int32_t
+update_abort(mpq_update_s **owned)
+{
+    int32_t status = libmpq__update_abort(*owned);
+    *owned = NULL; /* Consumed even on error. */
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP on success, or a negative libmpq error.
 .SH ERRORS

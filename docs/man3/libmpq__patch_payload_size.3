@@ -27,6 +27,22 @@ For a member flagged \fBLIBMPQ_FILE_FLAG_PATCH_FILE\fP, return the size of
 its decoded PTCH body after the plaintext patch-info prefix. This differs
 from \fBlibmpq__file_size_unpacked\fP(3), which reports the patched target
 size stored in the MPQ block table. No patch is applied.
+.SH EXAMPLE
+.nf
+#include <inttypes.h>
+#include <stdio.h>
+
+/* number selects a physical patch member in the open reader. */
+int32_t
+show_patch_body_size(mpq_archive_s *archive, uint32_t number)
+{
+    libmpq__off_t size;
+    int32_t status = libmpq__patch_payload_size(archive, number, &size);
+    if (status == 0)
+        printf("Decoded PTCH body bytes: %" PRId64 "\en", size);
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Returns zero on success and stores the size in \fIsize\fP. On failure,
 \fIsize\fP is zero and a negative libmpq error is returned.

@@ -45,6 +45,17 @@ should apply their own resource limits. Normal allocation failures are reported
 where the runtime returns control; this does not guarantee survival of OOM
 termination. Existing codec/version restrictions and ADPCM SINGLE rejection,
 KEY adjustments, generated listfile defaults and physical patch defaults remain.
+.SH EXAMPLE
+.nf
+/* archive is an active writer. input/sample.txt is a local test file. */
+int32_t
+add_local_sample(mpq_archive_s *archive)
+{
+    return libmpq__archive_add_path(
+        archive, "docs/sample.txt", "input/sample.txt", NULL
+    );
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP after the member is staged in the writer
 archive, or a negative libmpq error.

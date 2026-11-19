@@ -39,6 +39,22 @@ non-atomic references to a temporary source or verification index. Externally
 serialize operations that acquire or release those references, including
 cloning, lazy verification and closing. Synchronize concurrent access to
 shared callback contexts.
+.SH EXAMPLE
+.nf
+/* source is an open reader with a stable, live backing source. */
+int32_t
+count_files_on_clone(mpq_archive_s *source, uint32_t *count)
+{
+    mpq_archive_s *clone = NULL;
+    int32_t status = libmpq__archive_clone(&clone, source);
+    if (status != 0)
+        return status;
+
+    status = libmpq__archive_files(clone, count);
+    int32_t close_status = libmpq__archive_close(clone);
+    return status != 0 ? status : close_status;
+}
+.fi
 .SH RETURN VALUE
 On success, *\fIclone\fP is set to a new handle and zero is returned. On
 failure, *\fIclone\fP is set to NULL and the open, seek, read, format, or

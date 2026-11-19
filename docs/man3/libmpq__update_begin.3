@@ -80,6 +80,27 @@ Repeated names differing only by ASCII case or slash direction are accepted.
 Ambiguous names, embedded null bytes and unresolvable listfile entries reject
 reconstruction. A staged close failure prevents further mutation or publication;
 abort remains safe and attempts cleanup.
+.SH EXAMPLE
+.nf
+/* In sample.mpq, docs/old.txt exists and docs/new.txt does not. */
+int32_t
+rename_in_sample_archive(void)
+{
+    mpq_update_s *update = NULL;
+    int32_t status = libmpq__update_begin(
+        &update, "sample.mpq"
+    );
+    if (status != 0)
+        return status;
+
+    status = libmpq__update_rename(update, "docs/old.txt", "docs/new.txt");
+    if (status != 0) {
+        (void)libmpq__update_abort(update); /* Preserve the rename error. */
+        return status;
+    }
+    return libmpq__update_commit(update); /* Consumes the handle. */
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP on success, or a negative libmpq error.
 .SH ERRORS

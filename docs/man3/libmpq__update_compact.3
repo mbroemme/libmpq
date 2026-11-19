@@ -93,6 +93,16 @@ refers to the decoded logical source, using existing MPQE re-encryption and publ
 Use \fBlibmpq__update_compact_ex\fP() to supply a synchronous array of known
 filenames for unlisted encrypted KEY members and aliases. Its zero-count form
 is identical to this function; caller names do not expand supported layouts.
+.SH EXAMPLE
+.nf
+/* update is a live transaction. The caller commits or aborts it. */
+int32_t
+compact_sample_archive(mpq_update_s *update)
+{
+    /* Run last if subsequent edits would introduce new gaps. */
+    return libmpq__update_compact(update);
+}
+.fi
 .SH RETURN VALUE
 Returns 0 on success, including proven no-ops, or a negative libmpq error.
 .SH ERRORS

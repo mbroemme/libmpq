@@ -79,6 +79,24 @@ absent from the selected row are skipped, including omitted legacy rows.
 Zero mismatch bits mean no mismatch was detected, not that checksums existed.
 Use \fBlibmpq__file_attributes\fP() to inspect per-file availability when
 required. Checksums are not cryptographic authentication.
+.SH EXAMPLE
+.nf
+/* number selects a lossless member in the open reader.
+ * No reported mismatch can also mean the check was skipped. */
+int32_t
+check_recorded_crc32(
+    mpq_archive_s *archive, uint32_t number, int *mismatch
+)
+{
+    uint32_t mismatches;
+    int32_t status = libmpq__file_verify(
+        archive, number, LIBMPQ_VERIFY_FILE_CRC32, &mismatches
+    );
+    if (status == 0)
+        *mismatch = (mismatches & LIBMPQ_VERIFY_FILE_CRC32) != 0;
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Returns 0 when the operation completes, even on mismatch.
 The output in *mismatches is a subset of verify_flags, using the same

@@ -40,6 +40,18 @@ Discoverable embedded archives retain all prefix bytes and the original MPQ
 origin under the existing format restrictions. Named reconstruction rejects
 unrelated trailers; ordinary legacy v1 and v2 operations retain their suffix policy.
 See libmpq__update_begin(3) for discovery and temporary-storage requirements.
+.SH EXAMPLE
+.nf
+/* update is a live transaction. docs/extra.txt is absent.
+ * input/extra.txt supplies the full new contents. */
+int32_t
+stage_extra_from_disk(mpq_update_s *update)
+{
+    return libmpq__update_add_path(
+        update, "docs/extra.txt", "input/extra.txt", NULL
+    );
+}
+.fi
 .SH RETURN VALUE
 Returns zero on success or a negative libmpq error. A duplicate returns
 LIBMPQ_ERROR_EXIST; a source that cannot be opened returns LIBMPQ_ERROR_OPEN.

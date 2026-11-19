@@ -39,6 +39,30 @@ The first argument is an archive handle opened by
 arguments select the block. \fIout_buf\fP and \fIout_size\fP specify the
 output buffer. The function stores the number of bytes written in
 \fItransferred\fP. Offset-table caching is managed internally for this read.
+.SH EXAMPLE
+.nf
+#include <stdio.h>
+
+/* archive is an open reader and output is a writable binary stream.
+ * number selects a member whose first logical block is at most 4096 bytes. */
+int32_t
+copy_first_block(
+    mpq_archive_s *archive, uint32_t number, FILE *output
+)
+{
+    uint8_t buffer[4096];
+    libmpq__off_t got;
+    int32_t status = libmpq__block_read(
+        archive, number, 0, buffer, sizeof(buffer), &got
+    );
+    if (status != 0)
+        return status;
+
+    if (fwrite(buffer, 1, (size_t)got, output) != (size_t)got)
+        return LIBMPQ_ERROR_WRITE;
+    return 0;
+}
+.fi
 .SH RETURN VALUE
 On success, a zero is returned and on error one of the following constants.
 .SH ERRORS

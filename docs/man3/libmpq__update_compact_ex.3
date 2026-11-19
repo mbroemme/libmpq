@@ -82,9 +82,29 @@ compaction. Budget disk space for the working stage and candidate, with the
 existing extra embedded/MPQE temporaries where applicable.
 .SH EXAMPLE
 .nf
-const char *names[] = { "voice", "left/data" };
-int32_t status = libmpq__update_compact_ex(update, names, 2);
-/* Check status, then commit to publish or abort to discard. */
+/* Both names identify existing members in sample.mpq. */
+int32_t
+compact_with_known_names(void)
+{
+    const char *const filenames[] = {
+        "docs/sample.txt",
+        "data/sample.bin"
+    };
+    const size_t filename_count = sizeof(filenames) / sizeof(filenames[0]);
+    mpq_update_s *update = NULL;
+    int32_t status = libmpq__update_begin(&update, "sample.mpq");
+    if (status != 0)
+        return status;
+
+    status = libmpq__update_compact_ex(update, filenames, filename_count);
+    if (status != 0) {
+        (void)libmpq__update_abort(update);
+        return status; /* Abort consumed the handle. Keep the first error. */
+    }
+
+    /* Commit publishes the stage and consumes update even on error. */
+    return libmpq__update_commit(update);
+}
 .fi
 .SH RETURN VALUE
 Returns 0 for a validated compaction or no-op, or a negative libmpq error.

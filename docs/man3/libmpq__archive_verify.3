@@ -47,6 +47,24 @@ and ARCHIVE variants. Internal weak signatures can be verified in
 MPQE-wrapped MPQs; no external strong-signature transport is defined for
 MPQE. These legacy signatures should not be treated as modern trust
 primitives.
+.SH EXAMPLE
+.nf
+/* archive is an open weak\N'45'signed reader. key is its matching public key
+ * as a 64\N'45'byte big\N'45'endian modulus and a 64\N'45'byte padded exponent. */
+int32_t
+verify_sample_signature(
+    mpq_archive_s *archive, const uint8_t key[128], int *matches
+)
+{
+    uint32_t mismatches;
+    int32_t status = libmpq__archive_verify(
+        archive, LIBMPQ_SIGNATURE_WEAK, key, 128, &mismatches
+    );
+    if (status == 0)
+        *matches = mismatches == 0;
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP after verification. The requested bit is
 set in \fI*mismatches\fP if the signature does not match; it is clear

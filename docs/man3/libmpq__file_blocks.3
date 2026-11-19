@@ -33,6 +33,22 @@ Single-block files return one.
 The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The function stores the block count for
 \fIfile_number\fP in \fIblocks\fP.
+.SH EXAMPLE
+.nf
+#include <inttypes.h>
+#include <stdio.h>
+
+/* archive is an open reader and number is a resolved member number. */
+int32_t
+show_block_count(mpq_archive_s *archive, uint32_t number)
+{
+    uint32_t blocks;
+    int32_t status = libmpq__file_blocks(archive, number, &blocks);
+    if (status == 0)
+        printf("Logical blocks: %" PRIu32 "\en", blocks);
+    return status;
+}
+.fi
 .SH RETURN VALUE
 On success, a zero is returned and on error one of the following constants.
 .SH ERRORS

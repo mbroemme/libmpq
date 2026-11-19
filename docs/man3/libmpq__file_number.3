@@ -37,6 +37,15 @@ libmpq__file_number_from_identity(3) for an exact locale/platform tuple.
 The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The function resolves \fIfilename\fP and
 stores its file number in \fInumber\fP.
+.SH EXAMPLE
+.nf
+/* archive is open. Use the output number only if lookup returns zero. */
+int32_t
+lookup_sample(mpq_archive_s *archive, uint32_t *number)
+{
+    return libmpq__file_number(archive, "data/sample.bin", number);
+}
+.fi
 .SH RETURN VALUE
 On success, zero is returned and the file number is stored in \fInumber\fP.
 On error, one of the following constants is returned.

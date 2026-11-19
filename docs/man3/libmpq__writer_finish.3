@@ -25,6 +25,18 @@ libmpq__writer_finish \- finish an MPQ file writer
 Validates the declared size, writes the file sectors and records its hash and
 block entry. Incomplete streams are rejected. This call consumes the writer
 on both success and failure; do not reuse it afterward.
+.SH EXAMPLE
+.nf
+/* *owned is active and all declared bytes were written successfully.
+ * Caller still owns the archive and must close it separately. */
+int32_t
+finish_sample_member(mpq_writer_s **owned)
+{
+    int32_t status = libmpq__writer_finish(*owned);
+    *owned = NULL; /* Consumed on success or failure. */
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP when the member entry is staged, or a
 negative libmpq error. Archive finalization still requires

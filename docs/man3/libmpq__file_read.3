@@ -51,6 +51,30 @@ file. \fIout_buf\fP and \fIout_size\fP specify the output buffer. The
 function stores the number of bytes written in \fItransferred\fP.
 .LP
 Offset-table caching is managed internally; no explicit open or close is needed.
+.SH EXAMPLE
+.nf
+#include <stdio.h>
+
+/* archive is an open reader and output is a writable binary stream.
+ * number selects a non\N'45'patch member of at most 4096 bytes. */
+int32_t
+copy_small_member(
+    mpq_archive_s *archive, uint32_t number, FILE *output
+)
+{
+    uint8_t buffer[4096];
+    libmpq__off_t got;
+    int32_t status = libmpq__file_read(
+        archive, number, buffer, sizeof(buffer), &got
+    );
+    if (status != 0)
+        return status;
+
+    if (fwrite(buffer, 1, (size_t)got, output) != (size_t)got)
+        return LIBMPQ_ERROR_WRITE;
+    return 0;
+}
+.fi
 .SH RETURN VALUE
 On success, a zero is returned and on error one of the following constants.
 .SH ERRORS

@@ -35,6 +35,30 @@ libmpq__patch_sign(3) before finish. Output retains the base version; v4
 uses 0x4000-byte raw chunks and regenerates structural and member MD5 digests.
 This entry point creates an ordinary MPQ patch. Use
 libmpq__patch_begin_mpqe(3) to create an MPQE-wrapped patch instead.
+.SH EXAMPLE
+.nf
+/* base.mpq is a plain MPQ containing docs/sample.txt. */
+int32_t
+create_sample_patch(void)
+{
+    const uint8_t revised[] = "updated synthetic text";
+    mpq_patch_s *patch = NULL;
+    int32_t status = libmpq__patch_begin(
+        &patch, "base.mpq", "layer.mpq"
+    );
+    if (status != 0)
+        return status;
+
+    status = libmpq__patch_replace_data(
+        patch, "docs/sample.txt", revised, sizeof(revised) \N'45' 1, NULL
+    );
+    if (status != 0) {
+        (void)libmpq__patch_abort(patch); /* Preserve the replacement error. */
+        return status;
+    }
+    return libmpq__patch_finish(patch); /* Consumes even on failure. */
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP or a negative libmpq error.
 .SH ERRORS

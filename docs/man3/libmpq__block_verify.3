@@ -41,6 +41,23 @@ or MD5. Complete file reads automatically check usable sector Adler-32 values;
 complete lossless file reads also check available CRC32/MD5 attributes.
 \fBlibmpq__block_read\fP() does not implicitly verify its stored sector
 checksum or perform file-level attribute verification.
+.SH EXAMPLE
+.nf
+/* number selects a member with a stored sector checksum in the open reader. */
+int32_t
+check_first_sector(
+    mpq_archive_s *archive, uint32_t number, int *matches
+)
+{
+    uint32_t checksum, mismatches;
+    int32_t status = libmpq__block_verify(
+        archive, number, 0, &checksum, &mismatches
+    );
+    if (status == 0)
+        *matches = mismatches == 0;
+    return status;
+}
+.fi
 .SH RETURN VALUE
 0 means the operation completed. *checksum receives the stored
 Adler-32, not the calculated value. *mismatches is zero for a match or

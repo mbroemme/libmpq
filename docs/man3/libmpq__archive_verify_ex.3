@@ -82,6 +82,22 @@ Matching unkeyed MD5 values do not establish authenticity or provenance.
 This operation does not verify every member, listfile completeness, semantic
 attributes, signatures, arbitrary container prefixes or MPQE transport
 authenticity. Existing reader structures and mappings remain unchanged.
+.SH EXAMPLE
+.nf
+/* archive is an open reader. A missing digest cannot produce a match. */
+int32_t
+check_header_md5(mpq_archive_s *archive, int *matched)
+{
+    const uint32_t requested = LIBMPQ_VERIFY_METADATA_HEADER_MD5;
+    uint32_t checked, unavailable, mismatches;
+    int32_t status = libmpq__archive_verify_ex(
+        archive, requested, &checked, &unavailable, &mismatches
+    );
+    if (status == 0)
+        *matched = checked == requested && unavailable == 0 && mismatches == 0;
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Zero means requested comparisons completed, possibly with unavailable checks
 or mismatches. LIBMPQ_ERROR_EXIST indicates invalid required pointers;

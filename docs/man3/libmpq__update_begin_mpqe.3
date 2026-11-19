@@ -46,6 +46,29 @@ best effort: an abnormal process or system termination can leave plaintext
 temporary data behind. The destination identity is rechecked immediately
 before publication on a best-effort basis; this is not a lock or conditional
 replacement.
+.SH EXAMPLE
+.nf
+/* The MPQE file has docs/old.txt. Supply its matching code of at least
+ * 32 bytes. docs/new.txt does not exist. */
+int32_t
+rename_in_wrapped_archive(const uint8_t *code, size_t code_size)
+{
+    mpq_update_s *update = NULL;
+    int32_t status = libmpq__update_begin_mpqe(
+        &update, "wrapped.mpqe",
+        code, code_size
+    );
+    if (status != 0)
+        return status;
+
+    status = libmpq__update_rename(update, "docs/old.txt", "docs/new.txt");
+    if (status != 0) {
+        (void)libmpq__update_abort(update); /* Preserve the rename error. */
+        return status;
+    }
+    return libmpq__update_commit(update); /* Consumes the handle. */
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP on success, or a negative libmpq error. On
 failure, \fI*update\fP is NULL.

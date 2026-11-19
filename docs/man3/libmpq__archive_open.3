@@ -35,6 +35,23 @@ up automatically.
 The function stores the newly allocated archive handle in
 \fImpq_archive\fP and opens \fImpq_filename\fP. Set \fIarchive_offset\fP to
 -1 to search for the archive header, or provide a known offset.
+.SH EXAMPLE
+.nf
+int32_t
+inspect_embedded_archive(uint32_t *count)
+{
+    mpq_archive_s *archive = NULL;
+    int32_t status = libmpq__archive_open(
+        &archive, "container.bin", \N'45'1 /* Scan for an embedded header. */
+    );
+    if (status != 0)
+        return status;
+
+    status = libmpq__archive_files(archive, count);
+    int32_t close_status = libmpq__archive_close(archive);
+    return status != 0 ? status : close_status;
+}
+.fi
 .SH RETURN VALUE
 On success, *\fImpq_archive\fP is set to a new \fBmpq_archive_s\fP and zero
 is returned. On error, one of the following constants is returned.

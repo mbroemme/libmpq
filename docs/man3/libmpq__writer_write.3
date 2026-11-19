@@ -43,6 +43,19 @@ should apply their own resource limits. Normal allocation failures are reported
 where the runtime returns control; this does not guarantee survival of OOM
 termination. Existing codec/version restrictions and ADPCM SINGLE rejection,
 KEY adjustments, generated listfile defaults and physical patch defaults remain.
+.SH EXAMPLE
+.nf
+/* writer is active with room for six more bytes of declared input.
+ * On failure, close the archive to release the writer and discard output. */
+int32_t
+append_sample_chunk(mpq_writer_s *writer)
+{
+    const uint8_t data[] = "sample";
+
+    /* On failure, do not assume none of the bytes were accepted. */
+    return libmpq__writer_write(writer, data, sizeof(data) \N'45' 1);
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP when the bytes are accepted, or a negative
 libmpq error.

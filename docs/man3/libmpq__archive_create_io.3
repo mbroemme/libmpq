@@ -63,6 +63,60 @@ finalization. It is skipped on earlier failure. Flush is not a read-back
 barrier. The caller controls persistence, disposal and publication. Errors
 can leave partial bytes. There is no rollback, atomic publication or
 durability guarantee.
+.SH EXAMPLE
+.nf
+#include <string.h>
+
+struct sink {
+    uint8_t bytes[4096];
+    size_t used;
+};
+
+static int32_t
+write_at(void *context, libmpq__off_t offset, const uint8_t *data, size_t size)
+{
+    struct sink *sink = context;
+    if (offset < 0 || (uint64_t)offset > sizeof(sink\N'45'>bytes))
+        return LIBMPQ_ERROR_WRITE;
+
+    size_t start = (size_t)offset;
+    if (size > sizeof(sink\N'45'>bytes) \N'45' start)
+        return LIBMPQ_ERROR_WRITE;
+    if (size == 0)
+        return 0;
+    if (start > sink\N'45'>used)
+        memset(sink\N'45'>bytes + sink\N'45'>used, 0, start \N'45' sink\N'45'>used);
+    memcpy(sink\N'45'>bytes + start, data, size);
+    if (start + size > sink\N'45'>used)
+        sink\N'45'>used = start + size;
+    return 0;
+}
+
+/* On success the archive occupies sink\N'45'>bytes[0..used). */
+int32_t
+create_in_memory(struct sink *sink)
+{
+    const mpq_archive_create_options_s options = {
+        .version = LIBMPQ_ARCHIVE_VERSION_TWO,
+        .max_files = 8
+    };
+    const uint8_t data[] = { 1, 2, 3, 4 };
+    mpq_archive_s *archive = NULL;
+
+    sink\N'45'>used = 0;
+    int32_t status = libmpq__archive_create_io(
+        &archive, sink, NULL, write_at, NULL, &options
+    );
+    if (status != 0)
+        return status;
+
+    status = libmpq__archive_add_data(
+        archive, "data/sample.bin", data, sizeof(data), NULL
+    );
+    int32_t close_status = libmpq__archive_close(archive);
+    return status != 0 ? status : close_status;
+}
+.fi
 .SH RETURN VALUE
 Zero on success. Failed creation clears the output pointer when provided.
 Missing output, write-at or required read-at returns

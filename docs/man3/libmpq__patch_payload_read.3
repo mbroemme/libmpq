@@ -32,6 +32,32 @@ patch-info prefix. The prefix's MD5 is checked against the decoded body.
 \fIfilename\fP is the physical archive name for key derivation and may be
 NULL if no name-derived key is needed. The function does not apply the patch
 to a base file; BSD0 payloads require the matching base for materialization.
+.SH EXAMPLE
+.nf
+#include <stdio.h>
+
+/* archive is an open reader and output is a writable binary stream.
+ * number selects docs/sample.txt in a physical patch archive.
+ * The decoded PTCH body fits in 4096 bytes. It is copied without applying it.
+ */
+int32_t
+copy_small_patch_body(
+    mpq_archive_s *archive, uint32_t number, FILE *output
+)
+{
+    uint8_t buffer[4096];
+    libmpq__off_t got;
+    int32_t status = libmpq__patch_payload_read(
+        archive, number, "docs/sample.txt", buffer, sizeof(buffer), &got
+    );
+    if (status != 0)
+        return status;
+
+    if (fwrite(buffer, 1, (size_t)got, output) != (size_t)got)
+        return LIBMPQ_ERROR_WRITE;
+    return 0;
+}
+.fi
 .SH RETURN VALUE
 Returns zero and stores the byte count in \fItransferred\fP on success.
 On failure, \fItransferred\fP is zero and a negative libmpq error is returned.

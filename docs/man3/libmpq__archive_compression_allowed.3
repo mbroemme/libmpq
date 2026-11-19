@@ -64,6 +64,19 @@ are validated. Input-specific WAVE and file-storage constraints still apply.
 If skipped stages leave a method disallowed by the policy, the writer stores
 the original sector raw. The first WAVE sector stays lossless, using zlib
 instead of standalone Huffman under STANDARD v2.
+.SH EXAMPLE
+.nf
+int32_t
+allows_v2_zlib(void)
+{
+    int32_t allowed = libmpq__archive_compression_allowed(
+        LIBMPQ_ARCHIVE_VERSION_TWO, LIBMPQ_COMPRESSION_ZLIB,
+        LIBMPQ_COMPRESSION_POLICY_STANDARD
+    );
+    /* 1 allows this selector and 0 rejects it. */
+    return allowed;
+}
+.fi
 .SH RETURN VALUE
 Returns 1 if the compression selection is allowed for the archive version
 and policy, otherwise 0.

@@ -24,6 +24,18 @@ libmpq__strerror \- return a string describing a libmpq error code.
 .SH DESCRIPTION
 .PP
 Call \fBlibmpq__strerror\fP() to get a message for a libmpq return code.
+.SH EXAMPLE
+.nf
+#include <stdio.h>
+
+/* status is the result of a libmpq operation that returns zero on success. */
+void
+show_mpq_error(int32_t status)
+{
+    if (status < 0)
+        fprintf(stderr, "%s\en", libmpq__strerror(status));
+}
+.fi
 .SH RETURN VALUE
 The function returns a pointer to a read-only string, or NULL if
 \fIreturn_code\fP is not a libmpq return code.

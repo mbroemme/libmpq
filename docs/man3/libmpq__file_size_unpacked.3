@@ -34,6 +34,23 @@ For a patch-file member this is the patched target size; use
 The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The function stores the unpacked size for
 \fIfile_number\fP in \fIunpacked_size\fP.
+.SH EXAMPLE
+.nf
+#include <inttypes.h>
+#include <stdio.h>
+
+/* number selects an ordinary member in the open reader. For a patch
+ * member, this query reports the target size instead. */
+int32_t
+show_logical_size(mpq_archive_s *archive, uint32_t number)
+{
+    libmpq__off_t size;
+    int32_t status = libmpq__file_size_unpacked(archive, number, &size);
+    if (status == 0)
+        printf("Logical bytes: %" PRId64 "\en", size);
+    return status;
+}
+.fi
 .SH RETURN VALUE
 On success, a zero is returned and on error one of the following constants.
 .SH ERRORS

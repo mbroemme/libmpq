@@ -37,6 +37,19 @@ has classic aliases under other names. Reduced extended hashes cannot establish 
 identity and are rejected. Indexed metadata queries can use the result;
 for encrypted reads use the exact named stream so the filename is supplied.
 
+.SH EXAMPLE
+.nf
+/* archive is open. Select US English on platform 0 without fallback. */
+int32_t
+lookup_english_sample(
+    mpq_archive_s *archive, uint32_t *number
+)
+{
+    return libmpq__file_number_from_identity(
+        archive, "docs/sample.txt", 0x0409, 0, number
+    );
+}
+.fi
 .SH RETURN VALUE
 Return 0 on success or a negative libmpq error. A valid output is entirely
 cleared on failure. No partial stream is returned.

@@ -32,6 +32,18 @@ for an existing named base member. It does not modify the base archive or
 publish the patch. NULL \fIoptions\fP selects patch-writer defaults. Explicit
 options control storage of the patch member, not the final patched file;
 locale and platform must match the base member.
+.SH EXAMPLE
+.nf
+/* patch is staged. docs/sample.txt exists in the base archive.
+ * input/sample.txt supplies the full new contents. */
+int32_t
+patch_sample_from_disk(mpq_patch_s *patch)
+{
+    return libmpq__patch_replace_path(
+        patch, "docs/sample.txt", "input/sample.txt", NULL
+    );
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP or a negative libmpq error.
 .SH ERRORS

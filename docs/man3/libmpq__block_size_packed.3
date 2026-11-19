@@ -39,6 +39,22 @@ checksum-table bytes are excluded, including from the final data block.
 .PP
 This complements libmpq__block_size_unpacked(), which reports decoded bytes.
 Use the unpacked size when allocating a buffer for libmpq__block_read().
+.SH EXAMPLE
+.nf
+#include <inttypes.h>
+#include <stdio.h>
+
+/* number selects a member with at least one block in the open reader. */
+int32_t
+show_first_block_packed(mpq_archive_s *archive, uint32_t number)
+{
+    libmpq__off_t size;
+    int32_t status = libmpq__block_size_packed(archive, number, 0, &size);
+    if (status == 0)
+        printf("First block stored bytes: %" PRId64 "\en", size);
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Returns 0 and stores the size in *packed_size on success.
 A non-NULL packed_size output is initialized to zero before validation and

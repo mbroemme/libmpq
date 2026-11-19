@@ -46,6 +46,29 @@ signature verification.
 At least 32 authentication-code bytes are required. An incorrect code is not
 identifiable by MPQE alone and can therefore produce an ordinary MPQ parser
 error after decryption.
+.SH EXAMPLE
+.nf
+/* read_at fills exact ranges of the MPQE bytes through close.
+ * code is the matching authentication code of at least 32 bytes. */
+int32_t
+count_wrapped_source_members(
+    void *context, libmpq_read_at_fn read_at, libmpq__off_t source_size,
+    const uint8_t *code, size_t code_size, uint32_t *count
+)
+{
+    mpq_archive_s *archive = NULL;
+    int32_t status = libmpq__archive_open_mpqe_io(
+        &archive, context, read_at, source_size, 0, code, code_size,
+        "wrapped.mpqe"
+    );
+    if (status != 0)
+        return status;
+
+    status = libmpq__archive_files(archive, count);
+    int32_t close_status = libmpq__archive_close(archive);
+    return status != 0 ? status : close_status;
+}
+.fi
 .SH RETURN VALUE
 On success, *\fImpq_archive\fP receives a new \fBmpq_archive_s\fP and zero is
 returned. On failure, a valid output handle pointer receives NULL and a

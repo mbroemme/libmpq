@@ -33,6 +33,18 @@ LIBMPQ_ATTRIBUTE_FILETIME in options.attributes.
 ticks since 1601-01-01 UTC, not Unix time. Zero is the default.
 No filesystem timestamp is imported by \fBlibmpq__archive_add_path\fP().
 This call neither changes the source file nor creates a patch.
+.SH EXAMPLE
+.nf
+/* writer is active and its archive enables LIBMPQ_ATTRIBUTE_FILETIME. */
+int32_t
+set_sample_filetime(mpq_writer_s *writer)
+{
+    /* 2024\N'45'01\N'45'01 00:00:00 UTC as a Windows FILETIME. */
+    return libmpq__writer_timestamp(
+        writer, UINT64_C(133485408000000000)
+    );
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP after setting the active writer's FILETIME,
 or a negative libmpq error. The call does not consume the writer.

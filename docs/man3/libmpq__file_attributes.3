@@ -61,6 +61,25 @@ requirements, independent of this query.
 The native ABI is 40 bytes: fields begin at offsets 0, 4, 8, 16, and 32,
 followed by reserved[4] at offset 36. Reserved bytes are returned as zero.
 Natural alignment is retained; this is not the serialized little-endian payload.
+.SH EXAMPLE
+.nf
+#include <inttypes.h>
+#include <stdio.h>
+
+/* number selects a classic\N'45'backed member in the open reader. */
+int32_t
+show_member_filetime(mpq_archive_s *archive, uint32_t number)
+{
+    mpq_file_attributes_s attributes;
+    int32_t status = libmpq__file_attributes(archive, number, &attributes);
+    if (status != 0)
+        return status;
+
+    if ((attributes.flags & LIBMPQ_ATTRIBUTE_FILETIME) != 0)
+        printf("FILETIME: %" PRIu64 "\en", attributes.filetime);
+    return 0;
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP with stored attributes on success, or a
 negative libmpq error. The output is zeroed on failure.

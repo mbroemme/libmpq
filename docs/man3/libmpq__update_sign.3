@@ -83,6 +83,22 @@ failures retain the existing abort-only lifecycle. Abort and failed publication
 preserve the original source under the transaction guarantees. Private staging
 requires temporary disk space for the candidate and, for embedded weak
 reconstruction, prefix assembly.
+.SH EXAMPLE
+.nf
+/* update is a live transaction. Sign after the last mutation.
+ * Use an eligible archive with v4 raw chunks disabled if applicable.
+ * key is the 64\N'45'byte big\N'45'endian modulus followed by the 64\N'45'byte
+ * private exponent. The caller finalizes or discards its own output. */
+int32_t
+stage_update_weak_signature(
+    mpq_update_s *update, const uint8_t key[128]
+)
+{
+    return libmpq__update_sign(
+        update, LIBMPQ_SIGNATURE_WEAK, key, 128
+    );
+}
+.fi
 .SH RETURN VALUE
 Returns 0 on success or a negative libmpq error.
 .SH ERRORS

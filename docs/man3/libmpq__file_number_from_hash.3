@@ -48,6 +48,20 @@ for an exact locale/platform tuple.
 The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The function stores the matching file number
 in \fInumber\fP.
+.SH EXAMPLE
+.nf
+/* archive is an open reader with a classic hash table. */
+int32_t
+lookup_classic_sample(
+    mpq_archive_s *archive, uint32_t *number
+)
+{
+    uint32_t start, a, b;
+    libmpq__file_hash("data/sample.bin", &start, &a, &b);
+
+    return libmpq__file_number_from_hash(archive, start, a, b, number);
+}
+.fi
 .SH RETURN VALUE
 On success, zero is returned and the file number is stored in \fInumber\fP.
 On error, one of the following constants is returned.

@@ -33,6 +33,22 @@ The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The function adds the packed sizes to
 \fI*packed_size\fP. Initialize that value to zero to obtain only this
 archive's total.
+.SH EXAMPLE
+.nf
+#include <inttypes.h>
+#include <stdio.h>
+
+/* archive is an open reader. Start the accumulator at zero. */
+int32_t
+show_packed_total(mpq_archive_s *archive)
+{
+    libmpq__off_t total = 0;
+    int32_t status = libmpq__archive_size_packed(archive, &total);
+    if (status == 0)
+        printf("Stored member bytes: %" PRId64 "\en", total);
+    return status;
+}
+.fi
 .SH RETURN VALUE
 On success, a zero is returned.
 An unrepresentable total returns LIBMPQ_ERROR_SIZE without changing the accumulator.

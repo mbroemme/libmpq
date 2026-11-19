@@ -92,6 +92,26 @@ Verification uses one decoded-block buffer and one shared traversal. SINGLE_UNIT
 storage may require a buffer as large as that logical member. This operation
 does not establish signature trust, structural metadata coverage or whole-archive
 integrity. VERIFY_ALL requests all member checks; it does not promise availability.
+.SH EXAMPLE
+.nf
+/* number was resolved for data/sample.bin in the open reader.
+ * The filename supplies key context for that member. */
+int32_t
+check_sample_coverage(
+    mpq_archive_s *archive, uint32_t number, int *matched
+)
+{
+    const uint32_t requested = LIBMPQ_VERIFY_FILE_MD5 | LIBMPQ_VERIFY_RAW_MD5;
+    uint32_t checked, unavailable, mismatches;
+    int32_t status = libmpq__file_verify_ex(
+        archive, number, "data/sample.bin", requested,
+        &checked, &unavailable, &mismatches
+    );
+    if (status == 0)
+        *matched = checked == requested && unavailable == 0 && mismatches == 0;
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Zero means verification completed, even with unavailable checks or mismatches.
 Negative LIBMPQ_ERROR_* values report operational failures. All three required

@@ -65,6 +65,30 @@ then the completed tables. Checksums cover source bytes before compression.
 FILETIME defaults to zero and patch bits are zero. Use
 \fBlibmpq__writer_timestamp\fP() on an active writer for an explicit
 timestamp. Path addition never imports filesystem timestamps.
+.SH EXAMPLE
+.nf
+/* Use a scratch path. Discard the output if this function fails. */
+int32_t
+create_sample(void)
+{
+    const mpq_archive_create_options_s options = {
+        .version = LIBMPQ_ARCHIVE_VERSION_TWO,
+        .max_files = 8,
+        .sector_size = 4096
+    };
+    const uint8_t data[] = { 1, 2, 3, 4 };
+    mpq_archive_s *archive = NULL;
+    int32_t status = libmpq__archive_create(&archive, "sample.mpq", &options);
+    if (status != 0)
+        return status;
+
+    status = libmpq__archive_add_data(
+        archive, "data/sample.bin", data, sizeof(data), NULL
+    );
+    int32_t close_status = libmpq__archive_close(archive);
+    return status != 0 ? status : close_status;
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP with a writer handle on success. A valid
 \fI*mpq_archive\fP is NULL on failure, which returns a negative libmpq error.

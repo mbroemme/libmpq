@@ -27,6 +27,22 @@ libmpq__stream_size \- return a logical MPQ member size.
 .SH DESCRIPTION
 Store the immutable logical unpacked member size in \fI*size\fP. This operation
 performs no archive I/O.
+.SH EXAMPLE
+.nf
+#include <inttypes.h>
+#include <stdio.h>
+
+/* stream is an open logical member stream. */
+int32_t
+show_stream_size(mpq_stream_s *stream)
+{
+    libmpq__off_t size;
+    int32_t status = libmpq__stream_size(stream, &size);
+    if (status == 0)
+        printf("Logical stream bytes: %" PRId64 "\en", size);
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP on success.
 .SH ERRORS

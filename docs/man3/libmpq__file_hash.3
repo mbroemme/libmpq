@@ -36,6 +36,25 @@ multiple archives.
 The function stores the three hash values in \fIhash1\fP, \fIhash2\fP,
 and \fIhash3\fP. All four pointers must be non-NULL. The filename must be a
 valid NUL-terminated string, and each output must point to writable storage.
+.SH EXAMPLE
+.nf
+/* Both archives have classic hashes. Read numbers only if both hits succeed. */
+int32_t
+lookup_classic_in_two_archives(
+    mpq_archive_s *first, mpq_archive_s *second, uint32_t numbers[2]
+)
+{
+    uint32_t start, a, b;
+    libmpq__file_hash("data/sample.bin", &start, &a, &b);
+
+    int32_t status = libmpq__file_number_from_hash(
+        first, start, a, b, &numbers[0]
+    );
+    if (status != 0)
+        return status;
+    return libmpq__file_number_from_hash(second, start, a, b, &numbers[1]);
+}
+.fi
 .SH SEE ALSO
 .BR libmpq (3),
 .BR libmpq__file_number (3),

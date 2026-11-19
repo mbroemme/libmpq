@@ -59,6 +59,37 @@ Its own stage is closed before removal. A crash or cleanup failure can leave a
 private plaintext stage behind. A failed close can leave partial or complete
 transport in the sink. The caller controls disposal, publication and
 persistence. MPQE encryption does not independently authenticate an archive.
+.SH EXAMPLE
+.nf
+/* sink starts empty and remains valid through close. write_at writes
+ * exact ranges. code supplies at least 32 authentication\N'45'code bytes. */
+int32_t
+write_wrapped_sample(
+    void *sink, libmpq_write_at_fn write_at, libmpq_flush_fn flush,
+    const uint8_t *code, size_t code_size
+)
+{
+    const mpq_archive_create_options_s options = {
+        .version = LIBMPQ_ARCHIVE_VERSION_TWO,
+        .max_files = 8
+    };
+    const uint8_t data[] = { 1, 2, 3, 4 };
+    mpq_archive_s *archive = NULL;
+    int32_t status = libmpq__archive_create_mpqe_io(
+        &archive, sink, NULL, write_at, flush, code, code_size, &options
+    );
+    if (status != 0)
+        return status;
+
+    status = libmpq__archive_add_data(
+        archive, "data/sample.bin", data, sizeof(data), NULL
+    );
+
+    /* Close emits the transport. Discard sink contents on failure. */
+    int32_t close_status = libmpq__archive_close(archive);
+    return status != 0 ? status : close_status;
+}
+.fi
 .SH RETURN VALUE
 Zero on success. Creation clears a provided output pointer before validation.
 A missing output pointer or write callback returns

@@ -56,6 +56,22 @@ SHA-1 archive-range variant. MPQE output supports internal weak signing,
 including v4 when raw chunks are disabled. MPQE output rejects external strong signing regardless of
 version because no MPQE transport representation is defined for it. Both
 algorithms are legacy compatibility mechanisms, not modern trust primitives.
+.SH EXAMPLE
+.nf
+/* archive is a writer with no active member.
+ * Use an eligible archive with v4 raw chunks disabled if applicable.
+ * key is the 64\N'45'byte big\N'45'endian modulus followed by the 64\N'45'byte
+ * private exponent. The caller finalizes or discards its own output. */
+int32_t
+configure_archive_weak_signature(
+    mpq_archive_s *archive, const uint8_t key[128]
+)
+{
+    return libmpq__archive_sign(
+        archive, LIBMPQ_SIGNATURE_WEAK, key, 128
+    );
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP after configuration, or a negative libmpq
 error. A failed request does not consume the writer handle.

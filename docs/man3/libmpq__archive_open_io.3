@@ -49,6 +49,52 @@ Set \fIarchive_offset\fP to -1 to scan for an embedded header.
 name. Its basename is used for legacy strong-signature verification. When it
 is NULL, basename-dependent strong signatures are skipped; plain and ARCHIVE
 strong variants remain available.
+.SH EXAMPLE
+.nf
+#include <string.h>
+
+struct source {
+    const uint8_t *bytes;
+    size_t size;
+};
+
+static int32_t
+read_at(void *context, libmpq__off_t offset, uint8_t *out, size_t size)
+{
+    const struct source *source = context;
+    if (offset < 0 || (uint64_t)offset > source\N'45'>size)
+        return LIBMPQ_ERROR_READ;
+
+    size_t start = (size_t)offset;
+    if (size > source\N'45'>size \N'45' start)
+        return LIBMPQ_ERROR_READ;
+    if (size != 0)
+        memcpy(out, source\N'45'>bytes + start, size);
+    return 0;
+}
+
+/* bytes holds the entire archive and stays unchanged through this call. */
+int32_t
+count_memory_members(const uint8_t *bytes, size_t size, uint32_t *count)
+{
+    struct source source = { bytes, size };
+    mpq_archive_s *archive = NULL;
+
+#if SIZE_MAX > INT64_MAX
+    if (size > INT64_MAX)
+        return LIBMPQ_ERROR_SIZE;
+#endif
+    int32_t status = libmpq__archive_open_io(
+        &archive, &source, read_at, (libmpq__off_t)size, 0, "sample.mpq"
+    );
+    if (status != 0)
+        return status;
+
+    status = libmpq__archive_files(archive, count);
+    int32_t close_status = libmpq__archive_close(archive);
+    return status != 0 ? status : close_status;
+}
+.fi
 .SH RETURN VALUE
 On success, *\fImpq_archive\fP receives a new \fBmpq_archive_s\fP and zero is
 returned. On failure, a valid output handle pointer receives NULL and a

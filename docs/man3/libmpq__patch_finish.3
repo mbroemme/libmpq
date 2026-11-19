@@ -27,6 +27,17 @@ path supplied to libmpq__patch_begin(3) or libmpq__patch_begin_mpqe(3). The
 base archive remains unchanged. This call consumes \fIpatch\fP whether it
 succeeds or fails; callers must not reuse the pointer. On a handled failure
 before publication, the temporary output is discarded.
+.SH EXAMPLE
+.nf
+/* *owned is the caller's live patch handle. Publish the staged patch. */
+int32_t
+patch_finish(mpq_patch_s **owned)
+{
+    int32_t status = libmpq__patch_finish(*owned);
+    *owned = NULL; /* Consumed even on error. */
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP or a negative libmpq error.
 .SH ERRORS

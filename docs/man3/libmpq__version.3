@@ -24,6 +24,16 @@ libmpq__version \- return the libmpq package version.
 .SH DESCRIPTION
 .PP
 Call \fBlibmpq__version\fP() to retrieve the package version for minimum-version checks.
+.SH EXAMPLE
+.nf
+#include <stdio.h>
+
+void
+show_library_version(void)
+{
+    printf("libmpq %s\en", libmpq__version());
+}
+.fi
 .SH RETURN VALUE
 The function returns the library version.
 .SH SEE ALSO

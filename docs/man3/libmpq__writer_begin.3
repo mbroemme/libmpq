@@ -62,6 +62,21 @@ should apply their own resource limits. Normal allocation failures are reported
 where the runtime returns control; this does not guarantee survival of OOM
 termination. Existing codec/version restrictions and ADPCM SINGLE rejection,
 KEY adjustments, generated listfile defaults and physical patch defaults remain.
+.SH EXAMPLE
+.nf
+/* archive is an active writer with no member open.
+ * Caller owns the returned member writer on success. */
+int32_t
+begin_sample_member(
+    mpq_archive_s *archive, mpq_writer_s **writer
+)
+{
+    /* Write exactly 12 bytes, then consume *writer with writer_finish. */
+    return libmpq__writer_begin(
+        archive, "docs/sample.txt", 12, NULL, writer
+    );
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP with an active writer on success, or a
 negative libmpq error. Failure creates no new writer. The file entry is

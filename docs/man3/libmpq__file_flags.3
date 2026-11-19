@@ -40,6 +40,21 @@ to raw data. Use \fBlibmpq__block_compression\fP() for a sector's effective
 method. This query does not read payload data or verify checksums.
 .PP
 A non-NULL output is initialized to zero before argument validation.
+.SH EXAMPLE
+.nf
+/* archive is an open reader and number is a resolved member number. */
+int32_t
+member_is_encrypted(
+    mpq_archive_s *archive, uint32_t number, int *encrypted
+)
+{
+    uint32_t flags;
+    int32_t status = libmpq__file_flags(archive, number, &flags);
+    if (status == 0)
+        *encrypted = (flags & LIBMPQ_FILE_FLAG_ENCRYPTED) != 0;
+    return status;
+}
+.fi
 .SH RETURN VALUE
 On success, a zero is returned and on error one of the following constants.
 .SH ERRORS

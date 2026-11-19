@@ -718,6 +718,55 @@ built with v0.8.1 retain their compiled-in 0x7 mask. Recompiling adds
 \fBLIBMPQ_VERIFY_RAW_MD5\fP, which can add work, be unavailable or return
 an error. This changes recompiled caller behavior without changing an ELF
 symbol or function signature.
+.SH EXAMPLE
+.nf
+#include <libmpq/mpq.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+/* Run in a scratch directory where sample.mpq does not exist. */
+int
+main(void)
+{
+    const uint8_t greeting[] = "Hello from an MPQ!\en";
+    mpq_archive_s *archive = NULL;
+    int32_t status = libmpq__archive_create(&archive, "sample.mpq", NULL);
+    if (status == 0) {
+        status = libmpq__archive_add_data(
+            archive, "docs/hello.txt", greeting, sizeof(greeting) \N'45' 1, NULL
+        );
+        int32_t close_status = libmpq__archive_close(archive);
+        archive = NULL;
+        if (status == 0)
+            status = close_status;
+    }
+    if (status == 0)
+        status = libmpq__archive_open(&archive, "sample.mpq", 0);
+
+    if (status == 0) {
+        uint32_t number;
+        uint8_t buffer[sizeof(greeting)];
+        libmpq__off_t got;
+
+        status = libmpq__file_number(archive, "docs/hello.txt", &number);
+        if (status == 0) {
+            status = libmpq__file_read(
+                archive, number, buffer, sizeof(buffer), &got
+            );
+        }
+        if (status == 0 &&
+            fwrite(buffer, 1, (size_t)got, stdout) != (size_t)got)
+            status = LIBMPQ_ERROR_WRITE;
+
+        int32_t close_status = libmpq__archive_close(archive);
+        if (status == 0)
+            status = close_status;
+    }
+    if (status != 0)
+        fprintf(stderr, "%s\en", libmpq__strerror(status));
+    return status == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+.fi
 .SH SEE ALSO
 .SS "Utility and Compression Policy"
 .BR libmpq__version (3),

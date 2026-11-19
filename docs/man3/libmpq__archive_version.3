@@ -38,6 +38,22 @@ returns the decoded on-disk version plus one, regardless of table representation
 The first argument is an archive handle opened by
 \fBlibmpq__archive_open\fP(). The function stores the format version in
 \fIversion\fP.
+.SH EXAMPLE
+.nf
+#include <inttypes.h>
+#include <stdio.h>
+
+/* archive is an open reader. The reported generation is one\N'45'based. */
+int32_t
+show_archive_generation(mpq_archive_s *archive)
+{
+    uint32_t generation;
+    int32_t status = libmpq__archive_version(archive, &generation);
+    if (status == 0)
+        printf("MPQ v%" PRIu32 "\en", generation);
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Returns zero on success. A NULL archive or output pointer returns
 \fBLIBMPQ_ERROR_EXIST\fP and leaves any supplied output untouched.

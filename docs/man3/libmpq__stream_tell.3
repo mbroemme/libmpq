@@ -27,6 +27,22 @@ libmpq__stream_tell \- return a logical member stream position.
 .SH DESCRIPTION
 Store the current logical position in \fI*position\fP. This operation performs
 no archive I/O.
+.SH EXAMPLE
+.nf
+#include <inttypes.h>
+#include <stdio.h>
+
+/* stream is an open logical member stream. */
+int32_t
+show_stream_position(mpq_stream_s *stream)
+{
+    libmpq__off_t position;
+    int32_t status = libmpq__stream_tell(stream, &position);
+    if (status == 0)
+        printf("Logical position: %" PRId64 "\en", position);
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP on success.
 .SH ERRORS

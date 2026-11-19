@@ -35,6 +35,22 @@ This reports physical raw policy, not checksum availability or verification
 success. It does not expose the private archive or configure a transaction.
 A valid output pointer is cleared before validation. A latched terminal
 writer error is returned unchanged, with the output left zero.
+.SH EXAMPLE
+.nf
+#include <inttypes.h>
+#include <stdio.h>
+
+/* patch is a live staged patch writer. */
+int32_t
+show_patch_raw_chunk_size(mpq_patch_s *patch)
+{
+    uint32_t size;
+    int32_t status = libmpq__patch_raw_chunk_size_get(patch, &size);
+    if (status == 0)
+        printf("Configured patch raw chunk bytes: %" PRIu32 "\en", size);
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Return 0 on success or a negative libmpq error code.
 The output is cleared on failure when its pointer is valid.

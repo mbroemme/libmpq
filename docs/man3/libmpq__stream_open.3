@@ -36,6 +36,18 @@ through stream close under the rules of \fBlibmpq__archive_open_io\fP(3).
 .PP
 Open encrypted members whose key cannot be recovered without their plaintext
 filename with \fBlibmpq__stream_open_name\fP().
+.SH EXAMPLE
+.nf
+/* archive is open. number selects an unencrypted member. */
+int32_t
+open_member_number(
+    mpq_archive_s *archive, uint32_t number, mpq_stream_s **stream
+)
+{
+    /* On success the caller owns *stream and must close it. */
+    return libmpq__stream_open(archive, number, stream);
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP on success. Otherwise returns an existing archive,
 file, clone, allocation, or decoding error and leaves \fI*stream\fP NULL.

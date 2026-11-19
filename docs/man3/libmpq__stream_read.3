@@ -36,6 +36,25 @@ Usable sector Adler-32 values are checked as sectors load. Arbitrary logical
 member stream reads do not implicitly verify whole-file CRC32/MD5 attributes; use
 .BR libmpq__file_verify (3)
 for explicit whole-file integrity verification.
+.SH EXAMPLE
+.nf
+#include <stdio.h>
+
+/* stream is open at the desired position. output is writable and binary. */
+int32_t
+copy_next_chunk(mpq_stream_s *stream, FILE *output)
+{
+    uint8_t buffer[4096];
+    libmpq__off_t got;
+    int32_t status = libmpq__stream_read(stream, buffer, sizeof(buffer), &got);
+
+    /* A read error can still return a valid prefix. Zero on success is EOF. */
+    if (got > 0 && fwrite(buffer, 1, (size_t)got, output) != (size_t)got &&
+        status == 0)
+        status = LIBMPQ_ERROR_WRITE;
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP for normal, short EOF, and zero-length reads.
 .SH ERRORS

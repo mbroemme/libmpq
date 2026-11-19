@@ -72,6 +72,26 @@ LIBMPQ_ERROR_FORMAT.
 Commit alone publishes the candidate. A failure before adoption preserves the
 previous stage. Qualifying failures during adoption leave the update
 abort-only. See libmpq__update_commit(3) and libmpq__update_abort(3).
+.SH EXAMPLE
+.nf
+/* update is a live transaction. The lossless member
+ * has at least nine logical bytes. These edits leave the size unchanged. */
+int32_t
+stage_range_edits(mpq_update_s *update)
+{
+    const uint8_t marker[] = { 0x4d, 0x50, 0x51 };
+    const uint8_t revision[] = { 0x02 };
+    const mpq_update_replace_range_s ranges[] = {
+        { .offset = 0, .data = marker, .size = sizeof(marker) },
+        { .offset = 8, .data = revision, .size = sizeof(revision) }
+    };
+    const size_t count = sizeof(ranges) / sizeof(ranges[0]);
+
+    return libmpq__update_replace_ranges(
+        update, "data/sample.bin", ranges, count
+    );
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP on success or a negative libmpq error.
 .SH ERRORS

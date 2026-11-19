@@ -39,6 +39,19 @@ are not supported.
 .PP
 MPQ patch output accepts KEY encryption, using the final
 archive-relative member offset and reconstructed target size for key adjustment.
+.SH EXAMPLE
+.nf
+/* patch is staged. docs/sample.txt exists.
+ * The target is in the base archive. */
+int32_t
+patch_sample_bytes(mpq_patch_s *patch)
+{
+    const uint8_t data[] = "updated synthetic text";
+    return libmpq__patch_replace_data(
+        patch, "docs/sample.txt", data, sizeof(data) \N'45' 1, NULL
+    );
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP or a negative libmpq error.
 .SH ERRORS

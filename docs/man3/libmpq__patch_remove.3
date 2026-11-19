@@ -29,6 +29,16 @@ Stages a delete marker for an existing named member. Applying the published
 patch hides that member from the base archive, but neither this call nor patch
 publication modifies the base archive itself. A missing member cannot be
 removed.
+.SH EXAMPLE
+.nf
+/* patch is staged. docs/obsolete.txt exists in the base.
+ * Finish publishes the delete marker. */
+int32_t
+mark_sample_removal(mpq_patch_s *patch)
+{
+    return libmpq__patch_remove(patch, "docs/obsolete.txt");
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP or a negative libmpq error.
 .SH ERRORS

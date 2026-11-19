@@ -27,6 +27,17 @@ filesystem file. Immediately before publication, libmpq performs a best-effort
 identity recheck. This is not a lock or a conditional replacement primitive.
 The handle is consumed on both success and failure; do not use it again. A
 no-op transaction preserves the complete original container byte-for-byte.
+.SH EXAMPLE
+.nf
+/* *owned is the caller's live update handle. Publish staged changes. */
+int32_t
+update_commit(mpq_update_s **owned)
+{
+    int32_t status = libmpq__update_commit(*owned);
+    *owned = NULL; /* Consumed even on error. */
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP on success, or a negative libmpq error.
 .SH ERRORS

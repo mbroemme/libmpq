@@ -63,6 +63,28 @@ close/read operations require external synchronization.
 Verify physical signatures and RAW_MD5 on the original input handles.
 Composition does not inherit their trust as verification of the logical
 output. A changed v3 materialization does not retain physical v4 raw digests.
+.SH EXAMPLE
+.nf
+/* base and layer are open readers for the base and matching patch. */
+int32_t
+count_patched_members(
+    mpq_archive_s *base, mpq_archive_s *layer, uint32_t *count
+)
+{
+    mpq_archive_s *layers[] = { layer };
+    const char *prefixes[] = { "" }; /* Map the layer from its root. */
+    mpq_archive_s *view = NULL;
+    int32_t status = libmpq__archive_open_patch(
+        &view, base, layers, prefixes, sizeof(layers) / sizeof(layers[0])
+    );
+    if (status != 0)
+        return status;
+
+    status = libmpq__archive_files(view, count);
+    int32_t close_status = libmpq__archive_close(view);
+    return status != 0 ? status : close_status;
+}
+.fi
 .SH RETURN VALUE
 Success returns 0 and sets *\fIarchive\fP to a non-NULL owned reader.
 Failure returns an existing negative error code and clears *\fIarchive\fP

@@ -25,6 +25,17 @@ libmpq__stream_close \- close and consume a logical MPQ member stream.
 Release retained offset-table state and the decoded block cache, then close the
 private archive clone owned by \fIstream\fP. The handle is consumed regardless
 of the returned status and must not be reused.
+.SH EXAMPLE
+.nf
+/* *owned is an open stream that the caller owns. */
+int32_t
+close_member_stream(mpq_stream_s **owned)
+{
+    int32_t status = libmpq__stream_close(*owned);
+    *owned = NULL; /* Consumed even if cleanup failed. */
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP or the first cleanup error while all cleanup is
 still attempted.

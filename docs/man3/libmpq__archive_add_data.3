@@ -53,6 +53,23 @@ should apply their own resource limits. Normal allocation failures are reported
 where the runtime returns control; this does not guarantee survival of OOM
 termination. Existing codec/version restrictions and ADPCM SINGLE rejection,
 KEY adjustments, generated listfile defaults and physical patch defaults remain.
+.SH EXAMPLE
+.nf
+/* archive is an active archive writer with no open member writer. */
+int32_t
+add_compressed_sample(mpq_archive_s *archive)
+{
+    const mpq_file_options_s options = {
+        .flags = LIBMPQ_FILE_FLAG_COMPRESS,
+        .compression_first = LIBMPQ_COMPRESSION_ZLIB,
+        .compression_next = LIBMPQ_COMPRESSION_ZLIB
+    };
+    const uint8_t data[] = "synthetic sample contents";
+    return libmpq__archive_add_data(
+        archive, "docs/sample.txt", data, sizeof(data) \N'45' 1, &options
+    );
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP after the member is staged in the writer
 archive, or a negative libmpq error. Archive publication still requires

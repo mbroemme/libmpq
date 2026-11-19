@@ -56,6 +56,24 @@ memory. Close consumes the stream and can report a cleanup failure. Success
 verifies applicable selected payloads within the supported integrity rules.
 Unrelated patched payloads may be unread. Use separate checks for broader
 integrity and signature verification.
+.SH EXAMPLE
+.nf
+/* base and layer are open readers for the base and matching patch.
+ * The caller closes *stream on success and still owns both inputs. */
+int32_t
+open_patched_english_sample(
+    mpq_archive_s *base, mpq_archive_s *layer, mpq_stream_s **stream
+)
+{
+    mpq_archive_s *layers[] = { layer };
+    const char *prefixes[] = { "" }; /* Map the layer from its root. */
+
+    return libmpq__stream_open_patch_identity(
+        base, layers, prefixes, sizeof(layers) / sizeof(layers[0]),
+        "docs/sample.txt", 0x0409, 0, stream
+    );
+}
+.fi
 .SH RETURN VALUE
 Return zero on success or a negative libmpq error. Failure clears a valid
 output slot and never publishes a partial stream.

@@ -30,6 +30,20 @@ Seek relative to \fBLIBMPQ_SEEK_SET\fP, \fBLIBMPQ_SEEK_CUR\fP, or
 \fBLIBMPQ_SEEK_END\fP. Valid positions range from zero through the logical
 file size. Invalid origins, overflow, positions before zero, and positions
 after EOF fail without changing the current position.
+.SH EXAMPLE
+.nf
+/* stream is open and buffer has room for 16 bytes. Reads may be short. */
+int32_t
+rewind_and_read_sample(
+    mpq_stream_s *stream, uint8_t buffer[16], libmpq__off_t *got
+)
+{
+    int32_t status = libmpq__stream_seek(stream, 0, LIBMPQ_SEEK_SET);
+    if (status != 0)
+        return status;
+    return libmpq__stream_read(stream, buffer, 16, got);
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP on success.
 .SH ERRORS

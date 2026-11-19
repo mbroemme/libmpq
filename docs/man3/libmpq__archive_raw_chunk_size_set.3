@@ -49,6 +49,16 @@ Plain and MPQE output use the same inner policy. This does not configure a
 transaction: updates always preserve the source raw size. No new ownership
 or lifecycle handle is introduced. Raw MD5 protects physical stored bytes;
 it is separate from logical file CRC32/MD5 and signature verification.
+.SH EXAMPLE
+.nf
+/* archive is a v4 writer before any member or signing setup. */
+int32_t
+choose_archive_chunk_size(mpq_archive_s *archive)
+{
+    /* Choose 8 KiB raw MD5 chunks. A failed setter leaves policy intact. */
+    return libmpq__archive_raw_chunk_size_set(archive, 8192);
+}
+.fi
 .SH RETURN VALUE
 Return 0 on success or a negative libmpq error code.
 .SH ERRORS

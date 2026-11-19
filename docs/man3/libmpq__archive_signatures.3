@@ -36,6 +36,19 @@ MPQE.
 This call checks storage structure, not cryptographic authenticity.
 Use \fBlibmpq__archive_verify\fP(3) with a caller-supplied public key to
 verify one detected signature.
+.SH EXAMPLE
+.nf
+/* archive is an open reader. Presence alone says nothing about validity. */
+int32_t
+has_weak_signature(mpq_archive_s *archive, int *present)
+{
+    uint32_t signatures;
+    int32_t status = libmpq__archive_signatures(archive, &signatures);
+    if (status == 0)
+        *present = (signatures & LIBMPQ_SIGNATURE_WEAK) != 0;
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Returns \fB0\fP and sets \fI*signatures\fP on success,
 including when the mask is zero. A non-NULL output is initialized to zero

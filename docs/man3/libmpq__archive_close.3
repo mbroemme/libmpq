@@ -44,6 +44,17 @@ backing storage through close, including on failure. Persistence and
 publication of the sink remain the caller's responsibility. The library
 never closes or frees those resources or guarantees durability or atomic
 publication. A failure can leave partial output.
+.SH EXAMPLE
+.nf
+/* *owned is an open reader or writer that the caller owns. */
+int32_t
+close_archive(mpq_archive_s **owned)
+{
+    int32_t status = libmpq__archive_close(*owned);
+    *owned = NULL; /* Consumed even if close failed. */
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Returns zero on success or a negative libmpq error.
 An earlier writer or finalization error takes precedence over a later

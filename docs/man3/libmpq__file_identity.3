@@ -44,6 +44,25 @@ BET variant is added. Exact extended lookup requires full normalized 64-bit
 HET/56-bit BET hashes, a unique mapping and names of at most 264 bytes.
 Ambiguous or incomplete mappings are rejected, without filename recovery.
 
+.SH EXAMPLE
+.nf
+#include <stdio.h>
+
+/* archive is open. Index 0 selects the first live identity. */
+int32_t
+show_first_sample_identity(mpq_archive_s *archive)
+{
+    mpq_file_identity_s identity;
+    int32_t status = libmpq__file_identity(
+        archive, "docs/sample.txt", 0, &identity
+    );
+    if (status == 0) {
+        printf("Locale 0x%04x, platform %u\en",
+            (unsigned)identity.locale, (unsigned)identity.platform);
+    }
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Return 0 on success or a negative libmpq error. A valid output is entirely
 cleared on failure.

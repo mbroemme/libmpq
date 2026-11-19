@@ -67,6 +67,19 @@ Discoverable embedded archives retain all prefix bytes and the original MPQ
 origin under the existing format restrictions. Named reconstruction rejects
 unrelated trailers; ordinary legacy v1 and v2 operations retain their suffix policy.
 See libmpq__update_begin(3) for discovery and temporary-storage requirements.
+.SH EXAMPLE
+.nf
+/* update is a live transaction.
+ * The US English platform\N'45'0 entry has available FILETIME and an unshared
+ * classic row. The value is 2024\N'45'01\N'45'01 UTC in Windows FILETIME units. */
+int32_t
+stage_english_filetime(mpq_update_s *update)
+{
+    return libmpq__update_timestamp_identity(
+        update, "docs/sample.txt", UINT64_C(133485408000000000), 0x0409, 0
+    );
+}
+.fi
 .SH RETURN VALUE
 Returns 0 on success, including validated no-ops, or a negative libmpq error.
 .SH ERRORS

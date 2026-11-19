@@ -29,6 +29,22 @@ Query the configured size on writable archives or the stored v4 header size
 on readers. MPQ v1, v2, and v3 return zero. Use libmpq__archive_version(3) to
 distinguish older formats from v4 with disabled raw arrays. This operation is
 read-only; it does not verify checksums or prove their availability.
+.SH EXAMPLE
+.nf
+#include <inttypes.h>
+#include <stdio.h>
+
+/* archive is an open reader or archive writer. */
+int32_t
+show_archive_raw_chunk_size(mpq_archive_s *archive)
+{
+    uint32_t size;
+    int32_t status = libmpq__archive_raw_chunk_size_get(archive, &size);
+    if (status == 0)
+        printf("Configured raw chunk bytes: %" PRIu32 "\en", size);
+    return status;
+}
+.fi
 .SH RETURN VALUE
 Return 0 on success or a negative libmpq error code.
 The output is cleared on failure when its pointer is valid.
