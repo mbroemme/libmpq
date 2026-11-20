@@ -167,6 +167,7 @@ if [[ "${LIBMPQ_D_OS}" == windows ]]; then
 			'(.platform | index("windows")) != null and (.architecture - ["arm_hardfloat"]) == [$arch] and .compiler == $compiler'
 fi
 
+# Assemble the public D interfaces and binary-only DUB recipe.
 mkdir -p "${package_dir}/source/libmpq" "${package_dir}/tests" \
 	"${package_dir}/lib" "${interface_dir}" "${object_dir}"
 
@@ -224,6 +225,7 @@ dub convert --recipe=dub.sdl --format=json --stdout |
 		| del(.configurations)
 	' > "${package_dir}/dub.json"
 
+# Stage the compiler-specific wrapper and its platform runtime libraries.
 if [[ "${LIBMPQ_D_OS}" == windows ]]; then
 	d_library=mpq.lib
 else
@@ -286,6 +288,8 @@ else
 	test ! -e "${package_dir}/lib/mpq.lib"
 fi
 validate_architecture "${package_dir}/lib/${packaged_d_library}"
+
+# Record the toolchain and runtime requirements of the packaged binaries.
 {
 	echo "libmpq_version=${LIBMPQ_D_VERSION}"
 	echo "compiler=${LIBMPQ_D_COMPILER_NAME}"

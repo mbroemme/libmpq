@@ -125,8 +125,15 @@ for combination in msvc:x64 msvc:arm64 mingw:x86_64 mingw:aarch64; do
 	fi
 	stage="${root}/libmpq-${version}-windows-${suffix}"
 	output="${root}/dist/${stage##*/}.zip"
-	options=(--toolchain "${toolchain}" --architecture "${architecture}" --stage "${stage}" --runtime "${TEST_RUNTIME}" \
-		--source "${project}" --output "${output}" --version "${version}")
+	options=(
+		--toolchain "${toolchain}"
+		--architecture "${architecture}"
+		--stage "${stage}"
+		--runtime "${TEST_RUNTIME}"
+		--source "${project}"
+		--output "${output}"
+		--version "${version}"
+	)
 	reset_stage
 	expect_failure bash "${project}/scripts/package-windows.sh" prepare "${options[@]}" --architecture unsupported
 	grep -q 'Unsupported Windows toolchain/architecture' "${temporary}/failure.log"

@@ -182,6 +182,7 @@ validate_sdk()
 	assert_manpage_set man1
 	assert_manpage_set man3
 
+	# Validate the packaged Mach-O library and its deployment requirements.
 	shopt -s nullglob
 	shared_libraries=()
 	for shared_library in "${library_dir}"/libmpq.*.dylib; do
@@ -229,6 +230,7 @@ validate_sdk()
 		exit 1
 	fi
 
+	# Check both installed configuration interfaces in this extraction root.
 	config_cflags="$("${sdk_root}/bin/libmpq-config" \
 		--prefix="${sdk_root}" --cflags)"
 	config_libs="$("${sdk_root}/bin/libmpq-config" \
@@ -256,6 +258,7 @@ validate_sdk()
 		exit 1
 	fi
 
+	# Prove both consumers link and run without leaking build paths.
 	compile_consumer "${temporary}/consumer-pkgconfig" \
 		"${pkgconfig_cflags}" "${pkgconfig_libs}"
 	compile_consumer "${temporary}/consumer-config" \

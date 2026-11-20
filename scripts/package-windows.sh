@@ -29,12 +29,20 @@ fail()
 
 unix_path()
 {
-	if command -v cygpath >/dev/null; then cygpath -au "$1"; else realpath -m -- "$1"; fi
+	if command -v cygpath >/dev/null; then
+		cygpath -au "$1"
+	else
+		realpath -m -- "$1"
+	fi
 }
 
 native_path()
 {
-	if command -v cygpath >/dev/null; then cygpath -aw "$1"; else printf '%s\n' "$1"; fi
+	if command -v cygpath >/dev/null; then
+		cygpath -aw "$1"
+	else
+		printf '%s\n' "$1"
+	fi
 }
 
 # Index actual filenames without assuming Windows filesystem case sensitivity.

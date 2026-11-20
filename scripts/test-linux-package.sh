@@ -154,6 +154,7 @@ fi
 assert_manpage_set man1
 assert_manpage_set man3
 
+# Validate the packaged ELF library and its declared libc compatibility.
 mapfile -t shared_libraries < <(
 	find "${library_dir}" -maxdepth 1 -type f -name 'libmpq.so.*' -print | sort
 )
@@ -216,6 +217,7 @@ case "$(buildinfo_value libc)" in
 		;;
 esac
 
+# Check both installed configuration interfaces before compiling consumers.
 readonly config_cflags="$("${sdk_root}/bin/libmpq-config" \
 	--prefix="${sdk_root}" --cflags)"
 readonly config_libs="$("${sdk_root}/bin/libmpq-config" \

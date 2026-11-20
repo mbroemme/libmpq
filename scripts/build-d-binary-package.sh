@@ -133,5 +133,8 @@ else
 	dub run --config=tests --compiler="${LIBMPQ_D_DUB_COMPILER}"
 fi
 # Bash 3.2 (macOS) treats an empty array as unset under nounset.
-DFLAGS="${build_dflags}" dub build --config=library ${dub_options[@]+"${dub_options[@]}"} --compiler="${LIBMPQ_D_DUB_COMPILER}" --build=release
+DFLAGS="${build_dflags}" dub build --config=library \
+	${dub_options[@]+"${dub_options[@]}"} \
+	--compiler="${LIBMPQ_D_DUB_COMPILER}" \
+	--build=release
 bash scripts/package-d-binary.sh
