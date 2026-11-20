@@ -21,11 +21,6 @@
 #include "config.h"
 #endif
 
-/* Export public patch-payload entry points when building a Windows DLL. */
-#if defined(_WIN32) && defined(DLL_EXPORT)
-#define LIBMPQ_API __declspec(dllexport)
-#endif
-
 #include "mpq-archive.h"
 #include "mpq-attributes.h"
 #include "mpq-block.h"
