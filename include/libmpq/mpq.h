@@ -222,43 +222,27 @@ enum
  *
  * SPARSE cannot precede lossy WAVE ADPCM under either policy.
  */
-#ifndef LIBMPQ_COMPRESSION_HUFFMAN
 #define LIBMPQ_COMPRESSION_HUFFMAN 0x01u
-#endif
 
-#ifndef LIBMPQ_COMPRESSION_ZLIB
 #define LIBMPQ_COMPRESSION_ZLIB 0x02u
-#endif
 
-#ifndef LIBMPQ_COMPRESSION_PKZIP
 #define LIBMPQ_COMPRESSION_PKZIP 0x08u
-#endif
 
-#ifndef LIBMPQ_COMPRESSION_BZIP2
 #define LIBMPQ_COMPRESSION_BZIP2 0x10u
-#endif
 
-#ifndef LIBMPQ_COMPRESSION_WAVE_MONO
 #define LIBMPQ_COMPRESSION_WAVE_MONO 0x40u
-#endif
 
-#ifndef LIBMPQ_COMPRESSION_WAVE_STEREO
 #define LIBMPQ_COMPRESSION_WAVE_STEREO 0x80u
-#endif
 
 /*
  * Exclusive MPQ v2+ LZMA writer selector. This API-only value is outside the
  * serialized one-byte MPQ compression mask: the writer maps it to on-disk
  * method 0x12. It must not be combined with compression-stage bits.
  */
-#ifndef LIBMPQ_COMPRESSION_LZMA
 #define LIBMPQ_COMPRESSION_LZMA 0x00000100u
-#endif
 
 /* Lossless zero-run stage; cannot be combined with lossy WAVE ADPCM. */
-#ifndef LIBMPQ_COMPRESSION_SPARSE
 #define LIBMPQ_COMPRESSION_SPARSE 0x20u
-#endif
 
 /* Integrity and signature constants. */
 
@@ -582,25 +566,6 @@ extern LIBMPQ_API int32_t libmpq__archive_create_mpqe_io(
 );
 
 /*
- * Set writable v4 raw-MD5 chunk size before any member begins, signing succeeds
- * or finalization starts. All uint32_t values are allowed; zero disables member
- * and HET/BET raw arrays. The default remains 0x4000. Repeated unlocked calls
- * are allowed. Failed validation preserves the prior policy. Invalid lifecycle
- * returns NOT_INITIALIZED, older writable generations return FORMAT, and a
- * terminal writer error takes precedence. This does not configure updates.
- */
-extern LIBMPQ_API int32_t
-libmpq__archive_raw_chunk_size_set(mpq_archive_s *archive, uint32_t raw_chunk_size);
-
-/*
- * Query a reader's stored or writer's configured raw size without mutation.
- * V1/v2/v3 return zero. Clear the output on failure when its pointer is valid.
- * This reports policy, not checksum availability or verification success.
- */
-extern LIBMPQ_API int32_t
-libmpq__archive_raw_chunk_size_get(mpq_archive_s *archive, uint32_t *raw_chunk_size);
-
-/*
  * Clone an opened archive into an independent read handle.
  * The clone reopens a filesystem source or clones the custom source backend
  * and reparses its tables, so decoded metadata and caches are independent.
@@ -680,6 +645,25 @@ extern LIBMPQ_API int32_t libmpq__archive_files(mpq_archive_s *mpq_archive, uint
  * attributes validity.
  */
 extern LIBMPQ_API int32_t libmpq__archive_attributes(mpq_archive_s *mpq_archive, uint32_t *flags);
+
+/*
+ * Set writable v4 raw-MD5 chunk size before any member begins, signing succeeds
+ * or finalization starts. All uint32_t values are allowed; zero disables member
+ * and HET/BET raw arrays. The default remains 0x4000. Repeated unlocked calls
+ * are allowed. Failed validation preserves the prior policy. Invalid lifecycle
+ * returns NOT_INITIALIZED, older writable generations return FORMAT, and a
+ * terminal writer error takes precedence. This does not configure updates.
+ */
+extern LIBMPQ_API int32_t
+libmpq__archive_raw_chunk_size_set(mpq_archive_s *archive, uint32_t raw_chunk_size);
+
+/*
+ * Query a reader's stored or writer's configured raw size without mutation.
+ * V1/v2/v3 return zero. Clear the output on failure when its pointer is valid.
+ * This reports policy, not checksum availability or verification success.
+ */
+extern LIBMPQ_API int32_t
+libmpq__archive_raw_chunk_size_get(mpq_archive_s *archive, uint32_t *raw_chunk_size);
 
 /* Detect structurally present weak and strong signatures; this does not verify them. */
 extern LIBMPQ_API int32_t libmpq__archive_signatures(mpq_archive_s *archive, uint32_t *signatures);
@@ -889,6 +873,25 @@ extern LIBMPQ_API int32_t libmpq__file_verify_ex(
 extern LIBMPQ_API int32_t libmpq__file_read(
     mpq_archive_s *mpq_archive, uint32_t file_number, uint8_t *out_buf, libmpq__off_t out_size,
     libmpq__off_t *transferred
+);
+
+/* Patch payload access. */
+
+/*
+ * Return the decoded PTCH payload size for a patch-file member. The ordinary
+ * file size describes the patched target, not this stored payload.
+ */
+extern LIBMPQ_API int32_t
+libmpq__patch_payload_size(mpq_archive_s *archive, uint32_t file_number, libmpq__off_t *size);
+
+/*
+ * Decode and validate a patch-file member's PTCH payload into caller memory.
+ * filename is the physical archive name used for encrypted members; it may be
+ * NULL when no name-derived key is needed. This does not apply the patch.
+ */
+extern LIBMPQ_API int32_t libmpq__patch_payload_read(
+    mpq_archive_s *archive, uint32_t file_number, const char *filename, uint8_t *buffer,
+    libmpq__off_t capacity, libmpq__off_t *transferred
 );
 
 /* Logical member streams. */
@@ -1108,22 +1111,6 @@ extern LIBMPQ_API int32_t libmpq__archive_add_path(
 /* Transactional archive updates. */
 
 /*
- * Select filename/old_locale/old_platform exactly, without fallback, then
- * change only its tuple to new_locale/new_platform; keep filename and payload.
- * Payloads and shared aliases retain their packed bytes and physical offsets.
- * Occupied destinations return EXIST; ambiguous or unrepresentable changes
- * return FORMAT. Classic-only v1-v4 and consistent one-to-one mixed targets
- * are supported. BET-only targets cannot acquire qualified identities.
- * Equal tuples validate the exact source and succeed without reconstruction.
- * Special-member mutations and existing unsupported reconstruction layouts
- * return FORMAT. Rejected operations preserve the preceding valid stage.
- */
-extern LIBMPQ_API int32_t libmpq__update_change_identity(
-    mpq_update_s *update, const char *filename, uint16_t old_locale, uint16_t old_platform,
-    uint16_t new_locale, uint16_t new_platform
-);
-
-/*
  * Stage changes to an existing filesystem MPQ in a private working copy.
  * Changes reach the original only when commit atomically publishes that copy.
  * Supported embedded updates retain their prefix and original MPQ origin.
@@ -1250,21 +1237,19 @@ extern LIBMPQ_API int32_t libmpq__update_rename_identity(
 );
 
 /*
- * Immediately sign the current private stage with exactly WEAK or STRONG.
- * Raw private keys are big-endian n || d: 128 bytes for weak, 512 for strong.
- * Key storage is borrowed synchronously and never retained in the transaction.
- * Success validates generated storage and applicable structural/raw integrity,
- * not cryptographic trust or key-pair validity; verify with archive_verify().
- * Weak signing invalidates strong trailers and requires v4 raw chunks disabled.
- * Strong signing preserves existing weak bytes and is unsupported for MPQE.
- * The handle is not consumed; commit alone publishes. Sign after other changes.
- * Pre-adoption failure preserves the preceding stage; adoption close failures
- * retain existing abort-only behavior. Subsequent actual mutations invalidate
- * signatures, while existing validated no-ops preserve them.
+ * Select filename/old_locale/old_platform exactly, without fallback, then
+ * change only its tuple to new_locale/new_platform; keep filename and payload.
+ * Payloads and shared aliases retain their packed bytes and physical offsets.
+ * Occupied destinations return EXIST; ambiguous or unrepresentable changes
+ * return FORMAT. Classic-only v1-v4 and consistent one-to-one mixed targets
+ * are supported. BET-only targets cannot acquire qualified identities.
+ * Equal tuples validate the exact source and succeed without reconstruction.
+ * Special-member mutations and existing unsupported reconstruction layouts
+ * return FORMAT. Rejected operations preserve the preceding valid stage.
  */
-extern LIBMPQ_API int32_t libmpq__update_sign(
-    mpq_update_s *update, uint32_t signature_type, const uint8_t *private_key,
-    size_t private_key_size
+extern LIBMPQ_API int32_t libmpq__update_change_identity(
+    mpq_update_s *update, const char *filename, uint16_t old_locale, uint16_t old_platform,
+    uint16_t new_locale, uint16_t new_platform
 );
 
 /*
@@ -1327,6 +1312,24 @@ extern LIBMPQ_API int32_t libmpq__update_compact_ex(
 );
 
 /*
+ * Immediately sign the current private stage with exactly WEAK or STRONG.
+ * Raw private keys are big-endian n || d: 128 bytes for weak, 512 for strong.
+ * Key storage is borrowed synchronously and never retained in the transaction.
+ * Success validates generated storage and applicable structural/raw integrity,
+ * not cryptographic trust or key-pair validity; verify with archive_verify().
+ * Weak signing invalidates strong trailers and requires v4 raw chunks disabled.
+ * Strong signing preserves existing weak bytes and is unsupported for MPQE.
+ * The handle is not consumed; commit alone publishes. Sign after other changes.
+ * Pre-adoption failure preserves the preceding stage; adoption close failures
+ * retain existing abort-only behavior. Subsequent actual mutations invalidate
+ * signatures, while existing validated no-ops preserve them.
+ */
+extern LIBMPQ_API int32_t libmpq__update_sign(
+    mpq_update_s *update, uint32_t signature_type, const uint8_t *private_key,
+    size_t private_key_size
+);
+
+/*
  * Validate and atomically publish staged changes. This consumes the update
  * handle even if publication fails; callers must not use it afterward.
  */
@@ -1337,25 +1340,6 @@ extern LIBMPQ_API int32_t libmpq__update_commit(mpq_update_s *update);
  * This consumes the update handle even when cleanup reports an error.
  */
 extern LIBMPQ_API int32_t libmpq__update_abort(mpq_update_s *update);
-
-/* Patch payload access. */
-
-/*
- * Return the decoded PTCH payload size for a patch-file member. The ordinary
- * file size describes the patched target, not this stored payload.
- */
-extern LIBMPQ_API int32_t
-libmpq__patch_payload_size(mpq_archive_s *archive, uint32_t file_number, libmpq__off_t *size);
-
-/*
- * Decode and validate a patch-file member's PTCH payload into caller memory.
- * filename is the physical archive name used for encrypted members; it may be
- * NULL when no name-derived key is needed. This does not apply the patch.
- */
-extern LIBMPQ_API int32_t libmpq__patch_payload_read(
-    mpq_archive_s *archive, uint32_t file_number, const char *filename, uint8_t *buffer,
-    libmpq__off_t capacity, libmpq__off_t *transferred
-);
 
 /* Patch archive creation. */
 
