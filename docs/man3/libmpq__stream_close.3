@@ -19,7 +19,9 @@ libmpq__stream_close \- close and consume a logical MPQ member stream.
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__stream_close(mpq_stream_s *" "stream" ");"
+.BI "int32_t libmpq__stream_close("
+.BI "        mpq_stream_s *" "stream"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Release retained offset-table state and the decoded block cache, then close the

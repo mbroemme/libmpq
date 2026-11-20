@@ -19,7 +19,9 @@ libmpq__update_abort \- discard a staged MPQ update
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__update_abort(mpq_update_s *" "update" ");"
+.BI "int32_t libmpq__update_abort("
+.BI "        mpq_update_s *" "update"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Discards the private working copy and leaves the original destination

@@ -19,7 +19,9 @@ libmpq__writer_finish \- finish an MPQ file writer
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__writer_finish(mpq_writer_s *" "writer" ");"
+.BI "int32_t libmpq__writer_finish("
+.BI "        mpq_writer_s *" "writer"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Validates the declared size, writes the file sectors and records its hash and

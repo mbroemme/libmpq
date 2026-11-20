@@ -19,9 +19,12 @@ libmpq__update_add_path \- stage a new MPQ member from a filesystem path
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__update_add_path(mpq_update_s *" "update,"
-.BI "        const char *" "filename, const char *" "source_path,"
-.BI "        const mpq_file_options_s *" "options);"
+.BI "int32_t libmpq__update_add_path("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename,"
+.BI "        const char *" "source_path,"
+.BI "        const mpq_file_options_s *" "options"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Adds an absent filename using bytes read from the caller-owned source path.

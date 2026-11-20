@@ -19,12 +19,16 @@ libmpq__stream_open_patch_identity \- open an exact patched member stream
 .nf
 #include <libmpq/mpq.h>
 
-int32_t libmpq__stream_open_patch_identity(
-        mpq_archive_s *base, mpq_archive_s *const *patch_archives,
-        const char *const *patch_prefixes, size_t patch_count,
-        const char *filename,
-        uint16_t locale, uint16_t platform,
-        mpq_stream_s **stream);
+.BI "int32_t libmpq__stream_open_patch_identity("
+.BI "        mpq_archive_s *" "base,"
+.BI "        mpq_archive_s *const *" "patch_archives,"
+.BI "        const char *const *" "patch_prefixes,"
+.BI "        size_t " "patch_count,"
+.BI "        const char *" "filename,"
+.BI "        uint16_t " "locale,"
+.BI "        uint16_t " "platform,"
+.BI "        mpq_stream_s **" "stream"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Open one logical member from a read-only base archive and ordered read-only

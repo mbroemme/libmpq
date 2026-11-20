@@ -19,10 +19,11 @@ libmpq__update_timestamp \- stage an existing MPQ member FILETIME update
 .nf
 #include <libmpq/mpq.h>
 
-int32_t libmpq__update_timestamp(
-        mpq_update_s *update,
-        const char *filename,
-        uint64_t filetime);
+.BI "int32_t libmpq__update_timestamp("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename,"
+.BI "        uint64_t " "filetime"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Set existing Windows FILETIME metadata in the current successful transaction

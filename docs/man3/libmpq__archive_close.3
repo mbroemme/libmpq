@@ -19,7 +19,9 @@ libmpq__archive_close \- close an opened MPQ archive.
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__archive_close(mpq_archive_s *" "mpq_archive" ");"
+.BI "int32_t libmpq__archive_close("
+.BI "        mpq_archive_s *" "mpq_archive"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Close the archive handle returned by an archive open or create function.

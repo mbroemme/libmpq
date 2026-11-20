@@ -19,9 +19,13 @@ libmpq__stream_open_name_identity \- open an exact named member stream
 .nf
 #include <libmpq/mpq.h>
 
-int32_t libmpq__stream_open_name_identity(
-        mpq_archive_s *archive, const char *filename,
-        uint16_t locale, uint16_t platform, mpq_stream_s **stream);
+.BI "int32_t libmpq__stream_open_name_identity("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        const char *" "filename,"
+.BI "        uint16_t " "locale,"
+.BI "        uint16_t " "platform,"
+.BI "        mpq_stream_s **" "stream"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Open a read-only logical stream for exactly the requested filename identity.

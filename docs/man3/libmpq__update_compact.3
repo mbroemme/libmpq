@@ -19,7 +19,9 @@ libmpq__update_compact \- stage physical archive compaction
 .nf
 #include <libmpq/mpq.h>
 
-int32_t libmpq__update_compact(mpq_update_s *update);
+.BI "int32_t libmpq__update_compact("
+.BI "        mpq_update_s *" "update"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Immediately reconstruct and validate the current transaction stage with densely

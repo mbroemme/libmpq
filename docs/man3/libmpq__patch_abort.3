@@ -19,7 +19,9 @@ libmpq__patch_abort \- discard a staged patch archive
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__patch_abort(mpq_patch_s *" "patch" ");"
+.BI "int32_t libmpq__patch_abort("
+.BI "        mpq_patch_s *" "patch"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Closes the staged patch writer and removes its unpublished temporary output.

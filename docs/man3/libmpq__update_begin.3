@@ -19,7 +19,10 @@ libmpq__update_begin \- begin a filesystem MPQ update transaction
 .nf
 .B #include <libmpq/mpq.h>
 .sp
-.BI "int32_t libmpq__update_begin(mpq_update_s **" "update" ", const char *" "path" ");"
+.BI "int32_t libmpq__update_begin("
+.BI "        mpq_update_s **" "update,"
+.BI "        const char *" "path"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Creates a same-directory private working copy of an existing regular MPQ or

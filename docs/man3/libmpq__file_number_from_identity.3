@@ -19,9 +19,13 @@ libmpq__file_number_from_identity \- resolve an exact filename locale and platfo
 .nf
 #include <libmpq/mpq.h>
 
-int32_t libmpq__file_number_from_identity(
-        mpq_archive_s *archive, const char *filename,
-        uint16_t locale, uint16_t platform, uint32_t *file_number);
+.BI "int32_t libmpq__file_number_from_identity("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        const char *" "filename,"
+.BI "        uint16_t " "locale,"
+.BI "        uint16_t " "platform,"
+.BI "        uint32_t *" "file_number"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Select the exact locale/platform identity for the supplied filename.

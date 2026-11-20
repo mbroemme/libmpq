@@ -21,7 +21,9 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .sp
 .BI "const char *libmpq__version(void);"
 .sp
-.BI "const char *libmpq__strerror(int32_t " "return_code" ");"
+.BI "const char *libmpq__strerror("
+.BI "        int32_t " "return_code"
+.BI ");"
 .sp
 .BI "int32_t libmpq__archive_compression_allowed("
 .BI "        uint32_t " "archive_version,"
@@ -76,7 +78,9 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        mpq_archive_s *" "source"
 .BI ");"
 .sp
-.BI "int32_t libmpq__archive_close(mpq_archive_s *" "mpq_archive" ");"
+.BI "int32_t libmpq__archive_close("
+.BI "        mpq_archive_s *" "mpq_archive"
+.BI ");"
 .sp
 .BI "int32_t libmpq__archive_create("
 .BI "        mpq_archive_s **" "mpq_archive,"
@@ -156,9 +160,13 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        uint64_t " "filetime"
 .BI ");"
 .sp
-.BI "int32_t libmpq__writer_finish(mpq_writer_s *" "writer" ");"
+.BI "int32_t libmpq__writer_finish("
+.BI "        mpq_writer_s *" "writer"
+.BI ");"
 .sp
-.BI "int32_t libmpq__stream_close(mpq_stream_s *" "stream" ");"
+.BI "int32_t libmpq__stream_close("
+.BI "        mpq_stream_s *" "stream"
+.BI ");"
 .sp
 .BI "int32_t libmpq__stream_open("
 .BI "        mpq_archive_s *" "archive,"
@@ -172,20 +180,33 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "        mpq_stream_s **" "stream"
 .BI ");"
 .sp
-int32_t libmpq__stream_open_name_identity(
-        mpq_archive_s *archive, const char *filename,
-        uint16_t locale, uint16_t platform, mpq_stream_s **stream);
+.BI "int32_t libmpq__stream_open_name_identity("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        const char *" "filename,"
+.BI "        uint16_t " "locale,"
+.BI "        uint16_t " "platform,"
+.BI "        mpq_stream_s **" "stream"
+.BI ");"
 .sp
-int32_t libmpq__stream_open_patch(
-        mpq_archive_s *base, mpq_archive_s *const *patch_archives,
-        const char *const *patch_prefixes, size_t patch_count,
-        const char *filename, mpq_stream_s **stream);
+.BI "int32_t libmpq__stream_open_patch("
+.BI "        mpq_archive_s *" "base,"
+.BI "        mpq_archive_s *const *" "patch_archives,"
+.BI "        const char *const *" "patch_prefixes,"
+.BI "        size_t " "patch_count,"
+.BI "        const char *" "filename,"
+.BI "        mpq_stream_s **" "stream"
+.BI ");"
 .sp
-int32_t libmpq__stream_open_patch_identity(
-        mpq_archive_s *base, mpq_archive_s *const *patch_archives,
-        const char *const *patch_prefixes, size_t patch_count,
-        const char *filename, uint16_t locale, uint16_t platform,
-        mpq_stream_s **stream);
+.BI "int32_t libmpq__stream_open_patch_identity("
+.BI "        mpq_archive_s *" "base,"
+.BI "        mpq_archive_s *const *" "patch_archives,"
+.BI "        const char *const *" "patch_prefixes,"
+.BI "        size_t " "patch_count,"
+.BI "        const char *" "filename,"
+.BI "        uint16_t " "locale,"
+.BI "        uint16_t " "platform,"
+.BI "        mpq_stream_s **" "stream"
+.BI ");"
 .sp
 .BI "int32_t libmpq__stream_read("
 .BI "        mpq_stream_s *" "stream,"
@@ -210,9 +231,14 @@ int32_t libmpq__stream_open_patch_identity(
 .BI "        libmpq__off_t *" "position"
 .BI ");"
 .sp
-.BI "int32_t libmpq__update_abort(mpq_update_s *" "update" ");"
+.BI "int32_t libmpq__update_abort("
+.BI "        mpq_update_s *" "update"
+.BI ");"
 .sp
-.BI "int32_t libmpq__update_begin(mpq_update_s **" "update" ", const char *" "path" ");"
+.BI "int32_t libmpq__update_begin("
+.BI "        mpq_update_s **" "update,"
+.BI "        const char *" "path"
+.BI ");"
 .sp
 .BI "int32_t libmpq__update_begin_mpqe("
 .BI "        mpq_update_s **" "update,"
@@ -230,23 +256,40 @@ int32_t libmpq__stream_open_patch_identity(
 .BI "        uint16_t " "new_platform"
 .BI ");"
 .sp
-int32_t libmpq__update_sign(
-        mpq_update_s *update, uint32_t signature_type,
-        const uint8_t *private_key, size_t private_key_size);
+.BI "int32_t libmpq__update_sign("
+.BI "        mpq_update_s *" "update,"
+.BI "        uint32_t " "signature_type,"
+.BI "        const uint8_t *" "private_key,"
+.BI "        size_t " "private_key_size"
+.BI ");"
 .sp
-int32_t libmpq__update_compact(mpq_update_s *update);
+.BI "int32_t libmpq__update_compact("
+.BI "        mpq_update_s *" "update"
+.BI ");"
 .sp
-int32_t libmpq__update_compact_ex(
-        mpq_update_s *update, const char *const *filenames, size_t filename_count);
+.BI "int32_t libmpq__update_compact_ex("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *const *" "filenames,"
+.BI "        size_t " "filename_count"
+.BI ");"
 .sp
-int32_t libmpq__update_timestamp(
-        mpq_update_s *update, const char *filename, uint64_t filetime);
+.BI "int32_t libmpq__update_timestamp("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename,"
+.BI "        uint64_t " "filetime"
+.BI ");"
 .sp
-int32_t libmpq__update_timestamp_identity(
-        mpq_update_s *update, const char *filename, uint64_t filetime,
-        uint16_t locale, uint16_t platform);
+.BI "int32_t libmpq__update_timestamp_identity("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename,"
+.BI "        uint64_t " "filetime,"
+.BI "        uint16_t " "locale,"
+.BI "        uint16_t " "platform"
+.BI ");"
 .sp
-.BI "int32_t libmpq__update_commit(mpq_update_s *" "update" ");"
+.BI "int32_t libmpq__update_commit("
+.BI "        mpq_update_s *" "update"
+.BI ");"
 .sp
 .BI "int32_t libmpq__update_remove("
 .BI "        mpq_update_s *" "update,"
@@ -292,13 +335,20 @@ int32_t libmpq__update_timestamp_identity(
 .BI "        const mpq_file_options_s *" "options"
 .BI ");"
 .sp
-.BI "int32_t libmpq__update_add_data(mpq_update_s *" "update,"
-.BI "        const char *" "filename, const uint8_t *" "data,"
-.BI "        libmpq__off_t " "size, const mpq_file_options_s *" "options);"
+.BI "int32_t libmpq__update_add_data("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename,"
+.BI "        const uint8_t *" "data,"
+.BI "        libmpq__off_t " "size,"
+.BI "        const mpq_file_options_s *" "options"
+.BI ");"
 .sp
-.BI "int32_t libmpq__update_add_path(mpq_update_s *" "update,"
-.BI "        const char *" "filename, const char *" "source_path,"
-.BI "        const mpq_file_options_s *" "options);"
+.BI "int32_t libmpq__update_add_path("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *" "filename,"
+.BI "        const char *" "source_path,"
+.BI "        const mpq_file_options_s *" "options"
+.BI ");"
 .sp
 .BI "int32_t libmpq__update_replace_ranges("
 .BI "        mpq_update_s *" "update,"
@@ -332,7 +382,9 @@ int32_t libmpq__update_timestamp_identity(
 .BI "        const mpq_file_options_s *" "options"
 .BI ");"
 .sp
-.BI "int32_t libmpq__patch_abort(mpq_patch_s *" "patch" ");"
+.BI "int32_t libmpq__patch_abort("
+.BI "        mpq_patch_s *" "patch"
+.BI ");"
 .sp
 .BI "int32_t libmpq__patch_add_data("
 .BI "        mpq_patch_s *" "patch,"
@@ -363,7 +415,9 @@ int32_t libmpq__update_timestamp_identity(
 .BI "        size_t " "auth_code_size"
 .BI ");"
 .sp
-.BI "int32_t libmpq__patch_finish(mpq_patch_s *" "patch" ");"
+.BI "int32_t libmpq__patch_finish("
+.BI "        mpq_patch_s *" "patch"
+.BI ");"
 .sp
 .BI "int32_t libmpq__patch_payload_read("
 .BI "        mpq_archive_s *" "archive,"
@@ -513,9 +567,13 @@ int32_t libmpq__update_timestamp_identity(
 .BI "        uint32_t *" "number"
 .BI ");"
 .sp
-int32_t libmpq__file_number_from_identity(
-        mpq_archive_s *archive, const char *filename,
-        uint16_t locale, uint16_t platform, uint32_t *file_number);
+.BI "int32_t libmpq__file_number_from_identity("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        const char *" "filename,"
+.BI "        uint16_t " "locale,"
+.BI "        uint16_t " "platform,"
+.BI "        uint32_t *" "file_number"
+.BI ");"
 .sp
 .BI "int32_t libmpq__file_number_from_hash("
 .BI "        mpq_archive_s *" "mpq_archive,"

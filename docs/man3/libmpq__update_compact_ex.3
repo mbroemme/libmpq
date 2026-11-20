@@ -19,10 +19,11 @@ libmpq__update_compact_ex \- compact with externally known archive filenames
 .nf
 #include <libmpq/mpq.h>
 
-int32_t libmpq__update_compact_ex(
-        mpq_update_s *update,
-        const char *const *filenames,
-        size_t filename_count);
+.BI "int32_t libmpq__update_compact_ex("
+.BI "        mpq_update_s *" "update,"
+.BI "        const char *const *" "filenames,"
+.BI "        size_t " "filename_count"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Immediately compact the current private transaction stage using the same

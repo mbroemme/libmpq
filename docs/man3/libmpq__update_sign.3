@@ -19,11 +19,12 @@ libmpq__update_sign \- sign the current private transaction stage
 .nf
 #include <libmpq/mpq.h>
 
-int32_t libmpq__update_sign(
-        mpq_update_s *update,
-        uint32_t signature_type,
-        const uint8_t *private_key,
-        size_t private_key_size);
+.BI "int32_t libmpq__update_sign("
+.BI "        mpq_update_s *" "update,"
+.BI "        uint32_t " "signature_type,"
+.BI "        const uint8_t *" "private_key,"
+.BI "        size_t " "private_key_size"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Generate a signature immediately on a completed private candidate, validate

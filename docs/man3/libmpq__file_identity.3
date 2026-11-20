@@ -19,9 +19,12 @@ libmpq__file_identity \- retrieve one exact stored filename identity
 .nf
 #include <libmpq/mpq.h>
 
-int32_t libmpq__file_identity(
-        mpq_archive_s *archive, const char *filename,
-        uint32_t identity_index, mpq_file_identity_s *identity);
+.BI "int32_t libmpq__file_identity("
+.BI "        mpq_archive_s *" "archive,"
+.BI "        const char *" "filename,"
+.BI "        uint32_t " "identity_index,"
+.BI "        mpq_file_identity_s *" "identity"
+.BI ");"
 .fi
 .SH DESCRIPTION
 Return one live identity for filename at the zero-based identity_index.
