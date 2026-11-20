@@ -39,6 +39,5 @@ EXTRA_DIST = \
 	RELEASING.md \
 	RELICENSING.md \
 	dub.sdl \
-	scripts/coverage-report.sh \
 	scripts/generate-fuzz-corpus.sh \
 	scripts/minimize-fuzz-crash.sh
