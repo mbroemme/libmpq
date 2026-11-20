@@ -481,8 +481,8 @@ libmpq__update_timestamp(mpq_update_s *update, const char *filename, uint64_t fi
 
 int32_t
 libmpq__update_timestamp_identity(
-    mpq_update_s *update, const char *filename, uint64_t filetime, uint16_t locale,
-    uint16_t platform
+    mpq_update_s *update, const char *filename, uint16_t locale, uint16_t platform,
+    uint64_t filetime
 )
 {
     return libmpq__update_transaction_timestamp(update, filename, filetime, 1, locale, platform);

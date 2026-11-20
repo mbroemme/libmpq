@@ -378,7 +378,7 @@ _configure("libmpq__update_compact_ex", ctypes.c_int32, _VOID_PTR,
            ctypes.POINTER(ctypes.c_char_p), ctypes.c_size_t)
 _configure("libmpq__update_timestamp", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p, ctypes.c_uint64)
 _configure("libmpq__update_timestamp_identity", ctypes.c_int32, _VOID_PTR, ctypes.c_char_p,
-           ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16)
+           ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint64)
 _configure("libmpq__update_commit", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__update_abort", ctypes.c_int32, _VOID_PTR)
 _configure("libmpq__patch_begin", ctypes.c_int32, ctypes.POINTER(_VOID_PTR), ctypes.c_char_p, ctypes.c_char_p)
@@ -726,12 +726,8 @@ class Update:
         """Set an existing unsigned Windows FILETIME without changing the payload."""
         self._ensure_open()
         filetime = _checked_int(filetime, ctypes.c_uint64, "filetime")
-        selected = _identity_selection(locale, platform)
-        if selected is None:
-            libmpq.libmpq__update_timestamp(self._update, _as_bytes(name), filetime)
-        else:
-            libmpq.libmpq__update_timestamp_identity(
-                self._update, _as_bytes(name), filetime, *selected)
+        _identity_call("libmpq__update_timestamp", _identity_selection(locale, platform),
+                       self._update, _as_bytes(name), filetime)
 
     def remove(self, name, *, locale=None, platform=None):
         """Stage removal of an existing member."""

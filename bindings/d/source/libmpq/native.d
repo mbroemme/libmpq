@@ -416,7 +416,7 @@ extern(C) {
                                  const(char*)* filenames, size_t filename_count);
     int libmpq__update_timestamp(mpq_update_s* update, const(char)* filename, ulong filetime);
     int libmpq__update_timestamp_identity(mpq_update_s* update, const(char)* filename,
-                                        ulong filetime, ushort locale, ushort platform);
+                                        ushort locale, ushort platform, ulong filetime);
     /** Both lifecycle calls consume the handle, including on error. */
     int libmpq__update_commit(mpq_update_s* update);
     int libmpq__update_abort(mpq_update_s* update);

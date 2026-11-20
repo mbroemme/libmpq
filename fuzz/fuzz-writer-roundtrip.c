@@ -202,7 +202,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             result = libmpq__update_timestamp(update, "roundtrip.bin", timestamp);
             if (result == 0)
                 result =
-                    libmpq__update_timestamp_identity(update, "roundtrip.bin", timestamp, 0, 0);
+                    libmpq__update_timestamp_identity(update, "roundtrip.bin", 0, 0, timestamp);
             if (result == 0)
                 result = libmpq__update_compact(update);
             if (result == 0)

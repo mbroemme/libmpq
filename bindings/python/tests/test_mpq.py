@@ -2246,10 +2246,11 @@ def test_exact_update_stages(tmp_path, version, wrapped):
     code = b"LIBMPQ-MPQE-TEST-AUTH-CODE-00001"
     classic = version in (mpq.ARCHIVE_VERSION_1, mpq.ARCHIVE_VERSION_2)
     locale, platform = (0x409, 1) if classic else (0, 0)
+    filetime = 0xfedcba9876543210
     options = mpq.FileCreateOptions.raw()
     options.locale, options.platform = locale, platform
-    create = (mpq.Writer.create_mpqe(path, code, version=version) if wrapped
-              else mpq.Writer(path, version=version))
+    create = (mpq.Writer.create_mpqe(path, code, version=version, attributes=mpq.ATTRIBUTE_FILETIME)
+              if wrapped else mpq.Writer(path, version=version, attributes=mpq.ATTRIBUTE_FILETIME))
     with create as writer:
         writer.add("voice", b"selected", options)
         if classic:
@@ -2257,6 +2258,7 @@ def test_exact_update_stages(tmp_path, version, wrapped):
     original = path.read_bytes()
     begin = lambda: (mpq.Update.begin_mpqe(path, code) if wrapped else mpq.Update.begin(path))
     with begin() as update:
+        update.timestamp("voice", filetime, locale=locale, platform=platform)
         update.replace_data("voice", b"bytes", locale=locale, platform=platform)
         for invalid in (-1, 65536, 1.5):
             with pytest.raises((ValueError, TypeError)):
@@ -2276,9 +2278,13 @@ def test_exact_update_stages(tmp_path, version, wrapped):
     with (mpq.Archive.open_mpqe(path, code) if wrapped else mpq.Archive(path)) as archive:
         with archive.open_stream("renamed", locale=locale, platform=platform) as stream:
             assert stream.read() == b"path bytes"
+        selected = archive.file_number("renamed", locale=locale, platform=platform)
+        assert archive[selected].attributes().filetime == filetime
         if classic:
             with archive.open_stream("voice", locale=0, platform=0) as stream:
                 assert stream.read() == b"neutral"
+            neutral = archive.file_number("voice", locale=0, platform=0)
+            assert archive[neutral].attributes().filetime == 0
     committed = path.read_bytes()
     with begin() as update:
         update.remove("renamed", locale=locale, platform=platform)

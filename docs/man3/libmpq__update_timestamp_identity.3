@@ -22,9 +22,9 @@ libmpq__update_timestamp_identity \- stage an existing MPQ member FILETIME updat
 .BI "int32_t libmpq__update_timestamp_identity("
 .BI "        mpq_update_s *" "update,"
 .BI "        const char *" "filename,"
-.BI "        uint64_t " "filetime,"
 .BI "        uint16_t " "locale,"
-.BI "        uint16_t " "platform"
+.BI "        uint16_t " "platform,"
+.BI "        uint64_t " "filetime"
 .BI ");"
 .fi
 .SH DESCRIPTION
@@ -77,7 +77,7 @@ int32_t
 stage_english_filetime(mpq_update_s *update)
 {
     return libmpq__update_timestamp_identity(
-        update, "docs/sample.txt", UINT64_C(133485408000000000), 0x0409, 0
+        update, "docs/sample.txt", 0x0409, 0, UINT64_C(133485408000000000)
     );
 }
 .fi

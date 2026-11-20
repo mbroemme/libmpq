@@ -319,7 +319,7 @@ public final class LibmpqNative {
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, C_LONG));
         UPDATE_TIMESTAMP_IDENTITY = function(linker, lookup, "libmpq__update_timestamp_identity",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
-                        C_LONG, C_SHORT, C_SHORT));
+                        C_SHORT, C_SHORT, C_LONG));
         UPDATE_COMMIT = function(linker, lookup, "libmpq__update_commit",
                 FunctionDescriptor.of(C_INT, ValueLayout.ADDRESS));
         UPDATE_ABORT = function(linker, lookup, "libmpq__update_abort",
@@ -883,8 +883,8 @@ public final class LibmpqNative {
         return callInt(UPDATE_TIMESTAMP, update, name, filetime);
     }
     public static int updateTimestampIdentity(MemorySegment update, MemorySegment name,
-            long filetime, short locale, short platform) {
-        return callInt(UPDATE_TIMESTAMP_IDENTITY, update, name, filetime, locale, platform);
+            short locale, short platform, long filetime) {
+        return callInt(UPDATE_TIMESTAMP_IDENTITY, update, name, locale, platform, filetime);
     }
     public static int updateCommit(MemorySegment update) { return callInt(UPDATE_COMMIT, update); }
     public static int updateAbort(MemorySegment update) { return callInt(UPDATE_ABORT, update); }

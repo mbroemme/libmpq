@@ -731,7 +731,7 @@ They allow gaps; invoke compaction last when dense placement matters.
 
 `libmpq__update_timestamp(update, name, filetime)` changes existing FILETIME
 metadata using ordinary lookup. Use `libmpq__update_timestamp_identity(update,
-name, filetime, locale, platform)` for exact selection without fallback.
+name, locale, platform, filetime)` for exact selection without fallback.
 FILETIME is unsigned 100-nanosecond ticks since 1601-01-01 UTC; zero and
 `UINT64_MAX` are valid values. Valid, available classic-backed FILETIME is
 required. Missing arrays are not created and timestamps cannot be unset.

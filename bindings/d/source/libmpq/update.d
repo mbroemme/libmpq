@@ -185,7 +185,7 @@ final class Update {
     /** Set Windows FILETIME on the exact filename, locale and platform. */
     void timestamp(string name, ushort locale, ushort platform, ulong filetime) {
         ensureOpen();
-        checkStatus(libmpq__update_timestamp_identity(handle, checkedStringz(name), filetime, locale, platform), "libmpq__update_timestamp_identity");
+        checkStatus(libmpq__update_timestamp_identity(handle, checkedStringz(name), locale, platform, filetime), "libmpq__update_timestamp_identity");
     }
 
     /** Stage removal of one named member. */

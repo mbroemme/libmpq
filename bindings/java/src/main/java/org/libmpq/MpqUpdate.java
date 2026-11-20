@@ -483,7 +483,7 @@ public final class MpqUpdate implements AutoCloseable {
         short selectedPlatform = selector(platform);
         try (Arena arena = Arena.ofConfined()) {
             Support.check(LibmpqNative.updateTimestampIdentity(handle, name.marshal(arena),
-                    filetime, selectedLocale, selectedPlatform));
+                    selectedLocale, selectedPlatform, filetime));
         }
     }
 

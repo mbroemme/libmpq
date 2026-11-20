@@ -282,9 +282,9 @@ libmpq \- cross-platform C library for creating and reading MPQ archives.
 .BI "int32_t libmpq__update_timestamp_identity("
 .BI "        mpq_update_s *" "update,"
 .BI "        const char *" "filename,"
-.BI "        uint64_t " "filetime,"
 .BI "        uint16_t " "locale,"
-.BI "        uint16_t " "platform"
+.BI "        uint16_t " "platform,"
+.BI "        uint64_t " "filetime"
 .BI ");"
 .sp
 .BI "int32_t libmpq__update_commit("

@@ -5107,7 +5107,7 @@ test_identity_access(uint32_t version, uint32_t chunk, unsigned layout, uint8_t 
             LIBMPQ_ERROR_FORMAT
         );
         TEST_CHECK(
-            libmpq__update_timestamp_identity(timestamp_update, "chain-32", 0, 1, 0) ==
+            libmpq__update_timestamp_identity(timestamp_update, "chain-32", 1, 0, 0) ==
             LIBMPQ_ERROR_EXIST
         );
         TEST_CHECK(libmpq__update_abort(timestamp_update) == 0);
@@ -5662,12 +5662,12 @@ test_timestamp_updates(
     TEST_CHECK(libmpq__update_timestamp(update, "nested/voice.bin", 91) == 0);
     TEST_CHECK(same_file(libmpq__update_path(update), staged));
     TEST_CHECK(
-        libmpq__update_timestamp_identity(update, "nested/voice.bin", 1, 1, 0) == LIBMPQ_ERROR_EXIST
+        libmpq__update_timestamp_identity(update, "nested/voice.bin", 1, 0, 1) == LIBMPQ_ERROR_EXIST
     );
     TEST_CHECK(same_file(libmpq__update_path(update), staged));
     for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i) {
         TEST_CHECK(
-            libmpq__update_timestamp_identity(update, "nested/voice.bin", values[i], 0, 0) == 0
+            libmpq__update_timestamp_identity(update, "nested/voice.bin", 0, 0, values[i]) == 0
         );
         TEST_CHECK(
             test_timestamp_check(
@@ -5754,12 +5754,12 @@ test_timestamp_aliases(uint32_t version, uint32_t raw)
     TEST_CHECK(libmpq__update_begin(&update, path) == 0);
     TEST_CHECK(copy_file(libmpq__update_path(update), stage) == 0);
     TEST_CHECK(libmpq__update_timestamp(update, "chain-32", 0) == 0);
-    TEST_CHECK(libmpq__update_timestamp_identity(update, "chain-32", 0, 0x409, 0) == 0);
+    TEST_CHECK(libmpq__update_timestamp_identity(update, "chain-32", 0x409, 0, 0) == 0);
     TEST_CHECK(libmpq__update_timestamp(update, "opaque", 0) == 0);
     TEST_CHECK(same_file(libmpq__update_path(update), stage));
     TEST_CHECK(libmpq__update_timestamp(update, "chain-32", 1) == LIBMPQ_ERROR_FORMAT);
     TEST_CHECK(
-        libmpq__update_timestamp_identity(update, "chain-32", 1, 0x409, 0) == LIBMPQ_ERROR_FORMAT
+        libmpq__update_timestamp_identity(update, "chain-32", 0x409, 0, 1) == LIBMPQ_ERROR_FORMAT
     );
     TEST_CHECK(libmpq__update_timestamp(update, "opaque", 1) == LIBMPQ_ERROR_FORMAT);
     TEST_CHECK(same_file(libmpq__update_path(update), stage));
@@ -5804,7 +5804,7 @@ test_timestamp_metadata(unsigned mode)
     TEST_CHECK(libmpq__update_timestamp(update, "absent", 0) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(libmpq__update_timestamp(update, "payload", 0) == LIBMPQ_ERROR_FORMAT);
     TEST_CHECK(
-        libmpq__update_timestamp_identity(update, "payload", 1, 0, 0) == LIBMPQ_ERROR_FORMAT
+        libmpq__update_timestamp_identity(update, "payload", 0, 0, 1) == LIBMPQ_ERROR_FORMAT
     );
     TEST_CHECK(same_file(libmpq__update_path(update), stage));
     TEST_CHECK(libmpq__update_abort(update) == 0 && same_file(path, stage));
@@ -5859,10 +5859,10 @@ test_timestamp_sequences(uint32_t version)
         libmpq__update_change_identity(update, "renamed", 0, 0, UINT16_MAX, UINT16_MAX) == 0
     );
     TEST_CHECK(
-        libmpq__update_timestamp_identity(update, "renamed", 10, 0, 0) == LIBMPQ_ERROR_EXIST
+        libmpq__update_timestamp_identity(update, "renamed", 0, 0, 10) == LIBMPQ_ERROR_EXIST
     );
     TEST_CHECK(
-        libmpq__update_timestamp_identity(update, "renamed", 10, UINT16_MAX, UINT16_MAX) == 0
+        libmpq__update_timestamp_identity(update, "renamed", UINT16_MAX, UINT16_MAX, 10) == 0
     );
     TEST_CHECK(test_timestamp_value(update, "renamed", UINT16_MAX, UINT16_MAX, 10) == 0);
     TEST_CHECK(libmpq__update_timestamp(update, "renamed", 11) == 0);
@@ -5878,6 +5878,7 @@ test_timestamp_sequences(uint32_t version)
 static int
 test_timestamp_variants(uint32_t version)
 {
+    const uint64_t timestamp = UINT64_C(0xfedcba9876543210);
     mpq_archive_create_options_s create = { version, 8, 512, 0, LIBMPQ_ATTRIBUTE_FILETIME };
     mpq_file_options_s options = { 0 };
     mpq_archive_s *archive = NULL;
@@ -5924,12 +5925,12 @@ test_timestamp_variants(uint32_t version)
         TEST_CHECK(test_alias_table_write(path, rows, 0) == 0);
     }
     TEST_CHECK(libmpq__update_begin(&update, path) == 0);
-    TEST_CHECK(libmpq__update_timestamp_identity(update, "voice", UINT64_MAX, 0x409, 2) == 0);
+    TEST_CHECK(libmpq__update_timestamp_identity(update, "voice", 0x409, 2, timestamp) == 0);
     TEST_CHECK(test_timestamp_value(update, "voice", 0, 0, 0) == 0);
-    TEST_CHECK(test_timestamp_value(update, "voice", 0x409, 2, UINT64_MAX) == 0);
+    TEST_CHECK(test_timestamp_value(update, "voice", 0x409, 2, timestamp) == 0);
     TEST_CHECK(libmpq__update_timestamp(update, "voice", 17) == 0);
     TEST_CHECK(test_timestamp_value(update, "voice", 0, 0, 17) == 0);
-    TEST_CHECK(test_timestamp_value(update, "voice", 0x409, 2, UINT64_MAX) == 0);
+    TEST_CHECK(test_timestamp_value(update, "voice", 0x409, 2, timestamp) == 0);
     TEST_CHECK(libmpq__update_commit(update) == 0);
     TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
     TEST_CHECK(check_exact_contents(archive, "voice", 0, 0, (const uint8_t *)"neutral", 7) == 0);
@@ -6241,7 +6242,7 @@ test_embedded_mutations(mpq_update_s *update, unsigned form, const uint8_t *pref
     TEST_CHECK(test_embedded_stage(update, form, prefix, origin) == 0);
     TEST_CHECK(libmpq__update_change_identity(update, "folder\\voice", 0, 0, 1, 2) == 0);
     TEST_CHECK(test_embedded_stage(update, form, prefix, origin) == 0);
-    TEST_CHECK(libmpq__update_timestamp_identity(update, "folder\\voice", 18, 1, 2) == 0);
+    TEST_CHECK(libmpq__update_timestamp_identity(update, "folder\\voice", 1, 2, 18) == 0);
     TEST_CHECK(test_embedded_stage(update, form, prefix, origin) == 0);
     TEST_CHECK(libmpq__update_change_identity(update, "folder\\voice", 1, 2, 0, 0) == 0);
     TEST_CHECK(
@@ -8289,7 +8290,7 @@ test_key_provenance(uint32_t version, unsigned form, int adjusted)
     TEST_CHECK(libmpq__update_change_identity(update, "other", 0, 0, 1033, 2) == 0);
     TEST_CHECK(libmpq__update_compact(update) == 0);
     TEST_CHECK(libmpq__update_rename_identity(update, "voice", "voice2", 0, 0) == 0);
-    TEST_CHECK(libmpq__update_timestamp_identity(update, "other", 99, 1033, 2) == 0);
+    TEST_CHECK(libmpq__update_timestamp_identity(update, "other", 1033, 2, 99) == 0);
     TEST_CHECK(libmpq__update_compact(update) == 0);
     TEST_CHECK(libmpq__update_change_identity(update, "other", 1033, 2, 1041, 3) == 0);
     TEST_CHECK(copy_file(libmpq__update_path(update), stage) == 0);
@@ -8991,7 +8992,7 @@ test_single_updates(uint32_t version, unsigned form, int wrapped)
         ) == LIBMPQ_ERROR_FORMAT
     );
     TEST_CHECK(same_file(libmpq__update_path(update), stage) && same_file(path, source));
-    TEST_CHECK(libmpq__update_timestamp_identity(update, "voice", 123, 1033, 2) == 0);
+    TEST_CHECK(libmpq__update_timestamp_identity(update, "voice", 1033, 2, 123) == 0);
     TEST_CHECK(libmpq__update_compact(update) == 0);
     TEST_CHECK(libmpq__archive_open(&archive, libmpq__update_path(update), -1) == 0);
     TEST_CHECK(test_compact_prefix(archive, form, prefix, origin) == 0);
@@ -9699,7 +9700,7 @@ main(void)
 
     TEST_CHECK(libmpq__update_timestamp(NULL, "x", 0) == LIBMPQ_ERROR_EXIST);
     TEST_CHECK(
-        libmpq__update_timestamp_identity(NULL, "x", UINT64_MAX, 0, 0) == LIBMPQ_ERROR_EXIST
+        libmpq__update_timestamp_identity(NULL, "x", 0, 0, UINT64_MAX) == LIBMPQ_ERROR_EXIST
     );
     TEST_CHECK(test_timestamp_signatures() == 0);
     TEST_CHECK(test_timestamp_bet_alias(LIBMPQ_ARCHIVE_VERSION_3) == 0);
