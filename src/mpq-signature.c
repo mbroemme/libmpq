@@ -79,7 +79,8 @@ locate(mpq_archive_s *a, uint64_t *offset, uint64_t *extent, uint8_t payload[LIB
         return result;
     if (a->mpq_entry[index].unpacked_size != LIBMPQ_SIGNATURE_SIZE ||
         a->mpq_entry[index].packed_size != LIBMPQ_SIGNATURE_SIZE ||
-        (a->mpq_entry[index].flags & ~LIBMPQ_FLAG_SINGLE) != LIBMPQ_FLAG_EXISTS)
+        (a->mpq_entry[index].flags & ~(LIBMPQ_FLAG_SINGLE | LIBMPQ_FLAG_SIGNATURE)) !=
+            LIBMPQ_FLAG_EXISTS)
         return LIBMPQ_ERROR_FORMAT;
     pos = a->mpq_entry[index].offset;
     if (a->archive_offset < 0 || size < a->mpq_header.header_size ||

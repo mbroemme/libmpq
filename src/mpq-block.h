@@ -48,6 +48,9 @@
 /* Packed block offset table has an additional CRC checksum entry. */
 #define LIBMPQ_FLAG_CRC 0x04000000
 
+/* Historical marker on some weak-signature members. */
+#define LIBMPQ_FLAG_SIGNATURE 0x10000000
+
 /*
  * Native representation of one stored file payload. Offset and packed size
  * locate its bytes, while unpacked size describes the decoded result. Patch

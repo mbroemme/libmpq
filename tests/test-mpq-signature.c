@@ -19,6 +19,7 @@
 
 #include "mpq-api.h"
 #include "mpq-block.h"
+#include "mpq-crypto.h"
 #include "mpq-endian.h"
 #include "mpq-md5.h"
 #include "mpq-reader.h"
@@ -1068,6 +1069,34 @@ main(void)
     padded_size = archive_size + 16;
     padded_data = malloc(padded_size);
     TEST_CHECK(padded_data != NULL);
+
+    /* Change the encrypted block table, then sign the changed archive bytes. */
+    for (i = 0; i < 2; ++i) {
+        uint32_t table_offset = libmpq__load_le32(archive_data + 20);
+        uint32_t table_count = libmpq__load_le32(archive_data + 28);
+        uint32_t table_size = table_count * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE;
+        uint32_t key = libmpq__crypto_hash_string("(block table)", 0x300);
+        uint8_t *table;
+        uint32_t block;
+
+        TEST_CHECK(table_offset <= archive_size && table_size <= archive_size - table_offset);
+        memcpy(padded_data, archive_data, archive_size);
+        table = padded_data + table_offset;
+        TEST_CHECK(libmpq__crypto_decrypt_block(table, table_size, key) == 0);
+        for (block = 0; block < table_count; ++block)
+            if (libmpq__load_le32(table + block * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE) == signature_offset)
+                break;
+        TEST_CHECK(block < table_count);
+        libmpq__store_le32(
+            table + block * LIBMPQ_BLOCK_ENTRY_WIRE_SIZE + 12,
+            LIBMPQ_FLAG_EXISTS | LIBMPQ_FLAG_SIGNATURE | (i ? LIBMPQ_FLAG_SINGLE : 0)
+        );
+        TEST_CHECK(libmpq__crypto_encrypt_block(table, table_size, key) == 0);
+        TEST_CHECK(sign_padded_v1_archive(padded_data, archive_size, signature_offset) == 0);
+        TEST_CHECK(write_bytes(changed, padded_data, archive_size, 256) == 0);
+        TEST_CHECK(check_archive(changed, 256, 0) == 0);
+    }
+
     memcpy(padded_data, archive_data, archive_size);
     memset(padded_data + archive_size, 0xa5, padded_size - archive_size);
     TEST_CHECK(sign_padded_v1_archive(padded_data, padded_size, signature_offset) == 0);
