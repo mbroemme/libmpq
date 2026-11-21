@@ -21,7 +21,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
-#include "mpq-archive.h"
+#include "mpq-api.h"
 
 #include <stdio.h>
 #include <stdlib.h>

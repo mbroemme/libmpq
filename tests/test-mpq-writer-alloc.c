@@ -18,7 +18,7 @@
  */
 
 /* Only the four replacement modules receive the allocation macros. */
-#include "mpq-archive.h"
+#include "mpq-api.h"
 #include "mpq-writer.h"
 #define LIBMPQ_TEST_ALLOC_IMPLEMENTATION
 #include "test-mpq-helper.h"

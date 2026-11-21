@@ -20,7 +20,7 @@
 /* Verify read-only MPQE source opening with public fixtures. */
 #include "test-mpq-helper.h"
 
-#include "mpq-archive.h"
+#include "mpq-api.h"
 #include "mpq-block.h"
 #include "mpq-mpqe.h"
 #include "mpq-signature.h"

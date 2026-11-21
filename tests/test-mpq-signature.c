@@ -17,7 +17,7 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "mpq-archive.h"
+#include "mpq-api.h"
 #include "mpq-block.h"
 #include "mpq-endian.h"
 #include "mpq-md5.h"

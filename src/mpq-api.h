@@ -1,5 +1,5 @@
 /*
- *  mpq-archive.h -- private runtime MPQ archive state.
+ *  mpq-api.h -- private runtime MPQ archive state.
  *
  *  Copyright (c) 2003-2026 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -17,8 +17,8 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef LIBMPQ_MPQ_ARCHIVE_H
-#define LIBMPQ_MPQ_ARCHIVE_H
+#ifndef LIBMPQ_MPQ_API_H
+#define LIBMPQ_MPQ_API_H
 
 #include "mpq-attributes.h"
 #include "mpq-bet.h"
@@ -123,4 +123,4 @@ struct mpq_archive
     const struct mpq_writer_mpqe_ops *write_mpqe_ops; /* Private MPQE finalization operations. */
 };
 
-#endif /* LIBMPQ_MPQ_ARCHIVE_H */
+#endif /* LIBMPQ_MPQ_API_H */

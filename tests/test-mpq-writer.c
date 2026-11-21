@@ -23,7 +23,7 @@
 #endif
 
 /* Exercise deterministic writer output and generated writer/readback properties. */
-#include "mpq-archive.h"
+#include "mpq-api.h"
 #include "mpq-bet.h"
 #include "mpq-compression.h"
 #include "mpq-crypto.h"

@@ -19,7 +19,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
-#include "mpq-archive.h"
+#include "mpq-api.h"
 #include "mpq-bit.h"
 #include "mpq-compression.h"
 #include "mpq-crypto.h"

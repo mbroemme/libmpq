@@ -22,7 +22,7 @@
 #endif
 
 #include "mpq-update.h"
-#include "mpq-archive.h"
+#include "mpq-api.h"
 #include "mpq-attributes.h"
 #include "mpq-bet.h"
 #include "mpq-block.h"

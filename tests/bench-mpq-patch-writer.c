@@ -21,7 +21,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
-#include "mpq-archive.h"
+#include "mpq-api.h"
 #include "mpq-patch-reader.h"
 #include "mpq-patch-writer.h"
 #include "mpq-source.h"

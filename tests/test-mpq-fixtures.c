@@ -18,7 +18,7 @@
  */
 
 /* Verify checked-in synthetic feature and patch archives and extracted payloads. */
-#include "mpq-archive.h"
+#include "mpq-api.h"
 #include "mpq-attributes.h"
 #include "mpq-bit.h"
 #include "mpq-block.h"

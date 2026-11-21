@@ -17,7 +17,7 @@
  *  along with this file; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "../src/mpq-archive.h"
+#include "../src/mpq-api.h"
 #include "../src/mpq-crypto.h"
 #include "../src/mpq-endian.h"
 #include "../src/mpq-header.h"

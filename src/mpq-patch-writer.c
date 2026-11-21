@@ -18,7 +18,7 @@
  */
 
 #include "mpq-patch-writer.h"
-#include "mpq-archive.h"
+#include "mpq-api.h"
 #include "mpq-bet.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"

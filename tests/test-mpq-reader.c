@@ -18,7 +18,7 @@
  */
 
 /* Exercise fixture opening, file maps, sector offsets, and block reads. */
-#include "mpq-archive.h"
+#include "mpq-api.h"
 #include "mpq-bit.h"
 #include "mpq-crypto.h"
 #include "mpq-endian.h"

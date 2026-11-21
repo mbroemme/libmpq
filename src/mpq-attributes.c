@@ -18,7 +18,7 @@
  */
 
 #include "mpq-attributes.h"
-#include "mpq-archive.h"
+#include "mpq-api.h"
 #include "mpq-endian.h"
 #include "mpq-md5.h"
 #include "mpq-reader.h"
