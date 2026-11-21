@@ -4031,10 +4031,113 @@ test_compressed_classic(void)
     return 0;
 }
 
+/* Empty sectorized members need no table when no packed bytes exist. */
+static int
+test_zero_sector_members(void)
+{
+    const char *const names[] = { "plain.bin", "compressed.bin", "encrypted.bin", "truncated.bin" };
+    const mpq_archive_create_options_s options = { LIBMPQ_ARCHIVE_VERSION_1, 32, 4096, 0, 0 };
+    const mpq_file_options_s compressed = { LIBMPQ_FILE_FLAG_COMPRESS, LIBMPQ_COMPRESSION_ZLIB,
+                                            LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
+    const mpq_file_options_s encrypted = { LIBMPQ_FILE_FLAG_COMPRESS | LIBMPQ_FILE_FLAG_ENCRYPTED,
+                                           LIBMPQ_COMPRESSION_ZLIB, LIBMPQ_COMPRESSION_ZLIB, 0, 0 };
+    char path[512];
+    mpq_archive_s *archive = NULL;
+    uint8_t *image = NULL;
+    uint8_t payload[12000];
+    uint8_t output = 0;
+    size_t image_size;
+    uint32_t physical[4];
+    uint32_t table_offset;
+    uint32_t table_size;
+    uint32_t key = libmpq__crypto_hash_string("(block table)", 0x300);
+    libmpq__off_t transferred;
+    FILE *file;
+
+    TEST_CHECK(test_temp_path(path, sizeof(path), "zero-sector") == 0);
+    memset(payload, 'S', sizeof(payload));
+    TEST_CHECK(libmpq__archive_create(&archive, path, &options) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, names[0], NULL, 0, NULL) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, names[1], NULL, 0, &compressed) == 0);
+    TEST_CHECK(libmpq__archive_add_data(archive, names[2], NULL, 0, &encrypted) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, names[3], payload, sizeof(payload), &compressed) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    table_offset = archive->mpq_header.block_table_offset;
+    table_size = archive->mpq_header.block_table_count * 16u;
+    for (size_t i = 0; i < 4; i++) {
+        uint32_t number;
+        TEST_CHECK(libmpq__file_number(archive, names[i], &number) == 0);
+        physical[i] = archive->mpq_entry[archive->mpq_map[number].entry_index].classic_source_index;
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+
+    TEST_CHECK(test_read_path(path, &image, &image_size) == 0);
+    TEST_CHECK(table_offset <= image_size && table_size <= image_size - table_offset);
+    TEST_CHECK(libmpq__crypto_decrypt_block(image + table_offset, table_size, key) == 0);
+    TEST_CHECK(libmpq__load_le32(image + table_offset + physical[0] * 16u + 4u) == 0);
+    TEST_CHECK(libmpq__load_le32(image + table_offset + physical[1] * 16u + 4u) == 8);
+    TEST_CHECK(libmpq__load_le32(image + table_offset + physical[2] * 16u + 4u) == 8);
+    libmpq__store_le32(image + table_offset + physical[1] * 16u + 4u, 0);
+    libmpq__store_le32(image + table_offset + physical[2] * 16u + 4u, 0);
+    libmpq__store_le32(image + table_offset + physical[3] * 16u + 4u, 4);
+    TEST_CHECK(libmpq__crypto_encrypt_block(image + table_offset, table_size, key) == 0);
+    file = fopen(path, "wb");
+    TEST_CHECK(file != NULL);
+    TEST_CHECK(fwrite(image, 1, image_size, file) == image_size);
+    TEST_CHECK(fclose(file) == 0);
+    free(image);
+
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    for (size_t i = 0; i < 3; i++) {
+        mpq_stream_s *stream = NULL;
+        uint32_t number;
+        uint32_t exact;
+
+        TEST_CHECK(libmpq__file_number(archive, names[i], &number) == 0);
+        TEST_CHECK(
+            libmpq__file_number_from_identity(archive, names[i], 0, 0, &exact) == 0 &&
+            exact == number
+        );
+        transferred = -1;
+        TEST_CHECK(libmpq__file_read(archive, number, NULL, 0, &transferred) == 0);
+        TEST_CHECK(transferred == 0);
+        TEST_CHECK(libmpq__stream_open(archive, number, &stream) == 0);
+        TEST_CHECK(libmpq__stream_read(stream, &output, 1, &transferred) == 0 && transferred == 0);
+        TEST_CHECK(libmpq__stream_close(stream) == 0);
+        TEST_CHECK(libmpq__stream_open_name(archive, names[i], &stream) == 0);
+        TEST_CHECK(libmpq__stream_read(stream, NULL, 0, &transferred) == 0 && transferred == 0);
+        TEST_CHECK(libmpq__stream_close(stream) == 0);
+        TEST_CHECK(libmpq__stream_open_name_identity(archive, names[i], 0, 0, &stream) == 0);
+        TEST_CHECK(libmpq__stream_read(stream, &output, 1, &transferred) == 0 && transferred == 0);
+        TEST_CHECK(libmpq__stream_close(stream) == 0);
+    }
+    {
+        uint32_t number;
+        mpq_stream_s *stream = NULL;
+        TEST_CHECK(libmpq__file_number(archive, names[3], &number) == 0);
+        TEST_CHECK(
+            libmpq__file_read(archive, number, payload, sizeof(payload), &transferred) ==
+            LIBMPQ_ERROR_FORMAT
+        );
+        TEST_CHECK(
+            libmpq__stream_open_name(archive, names[3], &stream) == LIBMPQ_ERROR_FORMAT &&
+            stream == NULL
+        );
+    }
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    TEST_CHECK(remove(path) == 0);
+    return 0;
+}
+
 /* Validate fixture metadata and extraction through the reader-facing API. */
 int
 main(void)
 {
+    TEST_CHECK(test_zero_sector_members() == 0);
     TEST_CHECK(test_compressed_classic_mixed() == 0);
     TEST_CHECK(test_compressed_classic() == 0);
     TEST_CHECK(test_v4_ext_raw(17, 0, 96) == 0);

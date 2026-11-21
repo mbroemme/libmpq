@@ -1777,7 +1777,8 @@ libmpq__reader_offsets_acquire_key(
      */
     if ((mpq_archive->mpq_entry[entry_index].flags &
          (LIBMPQ_FLAG_COMPRESSED | LIBMPQ_FLAG_COMPRESS_PKZIP)) != 0 &&
-        (mpq_archive->mpq_entry[entry_index].flags & LIBMPQ_FLAG_SINGLE) == 0) {
+        (mpq_archive->mpq_entry[entry_index].flags & LIBMPQ_FLAG_SINGLE) == 0 &&
+        (blocks != 0 || mpq_archive->mpq_entry[entry_index].packed_size != 0)) {
         if (mpq_archive->mpq_entry[entry_index].packed_size < packed_size ||
             libmpq__reader_validate_payload_range(mpq_archive, entry_index, 0, packed_size) < 0) {
             result = LIBMPQ_ERROR_FORMAT;
