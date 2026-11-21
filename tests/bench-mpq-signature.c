@@ -23,6 +23,7 @@
 
 #include "test-mpq-helper.h"
 
+#include <libmpq/mpq.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
