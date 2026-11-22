@@ -12,7 +12,7 @@ touch $directory/configure.ac
 libtoolize --copy
 aclocal
 autoheader
-automake --foreign --add-missing --copy
+automake --add-missing --copy
 autoconf
 
 # show instructions what to do now.

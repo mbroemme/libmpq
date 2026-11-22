@@ -1,13 +1,13 @@
 # Initialize the Autoconf package metadata.
-AC_INIT([libmpq],[0.9.0],[mbroemme@libmpq.org],[libmpq])
+AC_INIT([libmpq], [0.9.0], [mbroemme@libmpq.org], [libmpq])
 AC_SUBST(LIBMPQ_ABI, [6:0:2])
 
 # Detect the canonical host and target build environments.
 AC_CANONICAL_TARGET
 
 # Initialize Autoconf and Automake.
-AM_INIT_AUTOMAKE([no-dependencies])
-AC_CONFIG_HEADERS([config.h:config.h.in])
+AM_INIT_AUTOMAKE([foreign])
+AC_CONFIG_HEADERS([config.h])
 
 # Keep libFuzzer targets opt-in so normal developer and release builds do not
 # require a compiler with the libFuzzer runtime.
@@ -97,17 +97,17 @@ AC_CONFIG_FILES([libmpq-config],[chmod +x libmpq-config])
 
 # Generate the remaining package build files.
 AC_CONFIG_FILES([
-Makefile
-include/libmpq/Makefile
-src/Makefile
-bindings/Makefile
-bindings/d/Makefile
-bindings/java/Makefile
-bindings/python/Makefile
-docs/man1/Makefile
-docs/man3/Makefile
-tests/Makefile
-fuzz/Makefile
+	Makefile
+	include/libmpq/Makefile
+	src/Makefile
+	bindings/Makefile
+	bindings/d/Makefile
+	bindings/java/Makefile
+	bindings/python/Makefile
+	docs/man1/Makefile
+	docs/man3/Makefile
+	tests/Makefile
+	fuzz/Makefile
 ])
 
 # Complete the configuration process.
