@@ -207,6 +207,7 @@ test_lzma_framing_validation(const char *path)
 static int
 test_stormlib_no_eopm(void)
 {
+    uint8_t packed[sizeof(stormlib_no_eopm_packed)];
     uint8_t output[sizeof(stormlib_no_eopm_expected) - 1U];
 
     TEST_CHECK(
@@ -216,6 +217,121 @@ test_stormlib_no_eopm(void)
         ) == (int32_t)sizeof(output)
     );
     TEST_CHECK(memcmp(output, stormlib_no_eopm_expected, sizeof(output)) == 0);
+
+    memcpy(packed, stormlib_no_eopm_packed, sizeof(packed));
+    packed[3] = 0;
+    packed[4] = 0;
+    packed[5] = 0;
+    packed[6] = 4;
+    TEST_CHECK(
+        libmpq__compression_decompress_multi(
+            packed, sizeof(packed), output, sizeof(output), LIBMPQ_ARCHIVE_VERSION_2
+        ) == (int32_t)sizeof(output)
+    );
+    TEST_CHECK(memcmp(output, stormlib_no_eopm_expected, sizeof(output)) == 0);
+    TEST_CHECK(
+        libmpq__compression_decompress_multi(
+            packed, sizeof(packed), output, sizeof(output) - 1U, LIBMPQ_ARCHIVE_VERSION_2
+        ) == LIBMPQ_ERROR_UNPACK
+    );
+    TEST_CHECK(
+        libmpq__compression_decompress_multi(
+            packed, sizeof(packed) - 10U, output, sizeof(output), LIBMPQ_ARCHIVE_VERSION_2
+        ) == LIBMPQ_ERROR_UNPACK
+    );
+    packed[6] = 8;
+    TEST_CHECK(
+        libmpq__compression_decompress_multi(
+            packed, sizeof(packed), output, sizeof(output), LIBMPQ_ARCHIVE_VERSION_2
+        ) == LIBMPQ_ERROR_UNPACK
+    );
+    return 0;
+}
+
+/* A 64 MiB dictionary needs a little more than 64 MiB of decoder memory. */
+static int
+test_lzma_dictionary_boundary(const char *path)
+{
+    static const char line[] = "This text uses the exclusive MPQ LZMA compression method.\n";
+    mpq_file_options_s options = { LIBMPQ_FILE_FLAG_COMPRESS, LIBMPQ_COMPRESSION_LZMA,
+                                   LIBMPQ_COMPRESSION_LZMA, 0, 0 };
+    mpq_archive_s *archive = NULL;
+    mpq_stream_s *stream = NULL;
+    uint8_t *stored = NULL;
+    uint8_t *output = NULL;
+    uint8_t payload[(sizeof(line) - 1U) * 32U];
+    size_t stored_size;
+    size_t output_size;
+    size_t offset;
+    size_t i;
+    libmpq__off_t transferred = 0;
+    uint32_t number;
+    FILE *file;
+
+    for (i = 0; i < 32U; ++i)
+        memcpy(payload + i * (sizeof(line) - 1U), line, sizeof(line) - 1U);
+    TEST_CHECK(test_add_archive(&archive, path, LIBMPQ_ARCHIVE_VERSION_2, 0) == 0);
+    TEST_CHECK(
+        libmpq__archive_add_data(archive, "lzma.txt", payload, sizeof(payload), &options) == 0
+    );
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+    TEST_CHECK(test_read_path(path, &stored, &stored_size) == 0);
+    offset = find_lzma_method(stored, stored_size, (sizeof(line) - 1U) * 32U);
+    TEST_CHECK(offset != stored_size);
+    stored[offset + 3] = 0;
+    stored[offset + 4] = 0;
+    stored[offset + 5] = 0;
+    stored[offset + 6] = 4;
+    file = fopen(path, "wb");
+    TEST_CHECK(file != NULL);
+    TEST_CHECK(fwrite(stored, 1, stored_size, file) == stored_size);
+    TEST_CHECK(fclose(file) == 0);
+
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "lzma.txt", &number) == 0);
+    TEST_CHECK(test_archive_read(archive, number, &output, &output_size) == 0);
+    TEST_CHECK(output_size == (sizeof(line) - 1U) * 32U);
+    for (i = 0; i < 32U; ++i)
+        TEST_CHECK(memcmp(output + i * (sizeof(line) - 1U), line, sizeof(line) - 1U) == 0);
+    free(output);
+    output = NULL;
+    TEST_CHECK(libmpq__stream_open_name(archive, "lzma.txt", &stream) == 0);
+    output = malloc(output_size);
+    TEST_CHECK(output != NULL);
+    TEST_CHECK(libmpq__stream_read(stream, output, output_size, &transferred) == 0);
+    TEST_CHECK(transferred == (libmpq__off_t)output_size);
+    for (i = 0; i < 32U; ++i)
+        TEST_CHECK(memcmp(output + i * (sizeof(line) - 1U), line, sizeof(line) - 1U) == 0);
+    TEST_CHECK(libmpq__stream_close(stream) == 0);
+    stream = NULL;
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    archive = NULL;
+    free(output);
+    output = NULL;
+
+    stored[offset + 6] = 8;
+    file = fopen(path, "wb");
+    TEST_CHECK(file != NULL);
+    TEST_CHECK(fwrite(stored, 1, stored_size, file) == stored_size);
+    TEST_CHECK(fclose(file) == 0);
+    TEST_CHECK(libmpq__archive_open(&archive, path, 0) == 0);
+    TEST_CHECK(libmpq__file_number(archive, "lzma.txt", &number) == 0);
+    output = malloc((sizeof(line) - 1U) * 32U);
+    TEST_CHECK(output != NULL);
+    TEST_CHECK(
+        libmpq__file_read(archive, number, output, (sizeof(line) - 1U) * 32U, &transferred) ==
+        LIBMPQ_ERROR_UNPACK
+    );
+    TEST_CHECK(libmpq__stream_open(archive, number, &stream) == 0);
+    TEST_CHECK(
+        libmpq__stream_read(stream, output, (sizeof(line) - 1U) * 32U, &transferred) ==
+        LIBMPQ_ERROR_UNPACK
+    );
+    TEST_CHECK(libmpq__stream_close(stream) == 0);
+    TEST_CHECK(libmpq__archive_close(archive) == 0);
+    free(output);
+    free(stored);
     return 0;
 }
 
@@ -322,6 +438,8 @@ main(void)
     TEST_CHECK(test_lzma_framing_validation(path) == 0);
     remove(path);
     TEST_CHECK(test_stormlib_no_eopm() == 0);
+    TEST_CHECK(test_lzma_dictionary_boundary(path) == 0);
+    remove(path);
     TEST_CHECK(test_v1_lzma_rejected() == 0);
     TEST_CHECK(test_malformed_lzma() == 0);
     TEST_CHECK(test_selector_validation(path) == 0);

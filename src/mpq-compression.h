@@ -36,8 +36,9 @@
 #define LIBMPQ_LZMA_HEADER_SIZE 14u
 #define LIBMPQ_LZMA_TOTAL_OVERHEAD 15u
 
-/* Reject raw-LZMA1 properties that require more than 64 MiB to decode. */
-#define LIBMPQ_LZMA_DECODER_MEMORY_MAX (64u * 1024u * 1024u)
+/* Bound the LZMA1 dictionary and estimated decoder memory separately. */
+#define LIBMPQ_LZMA_DICTIONARY_SIZE_MAX (64u * 1024u * 1024u)
+#define LIBMPQ_LZMA_DECODER_MEMORY_MAX (65u * 1024u * 1024u)
 
 /*
  * Codec callback signature used by the multi-compression dispatcher. The

@@ -89,6 +89,9 @@ decompress_lzma(uint8_t *in_buf, uint32_t in_size, uint8_t *out_buf, uint32_t ou
     if (ret != LZMA_OK)
         return LIBMPQ_ERROR_UNPACK;
 
+    if (((lzma_options_lzma *)filters[0].options)->dict_size > LIBMPQ_LZMA_DICTIONARY_SIZE_MAX)
+        goto cleanup;
+
     memusage = lzma_raw_decoder_memusage(filters);
     if (memusage == UINT64_MAX || memusage > LIBMPQ_LZMA_DECODER_MEMORY_MAX)
         goto cleanup;

@@ -685,8 +685,10 @@ it is LZMA and its payload is `useFilter` zero, five LZMA1 property bytes, an
 advisory little-endian 64-bit original size, and raw LZMA1 data normally
 without an end marker. StormLib normally writes those no-EOPM streams; libmpq
 writes LZMA1 streams with an EOPM and accepts both forms when reading. libmpq
-also rejects LZMA properties that require more than 64 MiB of decoder memory.
-Bound every decoder by the expected unpacked sector length.
+limits the LZMA dictionary to 64 MiB and the estimated liblzma decoder memory
+to 65 MiB, including decoder overhead. This estimate excludes other archive
+reader buffers and process allocations. Bound every decoder by the expected
+unpacked sector length.
 
 Writer compatibility is separate from permissive decoder support. STANDARD is
 the default and, in MPQ v2+, follows the fixed method set: `0x02`, `0x08`,
